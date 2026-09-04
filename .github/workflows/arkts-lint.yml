@@ -13,8 +13,13 @@ concurrency:
   group: arkts-lint-${{ github.ref }}
   cancel-in-progress: true
 
+# Default permissions: read repo contents for checkout. Without this, GITHUB_TOKEN
+# has no scopes in repos with restricted default permissions, and actions/checkout@v4
+# fails with "Repository not found" when fetching refs/pull/N/merge for PRs.
+permissions:
+  contents: read
+
 jobs:
-  # ─── Job 1: Unit tests (Node's built-in test runner) ───
   test:
     name: Unit tests (arkts-lint v0.3)
     runs-on: ubuntu-latest
@@ -41,7 +46,6 @@ jobs:
         working-directory: scripts/arkts-lint
         run: npm test
 
-  # ─── Job 2: AST lint (v0.3) �?fails build on errors ───
   lint-ast:
     name: Lint (arkts-lint v0.3 AST)
     runs-on: ubuntu-latest
@@ -62,12 +66,8 @@ jobs:
         run: npm ci
 
       - name: Run AST lint (must exit 0)
-        # Scan from the REPO ROOT, not from scripts/arkts-lint/.
-        # The script uses process.cwd() to find files, so working-directory matters.
-        # The script auto-skips its own fixtures and tests via path-based exclusion.
         run: node scripts/arkts-lint/index.mjs --quiet
 
-  # ─── Job 3: Regex lint (v1) �?for backwards compat ───
   lint-regex:
     name: Lint (v1 regex, reference)
     runs-on: ubuntu-latest
@@ -79,7 +79,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # No npm cache for v1 (no package.json in scripts/)
 
       - name: Run regex lint
         run: node scripts/audit-arkts-strict.mjs --quiet

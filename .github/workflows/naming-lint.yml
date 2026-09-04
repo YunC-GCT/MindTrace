@@ -13,6 +13,13 @@ concurrency:
   group: naming-lint-${{ github.ref }}
   cancel-in-progress: true
 
+# Default permissions: read repo contents for checkout. Without this, GITHUB_TOKEN
+# has no scopes in repos with restricted default permissions, and actions/checkout@v4
+# fails with "Repository not found" when fetching refs/pull/N/merge for PRs.
+# Individual jobs can extend (e.g. pr-comment needs pull-requests: write).
+permissions:
+  contents: read
+
 jobs:
   # Job 1: Unit tests (naming-lint helpers)
   test:
@@ -76,6 +83,7 @@ jobs:
     needs: lint
     if: github.event_name == 'pull_request' && failure()
     permissions:
+      contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
