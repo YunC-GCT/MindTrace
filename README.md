@@ -66,22 +66,115 @@ v1.0 打 tag 发布; 3 人 Git Flow 团队手册、CODEOWNERS 三 owner 路由�
 
 > 复赛 D3(2026-09-06)已将组件层规范为 `shared/{atoms,molecules,organisms}`, `components/` / `prototypes/` / `archive/` 相继退役。以下为初赛期快照, 保留供对比; 现行结构以 [AGENTS.md](./AGENTS.md)「关键架构」为准。
 
-```
+```text
 entry/src/main/ets/
-├── pages/                     # 每个 page 一个子文件夹
-│   ├── Index.ets              # 主容器: 5 Tab + 全局浮层 + 整链触发
-│   ├── Home/  Notes/  Profile/  Review/  StudyPlan/  AiSettings/
-├── overlays/                  # AgentFloatWindow / CameraOverlay / NoteDetailOverlay
-├── prototypes/                # 页面级 UI 原型(后退役)
-├── components/ atoms/ molecules/   # 组件层(D3 后统一为 shared/*)
-├── database/                  # DatabaseHelper / NoteDao / StudyPlanDao
-├── viewmodels/  services/  utils/
+├── pages/                              # 每个 page 一个子文件夹
+│   ├── Index.ets                       # 主容器: 5 Tab + 全局浮层 + 整链触发
+│   ├── Home/                           # 首页(拆 3 个组件)
+│   │   ├── HomePage.ets
+│   │   ├── HomeTopBar.ets
+│   │   └── HomeRecentNotes.ets
+│   ├── Notes/                          # 笔记页: 一级学科总览 + 二级学科笔记列表
+│   │   ├── NotesPage.ets
+│   │   ├── NotesHeader.ets
+│   │   ├── NotesList.ets
+│   │   ├── NotesSummaryPanel.ets
+│   │   ├── SubjectGrid.ets
+│   │   ├── SubjectCard.ets
+│   │   ├── SubjectViewToggle.ets
+│   │   ├── SubjectDetailPage.ets
+│   │   ├── SubjectHeader.ets
+│   │   ├── SubjectNoteList.ets
+│   │   ├── SubjectTypeEmpty.ets
+│   │   ├── TypeTabRow.ets
+│   │   └── NotesEmptyState.ets
+│   ├── Profile/                        # 我的(原 MePage, 拆 5 个组件)
+│   │   ├── ProfilePage.ets
+│   │   ├── ProfileHeader.ets
+│   │   ├── ProfileStatsRow.ets
+│   │   ├── ProfileMenuList.ets
+│   │   └── ProfileMenuItemRow.ets
+│   ├── Review/                         # 复习
+│   │   └── ReviewPage.ets
+│   ├── StudyPlan/                      # 学习计划(拆 4 个组件)
+│   │   ├── StudyPlanPage.ets
+│   │   ├── PlanHeader.ets
+│   │   ├── PlanInputBar.ets
+│   │   ├── PlanListView.ets
+│   │   └── PlanStatsBar.ets
+│   └── AiSettings/                     # AI 设置(拆 6 个组件)
+│       ├── AiSettingsPage.ets
+│       ├── ActionBar.ets
+│       ├── ConnectionStatus.ets
+│       ├── EndpointPicker.ets
+│       ├── KeyInput.ets
+│       ├── ModelPicker.ets
+│       └── SectionHeader.ets
+├── overlays/                           # 顶层浮层(被 Index 引用)
+│   ├── AgentFloatWindow.ets            # 真实 LLM 对话
+│   ├── CameraOverlay.ets               # 真实 cameraPicker
+│   └── NoteDetailOverlay.ets           # 5 子组件拆分
+├── prototypes/                         # 独立完整的页面级 UI 原型(后退役)
+│   ├── AgentFloatWindow.ets
+│   ├── CameraOverlay.ets
+│   ├── NoteDetailOverlay.ets
+│   ├── AgentMessageList.ets
+│   ├── NoteDetailOverlay/              # 5 个子组件
+│   └── chat/                           # AI 浮窗 8 个子组件
+│       ├── ChatBubble.ets
+│       ├── ChatHeader.ets
+│       ├── ChatModels.ets
+│       ├── ChatSession.ets
+│       ├── ChatTextSanitizer.ets
+│       ├── EmptyStateHint.ets
+│       ├── MessageInput.ets
+│       ├── QuickSuggestions.ets
+│       ├── SessionBar.ets
+│       └── TypingIndicator.ets
+├── components/                          # 旧 atom 命名(已废弃)
+│   └── HexLogo.ets
+├── atoms/                               # 16 个原子组件
+│   ├── AiTabButton / AppIcon / CameraAlbumBtn / CameraBackBtn
+│   ├── CameraCloseBtn / CameraConfirmBtn / CameraShutterBtn
+│   ├── ConfBadge / FloatingButton / GradientRing
+│   ├── HexLogo / PageHeader / PriorityBadge / StatsBox
+│   ├── TabButton / ViewfinderCorners
+├── molecules/                           # 7 个分子组件
+│   ├── CameraCapture.ets
+│   ├── CameraPreview.ets
+│   ├── HeroBanner.ets
+│   ├── NoteCard.ets
+│   ├── PlanItemRow.ets
+│   ├── ReminderBanner.ets
+│   └── TabBar.ets
+├── database/                            # RDB 数据访问
+│   ├── DatabaseHelper.ets               # RDB 封装
+│   ├── NoteDao.ets                      # 完整 CRUD
+│   └── StudyPlanDao.ets                 # 学习计划 DAO
+├── viewmodels/
+│   └── StudyPlanViewModel.ets           # MVVM
+├── services/
+│   ├── ApiClient.ets                    # HTTP 客户端
+│   ├── AiService.ets                    # 整链入口
+│   └── ImageUriResolver.ets             # file:// URI 沙箱化
+└── utils/
+    └── NoteItemMapper.ets               # NoteItem ↔ KnowledgeUnit
+
 common/src/main/ets/
-├── models/  constants/  tools/  data/  llm/
+├── models/                              # 共享类型(KnowledgeUnit + 5 个 enum)
+├── constants/                           # ColorTokens / 字号 / 间距
+├── tools/                               # logger / uuid / timeWindow / confidenceSort
+├── data/                                # MockNotes
+└── llm/                                 # LlmConfig + LlmClient(OpenAI 兼容)
+
 agents/src/main/ets/
-├── agents/  (TypeClassifier / KnowledgeModel)
-├── core/    (Dispatcher)
-└── mcp/tools/  (OcrTool)
+├── agents/
+│   ├── TypeClassifier.ets               # OCR + DeepSeek 分类
+│   └── KnowledgeModel.ets               # AI 结构化 + 真值检验
+├── core/
+│   └── Dispatcher.ets                   # 精简链调度
+└── mcp/tools/
+    └── OcrTool.ets                      # 本地 FastAPI HTTP
 ```
 
 ---
