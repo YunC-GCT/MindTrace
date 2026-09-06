@@ -129,3 +129,5 @@ skill 是 HSP, **不可依赖 entry HAP**; 依赖声明只放行 `common`+`agent
 ## 9. 调研产出口径
 
 本报告由 3 个后台 research agent 的一手信源核实汇总(华为官方文档 30+ 页全文抓取 + sitemap 全量核对; LangGraph.js 官方仓库/npm/API 文档; MCP 官方规范), 分项报告全文保存在本会话记录; 本文件是入库的汇总结论版。只读调研, 除本文件外无其它仓库写入。
+
+**后续补充(同日)**: 团队提供的「LangGraph 概念 × 鸿蒙资源」对照表已逐行核查, 见 [langgraph-mapping-verification-2026-09-06](./langgraph-mapping-verification-2026-09-06.md) — 关键修正: AgentExtensionAbility / agentConstant / A2A Server 面 = **API 26**(非 24, roadmap); AgentCard / AgentHostProxy 确为 API 24 可用; 意图装饰器实名 `@InsightIntent{Link,Page,Function,Form,Entry}` 五类。
