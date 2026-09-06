@@ -1,6 +1,9 @@
 /**
  * KnowledgeModel.test.ets — pure logic tests for KnowledgeModel.
  * structure() is not covered here because it needs LLM configuration.
+ * spec 015 PR1: 真值检查方法已实体化到 TruthCheckService,
+ * 对应测试迁至 TruthCheckService.test.ets; 此处保留 buildPrompt 与
+ * truthCheck 转发路径的行为守卫。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -30,48 +33,6 @@ export default function knowledgeModelTest(): void {
       expect(prompt).assertContain('difficulty');
       expect(prompt).assertContain('importance');
       expect(prompt).assertContain('JSON');
-    });
-
-    it('checkBracePairing_valid_latex_passes', 0, () => {
-      const km: KnowledgeModel = createModel();
-      const r = km.checkBracePairing('\\frac{1}{2}');
-      expect(r.valid).assertTrue();
-    });
-
-    it('checkBracePairing_missing_brace_is_patched', 0, () => {
-      const km: KnowledgeModel = createModel();
-      const r = km.checkBracePairing('\\frac{1}{2');
-      expect(r.correctedText).assertEqual('\\frac{1}{2}');
-    });
-
-    it('checkBracePairing_extra_brace_is_removed', 0, () => {
-      const km: KnowledgeModel = createModel();
-      const r = km.checkBracePairing('\\frac{1}{2}} extra');
-      expect(r.correctedText).assertEqual('\\frac{1}{2} extra');
-    });
-
-    it('checkDivisionByZero_normal_text_passes', 0, () => {
-      const km: KnowledgeModel = createModel();
-      const r = km.checkDivisionByZero('a/b=c');
-      expect(r.hasIssue).assertFalse();
-    });
-
-    it('checkDivisionByZero_detects_slash_zero', 0, () => {
-      const km: KnowledgeModel = createModel();
-      const r = km.checkDivisionByZero('1/0');
-      expect(r.hasIssue).assertTrue();
-    });
-
-    it('checkEquation_normal_equation_passes', 0, () => {
-      const km: KnowledgeModel = createModel();
-      const r = km.checkEquation('a+b=c');
-      expect(r.hasIssue).assertFalse();
-    });
-
-    it('checkEquation_detects_contradiction', 0, () => {
-      const km: KnowledgeModel = createModel();
-      const r = km.checkEquation('1=0');
-      expect(r.hasIssue).assertTrue();
     });
 
     it('truthCheck_empty_text_fails', 0, () => {

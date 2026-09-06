@@ -55,7 +55,7 @@ Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [AD
 
 ## Acceptance criteria
 
-- [ ] PR1 后:`TruthCheckService.ets` 含 4 检查实现;KnowledgeModel 不再含 L637–878 段;全测试绿
+- [x] PR1 后:`TruthCheckService.ets` 含 4 检查实现;KnowledgeModel 不再含真值检查段(878 → 617 行,2026-09-06);全测试绿
 - [ ] PR3 后:`KnowledgeModel.ets` 不存在;`grep -r "new KnowledgeModel()"` 为空;Dispatcher 直连 3 服务
 - [ ] 每步 `hvigor assembleHap` + naming-lint + link-check 通过
 - [ ] Hypium 12 个新测试通过或记录环境限制(DevEco GUI 执行)

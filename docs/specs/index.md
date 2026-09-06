@@ -18,7 +18,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
 | **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **contracts landed** (`common/src/main/ets/kit/`); 实际 Kit 资源接入延后 (2026-09-06) |
 | **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop; P1 只读工具实现可赛后落地) |
-| **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **PR1 scheduled** (复赛窗口内 TruthCheck 先行, 零 LLM 依赖段); PR2/3 赛后 |
+| **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **PR1 done** (2026-09-06, TruthCheck 实体化 878→617 行); PR2/3 赛后 |
 
 ## P0 tickets without spec
 
