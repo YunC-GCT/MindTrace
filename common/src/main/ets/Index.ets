@@ -84,7 +84,7 @@ export {
 //   LlmConfig:  单例, preferences 持久化 API key, UI 输入/读取入口
 //   LlmClient:  OpenAI 兼容 HTTP 客户端, 所有 agent 统一调用
 //   LlmError:   统一错误类型, 按 kind 分类(NO_API_KEY / NETWORK_ERROR / API_ERROR / ...)
-//   LlmTypes:   ChatMessage / LlmCallOptions / LlmErrorKind
+//   LlmTypes:   ChatMessage / LlmCallRequest / LlmCallResult / LlmErrorKind
 export { LlmConfig } from './llm/LlmConfig';
 export { LlmClient } from './llm/LlmClient';
 export { LlmGuard } from './llm/LlmGuard';
@@ -93,6 +93,8 @@ export { LlmError } from './llm/LlmTypes';
 export type {
   ChatMessage,
   LlmCallOptions,
+  LlmCallRequest,
+  LlmCallResult,
   LlmErrorKind,
 } from './llm/LlmTypes';
 export type { LlmGuardJsonOptions, LlmGuardJsonResult, LlmGuardValidationResult, LlmJsonValidator } from './llm/LlmGuard';
