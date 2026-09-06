@@ -1,7 +1,11 @@
 // ============================================================================
 //  services/StudyPlanService.ets — 学习计划 AI 生成服务 (F2 小步先修)
 //  ----------------------------------------------------------------------------
-//  职责: 生成学习计划标题 (LLM 调用 + JSON 数组解析), 供 StudyPlanViewModel 调用。
+//  路径: entry/src/main/ets/services/StudyPlanService.ets
+//  职责: 生成学习计划标题 (LLM 调用 + JSON 数组解析), 供 StudyPlanViewModel 调用
+//  依赖: common (LlmClient / ChatMessage / LlmCallResult)
+//  数据流: knownTitles → systemPrompt 组装 → LlmClient.call (JSON 路径) →
+//          parsePlanTitles → string[] (解析失败返回空数组)
 //  边界: 只负责"生成", 不做持久化 — insert 仍由 ViewModel 的 UI-CRUD 路径执行;
 //        F2 长期 (写路径统一, 见 agent-tools inventory 2026-09-06) 时再收敛
 //        insert + schema 校验。

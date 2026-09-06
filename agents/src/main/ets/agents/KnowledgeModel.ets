@@ -1,9 +1,19 @@
 // MindTrace - KnowledgeModel
-// 2026-09-05 · D2 Ticket #3 · 结构化编排服务
-// spec 015 PR3 (2026-09-06): 结构化编排 / AI 调用 (callAi, 即工具化预留 seam) /
-// JSON 校验 / 归一化 / 分类 hint 合并 全部自 KnowledgeModel.ets 实体化搬入
-// (纯提取, 行为零变化); KnowledgeModel.ets 同步删除。
-// 提示词归 PromptBuilder (PR2), 真值检查归 TruthCheckService (PR1)。
+// ============================================================================
+//  agents/KnowledgeModel.ets — 知识结构化编排 agent
+//  ----------------------------------------------------------------------------
+//  路径: agents/src/main/ets/agents/KnowledgeModel.ets
+//  职责: structure() / structureWithClassification() 编排 — 组装提示词 (PromptBuilder)、
+//        调用 LLM (callAi: LlmGuard JSON 校验重试, 即 ADR-0012 ToolLoop 的预留 seam)、
+//        归一化字段、合并分类 hint、产出主线 KnowledgeUnit
+//  依赖: common (LlmGuard / ContentProtocol / NOTE_TYPE_KEYS / models) ·
+//        TypeClassifier · PromptBuilder · TruthCheckService
+//  数据流: OCR 文本 → resolveClassificationHint → callAi (prompt + JSON_ONLY_RULES)
+//          → validateAiJson → normalize* → toKnowledgeUnit
+//          (含 TruthCheckService.check 真值标记) → KnowledgeUnit
+//  沿革: spec 015 (2026-09-06) 原地拆分 — 提示词/真值检查/常量拆为三个协作服务,
+//        本类依用户命名裁决保留 KnowledgeModel 之名, 878 行 god class → 554 行
+//  ============================================================================
 import type { KnowledgeCategory } from '../models/KnowledgeCategory';
 import { MvpTruthCheckResult } from '../models/TruthCheckResult';
 import {
