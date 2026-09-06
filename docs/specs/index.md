@@ -19,14 +19,12 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **ReminderFacadeImpl landed + injected** (F3, 2026-09-06); UI 入口延后 (用户裁决); BackgroundTask/FormCard 延后 |
 | **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop + P1 只读工具 note_query/note_get/review_due_query) |
 | **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **done** (PR1-PR3, 2026-09-06 — 三协作服务拆出, KnowledgeModel 保留为编排 agent) |
-| **评审后前端改造** | [`016-frontend-post-demo-polish.md`](./016-frontend-post-demo-polish.md) | (复用 ADR-0008/0009/0010/0011/0012, 不立新 ADR) | **spec ready, post-demo** — 8 个 PR 分 3 Phase: MotionPolicy/MathTextRenderer/IconButton (Phase 1) → i18n+ErrorBanner (Phase 2) → a11y/Suspense/性能 (Phase 3) |
 
 ## P0 tickets without spec
 
 | Ticket | Status |
 |--------|--------|
 | **#1** (doc expiry) | meta — not a refactor, just self-referential cleanup |
-| **评审后前端** | [spec 016](./016-frontend-post-demo-polish.md) — 8 PR / 3 Phase, 评审 demo 通过后开干, 不在复赛冲刺内 |
 
 ## Implementation status (2026-09-06)
 
