@@ -11,6 +11,7 @@
 //    - 变更后 this.items = this.items.slice(0) 强制数组引用更新，触发 @Observed→ForEach 重渲染
 //  ============================================================================
 
+import { relationalStore } from '@kit.ArkData'
 import { StudyPlanItem } from "common"
 import { DatabaseHelper } from "common"
 import { StudyPlanDao } from "../database/StudyPlanDao"
@@ -34,7 +35,7 @@ export class StudyPlanViewModel {
         this.items = cached.items.slice(0)
         this.initError = false
       }
-      const store = await DatabaseHelper.init(context)
+      const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       this.dao = new StudyPlanDao(store)
       this.items = await this.dao.queryAll()
       UiDataCacheService.setStudyPlanSnapshot(this.items)
