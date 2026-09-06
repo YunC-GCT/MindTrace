@@ -10,6 +10,7 @@ import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.Ab
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { LlmConfig, OcrConfig, DatabaseHelper } from 'common';
+import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 
 const DOMAIN = 0x0000;
 
@@ -32,6 +33,8 @@ export default class EntryAbility extends UIAbility {
     DatabaseHelper.init(this.context).catch((e: Error) => {
       hilog.error(DOMAIN, 'testTag', 'DB init failed: %{public}s', e.message);
     });
+    // F3 最小闭环 (spec 013 / ADR-0009): ReminderFacade 实现在组合根构造并注入
+    AppStorage.setOrCreate<ReminderFacadeImpl>('reminderFacade', new ReminderFacadeImpl(this.context));
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 
