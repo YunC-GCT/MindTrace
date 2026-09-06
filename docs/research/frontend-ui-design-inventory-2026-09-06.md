@@ -4,6 +4,8 @@
 > **Scope:** MindTrace entry 前端全部 96 个 .ets 的设计(视觉语言)、布局(结构模式)、动效(运动系统)三维清点 — 事实字段机器提取, 关键动效件实读
 > **Project:** MindTrace (entry module)
 > **Author:** 主线程审查 agent (research skill 调度)
+> **可信度**: 令牌/布局/动效 API 计数 = **机器事实** ●; 母题分类与"令牌绕过"判定 = **分析** ▲; 备注列设计债 = **审计** ◆。96 件中仅 GradientRing/FloatingButton/AiTabButton/TabBar 4 件为实读支撑 ▲, 其余凭机器字段+母题库推论
+> **配套**: 叙述与分层裁决在 [`frontend-component-audit-2026-09-06.md`](./frontend-component-audit-2026-09-06.md); 可视化体检在临时目录 `architecture-review-*.html`(禁入 git)
 
 ---
 
@@ -687,6 +689,15 @@ entry 内零直接引用的令牌: `SUBJECT_COLORS`, `TYPE_COLORS`, `LH_HEADING`
 
 
 （档案共 96 件 — 与 96 文件清单一一对应）
+
+## 结论速读 (TL;DR 重申, 去重版)
+
+- **静态半边 ✓**: 高频令牌消费健康 (S_2×231/MINT×150/TEXT_3×148), 渐变 9 / 阴影 6 / 毛玻璃 1 构成稳定母题; rgba/hex 字面量 111 处集中于三公式组件+浮层 (与 audit md §1 同一事实不同口径)
+- **动态半边 ⚠**: animateTo 是唯一通道 (5 文件); 令牌合规 3 文件 (AgentFloatWindow/HomePage/HexLogo), 绕过 2 文件 (ReviewGraphView ×8 硬编码 180ms×6/220/240, GradientRing setInterval 手摇帧 800/1400ms); .animation()/.transition() 全前端 0
+- **真死令牌**: LH_HEADING / SUCCESS / WARNING (连 common 侧无消费者; SUBJECT_COLORS/TYPE_COLORS 经 NoteTaxonomy 间接消费, **非死令牌**)
+- **旗舰首推**: MotionPolicy module (animateTo 包装 + 呼吸周期裁决 + 渐变圆钮补 DUR_INSTANT 按压反馈)
+
+详细见 §1 令牌地图 / §2 动效全景 / §3 母题库 / §4 档案。
 
 ## Conclusion
 
