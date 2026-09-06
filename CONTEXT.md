@@ -103,6 +103,10 @@ The entry-side adapter that implements `agents`' `NoteDaoInterface` on top of `e
 **Kit Facade (contract)**:
 An interface in `common/src/main/ets/kit/` (`ReminderFacade`, `BackgroundTaskFacade`, `FormCardFacade`) declaring a HarmonyOS kit capability for the business pipeline. Implementations are injected at the composition root when kit integration lands; this is a seam, not an import ban — DevEco template modules (abilities, FormAbility) import kit APIs directly (ADR-0009).
 
+**MCP 工具 (mcp/)**:
+A tool in `agents/src/main/ets/mcp/tools/` (currently `OcrTool`), built by the team as an MCP-语义 tool. The directory classifies tools by MCP tool semantics — not by whether an MCP server is running (none does today). CRUD-style tools (增删查改) belong in `tools/` instead (ADR-0010).
+_Avoid_: renaming `mcp/` away; calling it "the MCP server".
+
 ## Ambiguous terms
 
 The word **agent** is overloaded in this codebase. Use the precise form:

@@ -13,7 +13,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | **implemented** (2026-09-06) |
 | **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | spec ready, not implemented |
 | **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | **implemented** (TDD) |
-| **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | **implemented** (2026-09-06) |
+| **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | **reverted** (2026-09-06, [ADR-0010](../adr/0010-mcp-tools-semantics.md) — OcrTool 是 MCP 工具, `mcp/` 保留) |
 | **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
 | **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
 | **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **contracts landed** (`common/src/main/ets/kit/`); 实际 Kit 资源接入延后 (2026-09-06) |
@@ -41,7 +41,7 @@ After all of these, the architecture matches ADR intent:
 - ✅ LlmClient has 1 public method (call + adapters)
 - 🟡 KnowledgeModel replaced by 3 services (façade stage done, real split pending)
 - ⬜ AgentChatService is a thin facade
-- ✅ mcp/ directory doesn't exist
+- 🚫 `mcp/` stays — ADR-0005 superseded by [ADR-0010](../adr/0010-mcp-tools-semantics.md); `tools/` reserved for CRUD tools
 
 ## How to read a spec
 
