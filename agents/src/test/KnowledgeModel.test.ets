@@ -20,11 +20,18 @@ export default function knowledgeModelTest(): void {
       const km: KnowledgeModel = createModel();
       const prompt: string = km.buildPrompt('test');
       expect(prompt).assertContain('category');
-      expect(prompt).assertContain('definition');
-      expect(prompt).assertContain('statement');
-      expect(prompt).assertContain('expression');
-      expect(prompt).assertContain('proposition');
-      expect(prompt).assertContain('problem');
+      // 五类 NoteType (提示词中文化契约, 2026-09 起)
+      expect(prompt).assertContain('概念');
+      expect(prompt).assertContain('定理');
+      expect(prompt).assertContain('公式');
+      expect(prompt).assertContain('证明题');
+      expect(prompt).assertContain('计算题');
+      // 每类一个签名结构化字段
+      expect(prompt).assertContain('定义');
+      expect(prompt).assertContain('陈述');
+      expect(prompt).assertContain('表达式');
+      expect(prompt).assertContain('命题');
+      expect(prompt).assertContain('常见错误');
     });
 
     it('buildPrompt_contains_json_requirements', 0, () => {
