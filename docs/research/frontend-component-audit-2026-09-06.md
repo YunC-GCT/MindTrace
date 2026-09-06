@@ -186,3 +186,34 @@ MindTrace 前端的 shared 三层库收敛在 7 个组件, 全部围绕一条主
 ## Last updated
 
 2026-09-06
+
+---
+
+# 补充：体检扫描裁决 (2026-09-06 下午, /improve-codebase-architecture)
+
+对本文做了一次不留情面的机械扫描 (装饰器计数 / ForEach key 质量 / 全局状态 / 体积谱 / 字面量绕过 / imperative UI), 就"原子化标准符合度"与"React 设计理念符合度"两问给出裁决。HTML 可视化报告不入库 (naming 规范 .html 禁入 git), 由 /improve-codebase-architecture 会话生成于本机临时目录, 可随时重跑复现。
+
+## 裁决 1 — 原子化/分子化标准 (spec 012): 骨架合规 ≈75%
+
+- 合规: 三层目录 / PascalCase / 依赖方向全链向下 (grep 零反向 import, @Link=0)。
+- 违例: MathTextRenderer 假原子 (536 行, :13 import 内部模块 utils/UiCacheDebug); MathPreviewText atom→atom (:31); 单消费者组件入 shared (StatsBox / FormulaSplitRenderer); 文件头四要素注释未执行。
+- 真空: overlays 43 本地组件无层级规则; spec 012 验收 3/5 checkbox 未勾。
+
+## 裁决 2 — React 设计理念: 数据流理念高度符合, 组件理念 3 处偏离
+
+- 符合: **@Link=0** 纯单向数据流 (props down / 回调上抛); 组合优于继承 (struct 无继承, @Builder 插槽); TextInput 全受控模式; 声明式条件渲染。
+- 偏离: ForEach index-key ×3 (MarkdownRenderer:139,172 / DetailStepList:69); `AppStorage 'notesVersion'` 手工事件总线散布 6 文件 (隐式全局可变状态, 无响应式订阅); 胖容器 (ReviewGraphView **1880 行** ≈ shared 库总和 ×1.2; AgentFloatWindow 272 行容器持服务回调+会话+拖拽)。
+- 记录不判死: promptAction ×10 文件 (ArkUI 生态惯用); **96 处** rgba/hex 字面量绕过 ColorTokens (重灾区 = 三公式组件的 profile 四态样式)。
+
+## 加深机会候选 (codebase-design 词汇, 按 strength)
+
+| # | 候选 | Strength | 一句话 |
+|---|---|---|---|
+| C1 | MathTextRenderer 缓存/调度外移成独立 module | **Strong** | interface 本来就深, 但 seam 埋在 struct 里; 外移后缓存获独立测试面, 顺势重分层 |
+| C2 | 公式样式 profile 四态收口为 style-policy module | **Strong** | 同一套 rgba 写 3 遍; 96 处字面量归一到 ColorTokens |
+| C3 | ReviewGraphView 1880 行拆 5 个内部模块 | Worth exploring | 纯视觉拆分不改行为; 单消费者不进 shared |
+| C4 | AppStorage 手工事件总线 → @StorageProp 响应式 | Worth exploring | 失效语义 6 文件收敛到 1 处, 消灭漏刷类 bug |
+| C5 | IconButton 原子上收 (≥4 消费者) + MathPreviewText 升分子 | Worth exploring | 纯移动 + 守门锁定 |
+| C6 | AiSettings 九子件上收 | Speculative | YAGNI: 无第二个消费者不动 |
+
+**首选**: C1 — spec 012 重分层是注定要做的 PR, 且与 C2/C5 触达同组文件, 可组成 PR-A/B/C 序列, 一次审计三笔偿还。
