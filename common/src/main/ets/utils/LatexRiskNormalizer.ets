@@ -114,7 +114,9 @@ export class LatexRiskNormalizer {
   }
 
   private looksLikeBareDisplayFormula(text: string): boolean {
-    if (text.indexOf('$$') >= 0 || text.indexOf('$') === 0) {
+    // 含任意 $ 的行已是行内公式定界 — 不能再按裸展示公式包裹
+    // (旧守卫只排 $$ 开头/包含 $$, 漏掉单 $ 成对的行内公式行, 曾把真实回复损坏成 $$...$$)
+    if (text.indexOf('$') >= 0) {
       return false;
     }
     const startsWithCommand: boolean = text.indexOf('\\int') === 0
