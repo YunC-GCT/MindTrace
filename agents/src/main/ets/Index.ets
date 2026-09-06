@@ -26,8 +26,8 @@ export type { CaptureGraphOptions } from './graph/CaptureGraph';
 export { TypeClassifier } from './agents/TypeClassifier';
 export type { TypeClassifierTextResult } from './agents/TypeClassifier';
 export { KnowledgeModel } from './agents/KnowledgeModel';
-export { OcrTool } from './tools/OcrTool';
-export type { OcrRecognitionResult } from './tools/OcrTool';
+export { OcrTool } from './mcp/tools/OcrTool';
+export type { OcrRecognitionResult } from './mcp/tools/OcrTool';
 
 // 模型与扩展类型
 export type { KnowledgeUnitExt, StructuredField, AiRawResponse } from './models/KnowledgeUnitExt';

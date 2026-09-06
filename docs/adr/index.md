@@ -12,11 +12,12 @@ choice made, and the reversibility.
 | [0002](./0002-agent-terminology-disambiguation.md) | Keep code names `Agent*`; migrate user-facing copy to "AI 助手"; document disambiguation in CONTEXT.md | accepted |
 | [0003](./0003-dispatcher-single-entry-design.md) | Collapse 3 public methods (`analyze` + `dispatch` + `routeDispatch`) to one `dispatch(req, opts?)`; `analyze` becomes a private step | accepted |
 | [0004](./0004-llm-call-layer-consolidation.md) | Collapse 3 call methods to one `call(opts)` with adapter selection via `opts.stream`; remove `callSseTokens` (dead path) | accepted |
-| [0005](./0005-mcp-to-tools-rename.md) | Rename `agents/mcp/tools/` to `agents/tools/`; `mcp` is misleading (no MCP server runs) | accepted |
+| [0005](./0005-mcp-to-tools-rename.md) | Rename `agents/mcp/tools/` to `agents/tools/`; `mcp` is misleading (no MCP server runs) | superseded by [0010](./0010-mcp-tools-semantics.md) |
 | [0006](./0006-knowledge-model-decomposition-plan.md) | Split 870-LOC god class into 3 services (PromptBuilder + TruthCheckService + StructureService); Dispatcher orchestrates | accepted |
 | [0007](./0007-test-baseline-12-unit-tests.md) | Adopt audit's 12-test baseline (4+4+2+2 across 4 units) as the test floor | accepted |
 | [0008](./0008-capturegraph-self-built-runtime.md) | Adopt the LangGraph model as the canonical design root, implemented natively in ArkTS (`CaptureGraph`) — no Python sidecar / langgraphjs runtime dependency; AI failure throws, no fallback KnowledgeUnit | accepted |
 | [0009](./0009-kit-facade-injection-boundary.md) | Kit capability seam: pipeline consumes kits via `common/kit/` facade contracts, implementations injected at composition root — a seam, not an import ban (DevEco template modules import kits directly); kit integration deferred | accepted |
+| [0010](./0010-mcp-tools-semantics.md) | `mcp/` keeps MCP-tool semantics (`OcrTool` is a teammate-built MCP 工具); `tools/` reserved for CRUD tools — supersedes ADR-0005, PR #28 rename reverted | accepted |
 
 ## How to write a new ADR
 

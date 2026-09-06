@@ -1,6 +1,6 @@
 # Ticket #10 — Rename `agents/mcp/tools/` to `agents/tools/`
 
-> **Status**: implemented (2026-09-06 — `agents/src/main/ets/tools/`, `mcp/` 已删除)
+> **Status**: reverted (2026-09-06 — 改名执行后发现前提错误: OcrTool 是队员改造的 MCP 工具, 见 [ADR-0010](../adr/0010-mcp-tools-semantics.md); `mcp/tools/` 已恢复)
 > **Source ADR**: [`../adr/0005-mcp-to-tools-rename.md`](../adr/0005-mcp-to-tools-rename.md)
 > **Files affected**: `agents/src/main/ets/mcp/tools/` → `agents/src/main/ets/tools/` (rename); import paths in `agents/src/main/ets/Index.ets` and any consumers of `OcrTool`
 
