@@ -17,6 +17,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
 | **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
 | **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **contracts landed** (`common/src/main/ets/kit/`); 实际 Kit 资源接入延后 (2026-09-06) |
+| **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **spec ready** (2026-09-06; 复赛阶段 spec-only, P1 只读工具实现可赛后落地) |
 
 ## P0 tickets without spec
 
@@ -35,6 +36,7 @@ Done:
 Remaining (recommended order):
 1. **#3** KnowledgeModel real decomposition — façades exist; move the logic out of KnowledgeModel
 2. **#7** AgentChatService decomposition — 3 atomic PRs, 802-LOC class
+3. **F1 / spec 014** LLM tool-calling protocol + ToolRegistry — spec ready; read-only tools (P1) can land post-competition, write tools gated on F2 write-path unification
 
 After all of these, the architecture matches ADR intent:
 - ✅ Dispatcher has 1 public method
