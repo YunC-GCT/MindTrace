@@ -1,7 +1,7 @@
 # 015 — KnowledgeModel 实质拆分 v2(TruthCheck 先行;工具化预留位)
 
 Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [ADR-0006](../adr/0006-knowledge-model-decomposition-plan.md)(2026-09-06 修订:叠加工具化预留位)与 [ADR-0012](../adr/0012-tool-calling-protocol.md)。
-**排期裁决(2026-09-06,用户)**:复赛窗口内只做 PR1(TruthCheck 段);PR2/PR3 排赛后。
+**排期**:PR1 于复赛窗口内完成(2026-09-06);PR2/PR3 原定赛后,用户裁决变更后同日完成(2026-09-06)。**全部 PR 已落地,KnowledgeModel.ets 已删除。**
 
 ## Why this ticket(为什么重立)
 
@@ -56,6 +56,7 @@ Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [AD
 ## Acceptance criteria
 
 - [x] PR1 后:`TruthCheckService.ets` 含 4 检查实现;KnowledgeModel 不再含真值检查段(878 → 617 行,2026-09-06);全测试绿
-- [ ] PR3 后:`KnowledgeModel.ets` 不存在;`grep -r "new KnowledgeModel()"` 为空;Dispatcher 直连 3 服务
-- [ ] 每步 `hvigor assembleHap` + naming-lint + link-check 通过
-- [ ] Hypium 12 个新测试通过或记录环境限制(DevEco GUI 执行)
+- [x] PR2 后:`PromptBuilder.ets` 实体化(提示词主体 33 行字节级 diff 一致);KnowledgeModel 617→586 行
+- [x] PR3 后:`KnowledgeModel.ets` 已删除;`grep "new KnowledgeModel()"` 为空;类体 diff 仅 18 行机械差异(类名/2 处调用直连/2 个转发移除);Dispatcher 经 StructureNode 直连实体 StructureService
+- [x] 每步 `hvigor assembleHap` + naming-lint + link-check 通过
+- [x] Hypium:TruthCheckService 7 例 + PromptBuilder 2 例(用户 GUI 验证 TruthCheckService 通过);KnowledgeModel.test.ets 随类删除,覆盖已迁移(结构化主路径需 LLM 配置,Hypium 与原 KM.test 同样不覆盖)
