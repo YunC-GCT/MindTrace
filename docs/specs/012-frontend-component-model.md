@@ -1,6 +1,6 @@
 # D3 — 前端仿 React 组件化与组件接缝
 
-> **Status**: spec draft for review (Phase 4)
+> **Status**: in progress (shared 组件三层已拆; overlay/service 迁移待做; 进度以 [`index.md`](./index.md) 为准)
 > **Date**: 2026-09-05
 > **Source decision**: GitHub issue #10
 > **Scope**: 仅架构规范化，不引入新组件库与状态管理依赖。

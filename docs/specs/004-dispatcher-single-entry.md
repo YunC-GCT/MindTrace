@@ -1,6 +1,6 @@
 # Ticket #4 — Dispatcher single entry
 
-> **Status**: spec for review (Phase 3)
+> **Status**: implemented (2026-09-05 · D2 落地; 进度以 [`index.md`](./index.md) 为准)
 > **Source ADR**: [`../adr/0003-dispatcher-single-entry-design.md`](../adr/0003-dispatcher-single-entry-design.md)
 > **Files affected**: `agents/src/main/ets/core/Dispatcher.ets` (change); `entry/src/main/ets/services/AgentChatService.ets`, `entry/src/main/ets/services/AiService.ets` (migrate callers)
 > **Test files**: new `agents/src/test/Dispatcher.test.ets` (Hypium, behavior); new `scripts/arkts-lint/tests/dispatcher-api.test.mjs` (Node, AST-level shape)

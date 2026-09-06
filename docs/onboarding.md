@@ -19,7 +19,7 @@ MindTrace is a **HarmonyOS math learning assistant** for the **鸿蒙高校创�
 
 - 5 modules (1 HAP + 4 HSP): `entry`, `common`, `agents`, `skill`, `cardservice`
 - AI pipeline: photo → OCR → classify → structure → persist
-- Custom ArkTS lint engine (34 rules, 89 tests)
+- Custom ArkTS lint engine (34 rules, 70 tests)
 - Architecture: 4 layers + 5 modules (see `AGENTS.md`)
 
 ### Read in this order
@@ -56,14 +56,14 @@ If all three pass, you're set up correctly.
 
 - `agents/src/main/ets/core/Dispatcher.ets` — main agent orchestrator (single entry `dispatch`, runs the CaptureGraph)
 - `common/src/main/ets/llm/LlmClient.ets` — LLM call layer
-- `agents/src/main/ets/agents/KnowledgeModel.ets` — god class, decomposition in progress (façade stage)
+- `agents/src/main/ets/agents/KnowledgeModel.ets` — knowledge structuring orchestration agent (spec 015 done: PromptBuilder / TruthCheckService collaborators extracted)
 - `scripts/arkts-lint/index.mjs` — the custom AST lint engine
 
 ### 3. Run the tests (5 min)
 
 ```bash
-# 130 unit tests across the project
-node --test scripts/arkts-lint/tests/*.test.mjs          # 89 tests
+# 111 unit tests across the project
+node --test scripts/arkts-lint/tests/*.test.mjs          # 70 tests
 node --test scripts/naming-lint/tests/*.test.mjs         # 23 tests (8 helpers + 15 config)
 node --test scripts/link-check/tests/link-parser.test.mjs # 18 tests
 ```
