@@ -15,8 +15,8 @@ The audit's F1 finding ([agent-tools inventory](../architecture/agent-tools-inve
 
 ## Consequences
 
-- **Chosen (1)**: `ChatMessage.role` gains `'tool'`; `LlmRequestBody`/`LlmCallRequest` gain optional `tools`/`tool_choice`; `LlmResponseChoice.message` gains optional `tool_calls`. Requests without tools stay byte-equivalent to today.
-- `AgentTool` implementations in this spec are read-only queries over `DatabaseHelper`'s RDB store; they run in `common` and must not import `entry`.
+- **Chosen (1)**: `ChatMessage.role` gains `'tool'` and `ChatMessage` gains optional `tool_calls` (the loop-back assistant message needs somewhere to carry them, `content:''`); `LlmRequestBody`/`LlmCallRequest` gain optional `tools`/`tool_choice`; `LlmResponseChoice.message` gains optional `tool_calls`; `LlmCallResult` gains optional `toolCalls` (filled by `extractToolCalls`, gated on `message.tool_calls` presence — not `finish_reason`, which varies across OpenAI-compatible endpoints); `ToolLoop` consumes the existing `LlmCaller` seam (mockable, same pattern as `LlmGuard`); `LlmErrorKind` gains `'TOOL_LOOP_MAX_STEPS'`. Requests without tools stay byte-equivalent to today.
+- `AgentTool` implementations in this spec are read-only queries over `DatabaseHelper`'s RDB store; they run in `common` and must not import `entry`. The store is reached via `DatabaseHelper.getStore()` (null → `ok:false 'store not ready'`; context/init ownership stays with the entry composition root). Caveat: table schemas (`knowledge_unit` etc.) are currently declared by `entry` DAOs — P1 tools must either lift shared schema constants into `common` or cite NoteDao as the schema source-of-truth, to prevent drift.
 - `OcrTool` stays where it is (`mcp/`, MCP-semantic) — registering it as an `AgentTool` is a possible follow-up, not part of this decision.
 - When the competition window closes, write tools should land together with the F2 write-path unification (single validation gate), not before.
 

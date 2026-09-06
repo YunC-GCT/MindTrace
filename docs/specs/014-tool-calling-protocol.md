@@ -39,11 +39,14 @@ export interface LlmToolCall {
   type: 'function';
   function: LlmFunctionCallNameArgs;              // { name: string; arguments: string }
 }
+// ChatMessage 增 tool_calls?: LlmToolCall[]      — ToolLoop 回喂 assistant(tool_calls) 消息必需;
+//                                                  该消息 content 固定传 ''(OpenAI 兼容端点接受空串)
 // LlmResponseChoice.message 增 tool_calls?: LlmToolCall[];
 // LlmCallRequest 增 tools? / tool_choice? 透传字段
+// LlmCallResult 增 toolCalls?: LlmToolCall[]     — 由 extractToolCalls 填充, ToolLoop 经 LlmCaller seam 依赖它
 ```
 
-`LlmClient`: `callJsonInternal` 组装 body 时透传新字段; 新增 `extractToolCalls(parsed): LlmToolCall[]`(`finish_reason === 'tool_calls'` 时取 `choices[0].message.tool_calls`, 其余返回空数组); `extractContent` 保持不变。
+`LlmClient`: `callJsonInternal` 组装 body 时透传新字段; 新增 `extractToolCalls(parsed): LlmToolCall[]`(以 `choices[0].message.tool_calls` 非空为准提取 — **不硬性依赖 `finish_reason`**, OpenAI 兼容端点在该字段上行为有差异, `finish_reason` 仅作日志参考), `LlmCallResult.toolCalls` 随之填充; `extractContent` 保持不变。
 
 ### 2. ToolRegistry(common/src/main/ets/tools/ToolRegistry.ets)
 
@@ -66,13 +69,24 @@ export class ToolRegistry {
 }
 ```
 
+- `execute` 对**未知工具名**同样返回 `ok:false`(LLM 可能幻觉出未注册名), 不抛异常。
+- 命名规则 `^[a-z][a-z0-9_]{0,63}$` **刻意严于** OpenAI wire 规则 `^[a-zA-Z0-9_-]{1,64}$`, 是安全子集 — 更严的约束在注册时拦截, 而不是发送后被端点拒绝。
+
 ### 3. 工具执行循环(common/src/main/ets/tools/ToolLoop.ets)
 
-`run(messages: ChatMessage[], registry: ToolRegistry, options?: ToolLoopOptions): Promise<LlmCallResult>` — 内部走 `LlmClient.call`(JSON 路径): 响应含 `tool_calls` → 逐个 `registry.execute` → 追加 assistant(tool_calls) 消息 + `role:'tool'` 结果消息 → 继续循环; 无 `tool_calls` → 返回最终 text。`ToolLoopOptions.maxSteps`(默认 4)触顶即停并返回错误说明, 防失控循环。SSE 流式工具循环明确不在本 spec。
+- **构造注入 `LlmCaller`**(复用 `LlmGuard` 既有 seam — 生产传 `LlmClient`, 测试传 mock; 测试计划据此成立): `run(messages, registry, options?)` 内部走 `llmCaller.call`(JSON 路径)。
+- 响应 `toolCalls` 非空 → 逐个 `registry.execute` → 追加 assistant(`tool_calls` + `content:''`)消息 + `role:'tool'` 结果消息(`content = ToolResult.content`, `tool_call_id` 一一对应)→ 继续循环; 为空 → 返回最终 text。
+- `ToolLoopOptions { maxSteps?: number(默认 4); callOptions?: LlmCallOptions(模型/超时等, 透传每步调用) }`; `maxSteps` 触顶**抛** `LlmError('tool loop exceeded maxSteps=N', 'TOOL_LOOP_MAX_STEPS')`(`LlmErrorKind` 增该值, additive — 既有调用方按 `indexOf(kind)` 匹配, 不受影响), 防失控循环。
+- SSE 流式工具循环明确不在本 spec。
 
 ### 4. P1 首批工具(只读; 本 spec 只定接口形状, 实现可赛后)
 
-`note_query`(按 subject / review_status / keyword 过滤, 返回条数上限 20)、`note_get`(按 id)、`review_due_query`(按 ReviewStatus 聚合计数)。全部基于 `common` 的 `DatabaseHelper` RDB store 直接查询, **禁止 import entry**(拓扑红线, ADR-0012)。不注册任何写工具 — 写路径统一(F2)是前置条件。
+`note_query`(按 subject / review_status / keyword 过滤, 返回条数上限 20)、`note_get`(按 id)、`review_due_query`(按 ReviewStatus 聚合计数)。全部基于 `common` 的 `DatabaseHelper` RDB store 直接查询, **禁止 import entry**(拓扑红线, ADR-0012)。
+
+实现前提(写入验收):
+- store 经 `DatabaseHelper.getStore()` 获取 — 未 init 时为 null, 工具返回 `ok:false, 'store not ready'`; **context 与 init 所有权仍在 entry 组合根**, common 不自建。
+- **schema 归属警示**: `knowledge_unit` 等表结构目前由 `entry` 的 DAO 声明 — common 侧直查前, 要么把共享 schema 常量上移 common, 要么在工具文件头显式标注 NoteDao 为 schema source-of-truth, 防两端漂移。
+- 不注册任何写工具 — 写路径统一(F2)是前置条件。
 
 ### 5. skill 侧复用(仅契约, 不实装)
 
@@ -92,11 +106,11 @@ export class ToolRegistry {
 
 ## Test plan (TDD)
 
-- **协议解析**: 带 `tool_calls` 的 LlmResponse fixture → `extractToolCalls` 取值正确; `finish_reason='stop'` → 空数组; `arguments` 非 JSON → registry 返回 `ok:false` 而非抛异常。
+- **协议解析**: 带 `tool_calls` 的 LlmResponse fixture → `extractToolCalls` 取值正确; fixture 覆盖**两种端点形状**(`finish_reason='tool_calls'` 与 `finish_reason='stop'` 但 `message.tool_calls` 非空); 无 tool_calls → 空数组; `arguments` 非 JSON → registry 返回 `ok:false` 而非抛异常; 未知工具名 → `ok:false`。
 - **向后兼容**: 不带 tools 的 `LlmRequestBody` JSON.stringify 输出与改动前逐字段一致。
 - **ToolRegistry**: 注册成功 / 重名抛错 / 命名规则拒绝 / `listDefinitions()` 形状与 wire 协议一致。
-- **ToolLoop**(mock `LlmCaller`, 复用 LlmGuard 既有 seam 模式): 无工具直接返回 / 单轮工具调用闭环 / `maxSteps` 触顶 / 工具错误作为 tool 消息回喂后模型自恢复。
-- 全部走 `common/src/test/` 现有框架; CI(arkts-lint)不回归。
+- **ToolLoop**(mock `LlmCaller`, 复用 LlmGuard 既有 seam 模式): 无工具直接返回 / 单轮工具调用闭环 / `maxSteps` 触顶抛 `TOOL_LOOP_MAX_STEPS` / 工具错误作为 tool 消息回喂后模型自恢复。
+- 测试分两层: `common/src/test/`(Hypium, 行为层 — 协议解析 / Registry / Loop 闭环)+ `scripts/arkts-lint/tests/`(Node AST/wire 形状守门, **进 CI** — 断言请求体逐字段兼容与新字段形状)。CI(arkts-lint)不回归。
 
 ## Reversibility
 
@@ -107,6 +121,8 @@ export class ToolRegistry {
 - [ ] `LlmRequestBody` 含 `tools` 时, 请求体能被 OpenAI 兼容端点接受(fixture 单测断言 wire 形状)
 - [ ] 不含 `tools` 时请求体与现状逐字段等价(单测)
 - [ ] ToolLoop 在 mock LLM 回放下完成"提问→tool_calls→执行→回喂→最终回答"闭环(单测)
+- [ ] ToolLoop 回喂消息形状正确: assistant 消息带 `tool_calls` 且 `content=''`, tool 消息带对应 `tool_call_id`(单测)
+- [ ] `maxSteps` 触顶抛 `TOOL_LOOP_MAX_STEPS`(单测)
 - [ ] `node scripts/arkts-lint/index.mjs --quiet` 0 errors; `npm --prefix scripts/arkts-lint test` 全绿
 - [ ] naming-lint / link-check 通过
 - [ ] 无任何 `entry` import 出现在 `common/src/main/ets/tools/`
