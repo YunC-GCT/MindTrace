@@ -41,7 +41,7 @@ docs/
 | **Find a coding rule for a specific framework** | `docs/style/` (e.g. `langgraph-style.md` when added) |
 | **Understand the current architecture** | `docs/adr/` (current decisions) — for historical audits see [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./legacy/mindtrace/architecture/audit-full-2026-09-01.md) |
 | **Find an API contract** | [`docs/legacy/mindtrace/api/contract.md`](./legacy/mindtrace/api/contract.md) |
-| **Look up a workflow (issue tracking, triage)** | `docs/agents/{topic}.md` (13 workflow docs + `patterns/`) |
+| **Look up a workflow (issue tracking, triage)** | `docs/agents/{topic}.md`(工作流文档 + `patterns/`, 以目录为准) |
 | **Create a new doc** | Pick a template from `docs/template/`, then run `node scripts/naming-lint/index.mjs` to verify the name conforms |
 
 ## By audience
