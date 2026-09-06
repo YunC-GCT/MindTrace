@@ -143,6 +143,19 @@ export type {
 //   首批 16 条最常用 toast 集中; 后续加 en/ 目录后用 $r() + ResourceManager 替换
 export { Toast } from './i18n/Strings';
 
+// ========== 评审前 1.5 项: AppError + ErrorBus (fix/demo-polish-2026-09-06) ==========
+//   业务错误统一形态 (kind/severity/title/message/action/cause);
+//   ErrorBus 单例 publish/subscribe; 与 LlmError / CaptureGraphError 通过 cause 链入
+export { AppError } from './errors/AppError';
+export { ErrorBus } from './errors/ErrorBus';
+export type {
+  AppErrorShape,
+  AppErrorKind,
+  ErrorSeverity,
+  ErrorAction,
+} from './errors/AppError';
+export type { ErrorListener } from './errors/ErrorBus';
+
 // ========== D4 Kit facade 接缝契约 (spec 013) ==========
 //   只声明契约, 不 import @kit.*; 实现由 entry 层注入
 export type {

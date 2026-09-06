@@ -2,7 +2,7 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4, Toast } from "common"
+import { BG_DARK, BORDER, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4, Toast, AppError, ErrorBus } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
@@ -42,9 +42,21 @@ struct AiSettingsPage {
 
   private save(): void {
     this.vm.save().then((ok: boolean): void => {
-      try {
-        promptAction.showToast({ message: ok ? Toast.PLAN_SAVE_OK : Toast.PLAN_SAVE_FAILED, duration: 1500 })
-      } catch (_e) {}
+      if (ok) {
+        try {
+          promptAction.showToast({ message: Toast.PLAN_SAVE_OK, duration: 1500 })
+        } catch (_e) {}
+      } else {
+        ErrorBus.publish(new AppError({
+          kind: 'RDB_WRITE_FAIL',
+          severity: 'error',
+          title: '保存失败',
+          message: Toast.PLAN_SAVE_FAILED + ', 请检查存储空间后重试',
+          action: 'retry',
+          actionLabel: '重试',
+          timestamp: Date.now(),
+        }))
+      }
     })
   }
 

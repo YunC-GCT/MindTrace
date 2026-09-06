@@ -13,6 +13,7 @@ import { ProfilePage } from "./Profile/ProfilePage"
 import { TabBar } from "./MainTabs/TabBar"
 import { AgentFloatWindow } from "../overlays/AgentFloatWindow/AgentFloatWindow"
 import { CameraOverlay } from "../overlays/CameraOverlay/CameraOverlay"
+import { ErrorBanner } from "../shared/atoms/ErrorBanner"
 import { KeyboardAvoidMode } from "@kit.ArkUI"
 import { OverlayService } from "../services/OverlayService"
 
@@ -43,6 +44,9 @@ struct Index {
 
   build() {
     Stack() {
+      // 全局错误横幅: 订阅 ErrorBus, 三档 severity (info/warn/error), 不持久化
+      ErrorBanner()
+
       Column() {
         Tabs({ index: this.cur, controller: this.tc }) {
           TabContent() {
