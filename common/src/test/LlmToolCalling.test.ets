@@ -26,8 +26,9 @@ class ScriptedLlm implements LlmCaller {
   async call(request: LlmCallRequest): Promise<LlmCallResult> {
     this.seenMessages.push(request.messages.slice(0));
     if (this.index >= this.responses.length) {
-      const empty: LlmCallResult = { text: '', streamed: false };
-      return empty;
+      // 脚本耗尽后重复最后一条响应 (沿袭 LlmGuard FakeCaller 惯例) — maxSteps 触顶测试依赖它
+      const last: LlmCallResult = this.responses[this.responses.length - 1];
+      return last;
     }
     const response: LlmCallResult = this.responses[this.index];
     this.index += 1;
