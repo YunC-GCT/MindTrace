@@ -17,7 +17,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
 | **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
 | **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **ReminderFacadeImpl landed + injected** (F3, 2026-09-06); UI 入口延后 (用户裁决); BackgroundTask/FormCard 延后 |
-| **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop; P1 只读工具实现可赛后落地) |
+| **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop + P1 只读工具 note_query/note_get/review_due_query) |
 | **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **done** (PR1-PR3, 2026-09-06 — 三协作服务拆出, KnowledgeModel 保留为编排 agent) |
 
 ## P0 tickets without spec
@@ -36,7 +36,7 @@ Done:
 
 Remaining (recommended order):
 1. **#7** AgentChatService decomposition — 3 atomic PRs, 802-LOC class
-2. **F1 / spec 014 P1** read-only tools implementation — post-competition; write tools gated on F2 write-path unification
+2. ~~**F1 / spec 014 P1**~~ — implemented (2026-09-06); write tools gated on F2 write-path unification
 
 After all of these, the architecture matches ADR intent:
 - ✅ Dispatcher has 1 public method
