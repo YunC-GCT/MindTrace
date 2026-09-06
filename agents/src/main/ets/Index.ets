@@ -22,10 +22,12 @@ export type { CaptureGraphOptions } from './graph/CaptureGraph';
 // 子 Agent(D 责任 - 写真实现,L 责任 - 写真实现)
 //   当前为 stub,接 DispatchPayload discriminated union
 //   D 接手: 替换 TypeClassifier.classify body
-//   L 接手: 替换 KnowledgeModel.structure body + NoteDao.insert/queryById
+//   spec 015 PR3: KnowledgeModel 已删除, 结构化逻辑在 StructureService
 export { TypeClassifier } from './agents/TypeClassifier';
 export type { TypeClassifierTextResult } from './agents/TypeClassifier';
-export { KnowledgeModel } from './agents/KnowledgeModel';
+export { StructureService } from './agents/StructureService';
+export { PromptBuilder } from './agents/PromptBuilder';
+export { TruthCheckService } from './agents/TruthCheckService';
 export { OcrTool } from './mcp/tools/OcrTool';
 export type { OcrRecognitionResult } from './mcp/tools/OcrTool';
 

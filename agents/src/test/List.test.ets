@@ -5,13 +5,11 @@
  * 本文件导入 KnowledgeModel 的测试套件。
  */
 
-import knowledgeModelTest from './KnowledgeModel.test';
 import truthCheckServiceTest from './TruthCheckService.test';
 import promptBuilderTest from './PromptBuilder.test';
 import captureGraphTest from './CaptureGraph.test';
 
 export default function testsuite() {
-  knowledgeModelTest();
   truthCheckServiceTest();
   promptBuilderTest();
   captureGraphTest();

@@ -8,10 +8,10 @@ const structure = readFileSync(resolve(root, 'agents/src/main/ets/agents/Structu
 const truthCheck = readFileSync(resolve(root, 'agents/src/main/ets/agents/TruthCheckService.ets'), 'utf8');
 const prompt = readFileSync(resolve(root, 'agents/src/main/ets/agents/PromptBuilder.ets'), 'utf8');
 
-test('StructureService facade delegates to KnowledgeModel structure and structureWithClassification', () => {
+test('StructureService is the entity: structure and structureWithClassification implemented', () => {
   assert.match(structure, /class StructureService/);
-  assert.match(structure, /this\.model\.structure\(/);
-  assert.match(structure, /this\.model\.structureWithClassification\(/);
+  assert.match(structure, /async structure\(\n?\s*ocrText: string,/);
+  assert.match(structure, /async structureWithClassification\(/);
 });
 
 test('TruthCheckService facade exposes check(input)', () => {
@@ -24,10 +24,12 @@ test('PromptBuilder facade exposes build(input)', () => {
   assert.match(prompt, /build\(input: string\): string/);
 });
 
-test('Façade contract per split stage (spec 015): shells forward once; TruthCheck/PromptBuilder are entities', () => {
-  // PR3 待做: StructureService 仍是转发壳 (恰好一次 this.model.*)
-  assert.equal((structure.match(/this\.model\.structure\(/g) || []).length, 1);
-  assert.equal((structure.match(/this\.model\.structureWithClassification\(/g) || []).length, 1);
+test('Façade contract per split stage (spec 015): all three are entities, KM deleted', () => {
+  // PR3 已实体化: StructureService 持有编排/调用/校验实现, 不再依赖 KnowledgeModel
+  assert.match(structure, /async structure\(/);
+  assert.match(structure, /AI 结构化失败/);
+  assert.doesNotMatch(structure, /this\.model\./);
+  assert.doesNotMatch(structure, /from '\.\/KnowledgeModel'/);
   // PR2 已实体化: PromptBuilder 持有 buildPrompt 实现, 不再依赖 KnowledgeModel
   assert.match(prompt, /buildPrompt\(ocrText: string\): string/);
   assert.match(prompt, /你是数学学习笔记结构化助手/);
