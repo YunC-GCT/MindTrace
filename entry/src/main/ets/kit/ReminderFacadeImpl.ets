@@ -1,11 +1,15 @@
 // MindTrace - ReminderFacadeImpl
 // 2026-09-06 · F3 最小闭环 (spec 013 / ADR-0009 / 复赛冲刺序 2)
 // ----------------------------------------------------------------------------
-// 职责: ReminderFacade 契约的 entry 端实现 (@kit.NotificationKit reminderAgentManager)。
-// 注入: EntryAbility.onCreate 组合根构造, 经 AppStorage('reminderFacade') 供消费方获取
-//       (ADR-0009: 只有 entry import @kit; common/kit/ 只声明契约)。
-// 去重: unitId → reminderId 映射持久化在 preferences ('kit_reminder_map');
-//       scheduleReviewReminder 先 cancelByUnit 再 publish (契约语义)。
+// 路径: entry/src/main/ets/kit/ReminderFacadeImpl.ets
+// 职责: ReminderFacade 契约的 entry 端实现 — 复习提醒安排/取消 (系统日历提醒)
+// 依赖: @kit.BackgroundTasksKit (reminderAgentManager) · @kit.AbilityKit (common) ·
+//       @kit.ArkData (preferences) · common (ReminderFacade / ReviewReminderRequest 契约)
+// 数据流: EntryAbility.onCreate 组合根注入 AppStorage('reminderFacade') → 消费方
+//         getReminderFacade() → scheduleReviewReminder (先 cancelByUnit 去重 →
+//         publishReminder) → 系统日历提醒; unitId→reminderId 持久化
+//         preferences('kit_reminder_map'); 发布需设备通知开关开启
+// 注: UI 入口按用户裁决暂不挂 (2026-09-06); ADR-0009 — 只有 entry import @kit
 // ============================================================================
 
 import { reminderAgentManager } from '@kit.BackgroundTasksKit';

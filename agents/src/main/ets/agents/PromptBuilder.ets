@@ -1,8 +1,8 @@
 // MindTrace - PromptBuilder
 // 2026-09-05 · D2 Ticket #3 · 提示词构造服务
-// spec 015 PR2 (2026-09-06): buildPrompt 实体化搬入 (行为零变化);
-// KnowledgeModel.buildPrompt 保留一行转发。工具化预留位: 结构化若改走 ToolLoop
-// (ADR-0012), 提示词组装仍归本类。
+// spec 015 PR2 (2026-09-06): buildPrompt 实体化搬入 (提示词主体 33 行字节级 diff 一致, 纯提取);
+// 现由 KnowledgeModel.callAi 直接调用 (this.promptBuilder.buildPrompt)。
+// 工具化预留位: 结构化若改走 ToolLoop (ADR-0012), 提示词组装仍归本类。
 import { NOTE_TYPE_KEYS } from 'common';
 
 export class PromptBuilder {

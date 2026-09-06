@@ -20,9 +20,10 @@
 | `docs(entry):` / `docs:` | 文档 | `docs(phase-3): add ticket #5 spec` |
 | `test(llm):` | 测试 | `test(llm-config): RED test for ticket #9` |
 | `chore(docs):` / `chore:` | 杂事 | `chore(docs): reorganize into architecture/api/...` |
+| `revert(scope):` | 回滚先前提交 (说明原因) | `revert(home): 撤销顶栏提醒 UI (用户裁决)` |
 | `style:` | 格式化 | `style: reformat dispatcher.ets` |
 
-模块前缀 (`agents:` / `entry:` / `common:` / `build:`) 表示影响的 module。
+模块前缀 (`agents:` / `entry:` / `common:` / `build:`) 表示影响的 module;页面/组件级改动可用页面名作 scope (如 `home`),以可检索为准。
 
 ## 每 commit 前必查
 
