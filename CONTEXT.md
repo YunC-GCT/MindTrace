@@ -82,7 +82,7 @@ The class in `agents/core/Dispatcher.ets` that runs the pipeline. Single public 
 _Avoid_: Controller, Manager, Handler
 
 **CaptureGraph**:
-The lightweight LangGraph-style graph runtime (in `agents/src/main/ets/graph/`) that executes an Order: fixed edges between steps, plus a conditional edge after `truth_check` that reaches `persist` only when the state's `persist` flag is set. Built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008).
+The project's native ArkTS implementation of the LangGraph graph model — **LangGraph is the project's primary orchestration design**, and its naming (Node / Edge / State / conditional edge / START / END) is canonical (universal definitions in `docs/agents/agent-glossary.md`). CaptureGraph (in `agents/src/main/ets/graph/`) executes an Order: fixed edges between steps, plus a conditional edge after `truth_check` that reaches `persist` only when the state's `persist` flag is set. Built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008).
 
 **CaptureStep**:
 The node vocabulary of the CaptureGraph: `START | capture | classify | structure | truth_check | persist | END`. Lowercase for steps, uppercase for sentinels.

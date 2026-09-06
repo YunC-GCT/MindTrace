@@ -8,8 +8,8 @@
 
 | File | Date | Topic | Status |
 |---|---|---|---|
-| [`agent-framework-comparison-2026-09-02.md`](./agent-framework-comparison-2026-09-02.md) (.html) | 2026-09-02 | MindTrace 是否使用 LangGraph 等价框架?结论:不用,自建 Dispatcher + sub-agent 同步链 | **decided** (2026-09-05: 自建 CaptureGraph, 见 [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) / spec 011) |
-| [`langgraph-migration-2026-09-02.md`](./langgraph-migration-2026-09-02.md) (.html) | 2026-09-02 | MindTrace → LangGraph 迁移可行性调研 | **decided** (2026-09-05: 不迁移, 自建 CaptureGraph) |
+| [`agent-framework-comparison-2026-09-02.md`](./agent-framework-comparison-2026-09-02.md) (.html) | 2026-09-02 | MindTrace 是否使用 LangGraph 等价框架?结论:不用,自建 Dispatcher + sub-agent 同步链 | **decided** (2026-09-05: 采纳 LangGraph 设计模型,ArkTS 自建 CaptureGraph 承载,见 [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) / spec 011) |
+| [`langgraph-migration-2026-09-02.md`](./langgraph-migration-2026-09-02.md) (.html) | 2026-09-02 | MindTrace → LangGraph 迁移可行性调研 | **decided** (2026-09-05: 不引入 LangGraph 运行时依赖;采纳其设计模型,ArkTS 自建 CaptureGraph) |
 | [`project-positioning-2026-09-04.md`](./project-positioning-2026-09-04.md) | 2026-09-04 | 项目定位(摘要 + 详细双节),团队对齐与评委 pitch 用 | active |
 | [`harmonyos-kits-survey-2026-09-05.md`](./harmonyos-kits-survey-2026-09-05.md) | 2026-09-05 | 12 个官方 kit 家族能力 + MindTrace 适配点 + 成本档位;P0 = FormKit/Reminder/BackgroundTasks,P1 = AIEngine/NLP | active (D4 依据) |
 
