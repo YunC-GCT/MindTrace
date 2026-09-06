@@ -1,6 +1,6 @@
 # 014 — LLM Tool-calling 协议与 ToolRegistry(tools/ CRUD 工具层前置)
 
-> **Status**: implemented (2026-09-06 — 协议字段 / ToolRegistry / ToolLoop + §4 P1 只读工具全部落地, 含 Hypium + Node 双层测试)
+> **Status**: implemented + accepted (2026-09-06 — 协议/ToolRegistry/ToolLoop/P1 只读工具全部落地; Node 126/126 + on-device Hypium 全绿, 验收清单已闭合)
 
 Derived from [ADR-0012](../adr/0012-tool-calling-protocol.md). Scope label: F1(2026-09-06 体检)/ 复赛冲刺序 3(spec-only, 见 [inventory §6.1](../architecture/agent-tools-inventory-2026-09-06.md)).
 
@@ -120,14 +120,14 @@ export class ToolRegistry {
 
 ## Acceptance criteria
 
-- [ ] `LlmRequestBody` 含 `tools` 时, 请求体能被 OpenAI 兼容端点接受(fixture 单测断言 wire 形状)
-- [ ] 不含 `tools` 时请求体与现状逐字段等价(单测)
-- [ ] ToolLoop 在 mock LLM 回放下完成"提问→tool_calls→执行→回喂→最终回答"闭环(单测)
-- [ ] ToolLoop 回喂消息形状正确: assistant 消息带 `tool_calls` 且 `content=''`, tool 消息带对应 `tool_call_id`(单测)
-- [ ] `maxSteps` 触顶抛 `TOOL_LOOP_MAX_STEPS`(单测)
-- [ ] `node scripts/arkts-lint/index.mjs --quiet` 0 errors; `npm --prefix scripts/arkts-lint test` 全绿
-- [ ] naming-lint / link-check 通过
-- [ ] 无任何 `entry` import 出现在 `common/src/main/ets/tools/`
+- [x] `LlmRequestBody` 含 `tools` 时, 请求体能被 OpenAI 兼容端点接受(fixture 单测断言 wire 形状)
+- [x] 不含 `tools` 时请求体与现状逐字段等价(单测)
+- [x] ToolLoop 在 mock LLM 回放下完成"提问→tool_calls→执行→回喂→最终回答"闭环(单测)
+- [x] ToolLoop 回喂消息形状正确: assistant 消息带 `tool_calls` 且 `content=''`, tool 消息带对应 `tool_call_id`(单测)
+- [x] `maxSteps` 触顶抛 `TOOL_LOOP_MAX_STEPS`(单测)
+- [x] `node scripts/arkts-lint/index.mjs --quiet` 0 errors; `npm --prefix scripts/arkts-lint test` 全绿
+- [x] naming-lint / link-check 通过
+- [x] 无任何 `entry` import 出现在 `common/src/main/ets/tools/`
 
 ## Out of scope
 
