@@ -316,6 +316,9 @@ node scripts/link-check/index.mjs
    git fetch origin
    git worktree add ../MathMind-<slug> -b feature/<slug> origin/develop
    cd ../MathMind-<slug>
+   # 首次构建/测试前装依赖 (新 worktree 的 oh_modules 与 Node 测试依赖均为空):
+   ohpm install --all
+   npm --prefix scripts/arkts-lint ci
    # 该 session 之后只在这个目录里 commit/push; 收尾清理:
    git worktree remove ../MathMind-<slug>
    ```
