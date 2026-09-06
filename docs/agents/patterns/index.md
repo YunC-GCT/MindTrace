@@ -24,6 +24,7 @@ Patterns fill the **how** gap that specs and ADRs don't cover.
 | [`add-new-adr.md`](./add-new-adr.md) | Recording a hard-to-reverse design decision | 30-60 min |
 | [`refactor-x.md`](./refactor-x.md) | Restructuring code without changing behavior (TDD) | varies (1-3 days) |
 | [`investigate.md`](./investigate.md) | Answering a question with multiple plausible answers | 1-2 hours |
+| [`capability-to-implementation.md`](./capability-to-implementation.md) | 推进 agent 能力级工作(工具层/调用协议/god-class 拆分/Kit 接线)从想法到实施 | varies (1-3 days) |
 
 ## How to use a pattern
 
