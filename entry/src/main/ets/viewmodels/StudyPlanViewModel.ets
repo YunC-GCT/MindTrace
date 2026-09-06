@@ -13,7 +13,7 @@
 import { StudyPlanItem } from "common"
 import { DatabaseHelper } from "common"
 import { LlmClient } from "common"
-import type { ChatMessage } from "common"
+import type { ChatMessage, LlmCallResult } from "common"
 import { StudyPlanDao } from "../database/StudyPlanDao"
 import { StudyPlanSnapshot, UiDataCacheService } from "../services/UiDataCacheService"
 
@@ -217,10 +217,12 @@ export class StudyPlanViewModel {
         { role: "user", content: "请生成学习计划" },
       ]
 
-      const reply: string = await this.llm.call(messages, {
+      const replyResult: LlmCallResult = await this.llm.call({
+        messages: messages,
         maxTokens: 1024,
         timeoutMs: 60000,
       })
+      const reply: string = replyResult.text ?? ''
       const titles: string[] = this.parsePlanTitles(reply)
 
       for (const title of titles) {

@@ -9,7 +9,7 @@ import {
   JSON_ONLY_RULES,
   LATEX_GENERATION_RULES,
 } from 'common';
-import type { ContentValidationResult, LlmGuardJsonResult, LlmGuardValidationResult } from 'common';
+import type { ContentValidationResult, LlmCallResult, LlmGuardJsonResult, LlmGuardValidationResult } from 'common';
 import { common } from '@kit.AbilityKit';
 import { AiService } from './AiService';
 import { AgentMemoryService } from './AgentMemoryService';
@@ -148,17 +148,20 @@ export class AgentChatService {
       let accumulatedContent: string = '';
 
       try {
-        // 优先流式,不可用时降级非流式
-        const tokens: string[] = await client.callSseTokens(
-          this.buildReplyMessages(memoryContext, learnerProfileContext, userContent),
-          { maxTokens: 4096, timeoutMs: 120000, enableThinking: LlmConfig.getInstance().getEnableThinking() },
-        );
+        // 优先真流式 (SSE requestInStream),失败时降级非流式
+        await client.call({
+          messages: this.buildReplyMessages(memoryContext, learnerProfileContext, userContent),
+          stream: true,
+          onDelta: (delta: string, kind: 'reasoning' | 'content'): void => {
+            if (kind !== 'content') { return; }
+            accumulatedContent += delta;
+            this.cbs.appendAiMsg(msgId, delta, 'content');
+          },
+          maxTokens: 4096,
+          timeoutMs: 120000,
+          enableThinking: LlmConfig.getInstance().getEnableThinking(),
+        });
         this.setStep('completed');
-        for (const token of tokens) {
-          accumulatedContent += token;
-          this.cbs.appendAiMsg(msgId, token, 'content');
-          await this.delayMs(15);
-        }
         this.cbs.finishAiMsg(msgId);
       } catch (streamErr) {
         // 流式失败: 保留已展示的部分内容 + 追加错误提示
@@ -171,11 +174,12 @@ export class AgentChatService {
         } else {
           // 完全失败,降级到非流式
           this.cbs.finishAiMsg(msgId);
-          const reply: string = await client.call(
-            this.buildReplyMessages(memoryContext, learnerProfileContext, userContent),
-            { maxTokens: 4096, timeoutMs: 120000 },
-          );
-          await this.addAiMessage(sessionId, reply);
+          const fallbackResult: LlmCallResult = await client.call({
+            messages: this.buildReplyMessages(memoryContext, learnerProfileContext, userContent),
+            maxTokens: 4096,
+            timeoutMs: 120000,
+          });
+          await this.addAiMessage(sessionId, fallbackResult.text ?? '');
           this.finishBusy();
           return;
         }
@@ -259,10 +263,12 @@ export class AgentChatService {
       },
     ];
     const client: LlmClient = new LlmClient();
-    return await client.call(messages, {
+    const result: LlmCallResult = await client.call({
+      messages: messages,
       maxTokens: 8192,
       timeoutMs: 120000,
     });
+    return result.text ?? '';
   }
 
   private buildReplyMessages(memoryContext: string, learnerProfileContext: string, userContent: string): ChatMessage[] {
@@ -843,10 +849,6 @@ export class AgentChatService {
     } catch (e) {
       console.warn('[AgentChatService] summarize memory failed: ' + AgentChatService.errorMessage(e));
     }
-  }
-
-  private delayMs(ms: number): Promise<void> {
-    return new Promise<void>((resolve: () => void): void => { setTimeout(resolve, ms); });
   }
 
   private static errorMessage(e: Object): string {
