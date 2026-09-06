@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 const tcs = read('agents/src/main/ets/agents/TruthCheckService.ets');
-const structure = read('agents/src/main/ets/agents/StructureService.ets');
+const km = read('agents/src/main/ets/agents/KnowledgeModel.ets');
 const tcsTestPath = resolve(root, 'agents/src/test/TruthCheckService.test.ets');
 
 // spec 015 PR1: 真值检查实现实体化到 TruthCheckService, KnowledgeModel 仅保留转发。
@@ -27,12 +27,13 @@ test('the 4 internal result interfaces moved with the logic', () => {
   }
 });
 
-// spec 015 PR3: KnowledgeModel.ets 删除, 真值检查调用点直连 TruthCheckService。
-test('KnowledgeModel is deleted; pipeline calls TruthCheckService directly', () => {
-  const kmPath = resolve(root, 'agents/src/main/ets/agents/KnowledgeModel.ets');
-  assert.equal(existsSync(kmPath), false, 'KnowledgeModel.ets must not exist (spec 015 PR3)');
-  assert.match(structure, /this\.truthCheckService\.check\(ocrText\)/, 'structure() must call TruthCheckService directly');
-  assert.match(structure, /this\.promptBuilder\.buildPrompt\(ocrText\)/, 'callAi must call PromptBuilder directly');
+// spec 015 PR3: KnowledgeModel 重构为轻量编排 agent, 调用点直连协作服务。
+test('KnowledgeModel orchestrates via TruthCheckService and PromptBuilder directly', () => {
+  assert.match(km, /export class KnowledgeModel {/);
+  assert.match(km, /this\.truthCheckService\.check\(ocrText\)/, 'structure() must call TruthCheckService directly');
+  assert.match(km, /this\.promptBuilder\.buildPrompt\(ocrText\)/, 'callAi must call PromptBuilder directly');
+  assert.doesNotMatch(km, /checkBracePairing\(/, 'truth checks must live in TruthCheckService');
+  assert.doesNotMatch(km, /你是数学学习笔记结构化助手/, 'prompt body must live in PromptBuilder');
 });
 
 test('service-level Hypium coverage exists (4 checks)', () => {
