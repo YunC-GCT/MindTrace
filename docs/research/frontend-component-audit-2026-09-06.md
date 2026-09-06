@@ -217,3 +217,15 @@ MindTrace 前端的 shared 三层库收敛在 7 个组件, 全部围绕一条主
 | C6 | AiSettings 九子件上收 | Speculative | YAGNI: 无第二个消费者不动 |
 
 **首选**: C1 — spec 012 重分层是注定要做的 PR, 且与 C2/C5 触达同组文件, 可组成 PR-A/B/C 序列, 一次审计三笔偿还。
+
+---
+
+# 补充 2：设计/布局/动效三维档案指引 (2026-09-06 晚)
+
+组件的**设计语言、布局母题、动效行为**三维清点已独立成档: [`frontend-ui-design-inventory-2026-09-06.md`](./frontend-ui-design-inventory-2026-09-06.md) — 96 组件逐件档案 (事实字段机器提取) + 令牌热度表 + 动效全景 + 布局模式库。与本文分工: 本文管**结构与分层**, 该档管**视觉与运动**。
+
+与本文候选的交叉增量 (该档新发现):
+- 动效令牌半接入: animateTo 在 AgentFloatWindow/HomePage/HexLogo 全令牌合规; **ReviewGraphView ×8 animateTo 全硬编码 (180ms×6/220/240)**; GradientRing setInterval 手摇帧 800/1400ms + 呼吸周期 ≈1.5s vs 令牌 DUR_BREATH=3000 冲突
+- FloatingButton/AiTabButton 两颗最显眼渐变圆钮零按压反馈 (DUR_INSTANT 在场未用)
+- 真死令牌: LH_HEADING / SUCCESS / WARNING (SUBJECT_COLORS/TYPE_COLORS 经 NoteTaxonomy 间接消费, 非死令牌)
+- rgba/hex 字面量 111 处 (出现次数口径, 高于本文 96 行数口径)
