@@ -1,5 +1,7 @@
 # 014 — LLM Tool-calling 协议与 ToolRegistry(tools/ CRUD 工具层前置)
 
+> **Status**: implemented (2026-09-06 — 协议字段 / ToolRegistry / ToolLoop 落地, 含 Hypium + Node 双层测试; §4 P1 只读工具实现按本 spec 留待赛后)
+
 Derived from [ADR-0012](../adr/0012-tool-calling-protocol.md). Scope label: F1(2026-09-06 体检)/ 复赛冲刺序 3(spec-only, 见 [inventory §6.1](../architecture/agent-tools-inventory-2026-09-06.md)).
 
 ## Why this ticket
@@ -62,7 +64,7 @@ export interface AgentTool {
   execute(args: Record<string, Object>): Promise<ToolResult>;
 }
 export class ToolRegistry {
-  register(tool: AgentTool): void;                      // 重名/命名非法抛 LlmError
+  register(tool: AgentTool): void;                      // 重名/命名非法抛 LlmError(kind=TOOL_REGISTRY_ERROR)
   has(name: string): boolean;
   listDefinitions(): LlmToolDefinition[];
   execute(name: string, argsJson: string): Promise<ToolResult>;  // JSON.parse 失败 → ok:false, 不抛

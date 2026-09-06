@@ -17,7 +17,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
 | **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
 | **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **contracts landed** (`common/src/main/ets/kit/`); 实际 Kit 资源接入延后 (2026-09-06) |
-| **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **spec ready** (2026-09-06; 复赛阶段 spec-only, P1 只读工具实现可赛后落地) |
+| **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop; P1 只读工具实现可赛后落地) |
 | **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **PR1 scheduled** (复赛窗口内 TruthCheck 先行, 零 LLM 依赖段); PR2/3 赛后 |
 
 ## P0 tickets without spec
@@ -38,7 +38,7 @@ Remaining (recommended order):
 1. **#3 / spec 015 PR1** TruthCheckService 实体化 — 复赛窗口内, 零 LLM 依赖段
 2. **#3 / spec 015 PR2-3** PromptBuilder + StructureService 实体化 — 赛后
 3. **#7** AgentChatService decomposition — 3 atomic PRs, 802-LOC class
-4. **F1 / spec 014** LLM tool-calling protocol + ToolRegistry — spec ready; read-only tools (P1) can land post-competition, write tools gated on F2 write-path unification
+4. ~~**F1 / spec 014**~~ — implemented (2026-09-06); read-only tools (P1) can land post-competition, write tools gated on F2 write-path unification
 
 After all of these, the architecture matches ADR intent:
 - ✅ Dispatcher has 1 public method
