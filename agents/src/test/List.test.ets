@@ -8,9 +8,11 @@
 import truthCheckServiceTest from './TruthCheckService.test';
 import promptBuilderTest from './PromptBuilder.test';
 import captureGraphTest from './CaptureGraph.test';
+import captureTextFlowTest from './CaptureTextFlow.test';
 
 export default function testsuite() {
   truthCheckServiceTest();
   promptBuilderTest();
   captureGraphTest();
+  captureTextFlowTest();
 }
