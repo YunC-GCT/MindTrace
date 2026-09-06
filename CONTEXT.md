@@ -107,6 +107,10 @@ An interface in `common/src/main/ets/kit/` (`ReminderFacade`, `BackgroundTaskFac
 A tool in `agents/src/main/ets/mcp/tools/` (currently `OcrTool`), built by the team as an MCP-语义 tool. The directory classifies tools by MCP tool semantics — not by whether an MCP server is running (none does today). CRUD-style tools (增删查改) belong in `tools/` instead (ADR-0010).
 _Avoid_: renaming `mcp/` away; calling it "the MCP server".
 
+**OCR 服务 (tools/ocr_service/)**:
+The team-built Python FastAPI OCR service at the **repo-root** `tools/` directory (formula/combined recognition over HTTP :8000, started via `start.bat`), consumed by `OcrTool`. Entirely distinct from `agents/src/main/ets/tools/` — the ArkTS CRUD-tool reservation slot (ADR-0010).
+_Avoid_: confusing repo-root `tools/` (Python 服务) with the agents `tools/` 预留位 (F7, agent-tools inventory 2026-09-06).
+
 **小艺 skill 预留位 (skill/)**:
 The `skill/` HSP, reserved for Xiaoyi (小艺) skill integration. Deliberately a stub today (`SKILL_VERSION` + placeholder `SkillAbility`); retention is a recorded decision ([ADR-0011](./docs/adr/0011-skill-xiaoyi-reservation.md)), and its 7 intent actions are declared in `skill/src/main/module.json5`.
 _Avoid_: calling it dead code or an empty shell; proposing its removal or freeze.

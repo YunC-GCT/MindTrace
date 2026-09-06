@@ -78,7 +78,7 @@
 
 ### 演示路径 (5 分钟 walk-through)
 
-1. 启动 OCR 服务 (`python -m uvicorn ocr.app:app --port 8000`)
+1. 启动 OCR 服务 (运行 `tools/ocr_service/start.bat`, 端口 8000; 详见 tools/ocr_service/README.md)
 2. DevEco Studio `Run → Run 'entry'` (真机/模拟器)
 3. 主流程: 拍照 → OCR → AI 分类 → 知识结构化 → 持久化 → 复习浮窗对话 (SSE 流式)
 4. 5 Tab 流畅 / 知识星系无 "示例:*" 假学科 (ticket #16 已修)
@@ -121,8 +121,8 @@
 |---|---|
 | Open 项目 | DevEco `File → Open → <本地仓库根>` (目录名以各人克隆为准) |
 | Build / Run / Sync | DevEco GUI (`Build → Build Hap(s)/APP(s)`, `Run → Run 'entry'`) |
-| 启动 OCR 服务 | `python -m uvicorn ocr.app:app --port 8000` |
-| 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (89 测试) |
+| 启动 OCR 服务 | 运行 `tools/ocr_service/start.bat` (端口 8000; python 依赖见 tools/ocr_service/README.md) |
+| 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (数量以输出为准, 全绿即可) |
 | 跑 v0.3 lint 扫描 | `node scripts/arkts-lint/index.mjs --quiet` |
 | 创建新 module | `cp common/oh-package.json5 <new>/oh-package.json5` (必须含 `main` 字段) |
 | 验 .ets 无 BOM | PowerShell: `[System.IO.File]::ReadAllBytes(path)[0..2]` (应为 `0x69 0x6D 0x70`) |
