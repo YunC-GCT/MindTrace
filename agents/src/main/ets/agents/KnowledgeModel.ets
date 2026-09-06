@@ -1,4 +1,4 @@
-// MindTrace - StructureService
+// MindTrace - KnowledgeModel
 // 2026-09-05 · D2 Ticket #3 · 结构化编排服务
 // spec 015 PR3 (2026-09-06): 结构化编排 / AI 调用 (callAi, 即工具化预留 seam) /
 // JSON 校验 / 归一化 / 分类 hint 合并 全部自 KnowledgeModel.ets 实体化搬入
@@ -44,7 +44,7 @@ const KNOWLEDGE_HINT_CONFIDENCE_MIN: number = 0.55;
 const KNOWLEDGE_FALLBACK_CATEGORY: KnowledgeCategory = '概念';
 const KNOWLEDGE_FALLBACK_SUBJECT: string = '其它';
 
-export class StructureService {
+export class KnowledgeModel {
   private contentProtocol: ContentProtocol = new ContentProtocol();
   private contentExcerptBuilder: ContentExcerptBuilder = new ContentExcerptBuilder();
   private truthCheckService: TruthCheckService = new TruthCheckService();

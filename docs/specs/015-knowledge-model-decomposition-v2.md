@@ -1,7 +1,7 @@
 # 015 — KnowledgeModel 实质拆分 v2(TruthCheck 先行;工具化预留位)
 
 Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [ADR-0006](../adr/0006-knowledge-model-decomposition-plan.md)(2026-09-06 修订:叠加工具化预留位)与 [ADR-0012](../adr/0012-tool-calling-protocol.md)。
-**排期**:PR1 于复赛窗口内完成(2026-09-06);PR2/PR3 原定赛后,用户裁决变更后同日完成(2026-09-06)。**全部 PR 已落地,KnowledgeModel.ets 已删除。**
+**排期**:PR1 于复赛窗口内完成(2026-09-06);PR2/PR3 原定赛后,用户裁决变更后同日完成(2026-09-06)。**全部 PR 已落地;KnowledgeModel 依用户裁决保留其名,重构为轻量编排 agent(提示词/真值检查/常量已拆为协作服务)。**
 
 ## Why this ticket(为什么重立)
 
@@ -24,7 +24,7 @@ Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [AD
 
 ## 目标 (Definition of Done)
 
-1. `KnowledgeModel.ets` 删除;逻辑全部落入三个真实服务(各 ≤300 行、单一职责)
+1. `KnowledgeModel` 重构为纯编排 agent(保留其名);提示词/真值检查/常量拆入三个协作服务
 2. **行为零变化**:响应形状 / DB 写入 / 错误语义不变;既有 94 Node 测试 + Hypium 全绿
 3. 3 实例问题消除:Dispatcher 编排 3 服务,单实例组装
 4. **工具化就绪**:StructureService 的 LLM 交互收敛到单一私有 seam(今天走 LlmGuard;spec 014 ToolLoop 落地后仅替换该方法体,接口不变),不耦合工具实现
@@ -41,10 +41,10 @@ Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [AD
 ### PR2(赛后):PromptBuilder 实体化
 - `buildPrompt` + 提示词常量(JSON 输出指令、字段说明、NoteType 5 类枚举约束)进 `PromptBuilder.ets`;2 测试
 
-### PR3(赛后):StructureService 实体化 + 删除 KnowledgeModel
-- 编排 / `callAi` / `validateAiJson` / `normalize*` / hint 合并 / KM→KnowledgeUnit 转换 进 `StructureService.ets`
-- 构造注入 `LlmCaller` + `TruthCheckService` + `PromptBuilder`;Dispatcher 组装单例;TypeClassifier 调用方改指向;`KnowledgeModel.ets` 删除;4+2 测试
-- 工具化预留位落点:LLM 交互收敛进私有 `callStructureAi()`(PR3 时就是一行 LlmGuard 调用的包装)
+### PR3(同日完成):编排实体化 + KnowledgeModel 更名回归
+- 编排 / `callAi` / `validateAiJson` / `normalize*` / hint 合并 / KM→KnowledgeUnit 转换 / `KNOWLEDGE_*` 常量 先搬入 StructureService
+- 依用户裁决,实体**更名为 KnowledgeModel**(结构化逻辑本质是一个 agent,名字保留);`StructureService` 不复存在
+- KnowledgeModel.test.ets 随旧类删除(其 buildPrompt/truthCheck 用例已由 PromptBuilder/TruthCheckService 服务级测试等价覆盖);agents/Index 改导出三服务 + KnowledgeModel
 
 ## Out of scope
 
@@ -57,6 +57,6 @@ Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [AD
 
 - [x] PR1 后:`TruthCheckService.ets` 含 4 检查实现;KnowledgeModel 不再含真值检查段(878 → 617 行,2026-09-06);全测试绿
 - [x] PR2 后:`PromptBuilder.ets` 实体化(提示词主体 33 行字节级 diff 一致);KnowledgeModel 617→586 行
-- [x] PR3 后:`KnowledgeModel.ets` 已删除;`grep "new KnowledgeModel()"` 为空;类体 diff 仅 18 行机械差异(类名/2 处调用直连/2 个转发移除);Dispatcher 经 StructureNode 直连实体 StructureService
+- [x] PR3 后:`KnowledgeModel.ets` 为轻量编排 agent(554 行,保留其名);常量/提示词/真值检查在协作服务;类体 diff 仅 18 行机械差异(类名/2 处调用直连/2 个转发移除);Dispatcher 经 StructureNode 直连该 agent
 - [x] 每步 `hvigor assembleHap` + naming-lint + link-check 通过
 - [x] Hypium:TruthCheckService 7 例 + PromptBuilder 2 例(用户 GUI 验证 TruthCheckService 通过);KnowledgeModel.test.ets 随类删除,覆盖已迁移(结构化主路径需 LLM 配置,Hypium 与原 KM.test 同样不覆盖)
