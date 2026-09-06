@@ -23,7 +23,7 @@
 | 9 | BackgroundTaskFacade | `common/src/main/ets/kit/BackgroundTaskFacade.ets` | Kit 接缝契约 | 无 | `requestOneShot` / `hasPending` | 契约已立, 0 实现 0 消费 |
 | 10 | FormCardFacade | `common/src/main/ets/kit/FormCardFacade.ets` | Kit 接缝契约 | 无 (cardservice FormAbility 现用 mock) | `pushSnapshot` | 契约已立, 0 实现 0 消费 |
 | 11 | `agents/src/main/ets/tools/` | (不存在) | CRUD 工具预留位 (ADR-0010) | — | — | 预留, 目录未创建 |
-| 12 | skill/ 模块 | `skill/src/main/ets/Index.ets` + `SkillAbility.ets` | Intent 入口占位 | 无 | `SKILL_VERSION` 常量; SkillAbility.onCreate 仅 TODO | stub |
+| 12 | skill/ 模块 | `skill/src/main/ets/Index.ets` + `SkillAbility.ets` | 小艺 (Xiaoyi) skill 接入预留位 | 无 | `SKILL_VERSION` 常量; SkillAbility.onCreate 仅 TODO | 预留保留 (未实装; 2026-09-06 裁决不冻结不移除) |
 | 13 | OCR python 服务 | `tools/ocr_service/formula_api.py` | 外部 HTTP 服务 (OcrTool 的远端一半; 无 MCP 协议) | OcrTool (multipart POST) | 3 端点 (见 §3.7) | 现役 (start.bat 内联组 app) |
 | 14 | scripts/ 工具链 | `scripts/` | 开发/CI 工具 — **不算 agent 工具** | CI / 开发者 | arkts-lint (34 规则 / 89 测试)、naming-lint、link-check、audit-arkts-strict v1、lint 包装脚本 | 单列说明 |
 
@@ -74,10 +74,11 @@
 - 确认**不存在** (`ls` 验证) — 与 ADR-0010 "`tools/` 留给增删查改类工具, 未落地不创建" 一致
 - 注意与仓库根 `tools/` 目录区分: 根级 `tools/` 现存且只有 `tools/ocr_service/` (python 服务), 见 §3.7 与 F7 术语发现项
 
-### 3.6 skill/ 模块 (stub 确认)
+### 3.6 skill/ 模块 (小艺 skill 接入预留位 — 裁决保留)
 
-- [Index.ets](../../skill/src/main/ets/Index.ets) 仅 `export const SKILL_VERSION = 'v0.0.1'`; [SkillAbility.ets](../../skill/src/main/ets/skillability/SkillAbility.ets) onCreate 仅注释 "placeholder" + `TODO(W1 块 3): 根据 want.action 路由到对应 Agent`
-- 无任何其它模块 import skill/ — 零调用方空壳 HSP
+- [Index.ets](../../skill/src/main/ets/Index.ets) 仅 `export const SKILL_VERSION = 'v0.0.1'`; [SkillAbility.ets](../../skill/src/main/ets/skillability/SkillAbility.ets) onCreate 仅注释 "placeholder" + `TODO(W1 块 3): 根据 want.action 路由到对应 Agent` (头注释自述目标: 7 Intent actions 路由 + 调 common / agents 共享后端)
+- 无任何其它模块 import skill/ — 现状零调用方
+- **2026-09-06 裁决 (用户确认)**: 该模块是**小艺 (Xiaoyi) skill 开发预留位**, 开发尚未开始但必须保留 — F4 的"冻结/移除"建议撤销; 后继审计不得再把它当死代码建议删除 (裁决理由建议以 ADR 固化, 见 §6 F4 行)
 
 ### 3.7 OCR python 服务 (`tools/ocr_service/`)
 
@@ -132,7 +133,7 @@
 3. **Kit 契约未接线** (F3): 3 个 facade 0 实现 0 消费, pipeline 无法安排提醒 / 后台任务 / 卡片回灌; 卡片仍在用 mock
 4. **AI 写库路径不一致** (F2): 3 条路径三种校验强度 (truth_check / LlmGuard / 无), 且 StudyPlanViewModel 越层直写 DAO
 5. **图片直接入库入口未接线**: `AiService.capture` 无调用方, 拍照流只到 analyzeImage (persist=false); 图片→KnowledgeUnit 直存需经对话显式意图 (产品决策还是缺口, 需队员确认)
-6. **skill/ 空壳** (F4): HSP 拓扑占位, 无 Intent 路由
+6. **skill/ 未实装** (F4, 已裁决保留): 小艺 skill 接入预留位 — 缺的是实装计划与时间窗, 不是删除建议
 7. **文档漂移** (F6): AGENTS.md OCR 启动命令失效
 8. **"tools/" 一词两义** (F7): 仓库根 tools/ (python 服务) vs agents/src/main/ets/tools/ (CRUD 工具预留位), CONTEXT.md 未收录
 9. **OcrTool 实例化散布** (F5): 3 处 `new OcrTool()`, 端点隐式依赖 OcrConfig 全局单例, 图节点测试需全局状态
@@ -144,12 +145,28 @@
 | P1 | F1 LLM 层无 function-calling, tools/ 层无调用协议支撑 | **先立 spec 不写实现**: LlmTypes 增 tools/tool_choice + LlmResponse 增 tool_calls 解析 (OpenAI 兼容) + LlmGuard 上层工具执行循环 (ToolRegistry: name/description/JSON schema/execute); 这是 ADR-0010 预留位的前置条件。建议用 to-spec 流程立项 |
 | P1 | F2 AI 写库 3 条路径、3 种校验强度, StudyPlanViewModel 越层直写 | 小步先修: StudyPlan 生成抽到 Service 层并复用 LlmGuard validator; AgentMemory 契约文档化; 长期并入 F1 的 tools/ CRUD schema 校验 |
 | P2 | F3 Kit facade 0 实现 0 消费 (假设性 seam 腐烂风险) | 挑最小闭环接线: ReminderFacade (Home 已有 ReminderBanner), entry composition root 实现 + 注入; 按 ADR-0009 形状走 |
-| P2 | F4 skill/ 空壳 HSP | 复赛前冻结 (文档标记 W1 块 3 前不参与发版), 不动构建拓扑 |
+| P3 | F4 skill/ 预留位 (2026-09-06 裁决) | **保留** — 小艺 skill 开发预留, 不冻结不移除; 评估复赛前能否落 1-2 个最小 Intent 演示, 否则作为路线图叙事; 建议落 ADR 固化裁决理由 |
 | P2 | F5 OcrTool 散布实例化 + OcrConfig 隐式全局依赖 | composition root 构造并注入 TypeClassifier/CaptureGraph (与 DispatchOptions.dao 同形状); 为 F1 ToolRegistry 铺路 |
 | P3 | F6 AGENTS.md OCR 启动命令漂移 | 文档修正 (一行): 指向 tools/ocr_service/start.bat |
 | P3 | F7 "tools/" 一词两义 | 用 domain-modeling 在 CONTEXT.md 增补词条 (区分根级 tools/ 与 agents 预留位) |
 | P3 | F8 scripts/ 定位 | 已在本清单 §3.9 单列澄清; 无需代码动作 |
 | P3 | `AiService.capture` 无调用方 | 找队员确认是产品决策 (意图门禁) 还是漏接线; 若是决策, 在 AiService 头注释标注现状 |
+
+### 6.1 复赛阶段定位修订 (2026-09-06 增补)
+
+项目已抵达鸿蒙高校创新赛**复赛阶段**, 工作模式从"架构能力建设"切换为"演示强化 + 平台特性得分 + 设计叙事"。据此对 §6 发现项做**日历优先级**修订 — 架构判断不变, 变的是先后:
+
+| 复赛冲刺序 | 事项 | 说明 |
+|---|---|---|
+| 1 | 演示链路稳定性 | 真机 OCR 端点配置 (OcrConfig 已支持)、API key 流程、失败 fallback 演示脚本; 复赛前只修 demo-blocking 问题 |
+| 2 | F3 ↑ ReminderFacade 真实接线 | 唯一能在演示中展示的 Kit 深度集成点 (NotificationKit ReminderAgent); ADR-0009 所说的 "later window" 就是现在 |
+| 3 | F1 spec-only | 工具调用协议 spec (不写实现) — 强化 "AI agent 工具化路线图" 的设计透明度叙事 |
+| 4 | F4 保留 + 评估最小演示 | 小艺 skill 预留位不动; 若平台接入窗口允许, 复赛前落 1-2 个最小 Intent 演示, 否则作为路线图叙事 |
+| 赛后 | F2 / F5 / F6-F8 | 动已工作代码的回归风险 > 复赛收益; F5 并入 F1 的 ToolRegistry; 文档项 (F6/F7) 顺手修 |
+
+**定位声明 (复赛叙事)**: MindTrace = 鸿蒙端侧的"拍照 → OCR → AI 分类 → 知识结构化 → 复习"全链数学学习助手; 复赛三大支柱 = ① AI 全链自研 (Dispatcher + CaptureGraph, F1 spec 补上 agent 工具化路线图) ② 平台特性集成 (ReminderFacade 真实接线 + 小艺 skill 路线图) ③ 严格 ArkTS 工程化 (arkts-lint CI + ADR/spec 体系, 本清单即证)。
+
+**复赛版 Top recommendation** 与 §6 架构建议不冲突: F1 spec 仍是第一架构动作, 但日历上排在演示稳定性与 F3 接线之后。
 
 **Top recommendation**: 先做 F1 的 spec (工具调用协议), 理由: 它是 ADR-0010 预留位与 F2 长期解的共同前置, 且零实现成本即可让"CRUD 工具层"从口号变成可评审的设计。次优先: F2 的 StudyPlan 越层直写 (改动小、独立可落)。
 
