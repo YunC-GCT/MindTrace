@@ -1,7 +1,7 @@
 // MindTrace - Dispatcher (主 Agent 调度中枢) · D2 CaptureGraph host
 // 2026-09-05 · D2 Ticket #6: 唯一最终公共入口 dispatch()
 import { TypeClassifier } from '../agents/TypeClassifier';
-import { StructureService } from '../agents/StructureService';
+import { KnowledgeModel } from '../agents/KnowledgeModel';
 import { TruthCheckService } from '../agents/TruthCheckService';
 import { Logger, KnowledgeUnit, DispatchRequest, DispatchResult } from 'common';
 import type { DispatchPayload } from 'common';
@@ -74,7 +74,7 @@ export class Dispatcher {
   buildGraph(req: DispatchRequest, options: DispatchOptions = {}): CaptureGraph {
     const graph: CaptureGraph = new CaptureGraph();
     const classifier: TypeClassifier = new TypeClassifier();
-    const structure: StructureService = new StructureService();
+    const structure: KnowledgeModel = new KnowledgeModel();
     const truth: TruthCheckService = new TruthCheckService();
     graph.addNode('START', async (input: AgentState) => {
       const seed: AgentState = {

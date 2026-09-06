@@ -1,10 +1,10 @@
 // MindTrace - StructureNode
 // 2026-09-05 · D2 Ticket #5
 import { AgentState, CaptureNode, CaptureGraphError, CaptureNodeResult } from '../AgentState';
-import { StructureService } from '../../agents/StructureService';
+import { KnowledgeModel } from '../../agents/KnowledgeModel';
 
 export class StructureNodeFactory {
-  static create(service: StructureService): CaptureNode {
+  static create(service: KnowledgeModel): CaptureNode {
     return async (input: AgentState): Promise<CaptureNodeResult> => {
       try {
         const unit = await service.structure(input.captureText);
