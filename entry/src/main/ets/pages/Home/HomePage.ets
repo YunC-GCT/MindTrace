@@ -9,7 +9,9 @@
 // ============================================================================
 
 import { BG_DARK, DUR_SLOW, NoteItem, KnowledgeUnit } from "common"
+import type { ReminderFacade } from "common"
 import { promptAction } from "@kit.ArkUI"
+import { getReminderFacade } from "../../kit/ReminderFacadeImpl"
 import { FloatingButton } from "./FloatingButton"
 import { HeroBanner } from "./HeroBanner"
 import { HomeCollapsedReview } from "./HomeCollapsedReview"
@@ -107,6 +109,26 @@ export struct HomePage {
     }
   }
 
+  // F3 最小闭环: 组合根注入的 ReminderFacade → 安排 1 分钟后的复习提醒 (演示)
+  private async scheduleReviewReminder(): Promise<void> {
+    const facade: ReminderFacade | null = getReminderFacade()
+    if (facade === null) {
+      try { promptAction.showToast({ message: "提醒服务未就绪", duration: 1500 }) } catch (_e) {}
+      return
+    }
+    try {
+      await facade.scheduleReviewReminder({
+        unitId: "home-review-demo",
+        title: "MindTrace 复习提醒",
+        subtitle: "到时间啦, 回顾你的笔记",
+        fireAt: Date.now() + 60 * 1000,
+      })
+      try { promptAction.showToast({ message: "已设置 1 分钟后的复习提醒", duration: 2000 }) } catch (_e) {}
+    } catch (e) {
+      try { promptAction.showToast({ message: "提醒设置失败", duration: 1500 }) } catch (_e) {}
+    }
+  }
+
   private collapseReviewRing(): void {
     if (this.reviewRingCollapsed) {
       return
@@ -128,7 +150,11 @@ export struct HomePage {
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
-        HomeTopBar({ statusBarHeight: this.sbh })
+        HomeTopBar({
+          statusBarHeight: this.sbh,
+          showReminder: true,
+          onSetReminder: (): void => { this.scheduleReviewReminder() },
+        })
         if (this.reviewRingCollapsed) {
           HomeCollapsedReview({
             avg: this.vm.avg,
