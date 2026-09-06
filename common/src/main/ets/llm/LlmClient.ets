@@ -69,8 +69,8 @@ export class LlmClient {
   }
   // ===== 内部 =====
 
-  // JSON 适配路径 (原 call): request() + 手动 JSON 解析, 返回首条 message.content
-  private async callJsonInternal(request: LlmCallRequest): Promise<string> {
+  // JSON 适配路径 (原 call): request() + 手动 JSON 解析, 返回 text 与可选 toolCalls
+  private async callJsonInternal(request: LlmCallRequest): Promise<LlmCallResult> {
     // 1. 校验 API key
     const apiKey: string | null = await this.config.getApiKey();
     if (apiKey === null) {

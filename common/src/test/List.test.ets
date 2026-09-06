@@ -9,10 +9,12 @@ import llmGuardTest from './LlmGuard.test';
 import latexRiskNormalizerTest from './LatexRiskNormalizer.test';
 import contentProtocolTest from './ContentProtocol.test';
 import contentExcerptBuilderTest from './ContentExcerptBuilder.test';
+import llmToolCallingTest from './LlmToolCalling.test';
 
 export default function testsuite(): void {
   llmGuardTest();
   latexRiskNormalizerTest();
   contentProtocolTest();
   contentExcerptBuilderTest();
+  llmToolCallingTest();
 }
