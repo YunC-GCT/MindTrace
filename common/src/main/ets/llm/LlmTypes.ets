@@ -11,9 +11,11 @@
 
 // ==================== ChatMessage (单轮对话消息)====================
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: 'system' | 'user' | 'assistant' | 'tool';  // 'tool': 工具回喂消息 (spec 014)
   content: string;
   reasoning_content?: string;  // 推理模型
+  tool_call_id?: string;       // role='tool' 时必填 (OpenAI 语义)
+  tool_calls?: LlmToolCall[];  // assistant 消息携带的模型工具调用 (ToolLoop 回喂必需)
 }
 
 // ==================== LlmRequestBody (OpenAI 兼容请求体)====================
@@ -26,6 +28,8 @@ export interface LlmRequestBody {
   response_format?: LlmResponseFormat;
   thinking?: LlmThinkingConfig;   // DeepSeek 思考模式配置
   reasoning_effort?: string;      // 思考强度: "high" | "max"
+  tools?: LlmToolDefinition[];    // OpenAI 兼容 function-calling (spec 014, 可选 → 向后兼容)
+  tool_choice?: string;           // Phase 1 仅 'auto' | 'none'
 }
 
 export interface LlmThinkingConfig {
@@ -69,7 +73,8 @@ export type LlmErrorKind =
   | 'TIMEOUT'           // 超时
   | 'STREAM_FAILED'     // 流式传输中断
   | 'PERSIST_ERROR'     // preferences 读写失败
-  | 'NORMALIZE_KEYWORD_REJECTED'; // LlmConfig 拒绝保留关键词
+  | 'NORMALIZE_KEYWORD_REJECTED' // LlmConfig 拒绝保留关键词
+  | 'TOOL_LOOP_MAX_STEPS';       // ToolLoop 超过 maxSteps (spec 014)
 
 export class LlmError extends Error {
   public kind: LlmErrorKind;
@@ -126,6 +131,30 @@ export interface LlmCallOptions {
   enableThinking?: boolean;    // 是否启用思考模式 (DeepSeek thinking: {type: "enabled"})
 }
 
+// ==================== OpenAI 兼容 tool-calling wire 类型 (spec 014 / ADR-0012)====================
+export interface LlmFunctionDefinition {
+  name: string;                                   // ^[a-z][a-z0-9_]{0,63}$ (ToolRegistry 注册时校验)
+  description: string;
+  parameters: Record<string, Object>;             // JSON Schema 对象 (ArkTS 惯例, 同 LlmGuard)
+}
+
+export interface LlmToolDefinition {
+  type: 'function';
+  function: LlmFunctionDefinition;
+}
+
+// 响应侧: 模型发起的一次工具调用
+export interface LlmFunctionCallNameArgs {
+  name: string;
+  arguments: string;                              // JSON 字符串
+}
+
+export interface LlmToolCall {
+  id: string;
+  type: 'function';
+  function: LlmFunctionCallNameArgs;
+}
+
 // ==================== LlmCallRequest (统一调用入参, spec 005 / ADR-0004)====================
 export interface LlmCallRequest {
   messages: ChatMessage[];
@@ -140,6 +169,8 @@ export interface LlmCallRequest {
   timeoutMs?: number;
   responseFormat?: LlmResponseFormat;
   enableThinking?: boolean;
+  tools?: LlmToolDefinition[];    // 透传 (spec 014)
+  tool_choice?: string;           // 透传, Phase 1 仅 'auto' | 'none'
 }
 
 // ==================== LlmCallResult (统一调用出参, spec 005 / ADR-0004)====================
@@ -148,4 +179,6 @@ export interface LlmCallResult {
   text?: string;
   // 本次调用是否为流式
   streamed: boolean;
+  // JSON 路径: 响应携带的模型工具调用 (extractToolCalls 填充; 无工具调用时缺省)
+  toolCalls?: LlmToolCall[];
 }

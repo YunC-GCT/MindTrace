@@ -34,6 +34,7 @@ import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { LlmConfig } from './LlmConfig';
 import {
+  ChatMessage,
   LlmRequestBody,
   LlmResponse,
   LlmResponseChoice,
@@ -43,6 +44,7 @@ import {
   LlmThinkingConfig,
   LlmCallRequest,
   LlmCallResult,
+  LlmToolCall,
   LlmError,
 } from './LlmTypes';
 
@@ -63,11 +65,8 @@ export class LlmClient {
       const streamedResult: LlmCallResult = { streamed: true };
       return streamedResult;
     }
-    const text: string = await this.callJsonInternal(request);
-    const jsonResult: LlmCallResult = { text: text, streamed: false };
-    return jsonResult;
+    return await this.callJsonInternal(request);
   }
-
   // ===== 内部 =====
 
   // JSON 适配路径 (原 call): request() + 手动 JSON 解析, 返回首条 message.content
@@ -93,6 +92,12 @@ export class LlmClient {
     };
     if (request.responseFormat !== undefined) {
       body.response_format = request.responseFormat;
+    }
+    if (request.tools !== undefined) {
+      body.tools = request.tools;
+    }
+    if (request.tool_choice !== undefined) {
+      body.tool_choice = request.tool_choice;
     }
 
     // 3. 发 HTTP POST
@@ -131,12 +136,36 @@ export class LlmClient {
       throw new LlmError(`LLM response parse error: ${(e as Error).message ?? String(e)}`, 'PARSE_ERROR');
     }
 
-    // 6. 提取 content
+    // 6. 提取 content / tool_calls
     console.info('[LlmClient] raw response: ' + JSON.stringify(parsed).substring(0, 800));
     if (parsed.choices.length > 0 && parsed.choices[0].finish_reason === 'length') {
       throw new LlmError('LLM response truncated by max_tokens', 'API_ERROR');
     }
-    return this.extractContent(parsed);
+    const toolCalls: LlmToolCall[] = this.extractToolCalls(parsed);
+    const result: LlmCallResult = { text: '', streamed: false };
+    if (toolCalls.length > 0) {
+      // tool_calls 响应: content 常为 null/空, 不走 extractContent 的空内容抛错
+      const first: LlmResponseChoice = parsed.choices[0];
+      if (first.message !== undefined && first.message !== null && first.message.content !== undefined && first.message.content !== null) {
+        result.text = first.message.content;
+      }
+      result.toolCalls = toolCalls;
+    } else {
+      result.text = this.extractContent(parsed);
+    }
+    return result;
+  }
+
+  // tool_calls 提取: 以 message.tool_calls 非空为准 (finish_reason 在 OpenAI 兼容端点间有差异, 仅日志参考)
+  private extractToolCalls(parsed: LlmResponse): LlmToolCall[] {
+    if (parsed.choices.length === 0) {
+      return [];
+    }
+    const message: ChatMessage | null = parsed.choices[0].message;
+    if (message === undefined || message === null || message.tool_calls === undefined || message.tool_calls === null) {
+      return [];
+    }
+    return message.tool_calls;
   }
 
   private extractContent(parsed: LlmResponse): string {
