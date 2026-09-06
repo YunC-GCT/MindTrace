@@ -13,6 +13,7 @@
 3. 发版 → 从 `develop` 拉 `release/<stage>` → 改 bug + 文档 + 版本号 → PR → `main` → 打 tag → 同步回 `develop`
 4. 紧急修 → 从 `main` 拉 `hotfix/<slug>` → PR → `main`(同时 PR → `develop`)
 5. **所有 PR 必须有 1 个 CODEOWNERS approve**(3 人中任一);**owner 可以 self-approve 兜底**(评论里写 "LGTM, self-approve per 3-person policy")
+6. **多 session 并行 → 各自独立 worktree(`git worktree add`)或严格串行**,禁止共用工作目录互相切分支(§11 红线)
 
 ---
 
@@ -302,7 +303,36 @@ node scripts/link-check/index.mjs
 
 ---
 
-## 11. 常见问题
+## 11. 多 session 并行(独立 worktree 或串行)— 红线
+
+> **背景(2026-09-06 事故)**:两个 AI session 共用同一 clone 并行开发,一方中途切换分支,把另一方**未完成、未过构建**的提交随自己的 PR 带进了 `develop`(develop 一度构建失败)。以下规则由此立为红线,不可逾越。
+
+**规则:≥2 个 session 同时改同一仓库时,必须二选一**
+
+1. **独立 worktree(推荐)** — 每个 session 一个工作区、一个分支,互不可见:
+
+   ```bash
+   # 新 session 接任务时(在主 clone 里执行一次)
+   git fetch origin
+   git worktree add ../MathMind-<slug> -b feature/<slug> origin/develop
+   cd ../MathMind-<slug>
+   # 该 session 之后只在这个目录里 commit/push; 收尾清理:
+   git worktree remove ../MathMind-<slug>
+   ```
+
+2. **串行** — 只有一个 clone 时严格排队:一个 session 完成自己的 commit + push 并切回 `develop` 之前,另一个 session 不执行任何 git 写操作。
+
+**绝对禁止**
+
+- ❌ 在别的 session 可能正在工作的 clone 里 `git checkout` 切换分支
+- ❌ 把别人工作区里未完成 / 未过构建的改动一起 commit 进自己的 PR
+- ❌ 多个 session 对同一工作目录并发执行 commit / push
+
+**同步方式不变**:各 worktree 的分支照常 PR → `develop`;`develop` 是唯一同步点。本地另一个人手工开发时同理(AI session 与人共用 clone 也要串行)。
+
+---
+
+## 12. 常见问题
 
 **Q: 我开 PR 时"Review changes"按钮在哪?**
 A: GitHub 2024+ UI 有时藏得深。
@@ -327,7 +357,7 @@ A: 合并后 GitHub 提示 "Delete branch",建议删(保持仓库干净)。本�
 
 ---
 
-## 12. 进一步阅读
+## 13. 进一步阅读
 
 - `docs/agents/git-conventions.md` — 完整 commit + 分支规范
 - `docs/agents/branch-protection.md` — 保护规则 + self-approve 策略
