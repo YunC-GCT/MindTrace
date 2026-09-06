@@ -107,6 +107,7 @@ export { ToolRegistry } from './tools/ToolRegistry';
 export { ToolLoop } from './tools/ToolLoop';
 export type { AgentTool, ToolResult } from './tools/ToolRegistry';
 export type { ToolLoopOptions } from './tools/ToolLoop';
+export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools } from './tools/NoteQueryTools';
 
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
 //   OcrConfig:  单例, preferences 持久化 endpoint + enabled, 真机部署改 IP

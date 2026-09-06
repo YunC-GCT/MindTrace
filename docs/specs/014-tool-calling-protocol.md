@@ -1,6 +1,6 @@
 # 014 — LLM Tool-calling 协议与 ToolRegistry(tools/ CRUD 工具层前置)
 
-> **Status**: implemented (2026-09-06 — 协议字段 / ToolRegistry / ToolLoop 落地, 含 Hypium + Node 双层测试; §4 P1 只读工具实现按本 spec 留待赛后)
+> **Status**: implemented (2026-09-06 — 协议字段 / ToolRegistry / ToolLoop + §4 P1 只读工具全部落地, 含 Hypium + Node 双层测试)
 
 Derived from [ADR-0012](../adr/0012-tool-calling-protocol.md). Scope label: F1(2026-09-06 体检)/ 复赛冲刺序 3(spec-only, 见 [inventory §6.1](../architecture/agent-tools-inventory-2026-09-06.md)).
 
@@ -81,7 +81,7 @@ export class ToolRegistry {
 - `ToolLoopOptions { maxSteps?: number(默认 4); callOptions?: LlmCallOptions(模型/超时等, 透传每步调用) }`; `maxSteps` 触顶**抛** `LlmError('tool loop exceeded maxSteps=N', 'TOOL_LOOP_MAX_STEPS')`(`LlmErrorKind` 增该值, additive — 既有调用方按 `indexOf(kind)` 匹配, 不受影响), 防失控循环。
 - SSE 流式工具循环明确不在本 spec。
 
-### 4. P1 首批工具(只读; 本 spec 只定接口形状, 实现可赛后)
+### 4. P1 首批工具(只读, 已落地: common/src/main/ets/tools/NoteQueryTools.ets)
 
 `note_query`(按 subject / review_status / keyword 过滤, 返回条数上限 20)、`note_get`(按 id)、`review_due_query`(按 ReviewStatus 聚合计数)。全部基于 `common` 的 `DatabaseHelper` RDB store 直接查询, **禁止 import entry**(拓扑红线, ADR-0012)。
 
