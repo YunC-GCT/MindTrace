@@ -17,8 +17,8 @@
 
 | 任务 | 命令 |
 |---|---|
-| OCR 服务 (本地) | `python -m uvicorn ocr.app:app --port 8000` |
-| 单元测试 (Node) | `npm --prefix scripts/arkts-lint test` (70 tests) |
+| OCR 服务 (本地) | 运行 `tools/ocr_service/start.bat` (端口 8000; 真机需配 PC 局域网 IP, 见 [demo-script](./demo-script-2026-09-06.md) §1 P3) |
+| 单元测试 (Node) | `npm --prefix scripts/arkts-lint test` (数量以输出为准, 全绿即可) |
 | Lint 扫描 (v0.3 AST) | `node scripts/arkts-lint/index.mjs --quiet` |
 | Build / Run | **DevEco GUI 或 hvigor CLI** |
 
@@ -32,9 +32,7 @@ DevEco Studio → `Build` → `Build Hap(s)/APP(s)` 或 hvigor CLI：`hvigor ass
 
 ## 单元测试 (Hypium, 在 entry/build-profile.json5 配了 ohosTest)
 
-当前覆盖极少 (`agents/src/test/` 仅 2 文件)
-
-**计划**: Phase 4 ticket #13 加 12 个最小测试 (StructureService / TruthCheckService / PromptBuilder, 见 ADR-0007)
+`agents/src/test/`: TruthCheckService (7) / PromptBuilder (2) / CaptureGraph — spec 015 已落地服务级测试; 结构化主路径 (structure) 需 LLM 配置, 不做 Hypium (与原 KnowledgeModel.test 同理)
 
 ## E2E 验证
 

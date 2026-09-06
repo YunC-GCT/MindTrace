@@ -22,6 +22,7 @@
 | 改 API 版本兼容 | [`docs/agents/api-version.md`](./docs/agents/api-version.md) |
 | 改安全 / secrets / 签名 | [`docs/agents/security.md`](./docs/agents/security.md) |
 | 准备 PR / smoke test | [`docs/agents/smoke-test.md`](./docs/agents/smoke-test.md) |
+| 复赛演示脚本 / 赛前检查 | [`docs/agents/demo-script-2026-09-06.md`](./docs/agents/demo-script-2026-09-06.md) |
 | 排查 build / 编码陷阱 | [`docs/agents/file-header-template.md`](./docs/agents/file-header-template.md) §"创建新文件" |
 | 做后端 CaptureGraph / ArkTS 重构 | [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](./docs/agents/d2-capturegraph-teaching-2026-09-05.md) (踩坑与经验) |
 | 推进 agent 能力级工作 (工具层 / 调用协议 / 拆分) | [`docs/agents/patterns/capability-to-implementation.md`](./docs/agents/patterns/capability-to-implementation.md) (skill 链路) + [`docs/architecture/agent-tool-chain-2026-09-06.md`](./docs/architecture/agent-tool-chain-2026-09-06.md) (派发链总览) |
