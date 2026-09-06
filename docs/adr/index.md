@@ -16,7 +16,7 @@ choice made, and the reversibility.
 | [0006](./0006-knowledge-model-decomposition-plan.md) | Split 870-LOC god class into 3 services (PromptBuilder + TruthCheckService + StructureService); Dispatcher orchestrates | accepted |
 | [0007](./0007-test-baseline-12-unit-tests.md) | Adopt audit's 12-test baseline (4+4+2+2 across 4 units) as the test floor | accepted |
 | [0008](./0008-capturegraph-self-built-runtime.md) | Adopt the LangGraph model as the canonical design root, implemented natively in ArkTS (`CaptureGraph`) — no Python sidecar / langgraphjs runtime dependency; AI failure throws, no fallback KnowledgeUnit | accepted |
-| [0009](./0009-kit-facade-injection-boundary.md) | HSPs declare Kit facade contracts (`common/kit/`); only `entry` imports `@kit.*` and injects implementations | accepted |
+| [0009](./0009-kit-facade-injection-boundary.md) | Kit capability seam: pipeline consumes kits via `common/kit/` facade contracts, implementations injected at composition root — a seam, not an import ban (DevEco template modules import kits directly); kit integration deferred | accepted |
 
 ## How to write a new ADR
 

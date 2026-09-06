@@ -16,7 +16,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | spec ready, not implemented |
 | **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
 | **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
-| **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **in progress** — P0 contracts in `common/src/main/ets/kit/`; entry-side implementations pending |
+| **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **contracts landed** (`common/src/main/ets/kit/`); 实际 Kit 资源接入延后 (2026-09-06) |
 
 ## P0 tickets without spec
 

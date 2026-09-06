@@ -101,7 +101,7 @@ _Avoid_: agent (overloaded, see below)
 The entry-side adapter that implements `agents`' `NoteDaoInterface` on top of `entry`'s `NoteDao`. The seam that lets the agents module persist without depending on entry.
 
 **Kit Facade (contract)**:
-An interface in `common/src/main/ets/kit/` (`ReminderFacade`, `BackgroundTaskFacade`, `FormCardFacade`) declaring a HarmonyOS kit capability. Only `entry` imports `@kit.*` and injects implementations; HSPs never touch kit APIs (ADR-0009).
+An interface in `common/src/main/ets/kit/` (`ReminderFacade`, `BackgroundTaskFacade`, `FormCardFacade`) declaring a HarmonyOS kit capability for the business pipeline. Implementations are injected at the composition root when kit integration lands; this is a seam, not an import ban — DevEco template modules (abilities, FormAbility) import kit APIs directly (ADR-0009).
 
 ## Ambiguous terms
 
