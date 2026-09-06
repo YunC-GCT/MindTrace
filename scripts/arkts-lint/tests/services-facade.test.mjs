@@ -24,9 +24,13 @@ test('PromptBuilder facade exposes build(input)', () => {
   assert.match(prompt, /build\(input: string\): string/);
 });
 
-test('Façade files do not re-implement KnowledgeModel logic inline', () => {
+test('Façade contract per split stage (spec 015): shells forward once; TruthCheckService is the entity', () => {
+  // PR2/PR3 待做: StructureService / PromptBuilder 仍是转发壳 (恰好一次 this.model.*)
   assert.equal((structure.match(/this\.model\.structure\(/g) || []).length, 1);
   assert.equal((structure.match(/this\.model\.structureWithClassification\(/g) || []).length, 1);
-  assert.equal((truthCheck.match(/legacy\.truthCheck\(/g) || []).length, 1);
   assert.equal((prompt.match(/this\.model\.buildPrompt\(/g) || []).length, 1);
+  // PR1 已实体化: TruthCheckService 持有真实现, 不再依赖 KnowledgeModel
+  assert.match(truthCheck, /return this\.truthCheck\(input\);/);
+  assert.doesNotMatch(truthCheck, /legacy\.truthCheck\(/);
+  assert.doesNotMatch(truthCheck, /from '\.\/KnowledgeModel'/);
 });
