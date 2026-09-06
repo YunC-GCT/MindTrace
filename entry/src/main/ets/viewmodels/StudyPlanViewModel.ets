@@ -1,9 +1,10 @@
 ﻿// ============================================================================
-//  viewmodels/StudyPlanViewModel.ets — 学习计划业务逻辑层
+//  viewmodels/StudyPlanViewModel.ets — 学习计划 UI 状态层
 //  ----------------------------------------------------------------------------
-//  职责: 管理学习计划列表的增删改查 + AI 智能生成。
+//  职责: 管理学习计划列表的增删改查 UI 状态。
 //  持久化: StudyPlanDao (RDB study_plan 表)，init() 时加载全量。
-//  AI: generatePlan() 通过 LlmClient 调 DeepSeek，基于已有 KnowledgeUnit 生成计划。
+//  AI: generatePlan() 经 services/StudyPlanService 生成标题 (F2 小步先修,
+//      2026-09-06 — LLM 调用与解析已抽到 Service 层, ViewModel 只做 UI 状态与落库)。
 //
 //  ArkTS 1.1 strict:
 //    - 显式类型，无 Record<>，无 RegExpMatchArray
@@ -12,9 +13,8 @@
 
 import { StudyPlanItem } from "common"
 import { DatabaseHelper } from "common"
-import { LlmClient } from "common"
-import type { ChatMessage, LlmCallResult } from "common"
 import { StudyPlanDao } from "../database/StudyPlanDao"
+import { StudyPlanService } from "../services/StudyPlanService"
 import { StudyPlanSnapshot, UiDataCacheService } from "../services/UiDataCacheService"
 
 @Observed
@@ -25,7 +25,6 @@ export class StudyPlanViewModel {
   isLoading: boolean = false
   initError: boolean = false
   private dao: StudyPlanDao | null = null
-  private llm: LlmClient = new LlmClient()
 
   // ---- 初始化 ----
   async init(context: Context): Promise<void> {
@@ -202,28 +201,7 @@ export class StudyPlanViewModel {
   async generatePlan(knownTitles: string[]): Promise<void> {
     this.isLoading = true
     try {
-      const contextStr: string = knownTitles.length > 0
-        ? "用户已有以下知识点/计划：" + knownTitles.join("、") + "。"
-        : "用户正在学习大学数学（数学分析、高等代数、解析几何）。"
-
-      const systemPrompt: string =
-        "你是一个学习计划助手。" + contextStr +
-        "请根据这些信息，生成 3-5 条具体的学习计划待办事项，帮助用户系统复习。" +
-        "每条计划应简短（15字以内）、可执行。以纯 JSON 字符串数组格式返回，如 [\"复习极限定义\",\"做 3 道导数题\"]。" +
-        "只返回 JSON 数组，不要其他内容。"
-
-      const messages: ChatMessage[] = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: "请生成学习计划" },
-      ]
-
-      const replyResult: LlmCallResult = await this.llm.call({
-        messages: messages,
-        maxTokens: 1024,
-        timeoutMs: 60000,
-      })
-      const reply: string = replyResult.text ?? ''
-      const titles: string[] = this.parsePlanTitles(reply)
+      const titles: string[] = await StudyPlanService.generateTitles(knownTitles)
 
       for (const title of titles) {
         const item: StudyPlanItem = new StudyPlanItem(title)
@@ -242,29 +220,6 @@ export class StudyPlanViewModel {
       console.error("[StudyPlanViewModel.generatePlan] " + (e as Error).message)
     } finally {
       this.isLoading = false
-    }
-  }
-
-  // ---- 解析 LLM JSON 数组（避免 RegExpMatchArray） ----
-  private parsePlanTitles(raw: string): string[] {
-    const start: number = raw.indexOf("[")
-    const end: number = raw.lastIndexOf("]")
-    if (start === -1 || end === -1 || start >= end) {
-      return []
-    }
-    const json: string = raw.substring(start, end + 1)
-    try {
-      const parsed: string[] = JSON.parse(json) as string[]
-      const result: string[] = []
-      for (const item of parsed) {
-        if (typeof item === "string" && item.trim().length > 0) {
-          result.push(item.trim())
-        }
-      }
-      return result
-    } catch (e) {
-      console.error("[StudyPlanViewModel.parsePlanTitles] " + (e as Error).message)
-      return []
     }
   }
 
