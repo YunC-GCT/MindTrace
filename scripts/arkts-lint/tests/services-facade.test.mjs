@@ -24,11 +24,15 @@ test('PromptBuilder facade exposes build(input)', () => {
   assert.match(prompt, /build\(input: string\): string/);
 });
 
-test('Façade contract per split stage (spec 015): shells forward once; TruthCheckService is the entity', () => {
-  // PR2/PR3 待做: StructureService / PromptBuilder 仍是转发壳 (恰好一次 this.model.*)
+test('Façade contract per split stage (spec 015): shells forward once; TruthCheck/PromptBuilder are entities', () => {
+  // PR3 待做: StructureService 仍是转发壳 (恰好一次 this.model.*)
   assert.equal((structure.match(/this\.model\.structure\(/g) || []).length, 1);
   assert.equal((structure.match(/this\.model\.structureWithClassification\(/g) || []).length, 1);
-  assert.equal((prompt.match(/this\.model\.buildPrompt\(/g) || []).length, 1);
+  // PR2 已实体化: PromptBuilder 持有 buildPrompt 实现, 不再依赖 KnowledgeModel
+  assert.match(prompt, /buildPrompt\(ocrText: string\): string/);
+  assert.match(prompt, /你是数学学习笔记结构化助手/);
+  assert.doesNotMatch(prompt, /this\.model\./);
+  assert.doesNotMatch(prompt, /from '\.\/KnowledgeModel'/);
   // PR1 已实体化: TruthCheckService 持有真实现, 不再依赖 KnowledgeModel
   assert.match(truthCheck, /return this\.truthCheck\(input\);/);
   assert.doesNotMatch(truthCheck, /legacy\.truthCheck\(/);
