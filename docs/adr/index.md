@@ -18,6 +18,8 @@ choice made, and the reversibility.
 | [0008](./0008-capturegraph-self-built-runtime.md) | Adopt the LangGraph model as the canonical design root, implemented natively in ArkTS (`CaptureGraph`) — no Python sidecar / langgraphjs runtime dependency; AI failure throws, no fallback KnowledgeUnit | accepted |
 | [0009](./0009-kit-facade-injection-boundary.md) | Kit capability seam: pipeline consumes kits via `common/kit/` facade contracts, implementations injected at composition root — a seam, not an import ban (DevEco template modules import kits directly); kit integration deferred | accepted |
 | [0010](./0010-mcp-tools-semantics.md) | `mcp/` keeps MCP-tool semantics (`OcrTool` is a teammate-built MCP 工具); `tools/` reserved for CRUD tools — supersedes ADR-0005, PR #28 rename reverted | accepted |
+| [0011](./0011-skill-xiaoyi-reservation.md) | `skill/` is retained as the Xiaoyi (小艺) skill development reservation — stub state is deliberate; audit finding F4 (freeze/remove) withdrawn | accepted |
+| [0012](./0012-tool-calling-protocol.md) | OpenAI-compatible tool-calling fields in `LlmTypes`; `ToolRegistry` lives in `common/` (shared by the in-app LLM loop and the future `skill/` IntentRouter); read-only tools first — implemented by [spec 014](../specs/014-tool-calling-protocol.md) | accepted |
 
 ## How to write a new ADR
 
