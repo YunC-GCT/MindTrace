@@ -4,7 +4,7 @@
 > **何时读:** 你被分配到"MindTrace → LangGraph 迁移"任务时
 > **目的:** 知道要做什么、什么时候做、停下来问什么、用什么 skill
 
-> ⚠️ **SUPERSEDED (2026-09-06)** — LangGraph 迁移已**否决**。最终决策是在 ArkTS 内自建 CaptureGraph:见 [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) + [spec 011](../specs/011-capturegraph-arkts-refactor.md),D2 已于 2026-09-05 实现并合并。Python 边车与 langgraphjs 方案均被拒绝(见 [`docs/research/agent-framework-comparison-2026-09-02.md`](../research/agent-framework-comparison-2026-09-02.md))。**本文仅作历史交接记录,勿按其执行。**
+> ⚠️ **SUPERSEDED (2026-09-06, 仅执行计划层面)** — 本文档推荐的"Python LangGraph 边车"实施方式已被替换。项目决策:**采纳 LangGraph 为主要设计根模型**(命名、概念、图结构均以 LangGraph 为准),在 ArkTS 内自建 CaptureGraph 原生实现,不引入 Python 运行时 / langgraphjs 依赖 — 见 [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) + [spec 011](../specs/011-capturegraph-arkts-refactor.md),D2 已于 2026-09-05 落地。**本文仅作历史记录,勿按其执行。**
 
 ---
 
