@@ -1,7 +1,7 @@
 # Git Flow Lightweight — 团队开发手册 (2026-09-04)
 
 > **读者**: `@YunC-GCT` / `@rc-shi` / `@cmnon159`(3 人小团队)
-> **来源**: `git-flow-setup-2026-09-04.md` 操作清单 + `branch-protection.md` 当前规则 + PR 模板
+> **来源**: `git-flow-setup-2026-09-04.md` 操作清单 + `branch-protection.md` 当前规则 + [`git-conventions.md`](./git-conventions.md) commit 规范 + PR 模板
 > **版本**: v1.0(2026-09-04 release)
 
 ---
@@ -76,6 +76,7 @@ git push -u origin feature/<your-slug>
 - [ ] reviewers 至少有 1 人
 - [ ] description 包含 `## Summary` / `## Changes` / `## Test plan`
 - [ ] linked issue 填好(如有)
+- [ ] 若 PR 实现了某个 spec/ADR,同步更新 `docs/specs/index.md` / `docs/adr/index.md` 的状态列
 
 ---
 
