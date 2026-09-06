@@ -125,3 +125,27 @@ export interface LlmCallOptions {
   // 流式专用
   enableThinking?: boolean;    // 是否启用思考模式 (DeepSeek thinking: {type: "enabled"})
 }
+
+// ==================== LlmCallRequest (统一调用入参, spec 005 / ADR-0004)====================
+export interface LlmCallRequest {
+  messages: ChatMessage[];
+  // 流式开关: true 走 requestInStream SSE 适配路径, false (默认) 走 JSON request 适配路径
+  stream?: boolean;
+  // 流式回调 (stream=true 时必填), 每个 token 触发一次
+  onDelta?: LlmStreamCallback;
+  // 以下不指定则用 LlmConfig 的默认配置
+  temperature?: number;
+  maxTokens?: number;
+  model?: string;
+  timeoutMs?: number;
+  responseFormat?: LlmResponseFormat;
+  enableThinking?: boolean;
+}
+
+// ==================== LlmCallResult (统一调用出参, spec 005 / ADR-0004)====================
+export interface LlmCallResult {
+  // stream=false 时为完整回复文本; stream=true 时为 undefined (内容经 onDelta 交付)
+  text?: string;
+  // 本次调用是否为流式
+  streamed: boolean;
+}

@@ -10,7 +10,7 @@ an ADR (`docs/adr/`) and follows the same template.
 |--------|------|-----|--------|
 | **#3** | [`003-knowledge-model-decomposition.md`](./003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | **in progress** — 3 façades (`PromptBuilder` / `TruthCheckService` / `StructureService`) landed as forwarding shells; real split pending |
 | **#4** | [`004-dispatcher-single-entry.md`](./004-dispatcher-single-entry.md) | [`0003`](../adr/0003-dispatcher-single-entry-design.md) | **implemented** (D2, 2026-09-05) |
-| **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | spec ready, not implemented |
+| **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | **implemented** (2026-09-06) |
 | **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | spec ready, not implemented |
 | **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | **implemented** (TDD) |
 | **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | spec ready, not implemented |
@@ -28,19 +28,18 @@ an ADR (`docs/adr/`) and follows the same template.
 
 Done:
 - **#4** Dispatcher single-entry — landed with D2
+- **#5** LlmClient consolidation — 单一 `call(request)`, 真 SSE 流式, 死路已删
 - **#9** LlmConfig throw-on-silent-override — TDD
 - **D2 / spec 011** end-to-end — CaptureGraph + 5 nodes + conditional persist edge, Dispatcher 旧 API 已删
 
 Remaining (recommended order):
-1. **#5** LlmClient consolidation — independent, ~5-line refactor
-2. **#3** KnowledgeModel real decomposition — façades exist; move the logic out of KnowledgeModel
-3. **#13 / D4** entry-side facade implementations + FormKit mock replacement
-4. **#7** AgentChatService decomposition — 3 atomic PRs, 802-LOC class
-5. **#10** mcp → tools rename — git mv, ~3 import lines
+1. **#3** KnowledgeModel real decomposition — façades exist; move the logic out of KnowledgeModel
+2. **#7** AgentChatService decomposition — 3 atomic PRs, 802-LOC class
+3. **#10** mcp → tools rename — git mv, ~3 import lines
 
 After all of these, the architecture matches ADR intent:
 - ✅ Dispatcher has 1 public method
-- ⬜ LlmClient has 1 public method (call + adapters)
+- ✅ LlmClient has 1 public method (call + adapters)
 - 🟡 KnowledgeModel replaced by 3 services (façade stage done, real split pending)
 - ⬜ AgentChatService is a thin facade
 - ⬜ mcp/ directory doesn't exist
