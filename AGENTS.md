@@ -75,7 +75,7 @@
 | **LlmClient 统一调用层** | `common/src/main/ets/llm/LlmClient.ets` | 唯一公共入口 `call(request)` (spec [`005`](./docs/specs/005-llm-client-consolidation.md)): JSON 与真 SSE 流式 (requestInStream) 双适配路径 |
 | **知识星系可视化** | `entry/src/main/ets/pages/KnowledgeGalaxy*` | 用户学情可视化 |
 | **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 + 89 单元测试, **CI 已接入** |
-| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 9 ADR + 9 ticket spec, 设计透明度高 |
+| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 12 ADR + 11 ticket spec, 设计透明度高 |
 
 ### 演示路径 (5 分钟 walk-through)
 
@@ -135,8 +135,8 @@
 | Skill | 说明 | 详细 |
 |---|---|---|
 | **CONTEXT.md** | 项目专属词汇 (4 种 "agent" 消歧; D2 起含 CaptureGraph 等) | [`CONTEXT.md`](./CONTEXT.md) |
-| **ADR** | 架构决策记录 (9 个) | [`docs/adr/`](./docs/adr/) |
-| **Ticket specs** | 依 ADR 写的实施 spec (9 个) | [`docs/specs/`](./docs/specs/) |
+| **ADR** | 架构决策记录 (12 个) | [`docs/adr/`](./docs/adr/) |
+| **Ticket specs** | 依 ADR 写的实施 spec (11 个) | [`docs/specs/`](./docs/specs/) |
 | **Issue tracker** | GitHub Issues on `YunC-GCT/MindTrace`, via `gh` CLI | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) |
 | **Triage labels** | 5 标签: `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix` | [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
 | **TDD / domain-modeling** | 按需调 skill, 不强制 | (内置 skill) |

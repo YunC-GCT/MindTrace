@@ -29,7 +29,7 @@ MindTrace 通过 **拍照 → OCR → AI 分类 → 知识结构化 → 持久�
 
 ### 2026-09-05 ~ 09-06 · Day 1-2
 
-- **D1-D4 决策全部落 ADR**: OCR 保留自研、其余主链路 Kit 化走"契约在 common / 实现注入 entry"接缝([ADR-0009](./docs/adr/0009-kit-facade-injection-boundary.md)); 自研 CaptureGraph 承载 LangGraph 设计模型([ADR-0008](./docs/adr/0008-capturegraph-self-built-runtime.md)); LLM 工具调用协议([ADR-0012](./docs/adr/0012-tool-calling-protocol.md)); `skill/` 保留为小艺预留位([ADR-0011](./docs/adr/0011-skill-xiaoyi-reservation.md))。累计 **10 ADR + 15 spec**。
+- **D1-D4 决策全部落 ADR**: OCR 保留自研、其余主链路 Kit 化走"契约在 common / 实现注入 entry"接缝([ADR-0009](./docs/adr/0009-kit-facade-injection-boundary.md)); 自研 CaptureGraph 承载 LangGraph 设计模型([ADR-0008](./docs/adr/0008-capturegraph-self-built-runtime.md)); LLM 工具调用协议([ADR-0012](./docs/adr/0012-tool-calling-protocol.md)); `skill/` 保留为小艺预留位([ADR-0011](./docs/adr/0011-skill-xiaoyi-reservation.md))。累计 **12 ADR + 11 spec**。
 - **后端 CaptureGraph 落地**(spec 011): Dispatcher 单入口, 图节点 capture→classify→structure→truth_check→persist(条件边), AI 失败抛结构化错误、不生成 fallback 假笔记。
 - **结构化拆分收口**(spec 015): KnowledgeModel 重构为 554 行轻量编排 agent, 拆出 PromptBuilder(提示词)/TruthCheckService(真值检查)协作服务; 全程纯提取, 类体字节级 diff 证据存 PR #40/#41。
 - **LLM 工具化**: `call(request)` 单一调用入口(真 SSE 流式); 工具调用协议 + ToolRegistry + ToolLoop 落地 `common/src/main/ets/tools/`(spec 014, 只读工具先行)。
