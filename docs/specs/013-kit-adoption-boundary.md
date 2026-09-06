@@ -1,6 +1,6 @@
 # D4 — 鸿蒙 Kit 采用范围与替换边界
 
-> **Status**: P0 契约已落地 (`common/kit/`, 2026-09-05);**F3 最小闭环已接线** (ReminderFacadeImpl @kit.BackgroundTasksKit, entry 组合根注入 + Home 顶栏入口, 2026-09-06, 复赛冲刺序 2);BackgroundTaskFacade / FormCardFacade 实现延后
+> **Status**: P0 契约已落地 (`common/kit/`, 2026-09-05);**F3 ReminderFacadeImpl 已实现并注入** (@kit.BackgroundTasksKit, entry 组合根, 2026-09-06, 复赛冲刺序 2);UI 入口按用户裁决暂不挂 (2026-09-06);BackgroundTaskFacade / FormCardFacade 实现延后
 > **Date**: 2026-09-05
 > **Source decision**: GitHub issue #11
 > **Scope**: 仅架构规范化与 Kit 替换边界定义，不在本阶段实施具体替换。
