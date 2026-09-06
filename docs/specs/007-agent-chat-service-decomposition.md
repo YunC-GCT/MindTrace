@@ -1,20 +1,20 @@
 # Ticket #7 — AgentChatService decomposition into 3 services
 
-> **Status**: spec for review (Phase 3)
+> **Status**: in progress (2026-09-06 — PR1 IntentClassifier 已落地; PR2 ChatStatusMachine / PR3 ReplyService 待续)
 > **Source ADR**: implicit (mirrors ticket #3, ADR-0006 philosophy)
 > **Files affected**: `entry/src/main/ets/services/AgentChatService.ets` (split into 3 files); `entry/src/main/ets/overlays/AgentFloatWindow/` (consumer, unchanged)
 > **Test files**: new `entry/src/ohosTest/ets/test/AgentChatService.test.ets` (Hypium)
 
 ## Why this ticket
 
-`entry/src/main/ets/services/AgentChatService.ets` is **802 LOC** with 12+ responsibilities per the audit (§4.3):
+`entry/src/main/ets/services/AgentChatService.ets` is **861 LOC** (2026-09-06 复核) with 12+ responsibilities per the audit (§4.3):
 - Intent classification (note_generation vs chat)
 - LLM orchestration (streaming + non-streaming)
 - Image recognition (analyzeImage)
 - Note generation pipeline
 - Chat reply (realReply / realReplyStream)
 - Memory read/write (10+ safeX wrappers)
-- Status state machine (12 steps)
+- Status state machine (13 named steps incl. completed)
 - Prompt construction
 - 30+ keyword dictionaries (intent, deny, explicit)
 - Session management
@@ -59,7 +59,7 @@ class ChatStatusMachine {
   step: ChatStatusStep;  // observable state, updated as reply progresses
   advance(reason: string): void;
   reset(): void;
-  // 12 named steps (image_message_save, image_recognize, etc.)
+  // 13 named steps (image_message_save, image_recognize, ..., completed)
 }
 ```
 
