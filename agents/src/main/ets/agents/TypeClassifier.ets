@@ -13,7 +13,7 @@ import type {
   LlmGuardValidationResult,
   NoteCategory,
 } from 'common';
-import { OcrTool } from '../mcp/tools/OcrTool';
+import { OcrTool } from '../tools/OcrTool';
 
 const CLASSIFY_TEXT_LIMIT: number = 6000;
 const CLASSIFY_MAX_TOKENS: number = 800;

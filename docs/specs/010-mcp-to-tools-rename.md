@@ -1,6 +1,6 @@
 # Ticket #10 — Rename `agents/mcp/tools/` to `agents/tools/`
 
-> **Status**: spec for review (Phase 3)
+> **Status**: implemented (2026-09-06 — `agents/src/main/ets/tools/`, `mcp/` 已删除)
 > **Source ADR**: [`../adr/0005-mcp-to-tools-rename.md`](../adr/0005-mcp-to-tools-rename.md)
 > **Files affected**: `agents/src/main/ets/mcp/tools/` → `agents/src/main/ets/tools/` (rename); import paths in `agents/src/main/ets/Index.ets` and any consumers of `OcrTool`
 
