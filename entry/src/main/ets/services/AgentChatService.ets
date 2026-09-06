@@ -14,6 +14,7 @@ import { AgentMemoryService } from './AgentMemoryService';
 import type { ChatStatusMeta, ChatStatusStep } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { IntentClassifier } from './IntentClassifier';
 import type { TextIntent } from './IntentClassifier';
+import { ChatStatusMachine } from './ChatStatusMachine';
 
 
 export interface AgentChatCallbacks {
@@ -37,6 +38,7 @@ export class AgentChatService {
   private memory: AgentMemoryService | null = null;
   private contentProtocol: ContentProtocol = new ContentProtocol();
   private intentClassifier: IntentClassifier = new IntentClassifier();
+  private statusMachine: ChatStatusMachine = new ChatStatusMachine();
 
   constructor(callbacks: AgentChatCallbacks) {
     this.cbs = callbacks;
@@ -392,60 +394,12 @@ export class AgentChatService {
   }
 
   private setStep(step: ChatStatusStep): void {
-    this.cbs.setStatusMeta(AgentChatService.statusFromStep(step));
+    this.cbs.setStatusMeta(this.statusMachine.advance(step));
   }
 
   private finishBusy(): void {
     this.cbs.setStatusMeta(null);
     this.cbs.setBusy(false);
-  }
-
-  private static statusFromStep(step: ChatStatusStep): ChatStatusMeta {
-    if (step === 'intent_check') {
-      return AgentChatService.status(step, '判断任务', '确认这轮是直接回答还是整理成笔记。');
-    }
-    if (step === 'reply_context_load') {
-      return AgentChatService.status(step, '读取上下文', '取当前会话里和问题有关的内容。');
-    }
-    if (step === 'reply_model_call') {
-      return AgentChatService.status(step, '生成回答', '组织结论、步骤和必要条件。');
-    }
-    if (step === 'image_message_save') {
-      return AgentChatService.status(step, '记录图片问题', '先保存本轮图片和补充说明。');
-    }
-    if (step === 'image_recognize') {
-      return AgentChatService.status(step, '识别图片内容', '读取图片里的题目、公式和文字。');
-    }
-    if (step === 'image_material_save') {
-      return AgentChatService.status(step, '整理识别材料', '把识别结果留作后续笔记素材。');
-    }
-    if (step === 'note_intent_check') {
-      return AgentChatService.status(step, '确认整理需求', '确认这轮需要生成可保存的笔记。');
-    }
-    if (step === 'note_context_load') {
-      return AgentChatService.status(step, '读取笔记材料', '读取当前会话、图片识别结果和待整理内容。');
-    }
-    if (step === 'note_source_prepare') {
-      return AgentChatService.status(step, '整理笔记素材', '确定要写进笔记的原题、公式和关键步骤。');
-    }
-    if (step === 'note_material_summary') {
-      return AgentChatService.status(step, '汇总成笔记底稿', '把零散材料合成一份完整底稿。');
-    }
-    if (step === 'note_structure_save') {
-      return AgentChatService.status(step, '生成并保存笔记', '结构化标题、章节、标签和正文。');
-    }
-    if (step === 'note_finalize') {
-      return AgentChatService.status(step, '更新笔记列表', '刷新本地笔记并标记材料已使用。');
-    }
-    return AgentChatService.status(step, '完成', '本轮处理已结束。');
-  }
-
-  private static status(step: ChatStatusStep, title: string, detail: string): ChatStatusMeta {
-    return {
-      step: step,
-      title: title,
-      detail: detail,
-    };
   }
 
   private currentSessionId(): string {
