@@ -8,15 +8,15 @@ an ADR (`docs/adr/`) and follows the same template.
 
 | Ticket | Spec | ADR | Status |
 |--------|------|-----|--------|
-| **#3** | [`003-knowledge-model-decomposition.md`](./003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | spec ready, not implemented |
-| **#4** | [`004-dispatcher-single-entry.md`](./004-dispatcher-single-entry.md) | [`0003`](../adr/0003-dispatcher-single-entry-design.md) | spec ready, not implemented |
+| **#3** | [`003-knowledge-model-decomposition.md`](./003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | **in progress** — 3 façades (`PromptBuilder` / `TruthCheckService` / `StructureService`) landed as forwarding shells; real split pending |
+| **#4** | [`004-dispatcher-single-entry.md`](./004-dispatcher-single-entry.md) | [`0003`](../adr/0003-dispatcher-single-entry-design.md) | **implemented** (D2, 2026-09-05) |
 | **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | spec ready, not implemented |
 | **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | spec ready, not implemented |
-| **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | spec for review (Phase 3) |
+| **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | **implemented** (TDD) |
 | **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | spec ready, not implemented |
-| **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | D2 issue #9 / confirmed CaptureGraph decision | spec ready, not implemented |
-| **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | D3 issue #10 | spec draft, awaiting review |
-| **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | D4 issue #11 | spec draft, awaiting review |
+| **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
+| **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
+| **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **in progress** — P0 contracts in `common/src/main/ets/kit/`; entry-side implementations pending |
 
 ## P0 tickets without spec
 
@@ -24,21 +24,26 @@ an ADR (`docs/adr/`) and follows the same template.
 |--------|--------|
 | **#1** (doc expiry) | meta — not a refactor, just self-referential cleanup |
 
-## Implementation order (recommended)
+## Implementation status (2026-09-06)
 
-1. **#4** (Dispatcher single-entry) — smallest blast radius, unblocks other changes
-2. **#5** (LLMClient consolidation) — independent, ~5-line refactor
-3. **#3** (KnowledgeModel decomposition) — 3 atomic PRs, 870-LOC class
-4. **#7** (AgentChatService decomposition) — 3 atomic PRs, 802-LOC class
-5. **#10** (mcp → tools rename) — git mv, ~3 import lines
-6. **#9** (LlmConfig throw) — ~10 line change in LlmConfig
+Done:
+- **#4** Dispatcher single-entry — landed with D2
+- **#9** LlmConfig throw-on-silent-override — TDD
+- **D2 / spec 011** end-to-end — CaptureGraph + 5 nodes + conditional persist edge, Dispatcher 旧 API 已删
 
-After all 6, the architecture should match ADR intent:
-- Dispatcher has 1 public method
-- LLMClient has 1 public method (call + adapters)
-- KnowledgeModel doesn't exist; replaced by 3 services
-- AgentChatService is a thin facade
-- mcp/ directory doesn't exist
+Remaining (recommended order):
+1. **#5** LlmClient consolidation — independent, ~5-line refactor
+2. **#3** KnowledgeModel real decomposition — façades exist; move the logic out of KnowledgeModel
+3. **#13 / D4** entry-side facade implementations + FormKit mock replacement
+4. **#7** AgentChatService decomposition — 3 atomic PRs, 802-LOC class
+5. **#10** mcp → tools rename — git mv, ~3 import lines
+
+After all of these, the architecture matches ADR intent:
+- ✅ Dispatcher has 1 public method
+- ⬜ LlmClient has 1 public method (call + adapters)
+- 🟡 KnowledgeModel replaced by 3 services (façade stage done, real split pending)
+- ⬜ AgentChatService is a thin facade
+- ⬜ mcp/ directory doesn't exist
 
 ## How to read a spec
 

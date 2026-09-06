@@ -15,6 +15,8 @@ choice made, and the reversibility.
 | [0005](./0005-mcp-to-tools-rename.md) | Rename `agents/mcp/tools/` to `agents/tools/`; `mcp` is misleading (no MCP server runs) | accepted |
 | [0006](./0006-knowledge-model-decomposition-plan.md) | Split 870-LOC god class into 3 services (PromptBuilder + TruthCheckService + StructureService); Dispatcher orchestrates | accepted |
 | [0007](./0007-test-baseline-12-unit-tests.md) | Adopt audit's 12-test baseline (4+4+2+2 across 4 units) as the test floor | accepted |
+| [0008](./0008-capturegraph-self-built-runtime.md) | Self-built CaptureGraph (LangGraph-style ArkTS runtime) instead of LangGraph/Python sidecar; AI failure throws, no fallback KnowledgeUnit | accepted |
+| [0009](./0009-kit-facade-injection-boundary.md) | HSPs declare Kit facade contracts (`common/kit/`); only `entry` imports `@kit.*` and injects implementations | accepted |
 
 ## How to write a new ADR
 

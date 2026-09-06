@@ -19,13 +19,13 @@ MindTrace is a **HarmonyOS math learning assistant** for the **鸿蒙高校创�
 
 - 5 modules (1 HAP + 4 HSP): `entry`, `common`, `agents`, `skill`, `cardservice`
 - AI pipeline: photo → OCR → classify → structure → persist
-- Custom ArkTS lint engine (34 rules, 63 tests)
+- Custom ArkTS lint engine (34 rules, 89 tests)
 - Architecture: 4 layers + 5 modules (see `AGENTS.md`)
 
 ### Read in this order
 
 1. **Top of [`AGENTS.md`](../AGENTS.md)** — project context + 7 hard rules
-2. **Top of [`CONTEXT.md`](../CONTEXT.md)** — 19 project-specific terms
+2. **Top of [`CONTEXT.md`](../CONTEXT.md)** — project glossary (KnowledgeUnit, CaptureGraph, …)
 3. **Top of [`docs/index.md`](./index.md)** — full doc navigation
 4. The "改什么 → 读哪" pointer table in `AGENTS.md` — answers "where do I find X?"
 
@@ -47,23 +47,23 @@ If all three pass, you're set up correctly.
 
 ### 1. Read the design layer (15 min)
 
-- [`docs/adr/0001-0007`](./adr/) — 7 architecture decisions, **read in order**
-- [`docs/specs/003-010`](./specs/) — 6 implementation specs (TDD plans)
+- [`docs/adr/`](./adr/) — architecture decisions, **read in order**
+- [`docs/specs/`](./specs/) — implementation specs (TDD plans)
 - [`docs/style/arkts-1.1.md`](./style/arkts-1.1.md) — 40+ ArkTS rules
 - [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./legacy/mindtrace/architecture/audit-full-2026-09-01.md) — 21 audit findings
 
 ### 2. Read the code (10 min)
 
-- `agents/src/main/ets/core/Dispatcher.ets` (159 lines) — main agent orchestrator
+- `agents/src/main/ets/core/Dispatcher.ets` — main agent orchestrator (single entry `dispatch`, runs the CaptureGraph)
 - `common/src/main/ets/llm/LlmClient.ets` — LLM call layer
-- `agents/src/main/ets/agents/KnowledgeModel.ets` (929 lines, god class)
+- `agents/src/main/ets/agents/KnowledgeModel.ets` — god class, decomposition in progress (façade stage)
 - `scripts/arkts-lint/index.mjs` — the custom AST lint engine
 
 ### 3. Run the tests (5 min)
 
 ```bash
-# 70 unit tests across the project
-node --test scripts/arkts-lint/tests/*.test.mjs          # 67 tests
+# 130 unit tests across the project
+node --test scripts/arkts-lint/tests/*.test.mjs          # 89 tests
 node --test scripts/naming-lint/tests/*.test.mjs         # 23 tests (8 helpers + 15 config)
 node --test scripts/link-check/tests/link-parser.test.mjs # 18 tests
 ```
@@ -163,4 +163,4 @@ For ADR / spec / research format, see the corresponding template in [`docs/templ
 
 ## Last updated
 
-2026-09-02 (created alongside the naming governance refactor)
+2026-09-06 (counts refreshed after D2; de-hardcoded doc counts where possible)

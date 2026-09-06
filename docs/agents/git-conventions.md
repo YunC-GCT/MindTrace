@@ -1,5 +1,7 @@
 # Git conventions
 
+> **团队流程**(分支模型 / PR / review / 发版 / 分支保护)见团队手册 [`git-flow-lightweight-2026-09-04.md`](./git-flow-lightweight-2026-09-04.md);本文聚焦 commit 规范与单兵 git 操作。
+
 ## Branches
 
 - **主分支**: `main`(只放稳定可发布版本,每次合并打 tag)

@@ -61,9 +61,10 @@ package-lock.json
 .reasonix/
 .zcode/
 
-# ===== Git Flow setup scratch (Step A/B/C scripts + PR body + team message) =====
-# 一次性脚本,跑完即可删;不入 commit
+# ===== One-off scratch (git-flow setup scripts / gh issue cache / PR bodies) =====
+# 一次性产物,跑完即可删;不入 commit
 .scratch/
+.scratch_*
 
 # ===== Research scratch (Phase 1 audit, cleanup after) =====
 docs/research/_fetched/

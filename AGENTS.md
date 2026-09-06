@@ -3,7 +3,7 @@
 > **鸿蒙高校创新赛 · 复赛项目** — HarmonyOS 数学学习助手 (拍照 / OCR / AI 分类 / 知识结构化 / 复习 全链)
 > 5 module: `entry` (HAP) + `common` / `agents` / `skill` / `cardservice` (4 HSP)
 > **DevEco Studio 与 hvigor CLI 均为合法开发入口** (Windows 中文路径允许使用 hvigor CLI, 但需注意路径与字符编码)
-> 主分支: `main` · 最新版本: W4 (2026-07-24 起) · 最后审计: 2026-09-01
+> 主分支: `main` + `develop` · 最新版本: v1.0 (2026-09-05 release) · 最后审计: 2026-09-01
 > 项目: **MindTrace** (GitHub 仓库 `YunC-GCT/MindTrace`; MindTrace 是项目昵称; 本地目录名因机器而异, 文档一律用相对路径)
 
 ---
@@ -17,7 +17,7 @@
 | 改 .ets 合规 / 风格 | [`docs/style/arkts-1.1.md`](./docs/style/arkts-1.1.md) (40+ 规则) |
 | 写测试 / 加测试 | [`docs/specs/`](./docs/specs/) §"Test plan (TDD)" + `scripts/arkts-lint/tests/` 模板 |
 | 改 .ets 文件头 / 模块结构 | [`docs/agents/file-header-template.md`](./docs/agents/file-header-template.md) |
-| 改 git workflow / commit / branch | [`docs/agents/git-conventions.md`](./docs/agents/git-conventions.md) |
+| 改 git workflow / commit / branch | [`docs/agents/git-conventions.md`](./docs/agents/git-conventions.md) + 团队手册 [`docs/agents/git-flow-lightweight-2026-09-04.md`](./docs/agents/git-flow-lightweight-2026-09-04.md) (分支模型 / PR / 发版) |
 | 改 lint 规则 / lint 输出 | [`scripts/arkts-lint/`](./scripts/arkts-lint/) + [`docs/agents/api-version.md`](./docs/agents/api-version.md) §"Lint job" |
 | 改 API 版本兼容 | [`docs/agents/api-version.md`](./docs/agents/api-version.md) |
 | 改安全 / secrets / 签名 | [`docs/agents/security.md`](./docs/agents/security.md) |
@@ -72,8 +72,8 @@
 | **AI 智能分类 + 知识结构化** | `agents/src/main/ets/agents/` | 5 类题型识别 + KnowledgeUnit 拆解, 端到端 LLM pipeline |
 | **LlmClient 流式响应 (W4 新)** | `common/src/main/ets/llm/LlmClient.ets` | 3 调用路径待合一, spec [`005`](./docs/specs/005-llm-client-consolidation.md) |
 | **知识星系可视化** | `entry/src/main/ets/pages/KnowledgeGalaxy*` | 用户学情可视化 |
-| **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 + 63 单元测试, **CI 已接入** |
-| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 7 ADR + 6 ticket spec, 设计透明度高 |
+| **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 + 89 单元测试, **CI 已接入** |
+| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 9 ADR + 9 ticket spec, 设计透明度高 |
 
 ### 演示路径 (5 分钟 walk-through)
 
@@ -83,10 +83,11 @@
 4. 5 Tab 流畅 / 知识星系无 "示例:*" 假学科 (ticket #16 已修)
 5. 源码: `agents/` (AI 业务) + `scripts/arkts-lint/` (工程亮点) + `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` (21 个 finding 的架构审计)
 
-### 状态 (per audit 2026-09-01)
+### 状态 (per audit 2026-09-01 · D2-D4 进度 2026-09-06)
 
 ✅ 已修: **#15** ArkTS 铁律 (规约错误) · **#9** LlmConfig 静默覆盖 (TDD) · **#16** fixture data 泄漏 (TDD)
-🟡 待修: **#1** doc expiry · **#3** / #4 / #5 / #7 god class & 入口泄漏 (有 spec, 待实施) · **#10** mcp/ → tools/ rename
+✅ 已落地: **D2 全链** (2026-09-05, spec [`011`](./docs/specs/011-capturegraph-arkts-refactor.md) + [ADR-0008](./docs/adr/0008-capturegraph-self-built-runtime.md)) — Dispatcher 单入口 + CaptureGraph (capture→classify→structure→truth_check→persist 条件边) + 5 节点, 旧 API 已删 · **D3 部分** (spec [`012`](./docs/specs/012-frontend-component-model.md)) — shared/components → atoms/molecules/organisms · **D4 P0 契约** (spec [`013`](./docs/specs/013-kit-adoption-boundary.md) + [ADR-0009](./docs/adr/0009-kit-facade-injection-boundary.md)) — `common/kit/` 三 facade
+🟡 待修: **#1** doc expiry · **#3** KnowledgeModel 实质拆分 (façade 阶段) · **#5** LlmClient 三路径合一 · **#7** AgentChatService 拆分 · **#10** mcp/ → tools/ rename · **D4** entry 端 facade 注入 + FormKit mock 替换
 
 详细: [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md) §7 + [`docs/specs/`](./docs/specs/)
 
@@ -119,7 +120,7 @@
 | Open 项目 | DevEco `File → Open → <本地仓库根>` (目录名以各人克隆为准) |
 | Build / Run / Sync | DevEco GUI (`Build → Build Hap(s)/APP(s)`, `Run → Run 'entry'`) |
 | 启动 OCR 服务 | `python -m uvicorn ocr.app:app --port 8000` |
-| 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (70 测试) |
+| 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (89 测试) |
 | 跑 v0.3 lint 扫描 | `node scripts/arkts-lint/index.mjs --quiet` |
 | 创建新 module | `cp common/oh-package.json5 <new>/oh-package.json5` (必须含 `main` 字段) |
 | 验 .ets 无 BOM | PowerShell: `[System.IO.File]::ReadAllBytes(path)[0..2]` (应为 `0x69 0x6D 0x70`) |
@@ -130,9 +131,9 @@
 
 | Skill | 说明 | 详细 |
 |---|---|---|
-| **CONTEXT.md** | 项目专属词汇 (19 个术语, 4 种 "agent" 消歧) | [`CONTEXT.md`](./CONTEXT.md) |
-| **ADR** | 架构决策记录 (7 个) | [`docs/adr/`](./docs/adr/) |
-| **Ticket specs** | 依 ADR 写的实施 spec (6 个) | [`docs/specs/`](./docs/specs/) |
+| **CONTEXT.md** | 项目专属词汇 (4 种 "agent" 消歧; D2 起含 CaptureGraph 等) | [`CONTEXT.md`](./CONTEXT.md) |
+| **ADR** | 架构决策记录 (9 个) | [`docs/adr/`](./docs/adr/) |
+| **Ticket specs** | 依 ADR 写的实施 spec (9 个) | [`docs/specs/`](./docs/specs/) |
 | **Issue tracker** | GitHub Issues on `YunC-GCT/MindTrace`, via `gh` CLI | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) |
 | **Triage labels** | 5 标签: `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix` | [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
 | **TDD / domain-modeling** | 按需调 skill, 不强制 | (内置 skill) |
