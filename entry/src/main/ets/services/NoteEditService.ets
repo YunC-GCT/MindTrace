@@ -12,10 +12,8 @@ import { NoteDao } from '../database/NoteDao'
 export class NoteEditService {
   // isCreating=true 走 insert, 否则 update
   static async upsert(context: common.UIAbilityContext, unit: KnowledgeUnit, isCreating: boolean): Promise<void> {
-    let rdb: relationalStore.RdbStore | null = DatabaseHelper.getStore()
-    if (rdb === null) {
-      rdb = await DatabaseHelper.init(context)
-    }
+    const existing: relationalStore.RdbStore | null = DatabaseHelper.getStore()
+    const rdb: relationalStore.RdbStore = existing !== null ? existing : await DatabaseHelper.init(context)
     const dao: NoteDao = new NoteDao(rdb)
     if (isCreating) {
       await dao.insert(unit)

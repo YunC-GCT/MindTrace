@@ -2,6 +2,7 @@
 //  viewmodels/KnowledgeGalaxyViewModel.ets - review knowledge galaxy data logic
 // ============================================================================
 
+import { relationalStore } from '@kit.ArkData'
 import { DatabaseHelper, DifficultyLevel, KnowledgeUnit, NoteItem, ReviewStatus, subjectColor, typeColor } from "common"
 import { NoteDao } from "../database/NoteDao"
 import { unitToNoteItem } from "../utils/NoteItemMapper"
@@ -233,7 +234,7 @@ export class KnowledgeGalaxyViewModel {
 
   private async loadPersistedUnits(context: Context): Promise<KnowledgeUnit[]> {
     try {
-      const store = await DatabaseHelper.init(context)
+      const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       return await new NoteDao(store).queryAll()
     } catch (e) {
       console.warn("[KnowledgeGalaxyViewModel] persisted load failed: " + ((e as Error).message ?? String(e)))
@@ -250,7 +251,7 @@ export class KnowledgeGalaxyViewModel {
       return previewUnit
     }
     try {
-      const store = await DatabaseHelper.init(context)
+      const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       return await new NoteDao(store).queryById(id)
     } catch (e) {
       console.warn("[KnowledgeGalaxyViewModel] loadNote failed: " + ((e as Error).message ?? String(e)))
@@ -266,7 +267,7 @@ export class KnowledgeGalaxyViewModel {
       return false
     }
     try {
-      const store = await DatabaseHelper.init(context)
+      const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       await new NoteDao(store).deleteById(id)
       return await this.load(context)
     } catch (e) {
