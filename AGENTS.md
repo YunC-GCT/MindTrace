@@ -87,7 +87,7 @@
 
 ✅ 已修: **#15** ArkTS 铁律 (规约错误) · **#9** LlmConfig 静默覆盖 (TDD) · **#16** fixture data 泄漏 (TDD)
 ✅ 已落地: **D2 全链** (2026-09-05, spec [`011`](./docs/specs/011-capturegraph-arkts-refactor.md) + [ADR-0008](./docs/adr/0008-capturegraph-self-built-runtime.md)) — Dispatcher 单入口 + CaptureGraph (capture→classify→structure→truth_check→persist 条件边) + 5 节点, 旧 API 已删 · **D3 部分** (spec [`012`](./docs/specs/012-frontend-component-model.md)) — shared/components → atoms/molecules/organisms · **D4 P0 契约** (spec [`013`](./docs/specs/013-kit-adoption-boundary.md) + [ADR-0009](./docs/adr/0009-kit-facade-injection-boundary.md)) — `common/kit/` 三 facade
-🟡 待修: **#1** doc expiry · **#3** KnowledgeModel 实质拆分 (façade 阶段) · **#5** LlmClient 三路径合一 · **#7** AgentChatService 拆分 · **#10** mcp/ → tools/ rename · **D4** entry 端 facade 注入 + FormKit mock 替换
+🟡 待修: **#1** doc expiry · **#3** KnowledgeModel 实质拆分 (façade 阶段) · **#5** LlmClient 三路径合一 · **#7** AgentChatService 拆分 · **#10** mcp/ → tools/ rename (D4 Kit 实际接入后续评估, 2026-09-06)
 
 详细: [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md) §7 + [`docs/specs/`](./docs/specs/)
 
