@@ -96,9 +96,17 @@ export type {
   LlmCallRequest,
   LlmCallResult,
   LlmErrorKind,
+  LlmFunctionCallNameArgs,
+  LlmFunctionDefinition,
+  LlmToolCall,
+  LlmToolDefinition,
 } from './llm/LlmTypes';
 export type { LlmGuardJsonOptions, LlmGuardJsonResult, LlmGuardValidationResult, LlmJsonValidator } from './llm/LlmGuard';
 export type { LlmCaller } from './llm/LlmGuard';
+export { ToolRegistry } from './tools/ToolRegistry';
+export { ToolLoop } from './tools/ToolLoop';
+export type { AgentTool, ToolResult } from './tools/ToolRegistry';
+export type { ToolLoopOptions } from './tools/ToolLoop';
 
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
 //   OcrConfig:  单例, preferences 持久化 endpoint + enabled, 真机部署改 IP

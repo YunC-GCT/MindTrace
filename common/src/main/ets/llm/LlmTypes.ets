@@ -74,7 +74,8 @@ export type LlmErrorKind =
   | 'STREAM_FAILED'     // 流式传输中断
   | 'PERSIST_ERROR'     // preferences 读写失败
   | 'NORMALIZE_KEYWORD_REJECTED' // LlmConfig 拒绝保留关键词
-  | 'TOOL_LOOP_MAX_STEPS';       // ToolLoop 超过 maxSteps (spec 014)
+  | 'TOOL_LOOP_MAX_STEPS'       // ToolLoop 超过 maxSteps (spec 014)
+  | 'TOOL_REGISTRY_ERROR';      // ToolRegistry 重名/命名非法注册 (spec 014)
 
 export class LlmError extends Error {
   public kind: LlmErrorKind;
