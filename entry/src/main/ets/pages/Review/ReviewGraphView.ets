@@ -4,7 +4,7 @@ import {
   R_FULL, R_LG, R_MD,
   S_2, S_3, S_4, S_5,
   W_BOLD, W_SEMIBOLD,
-  KnowledgeUnit, NoteItem,
+  KnowledgeUnit, NoteItem, Toast,
 } from "common"
 import { promptAction } from "@kit.ArkUI"
 import { AppIcon } from "../../shared/atoms/AppIcon"
@@ -155,7 +155,7 @@ export struct ReviewGraphView {
   private reloadGalaxy(keepSelection: boolean): void {
     this.vm.load(getContext(this)).then((ok: boolean): void => {
       if (!ok) {
-        try { promptAction.showToast({ message: "知识星系加载失败", duration: 1500 }) } catch (_e) {}
+        try { promptAction.showToast({ message: Toast.GALAXY_LOAD_FAILED, duration: 1500 }) } catch (_e) {}
         this.stopRotation()
         return
       }
@@ -290,9 +290,9 @@ export struct ReviewGraphView {
       }
       const v: number = AppStorage.get<number>("notesVersion") ?? 0
       AppStorage.setOrCreate("notesVersion", v + 1)
-      try { promptAction.showToast({ message: "已删除笔记", duration: 1200 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.NOTE_DELETED, duration: 1200 }) } catch (_e) {}
     } else {
-      try { promptAction.showToast({ message: "删除笔记失败", duration: 1500 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.NOTE_DELETE_FAILED, duration: 1500 }) } catch (_e) {}
     }
   }
 

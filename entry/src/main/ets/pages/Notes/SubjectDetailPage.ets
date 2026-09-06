@@ -2,7 +2,7 @@
 //  pages/Notes/SubjectDetailPage.ets - subject-level notes page
 // ============================================================================
 
-import { BG_DARK, KnowledgeUnit, normalizeNoteType, NOTE_TYPE_ALL_KEY, NoteItem } from "common"
+import { BG_DARK, KnowledgeUnit, normalizeNoteType, NOTE_TYPE_ALL_KEY, NoteItem, Toast } from "common"
 import { promptAction, router } from "@kit.ArkUI"
 import { NoteDetailOverlay } from "../../overlays/NoteDetailOverlay/NoteDetailOverlay"
 import { NotesViewModel } from "../../viewmodels/NotesViewModel"
@@ -57,7 +57,7 @@ struct SubjectDetailPage {
     this.loadingReloadKey = reloadKey
     this.vm.loadNotes(getContext(this)).then((ok: boolean): void => {
       if (!ok) {
-        try { promptAction.showToast({ message: "笔记加载失败", duration: 1500 }) } catch (_e) {}
+        try { promptAction.showToast({ message: Toast.NOTE_LOAD_FAILED, duration: 1500 }) } catch (_e) {}
         return
       }
       this.ensureSubject()
@@ -134,9 +134,9 @@ struct SubjectDetailPage {
       invalidateDetailRender(id)
       this.selectedNote = null
       this.selectedUnit = null
-      try { promptAction.showToast({ message: "Note deleted", duration: 1200 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.NOTE_DELETED, duration: 1200 }) } catch (_e) {}
     } else {
-      try { promptAction.showToast({ message: "Delete failed", duration: 1500 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.NOTE_DELETE_FAILED, duration: 1500 }) } catch (_e) {}
     }
   }
 

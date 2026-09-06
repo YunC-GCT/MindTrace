@@ -2,7 +2,7 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4 } from "common"
+import { BG_DARK, BORDER, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4, Toast } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
@@ -35,7 +35,7 @@ struct AiSettingsPage {
   private reload(): void {
     this.vm.load().then((ok: boolean): void => {
       if (!ok) {
-        try { promptAction.showToast({ message: "配置加载失败", duration: 1500 }) } catch (_e) {}
+        try { promptAction.showToast({ message: Toast.CONFIG_LOAD_FAILED, duration: 1500 }) } catch (_e) {}
       }
     })
   }
@@ -43,7 +43,7 @@ struct AiSettingsPage {
   private save(): void {
     this.vm.save().then((ok: boolean): void => {
       try {
-        promptAction.showToast({ message: ok ? "已保存" : "保存失败", duration: 1500 })
+        promptAction.showToast({ message: ok ? Toast.PLAN_SAVE_OK : Toast.PLAN_SAVE_FAILED, duration: 1500 })
       } catch (_e) {}
     })
   }
@@ -51,14 +51,14 @@ struct AiSettingsPage {
   private reset(): void {
     this.vm.reset().then((ok: boolean): void => {
       if (!ok) {
-        try { promptAction.showToast({ message: "重置失败", duration: 1500 }) } catch (_e) {}
+        try { promptAction.showToast({ message: Toast.PLAN_RESET_FAILED, duration: 1500 }) } catch (_e) {}
       }
     })
   }
 
   private test(): void {
     if (this.vm.apiKey.trim().length === 0) {
-      try { promptAction.showToast({ message: "请先输入 API Key", duration: 1500 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.API_KEY_REQUIRED, duration: 1500 }) } catch (_e) {}
       return
     }
     this.vm.test()

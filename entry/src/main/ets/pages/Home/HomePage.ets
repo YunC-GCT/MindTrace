@@ -8,7 +8,7 @@
 //        ReminderBanner · HomeTopBar · HomeRecentNotes · NoteDetailOverlay · NoteItemMapper
 // ============================================================================
 
-import { BG_DARK, DUR_SLOW, NoteItem, KnowledgeUnit } from "common"
+import { BG_DARK, DUR_SLOW, NoteItem, KnowledgeUnit, Toast } from "common"
 import { promptAction } from "@kit.ArkUI"
 import { FloatingButton } from "./FloatingButton"
 import { HeroBanner } from "./HeroBanner"
@@ -57,7 +57,7 @@ export struct HomePage {
       if (ok) {
         this.loadedNotesVersion = version
       } else {
-        try { promptAction.showToast({ message: "Failed to load notes", duration: 1500 }) } catch (_e) {}
+        try { promptAction.showToast({ message: Toast.NOTE_LOAD_FAILED, duration: 1500 }) } catch (_e) {}
       }
     }).finally((): void => {
       if (this.loadingNotesVersion === version) {
@@ -101,9 +101,9 @@ export struct HomePage {
       invalidateDetailRender(id)
       this.selectedNote = null
       this.selectedUnit = null
-      try { promptAction.showToast({ message: "Note deleted", duration: 1200 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.NOTE_DELETED, duration: 1200 }) } catch (_e) {}
     } else {
-      try { promptAction.showToast({ message: "Delete failed", duration: 1500 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.NOTE_DELETE_FAILED, duration: 1500 }) } catch (_e) {}
     }
   }
 

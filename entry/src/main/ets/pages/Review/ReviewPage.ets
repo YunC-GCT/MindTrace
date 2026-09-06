@@ -7,7 +7,7 @@
 //  依赖: StudyPlanViewModel · UiDataCacheService · ReviewGraphView ·
 //        ReviewPlanView · ReviewTabSwitch · shared/atoms/AppIcon
 // ============================================================================
-import { BG_DARK, BORDER, GLASS_8, MINT, S_2, S_3, S_5, R_LG, F_BASE, StudyPlanItem } from "common"
+import { BG_DARK, BORDER, GLASS_8, MINT, S_2, S_3, S_5, R_LG, F_BASE, StudyPlanItem, Toast } from "common"
 import { promptAction } from "@kit.ArkUI"
 import { StudyPlanViewModel } from "../../viewmodels/StudyPlanViewModel"
 import { ReviewGraphView } from "./ReviewGraphView"
@@ -53,7 +53,7 @@ export struct ReviewPage {
     this.loadingPlanVersion = version
     this.vm.init(getContext(this)).then((): void => {
       if (this.vm.initError) {
-        try { promptAction.showToast({ message: "复习数据加载失败", duration: 1500 }) } catch (_e) {}
+        try { promptAction.showToast({ message: Toast.PLAN_LOAD_FAILED, duration: 1500 }) } catch (_e) {}
       }
       if (this.vm.initError) {
         return
@@ -136,7 +136,7 @@ export struct ReviewPage {
   private submitAddPlan = (): void => {
     const trimmed: string = this.addTitle.trim()
     if (trimmed.length === 0) {
-      try { promptAction.showToast({ message: "请输入复习计划", duration: 1200 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.PLAN_INPUT_REQUIRED, duration: 1200 }) } catch (_e) {}
       return
     }
     this.vm.newTitle = trimmed
@@ -159,7 +159,7 @@ export struct ReviewPage {
     const nextIds: string[] = this.liveIds.filter((id: string): boolean => this.hasActivePlan(id))
     nextIds.push(item.id)
     this.liveIds = nextIds
-    try { promptAction.showToast({ message: "已加入实时队列", duration: 1000 }) } catch (_e) {}
+    try { promptAction.showToast({ message: Toast.ENQUEUED_REALTIME, duration: 1000 }) } catch (_e) {}
   }
 
   private addToLiveTop = (item: StudyPlanItem): void => {
@@ -167,7 +167,7 @@ export struct ReviewPage {
       .filter((id: string): boolean => this.hasActivePlan(id) && id !== item.id)
     nextIds.unshift(item.id)
     this.liveIds = nextIds
-    try { promptAction.showToast({ message: "已移至实时队列顶部", duration: 1000 }) } catch (_e) {}
+    try { promptAction.showToast({ message: Toast.MOVED_TO_REALTIME_TOP, duration: 1000 }) } catch (_e) {}
   }
 
   private moveLivePlan = (item: StudyPlanItem, direction: number): void => {
@@ -210,7 +210,7 @@ export struct ReviewPage {
     const nextIds: string[] = this.planOrderIds.filter((id: string): boolean => id !== item.id)
     nextIds.unshift(item.id)
     this.planOrderIds = nextIds
-    try { promptAction.showToast({ message: "已移回复习队列", duration: 1000 }) } catch (_e) {}
+    try { promptAction.showToast({ message: Toast.MOVED_TO_REVIEW, duration: 1000 }) } catch (_e) {}
   }
 
   private crossToReview = (item: StudyPlanItem): void => {
@@ -218,7 +218,7 @@ export struct ReviewPage {
     const nextIds: string[] = this.planOrderIds.filter((id: string): boolean => id !== item.id)
     nextIds.unshift(item.id)
     this.planOrderIds = nextIds
-    try { promptAction.showToast({ message: "已移回复习队列", duration: 1000 }) } catch (_e) {}
+    try { promptAction.showToast({ message: Toast.MOVED_TO_REVIEW, duration: 1000 }) } catch (_e) {}
   }
 
   private deletePlan = (item: StudyPlanItem): void => {
@@ -226,12 +226,12 @@ export struct ReviewPage {
     this.planOrderIds = this.planOrderIds.filter((id: string): boolean => id !== item.id)
     if (this.vm.items.length === 0) {
       this.previewItems = this.previewItems.filter((candidate: StudyPlanItem): boolean => candidate.id !== item.id)
-      try { promptAction.showToast({ message: "已删除计划", duration: 1000 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.PLAN_DELETED, duration: 1000 }) } catch (_e) {}
       return
     }
     this.vm.deleteItem(item).then((): void => {
       this.pruneLiveQueue()
-      try { promptAction.showToast({ message: "已删除计划", duration: 1000 }) } catch (_e) {}
+      try { promptAction.showToast({ message: Toast.PLAN_DELETED, duration: 1000 }) } catch (_e) {}
     })
   }
 

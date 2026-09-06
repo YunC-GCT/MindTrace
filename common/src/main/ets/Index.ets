@@ -139,6 +139,10 @@ export type {
   ContentValidationResult,
 } from './render/ContentProtocol';
 
+// ========== 评审前打磨: Toast 文案首例 (fix/demo-polish-2026-09-06) ==========
+//   首批 16 条最常用 toast 集中; 后续加 en/ 目录后用 $r() + ResourceManager 替换
+export { Toast } from './i18n/Strings';
+
 // ========== D4 Kit facade 接缝契约 (spec 013) ==========
 //   只声明契约, 不 import @kit.*; 实现由 entry 层注入
 export type {

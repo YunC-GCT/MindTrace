@@ -8,7 +8,7 @@
 //        SubjectGrid · SubjectViewToggle
 // ============================================================================
 
-import { BG_DARK, TEXT, S_4, S_5, F_BASE, W_SEMIBOLD } from "common"
+import { BG_DARK, TEXT, S_4, S_5, F_BASE, W_SEMIBOLD, Toast } from "common"
 import { promptAction, router } from "@kit.ArkUI"
 import { NotesHeader } from "./NotesHeader"
 import { NotesEmptyState } from "./NotesEmptyState"
@@ -51,7 +51,7 @@ export struct NotesPage {
       if (ok) {
         this.loadedNotesVersion = version
       } else {
-        try { promptAction.showToast({ message: "笔记加载失败", duration: 1500 }) } catch (_e) {}
+        try { promptAction.showToast({ message: Toast.NOTE_LOAD_FAILED, duration: 1500 }) } catch (_e) {}
       }
     }).finally((): void => {
       if (this.loadingNotesVersion === version) {

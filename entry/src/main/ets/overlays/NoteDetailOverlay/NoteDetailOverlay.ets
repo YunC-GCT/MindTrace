@@ -16,6 +16,7 @@ import {
   uuid,
   isKnownNoteType,
   normalizeNoteType,
+  Toast,
 } from 'common'
 import { promptAction } from '@kit.ArkUI'
 import { common } from '@kit.AbilityKit'
@@ -300,7 +301,7 @@ export struct NoteDetailOverlay {
   private startEdit = (): void => {
     const current: KnowledgeUnit | null = this.effectiveUnit()
     if (current === null) {
-      promptAction.showToast({ message: '笔记仍在加载', duration: 1200 })
+      promptAction.showToast({ message: Toast.NOTE_STILL_LOADING, duration: 1200 })
       return
     }
     this.loadForm(current)
@@ -364,11 +365,11 @@ export struct NoteDetailOverlay {
     const summary: string = this.summaryText.trim()
     const content: string = this.contentText.trim()
     if (title.length === 0) {
-      promptAction.showToast({ message: '请输入标题', duration: 1200 })
+      promptAction.showToast({ message: Toast.TITLE_REQUIRED, duration: 1200 })
       return
     }
     if (summary.length === 0 && content.length === 0) {
-      promptAction.showToast({ message: '摘要和正文至少填写一项', duration: 1500 })
+      promptAction.showToast({ message: Toast.SUMMARY_OR_CONTENT_REQUIRED, duration: 1500 })
       return
     }
 
@@ -387,10 +388,10 @@ export struct NoteDetailOverlay {
       this.bumpNotesVersion()
       UiDataCacheService.setDetail(saved, UiDataCacheService.currentNotesVersion())
       this.onSaved(saved)
-      promptAction.showToast({ message: this.isCreating ? '笔记已新建' : '笔记已保存', duration: 1200 })
+      promptAction.showToast({ message: this.isCreating ? Toast.NOTE_CREATE_OK : Toast.NOTE_UPDATE_OK, duration: 1200 })
     } catch (e) {
       const message: string = (e as Error).message ?? String(e)
-      promptAction.showToast({ message: '保存失败：' + message, duration: 1800 })
+      promptAction.showToast({ message: Toast.saveFailed(message), duration: 1800 })
     }
     this.saving = false
   }
@@ -547,7 +548,7 @@ export struct NoteDetailOverlay {
   }
 
   private mockShare = (): void => {
-    promptAction.showToast({ message: '分享功能暂未开放', duration: 1500 })
+    promptAction.showToast({ message: Toast.SHARE_NOT_OPEN, duration: 1500 })
   }
 
   private confirmDelete = (): void => {
