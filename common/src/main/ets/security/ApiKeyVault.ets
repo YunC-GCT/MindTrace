@@ -64,33 +64,43 @@ export class ApiKeyVault {
 
   /**
    * 写入 API key 到 AssetStoreKit
-   * - 如果 asset 不存在 → asset.add()
-   * - 如果 asset 已存在(BusinessError 24000003)→ asset.update()(覆盖旧值)
+   * - 如果 asset 不存在 → asset.add(attributes): attributes 必须含 ALIAS + SECRET + ACCESSIBILITY
+   * - 如果 asset 已存在(BusinessError 24000003)→ asset.update(query, attrsToUpdate):
+   *     attrsToUpdate 只能含 SECRET(SDK 约束: ALIAS immutable, ACCESSIBILITY 不可更新)
+   *
+   * 一手信源: D:\HarmoNova\DevEco Studio\sdk\default\openharmony\ets\api\@ohos.security.asset.d.ts
+   *           https://www.seaxiang.com/blog/Xo8bKb (update 文档)
    *
    * @param key — API key 字符串(trim 由调用方负责)
    */
   public static async put(key: string): Promise<void> {
-    const queryMap: asset.AssetMap = new Map();
-    queryMap.set(asset.Tag.ALIAS, ApiKeyVault.strToBytes(ASSET_NAME));
+    const aliasBytes: Uint8Array = ApiKeyVault.strToBytes(ASSET_NAME);
+    const secretBytes: Uint8Array = ApiKeyVault.strToBytes(key);
 
-    const attributes: asset.AssetMap = new Map();
-    attributes.set(asset.Tag.ALIAS, ApiKeyVault.strToBytes(ASSET_NAME));
-    attributes.set(asset.Tag.SECRET, ApiKeyVault.strToBytes(key));
-    // API 9 不支持 DEVICE_UNLOCKED,使用默认行为(DEVICE_POWERED_ON)
-    attributes.set(asset.Tag.ACCESSIBILITY, asset.Accessibility.DEVICE_POWERED_ON);
+    // add() 用的 attributes: 必须含 ALIAS + SECRET + ACCESSIBILITY
+    const addAttrs: asset.AssetMap = new Map();
+    addAttrs.set(asset.Tag.ALIAS, aliasBytes);
+    addAttrs.set(asset.Tag.SECRET, secretBytes);
+    addAttrs.set(asset.Tag.ACCESSIBILITY, asset.Accessibility.DEVICE_POWERED_ON);
+
+    // update() 用的 query: 用 ALIAS 匹配要更新的 asset
+    const updateQuery: asset.AssetMap = new Map();
+    updateQuery.set(asset.Tag.ALIAS, aliasBytes);
+
+    // update() 用的 attributesToUpdate: SDK 约束 — 只 SECRET(ALIAS immutable, ACCESSIBILITY 不可更新)
+    const updateAttrs: asset.AssetMap = new Map();
+    updateAttrs.set(asset.Tag.SECRET, secretBytes);
 
     try {
-      await asset.add(attributes);
+      await asset.add(addAttrs);
     } catch (e) {
       // BusinessError 24000003: asset already exists — fallback 到 update
-      const err: Error = e as Error;
       const errCode: number = (e as Record<string, Object>)['code'] as number;
       if (errCode === 24000003) {
-        // 用 ALIAS 查询,覆盖 SECRET + ACCESSIBILITY
-        await asset.update(queryMap, attributes);
+        await asset.update(updateQuery, updateAttrs);
         return;
       }
-      throw err;
+      throw e as Error;
     }
   }
 

@@ -135,6 +135,53 @@ test('ApiKeyVault.put() falls back to update on "already exists" error', () => {
   );
 });
 
+// 测试 7c: update fallback 的 attributesToUpdate 必须独立(不含 ALIAS/ACCESSIBILITY)
+// SDK 约束: asset.update(query, attrsToUpdate) 的 attrsToUpdate 只能含 SECRET + DATA_LABEL_*
+// ALIAS immutable, ACCESSIBILITY 不在 update attrsToUpdate 列表中
+// 来源: @ohos.security.asset.d.ts + seaxiang.com/blog/Xo8bKb
+test('ApiKeyVault.put() update fallback uses SDK-valid attributesToUpdate (no ALIAS / no ACCESSIBILITY)', () => {
+  // 找真正的 asset.update(<var>, <var>) 函数调用(非注释)
+  // regex 匹配 `asset.update(变量, 变量)` 形式
+  const updateCallRegex = /asset\.update\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/g;
+  const matches = [];
+  let m;
+  while ((m = updateCallRegex.exec(apiKeyVault)) !== null) {
+    matches.push(m);
+  }
+  assert.ok(matches.length >= 1, 'at least one asset.update(<var>, <var>) call must exist');
+  // 取最后一个 update 调用(put() 内的)
+  const lastUpdate = matches[matches.length - 1];
+  const updateIdx = lastUpdate.index;
+  const attrsVarName = lastUpdate[2];  // 第二个参数名 = attributesToUpdate
+
+  // 从 update 调用向前找最近的 `attrsVarName =` 声明
+  const declRegex = new RegExp(`(?:const|let|var)\\s+${attrsVarName}\\s*[:=]`, 'g');
+  const declMatch = declRegex.exec(apiKeyVault);
+  assert.ok(declMatch !== null, `variable ${attrsVarName} must be declared before asset.update call`);
+
+  // 抓 attrsVarName 声明到 asset.update 调用的代码(attrsToUpdate 构造)
+  const attrsConstruction = apiKeyVault.substring(declMatch.index, updateIdx);
+
+  // 验证 attrsToUpdate 不包含 ALIAS/ACCESSIBILITY
+  assert.doesNotMatch(
+    attrsConstruction,
+    /asset\.Tag\.ALIAS/,
+    `attributesToUpdate (${attrsVarName}) must NOT set asset.Tag.ALIAS (SDK: ALIAS is immutable in update)`
+  );
+  assert.doesNotMatch(
+    attrsConstruction,
+    /asset\.Tag\.ACCESSIBILITY/,
+    `attributesToUpdate (${attrsVarName}) must NOT set asset.Tag.ACCESSIBILITY (SDK: not in update attrsToUpdate list)`
+  );
+
+  // attrsToUpdate 必须至少含 SECRET(SDK 实际允许但语义需要)
+  assert.match(
+    attrsConstruction,
+    /asset\.Tag\.SECRET/,
+    `attributesToUpdate (${attrsVarName}) must set asset.Tag.SECRET (这是 update 的实际目的)`
+  );
+});
+
 // 测试 8: clear 方法存在
 test('ApiKeyVault.clear() removes AssetStoreKit entry', () => {
   assert.match(
