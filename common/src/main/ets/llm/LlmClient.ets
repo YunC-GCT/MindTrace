@@ -1,4 +1,4 @@
-// MindTrace - LLM HTTP 客户端(OpenAI 兼容协议)
+﻿﻿// MindTrace - LLM HTTP 客户端(OpenAI 兼容协议)
 // 位置: common/src/main/ets/llm/LlmClient.ets
 // 责任: Z (Mavis)
 // 创建: 2026-07-14 — 主 Agent 业务 LLM 调用基础设施
@@ -325,7 +325,6 @@ export class LlmClient {
         clearTimeout(timer);
         clearTimeout(firstByteTimer);
         console.info('[LlmClient] dataEnd, buffer: ' + sseLineBuffer.length.toString());
-        console.error('[DEBUG-a4f2] LlmClient.callStreamInternal: dataEnd, dataReceived=' + dataReceived.toString() + ' buffer=' + sseLineBuffer.length.toString());
 
         // 处理 buffer 中剩余数据
         if (sseLineBuffer.trim().length > 0) {
@@ -337,7 +336,6 @@ export class LlmClient {
       });
 
       // 发起流式请求
-      console.error('[DEBUG-a4f2] LlmClient.callStreamInternal: calling requestInStream endpoint=' + endpointUrl);
       httpRequest.requestInStream(endpointUrl, {
         method: http.RequestMethod.POST,
         header: {
@@ -349,7 +347,6 @@ export class LlmClient {
         readTimeout: timeoutMs,
       }, (err: Error, data: number): void => {
         console.info('[LlmClient] requestInStream cb: err=' + (err ? err.message : 'null') + ' code=' + data.toString());
-        console.error('[DEBUG-a4f2] LlmClient.callStreamInternal: requestInStream cb err=' + (err ? err.message : 'null') + ' code=' + data.toString());
         if (err) {
           console.error('[LlmClient] stream err: ' + err.message);
           if (!streamEnded) {
@@ -396,7 +393,6 @@ export class LlmClient {
     //   不是 SSE 标准的 \n\n 双换行分隔。LlmClient 之前找 \n\n 永远找不到 event 边界,
     //   buffer 累积到 dataEnd 还没 emit 0 次。
     //   (参考 OpenAI 官方社区: https://community.openai.com/t/80861)
-    console.error(`[DEBUG-a4f2] processSseBuffer entry: buffer.len=${buffer.length}`);
     while (true) {
       const singleNewlineIdx: number = remaining.indexOf('\n');
       if (singleNewlineIdx < 0) {
@@ -413,7 +409,6 @@ export class LlmClient {
         continue;
       }
       if (trimmed.indexOf('data: ') !== 0) {
-        console.error(`[DEBUG-a4f2] processSseBuffer skip non-data line (head): ${trimmed.length > 80 ? trimmed.substring(0, 80) : trimmed}`);
         continue;
       }
 
@@ -429,7 +424,6 @@ export class LlmClient {
         // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
         const dataStrHead: string = dataStr.length > 100 ? dataStr.substring(0, 100) : dataStr;
         const errMsg: string = (e as Error).message !== undefined ? (e as Error).message : String(e);
-        console.error(`[DEBUG-a4f2] processSseBuffer JSON.parse failed: dataStr.head=${dataStrHead} err=${errMsg}`);
         return eventText + '\n' + remaining;
       }
     }
@@ -479,12 +473,10 @@ export class LlmClient {
       return;
     }
     const delta: LlmStreamDelta = chunk.choices[0].delta;
-    // [DEBUG-a4f2] 临时 instrumentation: 确认 delta 内容(reasoning_content / content 各自非空 / 长度)
     // console.error 显红色 + 默认 logcat 级别可见,避免用户 grep 不到
     // P1 bug fix 2026-09-07: DeepSeek 流式响应 delta 字段可能是 null (不是 undefined)
     //   例如 {"content": "...", "reasoning_content": null}
     //   必须用 != null 同时检查 null + undefined,避免 Cannot read property length of null
-    console.error(`[DEBUG-a4f2] tryEmitSseDelta: rc=${delta.reasoning_content != null ? delta.reasoning_content.length : -1}c=${delta.content != null ? delta.content.length : -1}`);
     // DeepSeek 思考模式: reasoning_content 先于 content 到达
     if (delta.reasoning_content != null && delta.reasoning_content.length > 0) {
       onDelta(delta.reasoning_content, 'reasoning');

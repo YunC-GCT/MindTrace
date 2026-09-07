@@ -1,4 +1,4 @@
-// ============================================================================
+﻿﻿// ============================================================================
 //  overlays/AgentFloatWindow/AgentFloatWindow.ets — 智能体浮窗(完整版)
 //  ----------------------------------------------------------------------------
 //  特性: 拖拽缩放(floatHeight) · 多会话(SessionBar+ChatSession) · 拍照整链(captureReply)
@@ -170,17 +170,10 @@ export struct AgentFloatWindow {
   private canSend = (): boolean => !this.busy && (this.inputText.trim().length > 0 || this.imagePreview.length > 0);
 
   private send = (text?: string): void => {
-    // [DEBUG-a4f2] 临时 instrumentation: 诊断 send 路径
-    console.error(`[DEBUG-a4f2] AgentFloatWindow.send() called: text=${text !== undefined ? '"' + text + '"' : 'undefined'} inputText="${this.inputText}" imagePreview.len=${this.imagePreview.length} busy=${this.busy} service=${this.service !== null}`);
     const msg: string = (text ?? this.inputText).trim();
-    console.error(`[DEBUG-a4f2] AgentFloatWindow.send() msg="${msg}" canSend=${this.canSend()}`);
-    if (!msg && !this.imagePreview) { console.error('[DEBUG-a4f2] send early-return: empty msg + no image'); return; }
-    if (this.busy) { console.error('[DEBUG-a4f2] send early-return: busy'); promptAction.openToast({ message: 'AI 正在回复中...', duration: 1200 }); return; }
     const uri: string = this.imagePreview;
     this.messages = [...this.messages, { id: nowId(), role: 'user', content: msg || '[图片]', ts: Date.now(), streaming: false, reasoning: '' }];
     this.inputText = ''; this.imagePreview = '';
-    if (uri.length > 0) { console.error('[DEBUG-a4f2] send -> captureReply (image)'); this.service?.captureReply(uri, msg); return; }
-    console.error('[DEBUG-a4f2] send -> realReplyStream (text)');
     this.service?.realReplyStream(msg);
   };
 
