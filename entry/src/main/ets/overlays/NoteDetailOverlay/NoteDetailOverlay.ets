@@ -24,7 +24,7 @@ import { NoteCloseButton } from './NoteCloseButton'
 import { NoteDetailMeta } from './NoteDetailMeta'
 import { NoteDetailBody } from './NoteDetailBody'
 import { NoteActionBar } from './NoteActionBar'
-import { NoteIconButton } from './NoteIconButton'
+import { IconButton } from '../../shared/atoms/IconButton'
 import { NoteEditForm } from './NoteEditForm'
 import { UiDataCacheService } from '../../services/UiDataCacheService'
 import { invalidateDetailRender } from './model/DetailRenderCache'
@@ -88,7 +88,7 @@ export struct NoteDetailOverlay {
           .alignItems(HorizontalAlign.Start)
 
           if (!this.isCreating && !this.isEditing && this.effectiveUnit() !== null) {
-            NoteIconButton({
+            IconButton({
               name: 'trash',
               color: DANGER,
               onTap: (): void => this.confirmDelete(),
@@ -132,7 +132,7 @@ export struct NoteDetailOverlay {
         if (this.isEditing) {
           Row() {
             Blank()
-            NoteIconButton({
+            IconButton({
               name: 'close',
               color: TEXT_2,
               isEnabled: !this.saving,
@@ -140,14 +140,14 @@ export struct NoteDetailOverlay {
             })
             Blank().width(8)
             if (this.saving) {
-              NoteIconButton({
+              IconButton({
                 name: 'more',
                 color: TEXT_3,
                 isEnabled: false,
                 onTap: (): void => {},
               })
             } else {
-              NoteIconButton({
+              IconButton({
                 name: 'check',
                 color: MINT,
                 isEnabled: true,
