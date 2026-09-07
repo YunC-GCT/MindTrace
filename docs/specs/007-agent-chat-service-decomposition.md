@@ -63,6 +63,11 @@ class ChatStatusMachine {
 }
 ```
 
+**PR2 design notes (post-`0399d8f`, 2026-09-07):**
+- `advance` signature: spec 伪代码 L60 写 `advance(reason: string): void`（observable step 字段 + void 返回），实际 PR2 实现为 `advance(step: ChatStatusStep): ChatStatusMeta`（纯函数返回 meta，给 setStatusMeta 直用）。后者更适合 facade 路径（无需 ChatStatusModel 自己持 step 状态）—— 保留。
+- `step` observable 字段（L59）+ `reset()` 方法（L61）**PR2 未实现**，留给 PR3 与 ReplyService 拆分一起裁决：是否需要 observable step 取决于 ReplyService 是否要 query step（PR3 时再决定）。
+- `finishBusy()`（setStatusMeta(null) + setBusy(false)）**不挪入 ChatStatusMachine**：busy lifecycle 由 AgentChatService 持有，状态机只负责 step→meta 转换。
+
 `AgentChatService` becomes a thin facade that the UI calls:
 
 ```ts
@@ -135,7 +140,7 @@ After PR 3: 3 services extracted, AgentChatService is a thin facade.
 | Class | Tests | What each verifies |
 |-------|-------|-------------------|
 | `IntentClassifier` | 3 | (1) note-generation intent detected; (2) chat intent detected; (3) deny intent rejected |
-| `ChatStatusMachine` | 2 | (1) initial state correct; (2) advance through full 12-step cycle |
+| `ChatStatusMachine` | 2 | (1) initial state correct; (2) advance through full 13-step cycle |
 | `ReplyService` | 4 | (1) non-streaming reply flow; (2) streaming with onDelta callback; (3) image reply via captureReply; (4) memory write on success |
 | `AgentChatService` (facade) | 1 | (1) all 3 delegate paths work end-to-end |
 
@@ -153,6 +158,14 @@ After PR 3: 3 services extracted, AgentChatService is a thin facade.
 - [ ] `node scripts/arkts-lint/index.mjs --quiet` shows warnings count reduced by ~80
 - [ ] `node --test scripts/arkts-lint/tests/*.test.mjs` all 65+ pass
 - [ ] No change in observable behavior: same replies, same status transitions, same memory writes
+
+## Progress (2026-09-07)
+
+| PR | Scope | Status | Notes |
+|----|-------|--------|-------|
+| PR1 | extract `IntentClassifier` | ✅ landed (`23be44c`) | IntentClassifier.ets 326 LOC; 4 Node structural guards; Hypium deferred to user |
+| PR2 | extract `ChatStatusMachine` | ✅ landed (`8f5ce3f` + `0399d8f` + `0147078`) | ChatStatusMachine.ets 43 LOC; AgentChatService 562 → 516; 6 Node structural guards; `advance(step): ChatStatusMeta` 纯函数形式（vs spec L60 `advance(reason): void`） |
+| PR3 | extract `ReplyService`, delete legacy | ⏳ pending | 待 spec L59/L61 (`step` 字段 + `reset()` 方法) 决裁 + facade ≤100 LOC 收敛 + Hypium 补齐 |
 
 ## Sequence (3 atomic PRs)
 
