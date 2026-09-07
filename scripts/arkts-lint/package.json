@@ -9,7 +9,7 @@
     "scan": "node index.mjs --quiet",
     "baseline": "node index.mjs --baseline=docs/lint-baseline-20260901-ast.json --quiet",
     "check-rules": "node index.mjs --check-rules",
-    "test": "node --test tests/parser.test.mjs tests/registry.test.mjs tests/rules-official.test.mjs tests/knowledge-galaxy-fixture-flag.test.mjs tests/llm-config-throw.test.mjs"
+    "test": "node --test tests/parser.test.mjs tests/registry.test.mjs tests/rules-official.test.mjs tests/knowledge-galaxy-fixture-flag.test.mjs tests/llm-config-throw.test.mjs tests/agentchat-intent-classifier.test.mjs tests/agentchat-status-machine.test.mjs"
   },
   "dependencies": {
     "@typescript-eslint/parser": "^8.18.0",

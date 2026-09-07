@@ -1,5 +1,5 @@
 // ============================================================================
-//  shared/components/MathTextRenderer.ets - KaTeX Web renderer wrapper
+//  shared/atoms/MathTextRenderer.ets - KaTeX Web renderer wrapper
 // ============================================================================
 
 import {

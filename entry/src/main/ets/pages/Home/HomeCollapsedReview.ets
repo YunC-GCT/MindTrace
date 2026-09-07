@@ -9,7 +9,7 @@ import {
   F_XS, F_BASE, F_LG,
   W_BOLD, W_SEMIBOLD,
 } from "common"
-import { AppIcon } from "../../shared/components/AppIcon"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 
 @Component
 export struct HomeCollapsedReview {

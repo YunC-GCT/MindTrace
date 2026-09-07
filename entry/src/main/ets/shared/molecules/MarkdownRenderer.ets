@@ -1,5 +1,5 @@
 // ============================================================================
-//  shared/components/MarkdownRenderer.ets - lightweight native markdown renderer
+//  shared/molecules/MarkdownRenderer.ets - lightweight native markdown renderer
 // ============================================================================
 
 import {
@@ -19,8 +19,8 @@ import {
 import { MarkdownBlock } from '../../utils/MarkdownParser'
 import { MarkdownInlineSegment } from '../../utils/MarkdownInlineParser'
 import { cachedParseMarkdown, cachedParseMarkdownInline } from '../../utils/MarkdownParseCache'
-import { MathTextRenderer } from './MathTextRenderer'
-import { AppIcon } from './AppIcon'
+import { MathTextRenderer } from '../atoms/MathTextRenderer'
+import { AppIcon } from '../atoms/AppIcon'
 
 const MARKDOWN_INITIAL_BLOCK_LIMIT: number = 3
 const MARKDOWN_BLOCK_BATCH_SIZE: number = 3

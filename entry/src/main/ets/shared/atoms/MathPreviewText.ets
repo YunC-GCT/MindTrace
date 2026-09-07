@@ -1,9 +1,9 @@
 // ============================================================================
-// shared/components/MathPreviewText.ets - compact note preview with KaTeX fallback
+// shared/atoms/MathPreviewText.ets - compact note preview with KaTeX fallback
 // ============================================================================
 
 import { ContentExcerptBuilder, ContentProtocol, TEXT_3, F_SM } from 'common'
-import { MathTextRenderer } from './MathTextRenderer'
+import { MathTextRenderer } from '../atoms/MathTextRenderer'
 
 @Component
 export struct MathPreviewText {

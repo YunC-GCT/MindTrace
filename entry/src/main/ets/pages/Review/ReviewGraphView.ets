@@ -7,7 +7,7 @@ import {
   KnowledgeUnit, NoteItem,
 } from "common"
 import { promptAction } from "@kit.ArkUI"
-import { AppIcon } from "../../shared/components/AppIcon"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 import { NoteDetailOverlay } from "../../overlays/NoteDetailOverlay/NoteDetailOverlay"
 import {
   ChapterOrbit,

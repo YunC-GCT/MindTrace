@@ -14,12 +14,12 @@ import {
   DifficultyLevel,
   ReviewStatus,
   uuid,
-  DatabaseHelper,
   isKnownNoteType,
   normalizeNoteType,
 } from 'common'
 import { promptAction } from '@kit.ArkUI'
-import { NoteDao } from '../../database/NoteDao'
+import { common } from '@kit.AbilityKit'
+import { NoteEditService } from '../../services/NoteEditService'
 import { NoteCloseButton } from './NoteCloseButton'
 import { NoteDetailMeta } from './NoteDetailMeta'
 import { NoteDetailBody } from './NoteDetailBody'
@@ -374,17 +374,11 @@ export struct NoteDetailOverlay {
 
     this.saving = true
     try {
-      const store = await DatabaseHelper.init(getContext(this))
-      const dao: NoteDao = new NoteDao(store)
       const now: number = Date.now()
       const saved: KnowledgeUnit = this.isCreating
         ? this.buildManualUnit(now, title, summary, content)
         : this.buildUpdatedUnit(now, title, summary, content)
-      if (this.isCreating) {
-        await dao.insert(saved)
-      } else {
-        await dao.update(saved)
-      }
+      await NoteEditService.upsert(getContext(this) as common.UIAbilityContext, saved, this.isCreating)
       this.invalidateSavedRenderCaches(saved)
       this.localUnit = saved
       this.isEditing = false

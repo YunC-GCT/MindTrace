@@ -9,16 +9,33 @@ export const AGENTS_VERSION = 'v0.0.3';
 
 // 主 Agent 调度中枢(Z)
 export { Dispatcher } from './core/Dispatcher';
+export { CaptureGraph } from './graph/CaptureGraph';
+export type {
+  AgentState,
+  CaptureGraphError,
+  CaptureNode,
+  CaptureNodeResult,
+  CaptureStep,
+} from './graph/AgentState';
+export type { CaptureGraphOptions } from './graph/CaptureGraph';
 
 // 子 Agent(D 责任 - 写真实现,L 责任 - 写真实现)
 //   当前为 stub,接 DispatchPayload discriminated union
 //   D 接手: 替换 TypeClassifier.classify body
-//   L 接手: 替换 KnowledgeModel.structure body + NoteDao.insert/queryById
+//   spec 015: KnowledgeModel 重构为轻量编排 agent, 常量/提示词/真值检查拆分为协作服务
 export { TypeClassifier } from './agents/TypeClassifier';
 export type { TypeClassifierTextResult } from './agents/TypeClassifier';
 export { KnowledgeModel } from './agents/KnowledgeModel';
+export { PromptBuilder } from './agents/PromptBuilder';
+export { TruthCheckService } from './agents/TruthCheckService';
 export { OcrTool } from './mcp/tools/OcrTool';
 export type { OcrRecognitionResult } from './mcp/tools/OcrTool';
+
+// 模型与扩展类型
+export type { KnowledgeUnitExt, StructuredField, AiRawResponse } from './models/KnowledgeUnitExt';
+
+// 持久化接口 (D2 Ticket #5: entry 通过该接口注入 NoteDao 实现)
+export type { NoteDaoInterface } from './models/NoteDaoInterface';
 
 // 重新导出 DispatchPayload 类型(定义在 common/models/CaptureChain.ets)
 //   UI 端 (entry/) 可以 `import type { DispatchPayload } from 'agents'`

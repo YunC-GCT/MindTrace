@@ -2,7 +2,7 @@
 
 > **Date:** 2026-09-02
 > **Scope:** Is MindTrace's agent pipeline built on LangGraph (or any equivalent graph/state-machine framework)?
-> **Project:** MindTrace (`D:\HMgent\MathMind`)
+> **Project:** MindTrace (`<本地仓库根>`)
 
 ---
 

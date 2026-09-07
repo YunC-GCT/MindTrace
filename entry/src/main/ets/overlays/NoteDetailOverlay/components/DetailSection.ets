@@ -19,7 +19,7 @@ import {
   F_SM,
   W_BOLD,
 } from 'common'
-import { MarkdownRenderer } from '../../../shared/components/MarkdownRenderer'
+import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import {
   DETAIL_RENDER_PRIORITY_NORMAL,
   enqueueDetailRender,

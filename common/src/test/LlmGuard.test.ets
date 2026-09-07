@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ContentProtocol, LlmGuard } from '../main/ets/Index';
-import type { ContentValidationResult, LlmCaller, LlmGuardValidationResult, ChatMessage } from '../main/ets/Index';
+import type { ContentValidationResult, LlmCallRequest, LlmCallResult, LlmCaller, LlmGuardValidationResult, ChatMessage } from '../main/ets/Index';
 
 class FakeCaller implements LlmCaller {
   public calls: ChatMessage[][] = [];
@@ -11,11 +11,12 @@ class FakeCaller implements LlmCaller {
     this.replies = replies;
   }
 
-  async call(messages: ChatMessage[]): Promise<string> {
-    this.calls.push(messages.slice(0));
+  async call(request: LlmCallRequest): Promise<LlmCallResult> {
+    this.calls.push(request.messages.slice(0));
     const reply: string = this.replies[this.index] ?? this.replies[this.replies.length - 1];
     this.index += 1;
-    return reply;
+    const result: LlmCallResult = { text: reply, streamed: false };
+    return result;
   }
 }
 

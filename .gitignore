@@ -61,6 +61,11 @@ package-lock.json
 .reasonix/
 .zcode/
 
+# ===== One-off scratch (git-flow setup scripts / gh issue cache / PR bodies) =====
+# 一次性产物,跑完即可删;不入 commit
+.scratch/
+.scratch_*
+
 # ===== Research scratch (Phase 1 audit, cleanup after) =====
 docs/research/_fetched/
 

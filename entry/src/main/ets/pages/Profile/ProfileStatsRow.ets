@@ -17,7 +17,7 @@
 //  ============================================================================
 
 import { S_4 } from "common"
-import { StatsBox } from "../../shared/components/StatsBox"
+import { StatsBox } from "../../shared/atoms/StatsBox"
 
 @Component
 export struct ProfileStatsRow {
