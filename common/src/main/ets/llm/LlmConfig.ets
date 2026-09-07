@@ -229,7 +229,6 @@ export class LlmConfig {
     }
     const lower: string = t.toLowerCase();
     if (
-      lower === DEFAULT_MODEL ||
       lower.indexOf('v3') >= 0 ||
       lower.indexOf('flash') >= 0 ||
       lower.indexOf('deepseek-chat') >= 0 ||
