@@ -134,6 +134,20 @@ export type {
 // ========== MM-MD-v1 内容渲染协议 ==========
 export { ContentProtocol } from './render/ContentProtocol';
 export { ContentExcerptBuilder } from './render/ContentExcerptBuilder';
+export {
+  MathRenderCacheEntry,
+  cacheGet,
+  cacheSet,
+  cacheRemove,
+  contentHash,
+} from './render/MathRenderCache';
+export const {
+  MATH_RENDER_CACHE_LIMIT,
+  MATH_RENDER_CACHE_MAX_CHARS,
+  MATH_RENDER_CACHE_KEY_VERSION,
+  MATH_RENDER_CACHE_TTL_MS,
+  MATH_RENDER_CACHE_PASSIVE_TRIM_TICKS,
+} from './render/MathRenderCache';
 export type {
   ContentProtocolRisk,
   ContentValidationResult,
