@@ -64,15 +64,34 @@ export class ApiKeyVault {
 
   /**
    * 写入 API key 到 AssetStoreKit
+   * - 如果 asset 不存在 → asset.add()
+   * - 如果 asset 已存在(BusinessError 24000003)→ asset.update()(覆盖旧值)
+   *
    * @param key — API key 字符串(trim 由调用方负责)
    */
   public static async put(key: string): Promise<void> {
+    const queryMap: asset.AssetMap = new Map();
+    queryMap.set(asset.Tag.ALIAS, ApiKeyVault.strToBytes(ASSET_NAME));
+
     const attributes: asset.AssetMap = new Map();
     attributes.set(asset.Tag.ALIAS, ApiKeyVault.strToBytes(ASSET_NAME));
     attributes.set(asset.Tag.SECRET, ApiKeyVault.strToBytes(key));
     // API 9 不支持 DEVICE_UNLOCKED,使用默认行为(DEVICE_POWERED_ON)
     attributes.set(asset.Tag.ACCESSIBILITY, asset.Accessibility.DEVICE_POWERED_ON);
-    await asset.add(attributes);
+
+    try {
+      await asset.add(attributes);
+    } catch (e) {
+      // BusinessError 24000003: asset already exists — fallback 到 update
+      const err: Error = e as Error;
+      const errCode: number = (e as Record<string, Object>)['code'] as number;
+      if (errCode === 24000003) {
+        // 用 ALIAS 查询,覆盖 SECRET + ACCESSIBILITY
+        await asset.update(queryMap, attributes);
+        return;
+      }
+      throw err;
+    }
   }
 
   /**

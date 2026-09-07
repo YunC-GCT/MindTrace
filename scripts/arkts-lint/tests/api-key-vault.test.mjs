@@ -120,6 +120,21 @@ test('ApiKeyVault.put() writes to AssetStoreKit', () => {
   );
 });
 
+// 测试 7b: put 必须支持"已存在则 update"(避免 24000003)
+test('ApiKeyVault.put() falls back to update on "already exists" error', () => {
+  // 关键:catch 24000003 后必须调用 asset.update 而不是抛错
+  assert.match(
+    apiKeyVault,
+    /24000003/,
+    'ApiKeyVault.put() must catch error code 24000003 (asset already exists)'
+  );
+  assert.match(
+    apiKeyVault,
+    /asset\.update\s*\(/,
+    'ApiKeyVault.put() must call asset.update(...) on 24000003 fallback'
+  );
+});
+
 // 测试 8: clear 方法存在
 test('ApiKeyVault.clear() removes AssetStoreKit entry', () => {
   assert.match(
