@@ -38,12 +38,14 @@ MindTrace 前端目前 5 个 Tab 页面 + 多个 Overlay 和 shared components�
 | Layer | 目录 | 文件名 | 依赖方向 |
 |---|---|---|---|
 | **Atom** | `entry/src/main/ets/shared/atoms/` | `PascalCase.ets` | 0 依赖内部模块 |
-| **Molecule** | `entry/src/main/ets/shared/molecules/` | `PascalCase.ets` | Atom |
+| **Molecule** | `entry/src/main/ets/shared/molecules/` | `PascalCase.ets` | Atom + 同层 Molecule |
 | **Organism** | `entry/src/main/ets/shared/organisms/` 或 `< `page>/components/` | `PascalCase.ets` | Atom + Molecule + Service 接口 |
 | **Template** | `< `page>/templates/` 或页面根 | `PascalCase.ets` | Organism + Atom + Molecule |
 | **Page** | `< `page>/` | `PascalCase.ets` | Template + ViewModel |
 
 依赖方向只能自上而下：Page → Template → Organism → Molecule → Atom。
+
+**例外（同层 Molecule 可互相引用）**：当一个 Molecule 是另一个 Molecule 的"窄化"或"参数化"视图时允许同层引用。例：`MathPreviewText` (molecule, 列表预览) → `MathTextRenderer` (molecule, 完整渲染)。前提是被引用的 Molecule 不依赖调用方的状态（无循环）。新场景引入同层引用前需在 PR 描述中标注理由。
 
 页面禁止直接 `import` 任何 dao、数据库、HTTP、KnowledgeModel 之类业务实现。
 

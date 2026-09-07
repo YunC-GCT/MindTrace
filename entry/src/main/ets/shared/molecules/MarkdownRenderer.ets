@@ -19,7 +19,7 @@ import {
 import { MarkdownBlock } from '../../utils/MarkdownParser'
 import { MarkdownInlineSegment } from '../../utils/MarkdownInlineParser'
 import { cachedParseMarkdown, cachedParseMarkdownInline } from '../../utils/MarkdownParseCache'
-import { MathTextRenderer } from '../atoms/MathTextRenderer'
+import { MathTextRenderer } from '../molecules/MathTextRenderer'
 import { AppIcon } from '../atoms/AppIcon'
 
 const MARKDOWN_INITIAL_BLOCK_LIMIT: number = 3

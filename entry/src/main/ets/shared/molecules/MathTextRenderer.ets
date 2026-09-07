@@ -1,16 +1,15 @@
 // ============================================================================
-//  shared/atoms/MathTextRenderer.ets - KaTeX Web renderer wrapper
+//  shared/molecules/MathTextRenderer.ets — KaTeX Web renderer wrapper
 //  ----------------------------------------------------------------------------
-//  spec 016 PR-B (issue #66, audit C1 Strong): 缓存层下沉到 common 模块。
-//  原文件 536 行 (假原子) → 减到 ~360 行 (真原子)。
-//  缓存 seam 现在通过 `common` 的 MathRenderCache 暴露 (cacheGet / cacheSet / cacheRemove /
-//  MathRenderCacheEntry + 容量/TTL 常量)。本文件不再 import 任何 entry/utils/
-//  内部模块 (spec 012 §"Atom: 0 依赖内部模块")。
-//
-//  下游 PR-C 范围 (audit C5):
-//    - 本文件 atoms/ → molecules/ (与 MathPreviewText 同步迁移)
-//    - MathPreviewText.ets atoms/ → molecules/ (atom→atom 当前违例)
-// ============================================================================
+//  spec 016 三联序列:
+//    PR-B (issue #66, audit C1): 缓存层下沉到 common 模块。本文件 536 行 (假原子) →
+//      减到 ~360 行 (真原子) by 抽出 MATH_RENDER_CACHE* + 12 cache fns 到
+//      common/render/MathRenderCache。本文件不再 import 任何 entry/utils/
+//      内部模块 (spec 012 §"Atom: 0 依赖内部模块")。
+//    PR-C (issue #67, audit C5): atoms/ → molecules/。本文件持有 Webview 控制器 +
+//      三模式渲染管线 + 分槽延迟调度 + 高度估算器, 远超原子尺度, 升为 molecule。
+//      同步迁移 MathPreviewText.ets (atom→atom 当前违例, 组合本文件)。
+//  ============================================================================
 
 import {
   TEXT, TEXT_2, GLASS_10, BORDER,

@@ -25,7 +25,7 @@
 
 import { TEXT, TEXT_2, F_SM, ContentProtocol } from 'common'
 import type { ContentValidationResult } from 'common'
-import { MathTextRenderer } from '../atoms/MathTextRenderer'
+import { MathTextRenderer } from '../molecules/MathTextRenderer'
 
 const MAX_TOTAL_BLOCKS: number = 30
 const TEXT_BLOCK_CHAR_LIMIT: number = 1500

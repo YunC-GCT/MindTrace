@@ -1,9 +1,13 @@
 // ============================================================================
-// shared/atoms/MathPreviewText.ets - compact note preview with KaTeX fallback
-// ============================================================================
+//  shared/molecules/MathPreviewText.ets — compact note preview with KaTeX fallback
+//  ----------------------------------------------------------------------------
+//  spec 016 PR-C (issue #67, audit C5): atom → molecule 迁移 (audit C5 atom→atom
+//  违例: 本文件组合 MathTextRenderer, 是分子行为)。本文件 import MathTextRenderer
+//  来自 sibling molecule (spec 012 §"Layering rules" PR-C 增补行允许 molecule→molecule)。
+//  ============================================================================
 
 import { ContentExcerptBuilder, ContentProtocol, TEXT_3, F_SM } from 'common'
-import { MathTextRenderer } from '../atoms/MathTextRenderer'
+import { MathTextRenderer } from './MathTextRenderer'
 
 @Component
 export struct MathPreviewText {

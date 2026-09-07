@@ -13,7 +13,7 @@ import {
   NOTE_ICON_SIZE, NoteItem, recentDate, typeChar, typeColor, typeGlassColor,
   borderToneColor, glassHighlightColor, glassShadowColor,
 } from "common"
-import { MathPreviewText } from "../atoms/MathPreviewText"
+import { MathPreviewText } from "../molecules/MathPreviewText"
 
 @Component
 export struct NoteCard {
