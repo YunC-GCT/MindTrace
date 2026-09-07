@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { GLASS_10, TEXT_2, R_MD } from 'common'
-import { AppIcon } from '../../shared/components/AppIcon'
+import { AppIcon } from '../../shared/atoms/AppIcon'
 
 @Component
 export struct NoteIconButton {

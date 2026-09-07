@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { BG_DARK, MINT, TEXT, TEXT_3, S_2, S_4, S_5, F_XS, F_MD, W_SEMIBOLD } from "common"
-import { AppIcon } from "../../shared/components/AppIcon"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 
 @Component
 export struct SubjectHeader {

@@ -8,12 +8,17 @@ an ADR (`docs/adr/`) and follows the same template.
 
 | Ticket | Spec | ADR | Status |
 |--------|------|-----|--------|
-| **#3** | [`003-knowledge-model-decomposition.md`](./003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | spec ready, not implemented |
-| **#4** | [`004-dispatcher-single-entry.md`](./004-dispatcher-single-entry.md) | [`0003`](../adr/0003-dispatcher-single-entry-design.md) | spec ready, not implemented |
-| **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | spec ready, not implemented |
+| **#3** | [`003-knowledge-model-decomposition.md`](./003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | **superseded** by [`015`](./015-knowledge-model-decomposition-v2.md) (2026-09-06; ADR-0006 amended) |
+| **#4** | [`004-dispatcher-single-entry.md`](./004-dispatcher-single-entry.md) | [`0003`](../adr/0003-dispatcher-single-entry-design.md) | **implemented** (D2, 2026-09-05) |
+| **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | **implemented** (2026-09-06) |
 | **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | spec ready, not implemented |
-| **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | spec for review (Phase 3) |
-| **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | spec ready, not implemented |
+| **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | **implemented** (TDD) |
+| **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | **reverted** (2026-09-06, [ADR-0010](../adr/0010-mcp-tools-semantics.md) — OcrTool 是 MCP 工具, `mcp/` 保留) |
+| **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
+| **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
+| **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **ReminderFacadeImpl landed + injected** (F3, 2026-09-06); UI 入口延后 (用户裁决); BackgroundTask/FormCard 延后 |
+| **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop + P1 只读工具 note_query/note_get/review_due_query) |
+| **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **done** (PR1-PR3, 2026-09-06 — 三协作服务拆出, KnowledgeModel 保留为编排 agent) |
 
 ## P0 tickets without spec
 
@@ -21,21 +26,24 @@ an ADR (`docs/adr/`) and follows the same template.
 |--------|--------|
 | **#1** (doc expiry) | meta — not a refactor, just self-referential cleanup |
 
-## Implementation order (recommended)
+## Implementation status (2026-09-06)
 
-1. **#4** (Dispatcher single-entry) — smallest blast radius, unblocks other changes
-2. **#5** (LLMClient consolidation) — independent, ~5-line refactor
-3. **#3** (KnowledgeModel decomposition) — 3 atomic PRs, 870-LOC class
-4. **#7** (AgentChatService decomposition) — 3 atomic PRs, 802-LOC class
-5. **#10** (mcp → tools rename) — git mv, ~3 import lines
-6. **#9** (LlmConfig throw) — ~10 line change in LlmConfig
+Done:
+- **#4** Dispatcher single-entry — landed with D2
+- **#5** LlmClient consolidation — 单一 `call(request)`, 真 SSE 流式, 死路已删
+- **#9** LlmConfig throw-on-silent-override — TDD
+- **D2 / spec 011** end-to-end — CaptureGraph + 5 nodes + conditional persist edge, Dispatcher 旧 API 已删
 
-After all 6, the architecture should match ADR intent:
-- Dispatcher has 1 public method
-- LLMClient has 1 public method (call + adapters)
-- KnowledgeModel doesn't exist; replaced by 3 services
-- AgentChatService is a thin facade
-- mcp/ directory doesn't exist
+Remaining (recommended order):
+1. **#7** AgentChatService decomposition — 3 atomic PRs, 802-LOC class
+2. ~~**F1 / spec 014 P1**~~ — implemented (2026-09-06); write tools gated on F2 write-path unification
+
+After all of these, the architecture matches ADR intent:
+- ✅ Dispatcher has 1 public method
+- ✅ LlmClient has 1 public method (call + adapters)
+- ✅ KnowledgeModel slimmed to orchestrating agent + 3 collaborator services (spec 015)
+- ⬜ AgentChatService is a thin facade
+- 🚫 `mcp/` stays — ADR-0005 superseded by [ADR-0010](../adr/0010-mcp-tools-semantics.md); `tools/` reserved for CRUD tools
 
 ## How to read a spec
 

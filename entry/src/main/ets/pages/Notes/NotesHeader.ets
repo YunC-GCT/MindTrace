@@ -22,7 +22,7 @@ import {
   R_MD,
   W_SEMIBOLD,
 } from "common"
-import { AppIcon } from "../../shared/components/AppIcon"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 
 @Component
 export struct NotesHeader {

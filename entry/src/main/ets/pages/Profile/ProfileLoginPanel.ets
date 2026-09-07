@@ -11,7 +11,7 @@ import {
   F_XS, F_SM, F_LG,
   W_SEMIBOLD,
 } from "common"
-import { AppIcon } from "../../shared/components/AppIcon"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 
 @Component
 export struct ProfileLoginPanel {

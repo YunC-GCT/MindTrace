@@ -15,6 +15,7 @@
  *   - LRU eviction uses while loops and explicit classes
  */
 
+import { relationalStore } from '@kit.ArkData'
 import { DatabaseHelper, KnowledgeUnit, NoteItem, StudyPlanItem, subjectColor } from "common"
 import { NoteDao } from "../database/NoteDao"
 import { StudyPlanDao } from "../database/StudyPlanDao"
@@ -285,7 +286,7 @@ export class UiDataCacheService {
   }
 
   private static async queryNotesSnapshot(context: Context, version: number): Promise<NotesSnapshot> {
-    const store = await DatabaseHelper.init(context)
+    const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
     const units: KnowledgeUnit[] = await new NoteDao(store).queryAllMetadata()
     return UiDataCacheService.setNotesSnapshot(version, units)
   }
@@ -310,7 +311,7 @@ export class UiDataCacheService {
   }
 
   private static async queryDetail(context: Context, id: string, version: number): Promise<KnowledgeUnit | null> {
-    const store = await DatabaseHelper.init(context)
+    const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
     const unit: KnowledgeUnit | null = await new NoteDao(store).queryById(id)
     if (unit !== null) {
       UiDataCacheService.setDetail(unit, version)
@@ -351,7 +352,7 @@ export class UiDataCacheService {
   }
 
   private static async queryStudyPlanSnapshot(context: Context): Promise<StudyPlanSnapshot> {
-    const store = await DatabaseHelper.init(context)
+    const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
     const items: StudyPlanItem[] = await new StudyPlanDao(store).queryAll()
     return UiDataCacheService.setStudyPlanSnapshot(items)
   }

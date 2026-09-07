@@ -1,31 +1,21 @@
-/**
- * KnowledgeModel.ets — 知识结构化模型
- *
- * 职责：笔记结构化 + 真值检验；持久化由 entry 层 NoteDao 负责
- * 任务编号: C
- * 依赖: A1 (NoteDao) + B1 (OcrTool) 完成
- *
- * 接口约定:
- *   structure(ocrText: string): Promise<KnowledgeUnitExt>
- *
- * 实现路径（2026-07 新版）:
- *   1) AI 自分词 → 判断最小类（概念/定理/公式/证明题/计算题）
- *   2) AI 按各类 Schema 填充结构化字段
- *   3) 构造 KnowledgeUnitExt (含 id/tags/fields/truthFlag/...)
- *   4) truthCheck(ocrText) 返回 MvpTruthCheckResult
- *   5) 转换为主线 KnowledgeUnit 返回
- *
- * ArkTS 严格模式约束:
- *   - 不使用 any/unknown
- *   - 不使用 as const
- *   - 对象字面量有显式类型
- *   - 不使用解构赋值
- *   - 不使用 spread 运算符
- *   - 不使用嵌套函数
- */
-
+// MindTrace - KnowledgeModel
+// ============================================================================
+//  agents/KnowledgeModel.ets — 知识结构化编排 agent
+//  ----------------------------------------------------------------------------
+//  路径: agents/src/main/ets/agents/KnowledgeModel.ets
+//  职责: structure() / structureWithClassification() 编排 — 组装提示词 (PromptBuilder)、
+//        调用 LLM (callAi: LlmGuard JSON 校验重试, 即 ADR-0012 ToolLoop 的预留 seam)、
+//        归一化字段、合并分类 hint、产出主线 KnowledgeUnit
+//  依赖: common (LlmGuard / ContentProtocol / NOTE_TYPE_KEYS / models) ·
+//        TypeClassifier · PromptBuilder · TruthCheckService
+//  数据流: OCR 文本 → resolveClassificationHint → callAi (prompt + JSON_ONLY_RULES)
+//          → validateAiJson → normalize* → toKnowledgeUnit
+//          (含 TruthCheckService.check 真值标记) → KnowledgeUnit
+//  沿革: spec 015 (2026-09-06) 原地拆分 — 提示词/真值检查/常量拆为三个协作服务,
+//        本类依用户命名裁决保留 KnowledgeModel 之名, 878 行 god class → 554 行
+//  ============================================================================
 import type { KnowledgeCategory } from '../models/KnowledgeCategory';
-import { MvpTruthCheckResult, MvpTruthCheckItem } from '../models/TruthCheckResult';
+import { MvpTruthCheckResult } from '../models/TruthCheckResult';
 import {
   KnowledgeUnitExt,
   createUnitExt,
@@ -53,29 +43,8 @@ import type {
   LlmGuardValidationResult,
 } from 'common';
 import { TypeClassifier } from './TypeClassifier';
-
-// truthCheck internal interfaces
-interface BracePairingResult {
-  valid: boolean;
-  errors: string[];
-  correctedText: string;
-}
-
-interface LatexCheckDetail {
-  hasError: boolean;
-  issues: string[];
-  correctedBody: string;
-}
-
-interface DivisionByZeroCheck {
-  hasIssue: boolean;
-  issues: string[];
-}
-
-interface EquationCheckResult {
-  hasIssue: boolean;
-  issues: string[];
-}
+import { TruthCheckService } from './TruthCheckService';
+import { PromptBuilder } from './PromptBuilder';
 
 const KNOWLEDGE_INPUT_LIMIT: number = 12000;
 const KNOWLEDGE_MAX_TOKENS: number = 12000;
@@ -88,6 +57,8 @@ const KNOWLEDGE_FALLBACK_SUBJECT: string = '其它';
 export class KnowledgeModel {
   private contentProtocol: ContentProtocol = new ContentProtocol();
   private contentExcerptBuilder: ContentExcerptBuilder = new ContentExcerptBuilder();
+  private truthCheckService: TruthCheckService = new TruthCheckService();
+  private promptBuilder: PromptBuilder = new PromptBuilder();
 
   /**
    * 主入口：AI 自分词 + 结构化 + 真值检验，返回主线 KnowledgeUnit。
@@ -121,8 +92,8 @@ export class KnowledgeModel {
       : undefined;
     const chapterHint: string = classificationHint.chapter ?? chapter;
 
-    // 尝试 AI 结构化；失败时暂时沿用 fallback 笔记，不丢数据。
-    // TODO: 后续改为结构化失败直接返回错误，由上层阻止入库，避免生成低质量占位笔记。
+    // D2 spec 011 §9: AI 失败时显式报错, 不再生成 fallback 占位笔记污染 RDB 与复习调度。
+    // 上层 StructureNode 会把该异常转为图错误 (STRUCTURE_ERROR), 阻止持久化。
     let aiRaw: AiRawResponse;
     try {
       aiRaw = await this.callAi(
@@ -133,14 +104,9 @@ export class KnowledgeModel {
         classificationHint.confidence,
       );
     } catch (aiErr) {
-      console.warn('[KnowledgeModel] AI call failed, using fallback: ' + (aiErr as Error).message);
-      return this.buildFallbackFromClassify(
-        ocrText,
-        classificationHint.type,
-        classificationHint.subject,
-        chapterHint,
-        source,
-      );
+      const errMsg: string = (aiErr as Error).message ?? String(aiErr);
+      console.warn('[KnowledgeModel] AI structure failed: ' + errMsg);
+      throw new Error('AI 结构化失败: ' + errMsg);
     }
     const ext: KnowledgeUnitExt = createUnitExt(aiRaw.category, aiRaw.subject, aiRaw.title, ocrText);
     ext.fields = aiRaw.fields;
@@ -150,7 +116,7 @@ export class KnowledgeModel {
     ext.source = source;
     ext.chapter = aiRaw.chapter.length > 0 ? aiRaw.chapter : chapterHint;
 
-    const truthResult: MvpTruthCheckResult = this.truthCheck(ocrText);
+    const truthResult: MvpTruthCheckResult = this.truthCheckService.check(ocrText);
     ext.truthFlag = truthResult.truthFlag;
     if (!truthResult.truthFlag) {
       for (const item of truthResult.details) {
@@ -217,52 +183,6 @@ export class KnowledgeModel {
     };
   }
 
-  // AI 调用失败 fallback: 用 TypeClassifier 已有分类结果构造基础笔记
-  // TODO: 后续删除该 fallback，改成显式失败，不再自动创建笔记。
-  // 不调 AI，直接返回 KnowledgeUnit（标题来自 OCR 首行，标签来自分类结果）
-  private buildFallbackFromClassify(
-    ocrText: string, type?: string, subject?: string, chapter: string = '', source: string = 'camera_capture',
-  ): KnowledgeUnit {
-    const now: number = Date.now();
-    const fallbackCategory: KnowledgeCategory = this.normalizeCategory(type ?? '', undefined);
-    const fallbackSubject: string = this.normalizeSubject(subject ?? '', undefined);
-    const firstLine: string = ocrText.split('\n')[0].trim();
-    const title: string = (firstLine.length > 3 && firstLine.length < 60)
-      ? firstLine
-      : fallbackCategory + ' · ' + fallbackSubject;
-    const tags: string[] = [];
-    tags.push(fallbackCategory);
-    if (chapter.length > 0) { tags.push(chapter); }
-    const summaryExcerpt: string = this.contentExcerptBuilder.buildPlainSummary(ocrText, 220);
-    const summary: string = summaryExcerpt.length > 0 ? summaryExcerpt : title;
-
-    console.info('[KnowledgeModel] fallback note created, title=' + title);
-    return {
-      id: this.uuid(),
-      title: title,
-      content: '## 内容\n' + ocrText,
-      summary: summary,
-      tags: tags,
-      subject: fallbackSubject,
-      category: fallbackCategory,
-      chapter: chapter,
-      difficulty: DifficultyLevel.MEDIUM,
-      source: source,
-      createdAt: now,
-      updatedAt: now,
-      reviewStatus: ReviewStatus.NEW,
-      nextReviewAt: now + 24 * 60 * 60 * 1000,
-      intervalDays: 1,
-      easeFactor: 2.5,
-      repetitions: 0,
-      prerequisites: [],
-      related: [],
-      embedding: [],
-      userId: '',
-      version: 1,
-    };
-  }
-
   private summaryFromFields(ext: KnowledgeUnitExt): string {
     const summaryParts: string[] = [];
     for (const field of ext.fields) {
@@ -305,7 +225,7 @@ export class KnowledgeModel {
         '- 置信度: ' + confidenceHint.toString() + '\n' +
         '优先用它减少五类歧义；如果正文证据更强, 以正文为准。'
       : '';
-    const prompt: string = this.buildPrompt(ocrText) + hint;
+    const prompt: string = this.promptBuilder.buildPrompt(ocrText) + hint;
 
     const systemMsg: ChatMessage = {
       role: 'system',
@@ -435,43 +355,6 @@ export class KnowledgeModel {
     }
     const score: number = Number(value);
     return !Number.isNaN(score) && score >= 1 && score <= 5;
-  }
-  // === Build AI Prompt ===
-
-  buildPrompt(ocrText: string): string {
-    const categories: string = NOTE_TYPE_KEYS.join(' / ');
-    return `你是数学学习笔记结构化助手。只返回纯 JSON 文本，不要用 \`\`\`json\`\`\` 代码块包裹。
-语言: 默认全部使用中文。
-字段:
-- category: 必须从 ${categories} 这五类中选择，不要返回 concept/theorem/formula/proof/computation
-- subject: 学科名称由你自主判断（如"高等数学"/"线性代数"/"初中数学"），无法判断时返回"其它"
-- chapter: 章节/知识点短语（如"微分中值定理"/"行列式"），无法判断时返回空字符串
-- title: 严谨名称或题目摘要
-- tags: 返回 2-4 个中文关键词（具体概念/方法/技巧），学科名请填在 subject 字段。示例: ["二次函数", "配方法", "顶点", "对称轴"]
-- difficulty: 1-5，1=简单，5=困难
-- importance: 1-5，1=低，5=核心
-- fields: 按 category 返回结构化字段数组 [{key, label, value}]
-  概念: 定义/性质/示例/相关概念
-  定理: 陈述/条件/结论/证明思路/应用
-  公式: 表达式/参数/适用范围/推导/备注
-  证明题: 命题/已知/证明过程/关键思路/结论
-  计算题: 问题/步骤/答案/方法总结/常见错误
-以上为各分类的标准字段，必须全部包含且不得增减，字段顺序可调整。
-
-渲染要求:
-- 行内短公式用 $...$ 包裹，如 $x^2 + y^2 = r^2$。
-- 重要的独立公式用 $$...$$ 包裹并单独成行，如：
-  $$
-  \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}
-  $$
-- $$ 开始和结束定界符必须各自单独占一行，块内禁止再写 $。
-- 标题、标签、字段 key、字段 label 中禁止公式。
-- 多行推导只使用 \\begin{aligned}...\\end{aligned}，禁止 align/align* 和自定义宏。
-- JSON 字符串中的 LaTeX 反斜杠必须写成双反斜杠 \\\\，例如 JSON 原文写 \\\\frac，解析后字段值才是 \\frac。
-- 不输出原始 HTML、Markdown 表格、嵌套列表。
-- 每个字段先用 1-2 句纯文字概括核心含义，再另起段落放公式或推导，便于生成简洁列表摘要。
-- 尽量一个字段对应一个页面分区。
-- 保留完整信息，不要把原题和关键步骤摘要丢失。`;
   }
   /**
    * 合并标签：AI 返回的标签 + 最小类名，去重
@@ -675,254 +558,6 @@ export class KnowledgeModel {
     }
     if ((classified.chapter ?? '').trim().length > 0) {
       result.chapter = (classified.chapter ?? '').trim();
-    }
-    return result;
-  }
-
-  /**
-   * 执行 4 项数学真值检验：括号配对、除零检测、等式矛盾、LaTeX 语法
-   *
-   * @param ocrText - 输入文本
-   * @returns MvpTruthCheckResult（检验结果 + 自动修正）
-   */
-  truthCheck(ocrText: string): MvpTruthCheckResult {
-    if (!ocrText || ocrText.trim().length === 0) {
-      const emptyItem: MvpTruthCheckItem = {
-        checkName: 'emptyInput',
-        passed: false,
-        issues: ['input text is empty'],
-      };
-      return {
-        truthFlag: false,
-        details: [emptyItem],
-        correctedText: undefined,
-      };
-    }
-
-    const details: MvpTruthCheckItem[] = [];
-    let corrected: string = ocrText;
-    let allPassed: boolean = true;
-
-    const braceResult: BracePairingResult = this.checkBracePairing(corrected);
-    const braceItem: MvpTruthCheckItem = {
-      checkName: 'bracketPair',
-      passed: braceResult.valid,
-      issues: braceResult.errors,
-    };
-    details.push(braceItem);
-    if (!braceResult.valid) {
-      allPassed = false;
-      corrected = braceResult.correctedText;
-    }
-
-    const divByZero: DivisionByZeroCheck = this.checkDivisionByZero(corrected);
-    const divItem: MvpTruthCheckItem = {
-      checkName: 'divisionByZero',
-      passed: !divByZero.hasIssue,
-      issues: divByZero.issues,
-    };
-    details.push(divItem);
-    if (divByZero.hasIssue) {
-      allPassed = false;
-    }
-
-    const eqResult: EquationCheckResult = this.checkEquation(corrected);
-    const eqItem: MvpTruthCheckItem = {
-      checkName: 'equationCheck',
-      passed: !eqResult.hasIssue,
-      issues: eqResult.issues,
-    };
-    details.push(eqItem);
-    if (eqResult.hasIssue) {
-      allPassed = false;
-    }
-
-    const latexDetail: LatexCheckDetail = this.checkLatexInternal(corrected);
-    const latexItem: MvpTruthCheckItem = {
-      checkName: 'latexSyntax',
-      passed: !latexDetail.hasError,
-      issues: latexDetail.issues,
-    };
-    details.push(latexItem);
-    if (latexDetail.hasError) {
-      allPassed = false;
-    }
-    if (latexDetail.correctedBody !== corrected) {
-      corrected = latexDetail.correctedBody;
-    }
-
-    return {
-      truthFlag: allPassed,
-      details: details,
-      correctedText: corrected !== ocrText ? corrected : undefined,
-    };
-  }
-
-  checkBracePairing(text: string): BracePairingResult {
-    const errors: string[] = [];
-    let braceDepth: number = 0;
-    let result: string = '';
-    let idx: number = 0;
-
-    while (idx < text.length) {
-      const ch: string = text[idx];
-      if (ch === '{') {
-        braceDepth = braceDepth + 1;
-        result = result + ch;
-      } else if (ch === '}') {
-        braceDepth = braceDepth - 1;
-        if (braceDepth < 0) {
-          errors.push('extra closing brace at position ' + String(idx));
-          braceDepth = 0;
-        } else {
-          result = result + ch;
-        }
-      } else {
-        result = result + ch;
-      }
-      idx = idx + 1;
-    }
-
-    if (braceDepth > 0) {
-      errors.push('missing closing brace count: ' + String(braceDepth));
-      let fillCount: number = 0;
-      while (fillCount < braceDepth) {
-        result = result + '}';
-        fillCount = fillCount + 1;
-      }
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors: errors,
-      correctedText: result,
-    };
-  }
-
-  checkDivisionByZero(text: string): DivisionByZeroCheck {
-    const issues: string[] = [];
-    if (text.indexOf('/0') !== -1) {
-      issues.push('possible division by zero: /0');
-    }
-    return {
-      hasIssue: issues.length > 0,
-      issues: issues,
-    };
-  }
-  checkEquation(text: string): EquationCheckResult {
-    const issues: string[] = [];
-    const contradictions: string[] = ['1=0', '0=1', '2=1', '1=2', '0=2', '2=0'];
-    for (const contradiction of contradictions) {
-      if (text.indexOf(contradiction) !== -1) {
-        issues.push('contradictory equation: ' + contradiction);
-      }
-    }
-    if (text.indexOf('\u2260') !== -1) {
-      issues.push('contains not-equal sign, please verify context');
-    }
-    const eqPatterns: string[] = ['x=x', 'X=X', 'a=a', 'A=A'];
-    for (const pattern of eqPatterns) {
-      if (text.indexOf(pattern) !== -1) {
-        issues.push('identity equation: ' + pattern);
-        break;
-      }
-    }
-    return {
-      hasIssue: issues.length > 0,
-      issues: issues,
-    };
-  }
-  checkLatexInternal(body: string): LatexCheckDetail {
-    const issues: string[] = [];
-    let corrected: string = body;
-
-    const braceResult: BracePairingResult = this.checkBracePairing(corrected);
-    if (!braceResult.valid) {
-      for (const error of braceResult.errors) {
-        issues.push(error);
-      }
-      corrected = braceResult.correctedText;
-    }
-
-    const leftCount: number = this.countOccurrences(corrected, '\\left');
-    const rightCount: number = this.countOccurrences(corrected, '\\right');
-    if (leftCount !== rightCount) {
-      issues.push('\\left and \\right count mismatch: ' + String(leftCount) + ':' + String(rightCount));
-    }
-
-    const latexFixes: string[][] = [
-      ['\\fract{', '\\frac{'],
-      ['\\sqt{', '\\sqrt{'],
-      ['\\begin{align*}', '\\begin{aligned}'],
-    ];
-    for (const fix of latexFixes) {
-      const before: string = corrected;
-      const target: string = fix[0];
-      const replacement: string = fix[1];
-      if (corrected.indexOf(target) !== -1) {
-        corrected = corrected.split(target).join(replacement);
-        if (corrected !== before) {
-          issues.push('auto fixed: ' + target + ' -> ' + replacement);
-        }
-      }
-    }
-
-    corrected = this.patchIntegralDx(corrected, issues);
-
-    return {
-      hasError: issues.length > 0,
-      issues: issues,
-      correctedBody: corrected,
-    };
-  }
-  // === Utility methods ===
-
-  private countOccurrences(text: string, pattern: string): number {
-    let count: number = 0;
-    let pos: number = text.indexOf(pattern);
-    while (pos !== -1) {
-      count = count + 1;
-      pos = text.indexOf(pattern, pos + 1);
-    }
-    return count;
-  }
-
-  private patchIntegralDx(text: string, issues: string[]): string {
-    let result: string = text;
-    const intPattern: string = '\\int_{';
-    const dxPattern: string = 'dx';
-    let searchPos: number = 0;
-    while (true) {
-      const intIdx: number = result.indexOf(intPattern, searchPos);
-      if (intIdx === -1) {
-        break;
-      }
-      const closeIdx: number = result.indexOf('}', intIdx + intPattern.length);
-      if (closeIdx === -1) {
-        break;
-      }
-      const hatOpen: number = result.indexOf('^{', closeIdx);
-      if (hatOpen === -1) {
-        break;
-      }
-      const hatClose: number = result.indexOf('}', hatOpen + 2);
-      if (hatClose === -1) {
-        break;
-      }
-      const afterIntegral: string = result.substring(hatClose + 1);
-      const trimmedAfter: string = afterIntegral.trim();
-      if (
-        trimmedAfter.indexOf(dxPattern) !== 0 &&
-        trimmedAfter.indexOf('\\,dx') !== 0 &&
-        trimmedAfter.indexOf('\\, dx') !== 0
-      ) {
-        result =
-          result.substring(0, hatClose + 1) +
-          ' \\, dx' +
-          result.substring(hatClose + 1);
-        issues.push('自动修正: 积分表达式补充 \\, dx');
-      }
-      searchPos = hatClose + 1;
     }
     return result;
   }

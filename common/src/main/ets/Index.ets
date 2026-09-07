@@ -84,7 +84,7 @@ export {
 //   LlmConfig:  单例, preferences 持久化 API key, UI 输入/读取入口
 //   LlmClient:  OpenAI 兼容 HTTP 客户端, 所有 agent 统一调用
 //   LlmError:   统一错误类型, 按 kind 分类(NO_API_KEY / NETWORK_ERROR / API_ERROR / ...)
-//   LlmTypes:   ChatMessage / LlmCallOptions / LlmErrorKind
+//   LlmTypes:   ChatMessage / LlmCallRequest / LlmCallResult / LlmErrorKind
 export { LlmConfig } from './llm/LlmConfig';
 export { LlmClient } from './llm/LlmClient';
 export { LlmGuard } from './llm/LlmGuard';
@@ -93,10 +93,21 @@ export { LlmError } from './llm/LlmTypes';
 export type {
   ChatMessage,
   LlmCallOptions,
+  LlmCallRequest,
+  LlmCallResult,
   LlmErrorKind,
+  LlmFunctionCallNameArgs,
+  LlmFunctionDefinition,
+  LlmToolCall,
+  LlmToolDefinition,
 } from './llm/LlmTypes';
 export type { LlmGuardJsonOptions, LlmGuardJsonResult, LlmGuardValidationResult, LlmJsonValidator } from './llm/LlmGuard';
 export type { LlmCaller } from './llm/LlmGuard';
+export { ToolRegistry } from './tools/ToolRegistry';
+export { ToolLoop } from './tools/ToolLoop';
+export type { AgentTool, ToolResult } from './tools/ToolRegistry';
+export type { ToolLoopOptions } from './tools/ToolLoop';
+export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools } from './tools/NoteQueryTools';
 
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
 //   OcrConfig:  单例, preferences 持久化 endpoint + enabled, 真机部署改 IP
@@ -127,3 +138,18 @@ export type {
   ContentProtocolRisk,
   ContentValidationResult,
 } from './render/ContentProtocol';
+
+// ========== D4 Kit facade 接缝契约 (spec 013) ==========
+//   只声明契约, 不 import @kit.*; 实现由 entry 层注入
+export type {
+  ReviewReminderRequest,
+  ReminderFacade,
+} from './kit/ReminderFacade';
+export type {
+  BackgroundTaskTag,
+  BackgroundTaskFacade,
+} from './kit/BackgroundTaskFacade';
+export type {
+  CardSnapshot,
+  FormCardFacade,
+} from './kit/FormCardFacade';

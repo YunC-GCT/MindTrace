@@ -24,7 +24,7 @@ import {
   W_BOLD, W_SEMIBOLD,
   glassSurfaceColor,
 } from "common"
-import { MathPreviewText } from "../../shared/components/MathPreviewText"
+import { MathPreviewText } from "../../shared/atoms/MathPreviewText"
 
 function subjectMark(subject: string): string {
   const trimmed: string = subject.trim()

@@ -27,7 +27,7 @@ import {
   unmatchedSectionText,
   EXTRA_SECTION_TITLE,
 } from '../model/DetailRenderModel'
-import { MarkdownRenderer } from '../../../shared/components/MarkdownRenderer'
+import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
 
 const TITLE_EXPRESSION: string = '\u5148\u8bb0\u4f4f\uff1a\u6838\u5fc3\u516c\u5f0f'

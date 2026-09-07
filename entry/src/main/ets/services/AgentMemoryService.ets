@@ -1,6 +1,6 @@
 import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import { ClassificationResult, ChatMessage, DatabaseHelper, LlmClient, LlmConfig, LlmGuard } from 'common';
+import { ClassificationResult, ChatMessage, DatabaseHelper, LlmCallResult, LlmClient, LlmConfig, LlmGuard } from 'common';
 import type { LlmGuardValidationResult } from 'common';
 import { AgentMemoryDao } from '../database/AgentMemoryDao';
 import { ChatMessageDao } from '../database/ChatMessageDao';
@@ -202,10 +202,12 @@ export class AgentMemoryService {
         content: content,
       },
     ];
-    const summaryText: string = await new LlmClient().call(llmMessages, {
+    const summaryResult: LlmCallResult = await new LlmClient().call({
+      messages: llmMessages,
       maxTokens: 2048,
       timeoutMs: 120000,
     });
+    const summaryText: string = summaryResult.text ?? '';
     const now: number = Date.now();
     const summaryRecord: AgentMemoryRecord = {
       id: AgentMemoryService.newId('sum'),

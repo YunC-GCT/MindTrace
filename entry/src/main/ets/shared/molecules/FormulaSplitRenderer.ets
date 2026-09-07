@@ -1,7 +1,7 @@
 /**
  * FormulaSplitRenderer.ets — 按 $$ 分块渲染公式 + 文本
  *
- * 路径: entry/src/main/ets/shared/components/FormulaSplitRenderer.ets
+ * 路径: entry/src/main/ets/shared/molecules/FormulaSplitRenderer.ets
  * 职责: 将含 $$...$$ 的 markdown 文本按公式边界拆分为 Block[],
  *       合并相邻文本块减少 WebView 数量, 每个 Block 用独立的
  *       MathTextRenderer 渲染 (公式块 forceDisplay=true 无上限,
@@ -25,7 +25,7 @@
 
 import { TEXT, TEXT_2, F_SM, ContentProtocol } from 'common'
 import type { ContentValidationResult } from 'common'
-import { MathTextRenderer } from './MathTextRenderer'
+import { MathTextRenderer } from '../atoms/MathTextRenderer'
 
 const MAX_TOTAL_BLOCKS: number = 30
 const TEXT_BLOCK_CHAR_LIMIT: number = 1500

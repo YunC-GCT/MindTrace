@@ -5,7 +5,7 @@ import {
   F_XS, F_SM,
   W_BOLD, W_SEMIBOLD,
 } from "common"
-import { AppIcon } from "../../shared/components/AppIcon"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 
 @Component
 export struct ReviewPlanRow {

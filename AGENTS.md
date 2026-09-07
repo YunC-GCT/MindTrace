@@ -2,9 +2,9 @@
 
 > **鸿蒙高校创新赛 · 复赛项目** — HarmonyOS 数学学习助手 (拍照 / OCR / AI 分类 / 知识结构化 / 复习 全链)
 > 5 module: `entry` (HAP) + `common` / `agents` / `skill` / `cardservice` (4 HSP)
-> **DevEco Studio 唯一开发入口** (Windows 中文路径禁 hvigorw CLI)
-> 主分支: `main` · 最新版本: W4 (2026-07-24 起) · 最后审计: 2026-09-01
-> 项目根: **`D:\HMgent\MathMind`** (不是 `MindTrace`, 大小写敏感)
+> **DevEco Studio 与 hvigor CLI 均为合法开发入口** (Windows 中文路径允许使用 hvigor CLI, 但需注意路径与字符编码)
+> 主分支: `main` + `develop` · 最新版本: v1.0 (2026-09-05 release) · 最后审计: 2026-09-01
+> 项目: **MindTrace** (GitHub 仓库 `YunC-GCT/MindTrace`; MindTrace 是项目昵称; 本地目录名因机器而异, 文档一律用相对路径)
 
 ---
 
@@ -17,12 +17,16 @@
 | 改 .ets 合规 / 风格 | [`docs/style/arkts-1.1.md`](./docs/style/arkts-1.1.md) (40+ 规则) |
 | 写测试 / 加测试 | [`docs/specs/`](./docs/specs/) §"Test plan (TDD)" + `scripts/arkts-lint/tests/` 模板 |
 | 改 .ets 文件头 / 模块结构 | [`docs/agents/file-header-template.md`](./docs/agents/file-header-template.md) |
-| 改 git workflow / commit / branch | [`docs/agents/git-conventions.md`](./docs/agents/git-conventions.md) |
+| 改 git workflow / commit / branch | [`docs/agents/git-conventions.md`](./docs/agents/git-conventions.md) + 团队手册 [`docs/agents/git-flow-lightweight-2026-09-04.md`](./docs/agents/git-flow-lightweight-2026-09-04.md) (分支模型 / PR / 发版) |
 | 改 lint 规则 / lint 输出 | [`scripts/arkts-lint/`](./scripts/arkts-lint/) + [`docs/agents/api-version.md`](./docs/agents/api-version.md) §"Lint job" |
 | 改 API 版本兼容 | [`docs/agents/api-version.md`](./docs/agents/api-version.md) |
 | 改安全 / secrets / 签名 | [`docs/agents/security.md`](./docs/agents/security.md) |
 | 准备 PR / smoke test | [`docs/agents/smoke-test.md`](./docs/agents/smoke-test.md) |
+| 复赛演示脚本 / 赛前检查 | [`docs/agents/demo-script-2026-09-06.md`](./docs/agents/demo-script-2026-09-06.md) |
 | 排查 build / 编码陷阱 | [`docs/agents/file-header-template.md`](./docs/agents/file-header-template.md) §"创建新文件" |
+| 做后端 CaptureGraph / ArkTS 重构 | [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](./docs/agents/d2-capturegraph-teaching-2026-09-05.md) (踩坑与经验) |
+| 推进 agent 能力级工作 (工具层 / 调用协议 / 拆分) | [`docs/agents/patterns/capability-to-implementation.md`](./docs/agents/patterns/capability-to-implementation.md) (skill 链路) + [`docs/architecture/agent-tool-chain-2026-09-06.md`](./docs/architecture/agent-tool-chain-2026-09-06.md) (派发链总览) |
+| 改 entry UI 设计/动效/token | 先读 [`docs/research/frontend-component-audit-2026-09-06.md`](./docs/research/frontend-component-audit-2026-09-06.md) (分层裁决 + C1-C6 候选) → 设计/动效细节 [`docs/research/frontend-ui-design-inventory-2026-09-06.md`](./docs/research/frontend-ui-design-inventory-2026-09-06.md) (96 件三维档案: 令牌/布局/动效) |
 | 写 / 改 / 归档 doc | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) (issue 模板) + `docs/agents/domain.md` (workflow) |
 | 写 issue / 改 spec | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) + [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
 | 排查 audit finding | [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md) |
@@ -53,12 +57,12 @@
 ## 必守红线 (7 条, 不可逾越)
 
 1. **不 push** — 未经 user 明确说 "push", 绝不 `git push`。"提交" = local commit
-2. **不 build** — `Build Hap(s)/APP(s)` 由 user 跑; AI 做本地 commit + 验证测试, 不跑 build
+2. **build 可由 AI 跑** — `Build Hap(s)/APP(s)` 可由 AI 通过 hvigor CLI 或 DevEco GUI 执行; AI 做本地 commit + 验证测试 + 跑 build, 不需要 user 跑
 3. **不 overwrite** — user 手动编辑过的 plan / file, **不整段覆盖**; 先 read 最新版, 优先 append
-4. **绝对路径** — 根目录 = `D:\HMgent\MathMind` (不是 `D:\HMgent\MindTrace`)
+4. **相对路径** — 文档禁止盘符绝对路径: 仓库内引用一律相对路径, 工具位置用环境变量表达; 本地目录名因人而异, 以实际工作目录为准
 5. **commit 规范** — conventional commits + 模块前缀 (`docs(frontend):` / `fix(agents):`); 详见 [`docs/agents/git-conventions.md`](./docs/agents/git-conventions.md)
 6. **不进 `main`** — 所有改动 commit 到 `feature/*` / `bugfix/*` 分支, 通过 PR 合入 `develop`,user 手动 review + merge。详见 [`docs/agents/git-conventions.md`](./docs/agents/git-conventions.md) §"分支工作流"
-7. **worktree 互斥** — 多 session 共享同一 worktree 时, 一个 session 改时另一个别动; 多 worktree 用 `develop` 分支同步
+7. **多 session 并行必须隔离** — ≥2 个 session 同时开发时, 每个 session 用 `git worktree add` 独立工作区(或严格串行: 一个 session 的 commit+push 完成前另一个不做任何 git 写操作); **禁止**在共用 clone 里互相切分支或把他人未完成改动带进自己的 PR; 各分支照常 PR 合入 `develop` 同步。详见团队手册 §11
 
 ---
 
@@ -68,24 +72,26 @@
 
 | 亮点 | 位置 | 说明 |
 |---|---|---|
-| **AI 智能分类 + 知识结构化** | `agents/src/main/ets/agents/` | 5 类题型识别 + KnowledgeUnit 拆解, 端到端 LLM pipeline |
-| **LlmClient 流式响应 (W4 新)** | `common/src/main/ets/llm/LlmClient.ets` | 3 调用路径待合一, spec [`005`](./docs/specs/005-llm-client-consolidation.md) |
+| **AI 智能分类 + 知识结构化** | `agents/src/main/ets/agents/` | 5 类题型识别 + KnowledgeUnit 拆解, 端到端 LLM pipeline; KnowledgeModel 重构为轻量编排 agent (spec 015: 拆出 PromptBuilder / TruthCheckService 协作服务) |
+| **LlmClient 统一调用层** | `common/src/main/ets/llm/LlmClient.ets` | 唯一公共入口 `call(request)` (spec [`005`](./docs/specs/005-llm-client-consolidation.md)): JSON 与真 SSE 流式 (requestInStream) 双适配路径 |
 | **知识星系可视化** | `entry/src/main/ets/pages/KnowledgeGalaxy*` | 用户学情可视化 |
-| **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 + 63 单元测试, **CI 已接入** |
-| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 7 ADR + 6 ticket spec, 设计透明度高 |
+| **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 + 70 单元测试, **CI 已接入** |
+| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 12 ADR + 11 ticket spec, 设计透明度高 |
 
 ### 演示路径 (5 分钟 walk-through)
 
-1. 启动 OCR 服务 (`python -m uvicorn ocr.app:app --port 8000`)
+1. 启动 OCR 服务 (运行 `tools/ocr_service/start.bat`, 端口 8000; 详见 tools/ocr_service/README.md)
 2. DevEco Studio `Run → Run 'entry'` (真机/模拟器)
 3. 主流程: 拍照 → OCR → AI 分类 → 知识结构化 → 持久化 → 复习浮窗对话 (SSE 流式)
 4. 5 Tab 流畅 / 知识星系无 "示例:*" 假学科 (ticket #16 已修)
 5. 源码: `agents/` (AI 业务) + `scripts/arkts-lint/` (工程亮点) + `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` (21 个 finding 的架构审计)
 
-### 状态 (per audit 2026-09-01)
+### 状态 (per audit 2026-09-01 · D2-D4 进度 2026-09-06)
 
 ✅ 已修: **#15** ArkTS 铁律 (规约错误) · **#9** LlmConfig 静默覆盖 (TDD) · **#16** fixture data 泄漏 (TDD)
-🟡 待修: **#1** doc expiry · **#3** / #4 / #5 / #7 god class & 入口泄漏 (有 spec, 待实施) · **#10** mcp/ → tools/ rename
+✅ 已处置: **#10** mcp→tools 改名撤销 — OcrTool 是队员改造的 MCP 工具, `mcp/` 保留, `tools/` 留给增删查改类工具 ([ADR-0010](./docs/adr/0010-mcp-tools-semantics.md))
+✅ 已落地: **D2 全链** (2026-09-05, spec [`011`](./docs/specs/011-capturegraph-arkts-refactor.md) + [ADR-0008](./docs/adr/0008-capturegraph-self-built-runtime.md)) — Dispatcher 单入口 + CaptureGraph (capture→classify→structure→truth_check→persist 条件边) + 5 节点, 旧 API 已删 · **D3 部分** (spec [`012`](./docs/specs/012-frontend-component-model.md)) — shared/components → atoms/molecules/organisms · **D4 P0 契约** (spec [`013`](./docs/specs/013-kit-adoption-boundary.md) + [ADR-0009](./docs/adr/0009-kit-facade-injection-boundary.md)) — `common/kit/` 三 facade · **F3 接线** — ReminderFacadeImpl (entry/kit/, @kit.BackgroundTasksKit reminderAgentManager) 组合根注入, UI 入口暂不挂 (用户裁决 2026-09-06); spec 015 PR1-3 全部完成 (KnowledgeModel 保留为轻量编排 agent, 用户裁决 2026-09-06)
+🟡 待修: **#1** doc expiry (2026-09-06 已清理一轮: 计数 / spec 状态行 / 版本日期) · **#7** AgentChatService 拆分 (spec 007: PR1 IntentClassifier 已合入, PR2 ChatStatusMachine / PR3 ReplyService 待做) · 🆕 **OcrNode payload 断链** (capture 节点清空文本与图 URI — `agents/src/main/ets/graph/nodes/OcrNode.ets:9` 把字符串 as never 传给 recognizeText, 且 AgentState 无 payload 字段; 红色证据测试在 `bugfix/ocrnode-payload-break`, 待修, 2026-09-06)
 
 详细: [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md) §7 + [`docs/specs/`](./docs/specs/)
 
@@ -111,14 +117,14 @@
 
 ## 常用命令 (Windows / DevEco Studio)
 
-**严禁 hvigorw CLI** (Windows 中文路径下 NODE_HOME/PATH 乱码, 已实测)。
+**hvigor CLI 与 DevEco GUI 均可使用** (Windows 中文路径下 hvigor CLI 已验证可用, AI 可以主动调用)。
 
 | 任务 | 命令 |
 |---|---|
-| Open 项目 | DevEco `File → Open → D:\HMgent\MathMind` (**不是** MindTrace) |
+| Open 项目 | DevEco `File → Open → <本地仓库根>` (目录名以各人克隆为准) |
 | Build / Run / Sync | DevEco GUI (`Build → Build Hap(s)/APP(s)`, `Run → Run 'entry'`) |
-| 启动 OCR 服务 | `python -m uvicorn ocr.app:app --port 8000` |
-| 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (70 测试) |
+| 启动 OCR 服务 | 运行 `tools/ocr_service/start.bat` (端口 8000; python 依赖见 tools/ocr_service/README.md) |
+| 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (数量以输出为准, 全绿即可) |
 | 跑 v0.3 lint 扫描 | `node scripts/arkts-lint/index.mjs --quiet` |
 | 创建新 module | `cp common/oh-package.json5 <new>/oh-package.json5` (必须含 `main` 字段) |
 | 验 .ets 无 BOM | PowerShell: `[System.IO.File]::ReadAllBytes(path)[0..2]` (应为 `0x69 0x6D 0x70`) |
@@ -129,9 +135,9 @@
 
 | Skill | 说明 | 详细 |
 |---|---|---|
-| **CONTEXT.md** | 项目专属词汇 (19 个术语, 4 种 "agent" 消歧) | [`CONTEXT.md`](./CONTEXT.md) |
-| **ADR** | 架构决策记录 (7 个) | [`docs/adr/`](./docs/adr/) |
-| **Ticket specs** | 依 ADR 写的实施 spec (6 个) | [`docs/specs/`](./docs/specs/) |
-| **Issue tracker** | GitHub Issues on `YunC-GCT/Math-Mind`, via `gh` CLI | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) |
+| **CONTEXT.md** | 项目专属词汇 (4 种 "agent" 消歧; D2 起含 CaptureGraph 等) | [`CONTEXT.md`](./CONTEXT.md) |
+| **ADR** | 架构决策记录 (12 个) | [`docs/adr/`](./docs/adr/) |
+| **Ticket specs** | 依 ADR 写的实施 spec (11 个) | [`docs/specs/`](./docs/specs/) |
+| **Issue tracker** | GitHub Issues on `YunC-GCT/MindTrace`, via `gh` CLI | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) |
 | **Triage labels** | 5 标签: `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix` | [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
 | **TDD / domain-modeling** | 按需调 skill, 不强制 | (内置 skill) |

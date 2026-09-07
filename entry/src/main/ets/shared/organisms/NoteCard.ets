@@ -1,5 +1,5 @@
 // ============================================================================
-//  shared/components/NoteCard.ets — 笔记卡片共享组件 · 对齐 v2-ui .note-card
+//  shared/organisms/NoteCard.ets — 笔记卡片共享组件 · 对齐 v2-ui .note-card
 //  ----------------------------------------------------------------------------
 //  布局: [渐变 icon 36×36] [meta: 类型(粗) · 日期  ··· 置信度]
 //                          [标题 (15px semibold)]
@@ -13,7 +13,7 @@ import {
   NOTE_ICON_SIZE, NoteItem, recentDate, typeChar, typeColor, typeGlassColor,
   borderToneColor, glassHighlightColor, glassShadowColor,
 } from "common"
-import { MathPreviewText } from "./MathPreviewText"
+import { MathPreviewText } from "../atoms/MathPreviewText"
 
 @Component
 export struct NoteCard {

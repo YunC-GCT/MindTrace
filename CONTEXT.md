@@ -20,7 +20,7 @@ This file is **project-specific** (MindTrace). For universal agent / software ar
 ## Language (MindTrace-specific)
 
 **Order**:
-The single source-of-truth pipeline the user triggers when capturing a math note. An Order flows Capture → Classify → Structure → Persist, with optional Preview augmentation.
+The single source-of-truth pipeline the user triggers when capturing a math note. An Order flows Capture → Classify → Structure → TruthCheck → Persist; with `persist: false` it runs analysis-only and stops before Persist.
 _Avoid_: pipeline, job, request
 
 **KnowledgeUnit**:
@@ -60,6 +60,9 @@ The act of producing raw text from an image, via OCR or manual input. Output is 
 The act of turning a Capture result into a KnowledgeUnit (subject, chapter, type, etc.). Performed by the LLM.
 _Avoid_: organize, process (in code surface)
 
+**TruthCheck**:
+The pipeline step that validates the structured KnowledgeUnit against the capture text before persisting (the `truth_check` step of the CaptureGraph). A failed check stops the Order with a CaptureGraphError — no fallback KnowledgeUnit is produced.
+
 **ReviewStatus (5 values)**:
 NEW / LEARNING / REVIEW / GRADUATED / LAPSED. Drives spaced-repetition scheduling.
 _Avoid_: state (in code surface, e.g. `state`), status (ambiguous with HTTP status)
@@ -75,12 +78,42 @@ A fixed-dimension vector representation of the note content, used for similarity
 The orchestration entry point that runs a Capture through the AI pipeline. Returns either a structured analysis or a KnowledgeUnit.
 
 **Dispatcher**:
-The class in `agents/core/Dispatcher.ets` that runs the pipeline. Single public entry: `dispatch(req)`. Sub-agents are private collaborators.
+The class in `agents/core/Dispatcher.ets` that runs the pipeline. Single public entry: `dispatch(req, context?, options)`. Sub-agents are private collaborators.
 _Avoid_: Controller, Manager, Handler
+
+**CaptureGraph**:
+The project's native ArkTS implementation of the LangGraph graph model — **LangGraph is the project's primary orchestration design**, and its naming (Node / Edge / State / conditional edge / START / END) is canonical (universal definitions in `docs/agents/agent-glossary.md`). CaptureGraph (in `agents/src/main/ets/graph/`) executes an Order: fixed edges between steps, plus a conditional edge after `truth_check` that reaches `persist` only when the state's `persist` flag is set. Built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008).
+
+**CaptureStep**:
+The node vocabulary of the CaptureGraph: `START | capture | classify | structure | truth_check | persist | END`. Lowercase for steps, uppercase for sentinels.
+
+**CaptureGraphError**:
+The structured error a CaptureGraph node throws on failure: `kind`, `message`, `step`, `retriable`, optional `cause`. It short-circuits the Order — the user sees an error, never a fabricated KnowledgeUnit.
+
+**DispatchOptions**:
+The per-dispatch options bag passed to `Dispatcher.dispatch`: `persist` (may this Order write the KnowledgeUnit?) and `dao` (the injected persistence implementation).
 
 **Sub-agent**:
 A private collaborator inside the Dispatcher pipeline (TypeClassifier, KnowledgeModel). Sub-agents are not user-facing.
 _Avoid_: agent (overloaded, see below)
+
+**NoteDaoAdapter**:
+The entry-side adapter that implements `agents`' `NoteDaoInterface` on top of `entry`'s `NoteDao`. The seam that lets the agents module persist without depending on entry.
+
+**Kit Facade (contract)**:
+An interface in `common/src/main/ets/kit/` (`ReminderFacade`, `BackgroundTaskFacade`, `FormCardFacade`) declaring a HarmonyOS kit capability for the business pipeline. Implementations are injected at the composition root when kit integration lands; this is a seam, not an import ban — DevEco template modules (abilities, FormAbility) import kit APIs directly (ADR-0009).
+
+**MCP 工具 (mcp/)**:
+A tool in `agents/src/main/ets/mcp/tools/` (currently `OcrTool`), built by the team as an MCP-语义 tool. The directory classifies tools by MCP tool semantics — not by whether an MCP server is running (none does today). CRUD-style tools (增删查改) belong in `tools/` instead (ADR-0010).
+_Avoid_: renaming `mcp/` away; calling it "the MCP server".
+
+**OCR 服务 (tools/ocr_service/)**:
+The team-built Python FastAPI OCR service at the **repo-root** `tools/` directory (formula/combined recognition over HTTP :8000, started via `start.bat`), consumed by `OcrTool`. Entirely distinct from `agents/src/main/ets/tools/` — the ArkTS CRUD-tool reservation slot (ADR-0010).
+_Avoid_: confusing repo-root `tools/` (Python 服务) with the agents `tools/` 预留位 (F7, agent-tools inventory 2026-09-06).
+
+**小艺 skill 预留位 (skill/)**:
+The `skill/` HSP, reserved for Xiaoyi (小艺) skill integration. Deliberately a stub today (`SKILL_VERSION` + placeholder `SkillAbility`); retention is a recorded decision ([ADR-0011](./docs/adr/0011-skill-xiaoyi-reservation.md)), and its 7 intent actions are declared in `skill/src/main/module.json5`.
+_Avoid_: calling it dead code or an empty shell; proposing its removal or freeze.
 
 ## Ambiguous terms
 
@@ -90,7 +123,7 @@ The word **agent** is overloaded in this codebase. Use the precise form:
 |------|---------|-------|
 | **MindTrace** | The whole app (project name) | repo name, `AppScope` config |
 | **`agents/`** (HSP) | The AI business module | `agents/src/main/ets/...` |
-| **`Agent*` (user-facing service)** | An in-app AI helper. *TODO: rename to `Assistant*` per `docs/adr/0002-agent-terminology.md`* | `AgentChatService`, `AgentFloatWindow`, `AgentMemoryService` |
+| **`Agent*` (user-facing service)** | An in-app AI helper. *TODO: rename to `Assistant*` per `docs/adr/0002-agent-terminology-disambiguation.md`* | `AgentChatService`, `AgentFloatWindow`, `AgentMemoryService` |
 | **sub-agent** | A private collaborator inside the Dispatcher | `TypeClassifier`, `KnowledgeModel` |
 
 **User-facing rule**: when writing copy the user sees (toast, placeholder, button label), use the precise form ("assistant" or "AI helper"), never "agent". When naming code, the migration is staged.
