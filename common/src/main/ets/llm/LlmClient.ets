@@ -456,6 +456,12 @@ export class LlmClient {
 
   /**
    * 解析单行 SSE data 并触发 onDelta (JSON 解析失败则抛异常)
+   *
+   * P1 bug fix 2026-09-07: deepseek-v4-pro 默认思考模式,响应可能只含 reasoning_content + 空 content。
+   * AgentChatService.realReplyStream line 158 过滤 kind !== 'content',导致 UI 永远空白。
+   * 修复: content 为空时,fallback 用 reasoning_content 作为 content 调 onDelta,
+   *       保证上层 AgentChatService 总能收到 content token,UI 不会空白。
+   *       reasoning 仍独立 emit(保留 reasoning 字段显示)。
    */
   private tryEmitSseDelta(dataStr: string, onDelta: LlmStreamCallback): void {
     const chunk: LlmStreamChunk = JSON.parse(dataStr) as LlmStreamChunk;
@@ -467,8 +473,12 @@ export class LlmClient {
     if (delta.reasoning_content !== undefined && delta.reasoning_content.length > 0) {
       onDelta(delta.reasoning_content, 'reasoning');
     }
+    // content emit: 优先用 content;content 空时 fallback 到 reasoning_content
+    // 防止 deepseek-v4-pro 思考模式导致 UI 空白(用户 logcat 显示 38KB 流但 UI 无消息)
     if (delta.content !== undefined && delta.content.length > 0) {
       onDelta(delta.content, 'content');
+    } else if (delta.reasoning_content !== undefined && delta.reasoning_content.length > 0) {
+      onDelta(delta.reasoning_content, 'content');
     }
   }
 
