@@ -141,7 +141,7 @@ export {
   cacheRemove,
   contentHash,
 } from './render/MathRenderCache';
-export const {
+export {
   MATH_RENDER_CACHE_LIMIT,
   MATH_RENDER_CACHE_MAX_CHARS,
   MATH_RENDER_CACHE_KEY_VERSION,

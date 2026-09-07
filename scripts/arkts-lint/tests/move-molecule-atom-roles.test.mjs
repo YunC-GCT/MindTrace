@@ -119,3 +119,15 @@ test('spec 012 §Layering rules allows molecule→molecule composition', () => {
     'spec 012 must explicitly allow molecule-to-molecule composition'
   );
 });
+
+test('common/Index.ets uses export { ... } from (no destructuring declaration)', () => {
+  // ArkTS 1.1 forbids `export const { X, Y } from ...` (arkts-no-destruct-decls, error 10605074).
+  // Only plain `export { X, Y } from ...` is valid. This guard prevents the destructuring
+  // pattern that broke the PR-C hvigor build.
+  const indexSrc = file(join(root, 'common/src/main/ets/Index.ets'));
+  assert.doesNotMatch(
+    indexSrc,
+    /export\s+const\s*\{[^}]*\}\s*from/,
+    'common/Index.ets uses destructuring declaration (export const { ... } from ...) — ArkTS 1.1 forbids this; use plain `export { ... } from ...`'
+  );
+});
