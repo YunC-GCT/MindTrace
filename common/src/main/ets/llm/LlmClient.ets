@@ -324,6 +324,7 @@ export class LlmClient {
         clearTimeout(timer);
         clearTimeout(firstByteTimer);
         console.info('[LlmClient] dataEnd, buffer: ' + sseLineBuffer.length.toString());
+        console.error('[DEBUG-a4f2] LlmClient.callStreamInternal: dataEnd, dataReceived=' + dataReceived.toString() + ' buffer=' + sseLineBuffer.length.toString());
 
         // 处理 buffer 中剩余数据
         if (sseLineBuffer.trim().length > 0) {
@@ -335,6 +336,7 @@ export class LlmClient {
       });
 
       // 发起流式请求
+      console.error('[DEBUG-a4f2] LlmClient.callStreamInternal: calling requestInStream endpoint=' + endpointUrl);
       httpRequest.requestInStream(endpointUrl, {
         method: http.RequestMethod.POST,
         header: {
@@ -346,6 +348,7 @@ export class LlmClient {
         readTimeout: timeoutMs,
       }, (err: Error, data: number): void => {
         console.info('[LlmClient] requestInStream cb: err=' + (err ? err.message : 'null') + ' code=' + data.toString());
+        console.error('[DEBUG-a4f2] LlmClient.callStreamInternal: requestInStream cb err=' + (err ? err.message : 'null') + ' code=' + data.toString());
         if (err) {
           console.error('[LlmClient] stream err: ' + err.message);
           if (!streamEnded) {
