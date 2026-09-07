@@ -110,9 +110,9 @@ export default function llmToolCallingTest(): void {
     it('registry_tolerates_unknown_tool_and_bad_json_as_ok_false', 0, async () => {
       const registry: ToolRegistry = new ToolRegistry();
       registry.register(new EchoProbeTool());
-      const unknown: ToolResult = await registry.execute('nope', '{}');
-      expect(unknown.ok).assertFalse();
-      expect(unknown.content).assertContain('unknown tool');
+      const errResult: ToolResult = await registry.execute('nope', '{}');
+      expect(errResult.ok).assertFalse();
+      expect(errResult.content).assertContain('unknown tool');
       const badJson: ToolResult = await registry.execute('echo_probe', 'not-json');
       expect(badJson.ok).assertFalse();
       expect(badJson.content).assertContain('invalid tool arguments');

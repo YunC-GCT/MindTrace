@@ -57,8 +57,8 @@ export class ToolRegistry {
   async execute(name: string, argsJson: string): Promise<ToolResult> {
     const tool: AgentTool | undefined = this.toolMap.get(name);
     if (tool === undefined) {
-      const unknown: ToolResult = { ok: false, content: 'unknown tool: ' + name };
-      return unknown;
+      const errResult: ToolResult = { ok: false, content: 'unknown tool: ' + name };
+      return errResult;
     }
     let args: Record<string, Object>;
     try {
