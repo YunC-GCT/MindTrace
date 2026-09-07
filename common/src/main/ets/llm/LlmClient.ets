@@ -481,16 +481,19 @@ export class LlmClient {
     const delta: LlmStreamDelta = chunk.choices[0].delta;
     // [DEBUG-a4f2] 临时 instrumentation: 确认 delta 内容(reasoning_content / content 各自非空 / 长度)
     // console.error 显红色 + 默认 logcat 级别可见,避免用户 grep 不到
-    console.error(`[DEBUG-a4f2] tryEmitSseDelta: rc=${delta.reasoning_content !== undefined ? delta.reasoning_content.length : -1}c=${delta.content !== undefined ? delta.content.length : -1}`);
+    // P1 bug fix 2026-09-07: DeepSeek 流式响应 delta 字段可能是 null (不是 undefined)
+    //   例如 {"content": "...", "reasoning_content": null}
+    //   必须用 != null 同时检查 null + undefined,避免 Cannot read property length of null
+    console.error(`[DEBUG-a4f2] tryEmitSseDelta: rc=${delta.reasoning_content != null ? delta.reasoning_content.length : -1}c=${delta.content != null ? delta.content.length : -1}`);
     // DeepSeek 思考模式: reasoning_content 先于 content 到达
-    if (delta.reasoning_content !== undefined && delta.reasoning_content.length > 0) {
+    if (delta.reasoning_content != null && delta.reasoning_content.length > 0) {
       onDelta(delta.reasoning_content, 'reasoning');
     }
     // content emit: 优先用 content;content 空时 fallback 到 reasoning_content
     // 防止 deepseek-v4-pro 思考模式导致 UI 空白(用户 logcat 显示 38KB 流但 UI 无消息)
-    if (delta.content !== undefined && delta.content.length > 0) {
+    if (delta.content != null && delta.content.length > 0) {
       onDelta(delta.content, 'content');
-    } else if (delta.reasoning_content !== undefined && delta.reasoning_content.length > 0) {
+    } else if (delta.reasoning_content != null && delta.reasoning_content.length > 0) {
       onDelta(delta.reasoning_content, 'content');
     }
   }
