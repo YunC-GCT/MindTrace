@@ -238,7 +238,8 @@ export class LlmConfig {
       throw new LlmError(
         `LlmConfig.normalizeModel: input "${v}" matches a reserved keyword; ` +
         `DEFAULT_MODEL is enforced. Reserved keywords: v3, flash, deepseek-chat, ` +
-        `deepseek-reasoner, r1, and the DEFAULT_MODEL value itself.`,
+        `deepseek-reasoner, r1. ` +
+        `(DEFAULT_MODEL itself is allowed — see ticket PR0 fix 2026-09-06.)`,
         'NORMALIZE_KEYWORD_REJECTED'
       );
     }
