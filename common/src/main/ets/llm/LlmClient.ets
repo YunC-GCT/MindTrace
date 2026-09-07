@@ -289,16 +289,17 @@ export class LlmClient {
         }
       }, timeoutMs);
 
-      // 首字节超时: 8 秒内无数据则降级
+      // 首字节超时: 30 秒内无数据则降级(2026-09-07 PR1j: deepseek-v4-pro 思考模式
+      // thinking_content 阶段可能 10-20 秒才发出第一个 chunk,8 秒不够)
       const firstByteTimer: number = setTimeout((): void => {
         if (!streamEnded && !dataReceived) {
           streamEnded = true;
           clearTimeout(timer);
           httpRequest.destroy();
-          console.warn('[LlmClient] no data received within 8s, triggering fallback');
+          console.warn('[LlmClient] no data received within 30s, triggering fallback');
           reject(new LlmError('LLM stream no data', 'STREAM_FAILED') as Error);
         }
-      }, 8000);
+      }, 30000);
 
       // 订阅流式数据事件
       httpRequest.on('dataReceive', (chunk: ArrayBuffer): void => {

@@ -151,6 +151,10 @@ export class AgentChatService {
 
       try {
         // 优先真流式 (SSE requestInStream),失败时降级非流式
+        // P1 fix 2026-09-07: 显式 enableThinking: false
+        // 根因: deepseek-v4-pro 思考模式 thinking_content 阶段耗时 10-20 秒,
+        //       期间 content + reasoning_content 都空,触发 firstByteTimer 降级。
+        //       chat 场景不需要 thinking 过程,只要 content,直接关。
         await client.call({
           messages: this.intentClassifier.buildReplyMessages(memoryContext, learnerProfileContext, userContent),
           stream: true,
@@ -168,7 +172,7 @@ export class AgentChatService {
           },
           maxTokens: 4096,
           timeoutMs: 120000,
-          enableThinking: LlmConfig.getInstance().getEnableThinking(),
+          enableThinking: false,  // chat 不要 thinking,避免流式超时
         });
         console.error(`[DEBUG-a4f2] AgentChatService stream completed, accumulatedContent length=${accumulatedContent.length}`);
         this.setStep('completed');
