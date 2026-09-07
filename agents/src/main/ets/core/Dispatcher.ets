@@ -79,6 +79,7 @@ export class Dispatcher {
     graph.addNode('START', async (input: AgentState) => {
       const seed: AgentState = {
         captureText: this.seedText(req),
+        payload: req.payload,
         currentStep: input.currentStep,
         persist: input.persist,
       };

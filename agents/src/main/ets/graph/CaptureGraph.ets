@@ -75,6 +75,9 @@ export class CaptureGraph {
       currentStep: currentStep,
       persist: persist,
     };
+    if (state.payload !== undefined) {
+      copied.payload = state.payload;
+    }
     if (state.classification !== undefined) {
       copied.classification = state.classification;
     }
