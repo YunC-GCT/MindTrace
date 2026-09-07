@@ -9,8 +9,8 @@ import {
   ContentProtocol,
 } from 'common'
 import { ChatMsg } from './ChatModels'
-import { FormulaSplitRenderer } from '../../../shared/components/FormulaSplitRenderer'
-import { MarkdownRenderer } from '../../../shared/components/MarkdownRenderer'
+import { FormulaSplitRenderer } from '../../../shared/molecules/FormulaSplitRenderer'
+import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 
 @Component
 export struct ChatBubble {

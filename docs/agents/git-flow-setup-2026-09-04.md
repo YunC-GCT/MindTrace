@@ -11,7 +11,7 @@
 跑完下面 4 行再继续:
 
 ```bash
-cd D:\HMgent\MathMind
+cd <本地仓库根>
 git branch --show-current          # 应是 YunCeH(历史分支,即将退役)
 git fetch origin                    # 拉最新
 git ls-remote origin | head -10     # 远程可达
@@ -57,7 +57,7 @@ git branch -d feat/auto-20260721-73792bbb
 ### 4.1 进入设置
 
 ```
-GitHub → YunC-GCT/Math-Mind → Settings → Branches → Branch protection rules
+GitHub → YunC-GCT/MindTrace → Settings → Branches → Branch protection rules
 ```
 
 ### 4.2 加 `main` 规则
@@ -88,7 +88,7 @@ GitHub → YunC-GCT/Math-Mind → Settings → Branches → Branch protection ru
 - 集成分支: develop (新 base,从 main 拉的)
 - 临时分支: feature/<slug> / bugfix/<slug> / release/<stage> / hotfix/<slug>
 - 详见 docs/agents/git-conventions.md §"分支工作流"
-- PR 模板: https://github.com/YunC-GCT/Math-Mind/compare/main...你的分支
+- PR 模板: https://github.com/YunC-GCT/MindTrace/compare/main...你的分支
 
 首次同步:
 git fetch origin
@@ -104,8 +104,8 @@ git checkout -b feature/<your-first-ticket> develop
 ```bash
 git branch -a | head -10            # 应见 main / develop, YunCeH 在本地不在 origin
 git remote show origin | grep -E "(main|develop)"   # 远程分支跟踪
-gh repo view YunC-GCT/Math-Mind --json defaultBranchRef   # 默认分支应 main
-gh api repos/YunC-GCT/Math-Mind/branches/develop/protection 2>/dev/null   # 应有保护规则返回
+gh repo view YunC-GCT/MindTrace --json defaultBranchRef   # 默认分支应 main
+gh api repos/YunC-GCT/MindTrace/branches/develop/protection 2>/dev/null   # 应有保护规则返回
 ```
 
 如果 `gh` 命令未装或返回 404,用 GitHub 网页眼睛目测:

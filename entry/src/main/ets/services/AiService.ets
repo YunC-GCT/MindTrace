@@ -25,18 +25,18 @@ import {
   KnowledgeUnit,
   ClassificationResult,
   DispatchRequest,
-  DispatchResult,
   DispatchAnalysisResult,
   DispatchPayload,
   Logger,
 } from 'common';
-import { Dispatcher } from 'agents';
+import { AgentState, CaptureGraph, CaptureGraphError, Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
 import { NoteDao } from '../database/NoteDao';
 import { DatabaseHelper } from 'common';
 import { UiDataCacheService } from './UiDataCacheService';
+import { NoteDaoAdapter } from '../adapters/NoteDaoAdapter';
 
 const log: Logger = new Logger('AiService');
 
@@ -85,11 +85,32 @@ export class AiService {
     };
 
     const dispatcher: Dispatcher = new Dispatcher();
-    const result: DispatchAnalysisResult = await dispatcher.analyze(req, this.context);
-    if (!result.success || result.classification === undefined) {
-      throw new Error(result.errorMessage ?? '识别失败');
+    const graph: CaptureGraph = dispatcher.buildGraph(req, { persist: false });
+    const initial: AgentState = {
+      captureText: '',
+      currentStep: 'START',
+      persist: false,
+    };
+    const finalState: AgentState = await graph.run(initial, { persist: false });
+    if (finalState.error !== undefined || finalState.classification === undefined) {
+      throw new Error(finalState.error?.message ?? '识别失败');
     }
-    return result.classification;
+    return finalState.classification;
+  }
+
+  // 内部: 把 entry 端 NoteDao 适配成 agents 端 NoteDaoInterface
+  private async buildNoteDao(): Promise<NoteDaoInterface> {
+    if (this.context === undefined) {
+      throw new Error('AiService.buildNoteDao 需要 UIAbilityContext');
+    }
+    let rdb: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (rdb === null) {
+      rdb = await DatabaseHelper.init(this.context);
+    }
+    const noteDao: NoteDao = new NoteDao(rdb);
+    const adapter: NoteDaoAdapter = new NoteDaoAdapter((unit) => noteDao.insert(unit));
+    UiDataCacheService.invalidateNotesSnapshots();
+    return adapter;
   }
 
   // 文本入口:同样的知识入库契约,跳过图像识别
@@ -106,24 +127,29 @@ export class AiService {
     // 1) 构造调度请求
     const req: DispatchRequest = { source: 'app', payload };
 
-    // 2) 调度 Dispatcher(显式传入 context, 避免 agent 层调用 getContext())
+    // 2) 准备 NoteDao 适配器, 注入到 CaptureGraph PersistNode
+    const dao: NoteDaoInterface = await this.buildNoteDao();
+
+    // 3) 构造 Dispatcher, 显式传入 dao (T6 收口时再决定是否删除 dao 参数)
     const dispatcher: Dispatcher = new Dispatcher();
-    const result: DispatchResult = await dispatcher.dispatch(req, this.context);
-
-    // 3) 调度失败 → 抛错(UI 用 Toast 提示)
-    if (!result.success) {
-      const errMsg: string = result.errorMessage ?? 'unresolved error';
-      log.error('dispatch 失败: ' + errMsg);
-      throw new Error('处理失败: ' + errMsg);
+    const graph: CaptureGraph = dispatcher.buildGraph(req, { persist: true, dao });
+    const initial: AgentState = {
+      captureText: payload.kind === 'text' ? payload.text : '',
+      currentStep: 'START',
+      persist: true,
+    };
+    const finalState: AgentState = await graph.run(initial, { persist: true });
+    const error: CaptureGraphError | undefined = finalState.error;
+    if (error !== undefined) {
+      log.error('capture graph failed: ' + error.kind + ' step=' + error.step + ' msg=' + error.message);
+      throw new Error('处理失败: ' + error.message);
+    }
+    const unit: KnowledgeUnit | undefined = finalState.knowledgeUnit;
+    if (unit === undefined) {
+      throw new Error('处理失败: capture graph 未生成 KnowledgeUnit');
     }
 
-    // 4) 校验 KnowledgeUnit.id 必须存在
-    const unit: KnowledgeUnit = result.data as KnowledgeUnit;
-    if (unit.id === undefined || unit.id === null || unit.id.length === 0) {
-      throw new Error('处理失败: KnowledgeUnit.id 为空');
-    }
-
-    // 5) 持久化
+    // 4) UI 缓存(原行为保留)
     console.info('[AiService] ====== KnowledgeUnit dump start ======');
     console.info('[AiService] id=' + unit.id + ' title=' + unit.title);
     console.info('[AiService] content length=' + unit.content.length.toString() + ' chars');
@@ -131,36 +157,10 @@ export class AiService {
     console.info('[AiService] summary=' + unit.summary);
     console.info('[AiService] tags=' + JSON.stringify(unit.tags));
     console.info('[AiService] ====== KnowledgeUnit dump end ======');
-    await this.insertNote(unit);
 
     log.info('done, 笔记 id=' + unit.id
-      + ', 类型=' + (unit.tags.length > 0 ? unit.tags[0] : '?')
-      + ', 耗时 ms=' + result.durationMs.toString());
+      + ', 类型=' + (unit.tags.length > 0 ? unit.tags[0] : '?'));
 
     return unit;
-  }
-
-  // 内部: 入库(RDB)
-  // P0 修复: 旧版调 DatabaseHelper.getStore() 在 init 未完成时永远 null, 静默吞掉。
-  // 现在: 拿不到 store 就主动 await init(context) 兜底, init 失败抛错而不是静默跳过。
-  private async insertNote(unit: KnowledgeUnit): Promise<void> {
-    if (this.context === undefined) {
-      throw new Error('AiService.insertNote 需要 UIAbilityContext');
-    }
-    try {
-      let rdb: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-      if (rdb === null) {
-        log.warn('DatabaseHelper 尚未初始化,主动 await init(context) 兜底');
-        rdb = await DatabaseHelper.init(this.context);
-      }
-      const dao: NoteDao = new NoteDao(rdb);
-      const rowId: number = await dao.insert(unit);
-      UiDataCacheService.invalidateNotesSnapshots();
-      UiDataCacheService.setDetail(unit, UiDataCacheService.currentNotesVersion());
-      log.info('NoteDao.insert 成功,rowId=' + rowId.toString());
-    } catch (e) {
-      log.error('NoteDao.insert 失败: ' + JSON.stringify(e));
-      throw new Error('保存笔记失败: ' + JSON.stringify(e));
-    }
   }
 }

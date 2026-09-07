@@ -13,6 +13,7 @@
  *   - Iteration uses for...of
  */
 
+import { relationalStore } from '@kit.ArkData'
 import { DatabaseHelper, KnowledgeUnit, NoteItem } from "common"
 import { NoteDao } from "../database/NoteDao"
 import {
@@ -70,7 +71,7 @@ export class NotesViewModel {
   async deleteNote(context: Context, id: string): Promise<boolean> {
     try {
       UiDataCacheService.invalidateNote(id)
-      const store = await DatabaseHelper.init(context)
+      const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       await new NoteDao(store).deleteById(id)
       const version: number = UiDataCacheService.currentNotesVersion()
       AppStorage.setOrCreate("notesVersion", version + 1)

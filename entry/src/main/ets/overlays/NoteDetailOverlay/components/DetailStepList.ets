@@ -20,8 +20,8 @@ import {
   F_SM,
   W_BOLD,
 } from 'common'
-import { MarkdownRenderer } from '../../../shared/components/MarkdownRenderer'
-import { AppIcon } from '../../../shared/components/AppIcon'
+import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
+import { AppIcon } from '../../../shared/atoms/AppIcon'
 
 const DETAIL_STEP_INITIAL_COUNT: number = 3
 const DETAIL_STEP_BATCH_SIZE: number = 3

@@ -3,7 +3,7 @@
  *
  * Path: entry/src/main/ets/pages/Notes/SubjectNoteList.ets
  * Responsibility: Lazily render filtered subject notes with List/ListItem while preserving NoteCard styling.
- * Dependencies: common.NoteItem, shared/components/NoteCard.
+ * Dependencies: common.NoteItem, shared/organisms/NoteCard.
  *
  * Data flow:
  *   SubjectDetailPage.filteredNotes -> SubjectNoteList -> NoteCard -> onSelect(note)
@@ -14,7 +14,7 @@
  */
 
 import { BG_CARD, BORDER, R_LG, S_4, NoteItem } from "common"
-import { NoteCard } from "../../shared/components/NoteCard"
+import { NoteCard } from "../../shared/organisms/NoteCard"
 
 function safeIndex(index: number | undefined): number {
   return index === undefined ? 0 : index

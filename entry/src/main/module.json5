@@ -28,6 +28,9 @@
           "abilities": ["EntryAbility"],
           "when": "always"
         }
+      },
+      {
+        "name": "ohos.permission.PUBLISH_AGENT_REMINDER"
       }
     ],
     "abilities": [

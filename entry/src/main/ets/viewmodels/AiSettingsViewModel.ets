@@ -142,10 +142,14 @@ export class AiSettingsViewModel {
       const llm: LlmConfig = LlmConfig.getInstance()
       await llm.setApiKey(key)
       await llm.saveAll(this.resolveEndpoint(), this.resolveModel(), this.temp, this.maxT, this.to)
-      await new LlmClient().call([
-        { role: "system", content: "You are a connection test endpoint. Reply with exactly: OK" },
-        { role: "user", content: "Reply OK only." },
-      ], { maxTokens: 512, timeoutMs: 60000 })
+      await new LlmClient().call({
+        messages: [
+          { role: "system", content: "You are a connection test endpoint. Reply with exactly: OK" },
+          { role: "user", content: "Reply OK only." },
+        ],
+        maxTokens: 512,
+        timeoutMs: 60000,
+      })
       this.statusText = "已配置 / 连接正常"
       this.configured = true
       return true

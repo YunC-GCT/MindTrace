@@ -1,5 +1,11 @@
 ﻿// ============================================================================
-//  pages/Notes/NotesPage.ets - notes page shell
+//  pages/Notes/NotesPage.ets — 笔记页 (5 Tab 之一)
+//  ----------------------------------------------------------------------------
+//  组件层: Page (D3 spec 012)
+//  允许依赖: common 令牌/模型 · viewmodels · services · shared/* · 本目录组件
+//  禁止依赖: database/dao 实现 · agents 内部实现 · 网络层直调
+//  依赖: NotesViewModel · NotesHeader · NotesEmptyState · NotesSummaryPanel ·
+//        SubjectGrid · SubjectViewToggle
 // ============================================================================
 
 import { BG_DARK, TEXT, S_4, S_5, F_BASE, W_SEMIBOLD } from "common"

@@ -42,3 +42,12 @@ return truthCheckService.check(raw);  // → mutates response fields or null
 - Audit §4.2 — original god-class finding
 - Phase 4 ticket #3 — implementation ticket
 - `CONTEXT.md` — defines `KnowledgeUnit`, `Capture`, `Structure`
+
+## Amendment (2026-09-06)
+
+Direction reaffirmed with a tool-calling addendum, per the [agent-tools inventory](../architecture/agent-tools-inventory-2026-09-06.md) cycle and user ruling:
+
+- **The 3-way split stands.** User ruling: prompt constants and validation stay as code (this already endorses 2 of the 3 classes).
+- **Tool-calling reservation**: after the split, `StructureService` confines its LLM interaction to a single private seam (today `LlmGuard.callJsonWithRetry`, same `LlmCaller` pattern), swappable by the `ToolLoop` from [ADR-0012](./0012-tool-calling-protocol.md) without interface change.
+- **Schedule**: only the TruthCheck extraction landed in the competition window (zero-LLM-dependency segment, lowest regression risk); PromptBuilder/StructureService extraction followed the same day per a later user ruling. The updated plan lives in [spec 015](../specs/015-knowledge-model-decomposition-v2.md), which supersedes [spec 003](../specs/003-knowledge-model-decomposition.md) (its PR sequence and test counts predate the D2 world: the 3 façade shells already exist, `Dispatcher` is single-entry).
+- **Naming ruling (2026-09-06, user)**: the slimmed orchestrator **retains the name `KnowledgeModel`** — it is, in essence, the structuring agent. The outcome is therefore "`KnowledgeModel` orchestrates three collaborator services (`PromptBuilder`, `TruthCheckService`, and its own single LLM-call seam)", not "KnowledgeModel deleted".

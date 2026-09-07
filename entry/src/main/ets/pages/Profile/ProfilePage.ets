@@ -1,5 +1,11 @@
 // ============================================================================
-//  pages/Profile/ProfilePage.ets - profile page shell
+//  pages/Profile/ProfilePage.ets — 我的页 (5 Tab 之一)
+//  ----------------------------------------------------------------------------
+//  组件层: Page (D3 spec 012)
+//  允许依赖: common 令牌/模型 · viewmodels · services · shared/* · 本目录组件
+//  禁止依赖: database/dao 实现 · agents 内部实现 · 网络层直调
+//  依赖: ProfileViewModel · ProfileAuthViewModel · ProfileHeader ·
+//        ProfileStatsRow · ProfileMenuList · ProfileLoginPanel
 // ============================================================================
 
 import {

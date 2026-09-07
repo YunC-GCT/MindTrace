@@ -28,7 +28,7 @@ import {
   splitReadableLines,
   EXTRA_SECTION_TITLE,
 } from '../model/DetailRenderModel'
-import { MarkdownRenderer } from '../../../shared/components/MarkdownRenderer'
+import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailStepList } from '../components/DetailStepList'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
 

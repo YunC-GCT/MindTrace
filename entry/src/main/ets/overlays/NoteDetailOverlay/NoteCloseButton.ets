@@ -17,7 +17,7 @@
 //  ============================================================================
 
 import { TEXT_2, GLASS_10, S_4 } from "common"
-import { AppIcon } from "../../shared/components/AppIcon"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 
 @Component
 export struct NoteCloseButton {

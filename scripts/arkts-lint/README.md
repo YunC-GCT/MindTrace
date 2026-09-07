@@ -10,7 +10,7 @@
 
 ```bash
 # 从 MindTrace 根目录
-cd D:\HMgent\MathMind
+cd <本地仓库根>
 
 # 检查规则定义合法性
 node scripts/arkts-lint/index.mjs --check-rules

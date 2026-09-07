@@ -15,7 +15,7 @@
 //  ============================================================================
 
 import { NoteItem } from "common"
-import { NoteCard } from "../../shared/components/NoteCard"
+import { NoteCard } from "../../shared/organisms/NoteCard"
 
 @Component
 export struct NotesList {

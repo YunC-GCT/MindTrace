@@ -23,7 +23,7 @@ import {
   emptyDetailRenderModel,
   fallbackMainText,
 } from '../model/DetailRenderModel'
-import { MarkdownRenderer } from '../../../shared/components/MarkdownRenderer'
+import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
 
 const TITLE_SUMMARY: string = '\u6458\u8981'

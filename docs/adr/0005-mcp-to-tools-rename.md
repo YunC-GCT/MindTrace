@@ -2,6 +2,10 @@
 
 The directory `agents/src/main/ets/mcp/tools/` is named "mcp" (Model Context Protocol) but the project does not run an MCP server. `OcrTool.ets` is plain HTTP. The name is false advertising and confuses new contributors.
 
+## Status
+
+**Superseded by [ADR-0010](./0010-mcp-tools-semantics.md)** (2026-09-06). The premise above — "the project does not run an MCP server, so the name is false advertising" — was wrong: `OcrTool` is an MCP-语义 tool (built by a teammate from an MCP tool), so `mcp/` is retained as a by-semantics directory classification and the rename was reverted (spec 010, PR #28 revert). After the revert, `tools/` refers to CRUD-class agent tools instead (see [ADR-0012](./0012-tool-calling-protocol.md)).
+
 ## Considered Options
 
 1. **Rename to `tools/`** *(chosen)*. One-time `git mv`, search-replace any imports. ~6 files affected (only `OcrTool.ets` and the index files reference the path).

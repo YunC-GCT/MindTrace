@@ -114,18 +114,28 @@ export class LatexRiskNormalizer {
   }
 
   private looksLikeBareDisplayFormula(text: string): boolean {
-    if (text.indexOf('$$') >= 0 || text.indexOf('$') === 0) {
-      return false;
-    }
-    const startsWithCommand: boolean = text.indexOf('\\int') === 0
+    // 1. 行首即 LaTeX 命令 → 裸展示公式, 即使行内嵌有 $...$ 片段 (如 \int ... ($n \neq -1$))
+    if (text.indexOf('\\int') === 0
       || text.indexOf('\\sum') === 0
       || text.indexOf('\\lim') === 0
       || text.indexOf('\\frac') === 0
       || text.indexOf('\\sqrt') === 0
-      || text.indexOf('\\begin') === 0;
-    if (startsWithCommand) {
+      || text.indexOf('\\begin') === 0) {
       return true;
     }
+    // 2. 行首是文本且含成对行内 $ → 公式已定界, 不是裸展示
+    //    (旧守卫只查 $$ / $ 开头, 曾把 '文本 $\Phi...\frac...$' 误判损坏成 $$...$$)
+    const first: number = this.nextUnescapedDollar(text, 0);
+    if (first >= 0) {
+      const second: number = this.nextUnescapedDollar(text, first + 1);
+      if (second >= 0) {
+        return false;
+      }
+      if (first === 0) {
+        return false;
+      }
+    }
+    // 3. 无 $ 定界的 'f(x)=\frac...' 形态 → 裸展示
     return text.indexOf('=') >= 0 && (
       text.indexOf('\\frac') >= 0 ||
       text.indexOf('\\sqrt') >= 0 ||
@@ -135,7 +145,6 @@ export class LatexRiskNormalizer {
       text.indexOf('\\begin') >= 0
     );
   }
-
   private removeNestedDollars(text: string, issues: string[], fixes: string[]): string {
     if (text.indexOf('$') < 0) {
       return text;

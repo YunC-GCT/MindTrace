@@ -1,9 +1,9 @@
 # MindTrace 项目定位 — 摘要 + 详细双节
 
 > **Date:** 2026-09-04
-> **Project:** MindTrace (`D:\HMgent\MathMind`,大小写敏感,非 `MindTrace` 仓库名)
+> **Project:** MindTrace (`<本地仓库根>`,大小写敏感,非 `MindTrace` 仓库名)
 > **Audience:** 评委 pitch(读 §1)+ 团队对齐(读 §2–§9)
-> **Scope:** 全代码库扫描 + 本地文档三角验证;远程 `YunC-GCT/Math-Mind` 当前环境 404,见 §8
+> **Scope:** 全代码库扫描 + 本地文档三角验证;远程 `YunC-GCT/MindTrace` 当前环境 404,见 §8
 > **基线 HEAD:** `5963493` on `YunCeH`(与 `main` 同步);审计基线 `29df511` (2026-09-01)
 
 ---
@@ -26,7 +26,7 @@ MindTrace 是**鸿蒙高校创新赛复赛项目**:一个跑在 HarmonyOS 上的
 | **工程亮点** | (a) 自研 `scripts/arkts-lint/` AST 引擎 — **34 规则 / 63/63 测试通过 / CI 已接入**,取代 v1 正则(消除 ~80% 误报);(b) **7 ADR + 6 ticket spec + 162 文件 23,301 LOC 全量架构审计**(总评级 🟡 可工作但分层混乱);(c) GitHub Actions CI + `permissions: contents: read` hardening;PR 模板 + 5 标签 triage 工作流 |
 | **测试基线** | Hypium ArkTS 测试 12 个(ADR-0007 基线)+ arkts-lint Node 测试 63 个 = **75 个测试** |
 | **当前状态** | W4 增量清晰(渲染层 + 缓存优化);已修 #15 ArkTS 铁律 / #9 LlmConfig 静默覆盖(TDD) / #16 fixture data 泄漏(TDD);待修 #1 doc expiry / #3 KnowledgeModel 870 LOC god class / #4 Dispatcher 双入口 / #5 LLMClient 三路径 / #7 AgentChatService 802 LOC / #10 mcp→tools rename |
-| **风险信号** | 远程仓库 `YunC-GCT/Math-Mind` 在当前环境全部 404(本地 origin 指向它,大概率私有 + 无凭证);`AGENTS.md` 中"最后审计 2026-09-01 / HEAD 29df511" 与现实 HEAD `5963493` 不一致(审计 §4.16 已点);6 spec 全部 "spec ready, not implemented",0 个落地 |
+| **风险信号** | 远程仓库 `YunC-GCT/MindTrace` 在当前环境全部 404(本地 origin 指向它,大概率私有 + 无凭证);`AGENTS.md` 中"最后审计 2026-09-01 / HEAD 29df511" 与现实 HEAD `5963493` 不一致(审计 §4.16 已点);6 spec 全部 "spec ready, not implemented",0 个落地 |
 | **仓库结构骨架** | 5 module 依赖方向单向无环:`entry → {common, agents}`;`{skill, cardservice} → {common, agents}`;`agents → common`;`common` 叶子 |
 
 **三句 elevator pitch**:
@@ -43,8 +43,8 @@ MindTrace 是**鸿蒙高校创新赛复赛项目**:一个跑在 HarmonyOS 上的
 | 字段 | 值 | 引用 |
 |---|---|---|
 | 项目名 | **MindTrace**(README / AppScope / docs 一致) | `README.md` L1, `AppScope/app.json5` |
-| 仓库本地路径 | `D:\HMgent\MathMind`(大小写敏感) | `AGENTS.md` L7 |
-| 远程仓库 | `git@github.com:YunC-GCT/Math-Mind.git`(当前环境 404) | `git remote -v` |
+| 仓库本地路径 | `<本地仓库根>` | `AGENTS.md` L7 |
+| 远程仓库 | `git@github.com:YunC-GCT/MindTrace.git`(当前环境 404) | `git remote -v` |
 | 主分支 | `main`;AI 工作分支 `YunCeH` | `AGENTS.md` L5, `docs/agents/git-conventions.md` |
 | 当前 HEAD | `5963493 fix(ci): add 'permissions: contents: read' to both workflows`(on `YunCeH`,与 `main` 同步) | `git log -1` |
 | 工作树状态 | clean,无未提交改动 | `git status` |
@@ -327,23 +327,23 @@ README.md      # 状态条 + 维护手册
 | 探测 | 结果 |
 |---|---|
 | `gh` CLI | 未安装 |
-| `curl https://api.github.com/repos/YunC-GCT/Math-Mind` | **HTTP 404** |
-| `curl https://github.com/YunC-GCT/Math-Mind` | **HTTP 404** |
+| `curl https://api.github.com/repos/YunC-GCT/MindTrace` | **HTTP 404** |
+| `curl https://github.com/YunC-GCT/MindTrace` | **HTTP 404** |
 | 用户 `YunC-GCT` 公开仓库列表 | 只有 `YunC-GCT/SIT`(Python),无 `Math-Mind` |
 | 拼写变体穷举 | `YunC-GCT/MathMind` / `Yun-C-GCT/Math-Mind` / `YunC-GCT/Math_Mind` 全部 404 |
 
 **最可能原因**:
 1. 仓库私有 + 当前环境无凭证(GitHub API 对私有无认证直接 404)
 2. 仓库被删除/重命名(用户名下零 `Math-Mind` 命中,排除重命名到同 owner)
-3. 凭证缺失(本地 `git remote -v` 显示 `git@github.com:YunC-GCT/Math-Mind.git`,与本地 origin 一致)
+3. 凭证缺失(本地 `git remote -v` 显示 `git@github.com:YunC-GCT/MindTrace.git`,与本地 origin 一致)
 
-**后续可补**: 在能访问 `YunC-GCT/Math-Mind` 的环境里重跑 `gh repo view --json ...`,把 JSON 贴回可补全远程视角。
+**后续可补**: 在能访问 `YunC-GCT/MindTrace` 的环境里重跑 `gh repo view --json ...`,把 JSON 贴回可补全远程视角。
 
 ### 8.2 本地三角验证的"远程视角"信号
 
 **信源 1: README 自陈**(`README.md` L1-5)
 - 项目名: MindTrace
-- 工程链接: [YunC-GCT/Math-Mind](https://github.com/YunC-GCT/Math-Mind)
+- 工程链接: [YunC-GCT/MindTrace](https://github.com/YunC-GCT/MindTrace)
 - 作者: YunC-GCT `<2549237929@qq.com>`,当前主笔: Z
 - 最近更新: 2026-09-01
 - 头注自述: "全代码库架构审计 + arkts-lint v0.3 (AST) + GitHub Actions CI 已落地"
@@ -404,10 +404,10 @@ README.md      # 状态条 + 维护手册
 > 本报告引用的所有一手信源,便于回查。
 
 **项目入口**:
-- `D:\HMgent\MathMind\AGENTS.md`
-- `D:\HMgent\MathMind\README.md`
-- `D:\HMgent\MathMind\CONTEXT.md`
-- `D:\HMgent\MathMind\build-profile.json5`
+- `<本地仓库根>\AGENTS.md`
+- `<本地仓库根>\README.md`
+- `<本地仓库根>\CONTEXT.md`
+- `<本地仓库根>\build-profile.json5`
 
 **5 module 清单**:
 - `entry/oh-package.json5` `common/oh-package.json5` `agents/oh-package.json5` `skill/oh-package.json5` `cardservice/oh-package.json5`
@@ -440,7 +440,7 @@ README.md      # 状态条 + 维护手册
 - `docs/template/` + `docs/index.md` + `docs/onboarding.md`
 - `docs/research/agent-framework-comparison-2026-09-02.md`
 - `docs/research/langgraph-migration-2026-09-02.md`
-- `docs/research/2026-09-04-project-positioning.md`(本报告)
+- `docs/research/project-positioning-2026-09-04.md`(本报告)
 
 **git 引用**:
 - HEAD: `5963493 fix(ci): add 'permissions: contents: read' to both workflows`

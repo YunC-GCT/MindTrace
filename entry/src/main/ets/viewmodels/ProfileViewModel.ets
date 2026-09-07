@@ -4,6 +4,7 @@
 //  Owns profile summary counts and data loading.
 // ============================================================================
 
+import { relationalStore } from '@kit.ArkData'
 import { DatabaseHelper, KnowledgeUnit, ReviewStatus } from "common"
 import { NoteDao } from "../database/NoteDao"
 
@@ -15,7 +16,7 @@ export class ProfileViewModel {
 
   async loadStats(context: Context): Promise<boolean> {
     try {
-      const store = await DatabaseHelper.init(context)
+      const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       const units: KnowledgeUnit[] = await new NoteDao(store).queryAll()
       this.notes = units.length
       this.today = this.countToday(units)

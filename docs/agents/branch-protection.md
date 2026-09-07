@@ -76,6 +76,35 @@
 > - 出现 release 节奏 + 严格 gate:加勾 `Required linear history`
 > - 有人故意放水:加勾 `Required signed commits` + CODEOWNERS 严化
 
+### 4. 关键修正:`bypass_mode = "pull_request"`(2026-09-05 12:14)
+
+> **背景**: 初次创建 Rulesets 时 `bypass_actors[*].bypass_mode` 设为 `"always"` —— 这意味着 Repository Admin(actor_id=4)和 Maintain(actor_id=5)**可以完全绕过所有规则**,包括 direct push 到 main。这造成"AI 在其他 session 直接 push 到 main"风险。
+>
+> **修正**(2026-09-05 12:14): `bypass_mode` 从 `"always"` → **`"pull_request"`**。
+>
+> **效果对比**:
+>
+> | 路径 | Before(always) | After(pull_request) |
+> |---|---|---|
+> | `git push origin main`(直接 push) | ⚠️ Admin 可绕过 ✅ | ❌ **Admin 也被拦** |
+> | `git push origin feature/xxx` | ✅ 不受限(临时分支) | ✅ 不受限 |
+> | PR `feature/* → main` 走 review | ✅ 可走 | ✅ 可走 |
+> | Admin 在 PR 里 self-approve | ✅ 可走 | ✅ 可走(兜底)|
+> | `current_user_can_bypass` 字段 | `always` | **`pull_requests_only`** |
+>
+> **结论**: 现在 `git push origin main` **被 ruleset 完全挡住**(任何人,包括 admin)。AI 在其他 session 必须走 **PR 流程**(创建 feature 分支 → push → 开 PR → review → merge),无法直接动 main。
+>
+> **api 更新命令**(gh CLI,需 admin scope `repo`):
+>
+> ```bash
+> gh api --method PUT /repos/YunC-GCT/MindTrace/rulesets/22318353 \
+>   --input .scratch/protect-main.json
+> gh api --method PUT /repos/YunC-GCT/MindTrace/rulesets/22318810 \
+>   --input .scratch/protect-develop.json
+> ```
+>
+> **未来变更流程**: 修改 `.scratch/protect-main.json` 或 `.scratch/protect-develop.json` → 用 gh PUT 更新 → 验证 `current_user_can_bypass: pull_requests_only` 保持 → 提交 commit message 记录变更。
+
 ### 3. 不受保护
 
 - `feature/*` / `release/*` / `hotfix/*` / `bugfix/*` — **临时分支,无需保护**
@@ -101,9 +130,9 @@
 | 2026-09-04 | Private → **Public** | 比赛项目需要公开 commit history / PR 供评委查看;同时解开 private + free plan 下 "Not enforced" 的限制 |
 
 切换步骤(owner 操作,AI 不做):
-1. https://github.com/YunC-GCT/Math-Mind/settings/general → 滚到 Danger Zone
+1. https://github.com/YunC-GCT/MindTrace/settings/general → 滚到 Danger Zone
 3. **Change repository visibility** → 选 Public
-4. 二次确认输仓库全名 `YunC-GCT/Math-Mind`
+4. 二次确认输仓库全名 `YunC-GCT/MindTrace`
 
 切换后:
 - `main` / `develop` ruleset 自动从 "Not enforced" → enforce

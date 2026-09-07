@@ -1,9 +1,9 @@
 import { LlmClient } from './LlmClient';
 import { buildGuardRetryMessage } from './LlmOutputRules';
-import type { ChatMessage, LlmCallOptions } from './LlmTypes';
+import type { ChatMessage, LlmCallOptions, LlmCallRequest, LlmCallResult } from './LlmTypes';
 
 export interface LlmCaller {
-  call(messages: ChatMessage[], opts?: LlmCallOptions): Promise<string>;
+  call(request: LlmCallRequest): Promise<LlmCallResult>;
 }
 
 export interface LlmGuardValidationResult {
@@ -47,7 +47,8 @@ export class LlmGuard {
     let attempt: number = 0;
 
     while (attempt <= maxRetries) {
-      raw = await this.client.call(guardedMessages, this.toCallOptions(options));
+      const callResult: LlmCallResult = await this.client.call(this.toCallRequest(guardedMessages, options));
+      raw = callResult.text ?? '';
       const parsed: LlmGuardJsonResult = this.parseAndValidate(raw, attempt + 1, validator);
       if (parsed.issues.length === 0) {
         return parsed;
@@ -116,13 +117,15 @@ export class LlmGuard {
     };
   }
 
-  private toCallOptions(options: LlmGuardJsonOptions): LlmCallOptions {
-    return {
+  private toCallRequest(messages: ChatMessage[], options: LlmGuardJsonOptions): LlmCallRequest {
+    const request: LlmCallRequest = {
+      messages: messages,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
       model: options.model,
       timeoutMs: options.timeoutMs,
       responseFormat: options.responseFormat ?? { type: 'json_object' },
     };
+    return request;
   }
 }

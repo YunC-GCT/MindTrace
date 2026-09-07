@@ -138,7 +138,8 @@ function checkEntry({ relPath, name, isDir }, violations) {
   // Normalize to forward slashes — `path.relative()` returns OS-native separators
   // (e.g. `docs\foo` on Windows, `docs/foo` on POSIX), so naive startsWith('docs/')
   // silently misses every file on Windows. Bug fixed 2026-09-04.
-  if (ext === '.html' && relPath.replace(/\\/g, '/').startsWith('docs/')) {
+  const relPathFwd = relPath.replace(/\\/g, '/');
+  if (ext === '.html' && relPathFwd.startsWith('docs/')) {
     violations.push({ relPath, name, rule: 'no-html-in-docs', msg: 'HTML files in docs/ must be gitignored renders, not source' });
     return;
   }
@@ -152,19 +153,20 @@ function checkEntry({ relPath, name, isDir }, violations) {
   }
 
   // 6. ADR / Spec / Research — special prefix/suffix rules
-  if (relPath.startsWith('docs/adr/') && ext === '.md' && name !== 'index.md') {
+  // All three use the normalized forward-slash path (see HTML check above for why).
+  if (relPathFwd.startsWith('docs/adr/') && ext === '.md' && name !== 'index.md') {
     if (!ADR_RE.test(name)) {
       violations.push({ relPath, name, rule: 'adr-prefix', msg: 'ADR must match NNNN-{slug}.md' });
     }
     return;
   }
-  if (relPath.startsWith('docs/specs/') && ext === '.md' && name !== 'index.md') {
+  if (relPathFwd.startsWith('docs/specs/') && ext === '.md' && name !== 'index.md') {
     if (!SPEC_RE.test(name)) {
       violations.push({ relPath, name, rule: 'spec-prefix', msg: 'Spec must match NNN-{slug}.md' });
     }
     return;
   }
-  if (relPath.startsWith('docs/research/') && ext === '.md' && name !== 'index.md') {
+  if (relPathFwd.startsWith('docs/research/') && ext === '.md' && name !== 'index.md') {
     if (!RESEARCH_DATE_RE.test(name)) {
       violations.push({ relPath, name, rule: 'research-date', msg: 'Research file must end with -YYYY-MM-DD.md' });
     }

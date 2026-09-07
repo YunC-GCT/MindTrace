@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { TEXT, TEXT_3, S_1, S_2, S_3, S_5, F_XS, F_BASE, W_SEMIBOLD, NoteItem } from "common"
-import { NoteCard } from "../../shared/components/NoteCard"
+import { NoteCard } from "../../shared/organisms/NoteCard"
 
 @Component
 export struct HomeRecentNotes {

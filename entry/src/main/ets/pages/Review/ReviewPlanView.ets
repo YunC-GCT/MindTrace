@@ -7,7 +7,7 @@ import {
   StudyPlanItem,
 } from "common"
 import { StudyPlanViewModel } from "../../viewmodels/StudyPlanViewModel"
-import { AppIcon } from "../../shared/components/AppIcon"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 import { ReviewPlanRow } from "./ReviewPlanRow"
 
 @Component

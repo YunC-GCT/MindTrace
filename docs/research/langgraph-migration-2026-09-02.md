@@ -2,7 +2,7 @@
 
 > **日期:** 2026-09-02
 > **范围:** 把 MindTrace 的 agent 流水线从当前自定义 `Dispatcher` 迁移到 **LangGraph** 需要做哪些调整
-> **项目:** MindTrace (`D:\HMgent\MathMind`)
+> **项目:** MindTrace (`<本地仓库根>`)
 > **作者:** 后台 research agent(被主 agent 替换完成;原 agent 因超时被中断,主 agent 接手)
 > **前置文档:** [agent-framework-comparison-2026-09-02.md](./agent-framework-comparison-2026-09-02.md) — 已确认 MindTrace **当前不是** 基于 LangGraph
 

@@ -1,6 +1,6 @@
 # Ticket #9 — LlmConfig silent-override → throw
 
-> **Status**: spec for review (Phase 3)
+> **Status**: implemented (2026-09-06 · TDD; 进度以 [`index.md`](./index.md) 为准)
 > **Source ADR**: implicit (defensive coding principle; matches ADR-0002 philosophy)
 > **Files affected**: `common/src/main/ets/llm/LlmConfig.ets`
 

@@ -3,17 +3,27 @@
 // 责任: Z (Mavis)
 // 创建: 2026-07-14 — 主 Agent 业务 LLM 调用基础设施
 //
-// 用法:
+// 用法 (spec 005: 唯一公共入口 call(request)):
 //   const client = new LlmClient();
-//   const text: string = await client.call([
-//     { role: 'system', content: '...' },
-//     { role: 'user', content: '...' },
-//   ]);
+//   // 非流式: 返回完整文本
+//   const result: LlmCallResult = await client.call({
+//     messages: [
+//       { role: 'system', content: '...' },
+//       { role: 'user', content: '...' },
+//     ],
+//   });
+//   const text: string = result.text ?? '';
+//   // 流式: 真 SSE (requestInStream), 每 token 触发 onDelta
+//   await client.call({
+//     messages: [...],
+//     stream: true,
+//     onDelta: (delta: string, kind: 'reasoning' | 'content'): void => { ... },
+//   });
 //
 // 设计:
 //   - 端点 / model / temperature / max_tokens / timeout 全部从 LlmConfig 单例读
-//   - 单次调用可用 opts 覆盖默认
-//   - 错误统一抛 LlmError(kind: NO_API_KEY / NETWORK_ERROR / API_ERROR / PARSE_ERROR / EMPTY_RESPONSE)
+//   - 单次调用可用 request 字段覆盖默认
+//   - 错误统一抛 LlmError(kind: NO_API_KEY / NETWORK_ERROR / API_ERROR / PARSE_ERROR / EMPTY_RESPONSE / TIMEOUT / STREAM_FAILED)
 //
 // ArkTS 1.1 严格语法:
 //   - 无 any / unknown
@@ -32,7 +42,9 @@ import {
   LlmStreamDelta,
   LlmStreamCallback,
   LlmThinkingConfig,
-  LlmCallOptions,
+  LlmCallRequest,
+  LlmCallResult,
+  LlmToolCall,
   LlmError,
 } from './LlmTypes';
 
@@ -43,29 +55,49 @@ export class LlmClient {
     this.config = LlmConfig.getInstance();
   }
 
-  // 主入口:发 chat completion 请求,返回首条 message.content 字符串
-  public async call(messages: ChatMessage[], opts?: LlmCallOptions): Promise<string> {
+  // 唯一公共入口 (ADR-0004 / spec 005): request.stream 选择 JSON / SSE 流式适配路径
+  public async call(request: LlmCallRequest): Promise<LlmCallResult> {
+    if (request.stream === true) {
+      if (request.onDelta === undefined) {
+        throw new LlmError('call: stream=true requires onDelta callback', 'STREAM_FAILED');
+      }
+      await this.callStreamInternal(request, request.onDelta);
+      const streamedResult: LlmCallResult = { streamed: true };
+      return streamedResult;
+    }
+    return await this.callJsonInternal(request);
+  }
+  // ===== 内部 =====
+
+  // JSON 适配路径 (原 call): request() + 手动 JSON 解析, 返回 text 与可选 toolCalls
+  private async callJsonInternal(request: LlmCallRequest): Promise<LlmCallResult> {
     // 1. 校验 API key
     const apiKey: string | null = await this.config.getApiKey();
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }
 
-    // 2. 构造请求体(opts 优先,默认从 LlmConfig)
-    const model: string = this.pickStr(opts?.model, this.config.getModel());
-    const temperature: number = this.pickNum(opts?.temperature, this.config.getTemperature());
-    const maxTokens: number = this.pickNum(opts?.maxTokens, this.config.getMaxTokens());
-    const timeoutMs: number = this.pickNum(opts?.timeoutMs, this.config.getTimeoutMs());
+    // 2. 构造请求体(request 字段优先, 默认从 LlmConfig)
+    const model: string = this.pickStr(request.model, this.config.getModel());
+    const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
+    const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
+    const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
 
     const body: LlmRequestBody = {
       model: model,
-      messages: messages,
+      messages: request.messages,
       temperature: temperature,
       max_tokens: maxTokens,
       stream: false,
     };
-    if (opts?.responseFormat !== undefined) {
-      body.response_format = opts.responseFormat;
+    if (request.responseFormat !== undefined) {
+      body.response_format = request.responseFormat;
+    }
+    if (request.tools !== undefined) {
+      body.tools = request.tools;
+    }
+    if (request.tool_choice !== undefined) {
+      body.tool_choice = request.tool_choice;
     }
 
     // 3. 发 HTTP POST
@@ -104,15 +136,37 @@ export class LlmClient {
       throw new LlmError(`LLM response parse error: ${(e as Error).message ?? String(e)}`, 'PARSE_ERROR');
     }
 
-    // 6. 提取 content
+    // 6. 提取 content / tool_calls
     console.info('[LlmClient] raw response: ' + JSON.stringify(parsed).substring(0, 800));
     if (parsed.choices.length > 0 && parsed.choices[0].finish_reason === 'length') {
       throw new LlmError('LLM response truncated by max_tokens', 'API_ERROR');
     }
-    return this.extractContent(parsed);
+    const toolCalls: LlmToolCall[] = this.extractToolCalls(parsed);
+    const result: LlmCallResult = { text: '', streamed: false };
+    if (toolCalls.length > 0) {
+      // tool_calls 响应: content 常为 null/空, 不走 extractContent 的空内容抛错
+      const first: LlmResponseChoice = parsed.choices[0];
+      if (first.message !== undefined && first.message !== null && first.message.content !== undefined && first.message.content !== null) {
+        result.text = first.message.content;
+      }
+      result.toolCalls = toolCalls;
+    } else {
+      result.text = this.extractContent(parsed);
+    }
+    return result;
   }
 
-  // ===== 内部 =====
+  // tool_calls 提取: 以 message.tool_calls 非空为准 (finish_reason 在 OpenAI 兼容端点间有差异, 仅日志参考)
+  private extractToolCalls(parsed: LlmResponse): LlmToolCall[] {
+    if (parsed.choices.length === 0) {
+      return [];
+    }
+    const message: ChatMessage | null = parsed.choices[0].message;
+    if (message === undefined || message === null || message.tool_calls === undefined || message.tool_calls === null) {
+      return [];
+    }
+    return message.tool_calls;
+  }
 
   private extractContent(parsed: LlmResponse): string {
     if (parsed.choices.length === 0) {
@@ -167,19 +221,14 @@ export class LlmClient {
   }
 
   /**
-   * 流式调用 DeepSeek Chat API (SSE)
+   * SSE 流式适配路径 (原 callStream)
    *
    * 使用 HarmonyOS requestInStream + on('dataReceive') 逐块接收 SSE 事件。
    * 每收到一个有效 token 即触发 onDelta 回调，实现逐字实时渲染。
-   *
-   * @param messages  对话消息列表
-   * @param onDelta   每次收到新 token 的回调 (delta文本, 'reasoning'|'content')
-   * @param opts      可选参数(含 enableThinking)
    */
-  public async callStream(
-    messages: ChatMessage[],
+  private async callStreamInternal(
+    request: LlmCallRequest,
     onDelta: LlmStreamCallback,
-    opts?: LlmCallOptions,
   ): Promise<void> {
     // 1. 校验 API key
     const apiKey: string | null = await this.config.getApiKey();
@@ -188,11 +237,11 @@ export class LlmClient {
     }
 
     // 2. 构造请求体
-    const model: string = this.pickStr(opts?.model, this.config.getModel());
-    const temperature: number = this.pickNum(opts?.temperature, this.config.getTemperature());
-    const maxTokens: number = this.pickNum(opts?.maxTokens, this.config.getMaxTokens());
-    const timeoutMs: number = this.pickNum(opts?.timeoutMs, this.config.getTimeoutMs());
-    const enableThinking: boolean = opts?.enableThinking === true;
+    const model: string = this.pickStr(request.model, this.config.getModel());
+    const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
+    const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
+    const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
+    const enableThinking: boolean = request.enableThinking === true;
 
     // 构造 body (Record 避免 redacted 匹配问题)
     const bodyObj: Record<string, Object> = {
@@ -200,7 +249,7 @@ export class LlmClient {
 
     // 手动设置字段以避免 redacted 字段匹配
     bodyObj['model'] = model;
-    bodyObj['messages'] = messages as Object;
+    bodyObj['messages'] = request.messages as Object;
     bodyObj['stream'] = true;
     bodyObj['max_tokens'] = maxTokens;
 
@@ -215,8 +264,8 @@ export class LlmClient {
       bodyObj['reasoning_effort'] = 'high';
     }
 
-    if (opts?.responseFormat !== undefined) {
-      bodyObj['response_format'] = opts.responseFormat as Object;
+    if (request.responseFormat !== undefined) {
+      bodyObj['response_format'] = request.responseFormat as Object;
     }
 
     const bodyJson: string = JSON.stringify(bodyObj);
@@ -421,77 +470,6 @@ export class LlmClient {
     if (delta.content !== undefined && delta.content.length > 0) {
       onDelta(delta.content, 'content');
     }
-  }
-
-  /**
-   * 解析 SSE body 并返回 content tokens 数组(用于伪流式逐条渲染)
-   * 使用可靠的非流式 request(),获取完整 SSE 响应后解析
-   */
-  public async callSseTokens(messages: ChatMessage[], opts?: LlmCallOptions): Promise<string[]> {
-    const apiKey: string | null = await this.config.getApiKey();
-    if (apiKey === null) {
-      throw new LlmError('API key not configured.', 'NO_API_KEY');
-    }
-    const model: string = this.pickStr(opts?.model, this.config.getModel());
-    const maxTokens: number = this.pickNum(opts?.maxTokens, this.config.getMaxTokens());
-    const timeoutMs: number = this.pickNum(opts?.timeoutMs, this.config.getTimeoutMs());
-    const enableThinking: boolean = opts?.enableThinking === true;
-
-    const bodyObj: Record<string, Object> = {};
-    bodyObj['model'] = model;
-    bodyObj['messages'] = messages as Object;
-    bodyObj['stream'] = true;
-    bodyObj['max_tokens'] = maxTokens;
-    if (!enableThinking) { bodyObj['temperature'] = this.pickNum(opts?.temperature, this.config.getTemperature()); }
-    if (enableThinking) {
-      const thinkingCfg: LlmThinkingConfig = { type: 'enabled' };
-      bodyObj['thinking'] = thinkingCfg as Object;
-      bodyObj['reasoning_effort'] = 'high';
-    }
-
-    const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
-    const httpRequest = http.createHttp();
-    let response: http.HttpResponse;
-    try {
-      response = await httpRequest.request(endpointUrl, {
-        method: http.RequestMethod.POST,
-        header: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-        extraData: JSON.stringify(bodyObj),
-        connectTimeout: timeoutMs,
-        readTimeout: timeoutMs,
-      });
-    } catch (e) {
-      httpRequest.destroy();
-      throw new LlmError('SSE request failed: ' + ((e as Error).message ?? String(e)), 'NETWORK_ERROR');
-    }
-    httpRequest.destroy();
-
-    if (response.responseCode !== 200) {
-      throw new LlmError('SSE API error ' + response.responseCode.toString(), 'API_ERROR');
-    }
-
-    const raw: string = (response.result as string) ?? '';
-    // HTTP CRLF → LF 统一后再按 SSE \n\n 分割
-    const normalized: string = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const tokens: string[] = [];
-    const events: string[] = normalized.split('\n\n');
-    for (const eventText of events) {
-      const lines: string[] = eventText.split('\n');
-      for (const line of lines) {
-        if (line.indexOf('data: ') !== 0) { continue; }
-        const dataStr: string = line.substring(6).trim();
-        if (dataStr === '[DONE]' || dataStr.length === 0) { continue; }
-        try {
-          const chunk: LlmStreamChunk = JSON.parse(dataStr) as LlmStreamChunk;
-          if (chunk.choices.length === 0) { continue; }
-          const delta: LlmStreamDelta = chunk.choices[0].delta;
-          if (delta.content !== undefined && delta.content.length > 0) {
-            tokens.push(delta.content);
-          }
-        } catch (e) { /* skip malformed line */ }
-      }
-    }
-    return tokens;
   }
 
   /**

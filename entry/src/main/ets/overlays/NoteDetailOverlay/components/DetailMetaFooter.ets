@@ -28,8 +28,8 @@ import {
 } from '../model/DetailRenderModel'
 import { detailLinesSignature, detailTextSignature } from './DetailSection'
 import { DETAIL_RENDER_PRIORITY_META, enqueueDetailRender } from './DetailRenderQueue'
-import { MarkdownRenderer } from '../../../shared/components/MarkdownRenderer'
-import { AppIcon } from '../../../shared/components/AppIcon'
+import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
+import { AppIcon } from '../../../shared/atoms/AppIcon'
 
 @Component
 export struct DetailMetaFooter {

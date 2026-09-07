@@ -41,7 +41,7 @@ docs/
 | **Find a coding rule for a specific framework** | `docs/style/` (e.g. `langgraph-style.md` when added) |
 | **Understand the current architecture** | `docs/adr/` (current decisions) — for historical audits see [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./legacy/mindtrace/architecture/audit-full-2026-09-01.md) |
 | **Find an API contract** | [`docs/legacy/mindtrace/api/contract.md`](./legacy/mindtrace/api/contract.md) |
-| **Look up a workflow (issue tracking, triage)** | `docs/agents/{topic}.md` (10 workflow docs + 3 patterns) |
+| **Look up a workflow (issue tracking, triage)** | `docs/agents/{topic}.md`(工作流文档 + `patterns/`, 以目录为准) |
 | **Create a new doc** | Pick a template from `docs/template/`, then run `node scripts/naming-lint/index.mjs` to verify the name conforms |
 
 ## By audience
@@ -92,6 +92,7 @@ Currently:
 - `docs/index.md` — this file
 - `docs/adr/index.md`
 - `docs/specs/index.md`
+- `docs/research/index.md`
 - `docs/template/index.md`
 - `docs/legacy/index.md`
 - `docs/legacy/mindtrace/index.md`
@@ -106,4 +107,4 @@ If you add a new doc directory, also add an `index.md` for it.
 - When the project structure changes, update §"Top-level layout"
 - Updates go via a `docs(index):` commit; bump this file's `Last updated` timestamp
 
-Last updated: 2026-09-02 (created)
+Last updated: 2026-09-06 (governance status refresh: ADR-0008/0009, research index listed, agents/ count)

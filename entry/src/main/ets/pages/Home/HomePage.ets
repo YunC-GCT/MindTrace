@@ -1,5 +1,11 @@
 ﻿// ============================================================================
-//  pages/Home/HomePage.ets - home page shell
+//  pages/Home/HomePage.ets — 首页 (5 Tab 之一)
+//  ----------------------------------------------------------------------------
+//  组件层: Page (D3 spec 012)
+//  允许依赖: common 令牌/模型 · viewmodels · services · shared/* · 本目录组件
+//  禁止依赖: database/dao 实现 · agents 内部实现 · 网络层直调
+//  依赖: HomeViewModel · FloatingButton · HeroBanner · HomeCollapsedReview ·
+//        ReminderBanner · HomeTopBar · HomeRecentNotes · NoteDetailOverlay · NoteItemMapper
 // ============================================================================
 
 import { BG_DARK, DUR_SLOW, NoteItem, KnowledgeUnit } from "common"

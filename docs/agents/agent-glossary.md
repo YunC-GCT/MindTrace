@@ -8,6 +8,8 @@ The single source of truth for what agent-architecture words mean. New agent ses
 
 If a term is **project-specific** (e.g. `KnowledgeUnit` in MindTrace, `PydanticModel` in a FastAPI project), it belongs in the project's glossary (`CONTEXT.md` or equivalent), NOT here.
 
+> **LangGraph note**: the graph vocabulary below (Node / Edge / State / StateGraph / Channel / …) follows LangGraph — adopted as MindTrace's primary orchestration design model, implemented natively in ArkTS as `CaptureGraph` (ADR-0008).
+
 ## Language
 
 **Agent**:
