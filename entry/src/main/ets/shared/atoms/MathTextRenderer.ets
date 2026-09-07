@@ -1,5 +1,15 @@
 // ============================================================================
 //  shared/atoms/MathTextRenderer.ets - KaTeX Web renderer wrapper
+//  ----------------------------------------------------------------------------
+//  spec 016 PR-B (issue #66, audit C1 Strong): 缓存层下沉到 common 模块。
+//  原文件 536 行 (假原子) → 减到 ~360 行 (真原子)。
+//  缓存 seam 现在通过 `common` 的 MathRenderCache 暴露 (cacheGet / cacheSet / cacheRemove /
+//  MathRenderCacheEntry + 容量/TTL 常量)。本文件不再 import 任何 entry/utils/
+//  内部模块 (spec 012 §"Atom: 0 依赖内部模块")。
+//
+//  下游 PR-C 范围 (audit C5):
+//    - 本文件 atoms/ → molecules/ (与 MathPreviewText 同步迁移)
+//    - MathPreviewText.ets atoms/ → molecules/ (atom→atom 当前违例)
 // ============================================================================
 
 import {
@@ -7,28 +17,12 @@ import {
   F_BASE,
   LatexRiskNormalizer,
   ContentProtocol,
+  cacheGet, cacheSet, cacheRemove, contentHash,
+  MathRenderCacheEntry,
+  MATH_RENDER_CACHE_KEY_VERSION,
 } from 'common'
 import type { ContentValidationResult, LatexRiskResult } from 'common'
 import webview from '@ohos.web.webview'
-import { uiCacheLog } from '../../utils/UiCacheDebug'
-
-class MathRenderCacheEntry {
-  key: string = ''
-  encodedHtml: string = ''
-  height: number = 0
-  touched: number = 0
-  touchedAt: number = 0
-  size: number = 0
-
-  constructor(key: string, encodedHtml: string, height: number, touched: number, touchedAt: number) {
-    this.key = key
-    this.encodedHtml = encodedHtml
-    this.height = height
-    this.touched = touched
-    this.touchedAt = touchedAt
-    this.size = encodedHtml.length
-  }
-}
 
 class MathRenderPayload {
   height: number = 0
@@ -41,141 +35,19 @@ class MathRenderInput {
   renderMode: 'native' | 'katex' | 'plainFallback' = 'native'
 }
 
-const MATH_RENDER_CACHE: MathRenderCacheEntry[] = []
-const MATH_RENDER_CACHE_LIMIT: number = 64
-const MATH_RENDER_CACHE_MAX_CHARS: number = 600000
-const MATH_RENDER_CACHE_KEY_VERSION: string = 'v2'
-const MATH_RENDER_CACHE_TTL_MS: number = 10 * 60 * 1000
-const MATH_RENDER_CACHE_PASSIVE_TRIM_TICKS: number = 12
-const NOTE_MATH_RENDER_DEFER_BASE_MS: number = 24
-const NOTE_MATH_RENDER_DEFER_STEP_MS: number = 22
-const NOTE_MATH_RENDER_DEFER_SLOTS: number = 8
+// 渲染调度常量(非缓存)— 留在本组件。改名 + 减常量避免与 cache 模块同名冲突。
+const RENDER_DEFER_BASE_MS: number = 24
+const RENDER_DEFER_STEP_MS: number = 22
+const RENDER_DEFER_SLOTS: number = 8
 const TEXT_HEIGHT_BUFFER_RATIO: number = 1.2
 const DISPLAY_FORMULA_HEIGHT_CHAT: number = 58
 const DISPLAY_FORMULA_HEIGHT_NOTE: number = 66
-let mathRenderCacheClock: number = 0
-let noteMathRenderDeferClock: number = 0
+let renderDeferClock: number = 0
 
-function nextCacheTick(): number {
-  mathRenderCacheClock += 1
-  return mathRenderCacheClock
-}
-
-function nextNoteMathRenderDelay(): number {
-  const slot: number = noteMathRenderDeferClock % NOTE_MATH_RENDER_DEFER_SLOTS
-  noteMathRenderDeferClock += 1
-  return NOTE_MATH_RENDER_DEFER_BASE_MS + slot * NOTE_MATH_RENDER_DEFER_STEP_MS
-}
-
-function cacheGet(key: string): MathRenderCacheEntry | null {
-  const now: number = Date.now()
-  trimCacheIfNeeded(now)
-  for (const entry of MATH_RENDER_CACHE) {
-    if (entry.key === key) {
-      entry.touched = nextCacheTick()
-      entry.touchedAt = now
-      uiCacheLog('[UiDataCache] math hit key=' + key)
-      return entry
-    }
-  }
-  uiCacheLog('[UiDataCache] math miss key=' + key)
-  return null
-}
-
-function cacheSet(key: string, encodedHtml: string, height: number): void {
-  const now: number = Date.now()
-  const touched: number = nextCacheTick()
-  if (encodedHtml.length > MATH_RENDER_CACHE_MAX_CHARS) {
-    cacheRemove(key)
-    trimCache(now)
-    return
-  }
-  for (const entry of MATH_RENDER_CACHE) {
-    if (entry.key === key) {
-      entry.encodedHtml = encodedHtml
-      entry.height = height
-      entry.touched = touched
-      entry.touchedAt = now
-      entry.size = encodedHtml.length
-      trimCacheIfNeeded(now)
-      return
-    }
-  }
-  MATH_RENDER_CACHE.push(new MathRenderCacheEntry(key, encodedHtml, height, touched, now))
-  trimCache(now)
-}
-
-function cacheRemove(key: string): void {
-  let index: number = MATH_RENDER_CACHE.length - 1
-  while (index >= 0) {
-    if (MATH_RENDER_CACHE[index].key === key) {
-      MATH_RENDER_CACHE.splice(index, 1)
-    }
-    index -= 1
-  }
-}
-
-function trimCacheIfNeeded(now: number): void {
-  if (MATH_RENDER_CACHE.length > MATH_RENDER_CACHE_LIMIT
-    || mathRenderCacheClock % MATH_RENDER_CACHE_PASSIVE_TRIM_TICKS === 0) {
-    trimCache(now)
-  }
-}
-
-function trimCache(now: number): void {
-  dropExpiredCacheEntries(now)
-  while (MATH_RENDER_CACHE.length > MATH_RENDER_CACHE_LIMIT) {
-    removeOldestCacheEntry()
-  }
-  while (cacheTotalSize() > MATH_RENDER_CACHE_MAX_CHARS && MATH_RENDER_CACHE.length > 0) {
-    removeOldestCacheEntry()
-  }
-}
-
-function dropExpiredCacheEntries(now: number): void {
-  let index: number = MATH_RENDER_CACHE.length - 1
-  while (index >= 0) {
-    if (now - MATH_RENDER_CACHE[index].touchedAt > MATH_RENDER_CACHE_TTL_MS) {
-      MATH_RENDER_CACHE.splice(index, 1)
-    }
-    index -= 1
-  }
-}
-
-function removeOldestCacheEntry(): void {
-  if (MATH_RENDER_CACHE.length === 0) {
-    return
-  }
-  let oldestIndex: number = 0
-  let oldestTick: number = MATH_RENDER_CACHE[0].touched
-  let index: number = 1
-  while (index < MATH_RENDER_CACHE.length) {
-    if (MATH_RENDER_CACHE[index].touched < oldestTick) {
-      oldestTick = MATH_RENDER_CACHE[index].touched
-      oldestIndex = index
-    }
-    index += 1
-  }
-  MATH_RENDER_CACHE.splice(oldestIndex, 1)
-}
-
-function cacheTotalSize(): number {
-  let total: number = 0
-  for (const entry of MATH_RENDER_CACHE) {
-    total += entry.size
-  }
-  return total
-}
-
-function contentHash(text: string): string {
-  let hash: number = 5381
-  let index: number = 0
-  while (index < text.length) {
-    hash = ((hash << 5) + hash + text.charCodeAt(index)) | 0
-    index += 1
-  }
-  const positive: number = hash < 0 ? -hash : hash
-  return text.length.toString() + '_' + positive.toString()
+function nextRenderDelay(): number {
+  const slot: number = renderDeferClock % RENDER_DEFER_SLOTS
+  renderDeferClock += 1
+  return RENDER_DEFER_BASE_MS + slot * RENDER_DEFER_STEP_MS
 }
 
 @Component
@@ -467,7 +339,7 @@ export struct MathTextRenderer {
   }
 
   private scheduleDeferredWebRender = (seq: number): void => {
-    const delay: number = nextNoteMathRenderDelay()
+    const delay: number = nextRenderDelay()
     setTimeout((): void => {
       if (seq !== this.renderSeq) {
         return
