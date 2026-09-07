@@ -396,6 +396,7 @@ export class LlmClient {
     //   不是 SSE 标准的 \n\n 双换行分隔。LlmClient 之前找 \n\n 永远找不到 event 边界,
     //   buffer 累积到 dataEnd 还没 emit 0 次。
     //   (参考 OpenAI 官方社区: https://community.openai.com/t/80861)
+    console.error(`[DEBUG-a4f2] processSseBuffer entry: buffer.len=${buffer.length}`);
     while (true) {
       const singleNewlineIdx: number = remaining.indexOf('\n');
       if (singleNewlineIdx < 0) {
@@ -412,6 +413,7 @@ export class LlmClient {
         continue;
       }
       if (trimmed.indexOf('data: ') !== 0) {
+        console.error(`[DEBUG-a4f2] processSseBuffer skip non-data line (head): ${trimmed.length > 80 ? trimmed.substring(0, 80) : trimmed}`);
         continue;
       }
 
@@ -425,6 +427,9 @@ export class LlmClient {
         this.tryEmitSseDelta(dataStr, onDelta);
       } catch (e) {
         // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
+        const dataStrHead: string = dataStr.length > 100 ? dataStr.substring(0, 100) : dataStr;
+        const errMsg: string = (e as Error).message !== undefined ? (e as Error).message : String(e);
+        console.error(`[DEBUG-a4f2] processSseBuffer JSON.parse failed: dataStr.head=${dataStrHead} err=${errMsg}`);
         return eventText + '\n' + remaining;
       }
     }
