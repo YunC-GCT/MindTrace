@@ -80,12 +80,15 @@ export {
   getLogger,
 } from './utils/logger';
 
-// ========== LLM 共享基础设施 (Z 2026-07-14) ==========
-//   LlmConfig:  单例, preferences 持久化 API key, UI 输入/读取入口
+// ========== LLM 共享基础设施 (Z 2026-07-14, PR1 2026-09-06) ==========
+//   LlmConfig:  单例, preferences 持久化 endpoint/model/temp/maxTokens/timeoutMs/EnableThinking,
+//               API key 委托 ApiKeyVault (TEE + AES256-GCM 加密)
 //   LlmClient:  OpenAI 兼容 HTTP 客户端, 所有 agent 统一调用
 //   LlmError:   统一错误类型, 按 kind 分类(NO_API_KEY / NETWORK_ERROR / API_ERROR / ...)
 //   LlmTypes:   ChatMessage / LlmCallRequest / LlmCallResult / LlmErrorKind
+//   ApiKeyVault: 凭据 vault (@kit.AssetStoreKit, 兼容读取旧 preferences key)
 export { LlmConfig } from './llm/LlmConfig';
+export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
 export { LlmGuard } from './llm/LlmGuard';
 export { JSON_ONLY_RULES, LATEX_GENERATION_RULES, buildGuardRetryMessage } from './llm/LlmOutputRules';

@@ -1,4 +1,4 @@
-import {
+﻿﻿import {
   KnowledgeUnit,
   ClassificationResult,
   LlmClient,
@@ -151,17 +151,26 @@ export class AgentChatService {
 
       try {
         // 优先真流式 (SSE requestInStream),失败时降级非流式
+        // P1 fix 2026-09-07: 显式 enableThinking: false
+        // 根因: deepseek-v4-pro 思考模式 thinking_content 阶段耗时 10-20 秒,
+        //       期间 content + reasoning_content 都空,触发 firstByteTimer 降级。
+        //       chat 场景不需要 thinking 过程,只要 content,直接关。
         await client.call({
           messages: this.intentClassifier.buildReplyMessages(memoryContext, learnerProfileContext, userContent),
           stream: true,
           onDelta: (delta: string, kind: 'reasoning' | 'content'): void => {
-            if (kind !== 'content') { return; }
+            // P1 bug fix 2026-09-07: 不再过滤 reasoning
+            // 根因: deepseek-v4-pro 思考模式,流式响应中 content 经常为空,
+            //       LlmClient.fallback 已经把 reasoning 当 content 调一次 onDelta。
+            //       但如果用户 build 旧版本(无 fallback),原 line 158 会过滤掉 reasoning,
+            //       accumulatedContent 始终空, UI 永远空白。
+            // 修复: 不管 kind, 总是累计 + appendAiMsg。
             accumulatedContent += delta;
-            this.cbs.appendAiMsg(msgId, delta, 'content');
+            this.cbs.appendAiMsg(msgId, delta, kind);
           },
           maxTokens: 4096,
           timeoutMs: 120000,
-          enableThinking: LlmConfig.getInstance().getEnableThinking(),
+          enableThinking: false,  // chat 不要 thinking,避免流式超时
         });
         this.setStep('completed');
         this.cbs.finishAiMsg(msgId);

@@ -1,4 +1,4 @@
-// MindTrace - LLM HTTP 客户端(OpenAI 兼容协议)
+﻿﻿// MindTrace - LLM HTTP 客户端(OpenAI 兼容协议)
 // 位置: common/src/main/ets/llm/LlmClient.ets
 // 责任: Z (Mavis)
 // 创建: 2026-07-14 — 主 Agent 业务 LLM 调用基础设施
@@ -289,16 +289,17 @@ export class LlmClient {
         }
       }, timeoutMs);
 
-      // 首字节超时: 8 秒内无数据则降级
+      // 首字节超时: 30 秒内无数据则降级(2026-09-07 PR1j: deepseek-v4-pro 思考模式
+      // thinking_content 阶段可能 10-20 秒才发出第一个 chunk,8 秒不够)
       const firstByteTimer: number = setTimeout((): void => {
         if (!streamEnded && !dataReceived) {
           streamEnded = true;
           clearTimeout(timer);
           httpRequest.destroy();
-          console.warn('[LlmClient] no data received within 8s, triggering fallback');
+          console.warn('[LlmClient] no data received within 30s, triggering fallback');
           reject(new LlmError('LLM stream no data', 'STREAM_FAILED') as Error);
         }
-      }, 8000);
+      }, 30000);
 
       // 订阅流式数据事件
       httpRequest.on('dataReceive', (chunk: ArrayBuffer): void => {
@@ -387,40 +388,43 @@ export class LlmClient {
   ): string {
     let remaining: string = buffer;
 
-    // 查找完整的 SSE event (以 \n\n 分隔)
+    // 查找完整的 SSE event (以 \n 分隔 — OpenAI/DeepSeek 兼容格式)
+    // 修复 2026-09-07 PR1k: OpenAI/DeepSeek 实际 SSE 格式是 data: {...}\n 每个行一个 event
+    //   不是 SSE 标准的 \n\n 双换行分隔。LlmClient 之前找 \n\n 永远找不到 event 边界,
+    //   buffer 累积到 dataEnd 还没 emit 0 次。
+    //   (参考 OpenAI 官方社区: https://community.openai.com/t/80861)
     while (true) {
-      const doubleNewlineIdx: number = remaining.indexOf('\n\n');
-      if (doubleNewlineIdx < 0) {
-        // 没有完整 event,保留剩余
+      const singleNewlineIdx: number = remaining.indexOf('\n');
+      if (singleNewlineIdx < 0) {
+        // 没有完整 event 行,保留剩余
         break;
       }
 
-      const eventText: string = remaining.substring(0, doubleNewlineIdx + 2);
-      remaining = remaining.substring(doubleNewlineIdx + 2);
+      const eventText: string = remaining.substring(0, singleNewlineIdx);
+      remaining = remaining.substring(singleNewlineIdx + 1);
 
-      // 解析该 event 中的每一行
-      const lines: string[] = eventText.split('\n');
-      for (const line of lines) {
-        const trimmed: string = line.trim();
-        if (trimmed.length === 0) {
-          continue;
-        }
-        if (trimmed.indexOf('data: ') !== 0) {
-          continue;
-        }
+      // 解析该 event 行
+      const trimmed: string = eventText.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+      if (trimmed.indexOf('data: ') !== 0) {
+        continue;
+      }
 
-        const dataStr: string = trimmed.substring(6);
-        if (dataStr === '[DONE]') {
-          continue; // 流结束信号,由 dataEnd 事件处理
-        }
+      const dataStr: string = trimmed.substring(6);
+      if (dataStr === '[DONE]') {
+        continue; // 流结束信号,由 dataEnd 事件处理
+      }
 
-        // 解析 JSON chunk
-        try {
-          this.tryEmitSseDelta(dataStr, onDelta);
-        } catch (e) {
-          // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
-          return eventText + remaining;
-        }
+      // 解析 JSON chunk
+      try {
+        this.tryEmitSseDelta(dataStr, onDelta);
+      } catch (e) {
+        // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
+        const dataStrHead: string = dataStr.length > 100 ? dataStr.substring(0, 100) : dataStr;
+        const errMsg: string = (e as Error).message !== undefined ? (e as Error).message : String(e);
+        return eventText + '\n' + remaining;
       }
     }
 
@@ -456,6 +460,12 @@ export class LlmClient {
 
   /**
    * 解析单行 SSE data 并触发 onDelta (JSON 解析失败则抛异常)
+   *
+   * P1 bug fix 2026-09-07: deepseek-v4-pro 默认思考模式,响应可能只含 reasoning_content + 空 content。
+   * AgentChatService.realReplyStream line 158 过滤 kind !== 'content',导致 UI 永远空白。
+   * 修复: content 为空时,fallback 用 reasoning_content 作为 content 调 onDelta,
+   *       保证上层 AgentChatService 总能收到 content token,UI 不会空白。
+   *       reasoning 仍独立 emit(保留 reasoning 字段显示)。
    */
   private tryEmitSseDelta(dataStr: string, onDelta: LlmStreamCallback): void {
     const chunk: LlmStreamChunk = JSON.parse(dataStr) as LlmStreamChunk;
@@ -463,12 +473,20 @@ export class LlmClient {
       return;
     }
     const delta: LlmStreamDelta = chunk.choices[0].delta;
+    // console.error 显红色 + 默认 logcat 级别可见,避免用户 grep 不到
+    // P1 bug fix 2026-09-07: DeepSeek 流式响应 delta 字段可能是 null (不是 undefined)
+    //   例如 {"content": "...", "reasoning_content": null}
+    //   必须用 != null 同时检查 null + undefined,避免 Cannot read property length of null
     // DeepSeek 思考模式: reasoning_content 先于 content 到达
-    if (delta.reasoning_content !== undefined && delta.reasoning_content.length > 0) {
+    if (delta.reasoning_content != null && delta.reasoning_content.length > 0) {
       onDelta(delta.reasoning_content, 'reasoning');
     }
-    if (delta.content !== undefined && delta.content.length > 0) {
+    // content emit: 优先用 content;content 空时 fallback 到 reasoning_content
+    // 防止 deepseek-v4-pro 思考模式导致 UI 空白(用户 logcat 显示 38KB 流但 UI 无消息)
+    if (delta.content != null && delta.content.length > 0) {
       onDelta(delta.content, 'content');
+    } else if (delta.reasoning_content != null && delta.reasoning_content.length > 0) {
+      onDelta(delta.reasoning_content, 'content');
     }
   }
 

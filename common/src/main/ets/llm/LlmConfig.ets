@@ -2,10 +2,10 @@
 // 创建: 2026-07-14
 
 import { preferences } from '@kit.ArkData';
+import { ApiKeyVault } from '../security/ApiKeyVault';
 import { LlmConfigInitResult, LlmError } from './LlmTypes';
 
 const STORE_NAME = 'llm_config';
-const KEY_API_KEY = 'api_key';
 const KEY_ENDPOINT = 'endpoint';
 const KEY_MODEL = 'model';
 const KEY_TEMPERATURE = 'temperature';
@@ -73,19 +73,15 @@ export class LlmConfig {
     this.cachedEnableThinking = et;
   }
 
-  // ===== API Key =====
+  // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
   public async getApiKey(): Promise<string | null> {
-    this.requireInited();
-    const v: string = await this.store!.get(KEY_API_KEY, '') as string;
-    return v.length > 0 ? v : null;
+    return ApiKeyVault.get();
   }
 
   public async setApiKey(key: string): Promise<void> {
-    this.requireInited();
     const t: string = key.trim();
     if (t.length === 0) { throw new LlmError('API key empty', 'NOT_INITIALIZED'); }
-    await this.store!.put(KEY_API_KEY, t);
-    await this.store!.flush();
+    await ApiKeyVault.put(t);
   }
 
   public async isConfigured(): Promise<boolean> {
@@ -94,9 +90,7 @@ export class LlmConfig {
   }
 
   public async clearApiKey(): Promise<void> {
-    this.requireInited();
-    await this.store!.delete(KEY_API_KEY);
-    await this.store!.flush();
+    await ApiKeyVault.clear();
   }
 
   // ===== Endpoint =====
@@ -229,7 +223,6 @@ export class LlmConfig {
     }
     const lower: string = t.toLowerCase();
     if (
-      lower === DEFAULT_MODEL ||
       lower.indexOf('v3') >= 0 ||
       lower.indexOf('flash') >= 0 ||
       lower.indexOf('deepseek-chat') >= 0 ||
@@ -239,7 +232,8 @@ export class LlmConfig {
       throw new LlmError(
         `LlmConfig.normalizeModel: input "${v}" matches a reserved keyword; ` +
         `DEFAULT_MODEL is enforced. Reserved keywords: v3, flash, deepseek-chat, ` +
-        `deepseek-reasoner, r1, and the DEFAULT_MODEL value itself.`,
+        `deepseek-reasoner, r1. ` +
+        `(DEFAULT_MODEL itself is allowed — see ticket PR0 fix 2026-09-06.)`,
         'NORMALIZE_KEYWORD_REJECTED'
       );
     }
