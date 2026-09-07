@@ -79,6 +79,32 @@ test('ApiKeyVault.get() prefers AssetStoreKit (write path)', () => {
   );
 });
 
+// 测试 4b: get 的 query 必须设 RETURN_TYPE = ALL(SDK 默认 ATTRIBUTES 不返回明文)
+// 不设这个,query 结果不含 SECRET,get(SECRET) 返回 undefined
+// 来源: AssetStoreKit query 文档(ost.51cto.com/posts/52405 的 queryPlaintext 示例)
+test('ApiKeyVault.get() query must set RETURN_TYPE = ALL to retrieve plaintext', () => {
+  // get() 内调 asset.query 的 queryMap 必须设 asset.Tag.RETURN_TYPE
+  // 找 get() 函数体内的 query 调用
+  const getFnBody = apiKeyVault.match(/public\s+static\s+async\s+get\s*\([\s\S]*?return\s+legacy/);
+  assert.ok(getFnBody !== null, 'get() function body must exist');
+  const getBody = getFnBody[0];
+
+  // query 调用的 queryMap 必须设 RETURN_TYPE
+  // 简化验证: get() 函数体内必须出现 asset.Tag.RETURN_TYPE
+  assert.match(
+    getBody,
+    /asset\.Tag\.RETURN_TYPE/,
+    'ApiKeyVault.get() query must set asset.Tag.RETURN_TYPE (SDK default is ATTRIBUTES which does not return SECRET)'
+  );
+
+  // 而且必须设为 ALL(才能拿明文)
+  assert.match(
+    getBody,
+    /asset\.ReturnType\.ALL/,
+    'ApiKeyVault.get() must use asset.ReturnType.ALL to retrieve plaintext (vs ATTRIBUTES only)'
+  );
+});
+
 // 测试 5: 兼容读取 — fallback 到 Preferences
 test('ApiKeyVault.get() falls back to Preferences on AssetStoreKit empty', () => {
   // 必须有 fallback 路径(读 preferences mindtrace_llm api_key)

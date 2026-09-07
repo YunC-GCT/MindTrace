@@ -41,6 +41,9 @@ export class ApiKeyVault {
     try {
       const queryMap: asset.AssetMap = new Map();
       queryMap.set(asset.Tag.ALIAS, ApiKeyVault.strToBytes(ASSET_NAME));
+      // SDK 关键: query 必须显式设 RETURN_TYPE = ALL
+      // 默认是 ATTRIBUTES(只返回属性,不解密),SECRET 不在结果中
+      queryMap.set(asset.Tag.RETURN_TYPE, asset.ReturnType.ALL);
       const results: asset.AssetMap[] = await asset.query(queryMap);
       if (results.length > 0) {
         const result: asset.AssetMap = results[0];
