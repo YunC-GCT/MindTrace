@@ -469,6 +469,8 @@ export class LlmClient {
       return;
     }
     const delta: LlmStreamDelta = chunk.choices[0].delta;
+    // [DEBUG-a4f2] 临时 instrumentation: 确认 delta 内容(reasoning_content / content 各自非空 / 长度)
+    console.info(`[DEBUG-a4f2] tryEmitSseDelta: rc=${delta.reasoning_content !== undefined ? delta.reasoning_content.length : -1}c=${delta.content !== undefined ? delta.content.length : -1}`);
     // DeepSeek 思考模式: reasoning_content 先于 content 到达
     if (delta.reasoning_content !== undefined && delta.reasoning_content.length > 0) {
       onDelta(delta.reasoning_content, 'reasoning');

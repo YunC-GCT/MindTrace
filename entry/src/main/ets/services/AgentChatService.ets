@@ -155,17 +155,26 @@ export class AgentChatService {
           messages: this.intentClassifier.buildReplyMessages(memoryContext, learnerProfileContext, userContent),
           stream: true,
           onDelta: (delta: string, kind: 'reasoning' | 'content'): void => {
-            if (kind !== 'content') { return; }
+            // [DEBUG-a4f2] 临时 instrumentation
+            console.info(`[DEBUG-a4f2] AgentChatService onDelta: kind=${kind} len=${delta.length} acc=${accumulatedContent.length}`);
+            // P1 bug fix 2026-09-07: 不再过滤 reasoning
+            // 根因: deepseek-v4-pro 思考模式,流式响应中 content 经常为空,
+            //       LlmClient.fallback 已经把 reasoning 当 content 调一次 onDelta。
+            //       但如果用户 build 旧版本(无 fallback),原 line 158 会过滤掉 reasoning,
+            //       accumulatedContent 始终空, UI 永远空白。
+            // 修复: 不管 kind, 总是累计 + appendAiMsg。
             accumulatedContent += delta;
-            this.cbs.appendAiMsg(msgId, delta, 'content');
+            this.cbs.appendAiMsg(msgId, delta, kind);
           },
           maxTokens: 4096,
           timeoutMs: 120000,
           enableThinking: LlmConfig.getInstance().getEnableThinking(),
         });
+        console.info(`[DEBUG-a4f2] AgentChatService stream completed, accumulatedContent length=${accumulatedContent.length}`);
         this.setStep('completed');
         this.cbs.finishAiMsg(msgId);
       } catch (streamErr) {
+        console.info(`[DEBUG-a4f2] AgentChatService stream error: ${AgentChatService.errorMessage(streamErr)}`);
         // 流式失败: 保留已展示的部分内容 + 追加错误提示
         if (accumulatedContent.length > 0) {
           this.cbs.appendAiMsg(msgId, '\n\n⚠️ *AI 回复中断，请重试*');
