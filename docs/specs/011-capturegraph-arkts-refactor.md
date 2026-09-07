@@ -1,6 +1,6 @@
 # D2 — CaptureGraph ArkTS 重构实施 Spec
 
-> **Status**: spec ready for implementation review  
+> **Status**: implemented (2026-09-05 · D2 全链落地, 旧 API 已删; 进度以 [`index.md`](./index.md) 为准)  
 > **Date**: 2026-09-05  
 > **Source**: GitHub issue #9 (`[Wayfinder] D2 后端：LangGraph 风格节点与图编排`)  
 > **Scope**: 仅架构规范化与主流程直接相关的现有能力重构；不增加用户可见功能
