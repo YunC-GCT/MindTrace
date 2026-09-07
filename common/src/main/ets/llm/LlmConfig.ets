@@ -1,9 +1,13 @@
 // MindTrace - LLM 配置管理(单例 + preferences 持久化 + 运行时读写)
 // 创建: 2026-07-14
+// PR1 2026-09-07: apiKey 凭据升级到 AssetStoreKit(委托 ApiKeyVault)
+// PR2-T1 2026-09-07: 加 vendorId / customVendorConfig 字段(getEndpoint/getModel 按 vendorId 解析)
 
 import { preferences } from '@kit.ArkData';
 import { ApiKeyVault } from '../security/ApiKeyVault';
 import { LlmConfigInitResult, LlmError } from './LlmTypes';
+import { DEFAULT_VENDOR_ID, findProvider } from './providers';
+import type { CustomVendorConfig } from './providers';
 
 const STORE_NAME = 'llm_config';
 const KEY_ENDPOINT = 'endpoint';
@@ -12,6 +16,8 @@ const KEY_TEMPERATURE = 'temperature';
 const KEY_MAX_TOKENS = 'max_tokens';
 const KEY_TIMEOUT_MS = 'timeout_ms';
 const KEY_ENABLE_THINKING = 'enable_thinking';
+const KEY_VENDOR_ID = 'vendor_id';
+const KEY_CUSTOM_VENDOR = 'custom_vendor';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -32,6 +38,9 @@ export class LlmConfig {
   private cachedMaxTokens: number = DEFAULT_MAX_TOKENS;
   private cachedTimeoutMs: number = DEFAULT_TIMEOUT_MS;
   private cachedEnableThinking: boolean = false;
+  // PR2-T1: vendor 解析
+  private cachedVendorId: string = 'deepseek';
+  private cachedCustomVendor: CustomVendorConfig | null = null;
 
   private constructor() {}
 
@@ -71,6 +80,17 @@ export class LlmConfig {
     if (tm >= 0) { this.cachedTimeoutMs = tm; }
     const et: boolean = await s.get(KEY_ENABLE_THINKING, false) as boolean;
     this.cachedEnableThinking = et;
+    // PR2-T1: vendorId + customVendor(JSON 字符串)
+    const vid: string = await s.get(KEY_VENDOR_ID, '') as string;
+    this.cachedVendorId = vid.length > 0 ? vid : DEFAULT_VENDOR_ID;
+    const cvJson: string = await s.get(KEY_CUSTOM_VENDOR, '') as string;
+    if (cvJson.length > 0) {
+      try {
+        this.cachedCustomVendor = JSON.parse(cvJson) as CustomVendorConfig;
+      } catch (_e) {
+        this.cachedCustomVendor = null;
+      }
+    }
   }
 
   // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
@@ -93,8 +113,16 @@ export class LlmConfig {
     await ApiKeyVault.clear();
   }
 
-  // ===== Endpoint =====
-  public getEndpoint(): string { return this.cachedEndpoint; }
+  // ===== Endpoint (PR2-T1: 按 vendorId 解析) =====
+  public getEndpoint(): string {
+    if (this.cachedVendorId === 'custom' && this.cachedCustomVendor !== null) {
+      return this.cachedCustomVendor.baseUrl;
+    }
+    const p = findProvider(this.cachedVendorId);
+    if (p !== null) { return p.baseUrl; }
+    return this.cachedEndpoint;
+  }
+
   public async setEndpoint(v: string): Promise<void> {
     this.requireInited();
     this.cachedEndpoint = this.normalizeEndpoint(v);
@@ -102,8 +130,16 @@ export class LlmConfig {
     await this.store!.flush();
   }
 
-  // ===== Model =====
-  public getModel(): string { return this.cachedModel; }
+  // ===== Model (PR2-T1: 按 vendorId 解析) =====
+  public getModel(): string {
+    if (this.cachedVendorId === 'custom' && this.cachedCustomVendor !== null) {
+      return this.cachedCustomVendor.model;
+    }
+    const p = findProvider(this.cachedVendorId);
+    if (p !== null) { return p.defaultModel; }
+    return this.cachedModel;
+  }
+
   public async setModel(v: string): Promise<void> {
     this.requireInited();
     this.cachedModel = this.normalizeModel(v);
@@ -147,6 +183,30 @@ export class LlmConfig {
     await this.store!.flush();
   }
 
+  // ===== PR2-T1: Vendor 解析 =====
+  public getVendorId(): string { return this.cachedVendorId; }
+
+  public async setVendorId(id: string): Promise<void> {
+    this.requireInited();
+    this.cachedVendorId = id;
+    await this.store!.put(KEY_VENDOR_ID, id);
+    await this.store!.flush();
+  }
+
+  public getCustomVendorConfig(): CustomVendorConfig | null { return this.cachedCustomVendor; }
+
+  public async setCustomVendorConfig(cfg: CustomVendorConfig | null): Promise<void> {
+    this.requireInited();
+    this.cachedCustomVendor = cfg;
+    const s = this.store!;
+    if (cfg === null) {
+      await s.delete(KEY_CUSTOM_VENDOR);
+    } else {
+      await s.put(KEY_CUSTOM_VENDOR, JSON.stringify(cfg));
+    }
+    await s.flush();
+  }
+
   // ===== 恢复默认 =====
   public async resetDefaults(): Promise<void> {
     this.requireInited();
@@ -156,6 +216,8 @@ export class LlmConfig {
     this.cachedMaxTokens = DEFAULT_MAX_TOKENS;
     this.cachedTimeoutMs = DEFAULT_TIMEOUT_MS;
     this.cachedEnableThinking = false;
+    this.cachedVendorId = 'deepseek';
+    this.cachedCustomVendor = null;
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
@@ -163,6 +225,8 @@ export class LlmConfig {
     await s.put(KEY_MAX_TOKENS, DEFAULT_MAX_TOKENS);
     await s.put(KEY_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
     await s.put(KEY_ENABLE_THINKING, false);
+    await s.put(KEY_VENDOR_ID, 'deepseek');
+    await s.delete(KEY_CUSTOM_VENDOR);
     await s.flush();
   }
 
