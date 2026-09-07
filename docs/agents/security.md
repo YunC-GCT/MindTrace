@@ -3,7 +3,7 @@
 ## Secrets (绝不入 git)
 
 - `.env` / `local.properties` 已在 `.gitignore`
-- **API Key**: 用户在 App 内 "我的 → AI 模型配置" 设置, 持久化到 preferences, **不入 git**
+- **API Key**: 用户在 App 内 "我的 → AI 模型配置" 设置, 持久化到 `@kit.AssetStoreKit`(TEE + AES256-GCM 加密, PR1 2026-09-06), 兼容读取: 启动时若 AssetStoreKit 空, fallback 旧 preferences key 并自动写回 AssetStoreKit(迁移透明, UI 无感知), **不入 git**
 - **OCR 服务地址**: 默认 `localhost`, 部署到真机时改 IP
 
 ## 网络权限
