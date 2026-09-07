@@ -391,40 +391,41 @@ export class LlmClient {
   ): string {
     let remaining: string = buffer;
 
-    // 查找完整的 SSE event (以 \n\n 分隔)
+    // 查找完整的 SSE event (以 \n 分隔 — OpenAI/DeepSeek 兼容格式)
+    // 修复 2026-09-07 PR1k: OpenAI/DeepSeek 实际 SSE 格式是 data: {...}\n 每个行一个 event
+    //   不是 SSE 标准的 \n\n 双换行分隔。LlmClient 之前找 \n\n 永远找不到 event 边界,
+    //   buffer 累积到 dataEnd 还没 emit 0 次。
+    //   (参考 OpenAI 官方社区: https://community.openai.com/t/80861)
     while (true) {
-      const doubleNewlineIdx: number = remaining.indexOf('\n\n');
-      if (doubleNewlineIdx < 0) {
-        // 没有完整 event,保留剩余
+      const singleNewlineIdx: number = remaining.indexOf('\n');
+      if (singleNewlineIdx < 0) {
+        // 没有完整 event 行,保留剩余
         break;
       }
 
-      const eventText: string = remaining.substring(0, doubleNewlineIdx + 2);
-      remaining = remaining.substring(doubleNewlineIdx + 2);
+      const eventText: string = remaining.substring(0, singleNewlineIdx);
+      remaining = remaining.substring(singleNewlineIdx + 1);
 
-      // 解析该 event 中的每一行
-      const lines: string[] = eventText.split('\n');
-      for (const line of lines) {
-        const trimmed: string = line.trim();
-        if (trimmed.length === 0) {
-          continue;
-        }
-        if (trimmed.indexOf('data: ') !== 0) {
-          continue;
-        }
+      // 解析该 event 行
+      const trimmed: string = eventText.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+      if (trimmed.indexOf('data: ') !== 0) {
+        continue;
+      }
 
-        const dataStr: string = trimmed.substring(6);
-        if (dataStr === '[DONE]') {
-          continue; // 流结束信号,由 dataEnd 事件处理
-        }
+      const dataStr: string = trimmed.substring(6);
+      if (dataStr === '[DONE]') {
+        continue; // 流结束信号,由 dataEnd 事件处理
+      }
 
-        // 解析 JSON chunk
-        try {
-          this.tryEmitSseDelta(dataStr, onDelta);
-        } catch (e) {
-          // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
-          return eventText + remaining;
-        }
+      // 解析 JSON chunk
+      try {
+        this.tryEmitSseDelta(dataStr, onDelta);
+      } catch (e) {
+        // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
+        return eventText + '\n' + remaining;
       }
     }
 
