@@ -24,6 +24,9 @@ const KEY_CUSTOM_VENDORS = 'custom_vendors';
 // PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models 持久化
 // Record<vendorId, string[]> — 用户在编辑 panel 加的 model,持久到 preferences
 const KEY_VENDOR_MODELS = 'vendor_models';
+// PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key 持久化
+// Record<vendorId, string> — 用户在 vendor 编辑 panel 填的 key
+const KEY_VENDOR_API_KEYS = 'vendor_api_keys';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -51,6 +54,8 @@ export class LlmConfig {
   private cachedCustomVendors: CustomVendorConfig[] = [];
   // PR2-T2 L2 (2026-09-08): per-vendor models Record — 用户编辑 panel 加的 model
   private cachedVendorModels: Record<string, string[]> = {};
+  // PR2-T2 L3 (2026-09-08): per-vendor API Key Record — vendor 编辑 panel 填的 key
+  private cachedVendorApiKeys: Record<string, string> = {};
 
   private constructor() {}
 
@@ -121,25 +126,59 @@ export class LlmConfig {
         this.cachedVendorModels = {};
       }
     }
+    // PR2-T2 L3: vendorApiKeys JSON Record
+    const vakJson: string = await s.get(KEY_VENDOR_API_KEYS, '') as string;
+    if (vakJson.length > 0) {
+      try {
+        const parsed = JSON.parse(vakJson) as Record<string, string>;
+        this.cachedVendorApiKeys = parsed ?? {};
+      } catch (_e) {
+        this.cachedVendorApiKeys = {};
+      }
+    }
   }
 
   // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
-  public async getApiKey(): Promise<string | null> {
+  // PR2-T2 L3 (2026-09-08): per-vendor API Key — vendorId 给定则查 per-vendor map,否则 fallback 全局
+  public async getApiKey(vendorId?: string): Promise<string | null> {
+    if (vendorId !== undefined && vendorId.length > 0) {
+      const per: string | undefined = this.cachedVendorApiKeys[vendorId];
+      if (per !== undefined && per.length > 0) { return per; }
+    }
+    // fallback 全局(AssetStoreKit via ApiKeyVault)
     return ApiKeyVault.get();
   }
 
-  public async setApiKey(key: string): Promise<void> {
+  // setApiKey(key) 无 vendorId → 全局(back-compat,PR1 AssetStoreKit)
+  // setApiKey(key, vendorId) → per-vendor map
+  public async setApiKey(key: string, vendorId?: string): Promise<void> {
     const t: string = key.trim();
     if (t.length === 0) { throw new LlmError('API key empty', 'NOT_INITIALIZED'); }
+    if (vendorId !== undefined && vendorId.length > 0) {
+      this.cachedVendorApiKeys[vendorId] = t;
+      const s = this.store!;
+      await s.put(KEY_VENDOR_API_KEYS, JSON.stringify(this.cachedVendorApiKeys));
+      await s.flush();
+      return;
+    }
     await ApiKeyVault.put(t);
   }
 
   public async isConfigured(): Promise<boolean> {
-    const k = await this.getApiKey();
+    const k = await this.getApiKey(this.cachedVendorId);
     return k !== null && k.length > 0;
   }
 
-  public async clearApiKey(): Promise<void> {
+  // clearApiKey() 无 vendorId → 清全局(back-compat)
+  // clearApiKey(vendorId) → 删 per-vendor entry
+  public async clearApiKey(vendorId?: string): Promise<void> {
+    if (vendorId !== undefined && vendorId.length > 0) {
+      delete this.cachedVendorApiKeys[vendorId];
+      const s = this.store!;
+      await s.put(KEY_VENDOR_API_KEYS, JSON.stringify(this.cachedVendorApiKeys));
+      await s.flush();
+      return;
+    }
     await ApiKeyVault.clear();
   }
 
@@ -339,6 +378,8 @@ export class LlmConfig {
     this.cachedCustomVendors = [];
     // PR2-T2 L2: 同时清 vendorModels
     this.cachedVendorModels = {};
+    // PR2-T2 L3: 同时清 vendorApiKeys
+    this.cachedVendorApiKeys = {};
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
@@ -350,6 +391,7 @@ export class LlmConfig {
     await s.delete(KEY_CUSTOM_VENDOR);
     await s.delete(KEY_CUSTOM_VENDORS);
     await s.delete(KEY_VENDOR_MODELS);
+    await s.delete(KEY_VENDOR_API_KEYS);
     await s.flush();
   }
 
