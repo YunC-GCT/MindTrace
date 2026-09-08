@@ -1,6 +1,6 @@
-﻿# Spec 017 — LLM 设置页 cleanup(PR2-T2 后续 L4 + L5 + L6)
+﻿# Spec 017 — LLM 设置页 cleanup(PR2-T2 后续 L4 + L5 + L6 + L1 + L2 + L3)
 
-> **Status**: draft (2026-09-08)
+> **Status**: implemented (2026-09-08) — 全 6 sub-tasks (L1+L2+L3+L4+L5+L6) 完成
 > **Source ADR**: implicit(spec 016 后续;承接 ticket #9 "LlmConfig 静默覆盖修复未完")
 > **前序 spec**: [`016-llm-settings-redesign.md`](./016-llm-settings-redesign.md) §6.4 公共接口变更 + §8 验收标准
 > **审计依据**: [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` §7 finding #9](../legacy/mindtrace/architecture/audit-full-2026-09-01.md)
