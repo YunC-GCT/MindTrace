@@ -164,8 +164,9 @@ struct AiSettingsPage {
             // 单真理源架构,无需 ViewModel 介入。
             onAddCustom: (): void => { this.vm.openAddCustomVendor() },
             // PR2-T2 P3: modal 确认后回调,把 4 字段 cfg 传给 ViewModel
-            onAddVendorConfirm: (cfg: AddCustomVendorCfg): void => {
-              this.vm.addCustomVendor(cfg.name, cfg.baseUrl, cfg.apiKey, cfg.firstModel)
+            // PR2-T2 polish: 返回新 vendorId 用于 NEW badge 跟踪(ticket #81 task A4)
+            onAddVendorConfirm: (cfg: AddCustomVendorCfg): string => {
+              return this.vm.addCustomVendor(cfg.name, cfg.baseUrl, cfg.apiKey, cfg.firstModel)
             },
           })
 

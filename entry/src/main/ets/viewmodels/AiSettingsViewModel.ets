@@ -347,10 +347,12 @@ export class AiSettingsViewModel {
 
   // PR2-T2 P3: 添加新 vendor(由 VendorPicker modal 确认后回调)
   // 同步切到新 vendor,后续 chat 用它的 baseUrl/model/apiKey
-  addCustomVendor(name: string, baseUrl: string, apiKey: string, firstModel: string): void {
+  // PR2-T2 polish ticket #81 task A4: 返回新 vendorId 用于 NEW badge 跟踪
+  addCustomVendor(name: string, baseUrl: string, apiKey: string, firstModel: string): string {
     const id: string = 'custom-' + Date.now()
     this.customVendors.push({ id, vendorName: name, baseUrl, model: firstModel, apiKey })
     this.vendorId = id
+    return id
   }
 
   // PR2-T2 P4: AI 服务段摘要解析(替代旧 modelSummary/endpointSummary 关键字嗅探)

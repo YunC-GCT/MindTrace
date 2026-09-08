@@ -96,11 +96,11 @@ test('VendorPicker highlights current vendor row (background switch + 当前活�
     resolve(root, 'entry/src/main/ets/pages/AiSettings/VendorPicker.ets'),
     'utf8'
   );
-  // .backgroundColor(... ? <any color> : "transparent") — refactored to any mint/dark color literal
+  // .backgroundColor(... ? <color-or-const> : "transparent") — refactored to any mint/dark color literal or const
   assert.match(
     vp,
-    /\.backgroundColor\s*\(\s*(?:item\.id\s*===\s*this\.currentVendorId|this\.currentVendorId\s*===\s*item\.id)\s*\?\s*['"][^'"]*['"]\s*:\s*['"]transparent['"]/,
-    'current vendor row must have .backgroundColor(... ? <color> : "transparent") when current'
+    /\.backgroundColor\s*\(\s*(?:item\.id\s*===\s*this\.currentVendorId|this\.currentVendorId\s*===\s*item\.id)\s*\?\s*(?:['"][^'"]*['"]|[A-Z_][A-Z0-9_]*)\s*:\s*['"]transparent['"]/,
+    'current vendor row must have .backgroundColor(... ? <color-or-const> : "transparent") when current'
   );
   // 当前活跃 badge(只在 current 状态显示)
   assert.ok(
@@ -452,8 +452,8 @@ test('AiSettingsViewModel exposes customVendors list and addCustomVendor method'
   // addCustomVendor(name, baseUrl, apiKey, firstModel) 方法
   assert.match(
     vm,
-    /addCustomVendor\s*\(\s*name\s*:\s*string\s*,\s*baseUrl\s*:\s*string\s*,\s*apiKey\s*:\s*string\s*,\s*firstModel\s*:\s*string\s*\)\s*:\s*void/,
-    'AiSettingsViewModel must declare addCustomVendor(name, baseUrl, apiKey, firstModel): void method'
+    /addCustomVendor\s*\(\s*name\s*:\s*string\s*,\s*baseUrl\s*:\s*string\s*,\s*apiKey\s*:\s*string\s*,\s*firstModel\s*:\s*string\s*\)\s*:\s*string/,
+    'AiSettingsViewModel must declare addCustomVendor(name, baseUrl, apiKey, firstModel): string method (returns new vendorId for NEW badge tracking)'
   );
 });
 
@@ -672,10 +672,10 @@ test('VendorPicker current row highlight uses success-dim background + border-le
     /SUCCESS_DIM/.test(bgValue),
     `Current row bg must be success-dim (rgba 0.15 or dim green), got: ${bgValue}`
   );
-  // border-left 3px 必须出现(在 current vendor 条件分支)
+  // border-left 3px 必须出现(在 current vendor 条件分支,可以是字面 3 或条件表达式)
   assert.match(
     vp,
-    /width\s*:\s*\{\s*left\s*:\s*3\s*\}/,
-    'VendorPicker row border must specify width: { left: 3 } for current vendor'
+    /width\s*:\s*\{[^}]*left\s*:[^}]*3[^}]*\}/,
+    'VendorPicker row border must specify width: { ... left: ... 3 ... } for current vendor'
   );
 });

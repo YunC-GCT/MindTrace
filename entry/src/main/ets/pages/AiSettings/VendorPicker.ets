@@ -44,6 +44,10 @@ interface AddCustomVendorCfg {
   firstModel: string;
 }
 
+// v6 设计稿: success-dim bg = MINT 颜色 15% 透明度(PR2-T2 polish ticket #81 task A5)
+// MINT = #5BE3B0 = rgb(91, 227, 176);light mint bg
+const SUCCESS_DIM: string = 'rgba(91, 227, 176, 0.15)'
+
 @Component
 export struct VendorPicker {
   // 当前选中的 vendor
@@ -68,14 +72,18 @@ export struct VendorPicker {
   @State newVendorApiKey: string = '';
   @State newVendorModel: string = '';
 
+  // PR2-T2 polish ticket #81 task A4: 新加 custom vendor 标记(session 内有效,无需持久化)
+  @State isNewVendorIds: Set<string> = new Set();
+
   // 回调
   onSelect: (id: string) => void = (_id: string): void => {};
   onEdit: (id: string) => void = (_id: string): void => {};
   onAddCustom: () => void = (): void => {};
 
   // PR2-T2 P3: 添加新 vendor 完成回调(把 cfg 传给 ViewModel,ViewModel 加到 customVendors + 切 vendorId)
+  // 返回新 vendor id 用于 NEW badge 跟踪(PR2-T2 polish ticket #81 task A4)
   // ArkTS 1.1 strict 要求 callback 参数用 interface 声明,不允许 inline object literal as type
-  onAddVendorConfirm: (cfg: AddCustomVendorCfg) => void = (_cfg: AddCustomVendorCfg): void => {};
+  onAddVendorConfirm: (cfg: AddCustomVendorCfg) => string = (_cfg: AddCustomVendorCfg): string => '';
 
   build() {
     Column() {
@@ -124,12 +132,26 @@ export struct VendorPicker {
           .margin({ right: S_2 })
           .width(16)
 
-        // 厂商名 + baseUrl(纵向堆叠)
+        // 厂商名 + NEW badge(内联)+ baseUrl(纵向堆叠)
         Column() {
-          Text(item.vendorName)
-            .fontSize(F_SM)
-            .fontColor(TEXT)
-            .fontWeight(W_MEDIUM)
+          Row() {
+            Text(item.vendorName)
+              .fontSize(F_SM)
+              .fontColor(TEXT)
+              .fontWeight(W_MEDIUM)
+            // PR2-T2 polish ticket #81 task A4: 新加 custom vendor 显示 NEW badge
+            if (this.isNewVendorIds.has(item.id)) {
+              Text('NEW')
+                .fontSize(F_XS)
+                .fontColor(BG_DARK)
+                .fontWeight(W_SEMIBOLD)
+                .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+                .backgroundColor(MINT)
+                .borderRadius(3)
+                .margin({ left: 6 })
+            }
+          }
+          .alignItems(VerticalAlign.Center)
           Text(item.baseUrl.replace(/^https?:\/\//, ''))
             .fontSize(F_XS)
             .fontColor(TEXT_3)
@@ -159,8 +181,12 @@ export struct VendorPicker {
       }
       .width('100%')
       .padding({ left: S_3, right: S_3, top: S_3, bottom: S_3 })
-      .backgroundColor(this.currentVendorId === item.id ? '#0F2A22' : 'transparent')
-      .border({ width: 1, color: this.currentVendorId === item.id ? MINT : BORDER })
+      // v6 设计稿(PR2-T2 polish ticket #81 task A5):success-dim bg + border-left 3px solid
+      .backgroundColor(this.currentVendorId === item.id ? SUCCESS_DIM : 'transparent')
+      .border({
+        width: { left: this.currentVendorId === item.id ? 3 : 0, top: 0, right: 0, bottom: 0 },
+        color: { left: MINT },
+      })
       .borderRadius(R_MD)
       .margin({ top: S_2 })
       .onClick((): void => {
@@ -409,7 +435,11 @@ export struct VendorPicker {
               const k: string = this.newVendorApiKey.trim()
               const m: string = this.newVendorModel.trim()
               if (n.length > 0 && b.length > 0 && k.length > 0 && m.length > 0) {
-                this.onAddVendorConfirm({ name: n, baseUrl: b, apiKey: k, firstModel: m })
+                // PR2-T2 polish ticket #81 task A4: 返回新 vendorId 用于 NEW badge 跟踪
+                const newId: string = this.onAddVendorConfirm({ name: n, baseUrl: b, apiKey: k, firstModel: m })
+                if (newId.length > 0) {
+                  this.isNewVendorIds.add(newId)
+                }
                 this.addCustomModalOpen = false
                 this.newVendorName = ''
                 this.newVendorBaseUrl = ''
