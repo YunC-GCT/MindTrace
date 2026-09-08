@@ -617,3 +617,65 @@ test('AiSettingsPage AI 服务段 has ring icon (Stack with 2 Circles for outer 
   // 内点 fill MINT
   assert.match(region, /\.fill\s*\(\s*MINT\s*\)/, 'Inner dot must have fill(MINT)');
 });
+
+// 测试 31(GREEN): 服务厂商 section 有副标题"5 预设 + 你添加的供应商..."
+// v6 设计稿(.pr2-t2-design.html line 422):5 预设 + 你添加的供应商。模型行点左侧"线 + 圆"切换当前 model。
+// PR2-T2 polish ticket #81 task A3
+test('AiSettingsPage 服务厂商 section has subtitle "5 预设 + 你添加的供应商"', () => {
+  const page = readFileSync(
+    resolve(root, 'entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets'),
+    'utf8'
+  );
+  assert.match(page, /5 预设\s*\+\s*你添加的供应商/, 'AiSettingsPage must contain subtitle text "5 预设 + 你添加的供应商"');
+  // 服务厂商 title 上下文
+  const idx = page.indexOf('服务厂商');
+  const region = page.substring(Math.max(0, idx - 200), idx + 800);
+  assert.match(region, /5 预设\s*\+\s*你添加的供应商/, 'Subtitle must be near 服务厂商 title');
+});
+
+// 测试 32(GREEN): VendorPicker 加 NEW badge(新加 custom vendor 显示)+ isNewVendorIds 跟踪
+// v6 设计稿(.pr2-t2-design.html line 848):<span class="new-badge">NEW</span>
+// 设计 new-badge bg=mint + color=bg-dark + border-radius 3
+// PR2-T2 polish ticket #81 task A4
+test('VendorPicker has NEW badge with MINT backgroundColor + isNewVendorIds @State tracking', () => {
+  const vp = readFileSync(
+    resolve(root, 'entry/src/main/ets/pages/AiSettings/VendorPicker.ets'),
+    'utf8'
+  );
+  // @State isNewVendorIds 必须存在
+  assert.match(vp, /@State\s+isNewVendorIds/, 'VendorPicker must declare @State isNewVendorIds for NEW badge tracking');
+  // "NEW" Text 必须出现
+  assert.ok(vp.includes("'NEW'") || vp.includes('"NEW"'), 'VendorPicker must contain NEW badge Text');
+  // NEW badge 视觉:bg MINT + color BG_DARK + borderRadius 3
+  const newIdx = vp.indexOf("'NEW'") >= 0 ? vp.indexOf("'NEW'") : vp.indexOf('"NEW"');
+  const newRegion = vp.substring(Math.max(0, newIdx - 300), newIdx + 300);
+  assert.match(newRegion, /\.backgroundColor\s*\(\s*MINT\s*\)/, 'NEW badge must have backgroundColor(MINT)');
+  assert.match(newRegion, /\.borderRadius\s*\(\s*3\s*\)/, 'NEW badge must have borderRadius(3) per v6 design');
+});
+
+// 测试 33(GREEN): 当前 vendor 行高亮改为 success-dim + border-left 3px solid
+// v6 设计稿(.pr2-t2-design.html css 110-113):.picker-row.current { background: success-dim; border-left: 3px solid success; }
+// PR2-T2 polish ticket #81 task A5
+test('VendorPicker current row highlight uses success-dim background + border-left 3px', () => {
+  const vp = readFileSync(
+    resolve(root, 'entry/src/main/ets/pages/AiSettings/VendorPicker.ets'),
+    'utf8'
+  );
+  // 找 backgroundColor(this.currentVendorId === item.id ? ...) 行
+  const bgMatch = vp.match(/backgroundColor\s*\(\s*this\.currentVendorId\s*===\s*item\.id\s*\?\s*([^)]+)\)/);
+  assert.ok(bgMatch !== null, 'VendorPicker row must have conditional backgroundColor based on currentVendorId');
+  const bgValue = bgMatch[1].trim();
+  // success-dim 应该是 rgba(green, 0.15) 或 '#1A2E26' 字面(项目无 SUCCESS_DIM token)
+  assert.ok(
+    /rgba\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0?\.15\s*\)/.test(bgValue) ||
+    /#0?1A2E26/i.test(bgValue) ||
+    /SUCCESS_DIM/.test(bgValue),
+    `Current row bg must be success-dim (rgba 0.15 or dim green), got: ${bgValue}`
+  );
+  // border-left 3px 必须出现(在 current vendor 条件分支)
+  assert.match(
+    vp,
+    /width\s*:\s*\{\s*left\s*:\s*3\s*\}/,
+    'VendorPicker row border must specify width: { left: 3 } for current vendor'
+  );
+});

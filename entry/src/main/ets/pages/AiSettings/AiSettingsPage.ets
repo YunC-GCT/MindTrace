@@ -142,11 +142,20 @@ struct AiSettingsPage {
           .width("100%")
           .padding({ left: S_4, right: S_4, top: S_4, bottom: S_2 })
 
-          Text("服务厂商")
-            .fontSize(F_SM)
-            .fontColor(TEXT)
-            .fontWeight(W_SEMIBOLD)
-            .padding({ left: S_4, right: S_4, top: S_4, bottom: S_2 })
+          Column() {
+            Text("服务厂商")
+              .fontSize(F_SM)
+              .fontColor(TEXT)
+              .fontWeight(W_SEMIBOLD)
+            // v6 设计稿 subtitle — PR2-T2 polish ticket #81 task A3
+            Text("5 预设 + 你添加的供应商。模型行点左侧'线 + 圆'切换当前 model。")
+              .fontSize(F_XS)
+              .fontColor(TEXT_3)
+              .margin({ top: 4 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .padding({ left: S_4, right: S_4, top: S_4, bottom: S_2 })
+          .width('100%')
 
           VendorPicker({
             currentVendorId: this.vm.vendorId,
