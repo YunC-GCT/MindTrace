@@ -73,3 +73,9 @@ docs/research/_fetched/
 # Reports rendered from .md for human review. Source stays in .md.
 docs/research/*.html
 docs/architecture/*.html
+
+# ===== Worktree-root design scratch (per-session v6 design + render) =====
+# Temporary paired .md + .html rendered from worktree root during dev.
+# Authoritative source: docs/specs/*.md + docs/agents/handoffs/*.md
+.pr2-*-design.html
+.pr2-*-design.md

@@ -5,10 +5,20 @@
  * 依赖：LlmConfig、OcrConfig、LlmClient、OcrTool
  */
 import { LlmClient, LlmConfig, OcrConfig } from "common"
+import type { CustomVendorConfig, ProviderConfig } from "common"
+import { PROVIDERS } from "common"
 import { DS_ENDPOINT } from "../pages/AiSettings/EndpointPicker"
 import { PRO_MODEL } from "../pages/AiSettings/ModelPicker"
 import { OcrTool } from "agents"
 import type { OcrRecognitionResult } from "agents"
+
+// PR2-T2 P3: 用户添加的自定义 vendor 列表
+// (后续 PR 可扩 LlmConfig 加 KEY_CUSTOM_VENDORS 持久化;当前 in-memory)
+// CustomVendorConfig = { vendorName, baseUrl, model }(common/providers.ets);apiKey 暂存 in-memory,后续接 AssetStoreKit
+interface CustomVendorFull extends CustomVendorConfig {
+  id: string
+  apiKey: string
+}
 
 const DEFAULT_OCR_ENDPOINT: string = ""
 const DEFAULT_OCR_MODE: string = "text"
@@ -56,6 +66,9 @@ export class AiSettingsViewModel {
       this.statusText = "未配置"
     }
 
+    // PR2-T2 修复 C1 critical: load() 还原 vendorId — 不还原则刷新页面 vendor 选择回到默认值 'deepseek'
+    this.vendorId = llm.getVendorId()
+
     this.syncEndpoint(llm.getEndpoint())
     this.syncModel(llm.getModel())
     this.temp = llm.getTemperature()
@@ -81,6 +94,8 @@ export class AiSettingsViewModel {
   async save(): Promise<boolean> {
     try {
       const llm: LlmConfig = LlmConfig.getInstance()
+      // PR2-T2: 持久化 vendorId — 不持久化则切换 vendor 后刷新页面就丢失
+      await llm.setVendorId(this.vendorId)
       await llm.saveAll(this.resolveEndpoint(), this.resolveModel(), this.temp, this.maxT, this.to)
       const key: string = this.apiKey.trim()
       if (key.length > 0) {
@@ -310,5 +325,65 @@ export class AiSettingsViewModel {
       return this.customMD
     }
     return PRO_MODEL
+  }
+
+  // ===== PR2-T2 增量: VendorPicker 接口 =====
+  // 选中的 vendor id('deepseek' / 'tongyi' / 'glm' / 'kimi' / 'doubao' / 'custom')
+  vendorId: string = 'deepseek'
+  // 注: panel 展开是 VendorPicker 内部 UI 状态(@State editingVendorId),
+  //     不放在 ViewModel(避免双真理源同步问题)。
+
+  // PR2-T2 P3: 用户添加的自定义 vendor 列表(in-memory;持久化后续 PR 接 LlmConfig)
+  customVendors: CustomVendorFull[] = []
+
+  selectVendor(id: string): void {
+    this.vendorId = id
+  }
+
+  openAddCustomVendor(): void {
+    // 占位 — 真正的 modal 打开在 VendorPicker 内(@State addCustomModalOpen)
+    // 保留本方法作为扩展点;后续 PR 可接 modal 状态/字段
+  }
+
+  // PR2-T2 P3: 添加新 vendor(由 VendorPicker modal 确认后回调)
+  // 同步切到新 vendor,后续 chat 用它的 baseUrl/model/apiKey
+  addCustomVendor(name: string, baseUrl: string, apiKey: string, firstModel: string): void {
+    const id: string = 'custom-' + Date.now()
+    this.customVendors.push({ id, vendorName: name, baseUrl, model: firstModel, apiKey })
+    this.vendorId = id
+  }
+
+  // PR2-T2 P4: AI 服务段摘要解析(替代旧 modelSummary/endpointSummary 关键字嗅探)
+  // 单一真理源: 用 vendorId + findProvider(customVendor.baseUrl) 解析
+  getCurrentVendor(): string {
+    // 预设 vendor
+    for (const p of PROVIDERS) {
+      if (p.id === this.vendorId) { return p.vendorName }
+    }
+    // 自定义 vendor(从 customVendors 数组找)
+    for (const v of this.customVendors) {
+      if (v.id === this.vendorId) { return v.vendorName }
+    }
+    return this.vendorId
+  }
+
+  getCurrentModel(): string {
+    for (const p of PROVIDERS) {
+      if (p.id === this.vendorId) { return p.defaultModel }
+    }
+    for (const v of this.customVendors) {
+      if (v.id === this.vendorId) { return v.model }
+    }
+    return ''
+  }
+
+  getCurrentEndpoint(): string {
+    for (const p of PROVIDERS) {
+      if (p.id === this.vendorId) { return p.baseUrl }
+    }
+    for (const v of this.customVendors) {
+      if (v.id === this.vendorId) { return v.baseUrl }
+    }
+    return ''
   }
 }
