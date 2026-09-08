@@ -12,6 +12,7 @@
 | [`langgraph-migration-2026-09-02.md`](./langgraph-migration-2026-09-02.md) (.html) | 2026-09-02 | MindTrace → LangGraph 迁移可行性调研 | **decided** (2026-09-05: 不引入 LangGraph 运行时依赖;采纳其设计模型,ArkTS 自建 CaptureGraph) |
 | [`project-positioning-2026-09-04.md`](./project-positioning-2026-09-04.md) | 2026-09-04 | 项目定位(摘要 + 详细双节),团队对齐与评委 pitch 用 | active |
 | [`harmonyos-kits-survey-2026-09-05.md`](./harmonyos-kits-survey-2026-09-05.md) | 2026-09-05 | 12 个官方 kit 家族能力 + MindTrace 适配点 + 成本档位;P0 = FormKit/Reminder/BackgroundTasks,P1 = AIEngine/NLP | active (D4 依据) |
+| [`issue-triage-2026-09-07.md`](./issue-triage-2026-09-07.md) | 2026-09-07 | 开放 GitHub Issues + 本地 specs/tickets 盘点;判断哪些正确、值得做、需要关闭或补信息 | active |
 
 临时原料 [`_positioning-facts-2026-09-04.md`](./_positioning-facts-2026-09-04.md)(下划线前缀)按约定不入正式索引。
 
@@ -37,4 +38,5 @@
 
 ## Last updated
 
-2026-09-06 (修正命名约定自反 + langgraph 两篇标记 decided)
+2026-09-07 (新增 issue triage 盘点)
+
