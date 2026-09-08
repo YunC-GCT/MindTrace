@@ -31,6 +31,7 @@ PR2-T2 commit `8f9081b` 由本 session agent 与 deepseek 协作完成,29/29 测
   - 5 测试新增,锁设计意图防回归(测试 28/30/31/32/33 + 测试 6/21 更新)
   - 引入 `SUCCESS_DIM = 'rgba(91, 227, 176, 0.15)'` 局部 const(后续 PR 可提为 common token)
   - `addCustomVendor` 改返回 string(原 void),让 VendorPicker 知道新 vendorId 用于 NEW badge 跟踪
+  - **追加决策(2026-09-08 双轴审查后)**:删除 "当前活跃" filled badge。理由:行高亮(success-dim bg + border-left 3px)已足够标识选中状态,badge 冗余简化 UI。design.html 现仍含 badge,但本实现选择更简洁方案(若 user 后续要求对齐 design.html,需重新加回)
 - **代价**:
   - `addCustomVendor` 签名变化(breaking for any external caller)— 实际只有 AiSettingsPage.ets 内调用,已同步更新
   - onAddVendorConfirm 回调签名变化(原 `(cfg) => void`,现 `(cfg) => string`)— 同步更新
@@ -38,6 +39,7 @@ PR2-T2 commit `8f9081b` 由本 session agent 与 deepseek 协作完成,29/29 测
 - **Open notes**:
   - `SUCCESS_DIM` 当前仅在 VendorPicker.ets 用,后续 L1/L2/L3 持久化 PR 可提升到 `common/ColorTokens.ets`
   - NEW badge 用 `Set<string>` 跟踪,session 内有效;切 vendor 切回仍显示;刷新页面后丢失(用户要求"无需持久化")
+  - "当前活跃" badge 删除:行高亮足够标识。后续若 user 反馈需要 badge 视觉冗余(对齐 design.html),可重新加回
 
 ## Reversibility
 
