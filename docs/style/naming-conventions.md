@@ -99,6 +99,7 @@ If a file is not in the whitelist, it must be in a subdirectory (`docs/`, `scrip
 | Style / coding standard | `docs/style/` | `{scope}-{topic}.md` |
 | Research note | `docs/research/` | `{topic-slug}-{YYYY-MM-DD}.md` |
 | Agent workflow pointer docs | `docs/agents/` | `{topic-slug}.md` |
+| Agent handoff (session 交接) | `docs/agents/handoffs/` | `{topic-slug}-handoff-{YYYY-MM-DD}.md` |
 | Template (canonical) | `docs/template/` | `{doc-type}-template.md` |
 | **Legacy / old project** | `docs/legacy/{project}/` | (preserves old naming — frozen) |
 
