@@ -96,7 +96,9 @@ export class AiSettingsViewModel {
       const llm: LlmConfig = LlmConfig.getInstance()
       // PR2-T2: 持久化 vendorId — 不持久化则切换 vendor 后刷新页面就丢失
       await llm.setVendorId(this.vendorId)
-      await llm.saveAll(this.resolveEndpoint(), this.resolveModel(), this.temp, this.maxT, this.to)
+      // PR2-T2 集成修复 (2026-09-08): 用 getCurrent* 而非 resolve* — 新方法是 vendorId-driven,旧方法是 keyword-sniff
+      // (旧 resolveEndpoint/resolveModel 在 ticket #83 L4 清理 PR 删除)
+      await llm.saveAll(this.getCurrentEndpoint(), this.getCurrentModel(), this.temp, this.maxT, this.to)
       const key: string = this.apiKey.trim()
       if (key.length > 0) {
         await llm.setApiKey(key)
