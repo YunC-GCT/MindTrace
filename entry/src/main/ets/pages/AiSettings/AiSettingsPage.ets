@@ -2,7 +2,7 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4 } from "common"
+import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4 } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
@@ -107,10 +107,30 @@ struct AiSettingsPage {
           ConnectionStatus({ configured: this.vm.configured, statusText: this.vm.statusText })
 
           Column() {
-            Text("AI 服务")
-              .fontSize(F_SM)
-              .fontColor(TEXT)
-              .fontWeight(W_SEMIBOLD)
+            Row() {
+              // 圆环 icon(外环 + 内点) — PR2-T2 polish ticket #81 task A2 对齐 v6 设计稿
+              Stack() {
+                Circle()
+                  .width(20)
+                  .height(20)
+                  .fill('transparent')
+                  .stroke(MINT)
+                  .strokeWidth(2)
+                Circle()
+                  .width(8)
+                  .height(8)
+                  .fill(MINT)
+              }
+              .width(20)
+              .height(20)
+              .margin({ right: 8 })
+
+              Text("AI 服务")
+                .fontSize(F_SM)
+                .fontColor(TEXT)
+                .fontWeight(W_SEMIBOLD)
+            }
+            .alignItems(VerticalAlign.Center)
             // PR2-T2 P4: 用 vendor 单一真理源解析(替代旧 modelSummary/endpointSummary 关键字嗅探)
             Text(`${this.vm.getCurrentVendor()} · 当前 ${this.vm.getCurrentModel()} · ${this.vm.getCurrentEndpoint()}`)
               .fontSize(F_XS)

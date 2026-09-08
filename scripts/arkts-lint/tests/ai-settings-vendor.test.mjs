@@ -594,3 +594,26 @@ test('VendorPicker row has line+circle radio visual (Stack OR Circle OR border)'
     'VendorPicker must have visual switch (Stack/Circle/border)'
   );
 });
+
+// 测试 30(GREEN): AI 服务段加圆环 icon(外环 + 内点)
+// v6 设计稿(.pr2-t2-design.html line 402-407):<svg><circle r=9/><circle r=3.5/></svg>
+// ArkTS 实现:Stack 内 2 Circle,外环 stroke MINT + 内点 fill MINT
+// PR2-T2 polish ticket #81 task A2
+test('AiSettingsPage AI 服务段 has ring icon (Stack with 2 Circles for outer ring + inner dot)', () => {
+  const page = readFileSync(
+    resolve(root, 'entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets'),
+    'utf8'
+  );
+  // 找 AI 服务 title 上下文(±600 字符)
+  assert.ok(page.includes('AI 服务'), 'AiSettingsPage must contain AI 服务 title');
+  const idx = page.indexOf('AI 服务');
+  const region = page.substring(Math.max(0, idx - 600), idx + 200);
+  // 必须有 Stack + 至少 2 Circle(外环 + 内点)
+  assert.match(region, /Stack\s*\(\s*\)/, 'AI 服务 title region must contain Stack() for ring icon');
+  const circleCount = (region.match(/\bCircle\s*\(\s*\)/g) || []).length;
+  assert.ok(circleCount >= 2, `AI 服务 title region must contain at least 2 Circle() (outer + inner), found ${circleCount}`);
+  // 外环 stroke MINT
+  assert.match(region, /\.stroke\s*\(\s*MINT\s*\)/, 'Outer ring must have stroke(MINT)');
+  // 内点 fill MINT
+  assert.match(region, /\.fill\s*\(\s*MINT\s*\)/, 'Inner dot must have fill(MINT)');
+});
