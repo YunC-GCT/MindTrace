@@ -65,22 +65,23 @@ test('L1: LlmConfig.addCustomVendor(cfg) appends + persists', () => {
   );
 });
 
-test('L1: LlmConfig.removeCustomVendor removes by (vendorName + baseUrl) tuple', () => {
+test('L1: LlmConfig.removeCustomVendor removes by id (preferred) or (vendorName + baseUrl) tuple fallback', () => {
   const src = readLlmConfigSource();
   assert.match(
     src,
     /public\s+async\s+removeCustomVendor\s*\(\s*matcher\s*:\s*CustomVendorConfig\s*\)\s*:\s*Promise\s*<\s*void\s*>/,
     'LlmConfig must declare public async removeCustomVendor(matcher: CustomVendorConfig): Promise<void>'
   );
-  // 内部 filter 用 vendorName + baseUrl 双匹配(无 id 字段,所以 tuple 匹配)
-  const removeBody = src.match(
-    /public\s+async\s+removeCustomVendor\s*\([\s\S]*?\)\s*:\s*Promise\s*<\s*void\s*>\s*\{([\s\S]*?)\n\s*\}/
-  );
-  assert.ok(removeBody !== null, 'removeCustomVendor body not found');
+  // source-level 匹配:removeCustomVendor 必须 id 优先 + vendorName/baseUrl tuple fallback
   assert.match(
-    removeBody[1],
-    /filter[^}]*vendorName[^}]*baseUrl/s,
-    'removeCustomVendor must filter by (vendorName + baseUrl) tuple'
+    src,
+    /removeCustomVendor[\s\S]*?v\.id\s*!==\s*matcher\.id/,
+    'removeCustomVendor must match by id (preferred)'
+  );
+  assert.match(
+    src,
+    /removeCustomVendor[\s\S]*?vendorName\s*===\s*matcher\.vendorName/,
+    'removeCustomVendor must fallback to (vendorName + baseUrl) tuple'
   );
 });
 

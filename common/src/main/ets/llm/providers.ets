@@ -70,9 +70,13 @@ export const PROVIDERS: ProviderConfig[] = [
 export const DEFAULT_VENDOR_ID: string = 'deepseek';
 
 export interface CustomVendorConfig {
+  // PR2-T2 ticket #83 bug fix (2026-09-08): id 字段保证 save/load 跨重启 identity 稳定
+  // 可选,旧数据(无 id 字段)解析时为 undefined
+  id?: string;
   vendorName: string;  // 用户填的显示名
   baseUrl: string;      // 用户填的 base URL
   model: string;        // 用户填的 model id
+  // apiKey 不在此处,走 ApiKeyVault / per-vendor L3 持久化(不污染 config 类型)
 }
 
 export function findProvider(id: string): ProviderConfig | null {

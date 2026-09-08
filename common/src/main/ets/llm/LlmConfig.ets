@@ -169,11 +169,20 @@ export class LlmConfig {
     return k !== null && k.length > 0;
   }
 
+  // PR2-T2 ticket #83 L3 (2026-09-08): 读所有 per-vendor api keys(VM.load() 用)
+  public getAllVendorApiKeys(): Record<string, string> {
+    return this.cachedVendorApiKeys
+  }
+
   // clearApiKey() 无 vendorId → 清全局(back-compat)
-  // clearApiKey(vendorId) → 删 per-vendor entry
+  // clearApiKey(vendorId) → 删 per-vendor entry(PR2-T2 bug fix 2026-09-08: rebuild Record 替代 delete,arkts-no-delete)
   public async clearApiKey(vendorId?: string): Promise<void> {
     if (vendorId !== undefined && vendorId.length > 0) {
-      delete this.cachedVendorApiKeys[vendorId];
+      const next: Record<string, string> = {}
+      for (const k of Object.keys(this.cachedVendorApiKeys)) {
+        if (k !== vendorId) { next[k] = this.cachedVendorApiKeys[k] }
+      }
+      this.cachedVendorApiKeys = next
       const s = this.store!;
       await s.put(KEY_VENDOR_API_KEYS, JSON.stringify(this.cachedVendorApiKeys));
       await s.flush();
@@ -183,10 +192,12 @@ export class LlmConfig {
   }
 
   // ===== Endpoint (PR2-T1: 按 vendorId 解析) =====
+  // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
   public getEndpoint(): string {
-    if (this.cachedVendorId === 'custom') {
-      // PR2-T2 L1: 优先查 customVendors[] 第一个匹配(vendorId='custom' 来自 VM 自定义 vendor)
-      const cv: CustomVendorConfig | null = this.findCustomVendor('custom');
+    // PR2-T2 L1: 任何 custom-prefix id(VM.addCustomVendor 用 'custom-'+Date.now() 生成)
+    if (this.cachedVendorId.startsWith('custom') && this.cachedVendorId.length > 6) {
+      // 优先查 customVendors[] 匹配 id(Bug #1 修复:不再只返回 [0])
+      const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
       if (cv !== null) { return cv.baseUrl; }
       // legacy 单数字段向后兼容
       if (this.cachedCustomVendor !== null) { return this.cachedCustomVendor.baseUrl; }
@@ -204,10 +215,11 @@ export class LlmConfig {
   }
 
   // ===== Model (PR2-T1: 按 vendorId 解析) =====
+  // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
   public getModel(): string {
-    if (this.cachedVendorId === 'custom') {
-      // PR2-T2 L1: 优先查 customVendors[] 第一个匹配
-      const cv: CustomVendorConfig | null = this.findCustomVendor('custom');
+    if (this.cachedVendorId.startsWith('custom') && this.cachedVendorId.length > 6) {
+      // PR2-T2 L1: 优先查 customVendors[] 匹配 id
+      const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
       if (cv !== null) { return cv.model; }
       // legacy 单数向后兼容
       if (this.cachedCustomVendor !== null) { return this.cachedCustomVendor.model; }
@@ -294,12 +306,13 @@ export class LlmConfig {
     return this.cachedCustomVendors;
   }
 
-  // PR2-T2 L1: 内部 helper — 在 customVendors[] 中按 id 找
-  // 注意: CustomVendorConfig 当前无 id 字段,匹配按 vendorName + baseUrl tuple
+  // PR2-T2 ticket #83 bug fix (2026-09-08): 内部 helper — 按 id 找
+  // CustomVendorConfig.id 字段(2026-09-08 引入)保证多 custom vendor 共存时 identity 稳定
   private findCustomVendor(id: string): CustomVendorConfig | null {
-    // 简化: id === 'custom' 时返回第一个 custom vendor(VM 应确保 single active custom)
-    if (this.cachedCustomVendors.length === 0) { return null; }
-    return this.cachedCustomVendors[0];
+    for (const v of this.cachedCustomVendors) {
+      if (v.id === id) { return v }
+    }
+    return null
   }
 
   public async setCustomVendors(arr: CustomVendorConfig[]): Promise<void> {
@@ -318,11 +331,16 @@ export class LlmConfig {
     await this.setCustomVendors([...this.cachedCustomVendors, cfg]);
   }
 
-  // PR2-T2 L1: 按 (vendorName + baseUrl) tuple 移除(L1 不引入 id 字段,向后兼容)
+  // PR2-T2 ticket #83 bug fix (2026-09-08): 优先按 id 匹配,fallback (vendorName+baseUrl) tuple
   public async removeCustomVendor(matcher: CustomVendorConfig): Promise<void> {
     const filtered: CustomVendorConfig[] = this.cachedCustomVendors.filter(
-      (v: CustomVendorConfig): boolean =>
-        !(v.vendorName === matcher.vendorName && v.baseUrl === matcher.baseUrl)
+      (v: CustomVendorConfig): boolean => {
+        if (matcher.id !== undefined && v.id !== undefined) {
+          return v.id !== matcher.id  // 按 id 匹配(优先)
+        }
+        // fallback:按 (vendorName + baseUrl) tuple
+        return !(v.vendorName === matcher.vendorName && v.baseUrl === matcher.baseUrl)
+      }
     );
     await this.setCustomVendors(filtered);
   }
@@ -354,7 +372,12 @@ export class LlmConfig {
     const filtered: string[] = existing.filter((m: string): boolean => m !== model);
     if (filtered.length === 0) {
       // 空数组 — 删 entry 而非存空数组,简化后续 getVendorModels fallback
-      delete this.cachedVendorModels[vendorId];
+      // PR2-T2 ticket #83 bug fix (2026-09-08): rebuild Record 替代 delete(arkts-no-delete)
+      const next: Record<string, string[]> = {}
+      for (const k of Object.keys(this.cachedVendorModels)) {
+        if (k !== vendorId) { next[k] = this.cachedVendorModels[k] }
+      }
+      this.cachedVendorModels = next
     } else {
       this.cachedVendorModels[vendorId] = filtered;
     }

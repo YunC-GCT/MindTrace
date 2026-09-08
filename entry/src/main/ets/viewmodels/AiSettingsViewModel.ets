@@ -21,10 +21,14 @@ interface CustomVendorFull {
   apiKey: string
 }
 
-// PR2-T2 ticket #83 L1: helper function — 显式返回类型避免 inline literal 触发 arkts-no-untyped-obj-literals
+// PR2-T2 ticket #83 bug fix (2026-09-08): 复用 LlmConfig 存的 id(不再 Date.now() regen)
+//   CustomVendorConfig 现在有 id?: string 字段,旧数据无 id 时 fallback 'custom-fallback-{i}'
 function toCustomVendorFull(v: CustomVendorConfig, i: number): CustomVendorFull {
+  const stableId: string = v.id !== undefined && v.id.length > 0
+    ? v.id
+    : `custom-fallback-${i}`
   return {
-    id: `custom-loaded-${i}-${Date.now()}`,
+    id: stableId,
     vendorName: v.vendorName,
     baseUrl: v.baseUrl,
     model: v.model,
@@ -96,12 +100,9 @@ export class AiSettingsViewModel {
       this.vendorModels[p.id] = models
     }
 
-    // PR2-T2 ticket #83 L3 (2026-09-08): 还原 per-vendor API Keys(仅当前 vendor)
-    this.vendorApiKeys = {}
-    const curKey: string | null = await llm.getApiKey(this.vendorId)
-    if (curKey !== null) {
-      this.vendorApiKeys[this.vendorId] = curKey
-    }
+    // PR2-T2 ticket #83 L3 (2026-09-08): 还原 per-vendor API Keys
+    // Bug fix (2026-09-08): 还原所有 vendor keys(原代码只还原 current)
+    this.vendorApiKeys = llm.getAllVendorApiKeys()
 
     // PR2-T2 ticket #83 L4 (2026-09-08): 不再调 syncEndpoint / syncModel(keyword-sniff 已删)
     // PR2-T2 ticket #83 L4: temp / maxT / to 走 LlmConfig cache,不在 VM
@@ -128,11 +129,26 @@ export class AiSettingsViewModel {
       // PR2-T2: 持久化 vendorId — 不持久化则切换 vendor 后刷新页面就丢失
       await llm.setVendorId(this.vendorId)
       // PR2-T2 ticket #83 L1 (2026-09-08): 持久化 customVendors 数组
+      // Bug fix (2026-09-08): 含 id 字段(保证跨重启 identity 稳定)
+      // Bug fix (2026-09-08): 也持久化 apiKey(走 per-vendor L3 通道,不在 CustomVendorConfig 里)
       await llm.setCustomVendors(this.customVendors.map(
-        (v: CustomVendorFull): CustomVendorConfig => ({
-          vendorName: v.vendorName, baseUrl: v.baseUrl, model: v.model,
-        })
+        (v: CustomVendorFull): CustomVendorConfig => {
+          const out: CustomVendorConfig = {
+            id: v.id,
+            vendorName: v.vendorName,
+            baseUrl: v.baseUrl,
+            model: v.model,
+          }
+          return out
+        }
       ))
+      // PR2-T2 ticket #83 L3 bug fix (2026-09-08): per-custom-vendor apiKey 走 LlmConfig.setApiKey(key, vendorId)
+      //   原代码只写 vendorName/baseUrl/model,apiKey 丢失
+      for (const v of this.customVendors) {
+        if (v.apiKey.length > 0) {
+          await llm.setApiKey(v.apiKey, v.id)
+        }
+      }
       // PR2-T2 ticket #83 L2 (2026-09-08): 持久化 per-vendor models
       for (const vid of Object.keys(this.vendorModels)) {
         const existing: string[] | undefined = llm.getVendorModels(vid)

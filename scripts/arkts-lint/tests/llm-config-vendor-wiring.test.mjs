@@ -60,8 +60,9 @@ test('wiring: VM.load() reads per-vendor models via LlmConfig.getVendorModels', 
   assert.match(vm, /llm\.getVendorModels\s*\(\s*p\.id\s*\)/, 'VM.load() must call llm.getVendorModels(p.id) for each preset vendor');
 });
 
-test('wiring: VM.load() reads per-vendor API key via LlmConfig.getApiKey(vendorId)', () => {
-  assert.match(vm, /getApiKey\s*\(\s*this\.vendorId\s*\)/, 'VM.load() must call llm.getApiKey(this.vendorId) for current vendor');
+test('wiring: VM.load() reads per-vendor API keys via LlmConfig.getAllVendorApiKeys()', () => {
+  // PR2-T2 ticket #83 bug fix (2026-09-08): load() 还原所有 vendor keys(原代码只还原 current)
+  assert.match(vm, /vendorApiKeys\s*=\s*llm\.getAllVendorApiKeys\(\)/, 'VM.load() must call llm.getAllVendorApiKeys() to restore all vendor api keys');
 });
 
 test('wiring: VendorPicker declares @Prop vendorApiKeys + vendorModels', () => {
