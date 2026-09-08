@@ -7,17 +7,36 @@
 import { LlmClient, LlmConfig, OcrConfig } from "common"
 import type { CustomVendorConfig, ProviderConfig } from "common"
 import { PROVIDERS } from "common"
-import { DS_ENDPOINT } from "../pages/AiSettings/EndpointPicker"
-import { PRO_MODEL } from "../pages/AiSettings/ModelPicker"
 import { OcrTool } from "agents"
 import type { OcrRecognitionResult } from "agents"
 
 // PR2-T2 P3: 用户添加的自定义 vendor 列表
-// (后续 PR 可扩 LlmConfig 加 KEY_CUSTOM_VENDORS 持久化;当前 in-memory)
-// CustomVendorConfig = { vendorName, baseUrl, model }(common/providers.ets);apiKey 暂存 in-memory,后续接 AssetStoreKit
-interface CustomVendorFull extends CustomVendorConfig {
+// PR2-T2 ticket #83 L1 (2026-09-08): 不用 extends CustomVendorConfig,直接声明全部字段
+//   (避免 ArkTS strict 在 inline literal 位置无法解析 extends 类型)
+interface CustomVendorFull {
   id: string
+  vendorName: string
+  baseUrl: string
+  model: string
   apiKey: string
+}
+
+// PR2-T2 ticket #83 L1: helper function — 显式返回类型避免 inline literal 触发 arkts-no-untyped-obj-literals
+function toCustomVendorFull(v: CustomVendorConfig, i: number): CustomVendorFull {
+  return {
+    id: `custom-loaded-${i}-${Date.now()}`,
+    vendorName: v.vendorName,
+    baseUrl: v.baseUrl,
+    model: v.model,
+    apiKey: '',
+  }
+}
+
+// PR2-T2 ticket #83 L1: helper for addCustomVendor(避免 inline literal)
+function makeCustomVendorFullEntry(
+  id: string, name: string, baseUrl: string, model: string, apiKey: string
+): CustomVendorFull {
+  return { id, vendorName: name, baseUrl, model, apiKey }
 }
 
 const DEFAULT_OCR_ENDPOINT: string = ""
@@ -34,17 +53,13 @@ const OCR_TEST_PNG_BYTES: number[] = [
 @Observed
 export class AiSettingsViewModel {
   apiKey: string = ""
-  useCustomEP: boolean = false
-  customEP: string = ""
-  mdlIdx: number = 0
-  useCustomMD: boolean = false
-  customMD: string = ""
+  // PR2-T2 ticket #83 L4 (2026-09-08): 删 useCustomEP / customEP / mdlIdx / useCustomMD / customMD 字段
+  //   (旧 keyword-sniff 路径,已被 L1+L2+L3 LlmConfig 取代)
+  // PR2-T2 ticket #83 L4: 删 temp / maxT / to 字段
+  //   (温度 / max_tokens / timeout — 走 LlmConfig 内部 cache)
   configured: boolean = false
   testing: boolean = false
   statusText: string = "未配置"
-  temp: number = 0.1
-  maxT: number = 12000
-  to: number = 120000
   ocrEndpoint: string = DEFAULT_OCR_ENDPOINT
   ocrEnabled: boolean = true
   ocrMode: string = DEFAULT_OCR_MODE
@@ -72,20 +87,13 @@ export class AiSettingsViewModel {
 
     // PR2-T2 ticket #83 L1 (2026-09-08): 还原 customVendors 数组
     const cvList: CustomVendorConfig[] = llm.getCustomVendors()
-    this.customVendors = cvList.map(
-      (v: CustomVendorConfig, i: number): CustomVendorFull => ({
-        id: `custom-loaded-${i}-${Date.now()}`,
-        vendorName: v.vendorName,
-        baseUrl: v.baseUrl,
-        model: v.model,
-        apiKey: '',  // apiKey 在 L3 单独持久化,不在 customVendors JSON 里
-      })
-    )
+    this.customVendors = cvList.map(toCustomVendorFull)
 
     // PR2-T2 ticket #83 L2 (2026-09-08): 还原 per-vendor models
     this.vendorModels = {}
     for (const p of PROVIDERS) {
-      this.vendorModels[p.id] = llm.getVendorModels(p.id)
+      const models: string[] = llm.getVendorModels(p.id)
+      this.vendorModels[p.id] = models
     }
 
     // PR2-T2 ticket #83 L3 (2026-09-08): 还原 per-vendor API Keys(仅当前 vendor)
@@ -95,11 +103,8 @@ export class AiSettingsViewModel {
       this.vendorApiKeys[this.vendorId] = curKey
     }
 
-    this.syncEndpoint(llm.getEndpoint())
-    this.syncModel(llm.getModel())
-    this.temp = llm.getTemperature()
-    this.maxT = llm.getMaxTokens()
-    this.to = llm.getTimeoutMs()
+    // PR2-T2 ticket #83 L4 (2026-09-08): 不再调 syncEndpoint / syncModel(keyword-sniff 已删)
+    // PR2-T2 ticket #83 L4: temp / maxT / to 走 LlmConfig cache,不在 VM
 
     const ocr: OcrConfig = OcrConfig.getInstance()
     try {
@@ -139,8 +144,10 @@ export class AiSettingsViewModel {
             await llm.addVendorModel(vid, m)
           }
           // 移除 LlmConfig 默认 seed 但不在 UI state 中的
-          for (const m of existing) {
-            if (ours.indexOf(m) < 0) { await llm.removeVendorModel(vid, m) }
+          if (existing !== undefined) {
+            for (const m of existing) {
+              if (ours.indexOf(m) < 0) { await llm.removeVendorModel(vid, m) }
+            }
           }
         }
       }
@@ -153,7 +160,14 @@ export class AiSettingsViewModel {
       }
       // PR2-T2 集成修复 (2026-09-08): 用 getCurrent* 而非 resolve* — 新方法是 vendorId-driven,旧方法是 keyword-sniff
       // (旧 resolveEndpoint/resolveModel 在 ticket #83 L4 清理 PR 删除)
-      await llm.saveAll(this.getCurrentEndpoint(), this.getCurrentModel(), this.temp, this.maxT, this.to)
+      // PR2-T2 ticket #83 L4 (2026-09-08): temp / maxT / to 走 LlmConfig cache
+      await llm.saveAll(
+        this.getCurrentEndpoint(),
+        this.getCurrentModel(),
+        llm.getTemperature(),
+        llm.getMaxTokens(),
+        llm.getTimeoutMs()
+      )
       // 全局 API key (back-compat path)— 仅当 user 显式填过;UI 已删全局 input,这里保留 catch-all
       const key: string = this.apiKey.trim()
       if (key.length > 0) {
@@ -178,16 +192,9 @@ export class AiSettingsViewModel {
       await llm.resetDefaults()
       await llm.clearApiKey()
       this.apiKey = ""
-      this.useCustomEP = false
-      this.customEP = ""
-      this.mdlIdx = 0
-      this.useCustomMD = false
-      this.customMD = ""
+      // PR2-T2 ticket #83 L4 (2026-09-08): 不再 reset useCustomEP/customEP/mdlIdx/useCustomMD/customMD/temp/maxT/to(已删字段)
       this.configured = false
       this.statusText = "未配置"
-      this.temp = 0.1
-      this.maxT = 12000
-      this.to = 120000
 
       const ocr: OcrConfig = OcrConfig.getInstance()
       await ocr.resetDefaults()
@@ -210,7 +217,14 @@ export class AiSettingsViewModel {
     try {
       const llm: LlmConfig = LlmConfig.getInstance()
       await llm.setApiKey(key)
-      await llm.saveAll(this.resolveEndpoint(), this.resolveModel(), this.temp, this.maxT, this.to)
+      // PR2-T2 ticket #83 L4 (2026-09-08): 用 getCurrent* + LlmConfig cache,不再调 resolve*/temp/maxT/to
+      await llm.saveAll(
+        this.getCurrentEndpoint(),
+        this.getCurrentModel(),
+        llm.getTemperature(),
+        llm.getMaxTokens(),
+        llm.getTimeoutMs()
+      )
       await new LlmClient().call({
         messages: [
           { role: "system", content: "You are a connection test endpoint. Reply with exactly: OK" },
@@ -264,35 +278,9 @@ export class AiSettingsViewModel {
     this.apiKey = value
   }
 
-  setCustomEndpoint(value: string): void {
-    this.customEP = value
-    this.useCustomEP = value.trim().length > 0
-  }
-
-  toggleCustomEndpoint(value: boolean): void {
-    this.useCustomEP = value
-    if (!value) {
-      this.customEP = ""
-    }
-  }
-
-  selectModel(index: number): void {
-    this.mdlIdx = index
-    this.useCustomMD = false
-    this.customMD = ""
-  }
-
-  setCustomModel(value: string): void {
-    this.customMD = value
-    this.useCustomMD = value.trim().length > 0
-  }
-
-  toggleCustomModel(value: boolean): void {
-    this.useCustomMD = value
-    if (!value) {
-      this.customMD = ""
-    }
-  }
+  // PR2-T2 ticket #83 L4 (2026-09-08): 删 setCustomEndpoint / toggleCustomEndpoint /
+  //   selectModel / setCustomModel / toggleCustomModel / setTemp / setMaxTokens / setTimeout
+  //   (旧 keyword-sniff 路径 + LLM 参数 setter — 全部走 LlmConfig / 自身 setters)
 
   setOcrEndpoint(value: string): void {
     this.ocrEndpoint = value
@@ -311,75 +299,10 @@ export class AiSettingsViewModel {
     this.ocrMode = DEFAULT_OCR_MODE
   }
 
-  currentModelText(): string {
-    if (this.useCustomMD && this.customMD.trim().length > 0) {
-      return this.customMD.trim()
-    }
-    return PRO_MODEL
-  }
-
-  modelLabel(): string {
-    const model: string = this.currentModelText()
-    if (model === PRO_MODEL) {
-      return "DeepSeek-V4-Pro"
-    }
-    return model
-  }
-
-  endpointLabel(): string {
-    const endpoint: string = this.resolveEndpoint()
-    return endpoint === DS_ENDPOINT ? "DeepSeek 官方" : endpoint
-  }
-
-  private syncEndpoint(endpoint: string): void {
-    const current: string = endpoint.trim()
-    const lower: string = current.toLowerCase()
-    if (
-      current.length === 0 ||
-      current === DS_ENDPOINT ||
-      lower.indexOf('siliconflow') >= 0 ||
-      (lower.indexOf('api.deepseek.com') >= 0 && lower.indexOf('chat/completions') < 0)
-    ) {
-      this.useCustomEP = false
-      this.customEP = ""
-      return
-    }
-    this.useCustomEP = true
-    this.customEP = current
-  }
-
-  private syncModel(model: string): void {
-    const current: string = model.trim()
-    const lower: string = current.toLowerCase()
-    if (
-      current.length === 0 ||
-      current === PRO_MODEL ||
-      lower.indexOf('v3') >= 0 ||
-      lower.indexOf('flash') >= 0 ||
-      lower.indexOf('deepseek-chat') >= 0 ||
-      lower.indexOf('deepseek-reasoner') >= 0 ||
-      lower.indexOf('r1') >= 0
-    ) {
-      this.mdlIdx = 0
-      this.useCustomMD = false
-      this.customMD = ""
-      return
-    }
-    this.mdlIdx = 0
-    this.useCustomMD = true
-    this.customMD = current
-  }
-
-  private resolveEndpoint(): string {
-    return this.useCustomEP && this.customEP.length > 0 ? this.customEP : DS_ENDPOINT
-  }
-
-  private resolveModel(): string {
-    if (this.useCustomMD && this.customMD.length > 0) {
-      return this.customMD
-    }
-    return PRO_MODEL
-  }
+  // PR2-T2 ticket #83 L4 (2026-09-08): 删 currentModelText / modelLabel / endpointLabel
+  //   (旧 keyword-sniff 路径 — 改用 getCurrent* 方法)
+  // PR2-T2 ticket #83 L4: 删 syncEndpoint / syncModel keyword-sniff
+  // PR2-T2 ticket #83 L4: 删 resolveEndpoint / resolveModel(由 getCurrent* 取代)
 
   // ===== PR2-T2 增量: VendorPicker 接口 =====
   // 选中的 vendor id('deepseek' / 'tongyi' / 'glm' / 'kimi' / 'doubao' / 'custom')
@@ -413,7 +336,9 @@ export class AiSettingsViewModel {
   // PR2-T2 polish ticket #81 task A4: 返回新 vendorId 用于 NEW badge 跟踪
   addCustomVendor(name: string, baseUrl: string, apiKey: string, firstModel: string): string {
     const id: string = 'custom-' + Date.now()
-    this.customVendors.push({ id, vendorName: name, baseUrl, model: firstModel, apiKey })
+    // PR2-T2 ticket #83 L1 (2026-09-08): 通过 helper 构造 CustomVendorFull 避免 inline literal arkts-no-untyped-obj-literals
+    const cv: CustomVendorFull = makeCustomVendorFullEntry(id, name, baseUrl, firstModel, apiKey)
+    this.customVendors.push(cv)
     this.vendorId = id
     return id
   }
@@ -442,7 +367,13 @@ export class AiSettingsViewModel {
   }
 
   clearVendorApiKey(vendorId: string): void {
-    delete this.vendorApiKeys[vendorId]
+    // PR2-T2 ticket #83 L3 (2026-09-08): ArkTS 严格模式禁 delete operator
+    // 用 rebuild Record 替代(保留其他 vendor keys)
+    const next: Record<string, string> = {}
+    for (const k of Object.keys(this.vendorApiKeys)) {
+      if (k !== vendorId) { next[k] = this.vendorApiKeys[k] }
+    }
+    this.vendorApiKeys = next
   }
 
   // PR2-T2 P4: AI 服务段摘要解析(替代旧 modelSummary/endpointSummary 关键字嗅探)
@@ -450,7 +381,9 @@ export class AiSettingsViewModel {
   getCurrentVendor(): string {
     // 预设 vendor
     for (const p of PROVIDERS) {
-      if (p.id === this.vendorId) { return p.vendorName }
+      if (p.id === this.vendorId) {
+        return p.vendorName
+      }
     }
     // 自定义 vendor(从 customVendors 数组找)
     for (const v of this.customVendors) {
@@ -461,7 +394,9 @@ export class AiSettingsViewModel {
 
   getCurrentModel(): string {
     for (const p of PROVIDERS) {
-      if (p.id === this.vendorId) { return p.defaultModel }
+      if (p.id === this.vendorId) {
+        return p.defaultModel
+      }
     }
     for (const v of this.customVendors) {
       if (v.id === this.vendorId) { return v.model }
@@ -471,7 +406,9 @@ export class AiSettingsViewModel {
 
   getCurrentEndpoint(): string {
     for (const p of PROVIDERS) {
-      if (p.id === this.vendorId) { return p.baseUrl }
+      if (p.id === this.vendorId) {
+        return p.baseUrl
+      }
     }
     for (const v of this.customVendors) {
       if (v.id === this.vendorId) { return v.baseUrl }
