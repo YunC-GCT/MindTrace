@@ -561,9 +561,10 @@ test('AiSettingsViewModel exposes getCurrentVendor() and getCurrentModel() for A
   );
 });
 
-// 测试 28(RED): "当前" badge 视觉必须真正是绿色 pill(背景色 + 圆角),不是普通 Text
-// v6 设计稿: "当前" = 绿色背景 pill + 白字 + 圆角 + 字号小
-test('VendorPicker 当前活跃 badge has MINT fontColor + MINT_BORDER border (refactored visual)', () => {
+// 测试 28(GREEN): "当前" badge 视觉必须真正是 filled pill(背景色 + 白字 + 圆角 3),不是 outline 描边
+// v6 设计稿(.pr2-t2-design.html css 123-126): current-badge = success bg + white + border-radius 3
+// 修订:PR2-T2 polish ticket #81 task A1,从 outline mint 描边 → filled MINT bg + 白字
+test('VendorPicker 当前活跃 badge has filled MINT backgroundColor + #FFFFFF fontColor (v6 design)', () => {
   const vp = readFileSync(
     resolve(root, 'entry/src/main/ets/pages/AiSettings/VendorPicker.ets'),
     'utf8'
@@ -571,8 +572,9 @@ test('VendorPicker 当前活跃 badge has MINT fontColor + MINT_BORDER border (r
   assert.ok(vp.includes('当前活跃'), 'VendorPicker must contain 当前活跃 badge text');
   const idx = vp.indexOf('当前活跃');
   const region = vp.substring(Math.max(0, idx - 250), idx + 500);
-  assert.match(region, /fontColor\s*\(\s*MINT\s*\)/, '当前活跃 must have fontColor(MINT)');
-  assert.match(region, /border[^}]*color\s*:\s*MINT_BORDER/, '当前活跃 must have border color: MINT_BORDER');
+  assert.match(region, /backgroundColor\s*\(\s*MINT\s*\)/, '当前活跃 must have backgroundColor(MINT) for filled pill');
+  assert.match(region, /fontColor\s*\(\s*['"]#FFFFFF['"]\s*\)/, '当前活跃 must have fontColor(\'#FFFFFF\') for white text on filled bg');
+  assert.match(region, /borderRadius\s*\(\s*3\s*\)/, '当前活跃 must have borderRadius(3) per v6 design');
 });
 
 

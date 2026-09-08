@@ -168,15 +168,16 @@ export struct VendorPicker {
       })
 
       // "当前" badge 行(整行卡片下,视觉强调当前选中状态)
+      // v6 设计稿(PR2-T2 polish): filled MINT bg + white text(替代 outline mint 描边 pill)
       if (this.currentVendorId === item.id) {
         Row() {
           Text('当前活跃')
             .fontSize(F_XS)
-            .fontColor(MINT)
+            .fontColor('#FFFFFF')
             .fontWeight(W_SEMIBOLD)
             .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-            .border({ width: 1, color: MINT_BORDER })
-            .borderRadius(R_SM)
+            .backgroundColor(MINT)
+            .borderRadius(3)
         }
         .width('100%')
         .padding({ left: 16, top: 4, bottom: 6 })
