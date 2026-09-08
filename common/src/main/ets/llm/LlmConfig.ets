@@ -21,6 +21,9 @@ const KEY_CUSTOM_VENDOR = 'custom_vendor';
 // PR2-T2 ticket #83 L1 (2026-09-08): per-vendor customVendors 持久化
 // 与单数 legacy cachedCustomVendor 并存(向后兼容);新代码优先用数组
 const KEY_CUSTOM_VENDORS = 'custom_vendors';
+// PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models 持久化
+// Record<vendorId, string[]> — 用户在编辑 panel 加的 model,持久到 preferences
+const KEY_VENDOR_MODELS = 'vendor_models';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -46,6 +49,8 @@ export class LlmConfig {
   private cachedCustomVendor: CustomVendorConfig | null = null;
   // PR2-T2 L1 (2026-09-08): per-vendor customVendors 数组(替代单数 cachedCustomVendor 的扩展用法)
   private cachedCustomVendors: CustomVendorConfig[] = [];
+  // PR2-T2 L2 (2026-09-08): per-vendor models Record — 用户编辑 panel 加的 model
+  private cachedVendorModels: Record<string, string[]> = {};
 
   private constructor() {}
 
@@ -106,6 +111,16 @@ export class LlmConfig {
         this.cachedCustomVendors = [];
       }
     }
+    // PR2-T2 L2: vendorModels JSON Record
+    const vmJson: string = await s.get(KEY_VENDOR_MODELS, '') as string;
+    if (vmJson.length > 0) {
+      try {
+        const parsed = JSON.parse(vmJson) as Record<string, string[]>;
+        this.cachedVendorModels = parsed ?? {};
+      } catch (_e) {
+        this.cachedVendorModels = {};
+      }
+    }
   }
 
   // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
@@ -157,6 +172,11 @@ export class LlmConfig {
       if (cv !== null) { return cv.model; }
       // legacy 单数向后兼容
       if (this.cachedCustomVendor !== null) { return this.cachedCustomVendor.model; }
+    }
+    // PR2-T2 L2: 优先查 vendorModels[vendorId][0](用户加的 model)
+    const userModels: string[] | undefined = this.cachedVendorModels[this.cachedVendorId];
+    if (userModels !== undefined && userModels.length > 0) {
+      return userModels[0];
     }
     const p = findProvider(this.cachedVendorId);
     if (p !== null) { return p.defaultModel; }
@@ -268,6 +288,42 @@ export class LlmConfig {
     await this.setCustomVendors(filtered);
   }
 
+  // ===== PR2-T2 L2 (2026-09-08): per-vendor models 数组持久化 =====
+  // getVendorModels 返回 vendor 的 model 列表;若空,seed default 1 个
+  public getVendorModels(vendorId: string): string[] {
+    const models: string[] | undefined = this.cachedVendorModels[vendorId];
+    if (models !== undefined && models.length > 0) { return models; }
+    // seed:首次访问且 vendor 是预设,返回 1 个 default model
+    const p = findProvider(vendorId);
+    if (p !== null) { return [p.defaultModel]; }
+    return [];
+  }
+
+  public async addVendorModel(vendorId: string, model: string): Promise<void> {
+    const t: string = model.trim();
+    if (t.length === 0) { return; }
+    const existing: string[] = this.cachedVendorModels[vendorId] ?? [];
+    if (existing.indexOf(t) >= 0) { return; }  // 防重
+    this.cachedVendorModels[vendorId] = [...existing, t];
+    const s = this.store!;
+    await s.put(KEY_VENDOR_MODELS, JSON.stringify(this.cachedVendorModels));
+    await s.flush();
+  }
+
+  public async removeVendorModel(vendorId: string, model: string): Promise<void> {
+    const existing: string[] = this.cachedVendorModels[vendorId] ?? [];
+    const filtered: string[] = existing.filter((m: string): boolean => m !== model);
+    if (filtered.length === 0) {
+      // 空数组 — 删 entry 而非存空数组,简化后续 getVendorModels fallback
+      delete this.cachedVendorModels[vendorId];
+    } else {
+      this.cachedVendorModels[vendorId] = filtered;
+    }
+    const s = this.store!;
+    await s.put(KEY_VENDOR_MODELS, JSON.stringify(this.cachedVendorModels));
+    await s.flush();
+  }
+
   // ===== 恢复默认 =====
   public async resetDefaults(): Promise<void> {
     this.requireInited();
@@ -281,6 +337,8 @@ export class LlmConfig {
     this.cachedCustomVendor = null;
     // PR2-T2 L1: 同时清 customVendors[]
     this.cachedCustomVendors = [];
+    // PR2-T2 L2: 同时清 vendorModels
+    this.cachedVendorModels = {};
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
@@ -291,6 +349,7 @@ export class LlmConfig {
     await s.put(KEY_VENDOR_ID, 'deepseek');
     await s.delete(KEY_CUSTOM_VENDOR);
     await s.delete(KEY_CUSTOM_VENDORS);
+    await s.delete(KEY_VENDOR_MODELS);
     await s.flush();
   }
 

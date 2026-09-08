@@ -154,15 +154,15 @@ test('LlmConfig: empty input still returns DEFAULT (positive test)', () => {
   // Documents the INTENT: only reserved KEYWORDS throw. Empty input is
   // the legitimate silent-default case.
   const src = readLlmConfigSource();
-  // Source has 3 `t.length === 0` checks:
-  //   1. line 86: api-key check (correctly throws, not our concern here)
-  //   2. line 203: normalizeEndpoint empty (must return DEFAULT)
-  //   3. line 222: normalizeModel empty (must return DEFAULT)
-  // The 2nd occurrence is normalizeEndpoint's empty check.
-  const bodyEP = findBranchBodyContainingNth(src, 't.length === 0', 2);
-  assert.ok(bodyEP !== null, 'normalizeEndpoint empty-input branch not found');
-  assert.doesNotMatch(bodyEP, /throw/, 'normalizeEndpoint should NOT throw on empty input');
-  assert.match(bodyEP, /return\s+DEFAULT/, 'normalizeEndpoint: empty input should return DEFAULT');
+  // Source has multiple `t.length === 0` checks (api-key throws; normalizeEndpoint
+  // / normalizeModel silent defaults; addVendorModel noop). Use a context-anchored
+  // regex to find normalizeEndpoint's empty check specifically.
+  // Pattern: look for normalizeEndpoint (or normalizeEndpointForVendor) function body
+  // and assert the `t.length === 0` block returns DEFAULT_ENDPOINT.
+  const normalizeEndpointBody = src.match(
+    /private\s+normalizeEndpoint(?:ForVendor)?\s*\(\s*v\s*:\s*string[^}]*?t\.length\s*===\s*0[^}]*?return\s+DEFAULT_ENDPOINT/s
+  );
+  assert.ok(normalizeEndpointBody !== null, 'normalizeEndpoint empty-input branch (return DEFAULT_ENDPOINT) not found');
 });
 
 test('LlmConfig: file passes TSC syntax check (no obvious issues)', () => {
