@@ -257,15 +257,23 @@ export class LlmConfig {
   }
 
   private normalizeEndpoint(v: string): string {
+    return this.normalizeEndpointForVendor(v, this.cachedVendorId);
+  }
+
+  // PR2-T2 集成修复 (2026-09-08): siliconflow 关键字检查仅在 DeepSeek vendor 下生效
+  // 原因: siliconflow 是 DeepSeek API 的 fallback 关键字,其他 vendor 不应被此关键字拒绝。
+  //       VendorPicker PR2-T2 引入 5 vendor 后,如不 vendor-aware,任何 URL 含 siliconflow 子串
+  //       的 endpoint 都会被错误拒绝。
+  private normalizeEndpointForVendor(v: string, vendorId: string): string {
     const t: string = v.trim();
     if (t.length === 0) {
       return DEFAULT_ENDPOINT;
     }
     const lower: string = t.toLowerCase();
-    if (lower.indexOf('siliconflow') >= 0) {
+    if (vendorId === 'deepseek' && lower.indexOf('siliconflow') >= 0) {
       throw new LlmError(
         `LlmConfig.normalizeEndpoint: input "${v}" matches reserved keyword "siliconflow"; ` +
-        `siliconflow is not supported. Use DEFAULT_ENDPOINT or override ` +
+        `siliconflow is not supported for DeepSeek. Use DEFAULT_ENDPOINT or override ` +
         `normalizeEndpoint() if this is intentional.`,
         'NORMALIZE_KEYWORD_REJECTED'
       );
@@ -281,25 +289,36 @@ export class LlmConfig {
   }
 
   private normalizeModel(v: string): string {
+    return this.normalizeModelForVendor(v, this.cachedVendorId);
+  }
+
+  // PR2-T2 集成修复 (2026-09-08): reserved keywords 检查仅在 DeepSeek vendor 下生效
+  // 原因: 5 vendor 引入后,其他 vendor 的合法模型名含 'flash' / 'r1' / 数字版本等子串
+  //       (例: qwen-flash, glm-4-flash, kimi-r1, qwen3-max, kimi-k2.6)。
+  //       Vendor-agnostic 检查会错误拒绝这些合法名,破坏 LLM 链路。
+  // ticket #9 原意 (DeepSeek 模型命名空间) 通过 vendorId === 'deepseek' 限定保留。
+  private normalizeModelForVendor(v: string, vendorId: string): string {
     const t: string = v.trim();
     if (t.length === 0) {
       return DEFAULT_MODEL;
     }
-    const lower: string = t.toLowerCase();
-    if (
-      lower.indexOf('v3') >= 0 ||
-      lower.indexOf('flash') >= 0 ||
-      lower.indexOf('deepseek-chat') >= 0 ||
-      lower.indexOf('deepseek-reasoner') >= 0 ||
-      lower.indexOf('r1') >= 0
-    ) {
-      throw new LlmError(
-        `LlmConfig.normalizeModel: input "${v}" matches a reserved keyword; ` +
-        `DEFAULT_MODEL is enforced. Reserved keywords: v3, flash, deepseek-chat, ` +
-        `deepseek-reasoner, r1. ` +
-        `(DEFAULT_MODEL itself is allowed — see ticket PR0 fix 2026-09-06.)`,
-        'NORMALIZE_KEYWORD_REJECTED'
-      );
+    if (vendorId === 'deepseek') {
+      const lower: string = t.toLowerCase();
+      if (
+        lower.indexOf('v3') >= 0 ||
+        lower.indexOf('flash') >= 0 ||
+        lower.indexOf('deepseek-chat') >= 0 ||
+        lower.indexOf('deepseek-reasoner') >= 0 ||
+        lower.indexOf('r1') >= 0
+      ) {
+        throw new LlmError(
+          `LlmConfig.normalizeModel: input "${v}" matches a reserved keyword; ` +
+          `DEFAULT_MODEL is enforced for DeepSeek. Reserved keywords: v3, flash, deepseek-chat, ` +
+          `deepseek-reasoner, r1. ` +
+          `(DEFAULT_MODEL itself is allowed — see ticket PR0 fix 2026-09-06.)`,
+          'NORMALIZE_KEYWORD_REJECTED'
+        );
+      }
     }
     return t;
   }

@@ -142,3 +142,30 @@ test('common Index.ets re-exports ProviderConfig and CustomVendorConfig types', 
   assert.match(commonIndex, /export\s+type\s*\{[^}]*ProviderConfig/, 'must export type ProviderConfig');
   assert.match(commonIndex, /export\s+type\s*\{[^}]*CustomVendorConfig/, 'must export type CustomVendorConfig');
 });
+
+// === PR2-T2 集成修复(2026-09-08): vendor-aware normalize ===
+
+// vendor-aware normalize:必须存在 ForVendor 私有重载
+test('LlmConfig.normalizeEndpoint/normalizeModel have vendor-aware ForVendor overload', () => {
+  assert.match(llmConfig, /normalizeEndpointForVendor/, 'normalizeEndpoint must have ForVendor overload for vendor-aware keyword check');
+  assert.match(llmConfig, /normalizeModelForVendor/, 'normalizeModel must have ForVendor overload for vendor-aware keyword check');
+});
+
+// vendor-aware normalizeModel:reserved keywords 仅 vendorId === 'deepseek' 抛错
+test('LlmConfig.normalizeModel reserved keywords (flash/v3/r1/etc) gated by vendorId === "deepseek"', () => {
+  // 找到 normalizeModelForVendor 的 vendorId check + throw 块
+  assert.match(
+    llmConfig,
+    /if\s*\(\s*vendorId\s*===\s*['"]deepseek['"]\s*\)\s*\{[\s\S]*?lower\.indexOf\(\s*['"]flash['"]\s*\)/,
+    'normalizeModel reserved keywords must be wrapped in if (vendorId === "deepseek") check'
+  );
+});
+
+// vendor-aware normalizeEndpoint: 'siliconflow' 仅 vendorId === 'deepseek' 抛错
+test('LlmConfig.normalizeEndpoint siliconflow keyword gated by vendorId === "deepseek"', () => {
+  assert.match(
+    llmConfig,
+    /vendorId\s*===\s*['"]deepseek['"]\s*&&\s*lower\.indexOf\(\s*['"]siliconflow['"]\s*\)/,
+    'normalizeEndpoint siliconflow check must include vendorId === "deepseek" gate'
+  );
+});
