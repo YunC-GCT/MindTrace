@@ -90,8 +90,8 @@ test('VendorPicker row is clickable and triggers onSelect(vendorId)', () => {
 });
 
 // 测试 6(RED): 当前 vendor row 应有 'current' 视觉 class
-// v6 设计稿: current row = 绿底(.current) + 绿左边框 + "当前" badge
-test('VendorPicker highlights current vendor row (background switch + 当前活跃 badge)', () => {
+// v6 设计稿: current row = success-dim bg + border-left 3px(由 test 33 覆盖);"当前" badge 已删除(2026-09-08 UX 简化,行高亮足够标识选中状态)
+test('VendorPicker highlights current vendor row (background switch — 当前活跃 badge removed)', () => {
   const vp = readFileSync(
     resolve(root, 'entry/src/main/ets/pages/AiSettings/VendorPicker.ets'),
     'utf8'
@@ -102,10 +102,11 @@ test('VendorPicker highlights current vendor row (background switch + 当前活�
     /\.backgroundColor\s*\(\s*(?:item\.id\s*===\s*this\.currentVendorId|this\.currentVendorId\s*===\s*item\.id)\s*\?\s*(?:['"][^'"]*['"]|[A-Z_][A-Z0-9_]*)\s*:\s*['"]transparent['"]/,
     'current vendor row must have .backgroundColor(... ? <color-or-const> : "transparent") when current'
   );
-  // 当前活跃 badge(只在 current 状态显示)
+  // 当前活跃 badge 已删除(2026-09-08 双轴审查后 UX 简化):行高亮(success-dim + border-left)足够标识选中
+  // 注:Modal 字段 label 含"将设为当前活跃"子串,但非独立 badge
   assert.ok(
-    vp.includes('当前活跃'),
-    'VendorPicker must show 当前活跃 badge for current vendor'
+    !vp.includes("'当前活跃'"),
+    "VendorPicker must NOT show 当前活跃 badge Text('当前活跃') anymore (UX simplification 2026-09-08)"
   );
 });
 
@@ -563,18 +564,18 @@ test('AiSettingsViewModel exposes getCurrentVendor() and getCurrentModel() for A
 
 // 测试 28(GREEN): "当前" badge 视觉必须真正是 filled pill(背景色 + 白字 + 圆角 3),不是 outline 描边
 // v6 设计稿(.pr2-t2-design.html css 123-126): current-badge = success bg + white + border-radius 3
-// 修订:PR2-T2 polish ticket #81 task A1,从 outline mint 描边 → filled MINT bg + 白字
-test('VendorPicker 当前活跃 badge has filled MINT backgroundColor + #FFFFFF fontColor (v6 design)', () => {
+// 测试 28(回归):"当前活跃" badge 已删除(2026-09-08 双轴审查 UX 简化)
+// 行高亮(success-dim bg + border-left 3px,test 33 覆盖)足够标识选中状态,不需要 badge
+test('VendorPicker 当前活跃 badge has been removed (UX simplification 2026-09-08)', () => {
   const vp = readFileSync(
     resolve(root, 'entry/src/main/ets/pages/AiSettings/VendorPicker.ets'),
     'utf8'
   );
-  assert.ok(vp.includes('当前活跃'), 'VendorPicker must contain 当前活跃 badge text');
-  const idx = vp.indexOf('当前活跃');
-  const region = vp.substring(Math.max(0, idx - 250), idx + 500);
-  assert.match(region, /backgroundColor\s*\(\s*MINT\s*\)/, '当前活跃 must have backgroundColor(MINT) for filled pill');
-  assert.match(region, /fontColor\s*\(\s*['"]#FFFFFF['"]\s*\)/, '当前活跃 must have fontColor(\'#FFFFFF\') for white text on filled bg');
-  assert.match(region, /borderRadius\s*\(\s*3\s*\)/, '当前活跃 must have borderRadius(3) per v6 design');
+  // 精确匹配 badge Text('当前活跃')(带引号)— modal 字段 label 含"将设为当前活跃"子串,需区分
+  assert.ok(
+    !vp.includes("'当前活跃'"),
+    "VendorPicker must NOT contain badge Text('当前活跃') (deleted in UX simplification)"
+  );
 });
 
 

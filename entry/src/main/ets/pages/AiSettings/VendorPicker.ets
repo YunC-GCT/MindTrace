@@ -193,21 +193,8 @@ export struct VendorPicker {
         this.onSelect(item.id)
       })
 
-      // "当前" badge 行(整行卡片下,视觉强调当前选中状态)
-      // v6 设计稿(PR2-T2 polish): filled MINT bg + white text(替代 outline mint 描边 pill)
-      if (this.currentVendorId === item.id) {
-        Row() {
-          Text('当前活跃')
-            .fontSize(F_XS)
-            .fontColor('#FFFFFF')
-            .fontWeight(W_SEMIBOLD)
-            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-            .backgroundColor(MINT)
-            .borderRadius(3)
-        }
-        .width('100%')
-        .padding({ left: 16, top: 4, bottom: 6 })
-      }
+      // "currently active" badge 已删除 — 选中状态由行高亮(success-dim bg + border-left 3px)足够标识
+      // 决策记录: ADR-0015(2026-09-08 双轴审查后 UX 简化)
 
       // PR2-T2: 编辑 panel(完整版)— API Key 输入 + 模型目录 + 添加 model
       if (this.editingVendorId === item.id) {
