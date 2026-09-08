@@ -18,6 +18,9 @@ const KEY_TIMEOUT_MS = 'timeout_ms';
 const KEY_ENABLE_THINKING = 'enable_thinking';
 const KEY_VENDOR_ID = 'vendor_id';
 const KEY_CUSTOM_VENDOR = 'custom_vendor';
+// PR2-T2 ticket #83 L1 (2026-09-08): per-vendor customVendors 持久化
+// 与单数 legacy cachedCustomVendor 并存(向后兼容);新代码优先用数组
+const KEY_CUSTOM_VENDORS = 'custom_vendors';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -41,6 +44,8 @@ export class LlmConfig {
   // PR2-T1: vendor 解析
   private cachedVendorId: string = 'deepseek';
   private cachedCustomVendor: CustomVendorConfig | null = null;
+  // PR2-T2 L1 (2026-09-08): per-vendor customVendors 数组(替代单数 cachedCustomVendor 的扩展用法)
+  private cachedCustomVendors: CustomVendorConfig[] = [];
 
   private constructor() {}
 
@@ -91,6 +96,16 @@ export class LlmConfig {
         this.cachedCustomVendor = null;
       }
     }
+    // PR2-T2 L1: customVendors JSON 数组(新)
+    const cvListJson: string = await s.get(KEY_CUSTOM_VENDORS, '') as string;
+    if (cvListJson.length > 0) {
+      try {
+        const parsed = JSON.parse(cvListJson) as CustomVendorConfig[];
+        this.cachedCustomVendors = Array.isArray(parsed) ? parsed : [];
+      } catch (_e) {
+        this.cachedCustomVendors = [];
+      }
+    }
   }
 
   // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
@@ -115,8 +130,12 @@ export class LlmConfig {
 
   // ===== Endpoint (PR2-T1: 按 vendorId 解析) =====
   public getEndpoint(): string {
-    if (this.cachedVendorId === 'custom' && this.cachedCustomVendor !== null) {
-      return this.cachedCustomVendor.baseUrl;
+    if (this.cachedVendorId === 'custom') {
+      // PR2-T2 L1: 优先查 customVendors[] 第一个匹配(vendorId='custom' 来自 VM 自定义 vendor)
+      const cv: CustomVendorConfig | null = this.findCustomVendor('custom');
+      if (cv !== null) { return cv.baseUrl; }
+      // legacy 单数字段向后兼容
+      if (this.cachedCustomVendor !== null) { return this.cachedCustomVendor.baseUrl; }
     }
     const p = findProvider(this.cachedVendorId);
     if (p !== null) { return p.baseUrl; }
@@ -132,8 +151,12 @@ export class LlmConfig {
 
   // ===== Model (PR2-T1: 按 vendorId 解析) =====
   public getModel(): string {
-    if (this.cachedVendorId === 'custom' && this.cachedCustomVendor !== null) {
-      return this.cachedCustomVendor.model;
+    if (this.cachedVendorId === 'custom') {
+      // PR2-T2 L1: 优先查 customVendors[] 第一个匹配
+      const cv: CustomVendorConfig | null = this.findCustomVendor('custom');
+      if (cv !== null) { return cv.model; }
+      // legacy 单数向后兼容
+      if (this.cachedCustomVendor !== null) { return this.cachedCustomVendor.model; }
     }
     const p = findProvider(this.cachedVendorId);
     if (p !== null) { return p.defaultModel; }
@@ -207,6 +230,44 @@ export class LlmConfig {
     await s.flush();
   }
 
+  // ===== PR2-T2 L1 (2026-09-08): per-vendor customVendors 数组 =====
+  public getCustomVendors(): CustomVendorConfig[] {
+    return this.cachedCustomVendors;
+  }
+
+  // PR2-T2 L1: 内部 helper — 在 customVendors[] 中按 id 找
+  // 注意: CustomVendorConfig 当前无 id 字段,匹配按 vendorName + baseUrl tuple
+  private findCustomVendor(id: string): CustomVendorConfig | null {
+    // 简化: id === 'custom' 时返回第一个 custom vendor(VM 应确保 single active custom)
+    if (this.cachedCustomVendors.length === 0) { return null; }
+    return this.cachedCustomVendors[0];
+  }
+
+  public async setCustomVendors(arr: CustomVendorConfig[]): Promise<void> {
+    this.requireInited();
+    this.cachedCustomVendors = arr;
+    const s = this.store!;
+    if (arr.length === 0) {
+      await s.delete(KEY_CUSTOM_VENDORS);
+    } else {
+      await s.put(KEY_CUSTOM_VENDORS, JSON.stringify(arr));
+    }
+    await s.flush();
+  }
+
+  public async addCustomVendor(cfg: CustomVendorConfig): Promise<void> {
+    await this.setCustomVendors([...this.cachedCustomVendors, cfg]);
+  }
+
+  // PR2-T2 L1: 按 (vendorName + baseUrl) tuple 移除(L1 不引入 id 字段,向后兼容)
+  public async removeCustomVendor(matcher: CustomVendorConfig): Promise<void> {
+    const filtered: CustomVendorConfig[] = this.cachedCustomVendors.filter(
+      (v: CustomVendorConfig): boolean =>
+        !(v.vendorName === matcher.vendorName && v.baseUrl === matcher.baseUrl)
+    );
+    await this.setCustomVendors(filtered);
+  }
+
   // ===== 恢复默认 =====
   public async resetDefaults(): Promise<void> {
     this.requireInited();
@@ -218,6 +279,8 @@ export class LlmConfig {
     this.cachedEnableThinking = false;
     this.cachedVendorId = 'deepseek';
     this.cachedCustomVendor = null;
+    // PR2-T2 L1: 同时清 customVendors[]
+    this.cachedCustomVendors = [];
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
@@ -227,6 +290,7 @@ export class LlmConfig {
     await s.put(KEY_ENABLE_THINKING, false);
     await s.put(KEY_VENDOR_ID, 'deepseek');
     await s.delete(KEY_CUSTOM_VENDOR);
+    await s.delete(KEY_CUSTOM_VENDORS);
     await s.flush();
   }
 
