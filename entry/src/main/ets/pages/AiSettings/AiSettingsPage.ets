@@ -72,14 +72,11 @@ struct AiSettingsPage {
   }
 
   private modelSummary(): string {
-    return this.vm.modelLabel()
+    return this.vm.getCurrentModel()
   }
 
   private endpointSummary(): string {
-    if (this.vm.useCustomEP && this.vm.customEP.trim().length > 0) {
-      return this.vm.customEP.trim()
-    }
-    return "DeepSeek 官方"
+    return this.vm.getCurrentEndpoint()
   }
 
   private ocrSummary(): string {
