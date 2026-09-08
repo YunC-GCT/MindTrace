@@ -111,3 +111,30 @@ test('L3: resetDefaults clears cachedVendorApiKeys + KEY_VENDOR_API_KEYS prefs',
     'resetDefaults must delete KEY_VENDOR_API_KEYS from preferences'
   );
 });
+
+// === L3 wiring (2026-09-08): LlmClient 用 per-vendor key ===
+
+test('L3 wiring: LlmClient.callJsonInternal passes getVendorId() to getApiKey', () => {
+  const src = readFileSync(
+    resolve(REPO_ROOT, 'common/src/main/ets/llm/LlmClient.ets'),
+    'utf8'
+  );
+  // callJsonInternal 必须用 this.config.getApiKey(this.config.getVendorId())
+  assert.match(
+    src,
+    /getApiKey\(\s*this\.config\.getVendorId\(\)\s*\)/,
+    'LlmClient.callJsonInternal must call getApiKey with current vendorId (per-vendor key)'
+  );
+});
+
+test('L3 wiring: LlmClient.callStreamInternal passes getVendorId() to getApiKey', () => {
+  const src = readFileSync(
+    resolve(REPO_ROOT, 'common/src/main/ets/llm/LlmClient.ets'),
+    'utf8'
+  );
+  assert.match(
+    src,
+    /getApiKey\(\s*this\.config\.getVendorId\(\)\s*\)/,
+    'LlmClient.callStreamInternal must call getApiKey with current vendorId (per-vendor key)'
+  );
+});

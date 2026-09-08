@@ -2,16 +2,23 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4 } from "common"
+import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4 } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
 import { ActionBar } from "./ActionBar"
-import { EndpointPicker } from "./EndpointPicker"
-import { ModelPicker } from "./ModelPicker"
-import { KeyInput } from "./KeyInput"
+import { VendorPicker } from "./VendorPicker"
 import { OcrConfigSection } from "./OcrConfigSection"
 import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
+
+// PR2-T2 P3: 添加新供应商 modal 4 字段 cfg
+// 与 VendorPicker.ets AddCustomVendorCfg 同步(DRY 妥协 — ArkTS 1.1 不允许 inline object literal as type)
+interface AddCustomVendorCfg {
+  name: string
+  baseUrl: string
+  apiKey: string
+  firstModel: string
+}
 
 @Entry
 @Component
@@ -95,15 +102,41 @@ struct AiSettingsPage {
       Row().width("100%").height(0.5).backgroundColor(BORDER)
 
       Scroll() {
-        Column() {
-          ConnectionStatus({ configured: this.vm.configured, statusText: this.vm.statusText })
+          Column() {
+            ConnectionStatus({
+              configured: this.vm.configured,
+              statusText: this.vm.statusText,
+              testing: this.vm.testing,
+              onTest: (): void => { this.test() },
+            })
 
           Column() {
-            Text("AI 服务")
-              .fontSize(F_SM)
-              .fontColor(TEXT)
-              .fontWeight(W_SEMIBOLD)
-            Text(this.modelSummary() + " · " + this.endpointSummary())
+            Row() {
+              // 圆环 icon(外环 + 内点) — PR2-T2 polish ticket #81 task A2 对齐 v6 设计稿
+              Stack() {
+                Circle()
+                  .width(20)
+                  .height(20)
+                  .fill('transparent')
+                  .stroke(MINT)
+                  .strokeWidth(2)
+                Circle()
+                  .width(8)
+                  .height(8)
+                  .fill(MINT)
+              }
+              .width(20)
+              .height(20)
+              .margin({ right: 8 })
+
+              Text("AI 服务")
+                .fontSize(F_SM)
+                .fontColor(TEXT)
+                .fontWeight(W_SEMIBOLD)
+            }
+            .alignItems(VerticalAlign.Center)
+            // PR2-T2 P4: 用 vendor 单一真理源解析(替代旧 modelSummary/endpointSummary 关键字嗅探)
+            Text(`${this.vm.getCurrentVendor()} · 当前 ${this.vm.getCurrentModel()} · ${this.vm.getCurrentEndpoint()}`)
               .fontSize(F_XS)
               .fontColor(TEXT_3)
               .margin({ top: 4 })
@@ -113,45 +146,32 @@ struct AiSettingsPage {
           .width("100%")
           .padding({ left: S_4, right: S_4, top: S_4, bottom: S_2 })
 
-          Text("端点")
-            .fontSize(F_XS)
-            .fontColor(TEXT_3)
-            .fontWeight(W_SEMIBOLD)
-            .padding({ left: S_4, right: S_4, top: S_2, bottom: S_2 })
+          Column() {
+            Text("服务厂商")
+              .fontSize(F_SM)
+              .fontColor(TEXT)
+              .fontWeight(W_SEMIBOLD)
+            // v6 设计稿 subtitle — PR2-T2 polish ticket #81 task A3
+            Text("5 预设 + 你添加的供应商。模型行点左侧'线 + 圆'切换当前 model。")
+              .fontSize(F_XS)
+              .fontColor(TEXT_3)
+              .margin({ top: 4 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .padding({ left: S_4, right: S_4, top: S_4, bottom: S_2 })
+          .width('100%')
 
-          EndpointPicker({
-            useCustom: this.vm.useCustomEP,
-            customText: this.vm.customEP,
-            onToggle: (v: boolean): void => { this.vm.toggleCustomEndpoint(v) },
-            onCustomChange: (v: string): void => { this.vm.setCustomEndpoint(v) },
-          })
-
-          Text("模型")
-            .fontSize(F_XS)
-            .fontColor(TEXT_3)
-            .fontWeight(W_SEMIBOLD)
-            .padding({ left: S_4, right: S_4, top: S_3, bottom: S_2 })
-
-          ModelPicker({
-            mdlIdx: this.vm.mdlIdx,
-            useCustom: this.vm.useCustomMD,
-            customText: this.vm.customMD,
-            onSelect: (i: number): void => { this.vm.selectModel(i) },
-            onToggle: (v: boolean): void => { this.vm.toggleCustomModel(v) },
-            onCustomChange: (v: string): void => { this.vm.setCustomModel(v) },
-          })
-
-          Text("API Key")
-            .fontSize(F_XS)
-            .fontColor(TEXT_3)
-            .fontWeight(W_SEMIBOLD)
-            .padding({ left: S_4, right: S_4, top: S_3, bottom: S_2 })
-
-          KeyInput({
-            apiKey: this.vm.apiKey,
-            testing: this.vm.testing,
-            onChange: (v: string): void => { this.vm.setApiKey(v) },
-            onTest: (): void => { this.test() },
+          VendorPicker({
+            currentVendorId: this.vm.vendorId,
+            onSelect: (id: string): void => { this.vm.selectVendor(id) },
+            // onEdit 不传: VendorPicker 自管 panel 展开(@State editingVendorId),
+            // 单真理源架构,无需 ViewModel 介入。
+            onAddCustom: (): void => { this.vm.openAddCustomVendor() },
+            // PR2-T2 P3: modal 确认后回调,把 4 字段 cfg 传给 ViewModel
+            // PR2-T2 polish: 返回新 vendorId 用于 NEW badge 跟踪(ticket #81 task A4)
+            onAddVendorConfirm: (cfg: AddCustomVendorCfg): string => {
+              return this.vm.addCustomVendor(cfg.name, cfg.baseUrl, cfg.apiKey, cfg.firstModel)
+            },
           })
 
           Column() {
