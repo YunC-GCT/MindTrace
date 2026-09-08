@@ -56,13 +56,16 @@ export struct VendorPicker {
   // 预设 vendor 列表(caller 可覆盖,默认从 common.PROVIDERS 取)
   providers: ProviderConfig[] = [];
 
+  // PR2-T2 ticket #83 L1+L2+L3 (2026-09-08): per-vendor 持久化数据(由 parent 提供)
+  // PR2-T2 polish: 已从父级注入,刷新页面保留
+  @Prop vendorApiKeys: Record<string, string> = {};
+  @Prop vendorModels: Record<string, string[]> = {};
+
   // PR2-T2: 编辑 panel 展开状态(单真理源 — VendorPicker 自管,不通知 ViewModel)
   // null = 全折叠;非 null = 该 vendorId 对应 row 下 panel 展开
   @State editingVendorId: string | null = null;
 
-  // PR2-T2: panel 内 model 状态(panel 自管,刷新页面会丢失 — 后续 PR 接 per-vendor models 持久化)
-  @State models: string[] = [];
-  @State activeModel: string = '';
+  // PR2-T2 ticket #83 (2026-09-08): panel 内 model 输入(仅 input 状态,实际数据走 @Prop vendorModels)
   @State newModelInput: string = '';
 
   // PR2-T2 P3: 添加新供应商 modal 状态(单真理源 — modal 是纯 UI 状态,VendorPicker 自管)
@@ -84,6 +87,16 @@ export struct VendorPicker {
   // 返回新 vendor id 用于 NEW badge 跟踪(PR2-T2 polish ticket #81 task A4)
   // ArkTS 1.1 strict 要求 callback 参数用 interface 声明,不允许 inline object literal as type
   onAddVendorConfirm: (cfg: AddCustomVendorCfg) => string = (_cfg: AddCustomVendorCfg): string => '';
+
+  // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key onChange
+  onApiKeyChange: (vendorId: string, key: string) => void =
+    (_v: string, _k: string): void => {};
+
+  // PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models UI 动作
+  onAddModel: (vendorId: string, model: string) => void =
+    (_v: string, _m: string): void => {};
+  onRemoveModel: (vendorId: string, model: string) => void =
+    (_v: string, _m: string): void => {};
 
   build() {
     Column() {
@@ -173,10 +186,6 @@ export struct VendorPicker {
           .onClick((): void => {
             const opening: boolean = this.editingVendorId !== item.id
             this.editingVendorId = opening ? item.id : null
-            if (opening) {
-              this.models = [item.defaultModel]
-              this.activeModel = item.defaultModel
-            }
           })
       }
       .width('100%')
@@ -204,63 +213,57 @@ export struct VendorPicker {
             .fontColor(TEXT_3)
             .margin({ bottom: S_2 })
 
-          // API Key 输入
-          TextInput({ placeholder: 'API Key(per-vendor)' })
+          // API Key 输入 — PR2-T2 ticket #83 L3 wiring (2026-09-08)
+          // text 从 @Prop vendorApiKeys[item.id] 读,onChange 实时写回 parent
+          TextInput({ text: this.vendorApiKeys[item.id] ?? '', placeholder: 'API Key(per-vendor)' })
+            .type(InputType.Password)
             .width('100%')
             .height(36)
             .fontSize(F_SM)
+            .fontColor(TEXT)
             .placeholderColor(TEXT_4)
             .backgroundColor(BG_CARD)
             .border({ width: 1, color: BORDER })
             .borderRadius(R_SM)
             .padding({ left: S_2 })
             .margin({ bottom: S_3 })
+            .onChange((v: string): void => {
+              this.onApiKeyChange(item.id, v)
+            })
 
           Text('模型目录')
             .fontSize(F_XS)
             .fontColor(TEXT_3)
             .fontWeight(W_MEDIUM)
             .margin({ bottom: S_2 })
-          ForEach(this.models,
+          // PR2-T2 ticket #83 L2 wiring (2026-09-08): models 走 @Prop vendorModels[item.id]
+          ForEach(this.vendorModels[item.id] ?? [],
             (m: string): void => {
               Row() {
-                Text(this.activeModel === m ? '●' : '○')
+                Text('•')
                   .fontSize(16)
-                  .fontColor(this.activeModel === m ? MINT : TEXT_3)
+                  .fontColor(MINT)
                   .margin({ right: 8 })
                   .width(12)
                 Text(m)
                   .fontSize(F_SM)
                   .fontColor(TEXT)
                   .layoutWeight(1)
-                if (this.models.length > 1) {
-                  Text('×')
-                    .fontSize(16)
-                    .fontColor(TEXT_3)
-                    .padding(4)
-                    .onClick((): void => {
-                      const next: string[] = []
-                      for (const x of this.models) {
-                        if (x !== m) { next.push(x) }
-                      }
-                      this.models = next
-                      if (this.activeModel === m && next.length > 0) {
-                        this.activeModel = next[0]
-                      }
-                    })
-                }
+                Text('×')
+                  .fontSize(16)
+                  .fontColor(TEXT_3)
+                  .padding(4)
+                  .onClick((): void => {
+                    this.onRemoveModel(item.id, m)
+                  })
               }
               .width('100%')
               .padding({ left: S_2, right: S_2, top: 6, bottom: 6 })
               .borderRadius(R_SM)
-              .backgroundColor(this.activeModel === m ? '#0F2A22' : 'transparent')
-              .onClick((): void => {
-                this.activeModel = m
-              })
             }
           )
 
-          // 添加 model 输入
+          // 添加 model 输入 — PR2-T2 ticket #83 L2 wiring
           Row() {
             TextInput({ placeholder: '输入模型名后回车', text: this.newModelInput })
               .layoutWeight(1)
@@ -282,8 +285,8 @@ export struct VendorPicker {
               .borderRadius(R_SM)
               .onClick((): void => {
                 const m: string = this.newModelInput.trim()
-                if (m.length > 0 && !this.models.includes(m)) {
-                  this.models = [...this.models, m]
+                if (m.length > 0) {
+                  this.onAddModel(item.id, m)
                   this.newModelInput = ''
                 }
               })

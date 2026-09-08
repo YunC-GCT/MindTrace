@@ -163,6 +163,9 @@ struct AiSettingsPage {
 
           VendorPicker({
             currentVendorId: this.vm.vendorId,
+            // PR2-T2 ticket #83 L1+L2+L3 (2026-09-08): per-vendor 数据从 VM 注入
+            vendorApiKeys: this.vm.vendorApiKeys,
+            vendorModels: this.vm.vendorModels,
             onSelect: (id: string): void => { this.vm.selectVendor(id) },
             // onEdit 不传: VendorPicker 自管 panel 展开(@State editingVendorId),
             // 单真理源架构,无需 ViewModel 介入。
@@ -171,6 +174,17 @@ struct AiSettingsPage {
             // PR2-T2 polish: 返回新 vendorId 用于 NEW badge 跟踪(ticket #81 task A4)
             onAddVendorConfirm: (cfg: AddCustomVendorCfg): string => {
               return this.vm.addCustomVendor(cfg.name, cfg.baseUrl, cfg.apiKey, cfg.firstModel)
+            },
+            // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key 实时回调
+            onApiKeyChange: (vendorId: string, key: string): void => {
+              this.vm.setVendorApiKey(vendorId, key)
+            },
+            // PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models UI 动作
+            onAddModel: (vendorId: string, model: string): void => {
+              this.vm.addVendorModel(vendorId, model)
+            },
+            onRemoveModel: (vendorId: string, model: string): void => {
+              this.vm.removeVendorModel(vendorId, model)
             },
           })
 

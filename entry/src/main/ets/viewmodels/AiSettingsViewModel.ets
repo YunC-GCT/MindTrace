@@ -55,6 +55,7 @@ export class AiSettingsViewModel {
     let ok: boolean = true
     const llm: LlmConfig = LlmConfig.getInstance()
     try {
+      // 全局 key — 仅作 fallback 显示(UI 已删全局 input)
       const key: string | null = await llm.getApiKey()
       this.apiKey = key === null ? "" : key
       this.configured = this.apiKey.trim().length > 0
@@ -68,6 +69,31 @@ export class AiSettingsViewModel {
 
     // PR2-T2 修复 C1 critical: load() 还原 vendorId — 不还原则刷新页面 vendor 选择回到默认值 'deepseek'
     this.vendorId = llm.getVendorId()
+
+    // PR2-T2 ticket #83 L1 (2026-09-08): 还原 customVendors 数组
+    const cvList: CustomVendorConfig[] = llm.getCustomVendors()
+    this.customVendors = cvList.map(
+      (v: CustomVendorConfig, i: number): CustomVendorFull => ({
+        id: `custom-loaded-${i}-${Date.now()}`,
+        vendorName: v.vendorName,
+        baseUrl: v.baseUrl,
+        model: v.model,
+        apiKey: '',  // apiKey 在 L3 单独持久化,不在 customVendors JSON 里
+      })
+    )
+
+    // PR2-T2 ticket #83 L2 (2026-09-08): 还原 per-vendor models
+    this.vendorModels = {}
+    for (const p of PROVIDERS) {
+      this.vendorModels[p.id] = llm.getVendorModels(p.id)
+    }
+
+    // PR2-T2 ticket #83 L3 (2026-09-08): 还原 per-vendor API Keys(仅当前 vendor)
+    this.vendorApiKeys = {}
+    const curKey: string | null = await llm.getApiKey(this.vendorId)
+    if (curKey !== null) {
+      this.vendorApiKeys[this.vendorId] = curKey
+    }
 
     this.syncEndpoint(llm.getEndpoint())
     this.syncModel(llm.getModel())
@@ -96,16 +122,42 @@ export class AiSettingsViewModel {
       const llm: LlmConfig = LlmConfig.getInstance()
       // PR2-T2: 持久化 vendorId — 不持久化则切换 vendor 后刷新页面就丢失
       await llm.setVendorId(this.vendorId)
+      // PR2-T2 ticket #83 L1 (2026-09-08): 持久化 customVendors 数组
+      await llm.setCustomVendors(this.customVendors.map(
+        (v: CustomVendorFull): CustomVendorConfig => ({
+          vendorName: v.vendorName, baseUrl: v.baseUrl, model: v.model,
+        })
+      ))
+      // PR2-T2 ticket #83 L2 (2026-09-08): 持久化 per-vendor models
+      for (const vid of Object.keys(this.vendorModels)) {
+        const existing: string[] | undefined = llm.getVendorModels(vid)
+        // 仅写非空 vendor,避免覆盖 LlmConfig 默认 seed
+        const ours: string[] = this.vendorModels[vid]
+        if (ours.length > 0) {
+          // 简化:重写整个 vendor 的 model list(对预设 vendor 也可,因为我们 seed 用 default)
+          for (const m of ours) {
+            await llm.addVendorModel(vid, m)
+          }
+          // 移除 LlmConfig 默认 seed 但不在 UI state 中的
+          for (const m of existing) {
+            if (ours.indexOf(m) < 0) { await llm.removeVendorModel(vid, m) }
+          }
+        }
+      }
+      // PR2-T2 ticket #83 L3 (2026-09-08): 持久化 per-vendor API Key
+      for (const vid of Object.keys(this.vendorApiKeys)) {
+        const k: string = this.vendorApiKeys[vid]
+        if (k.length > 0) {
+          await llm.setApiKey(k, vid)
+        }
+      }
       // PR2-T2 集成修复 (2026-09-08): 用 getCurrent* 而非 resolve* — 新方法是 vendorId-driven,旧方法是 keyword-sniff
       // (旧 resolveEndpoint/resolveModel 在 ticket #83 L4 清理 PR 删除)
       await llm.saveAll(this.getCurrentEndpoint(), this.getCurrentModel(), this.temp, this.maxT, this.to)
+      // 全局 API key (back-compat path)— 仅当 user 显式填过;UI 已删全局 input,这里保留 catch-all
       const key: string = this.apiKey.trim()
       if (key.length > 0) {
-        await llm.setApiKey(key)
-        this.configured = true
-      } else {
-        await llm.clearApiKey()
-        this.configured = false
+        await llm.setApiKey(key)  // 无 vendorId → 全局(PR1 AssetStoreKit)
       }
       const ocr: OcrConfig = OcrConfig.getInstance()
       await ocr.setEndpoint(this.ocrEndpoint)
@@ -335,8 +387,17 @@ export class AiSettingsViewModel {
   // 注: panel 展开是 VendorPicker 内部 UI 状态(@State editingVendorId),
   //     不放在 ViewModel(避免双真理源同步问题)。
 
-  // PR2-T2 P3: 用户添加的自定义 vendor 列表(in-memory;持久化后续 PR 接 LlmConfig)
+  // PR2-T2 ticket #83 L1 (2026-09-08): 用户添加的自定义 vendor 列表
+  // in-memory mirror;save() 持久化到 LlmConfig
   customVendors: CustomVendorFull[] = []
+
+  // PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models Record
+  // in-memory mirror;save() 持久化到 LlmConfig
+  vendorModels: Record<string, string[]> = {}
+
+  // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key Record
+  // in-memory mirror;save() 持久化到 LlmConfig
+  vendorApiKeys: Record<string, string> = {}
 
   selectVendor(id: string): void {
     this.vendorId = id
@@ -344,7 +405,7 @@ export class AiSettingsViewModel {
 
   openAddCustomVendor(): void {
     // 占位 — 真正的 modal 打开在 VendorPicker 内(@State addCustomModalOpen)
-    // 保留本方法作为扩展点;后续 PR 可接 modal 状态/字段
+    // 保留本方法作为扩展点
   }
 
   // PR2-T2 P3: 添加新 vendor(由 VendorPicker modal 确认后回调)
@@ -355,6 +416,33 @@ export class AiSettingsViewModel {
     this.customVendors.push({ id, vendorName: name, baseUrl, model: firstModel, apiKey })
     this.vendorId = id
     return id
+  }
+
+  // PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models UI 动作
+  // UI 加 model / 删 model,后续 save() 持久化
+  addVendorModel(vendorId: string, model: string): void {
+    const t: string = model.trim()
+    if (t.length === 0) { return }
+    if (this.vendorModels[vendorId] === undefined) {
+      this.vendorModels[vendorId] = []
+    }
+    if (this.vendorModels[vendorId].indexOf(t) >= 0) { return }  // 防重
+    this.vendorModels[vendorId].push(t)
+  }
+
+  removeVendorModel(vendorId: string, model: string): void {
+    const existing: string[] | undefined = this.vendorModels[vendorId]
+    if (existing === undefined) { return }
+    this.vendorModels[vendorId] = existing.filter((m: string): boolean => m !== model)
+  }
+
+  // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key UI 动作
+  setVendorApiKey(vendorId: string, key: string): void {
+    this.vendorApiKeys[vendorId] = key
+  }
+
+  clearVendorApiKey(vendorId: string): void {
+    delete this.vendorApiKeys[vendorId]
   }
 
   // PR2-T2 P4: AI 服务段摘要解析(替代旧 modelSummary/endpointSummary 关键字嗅探)
