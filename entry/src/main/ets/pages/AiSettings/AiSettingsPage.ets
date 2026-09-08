@@ -8,7 +8,6 @@ import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
 import { ActionBar } from "./ActionBar"
 import { VendorPicker } from "./VendorPicker"
-import { KeyInput } from "./KeyInput"
 import { OcrConfigSection } from "./OcrConfigSection"
 import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
 
@@ -103,8 +102,13 @@ struct AiSettingsPage {
       Row().width("100%").height(0.5).backgroundColor(BORDER)
 
       Scroll() {
-        Column() {
-          ConnectionStatus({ configured: this.vm.configured, statusText: this.vm.statusText })
+          Column() {
+            ConnectionStatus({
+              configured: this.vm.configured,
+              statusText: this.vm.statusText,
+              testing: this.vm.testing,
+              onTest: (): void => { this.test() },
+            })
 
           Column() {
             Row() {
@@ -168,19 +172,6 @@ struct AiSettingsPage {
             onAddVendorConfirm: (cfg: AddCustomVendorCfg): string => {
               return this.vm.addCustomVendor(cfg.name, cfg.baseUrl, cfg.apiKey, cfg.firstModel)
             },
-          })
-
-          Text("API Key")
-            .fontSize(F_XS)
-            .fontColor(TEXT_3)
-            .fontWeight(W_SEMIBOLD)
-            .padding({ left: S_4, right: S_4, top: S_3, bottom: S_2 })
-
-          KeyInput({
-            apiKey: this.vm.apiKey,
-            testing: this.vm.testing,
-            onChange: (v: string): void => { this.vm.setApiKey(v) },
-            onTest: (): void => { this.test() },
           })
 
           Column() {

@@ -680,3 +680,39 @@ test('VendorPicker current row highlight uses success-dim background + border-le
     'VendorPicker row border must specify width: { ... left: ... 3 ... } for current vendor'
   );
 });
+
+// 测试 34(GREEN): ConnectionStatus 接受 testing @Prop + onTest 回调,渲染测试按钮到右侧
+// 2026-09-08 UX 调整:测试按钮从 KeyInput 段移到连接状态右侧
+test('ConnectionStatus has testing @Prop + onTest callback + renders test button at right', () => {
+  const cs = readFileSync(
+    resolve(root, 'entry/src/main/ets/pages/AiSettings/ConnectionStatus.ets'),
+    'utf8'
+  );
+  // @Prop testing 字段
+  assert.match(cs, /@Prop\s+testing\s*:\s*boolean/, 'ConnectionStatus must declare @Prop testing: boolean');
+  // onTest 回调
+  assert.match(cs, /onTest\s*\?:\s*\(\s*\)\s*=>\s*void/, 'ConnectionStatus must declare onTest callback');
+  // Button "测试"(放最右,接 onTest)
+  assert.match(cs, /Button\s*\(\s*this\.testing\s*\?\s*['"][.]{3}['"]\s*:\s*['"]测试['"]/, 'ConnectionStatus must render Button with 测试 / ... text');
+  // Circle + Button 顺序:Circle 在前(状态圆点),Button 在后(测试按钮)— Button 应在 Circle 之后
+  const circleIdx = cs.indexOf('Circle({ width: 10, height: 10 })');
+  const buttonIdx = cs.indexOf('Button(this.testing');
+  assert.ok(circleIdx > 0 && buttonIdx > circleIdx, 'Test button must be rendered AFTER status circle (to the right)');
+});
+
+// 测试 35(GREEN): AiSettingsPage 把 testing/onTest 传给 ConnectionStatus,移除 KeyInput 引用
+// 2026-09-08 UX 调整:全局 API Key 段已删(per-vendor 走 VendorPicker 编辑 panel),测试按钮移到连接状态右侧
+test('AiSettingsPage passes testing/onTest to ConnectionStatus + removes KeyInput import', () => {
+  const page = readFileSync(
+    resolve(root, 'entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets'),
+    'utf8'
+  );
+  // 不再 import KeyInput
+  assert.doesNotMatch(page, /import\s+\{\s*KeyInput\s*\}/, 'AiSettingsPage must NOT import KeyInput (global API Key section removed)');
+  // 不再 render KeyInput component
+  assert.doesNotMatch(page, /KeyInput\s*\(\s*\{/, 'AiSettingsPage must NOT render KeyInput component');
+  // 把 testing 传给 ConnectionStatus
+  assert.match(page, /ConnectionStatus\s*\(\s*\{[^}]*testing\s*:\s*this\.vm\.testing/, 'AiSettingsPage must pass testing: this.vm.testing to ConnectionStatus');
+  // 把 onTest 传给 ConnectionStatus
+  assert.match(page, /ConnectionStatus\s*\(\s*\{[^}]*onTest\s*:/, 'AiSettingsPage must pass onTest callback to ConnectionStatus');
+});
