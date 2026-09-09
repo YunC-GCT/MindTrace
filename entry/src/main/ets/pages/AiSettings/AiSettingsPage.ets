@@ -222,12 +222,14 @@ struct AiSettingsPage {
             },
           })
 
-          ActionBar({ onReset: (): void => { this.reset() }, onSave: (): void => { this.save() } })
           Blank().height(40)
         }
         .width("100%")
       }
       .layoutWeight(1)
+      // PR2-T2 ticket #83 follow-up (2026-09-08): ActionBar 移出 Scroll,save 按钮永远可见
+      // (页面太长 + edit panel 展开后用户在 Scroll 底部,save 不可见)
+      ActionBar({ onReset: (): void => { this.reset() }, onSave: (): void => { this.save() } })
     }
     .width("100%")
     .height("100%")
