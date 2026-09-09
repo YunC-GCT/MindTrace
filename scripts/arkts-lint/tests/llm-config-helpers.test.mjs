@@ -16,11 +16,12 @@ const TARGET_FILE = resolve(root, 'common/src/main/ets/llm/LlmConfig.ets');
 const src = readFileSync(TARGET_FILE, 'utf8').replace(/\r\n/g, '\n');
 
 // ===== T2 验收:helpers 存在 =====
-test('T2: LlmConfig declares private isCustomVendor(id: string): boolean method', () => {
+test('T2: LlmConfig declares private static isCustomVendor(id: string): boolean method', () => {
+  // T6 follow-up:改 static(VM 也能调 — 消 VM 重复 magic)
   assert.match(
     src,
-    /private\s+isCustomVendor\s*\(\s*id\s*:\s*string\s*\)\s*:\s*boolean/,
-    'LlmConfig must declare private isCustomVendor(id: string): boolean method'
+    /private\s+static\s+isCustomVendor\s*\(\s*id\s*:\s*string\s*\)\s*:\s*boolean/,
+    'LlmConfig must declare private static isCustomVendor(id: string): boolean method (T6 follow-up: static so VM can call)'
   );
 });
 
