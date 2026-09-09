@@ -178,11 +178,7 @@ export class LlmConfig {
   // clearApiKey(vendorId) → 删 per-vendor entry(PR2-T2 bug fix 2026-09-08: rebuild Record 替代 delete,arkts-no-delete)
   public async clearApiKey(vendorId?: string): Promise<void> {
     if (vendorId !== undefined && vendorId.length > 0) {
-      const next: Record<string, string> = {}
-      for (const k of Object.keys(this.cachedVendorApiKeys)) {
-        if (k !== vendorId) { next[k] = this.cachedVendorApiKeys[k] }
-      }
-      this.cachedVendorApiKeys = next
+      this.cachedVendorApiKeys = this.rebuildRecordWithout<string>(this.cachedVendorApiKeys, vendorId)
       const s = this.store!;
       await s.put(KEY_VENDOR_API_KEYS, JSON.stringify(this.cachedVendorApiKeys));
       await s.flush();
@@ -194,8 +190,8 @@ export class LlmConfig {
   // ===== Endpoint (PR2-T1: 按 vendorId 解析) =====
   // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
   public getEndpoint(): string {
-    // PR2-T2 L1: 任何 custom-prefix id(VM.addCustomVendor 用 'custom-'+Date.now() 生成)
-    if (this.cachedVendorId.startsWith('custom') && this.cachedVendorId.length > 6) {
+    // PR2-T2 ticket #83 T2 (2026-09-08): isCustomVendor helper 替代 startsWith magic number
+    if (this.isCustomVendor(this.cachedVendorId)) {
       // 优先查 customVendors[] 匹配 id(Bug #1 修复:不再只返回 [0])
       const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
       if (cv !== null) { return cv.baseUrl; }
@@ -217,7 +213,7 @@ export class LlmConfig {
   // ===== Model (PR2-T1: 按 vendorId 解析) =====
   // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
   public getModel(): string {
-    if (this.cachedVendorId.startsWith('custom') && this.cachedVendorId.length > 6) {
+    if (this.isCustomVendor(this.cachedVendorId)) {
       // PR2-T2 L1: 优先查 customVendors[] 匹配 id
       const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
       if (cv !== null) { return cv.model; }
@@ -315,6 +311,21 @@ export class LlmConfig {
     return null
   }
 
+  // PR2-T2 ticket #83 T2 (2026-09-08): helpers 消除重复 + 消 magic number
+  // isCustomVendor(id): VM.addCustomVendor 生成 'custom-'+Date.now() id,此 helper 封装 prefix 检测
+  private isCustomVendor(id: string): boolean {
+    return id.startsWith('custom') && id.length > 6
+  }
+
+  // rebuildRecordWithout<V>: 替代 inline delete + Object.keys loop(arkts-no-delete 兼容)
+  private rebuildRecordWithout<V>(rec: Record<string, V>, key: string): Record<string, V> {
+    const next: Record<string, V> = {}
+    for (const k of Object.keys(rec)) {
+      if (k !== key) { next[k] = rec[k] }
+    }
+    return next
+  }
+
   public async setCustomVendors(arr: CustomVendorConfig[]): Promise<void> {
     this.requireInited();
     this.cachedCustomVendors = arr;
@@ -372,12 +383,8 @@ export class LlmConfig {
     const filtered: string[] = existing.filter((m: string): boolean => m !== model);
     if (filtered.length === 0) {
       // 空数组 — 删 entry 而非存空数组,简化后续 getVendorModels fallback
-      // PR2-T2 ticket #83 bug fix (2026-09-08): rebuild Record 替代 delete(arkts-no-delete)
-      const next: Record<string, string[]> = {}
-      for (const k of Object.keys(this.cachedVendorModels)) {
-        if (k !== vendorId) { next[k] = this.cachedVendorModels[k] }
-      }
-      this.cachedVendorModels = next
+      // PR2-T2 ticket #83 T2 (2026-09-08): rebuildRecordWithout helper 替代 inline delete loop
+      this.cachedVendorModels = this.rebuildRecordWithout<string[]>(this.cachedVendorModels, vendorId)
     } else {
       this.cachedVendorModels[vendorId] = filtered;
     }

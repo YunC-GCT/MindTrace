@@ -66,15 +66,13 @@ test('regression Bug #1: LlmConfig.findCustomVendor matches by id (not always [0
 });
 
 test('regression Bug #1: getEndpoint() fallback to customVendors match for any custom-prefix id', () => {
-  // 原 if (this.cachedVendorId === 'custom') 太严格 — 实际 vendorId 是 'custom-1234...'
-  // 修后:getEndpoint() 应在 cachedVendorId startsWith('custom') 且 customVendors 非空时查找
+  // PR2-T2 ticket #83 T2 (2026-09-08): 用 isCustomVendor helper 替代 startsWith magic
   const epBody = llmConfig.match(/public\s+getEndpoint\s*\(\s*\)\s*:\s*string\s*\{([\s\S]*?)\n\s*\}/);
   assert.ok(epBody !== null, 'getEndpoint body not found');
-  // 应有 startsWith('custom') 或类似 dynamic id 检测
   assert.match(
     epBody[1],
-    /startsWith\(\s*['"]custom/,
-    'getEndpoint must detect custom vendor via startsWith("custom") not exact match === "custom"'
+    /isCustomVendor\s*\(\s*this\.cachedVendorId\s*\)/,
+    'getEndpoint must use isCustomVendor(this.cachedVendorId) helper'
   );
 });
 
