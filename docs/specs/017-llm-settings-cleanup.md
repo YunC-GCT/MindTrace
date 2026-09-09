@@ -83,6 +83,17 @@ endpointSummary(): string {
 | `endpointSummary()` / `modelSummary()` | 改实现 | 返回 `vm.getCurrentEndpoint() / getCurrentModel()` |
 | `EndpointPicker.ets` / `ModelPicker.ets` | 文件删除 | `AiSettingsViewModel` 去掉 import |
 | `tests/llm-config-allow-default-model.test.mjs` 测试 4 | 改源 | 改读 `providers.ets` 而非 `ModelPicker.ets` |
+| `LlmConfig.cachedCustomVendors: CustomVendorConfig[]` | L1 新增 | 含 `id?: string` 字段(back-compat);`save()` 投影,`load()` 复用 |
+| `LlmConfig.cachedVendorModels: Record<string, string[]>` | L2 新增 | per-vendor models Record |
+| `LlmConfig.cachedVendorApiKeys: Record<string, string>` | L3 新增 | per-vendor api key Record(preferences JSON) |
+| `LlmConfig.getCustomVendors() / setCustomVendors() / addCustomVendor() / removeCustomVendor()` | L1 新增 | 数组 CRUD |
+| `LlmConfig.getVendorModels() / addVendorModel() / removeVendorModel()` | L2 新增 | per-vendor models CRUD |
+| `LlmConfig.getApiKey(vendorId?) / setApiKey(key, vendorId?) / clearApiKey(vendorId?) / getAllVendorApiKeys()` | L3 新增(扩展 overload) | vendorId 给定则 per-vendor map,否则全局 AssetStoreKit |
+| `LlmConfig.findCustomVendor(id)` | L1 bug fix (e79e404) | 按 `v.id === id` 匹配(不再 always `[0]`) |
+| `LlmConfig.getEndpoint/getModel` | L1 bug fix (e79e404) | `startsWith('custom') && length > 6` 守卫(VM.addCustomVendor 生成 `'custom-'+Date.now()`) |
+| `AiSettingsViewModel.toCustomVendorFull` | L1 bug fix (e79e404) | 复用 `v.id`(非 regen `custom-loaded-...`) |
+| `AiSettingsViewModel.save` | L1+L3 bug fix (e79e404) | 投影 id + 循环 `setApiKey(v.apiKey, v.id)` per custom vendor |
+| `AiSettingsViewModel.load` | L3 bug fix (e79e404) | `this.vendorApiKeys = llm.getAllVendorApiKeys()`(还原全部) |
 
 **不破坏**:
 - LlmConfig / VendorPicker / AiSettingsPage 主结构
@@ -139,9 +150,17 @@ PR2-T2 已有的 29 测试**全部仍 GREEN** + 新增 8 测试全 GREEN = 37/37
 
 ## Acceptance criteria
 
-- [ ] `node --test scripts/arkts-lint/tests/ai-settings-vendor.test.mjs` 37/37 GREEN(原 29 + 新 8)
 - [ ] `node --test scripts/arkts-lint/tests/llm-config-allow-default-model.test.mjs` 全 GREEN(含 T6 改后)
-- [ ] `node --test scripts/arkts-lint/tests/*.test.mjs` 全 GREEN(全 suite)
+- [ ] `node --test scripts/arkts-lint/tests/*.test.mjs` 全 GREEN(全 suite) — **实际 83/83 GREEN(L1+L2+L3 8 套件 + L4+L5+L6 + restart regression 9 套件)**
+  - llm-config-throw: 5/5
+  - llm-config-vendor-list (L1): 10/10
+  - llm-config-vendor-models (L2): 8/8
+  - llm-config-vendor-api-key (L3): 11/11
+  - llm-config-vendor-wiring (UI): 18/18
+  - llm-config-vendor-cleanup (L4): 9/9
+  - llm-config-vendor-file-cleanup (L5+L6): 9/9
+  - llm-config-allow-default-model (T6): 4/4
+  - llm-config-vendor-restart (e79e404 bug fix regression): 9/9
 - [ ] `hvigorw assembleHap` BUILD SUCCESSFUL
 - [ ] `git grep -n 'useCustomEP\|customEP\|mdlIdx\|useCustomMD\|customMD\|syncEndpoint\|syncModel' -- '*.ets'` 0 命中
 - [ ] `git grep -n 'EndpointPicker\|ModelPicker' -- '*.ets' '*.mjs'` 仅命中 `tests/` 文件(说明完全删干净,测试已迁移)
