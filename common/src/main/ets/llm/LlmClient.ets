@@ -71,8 +71,8 @@ export class LlmClient {
 
   // JSON 适配路径 (原 call): request() + 手动 JSON 解析, 返回 text 与可选 toolCalls
   private async callJsonInternal(request: LlmCallRequest): Promise<LlmCallResult> {
-    // 1. 校验 API key
-    const apiKey: string | null = await this.config.getApiKey();
+    // 1. 校验 API key — PR2-T2 L3 (2026-09-08): per-vendor key(否则 fallback 全局)
+    const apiKey: string | null = await this.config.getApiKey(this.config.getVendorId());
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }
@@ -230,8 +230,8 @@ export class LlmClient {
     request: LlmCallRequest,
     onDelta: LlmStreamCallback,
   ): Promise<void> {
-    // 1. 校验 API key
-    const apiKey: string | null = await this.config.getApiKey();
+    // 1. 校验 API key — PR2-T2 L3 (2026-09-08): per-vendor key
+    const apiKey: string | null = await this.config.getApiKey(this.config.getVendorId());
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }

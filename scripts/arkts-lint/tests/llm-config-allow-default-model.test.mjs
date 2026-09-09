@@ -99,17 +99,19 @@ test('normalizeEndpoint does not reject DEFAULT_ENDPOINT itself', () => {
   );
 });
 
-// 测试 4: 端到端诊断 — PRO_MODEL 与 DEFAULT_MODEL 必须保持一致
-// ViewModel.test() 调用 saveAll(resolveEndpoint, resolveModel, ...) 触发 normalizeModel:
-//   - resolveModel() 默认返回 PRO_MODEL(来自 entry/src/main/ets/pages/AiSettings/ModelPicker.ets:7)
-//   - saveAll 内部 normalizeModel(PRO_MODEL) 必须命中"空输入" 路径(返回 DEFAULT_MODEL) 而不是 reserved keyword 路径
-// 因此 PRO_MODEL 必须等于 LlmConfig.DEFAULT_MODEL(否则会再次触发 P0 bug)。
-test('PRO_MODEL (in ModelPicker) equals DEFAULT_MODEL (in LlmConfig) — P0 bug precondition', () => {
-  // PRO_MODEL 在 ModelPicker.ets 定义
-  const modelPicker = read('entry/src/main/ets/pages/AiSettings/ModelPicker.ets');
-  const proModelMatch = modelPicker.match(/PRO_MODEL\s*=\s*['"]([^'"]+)['"]/);
-  assert.ok(proModelMatch !== null, 'PRO_MODEL constant must exist in ModelPicker.ets');
-  const proModel = proModelMatch[1];
+// 测试 4: 端到端诊断 — providers.ets deepseek.defaultModel 与 LlmConfig.DEFAULT_MODEL 必须保持一致
+// PR2-T2 ticket #83 L5 (2026-09-08): EndpointPicker.ets / ModelPicker.ets git rm,DS_ENDPOINT/PRO_MODEL 字面替换
+// 新来源:common/src/main/ets/llm/providers.ets(PR2-T1)的 PROVIDERS[0].defaultModel
+// ViewModel.test() 调 saveAll(getCurrentModel()) — 应当命中 vendor-aware normalize 的 deepseek path
+// 因此 providers deepseek.defaultModel 必须等于 LlmConfig.DEFAULT_MODEL(否则 vendor-aware normalize 不一致)
+test('PROVIDERS deepseek.defaultModel (in providers.ets) equals DEFAULT_MODEL (in LlmConfig)', () => {
+  // PROVIDERS[0] = deepseek.defaultModel(PR2-T1 spec)
+  const providers = read('common/src/main/ets/llm/providers.ets');
+  const firstProviderMatch = providers.match(
+    /id:\s*['"]deepseek['"][\s\S]*?defaultModel:\s*['"]([^'"]+)['"]/
+  );
+  assert.ok(firstProviderMatch !== null, 'PROVIDERS deepseek.defaultModel must exist in providers.ets');
+  const providerModel = firstProviderMatch[1];
 
   // DEFAULT_MODEL 在 LlmConfig.ets 定义
   const defaultModelMatch = llmConfig.match(/DEFAULT_MODEL\s*=\s*['"]([^'"]+)['"]/);
@@ -118,9 +120,9 @@ test('PRO_MODEL (in ModelPicker) equals DEFAULT_MODEL (in LlmConfig) — P0 bug 
 
   // 端到端: 两者必须相等
   assert.equal(
-    proModel,
+    providerModel,
     defaultModel,
-    `PRO_MODEL=${proModel} must equal LlmConfig.DEFAULT_MODEL=${defaultModel}. ` +
-    'If they diverge, ViewModel.saveAll(PRO_MODEL) hits normalizeModel(NORMALIZE_KEYWORD_REJECTED).'
+    `PROVIDERS deepseek.defaultModel=${providerModel} must equal LlmConfig.DEFAULT_MODEL=${defaultModel}. ` +
+    'If they diverge, ViewModel.saveAll(deepseek-default) hits vendor-aware normalize mismatch.'
   );
 });
