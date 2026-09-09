@@ -205,13 +205,14 @@ export struct VendorPicker {
       // "currently active" badge 已删除 — 选中状态由行高亮(success-dim bg + border-left 3px)足够标识
       // 决策记录: ADR-0015(2026-09-08 双轴审查后 UX 简化)
 
-      // PR2-T2: 编辑 panel(完整版)— API Key 输入 + 模型目录 + 添加 model
-      if (this.editingVendorId === item.id) {
-        Column() {
-          Text(`${item.vendorName} · ${item.defaultModel}`)
-            .fontSize(F_XS)
-            .fontColor(TEXT_3)
-            .margin({ bottom: S_2 })
+      // PR2-T2 ticket #83 follow-up (2026-09-08): 每 vendor 的 config 总是可见
+      // 删 if (this.editingVendorId === item.id) 守卫 — API Key + 模型列表对所有 5 vendor 都展开
+      // (user 反馈"对于每个厂商的配置还是没有展开" — 单 panel 展开 UX 不直观)
+      Column() {
+        Text(`${item.vendorName} · ${item.defaultModel}`)
+          .fontSize(F_XS)
+          .fontColor(TEXT_3)
+          .margin({ bottom: S_2 })
 
           // API Key 输入 — PR2-T2 ticket #83 L3 wiring (2026-09-08)
           // text 从 @Prop vendorApiKeys[item.id] 读,onChange 实时写回 parent
@@ -307,7 +308,6 @@ export struct VendorPicker {
         .backgroundColor(BG_CARD)
         .borderRadius(R_MD)
         .margin({ top: 2, bottom: S_2 })
-      }
     }
   }
 
