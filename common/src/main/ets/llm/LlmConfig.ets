@@ -170,8 +170,9 @@ export class LlmConfig {
   }
 
   // PR2-T2 ticket #83 L3 (2026-09-08): 读所有 per-vendor api keys(VM.load() 用)
+  // PR2-T2 ticket #83 T3 (2026-09-08): defensive copy(Standards #8 fix)— 返回 spread copy 而非 mutable ref
   public getAllVendorApiKeys(): Record<string, string> {
-    return this.cachedVendorApiKeys
+    return { ...this.cachedVendorApiKeys }
   }
 
   // clearApiKey() 无 vendorId → 清全局(back-compat)
