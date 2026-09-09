@@ -44,10 +44,6 @@ const OCR_TEST_PNG_BYTES: number[] = [
 
 @Observed
 export class AiSettingsViewModel {
-  // PR2-T2 ticket #83 L4 (2026-09-08): 删 useCustomEP / customEP / mdlIdx / useCustomMD / customMD 字段
-  //   (旧 keyword-sniff 路径,已被 L1+L2+L3 LlmConfig 取代)
-  // PR2-T2 ticket #83 L4: 删 temp / maxT / to 字段
-  //   (温度 / max_tokens / timeout — 走 LlmConfig 内部 cache)
   configured: boolean = false
   testing: boolean = false
   statusText: string = "未配置"
@@ -100,9 +96,6 @@ export class AiSettingsViewModel {
       this.statusText = "未配置"
     }
 
-    // PR2-T2 ticket #83 L4 (2026-09-08): 不再调 syncEndpoint / syncModel(keyword-sniff 已删)
-    // PR2-T2 ticket #83 L4: temp / maxT / to 走 LlmConfig cache,不在 VM
-
     const ocr: OcrConfig = OcrConfig.getInstance()
     try {
       this.ocrEndpoint = ocr.getEndpoint()
@@ -154,9 +147,6 @@ export class AiSettingsViewModel {
           await llm.clearApiKey(vid)
         }
       }
-      // PR2-T2 集成修复 (2026-09-08): 用 getCurrent* 而非 resolve* — 新方法是 vendorId-driven,旧方法是 keyword-sniff
-      // (旧 resolveEndpoint/resolveModel 在 ticket #83 L4 清理 PR 删除)
-      // PR2-T2 ticket #83 L4 (2026-09-08): temp / maxT / to 走 LlmConfig cache
       await llm.saveAll(
         this.getCurrentEndpoint(),
         this.getCurrentModel(),
@@ -179,33 +169,6 @@ export class AiSettingsViewModel {
       await ocr.setMode(this.ocrMode)
       this.ocrEndpoint = ocr.getEndpoint()
       this.ocrMode = ocr.getMode()
-      return true
-    } catch (_e) {
-      return false
-    }
-  }
-
-  async save(): Promise<boolean> {
-    const llmOk: boolean = await this.saveLlm()
-    const ocrOk: boolean = await this.saveOcr()
-    return llmOk && ocrOk
-  }
-
-  async reset(): Promise<boolean> {
-    try {
-      const llm: LlmConfig = LlmConfig.getInstance()
-      await llm.resetDefaults()
-      await llm.clearApiKey()
-      // PR2-T2 ticket #83 L4 (2026-09-08): 不再 reset useCustomEP/customEP/mdlIdx/useCustomMD/customMD/temp/maxT/to(已删字段)
-      this.configured = false
-      this.statusText = "未配置"
-
-      const ocr: OcrConfig = OcrConfig.getInstance()
-      await ocr.resetDefaults()
-      this.ocrEndpoint = ocr.getEndpoint()
-      this.ocrEnabled = ocr.isEnabled()
-      this.ocrMode = ocr.getMode()
-      this.ocrStatusText = "未测试"
       return true
     } catch (_e) {
       return false
@@ -241,7 +204,6 @@ export class AiSettingsViewModel {
     this.testing = true
     try {
       await llm.setVendorId(this.vendorId)
-      // PR2-T2 ticket #83 L4 (2026-09-08): 用 getCurrent* + LlmConfig cache,不再调 resolve*/temp/maxT/to
       await llm.saveAll(
         this.getCurrentEndpoint(),
         this.getCurrentModel(),
@@ -298,10 +260,6 @@ export class AiSettingsViewModel {
     }
   }
 
-  // PR2-T2 ticket #83 L4 (2026-09-08): 删 setCustomEndpoint / toggleCustomEndpoint /
-  //   selectModel / setCustomModel / toggleCustomModel / setTemp / setMaxTokens / setTimeout
-  //   (旧 keyword-sniff 路径 + LLM 参数 setter — 全部走 LlmConfig / 自身 setters)
-
   setOcrEndpoint(value: string): void {
     this.ocrEndpoint = value
   }
@@ -318,11 +276,6 @@ export class AiSettingsViewModel {
     this.ocrEndpoint = DEFAULT_OCR_ENDPOINT
     this.ocrMode = DEFAULT_OCR_MODE
   }
-
-  // PR2-T2 ticket #83 L4 (2026-09-08): 删 currentModelText / modelLabel / endpointLabel
-  //   (旧 keyword-sniff 路径 — 改用 getCurrent* 方法)
-  // PR2-T2 ticket #83 L4: 删 syncEndpoint / syncModel keyword-sniff
-  // PR2-T2 ticket #83 L4: 删 resolveEndpoint / resolveModel(由 getCurrent* 取代)
 
   // ===== PR2-T2 增量: VendorPicker 接口 =====
   // 选中的 vendor id('deepseek' / 'tongyi' / 'glm' / 'kimi' / 'doubao' / 'custom')
@@ -354,11 +307,6 @@ export class AiSettingsViewModel {
     }
     next[vendorId] = model
     this.activeVendorModels = next
-  }
-
-  openAddCustomVendor(): void {
-    // 占位 — 真正的 modal 打开在 VendorPicker 内(@State addCustomModalOpen)
-    // 保留本方法作为扩展点
   }
 
   // PR2-T2 P3: 添加新 vendor(由 VendorPicker modal 确认后回调)
@@ -428,18 +376,6 @@ export class AiSettingsViewModel {
     this.vendorApiKeys = next
   }
 
-  clearVendorApiKey(vendorId: string): void {
-    // PR2-T2 ticket #83 L3 (2026-09-08): ArkTS 严格模式禁 delete operator
-    // 用 rebuild Record 替代(保留其他 vendor keys)
-    const next: Record<string, string> = {}
-    for (const k of Object.keys(this.vendorApiKeys)) {
-      if (k !== vendorId) { next[k] = this.vendorApiKeys[k] }
-    }
-    this.vendorApiKeys = next
-  }
-
-  // PR2-T2 P4: AI 服务段摘要解析(替代旧 modelSummary/endpointSummary 关键字嗅探)
-  // 单一真理源: 用 vendorId + findProvider(customVendor.baseUrl) 解析
   getCurrentVendor(): string {
     // 预设 vendor
     for (const p of PROVIDERS) {

@@ -29,9 +29,9 @@ test('wiring: VM declares vendorApiKeys + vendorModels + customVendors fields', 
   assert.match(vm, /customVendors\s*:\s*CustomVendorConfig\s*\[\s*\]/, 'VM must declare customVendors: CustomVendorConfig[]');
 });
 
-test('wiring: VM exposes setVendorApiKey + clearVendorApiKey methods', () => {
+test('wiring: VM exposes setVendorApiKey method', () => {
   assert.match(vm, /setVendorApiKey\s*\(\s*vendorId\s*:\s*string\s*,\s*key\s*:\s*string\s*\)\s*:\s*void/, 'VM must declare setVendorApiKey(vendorId, key): void');
-  assert.match(vm, /clearVendorApiKey\s*\(\s*vendorId\s*:\s*string\s*\)\s*:\s*void/, 'VM must declare clearVendorApiKey(vendorId): void');
+  assert.doesNotMatch(vm, /clearVendorApiKey\s*\(/, 'VM must not retain unused clearVendorApiKey()');
 });
 
 test('wiring: VM exposes addVendorModel + removeVendorModel methods', () => {

@@ -10,11 +10,10 @@
  * 数据流:
  *   AiSettingsPage.vm.vendorId → VendorPicker.props.currentVendorId
  *   onSelect(id) → vm.selectVendor(id)
- *   onAddCustom() → vm.openAddCustomVendor()
  *   编辑 button 自管 @State editingVendorId(单真理源,不再通知 ViewModel)
  *   panel 内 取消/保存 2 按钮:
  *     取消: discard local draft, collapse panel
- *     保存: commit local draft 到 parent via onApiKeyChange / onAddModel / onRemoveModel, 再调 onSaveEdit 触发 vm.save()
+ *     保存: commit local draft 到 parent via onApiKeyChange / onAddModel / onRemoveModel, 再调 onSaveEdit 触发 vm.saveLlm()
  *
  * PR2-T2 ticket #83 follow-up (2026-09-08): 重写为 draft pattern
  *   - @State apiKeyInput + @State localModels(本地 draft,不在 onChange 立即 push 到 parent)
@@ -61,9 +60,6 @@ export struct VendorPicker {
   // 当前选中的 vendor
   @Prop currentVendorId: string = 'deepseek';
 
-  // 预设 vendor 列表(caller 可覆盖,默认从 common.PROVIDERS 取)
-  providers: ProviderConfig[] = [];
-
   // PR2-T2 ticket #83 L1+L2+L3 (2026-09-08): per-vendor 持久化数据(由 parent 提供)
   @Prop vendorApiKeys: Record<string, string> = {};
   @Prop vendorModels: Record<string, string[]> = {};
@@ -94,7 +90,6 @@ export struct VendorPicker {
   @State isNewVendorIds: Set<string> = new Set();
 
   onSelect: (id: string) => void = (_id: string): void => {};
-  onAddCustom: () => void = (): void => {};
 
   // PR2-T2 P3: 添加新 vendor 完成回调(把 cfg 传给 ViewModel,ViewModel 加到 customVendors + 切 vendorId)
   onAddVendorConfirm: (cfg: AddCustomVendorCfg) => string = (_cfg: AddCustomVendorCfg): string => '';
@@ -175,7 +170,7 @@ export struct VendorPicker {
   build() {
     Column() {
       // 5 预设 vendor + 用户添加的 custom vendors
-      ForEach(this.providers.length > 0 ? this.providers : PROVIDERS,
+        ForEach(PROVIDERS,
         (item: ProviderConfig): void => {
           this.renderVendorRow(item.id, item.vendorName, item.baseUrl, item.defaultModel)
         }
@@ -203,7 +198,6 @@ export struct VendorPicker {
       .borderRadius(R_MD)
       .margin({ top: S_2, bottom: S_4 })
       .onClick((): void => {
-        this.onAddCustom()
         this.addCustomModalOpen = true
       })
 
