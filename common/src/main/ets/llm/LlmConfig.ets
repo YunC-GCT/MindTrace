@@ -170,9 +170,14 @@ export class LlmConfig {
   }
 
   // PR2-T2 ticket #83 L3 (2026-09-08): 读所有 per-vendor api keys(VM.load() 用)
-  // PR2-T2 ticket #83 T3 (2026-09-08): defensive copy(Standards #8 fix)— 返回 spread copy 而非 mutable ref
+  // PR2-T2 ticket #83 T3 (2026-09-08): defensive copy(Standards #8 fix)— 返回 snapshot 而非 mutable ref
+  // 修:用显式 typed local + Object.keys 复制,不用 spread(arkts-no-spread 严格模式禁 object spread into {...obj})
   public getAllVendorApiKeys(): Record<string, string> {
-    return { ...this.cachedVendorApiKeys }
+    const snapshot: Record<string, string> = {}
+    for (const k of Object.keys(this.cachedVendorApiKeys)) {
+      snapshot[k] = this.cachedVendorApiKeys[k]
+    }
+    return snapshot
   }
 
   // clearApiKey() 无 vendorId → 清全局(back-compat)
@@ -314,9 +319,9 @@ export class LlmConfig {
   }
 
   // PR2-T2 ticket #83 T2 (2026-09-08): helpers 消除重复 + 消 magic number
-  // T6 follow-up (2026-09-08): 改 static — VM 也可调(消 VM 重复的 magic)
+  // T6 follow-up (2026-09-08): 改 public static — VM 也可调(消 VM 重复的 magic)
   // isCustomVendor(id): VM.addCustomVendor 生成 'custom-'+Date.now() id,此 helper 封装 prefix 检测
-  private static isCustomVendor(id: string): boolean {
+  public static isCustomVendor(id: string): boolean {
     return id.startsWith('custom') && id.length > 6
   }
 

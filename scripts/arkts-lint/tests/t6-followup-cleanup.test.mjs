@@ -16,13 +16,13 @@ const TARGET_VM = resolve(root, 'entry/src/main/ets/viewmodels/AiSettingsViewMod
 const llmConfig = readFileSync(TARGET_LLM, 'utf8').replace(/\r\n/g, '\n');
 const vm = readFileSync(TARGET_VM, 'utf8').replace(/\r\n/g, '\n');
 
-// ===== T6.1: isCustomVendor 提升为 static(VM 复用) =====
-test('T6.1: LlmConfig.isCustomVendor is static (callable from VM without instance)', () => {
-  // static method 签名:private static isCustomVendor(...)
+// ===== T6.1: isCustomVendor 提升为 public static(VM 复用) =====
+test('T6.1: LlmConfig.isCustomVendor is public static (callable from VM without instance)', () => {
+  // public static method 签名(VM 跨文件调,需 public)
   assert.match(
     llmConfig,
-    /private\s+static\s+isCustomVendor\s*\(\s*id\s*:\s*string\s*\)\s*:\s*boolean/,
-    'LlmConfig.isCustomVendor must be static (not instance method) so VM can call LlmConfig.isCustomVendor(id)'
+    /public\s+static\s+isCustomVendor\s*\(\s*id\s*:\s*string\s*\)\s*:\s*boolean/,
+    'LlmConfig.isCustomVendor must be public static (so VM can call LlmConfig.isCustomVendor(id) without instance)'
   );
 });
 
