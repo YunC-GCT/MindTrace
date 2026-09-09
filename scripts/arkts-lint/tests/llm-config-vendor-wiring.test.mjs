@@ -26,7 +26,7 @@ const pg = read('entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets');
 test('wiring: VM declares vendorApiKeys + vendorModels + customVendors fields', () => {
   assert.match(vm, /vendorApiKeys\s*:\s*Record\s*<\s*string\s*,\s*string\s*>/, 'VM must declare vendorApiKeys: Record<string, string>');
   assert.match(vm, /vendorModels\s*:\s*Record\s*<\s*string\s*,\s*string\s*\[\s*\]\s*>/, 'VM must declare vendorModels: Record<string, string[]>');
-  assert.match(vm, /customVendors\s*:\s*CustomVendorFull\s*\[\s*\]/, 'VM must declare customVendors: CustomVendorFull[]');
+  assert.match(vm, /customVendors\s*:\s*CustomVendorConfig\s*\[\s*\]/, 'VM must declare customVendors: CustomVendorConfig[]');
 });
 
 test('wiring: VM exposes setVendorApiKey + clearVendorApiKey methods', () => {
@@ -76,27 +76,25 @@ test('wiring: VendorPicker declares onApiKeyChange + onAddModel + onRemoveModel 
   assert.match(vp, /onRemoveModel\s*:\s*\(\s*vendorId\s*:\s*string\s*,\s*model\s*:\s*string\s*\)\s*=>\s*void/, 'VendorPicker must declare onRemoveModel callback');
 });
 
-test('wiring: VendorPicker API Key TextInput.text reads from vendorApiKeys[item.id]', () => {
-  // text: this.vendorApiKeys[item.id] ?? '' (within the API Key TextInput)
-  assert.match(vp, /TextInput\([^)]*text:\s*this\.vendorApiKeys\[item\.id\]\s*\?\?\s*''/s, 'API Key TextInput must read text from this.vendorApiKeys[item.id]');
+test('wiring: VendorPicker API Key TextInput.text reads local apiKeyInput draft', () => {
+  assert.match(vp, /TextInput\([^)]*text:\s*this\.apiKeyInput/s, 'API Key TextInput must read local apiKeyInput draft');
 });
 
-test('wiring: VendorPicker API Key TextInput.onChange calls onApiKeyChange', () => {
-  // onChange((v: string): void => { this.onApiKeyChange(item.id, v) })
-  assert.match(vp, /onApiKeyChange\s*\(\s*item\.id\s*,\s*v\s*\)/, 'API Key TextInput.onChange must call onApiKeyChange(item.id, v)');
+test('wiring: VendorPicker API Key TextInput.onChange only updates local draft', () => {
+  assert.match(vp, /onChange\(\(v:\s*string\):\s*void\s*=>\s*\{\s*this\.apiKeyInput\s*=\s*v/, 'API Key onChange must update local draft');
 });
 
-test('wiring: VendorPicker model list ForEach reads from vendorModels[item.id]', () => {
-  // ForEach(this.vendorModels[item.id] ?? [], (m: string): void => { ... })
-  assert.match(vp, /ForEach\s*\(\s*this\.vendorModels\[item\.id\]\s*\?\?\s*\[\s*\]/s, 'Model list ForEach must iterate this.vendorModels[item.id]');
+test('wiring: VendorPicker model list ForEach reads from localModels draft', () => {
+  assert.match(vp, /ForEach\s*\(\s*this\.localModels/s, 'Model list ForEach must iterate localModels draft');
 });
 
-test('wiring: VendorPicker model × button calls onRemoveModel', () => {
-  assert.match(vp, /onRemoveModel\s*\(\s*item\.id\s*,\s*m\s*\)/, 'Model × button must call onRemoveModel(item.id, m)');
+test('wiring: VendorPicker model × button updates localModels draft', () => {
+  assert.match(vp, /this\.localModels\s*=\s*this\.localModels\.filter/, 'Model × button must update localModels draft');
 });
 
-test('wiring: VendorPicker model + button calls onAddModel', () => {
-  assert.match(vp, /onAddModel\s*\(\s*item\.id\s*,\s*m\s*\)/, 'Model + button must call onAddModel(item.id, m)');
+test('wiring: VendorPicker 保存一次性调用 onAddModel/onRemoveModel', () => {
+  assert.match(vp, /saveEdit[\s\S]*?onRemoveModel\(vendorId,\s*m\)/, 'saveEdit must commit removals');
+  assert.match(vp, /saveEdit[\s\S]*?onAddModel\(vendorId,\s*m\)/, 'saveEdit must commit additions');
 });
 
 test('wiring: AiSettingsPage passes vendorApiKeys + vendorModels to VendorPicker', () => {

@@ -43,14 +43,11 @@ test('regression Bug #1: VM.toCustomVendorFull preserves saved id (no Date.now()
   );
 });
 
-test('regression Bug #1: VM.save() must write id field (not strip it)', () => {
-  // setCustomVendors 接受的对象必须含 id(vendorName+baseUrl+model+id)
-  // 简化:save 中 setCustomVendors 调用的 .map callback 必须返回含 id 的对象
-  // 即 (v): CustomVendorFull => ({ ..., id: v.id, ... }) 而非 ({ vendorName, baseUrl, model })
+test('regression Bug #1: VM.saveLlm() persists CustomVendorConfig entries including id', () => {
   assert.match(
     vm,
-    /setCustomVendors[\s\S]*?id:\s*v\.id/,
-    'VM.save() setCustomVendors.map must include id: v.id (preserve identity)'
+    /saveLlm[\s\S]*?setCustomVendors\(this\.customVendors\)/,
+    'VM.saveLlm() must persist CustomVendorConfig[] with stable ids'
   );
 });
 
@@ -77,12 +74,11 @@ test('regression Bug #1: getEndpoint() fallback to customVendors match for any c
 });
 
 // ===== Bug #2 修复:save() 持久化 per-custom-vendor apiKey =====
-test('regression Bug #2: VM.save() persists per-custom-vendor apiKey via llm.setApiKey', () => {
-  // source-level 匹配(避免 body extraction 嵌套 {} 失败)
+test('regression Bug #2: VM.saveLlm() persists per-vendor API keys from vendorApiKeys', () => {
   assert.match(
     vm,
-    /save[\s\S]*?setApiKey\s*\(\s*[^,)]+,\s*v\.id\s*\)/,
-    'VM.save() must call llm.setApiKey(apiKey, vendorId) for each custom vendor'
+    /saveLlm[\s\S]*?Object\.keys\(this\.vendorApiKeys\)[\s\S]*?setApiKey\(k,\s*vid\)/,
+    'VM.saveLlm() must persist all vendorApiKeys by vendor id'
   );
 });
 

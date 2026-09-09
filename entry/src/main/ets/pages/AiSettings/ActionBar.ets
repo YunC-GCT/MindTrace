@@ -1,10 +1,10 @@
 // ============================================================================
 //  pages/AiSettings/ActionBar.ets — 设置页底部操作栏
 //  ----------------------------------------------------------------------------
-//  职责: 设置页底部"恢复默认"+"保存配置"两个操作按钮。
+//  职责: 设置页底部 OCR 专用"重置 OCR"+"保存 OCR"两个操作按钮。
 //
 //  布局:
-//    [恢复默认 (灰色背景)] [保存配置 (MINT 品牌色背景)]
+//    [重置 OCR (灰色背景)] [保存 OCR (MINT 品牌色背景)]
 //
 //  依赖: common 令牌(MINT / BG_DARK / TEXT_3 / F_SM / R_MD / S_2)
 //
@@ -25,8 +25,8 @@ export struct ActionBar {
 
   build() {
     Row() {
-      // 左侧: 恢复默认(灰色)
-      Button("恢复默认")
+      // 左侧: 重置 OCR(灰色)
+      Button("重置 OCR")
         .fontSize(F_SM)
         .fontColor(TEXT_3)
         .height(44)
@@ -37,8 +37,8 @@ export struct ActionBar {
           if (this.onReset) { this.onReset() }
         })
 
-      // 右侧: 保存配置(MINT 品牌色,主操作)
-      Button("保存配置")
+      // 右侧: 保存 OCR(MINT 品牌色,主操作)
+      Button("保存 OCR")
         .fontSize(F_SM)
         .fontColor(BG_DARK)
         .height(44)

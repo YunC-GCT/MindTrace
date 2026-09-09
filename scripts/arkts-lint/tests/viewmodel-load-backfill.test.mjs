@@ -3,8 +3,7 @@
 // 范围:
 //   - VM.load() 在还原 customVendors 后,对每个 v:
 //     - 若 v.id === undefined 且 cachedVendorId startsWith('custom', set v.id = cachedVendorId(legacy data)
-//   - VM.load() 在还原 vendorApiKeys 后,for v of customVendors:
-//     - 若 this.vendorApiKeys[v.id] 非空且 !v.apiKey,backfill v.apiKey
+//   - customVendors 不保存 secret;API key 独立存在 vendorApiKeys
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,11 +23,7 @@ test('T4: VM.load() migrates legacy customVendors without id (assign from cached
   );
 });
 
-test('T4: VM.load() backfills customVendors[i].apiKey from vendorApiKeys', () => {
-  // source-level 匹配 backfill loop
-  assert.match(
-    src,
-    /load[\s\S]*?vendorApiKeys\[\s*v\.id\s*\][\s\S]*?v\.apiKey\s*=\s*stored/,
-    'VM.load() must backfill customVendors[i].apiKey from this.vendorApiKeys[v.id]'
-  );
+test('T4: VM.load() restores vendorApiKeys separately from customVendors', () => {
+  assert.match(src, /vendorApiKeys\s*=\s*llm\.getAllVendorApiKeys\(\)/);
+  assert.doesNotMatch(src, /v\.apiKey\s*=/);
 });

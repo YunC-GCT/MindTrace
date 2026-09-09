@@ -2,7 +2,7 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, R_MD, S_2, S_3, S_4 } from "common"
+import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4 } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
@@ -47,28 +47,36 @@ struct AiSettingsPage {
     })
   }
 
-  private save(): void {
-    this.vm.save().then((ok: boolean): void => {
+  private saveLlm = (): void => {
+    this.vm.saveLlm().then((ok: boolean): void => {
       try {
-        promptAction.showToast({ message: ok ? "已保存" : "保存失败", duration: 1500 })
+        promptAction.showToast({ message: ok ? "模型设置已保存" : "模型设置保存失败", duration: 1500 })
       } catch (_e) {}
     })
   }
 
-  private reset(): void {
-    this.vm.reset().then((ok: boolean): void => {
+  private saveOcr = (): void => {
+    this.vm.saveOcr().then((ok: boolean): void => {
+      try {
+        promptAction.showToast({ message: ok ? "OCR 配置已保存" : "OCR 配置保存失败", duration: 1500 })
+      } catch (_e) {}
+    })
+  }
+
+  private resetOcr = (): void => {
+    this.vm.resetOcr().then((ok: boolean): void => {
       if (!ok) {
-        try { promptAction.showToast({ message: "重置失败", duration: 1500 }) } catch (_e) {}
+        try { promptAction.showToast({ message: "OCR 重置失败", duration: 1500 }) } catch (_e) {}
       }
     })
   }
 
-  private test(): void {
-    if (this.vm.apiKey.trim().length === 0) {
-      try { promptAction.showToast({ message: "请先输入 API Key", duration: 1500 }) } catch (_e) {}
-      return
-    }
-    this.vm.test()
+  private test = (): void => {
+    this.vm.test().then((ok: boolean): void => {
+      if (!ok) {
+        try { promptAction.showToast({ message: this.vm.statusText, duration: 1500 }) } catch (_e) {}
+      }
+    })
   }
 
   private modelSummary(): string {
@@ -163,9 +171,8 @@ struct AiSettingsPage {
             // PR2-T2 ticket #83 L1+L2+L3 (2026-09-08): per-vendor 数据从 VM 注入
             vendorApiKeys: this.vm.vendorApiKeys,
             vendorModels: this.vm.vendorModels,
+            customVendors: this.vm.customVendors,
             onSelect: (id: string): void => { this.vm.selectVendor(id) },
-            // onEdit 不传: VendorPicker 自管 panel 展开(@State editingVendorId),
-            // 单真理源架构,无需 ViewModel 介入。
             onAddCustom: (): void => { this.vm.openAddCustomVendor() },
             // PR2-T2 P3: modal 确认后回调,把 4 字段 cfg 传给 ViewModel
             // PR2-T2 polish: 返回新 vendorId 用于 NEW badge 跟踪(ticket #81 task A4)
@@ -183,34 +190,10 @@ struct AiSettingsPage {
             onRemoveModel: (vendorId: string, model: string): void => {
               this.vm.removeVendorModel(vendorId, model)
             },
+            onSaveEdit: (_vendorId: string): void => {
+              this.saveLlm()
+            },
           })
-
-          // PR2-T2 ticket #83 follow-up (2026-09-08): LLM section 专用 "保存模型设置" 按钮
-          // user 反馈"我这里无法保存这些密钥信息" — 显式 LLM save 入口,不依赖底部 ActionBar
-          // 仅存 LLM(不存 OCR),底部 ActionBar 仍负责 OCR
-          Row() {
-            Text('保存模型设置')
-              .fontSize(F_SM)
-              .fontColor(BG_DARK)
-              .fontWeight(W_SEMIBOLD)
-              .layoutWeight(1)
-              .textAlign(TextAlign.Center)
-              .padding(12)
-              .backgroundColor(MINT)
-              .borderRadius(R_MD)
-              .onClick((): void => {
-                this.vm.save().then((ok: boolean): void => {
-                  try {
-                    promptAction.showToast({
-                      message: ok ? '模型设置已保存' : '保存失败',
-                      duration: 1500,
-                    })
-                  } catch (_e) {}
-                })
-              })
-          }
-          .width('100%')
-          .padding({ left: S_4, right: S_4, top: S_2, bottom: S_2 })
 
           Column() {
             Text("OCR 服务")
@@ -256,7 +239,7 @@ struct AiSettingsPage {
       .layoutWeight(1)
       // PR2-T2 ticket #83 follow-up (2026-09-08): ActionBar 移出 Scroll,save 按钮永远可见
       // (页面太长 + edit panel 展开后用户在 Scroll 底部,save 不可见)
-      ActionBar({ onReset: (): void => { this.reset() }, onSave: (): void => { this.save() } })
+      ActionBar({ onReset: (): void => { this.resetOcr() }, onSave: (): void => { this.saveOcr() } })
     }
     .width("100%")
     .height("100%")

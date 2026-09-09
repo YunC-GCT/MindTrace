@@ -3,15 +3,23 @@
  *
  * 路径: entry/src/main/ets/pages/AiSettings/VendorPicker.ets
  * 职责: 渲染 5 预设厂商(DeepSeek/通义/GLM/Kimi/豆包) + 用户添加的自定义 vendor;
- *       每行右侧 [编辑] 按钮展开该 row 下方 panel(API Key + 模型目录 + 添加模型)。
+ *       每行右侧 [编辑] 按钮展开该 row 下方 panel(API Key 输入 + 模型目录 + 添加模型 + 取消/保存)。
  *       底部 [+ 添加新供应商] 按钮触发父级弹 modal(P3)。
  * 依赖: common(providers.ts: PROVIDERS 常量 + ProviderConfig 类型)
  *
  * 数据流:
  *   AiSettingsPage.vm.vendorId → VendorPicker.props.currentVendorId
- *   onSelect(id) → vm.selectVendor(id)(in-memory, save() 持久化)
- *   onAddCustom() → vm.openAddCustomVendor()(父级弹 modal)
- *   编辑 button 自管 @State editingVendorId(单真理源,不再通知 ViewModel)— 已在 always-visible 改动中删除
+ *   onSelect(id) → vm.selectVendor(id)
+ *   onAddCustom() → vm.openAddCustomVendor()
+ *   编辑 button 自管 @State editingVendorId(单真理源,不再通知 ViewModel)
+ *   panel 内 取消/保存 2 按钮:
+ *     取消: discard local draft, collapse panel
+ *     保存: commit local draft 到 parent via onApiKeyChange / onAddModel / onRemoveModel, 再调 onSaveEdit 触发 vm.save()
+ *
+ * PR2-T2 ticket #83 follow-up (2026-09-08): 重写为 draft pattern
+ *   - @State apiKeyInput + @State localModels(本地 draft,不在 onChange 立即 push 到 parent)
+ *   - 取消 真正 discard,保存 真正 commit
+ *   - 之前 always-visible 改动被 revert(用户要回折叠)
  *
  * 5 预设 vendor(2026-09 一手信源调研):
  *   DeepSeek   · deepseek-v4-pro     · api.deepseek.com
@@ -28,7 +36,7 @@
  */
 
 import { PROVIDERS } from 'common';
-import type { ProviderConfig } from 'common';
+import type { CustomVendorConfig, ProviderConfig } from 'common';
 import {
   MINT, MINT_BORDER, BG_CARD, BG_DARK, TEXT, TEXT_2, TEXT_3, TEXT_4, BORDER,
   F_XS, F_SM, F_MD, W_NORMAL, W_MEDIUM, W_SEMIBOLD,
@@ -57,16 +65,19 @@ export struct VendorPicker {
   providers: ProviderConfig[] = [];
 
   // PR2-T2 ticket #83 L1+L2+L3 (2026-09-08): per-vendor 持久化数据(由 parent 提供)
-  // PR2-T2 polish: 已从父级注入,刷新页面保留
   @Prop vendorApiKeys: Record<string, string> = {};
   @Prop vendorModels: Record<string, string[]> = {};
+  @Prop customVendors: CustomVendorConfig[] = [];
 
-  // PR2-T2: 编辑 panel 展开状态(单真理源 — VendorPicker 自管,不通知 ViewModel)
-  // null = 全折叠;非 null = 该 vendorId 对应 row 下 panel 展开
-  // PR2-T2 ticket #83 follow-up (2026-09-08): 删 @State editingVendorId
-  // (always-visible panel — 无 gating 需要,此 state 死)
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 恢复 click-to-expand
+  @State editingVendorId: string | null = null;
 
-  // PR2-T2 ticket #83 (2026-09-08): panel 内 model 输入(仅 input 状态,实际数据走 @Prop vendorModels)
+  // PR2-T2 ticket #83 follow-up (2026-09-08): local draft state
+  // 不在 onChange/onAdd/onRemove 立即 push 到 parent — 等保存按钮 一次性 commit
+  @State apiKeyInput: string = '';
+  @State localModels: string[] = [];
+
+  // PR2-T2: panel 内 model 输入(仅 input 状态,实际数据走 local localModels)
   @State newModelInput: string = '';
 
   // PR2-T2 P3: 添加新供应商 modal 状态(单真理源 — modal 是纯 UI 状态,VendorPicker 自管)
@@ -79,32 +90,87 @@ export struct VendorPicker {
   // PR2-T2 polish ticket #81 task A4: 新加 custom vendor 标记(session 内有效,无需持久化)
   @State isNewVendorIds: Set<string> = new Set();
 
-  // 回调
   onSelect: (id: string) => void = (_id: string): void => {};
-  // PR2-T2 ticket #83 follow-up (2026-09-08): 删 onEdit callback(no caller after always-visible)
   onAddCustom: () => void = (): void => {};
 
   // PR2-T2 P3: 添加新 vendor 完成回调(把 cfg 传给 ViewModel,ViewModel 加到 customVendors + 切 vendorId)
-  // 返回新 vendor id 用于 NEW badge 跟踪(PR2-T2 polish ticket #81 task A4)
-  // ArkTS 1.1 strict 要求 callback 参数用 interface 声明,不允许 inline object literal as type
   onAddVendorConfirm: (cfg: AddCustomVendorCfg) => string = (_cfg: AddCustomVendorCfg): string => '';
 
   // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key onChange
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 不再每键调 — 改为保存按钮 一次性 commit
   onApiKeyChange: (vendorId: string, key: string) => void =
     (_v: string, _k: string): void => {};
 
   // PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models UI 动作
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 不再每点调 — 改为保存按钮 一次性 commit
   onAddModel: (vendorId: string, model: string) => void =
     (_v: string, _m: string): void => {};
   onRemoveModel: (vendorId: string, model: string) => void =
     (_v: string, _m: string): void => {};
+
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 保存按钮 触发 parent save
+  onSaveEdit: (vendorId: string) => void = (_vendorId: string): void => {};
+
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 展开 vendor 编辑 panel
+  openEdit = (vendorId: string): void => {
+    this.editingVendorId = vendorId
+    // initialize drafts from parent's current state
+    this.apiKeyInput = this.vendorApiKeys[vendorId] ?? ''
+    const current: string[] | undefined = this.vendorModels[vendorId]
+    this.localModels = current !== undefined ? [...current] : []
+    this.newModelInput = ''
+  }
+
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 取消 — discard local drafts, collapse panel
+  cancelEdit = (): void => {
+    this.editingVendorId = null
+    this.apiKeyInput = ''
+    this.localModels = []
+    this.newModelInput = ''
+  }
+
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 保存 — commit drafts 到 parent + 触发 save
+  saveEdit = (vendorId: string): void => {
+    // commit API key
+    this.onApiKeyChange(vendorId, this.apiKeyInput)
+    // commit model list via diff
+    const original: string[] | undefined = this.vendorModels[vendorId]
+    const base: string[] = original !== undefined ? original : []
+    // remove what's in base but not in local
+    for (const m of base) {
+      if (!this.localModels.includes(m)) {
+        this.onRemoveModel(vendorId, m)
+      }
+    }
+    // add what's in local but not in base
+    for (const m of this.localModels) {
+      if (!base.includes(m)) {
+        this.onAddModel(vendorId, m)
+      }
+    }
+    // clear drafts + collapse
+    this.editingVendorId = null
+    this.apiKeyInput = ''
+    this.localModels = []
+    this.newModelInput = ''
+    // trigger parent save (persist to LlmConfig)
+    this.onSaveEdit(vendorId)
+  }
 
   build() {
     Column() {
       // 5 预设 vendor + 用户添加的 custom vendors
       ForEach(this.providers.length > 0 ? this.providers : PROVIDERS,
         (item: ProviderConfig): void => {
-          this.renderVendorRow(item)
+          this.renderVendorRow(item.id, item.vendorName, item.baseUrl, item.defaultModel)
+        }
+      )
+
+      ForEach(this.customVendors,
+        (item: CustomVendorConfig): void => {
+          if (item.id !== undefined && item.id.length > 0) {
+            this.renderVendorRow(item.id, item.vendorName, item.baseUrl, item.model)
+          }
         }
       )
 
@@ -135,26 +201,26 @@ export struct VendorPicker {
 
   // PR2-T2: 单个 vendor row(重构:用 common tokens 统一视觉,Text 字符 radio + 卡片化)
   @Builder
-  renderVendorRow(item: ProviderConfig) {
+  renderVendorRow(itemId: string, vendorName: string, baseUrl: string, defaultModel: string) {
     Column() {
       // 主行:radio + 厂商名 + baseUrl + 编辑 button(卡片化)
       Row() {
         // Radio:Text 字符 ● / ○(真机一定渲染;Circle 之前不渲染)
-        Text(this.currentVendorId === item.id ? '●' : '○')
+        Text(this.currentVendorId === itemId ? '●' : '○')
           .fontSize(20)
-          .fontColor(this.currentVendorId === item.id ? MINT : TEXT_3)
+          .fontColor(this.currentVendorId === itemId ? MINT : TEXT_3)
           .margin({ right: S_2 })
           .width(16)
 
         // 厂商名 + NEW badge(内联)+ baseUrl(纵向堆叠)
         Column() {
           Row() {
-            Text(item.vendorName)
+            Text(vendorName)
               .fontSize(F_SM)
               .fontColor(TEXT)
               .fontWeight(W_MEDIUM)
             // PR2-T2 polish ticket #81 task A4: 新加 custom vendor 显示 NEW badge
-            if (this.isNewVendorIds.has(item.id)) {
+            if (this.isNewVendorIds.has(itemId)) {
               Text('NEW')
                 .fontSize(F_XS)
                 .fontColor(BG_DARK)
@@ -166,7 +232,7 @@ export struct VendorPicker {
             }
           }
           .alignItems(VerticalAlign.Center)
-          Text(item.baseUrl.replace(/^https?:\/\//, ''))
+          Text(baseUrl.replace(/^https?:\/\//, ''))
             .fontSize(F_XS)
             .fontColor(TEXT_3)
             .margin({ top: 2 })
@@ -175,37 +241,51 @@ export struct VendorPicker {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-        // PR2-T2 ticket #83 follow-up (2026-09-08): 删 编辑 button(panel always-visible,无 toggle 需要)
+
+        // PR2-T2 ticket #83 follow-up (2026-09-08): 恢复 编辑 button(click-to-expand)
+        Text('编辑')
+          .fontSize(F_XS)
+          .fontColor(MINT)
+          .fontWeight(W_MEDIUM)
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .border({ width: 1, color: MINT_BORDER })
+          .borderRadius(R_SM)
+          .onClick((): void => {
+            const opening: boolean = this.editingVendorId !== itemId
+            if (opening) {
+              this.openEdit(itemId)
+            } else {
+              this.cancelEdit()
+            }
+          })
       }
       .width('100%')
       .padding({ left: S_3, right: S_3, top: S_3, bottom: S_3 })
       // v6 设计稿(PR2-T2 polish ticket #81 task A5):success-dim bg + border-left 3px solid
-      .backgroundColor(this.currentVendorId === item.id ? SUCCESS_DIM : 'transparent')
+      .backgroundColor(this.currentVendorId === itemId ? SUCCESS_DIM : 'transparent')
       .border({
-        width: { left: this.currentVendorId === item.id ? 3 : 0, top: 0, right: 0, bottom: 0 },
+        width: { left: this.currentVendorId === itemId ? 3 : 0, top: 0, right: 0, bottom: 0 },
         color: { left: MINT },
       })
       .borderRadius(R_MD)
       .margin({ top: S_2 })
       .onClick((): void => {
-        this.onSelect(item.id)
+        this.onSelect(itemId)
       })
 
       // "currently active" badge 已删除 — 选中状态由行高亮(success-dim bg + border-left 3px)足够标识
       // 决策记录: ADR-0015(2026-09-08 双轴审查后 UX 简化)
 
-      // PR2-T2 ticket #83 follow-up (2026-09-08): 每 vendor 的 config 总是可见
-      // 删 if (this.editingVendorId === item.id) 守卫 — API Key + 模型列表对所有 5 vendor 都展开
-      // (user 反馈"对于每个厂商的配置还是没有展开" — 单 panel 展开 UX 不直观)
-      Column() {
-        Text(`${item.vendorName} · ${item.defaultModel}`)
-          .fontSize(F_XS)
-          .fontColor(TEXT_3)
-          .margin({ bottom: S_2 })
+      // PR2-T2 ticket #83 follow-up (2026-09-08): 恢复 click-to-expand panel
+      if (this.editingVendorId === itemId) {
+        Column() {
+          Text(`${vendorName} · ${defaultModel}`)
+            .fontSize(F_XS)
+            .fontColor(TEXT_3)
+            .margin({ bottom: S_2 })
 
-          // API Key 输入 — PR2-T2 ticket #83 L3 wiring (2026-09-08)
-          // text 从 @Prop vendorApiKeys[item.id] 读,onChange 实时写回 parent
-          TextInput({ text: this.vendorApiKeys[item.id] ?? '', placeholder: 'API Key(per-vendor)' })
+          // PR2-T2 ticket #83 L3 (2026-09-08): API Key 输入(draft — 不再 onChange 立即 push)
+          TextInput({ text: this.apiKeyInput, placeholder: 'API Key(per-vendor)' })
             .type(InputType.Password)
             .width('100%')
             .height(36)
@@ -218,7 +298,7 @@ export struct VendorPicker {
             .padding({ left: S_2 })
             .margin({ bottom: S_3 })
             .onChange((v: string): void => {
-              this.onApiKeyChange(item.id, v)
+              this.apiKeyInput = v
             })
 
           Text('模型目录')
@@ -226,8 +306,9 @@ export struct VendorPicker {
             .fontColor(TEXT_3)
             .fontWeight(W_MEDIUM)
             .margin({ bottom: S_2 })
-          // PR2-T2 ticket #83 L2 wiring (2026-09-08): models 走 @Prop vendorModels[item.id]
-          ForEach(this.vendorModels[item.id] ?? [],
+
+          // PR2-T2 ticket #83 follow-up (2026-09-08): 列表用 local localModels(不立即同步 parent)
+          ForEach(this.localModels,
             (m: string): void => {
               Row() {
                 Text('•')
@@ -244,7 +325,7 @@ export struct VendorPicker {
                   .fontColor(TEXT_3)
                   .padding(4)
                   .onClick((): void => {
-                    this.onRemoveModel(item.id, m)
+                    this.localModels = this.localModels.filter((x: string): boolean => x !== m)
                   })
               }
               .width('100%')
@@ -253,7 +334,7 @@ export struct VendorPicker {
             }
           )
 
-          // 添加 model 输入 — PR2-T2 ticket #83 L2 wiring
+          // 添加 model 输入(draft — 加到 localModels,不立即 push)
           Row() {
             TextInput({ placeholder: '输入模型名后回车', text: this.newModelInput })
               .layoutWeight(1)
@@ -265,11 +346,10 @@ export struct VendorPicker {
               .borderRadius(R_SM)
               .padding({ left: S_2 })
               .onChange((v: string): void => { this.newModelInput = v })
-              // PR2-T2 ticket #83 follow-up (2026-09-08): placeholder 写"回车"但之前无 onSubmit,Enter 实际无效
               .onSubmit((): void => {
                 const m: string = this.newModelInput.trim()
-                if (m.length > 0) {
-                  this.onAddModel(item.id, m)
+                if (m.length > 0 && !this.localModels.includes(m)) {
+                  this.localModels = [...this.localModels, m]
                   this.newModelInput = ''
                 }
               })
@@ -283,10 +363,40 @@ export struct VendorPicker {
               .borderRadius(R_SM)
               .onClick((): void => {
                 const m: string = this.newModelInput.trim()
-                if (m.length > 0) {
-                  this.onAddModel(item.id, m)
+                if (m.length > 0 && !this.localModels.includes(m)) {
+                  this.localModels = [...this.localModels, m]
                   this.newModelInput = ''
                 }
+              })
+          }
+          .width('100%')
+          .margin({ top: S_2 })
+
+          // PR2-T2 ticket #83 follow-up (2026-09-08): 取消 / 保存 2 按钮(draft 提交入口)
+          Row() {
+            Text('取消')
+              .fontSize(F_SM)
+              .fontColor(TEXT_3)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+              .padding(8)
+              .border({ width: 1, color: BORDER })
+              .borderRadius(R_SM)
+              .onClick((): void => {
+                this.cancelEdit()
+              })
+            Text('保存')
+              .fontSize(F_SM)
+              .fontColor(BG_DARK)
+              .fontWeight(W_SEMIBOLD)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+              .padding(8)
+              .backgroundColor(MINT)
+              .borderRadius(R_SM)
+              .margin({ left: S_2 })
+              .onClick((): void => {
+                this.saveEdit(itemId)
               })
           }
           .width('100%')
@@ -297,6 +407,7 @@ export struct VendorPicker {
         .backgroundColor(BG_CARD)
         .borderRadius(R_MD)
         .margin({ top: 2, bottom: S_2 })
+      }
     }
   }
 
@@ -422,7 +533,6 @@ export struct VendorPicker {
               const k: string = this.newVendorApiKey.trim()
               const m: string = this.newVendorModel.trim()
               if (n.length > 0 && b.length > 0 && k.length > 0 && m.length > 0) {
-                // PR2-T2 polish ticket #81 task A4: 返回新 vendorId 用于 NEW badge 跟踪
                 const newId: string = this.onAddVendorConfirm({ name: n, baseUrl: b, apiKey: k, firstModel: m })
                 if (newId.length > 0) {
                   this.isNewVendorIds.add(newId)

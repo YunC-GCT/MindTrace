@@ -4,7 +4,7 @@
 // 影响:default 厂商 + 自定义厂商都中(都用同一 edit panel)
 
 // PR2-T2 ticket #83 follow-up(2026-09-08):user 真机测试发现
-// 修法:TextInput 新增 .onSubmit(() => { same as + click }) handler
+// 修法:TextInput 新增 .onSubmit(() => { same as + click }) handler,写 localModels draft
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,16 +20,15 @@ test('VendorPicker: 模型 input 含 onSubmit handler(回车触发添加)', () =
   // 整体 source-level 匹配(避免 body extraction 嵌套 if 失败)
   assert.match(
     src,
-    /placeholder:\s*['"]输入模型名后回车['"][\s\S]*?\.onSubmit\s*\(\s*\(\s*\)\s*:\s*void\s*=>\s*\{[\s\S]*?this\.onAddModel/,
-    'VendorPicker 模型 input 必须有 .onSubmit handler 调用 this.onAddModel(placeholder 说"回车"但之前没 handler — UX bug)'
+    /placeholder:\s*['"]输入模型名后回车['"][\s\S]*?\.onSubmit\s*\(\s*\(\s*\)\s*:\s*void\s*=>\s*\{[\s\S]*?this\.localModels/,
+    'VendorPicker 模型 input 必须有 .onSubmit handler 写入 localModels draft'
   );
 });
 
-test('VendorPicker: onSubmit 调 onAddModel 用 item.id + 局部 m(trim 后)', () => {
-  // onSubmit 内:trim newModelInput → 局部 m → onAddModel(item.id, m)(与 + click handler 一致)
+test('VendorPicker: onSubmit 用 trim 后局部 m 写 localModels draft', () => {
   assert.match(
     src,
-    /onSubmit[\s\S]*?const\s+m\s*:\s*string\s*=\s*this\.newModelInput\.trim\(\)[\s\S]*?this\.onAddModel\s*\(\s*item\.id\s*,\s*m\s*\)/,
-    'VendorPicker onSubmit must call onAddModel(item.id, m) where m = this.newModelInput.trim() (consistent with + click handler)'
+    /onSubmit[\s\S]*?const\s+m\s*:\s*string\s*=\s*this\.newModelInput\.trim\(\)[\s\S]*?this\.localModels\s*=\s*\[\.\.\.this\.localModels,\s*m\]/,
+    'VendorPicker onSubmit must add trimmed m to localModels draft'
   );
 });

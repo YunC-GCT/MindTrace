@@ -13,17 +13,7 @@ import type { OcrRecognitionResult } from "agents"
 // PR2-T2 P3: 用户添加的自定义 vendor 列表
 // PR2-T2 ticket #83 L1 (2026-09-08): 不用 extends CustomVendorConfig,直接声明全部字段
 //   (避免 ArkTS strict 在 inline literal 位置无法解析 extends 类型)
-interface CustomVendorFull {
-  id: string
-  vendorName: string
-  baseUrl: string
-  model: string
-  apiKey: string
-}
-
-// PR2-T2 ticket #83 bug fix (2026-09-08): 复用 LlmConfig 存的 id(不再 Date.now() regen)
-//   CustomVendorConfig 现在有 id?: string 字段,旧数据无 id 时 fallback 'custom-fallback-{i}'
-function toCustomVendorFull(v: CustomVendorConfig, i: number): CustomVendorFull {
+function toCustomVendorConfig(v: CustomVendorConfig, i: number): CustomVendorConfig {
   const stableId: string = v.id !== undefined && v.id.length > 0
     ? v.id
     : `custom-fallback-${i}`
@@ -32,15 +22,13 @@ function toCustomVendorFull(v: CustomVendorConfig, i: number): CustomVendorFull 
     vendorName: v.vendorName,
     baseUrl: v.baseUrl,
     model: v.model,
-    apiKey: '',
   }
 }
 
-// PR2-T2 ticket #83 L1: helper for addCustomVendor(避免 inline literal)
-function makeCustomVendorFullEntry(
-  id: string, name: string, baseUrl: string, model: string, apiKey: string
-): CustomVendorFull {
-  return { id, vendorName: name, baseUrl, model, apiKey }
+function makeCustomVendorEntry(
+  id: string, name: string, baseUrl: string, model: string
+): CustomVendorConfig {
+  return { id, vendorName: name, baseUrl, model }
 }
 
 const DEFAULT_OCR_ENDPOINT: string = ""
@@ -91,7 +79,7 @@ export class AiSettingsViewModel {
 
     // PR2-T2 ticket #83 L1 (2026-09-08): 还原 customVendors 数组
     const cvList: CustomVendorConfig[] = llm.getCustomVendors()
-    this.customVendors = cvList.map(toCustomVendorFull)
+    this.customVendors = cvList.map(toCustomVendorConfig)
 
     // PR2-T2 ticket #83 T4 (2026-09-08): legacy data migration
     // T6 follow-up (2026-09-08): 仅 single legacy vendor(cvList.length === 1)时 assign cachedVendorId
@@ -115,17 +103,6 @@ export class AiSettingsViewModel {
     // Bug fix (2026-09-08): 还原所有 vendor keys(原代码只还原 current)
     this.vendorApiKeys = llm.getAllVendorApiKeys()
 
-    // PR2-T2 ticket #83 T4 (2026-09-08): backfill customVendors[i].apiKey from vendorApiKeys
-    // UI 不撒谎:vendorPicker 的 API Key input 应显示已保存的 key
-    for (const v of this.customVendors) {
-      if (v.id !== undefined && v.id.length > 0) {
-        const stored: string | undefined = this.vendorApiKeys[v.id]
-        if (stored !== undefined && stored.length > 0 && v.apiKey.length === 0) {
-          v.apiKey = stored
-        }
-      }
-    }
-
     // PR2-T2 ticket #83 L4 (2026-09-08): 不再调 syncEndpoint / syncModel(keyword-sniff 已删)
     // PR2-T2 ticket #83 L4: temp / maxT / to 走 LlmConfig cache,不在 VM
 
@@ -145,7 +122,7 @@ export class AiSettingsViewModel {
     return ok
   }
 
-  async save(): Promise<boolean> {
+  async saveLlm(): Promise<boolean> {
     try {
       const llm: LlmConfig = LlmConfig.getInstance()
       // PR2-T2: 持久化 vendorId — 不持久化则切换 vendor 后刷新页面就丢失
@@ -153,24 +130,7 @@ export class AiSettingsViewModel {
       // PR2-T2 ticket #83 L1 (2026-09-08): 持久化 customVendors 数组
       // Bug fix (2026-09-08): 含 id 字段(保证跨重启 identity 稳定)
       // Bug fix (2026-09-08): 也持久化 apiKey(走 per-vendor L3 通道,不在 CustomVendorConfig 里)
-      await llm.setCustomVendors(this.customVendors.map(
-        (v: CustomVendorFull): CustomVendorConfig => {
-          const out: CustomVendorConfig = {
-            id: v.id,
-            vendorName: v.vendorName,
-            baseUrl: v.baseUrl,
-            model: v.model,
-          }
-          return out
-        }
-      ))
-      // PR2-T2 ticket #83 L3 bug fix (2026-09-08): per-custom-vendor apiKey 走 LlmConfig.setApiKey(key, vendorId)
-      //   原代码只写 vendorName/baseUrl/model,apiKey 丢失
-      for (const v of this.customVendors) {
-        if (v.apiKey.length > 0) {
-          await llm.setApiKey(v.apiKey, v.id)
-        }
-      }
+      await llm.setCustomVendors(this.customVendors)
       // PR2-T2 ticket #83 L2 (2026-09-08): 持久化 per-vendor models
       for (const vid of Object.keys(this.vendorModels)) {
         const existing: string[] | undefined = llm.getVendorModels(vid)
@@ -211,17 +171,31 @@ export class AiSettingsViewModel {
       if (key.length > 0) {
         await llm.setApiKey(key)  // 无 vendorId → 全局(PR1 AssetStoreKit)
       }
+      this.statusText = "已保存"
+      return true
+    } catch (_e) {
+      return false
+    }
+  }
+
+  async saveOcr(): Promise<boolean> {
+    try {
       const ocr: OcrConfig = OcrConfig.getInstance()
       await ocr.setEndpoint(this.ocrEndpoint)
       await ocr.setEnabled(this.ocrEnabled)
       await ocr.setMode(this.ocrMode)
       this.ocrEndpoint = ocr.getEndpoint()
       this.ocrMode = ocr.getMode()
-      this.statusText = "已保存"
       return true
     } catch (_e) {
       return false
     }
+  }
+
+  async save(): Promise<boolean> {
+    const llmOk: boolean = await this.saveLlm()
+    const ocrOk: boolean = await this.saveOcr()
+    return llmOk && ocrOk
   }
 
   async reset(): Promise<boolean> {
@@ -246,15 +220,30 @@ export class AiSettingsViewModel {
     }
   }
 
+  async resetOcr(): Promise<boolean> {
+    try {
+      const ocr: OcrConfig = OcrConfig.getInstance()
+      await ocr.resetDefaults()
+      this.ocrEndpoint = ocr.getEndpoint()
+      this.ocrEnabled = ocr.isEnabled()
+      this.ocrMode = ocr.getMode()
+      this.ocrStatusText = "未测试"
+      return true
+    } catch (_e) {
+      return false
+    }
+  }
+
   async test(): Promise<boolean> {
-    const key: string = this.apiKey.trim()
-    if (key.length === 0) {
+    const llm: LlmConfig = LlmConfig.getInstance()
+    const key: string | null = await llm.getApiKey(this.vendorId)
+    if (key === null || key.trim().length === 0) {
+      this.statusText = "请先在当前供应商配置 API Key"
       return false
     }
     this.testing = true
     try {
-      const llm: LlmConfig = LlmConfig.getInstance()
-      await llm.setApiKey(key)
+      await llm.setVendorId(this.vendorId)
       // PR2-T2 ticket #83 L4 (2026-09-08): 用 getCurrent* + LlmConfig cache,不再调 resolve*/temp/maxT/to
       await llm.saveAll(
         this.getCurrentEndpoint(),
@@ -350,7 +339,7 @@ export class AiSettingsViewModel {
 
   // PR2-T2 ticket #83 L1 (2026-09-08): 用户添加的自定义 vendor 列表
   // in-memory mirror;save() 持久化到 LlmConfig
-  customVendors: CustomVendorFull[] = []
+  customVendors: CustomVendorConfig[] = []
 
   // PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models Record
   // in-memory mirror;save() 持久化到 LlmConfig
@@ -374,9 +363,10 @@ export class AiSettingsViewModel {
   // PR2-T2 polish ticket #81 task A4: 返回新 vendorId 用于 NEW badge 跟踪
   addCustomVendor(name: string, baseUrl: string, apiKey: string, firstModel: string): string {
     const id: string = 'custom-' + Date.now()
-    // PR2-T2 ticket #83 L1 (2026-09-08): 通过 helper 构造 CustomVendorFull 避免 inline literal arkts-no-untyped-obj-literals
-    const cv: CustomVendorFull = makeCustomVendorFullEntry(id, name, baseUrl, firstModel, apiKey)
+    const cv: CustomVendorConfig = makeCustomVendorEntry(id, name, baseUrl, firstModel)
     this.customVendors.push(cv)
+    this.vendorApiKeys[id] = apiKey
+    this.vendorModels[id] = [firstModel]
     this.vendorId = id
     return id
   }
