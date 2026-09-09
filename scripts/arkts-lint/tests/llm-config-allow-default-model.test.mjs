@@ -1,4 +1,4 @@
-﻿// scripts/arkts-lint/tests/llm-config-allow-default-model.test.mjs
+// scripts/arkts-lint/tests/llm-config-allow-default-model.test.mjs
 //
 // P0 bug 真实修复的 RED 测试:
 // LlmConfig.normalizeModel 不应把 DEFAULT_MODEL 本身视为 reserved keyword

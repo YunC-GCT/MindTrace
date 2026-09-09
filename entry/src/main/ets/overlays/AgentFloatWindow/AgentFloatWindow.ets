@@ -1,4 +1,4 @@
-// ============================================================================
+﻿﻿// ============================================================================
 //  overlays/AgentFloatWindow/AgentFloatWindow.ets — 智能体浮窗(完整版)
 //  ----------------------------------------------------------------------------
 //  特性: 拖拽缩放(floatHeight) · 多会话(SessionBar+ChatSession) · 拍照整链(captureReply)
@@ -171,12 +171,9 @@ export struct AgentFloatWindow {
 
   private send = (text?: string): void => {
     const msg: string = (text ?? this.inputText).trim();
-    if (!msg && !this.imagePreview) { return; }
-    if (this.busy) { promptAction.openToast({ message: 'AI 正在回复中...', duration: 1200 }); return; }
     const uri: string = this.imagePreview;
     this.messages = [...this.messages, { id: nowId(), role: 'user', content: msg || '[图片]', ts: Date.now(), streaming: false, reasoning: '' }];
     this.inputText = ''; this.imagePreview = '';
-    if (uri.length > 0) { this.service?.captureReply(uri, msg); return; }
     this.service?.realReplyStream(msg);
   };
 
