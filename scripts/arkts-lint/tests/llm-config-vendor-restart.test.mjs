@@ -82,6 +82,14 @@ test('regression Bug #2: VM.saveLlm() persists per-vendor API keys from vendorAp
   );
 });
 
+test('regression Bug #2b: VM.saveLlm() clears empty per-vendor API keys', () => {
+  assert.match(
+    vm,
+    /Object\.keys\(this\.vendorApiKeys\)[\s\S]*?if\s*\(k\.length\s*>\s*0\)[\s\S]*?llm\.setApiKey\(k,\s*vid\)[\s\S]*?else\s*\{[\s\S]*?llm\.clearApiKey\(vid\)/,
+    'VM.saveLlm() must clear persisted per-vendor key when current draft is empty'
+  );
+});
+
 // ===== Bug #3 修复:load() 还原所有 vendorApiKeys =====
 test('regression Bug #3: VM.load() restores ALL vendorApiKeys (not just current)', () => {
   // source-level 匹配

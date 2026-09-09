@@ -46,11 +46,11 @@ test('L3: LlmConfig.getApiKey(vendorId): Promise<string|null> overload exists', 
 
 test('L3: getApiKey(vendorId) checks per-vendor map before global fallback', () => {
   const src = readLlmConfigSource();
-  // getApiKey 必须 reference cachedVendorApiKeys[vendorId] AND ApiKeyVault.get() (fallback)
+  // getApiKey 必须 reference cachedVendorApiKeys[keyVendorId] AND ApiKeyVault.get() (fallback)
   assert.match(
     src,
-    /cachedVendorApiKeys[^}]*vendorId[^}]*length\s*>\s*0/s,
-    'getApiKey must check cachedVendorApiKeys[vendorId] length > 0'
+    /cachedVendorApiKeys[^}]*keyVendorId[^}]*length\s*>\s*0/s,
+    'getApiKey must check cachedVendorApiKeys[keyVendorId] length > 0'
   );
   assert.match(
     src,

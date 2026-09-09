@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
@@ -24,4 +25,11 @@ test('底部 ActionBar 仅保存和重置 OCR', () => {
 test('连接测试读取当前 vendor 的 API key', () => {
   assert.match(vm, /getApiKey\(this\.vendorId\)/);
   assert.doesNotMatch(vm, /async\s+test[\s\S]*?await\s+llm\.setApiKey\(key\)/);
+});
+
+test('旧全局 KeyInput 与 ViewModel apiKey 状态已清理', () => {
+  assert.equal(existsSync(resolve(root, 'entry/src/main/ets/pages/AiSettings/KeyInput.ets')), false);
+  assert.doesNotMatch(vm, /\bapiKey\s*:\s*string\s*=/);
+  assert.doesNotMatch(vm, /setApiKey\s*\(\s*value\s*:\s*string\s*\)/);
+  assert.doesNotMatch(vm, /llm\.setApiKey\(key\)/);
 });

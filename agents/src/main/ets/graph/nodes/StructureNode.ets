@@ -7,12 +7,15 @@ export class StructureNodeFactory {
   static create(service: KnowledgeModel): CaptureNode {
     return async (input: AgentState): Promise<CaptureNodeResult> => {
       try {
-        const unit = await service.structure(input.captureText);
+        const unit = input.classification === undefined
+          ? await service.structure(input.captureText)
+          : await service.structureWithClassification(input.captureText, input.classification);
         const next: AgentState = {
           captureText: input.captureText,
           currentStep: input.currentStep,
           persist: input.persist,
           knowledgeUnit: unit,
+          classification: input.classification,
         };
         return { state: next };
       } catch (e) {

@@ -1,4 +1,4 @@
-﻿﻿// MindTrace - LLM HTTP 客户端(OpenAI 兼容协议)
+// MindTrace - LLM HTTP 客户端(OpenAI 兼容协议)
 // 位置: common/src/main/ets/llm/LlmClient.ets
 // 责任: Z (Mavis)
 // 创建: 2026-07-14 — 主 Agent 业务 LLM 调用基础设施
@@ -102,6 +102,7 @@ export class LlmClient {
 
     // 3. 发 HTTP POST
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
+    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' endpoint=' + endpointUrl + ' stream=false');
     const httpRequest = http.createHttp();
     let response: http.HttpResponse;
     try {
@@ -272,6 +273,7 @@ export class LlmClient {
 
     // 3. 创建 HttpRequest 并发起流式请求
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
+    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' endpoint=' + endpointUrl + ' stream=true');
     const httpRequest = http.createHttp();
 
     return new Promise<void>((resolve: (value: void) => void, reject: (reason: Error) => void): void => {

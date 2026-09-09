@@ -54,7 +54,7 @@ test('normalizeModel allows DEFAULT_MODEL itself (no longer rejects it)', () => 
 });
 
 // 测试 2: ticket #9 的其他 keyword 守卫必须保留(不破坏既有修复)
-test('normalizeModel still rejects v3 / flash / deepseek-chat / deepseek-reasoner / r1', () => {
+test('normalizeModel still rejects legacy fallback keywords after official DeepSeek allowlist', () => {
   assert.match(
     llmConfig,
     /lower\.indexOf\(['"]v3['"]\)\s*>=\s*0/,
@@ -63,17 +63,17 @@ test('normalizeModel still rejects v3 / flash / deepseek-chat / deepseek-reasone
   assert.match(
     llmConfig,
     /lower\.indexOf\(['"]flash['"]\)\s*>=\s*0/,
-    'normalizeModel must still reject flash keyword (ticket #9 intent)'
+    'normalizeModel must still reject non-allowlisted flash keyword (ticket #9 intent)'
   );
   assert.match(
     llmConfig,
-    /lower\.indexOf\(['"]deepseek-chat['"]\)\s*>=\s*0/,
-    'normalizeModel must still reject deepseek-chat keyword (ticket #9 intent)'
+    /model\s*===\s*['"]deepseek-v4-flash['"]/,
+    'normalizeModel must allow current official deepseek-v4-flash before flash keyword rejection'
   );
   assert.match(
     llmConfig,
-    /lower\.indexOf\(['"]deepseek-reasoner['"]\)\s*>=\s*0/,
-    'normalizeModel must still reject deepseek-reasoner keyword (ticket #9 intent)'
+    /model\s*===\s*['"]deepseek-v4-flash-vision-exp['"]/,
+    'normalizeModel must allow current official deepseek-v4-flash-vision-exp before flash keyword rejection'
   );
   assert.match(
     llmConfig,

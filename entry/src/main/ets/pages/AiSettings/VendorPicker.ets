@@ -67,6 +67,7 @@ export struct VendorPicker {
   // PR2-T2 ticket #83 L1+L2+L3 (2026-09-08): per-vendor 持久化数据(由 parent 提供)
   @Prop vendorApiKeys: Record<string, string> = {};
   @Prop vendorModels: Record<string, string[]> = {};
+  @Prop activeVendorModels: Record<string, string> = {};
   @Prop customVendors: CustomVendorConfig[] = [];
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 恢复 click-to-expand
@@ -75,7 +76,9 @@ export struct VendorPicker {
   // PR2-T2 ticket #83 follow-up (2026-09-08): local draft state
   // 不在 onChange/onAdd/onRemove 立即 push 到 parent — 等保存按钮 一次性 commit
   @State apiKeyInput: string = '';
+  @State originalApiKeyInput: string = '';
   @State localModels: string[] = [];
+  @State localActiveModel: string = '';
 
   // PR2-T2: panel 内 model 输入(仅 input 状态,实际数据走 local localModels)
   @State newModelInput: string = '';
@@ -107,6 +110,8 @@ export struct VendorPicker {
     (_v: string, _m: string): void => {};
   onRemoveModel: (vendorId: string, model: string) => void =
     (_v: string, _m: string): void => {};
+  onSelectModel: (vendorId: string, model: string) => void =
+    (_v: string, _m: string): void => {};
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 保存按钮 触发 parent save
   onSaveEdit: (vendorId: string) => void = (_vendorId: string): void => {};
@@ -116,44 +121,54 @@ export struct VendorPicker {
     this.editingVendorId = vendorId
     // initialize drafts from parent's current state
     this.apiKeyInput = this.vendorApiKeys[vendorId] ?? ''
+    this.originalApiKeyInput = this.apiKeyInput
     const current: string[] | undefined = this.vendorModels[vendorId]
     this.localModels = current !== undefined ? [...current] : []
+    const active: string | undefined = this.activeVendorModels[vendorId]
+    this.localActiveModel = active !== undefined && active.length > 0
+      ? active
+      : (this.localModels.length > 0 ? this.localModels[0] : '')
     this.newModelInput = ''
   }
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 取消 — discard local drafts, collapse panel
   cancelEdit = (): void => {
+    if (this.editingVendorId !== null) {
+      this.onApiKeyChange(this.editingVendorId, this.originalApiKeyInput)
+    }
     this.editingVendorId = null
     this.apiKeyInput = ''
+    this.originalApiKeyInput = ''
     this.localModels = []
+    this.localActiveModel = ''
     this.newModelInput = ''
   }
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 保存 — commit drafts 到 parent + 触发 save
   saveEdit = (vendorId: string): void => {
-    // commit API key
+    const pendingModel: string = this.newModelInput.trim()
+    if (pendingModel.length > 0 && !this.localModels.includes(pendingModel)) {
+      this.localModels = [...this.localModels, pendingModel]
+      this.localActiveModel = pendingModel
+      this.newModelInput = ''
+    }
     this.onApiKeyChange(vendorId, this.apiKeyInput)
-    // commit model list via diff
     const original: string[] | undefined = this.vendorModels[vendorId]
     const base: string[] = original !== undefined ? original : []
-    // remove what's in base but not in local
     for (const m of base) {
       if (!this.localModels.includes(m)) {
         this.onRemoveModel(vendorId, m)
       }
     }
-    // add what's in local but not in base
     for (const m of this.localModels) {
       if (!base.includes(m)) {
         this.onAddModel(vendorId, m)
       }
     }
-    // clear drafts + collapse
-    this.editingVendorId = null
-    this.apiKeyInput = ''
-    this.localModels = []
-    this.newModelInput = ''
-    // trigger parent save (persist to LlmConfig)
+    if (this.localActiveModel.length > 0) {
+      this.onSelectModel(vendorId, this.localActiveModel)
+    }
+    this.originalApiKeyInput = this.apiKeyInput
     this.onSaveEdit(vendorId)
   }
 
@@ -299,6 +314,7 @@ export struct VendorPicker {
             .margin({ bottom: S_3 })
             .onChange((v: string): void => {
               this.apiKeyInput = v
+              this.onApiKeyChange(itemId, v)
             })
 
           Text('模型目录')
@@ -313,19 +329,23 @@ export struct VendorPicker {
               Row() {
                 Text('•')
                   .fontSize(16)
-                  .fontColor(MINT)
+                  .fontColor(this.localActiveModel === m ? MINT : TEXT_3)
                   .margin({ right: 8 })
                   .width(12)
                 Text(m)
                   .fontSize(F_SM)
-                  .fontColor(TEXT)
+                  .fontColor(this.localActiveModel === m ? MINT : TEXT)
                   .layoutWeight(1)
+                  .onClick((): void => { this.localActiveModel = m })
                 Text('×')
                   .fontSize(16)
                   .fontColor(TEXT_3)
                   .padding(4)
                   .onClick((): void => {
                     this.localModels = this.localModels.filter((x: string): boolean => x !== m)
+                    if (this.localActiveModel === m) {
+                      this.localActiveModel = this.localModels.length > 0 ? this.localModels[0] : ''
+                    }
                   })
               }
               .width('100%')
@@ -351,6 +371,7 @@ export struct VendorPicker {
                 const m: string = this.newModelInput.trim()
                 if (m.length > 0 && !this.localModels.includes(m)) {
                   this.localModels = [...this.localModels, m]
+                  this.localActiveModel = m
                   this.newModelInput = ''
                 }
               })
@@ -366,6 +387,7 @@ export struct VendorPicker {
                 const m: string = this.newModelInput.trim()
                 if (m.length > 0 && !this.localModels.includes(m)) {
                   this.localModels = [...this.localModels, m]
+                  this.localActiveModel = m
                   this.newModelInput = ''
                 }
               })

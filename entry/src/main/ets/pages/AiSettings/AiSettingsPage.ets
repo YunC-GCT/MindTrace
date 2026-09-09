@@ -171,6 +171,7 @@ struct AiSettingsPage {
             // PR2-T2 ticket #83 L1+L2+L3 (2026-09-08): per-vendor 数据从 VM 注入
             vendorApiKeys: this.vm.vendorApiKeys,
             vendorModels: this.vm.vendorModels,
+            activeVendorModels: this.vm.activeVendorModels,
             customVendors: this.vm.customVendors,
             onSelect: (id: string): void => { this.vm.selectVendor(id) },
             onAddCustom: (): void => { this.vm.openAddCustomVendor() },
@@ -189,6 +190,9 @@ struct AiSettingsPage {
             },
             onRemoveModel: (vendorId: string, model: string): void => {
               this.vm.removeVendorModel(vendorId, model)
+            },
+            onSelectModel: (vendorId: string, model: string): void => {
+              this.vm.selectVendorModel(vendorId, model)
             },
             onSaveEdit: (_vendorId: string): void => {
               this.saveLlm()

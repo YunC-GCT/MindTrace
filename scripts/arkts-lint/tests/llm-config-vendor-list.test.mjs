@@ -110,7 +110,7 @@ test('L1: getEndpoint() falls back to customVendors[] when vendorId="custom"', (
 
 test('L1: getModel() falls back to customVendors[].model when vendorId="custom"', () => {
   const src = readLlmConfigSource();
-  const modelBody = src.match(/public\s+getModel\s*\(\s*\)\s*:\s*string\s*\{([\s\S]*?)\n\s*\}/);
+  const modelBody = src.match(/public\s+getModel\s*\(\s*\)\s*:\s*string\s*\{([\s\S]*?)\n\s*\}\n\s*\n\s*public\s+async\s+setModel/);
   assert.ok(modelBody !== null, 'getModel body not found');
   assert.match(
     modelBody[1],
