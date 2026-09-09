@@ -94,8 +94,9 @@ export class AiSettingsViewModel {
     this.customVendors = cvList.map(toCustomVendorFull)
 
     // PR2-T2 ticket #83 T4 (2026-09-08): legacy data migration
-    // 旧数据无 id 字段(e79e404 之前存的):若有 cachedVendorId 匹配,assign
-    if (this.vendorId.length > 6 && this.vendorId.startsWith('custom')) {
+    // T6 follow-up (2026-09-08): 仅 single legacy vendor(cvList.length === 1)时 assign cachedVendorId
+    // 多 vendor 时 fallback id 已 unique,不需要 migration 避免 id 冲突
+    if (LlmConfig.isCustomVendor(this.vendorId) && cvList.length === 1) {
       for (const v of this.customVendors) {
         if (v.id === undefined || v.id.length === 0) {
           v.id = this.vendorId

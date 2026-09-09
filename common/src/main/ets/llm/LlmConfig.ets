@@ -192,7 +192,8 @@ export class LlmConfig {
   // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
   public getEndpoint(): string {
     // PR2-T2 ticket #83 T2 (2026-09-08): isCustomVendor helper 替代 startsWith magic number
-    if (this.isCustomVendor(this.cachedVendorId)) {
+    // T6 follow-up (2026-09-08): 改 static call 消 VM 重复
+    if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
       // 优先查 customVendors[] 匹配 id(Bug #1 修复:不再只返回 [0])
       const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
       if (cv !== null) { return cv.baseUrl; }
@@ -214,7 +215,7 @@ export class LlmConfig {
   // ===== Model (PR2-T1: 按 vendorId 解析) =====
   // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
   public getModel(): string {
-    if (this.isCustomVendor(this.cachedVendorId)) {
+    if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
       // PR2-T2 L1: 优先查 customVendors[] 匹配 id
       const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
       if (cv !== null) { return cv.model; }
@@ -313,8 +314,9 @@ export class LlmConfig {
   }
 
   // PR2-T2 ticket #83 T2 (2026-09-08): helpers 消除重复 + 消 magic number
+  // T6 follow-up (2026-09-08): 改 static — VM 也可调(消 VM 重复的 magic)
   // isCustomVendor(id): VM.addCustomVendor 生成 'custom-'+Date.now() id,此 helper 封装 prefix 检测
-  private isCustomVendor(id: string): boolean {
+  private static isCustomVendor(id: string): boolean {
     return id.startsWith('custom') && id.length > 6
   }
 
