@@ -2,7 +2,7 @@
 //  viewmodels/KnowledgeGalaxyViewModel.ets - review knowledge galaxy data logic
 // ============================================================================
 
-import { relationalStore } from '@kit.ArkData'
+import { preferences, relationalStore } from '@kit.ArkData'
 import { DatabaseHelper, DifficultyLevel, KnowledgeUnit, NoteItem, ReviewStatus, subjectColor, typeColor } from "common"
 import { NoteDao } from "../database/NoteDao"
 import { unitToNoteItem } from "../utils/NoteItemMapper"
@@ -10,16 +10,19 @@ import { unitToNoteItem } from "../utils/NoteItemMapper"
 const UNCLASSIFIED_SUBJECT: string = "未分类"
 const UNCLASSIFIED_CHAPTER: string = "未分章节"
 const WRONG_NOTE_TYPE: string = "错题"
-const ENABLE_GALAXY_PREVIEW_UNITS: boolean = false
-const PREVIEW_UNIT_PREFIX: string = "galaxy_preview_"
+const ENABLE_GALAXY_RDB_SAMPLE_NOTES: boolean = true
+const GALAXY_SAMPLE_STORE_NAME: string = "galaxy_sample_notes"
+const GALAXY_SAMPLE_SEEDED_KEY: string = "seeded_v1"
+const SAMPLE_UNIT_PREFIX: string = "galaxy_note_"
 
-function previewUnit(
+function sampleUnit(
   id: string,
   title: string,
   subject: string,
   category: string,
   chapter: string,
   summary: string,
+  content: string,
   prerequisites: string[],
   related: string[],
   repetitions: number,
@@ -27,9 +30,9 @@ function previewUnit(
 ): KnowledgeUnit {
   const now: number = Date.now()
   return {
-    id: PREVIEW_UNIT_PREFIX + id,
+    id: SAMPLE_UNIT_PREFIX + id,
     title: title,
-    content: summary,
+    content: content,
     summary: summary,
     tags: [subject, category, chapter],
     subject: subject,
@@ -47,7 +50,7 @@ function previewUnit(
     prerequisites: prerequisites,
     related: related,
     embedding: [],
-    userId: "preview",
+    userId: "local_sample",
     version: 1,
   }
 }
@@ -214,7 +217,7 @@ export class KnowledgeGalaxyViewModel {
 
   async load(context: Context): Promise<boolean> {
     try {
-      const units: KnowledgeUnit[] = this.withPreviewUnits(await this.loadPersistedUnits(context))
+      const units: KnowledgeUnit[] = await this.loadPersistedUnits(context)
       this.units = units
       this.notes = this.unitsToNotes(units)
       this.systems = this.buildSystems(units, this.notes)
@@ -235,7 +238,9 @@ export class KnowledgeGalaxyViewModel {
   private async loadPersistedUnits(context: Context): Promise<KnowledgeUnit[]> {
     try {
       const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
-      return await new NoteDao(store).queryAll()
+      const dao: NoteDao = new NoteDao(store)
+      const units: KnowledgeUnit[] = await dao.queryAll()
+      return await this.withRdbSampleNotes(context, dao, units)
     } catch (e) {
       console.warn("[KnowledgeGalaxyViewModel] persisted load failed: " + ((e as Error).message ?? String(e)))
       return []
@@ -245,10 +250,6 @@ export class KnowledgeGalaxyViewModel {
   async loadNote(context: Context, id: string): Promise<KnowledgeUnit | null> {
     if (id.length === 0) {
       return null
-    }
-    const previewUnit: KnowledgeUnit | null = this.findLoadedPreviewUnit(id)
-    if (previewUnit !== null) {
-      return previewUnit
     }
     try {
       const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
@@ -261,9 +262,6 @@ export class KnowledgeGalaxyViewModel {
 
   async deleteNote(context: Context, id: string): Promise<boolean> {
     if (id.length === 0) {
-      return false
-    }
-    if (this.isPreviewUnitId(id)) {
       return false
     }
     try {
@@ -284,19 +282,6 @@ export class KnowledgeGalaxyViewModel {
     return notes
   }
 
-  private withPreviewUnits(units: KnowledgeUnit[]): KnowledgeUnit[] {
-    if (!ENABLE_GALAXY_PREVIEW_UNITS) {
-      return units
-    }
-    const result: KnowledgeUnit[] = units.slice(0)
-    for (const unit of this.previewUnits()) {
-      if (!this.hasUnitId(result, unit.id)) {
-        result.push(unit)
-      }
-    }
-    return result
-  }
-
   private hasUnitId(units: KnowledgeUnit[], id: string): boolean {
     for (const unit of units) {
       if (unit.id === id) {
@@ -306,159 +291,203 @@ export class KnowledgeGalaxyViewModel {
     return false
   }
 
-  private findLoadedPreviewUnit(id: string): KnowledgeUnit | null {
-    if (!this.isPreviewUnitId(id)) {
-      return null
+  private async withRdbSampleNotes(context: Context, dao: NoteDao, units: KnowledgeUnit[]): Promise<KnowledgeUnit[]> {
+    if (!ENABLE_GALAXY_RDB_SAMPLE_NOTES) {
+      return units
     }
-    for (const unit of this.units) {
-      if (unit.id === id) {
-        return unit
+    const seeded: boolean = await this.isRdbSampleSeeded(context)
+    if (seeded) {
+      return units
+    }
+
+    let inserted: boolean = false
+    for (const unit of this.sampleUnits()) {
+      if (!this.hasUnitId(units, unit.id)) {
+        await dao.insert(unit)
+        inserted = true
       }
     }
-    return null
+    await this.markRdbSampleSeeded(context)
+    if (inserted) {
+      this.bumpNotesVersion()
+    }
+    return inserted ? await dao.queryAll() : units
   }
 
-  private isPreviewUnitId(id: string): boolean {
-    return id.indexOf(PREVIEW_UNIT_PREFIX) === 0
+  private bumpNotesVersion(): void {
+    try {
+      const version: number = AppStorage.get<number>("notesVersion") ?? 0
+      AppStorage.setOrCreate("notesVersion", version + 1)
+    } catch (_e) {}
   }
 
-  private previewUnits(): KnowledgeUnit[] {
+  private async isRdbSampleSeeded(context: Context): Promise<boolean> {
+    try {
+      const store: preferences.Preferences = await preferences.getPreferences(context, GALAXY_SAMPLE_STORE_NAME)
+      return await store.get(GALAXY_SAMPLE_SEEDED_KEY, false) as boolean
+    } catch (e) {
+      console.warn("[KnowledgeGalaxyViewModel] sample seed flag read failed: " + ((e as Error).message ?? String(e)))
+      return false
+    }
+  }
+
+  private async markRdbSampleSeeded(context: Context): Promise<void> {
+    try {
+      const store: preferences.Preferences = await preferences.getPreferences(context, GALAXY_SAMPLE_STORE_NAME)
+      await store.put(GALAXY_SAMPLE_SEEDED_KEY, true)
+      await store.flush()
+    } catch (e) {
+      console.warn("[KnowledgeGalaxyViewModel] sample seed flag write failed: " + ((e as Error).message ?? String(e)))
+    }
+  }
+
+  private sampleUnits(): KnowledgeUnit[] {
     const units: KnowledgeUnit[] = []
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "limit_definition",
       "数列与函数极限定义",
-      "示例：数学分析",
+      "数学分析",
       "概念",
       "极限",
       "用 epsilon-delta 语言描述函数趋近，作为连续、导数和级数判别的基础。",
+      "极限描述的是变量在某个过程中无限接近某个确定值。\n\n函数极限常写作 lim_{x -> a} f(x) = L。严格定义是：对任意 epsilon > 0，存在 delta > 0，使得当 0 < |x-a| < delta 时，有 |f(x)-L| < epsilon。\n\n学习重点：先判断自变量趋近的过程，再证明函数值可以被控制到任意小的误差内。",
       [],
-      [PREVIEW_UNIT_PREFIX + "limit_laws", PREVIEW_UNIT_PREFIX + "continuity"],
+      [SAMPLE_UNIT_PREFIX + "limit_laws", SAMPLE_UNIT_PREFIX + "continuity"],
       2,
       ReviewStatus.LEARNING,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "limit_laws",
       "极限四则运算法则",
-      "示例：数学分析",
+      "数学分析",
       "定理",
       "极限",
       "在极限存在的条件下，和、差、积、商的极限可分别运算。",
-      [PREVIEW_UNIT_PREFIX + "limit_definition"],
-      [PREVIEW_UNIT_PREFIX + "continuity", PREVIEW_UNIT_PREFIX + "limit_definition"],
+      "若 lim f(x)=A，lim g(x)=B，则 lim(f+g)=A+B，lim(fg)=AB。当 B 不等于 0 时，lim(f/g)=A/B。\n\n使用时要先确认两个极限都存在；商法则还要确认分母极限不为 0。很多计算题的错误来自直接套公式而忘记检查条件。",
+      [SAMPLE_UNIT_PREFIX + "limit_definition"],
+      [SAMPLE_UNIT_PREFIX + "continuity", SAMPLE_UNIT_PREFIX + "limit_definition"],
       5,
       ReviewStatus.REVIEW,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "continuity",
       "连续性的局部性质",
-      "示例：数学分析",
+      "数学分析",
       "概念",
       "连续函数",
       "连续函数在一点附近保持有界、保号，并可与极限运算法则配合使用。",
-      [PREVIEW_UNIT_PREFIX + "limit_definition"],
-      [PREVIEW_UNIT_PREFIX + "limit_laws", PREVIEW_UNIT_PREFIX + "limit_definition"],
+      "函数 f 在点 x0 连续，等价于 lim_{x -> x0} f(x)=f(x0)。\n\n常用局部性质包括局部有界性、局部保号性，以及连续函数经过四则运算后在合法条件下仍连续。证明时经常把连续性转化为极限定义，再使用极限运算法则。",
+      [SAMPLE_UNIT_PREFIX + "limit_definition"],
+      [SAMPLE_UNIT_PREFIX + "limit_laws", SAMPLE_UNIT_PREFIX + "limit_definition"],
       4,
       ReviewStatus.REVIEW,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "derivative_definition",
       "导数定义与几何意义",
-      "示例：数学分析",
+      "数学分析",
       "概念",
       "导数与微分",
       "导数是差商极限，表示曲线切线斜率和瞬时变化率。",
-      [PREVIEW_UNIT_PREFIX + "limit_definition", PREVIEW_UNIT_PREFIX + "continuity"],
-      [PREVIEW_UNIT_PREFIX + "lagrange_mvt", PREVIEW_UNIT_PREFIX + "taylor_formula"],
+      "导数定义为 f'(x0)=lim_{h -> 0} [f(x0+h)-f(x0)]/h。它来自差商的极限，几何上表示曲线在该点切线的斜率。\n\n导数存在一定推出连续，但连续不一定可导。做题时常用定义处理分段函数、绝对值函数和参数函数在特殊点的可导性。",
+      [SAMPLE_UNIT_PREFIX + "limit_definition", SAMPLE_UNIT_PREFIX + "continuity"],
+      [SAMPLE_UNIT_PREFIX + "lagrange_mvt", SAMPLE_UNIT_PREFIX + "taylor_formula"],
       7,
       ReviewStatus.GRADUATED,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "lagrange_mvt",
       "拉格朗日中值定理",
-      "示例：数学分析",
+      "数学分析",
       "定理",
       "微分中值定理",
       "若函数闭区间连续、开区间可导，则存在一点使导数等于割线斜率。",
-      [PREVIEW_UNIT_PREFIX + "derivative_definition", PREVIEW_UNIT_PREFIX + "continuity"],
-      [PREVIEW_UNIT_PREFIX + "taylor_formula", PREVIEW_UNIT_PREFIX + "derivative_definition"],
+      "若 f 在 [a,b] 上连续，在 (a,b) 内可导，则存在 xi 属于 (a,b)，使 f'(xi) = [f(b)-f(a)]/(b-a)。\n\n它把函数整体变化量和某点导数联系起来，常用于证明不等式、估计函数增量、判断单调性。套用前必须检查闭区间连续与开区间可导。",
+      [SAMPLE_UNIT_PREFIX + "derivative_definition", SAMPLE_UNIT_PREFIX + "continuity"],
+      [SAMPLE_UNIT_PREFIX + "taylor_formula", SAMPLE_UNIT_PREFIX + "derivative_definition"],
       8,
       ReviewStatus.GRADUATED,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "taylor_formula",
       "泰勒公式余项估计",
-      "示例：数学分析",
+      "数学分析",
       "公式",
       "泰勒公式",
       "用多项式近似函数，并通过余项控制误差，是极限与近似计算的核心工具。",
-      [PREVIEW_UNIT_PREFIX + "lagrange_mvt", PREVIEW_UNIT_PREFIX + "derivative_definition"],
+      "泰勒公式把函数在一点附近表示为多项式主部加余项：f(x)=sum_{k=0}^{n} f^{(k)}(a)(x-a)^k/k! + R_n(x)。\n\n常见余项有佩亚诺余项和拉格朗日余项。计算极限时通常保留到第一个非零项；估计误差时要关注余项阶数和适用区间。",
+      [SAMPLE_UNIT_PREFIX + "lagrange_mvt", SAMPLE_UNIT_PREFIX + "derivative_definition"],
       [
-        PREVIEW_UNIT_PREFIX + "lagrange_mvt",
-        PREVIEW_UNIT_PREFIX + "derivative_definition",
-        PREVIEW_UNIT_PREFIX + "missing_note",
-        PREVIEW_UNIT_PREFIX + "sign_error_wrong",
-        PREVIEW_UNIT_PREFIX + "matrix_inverse",
+        SAMPLE_UNIT_PREFIX + "lagrange_mvt",
+        SAMPLE_UNIT_PREFIX + "derivative_definition",
+        SAMPLE_UNIT_PREFIX + "sign_error_wrong",
+        SAMPLE_UNIT_PREFIX + "matrix_inverse",
       ],
       6,
       ReviewStatus.REVIEW,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "sign_error_wrong",
       "泰勒展开符号错题",
-      "示例：数学分析",
+      "数学分析",
       WRONG_NOTE_TYPE,
       "泰勒公式",
       "错题示例：这条不应进入知识星系，也不应参与关系线。",
-      [PREVIEW_UNIT_PREFIX + "taylor_formula"],
+      "错题记录：计算 ln(1-x) 的展开时，把 -x^2/2 误写成 +x^2/2。\n\n正确展开是 ln(1-x) = -x - x^2/2 - x^3/3 - ...。这类题需要先确认基础展开式，再代入变量，最后统一检查符号。",
+      [SAMPLE_UNIT_PREFIX + "taylor_formula"],
       [],
       1,
       ReviewStatus.LAPSED,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "vector_linear_dependence",
       "向量组线性相关",
-      "示例：线性代数",
+      "线性代数",
       "概念",
       "向量空间",
       "存在不全为零的系数组合为零向量时，向量组线性相关。",
+      "向量组 alpha_1,...,alpha_n 线性相关，是指存在不全为 0 的数 k_i，使 k_1 alpha_1 + ... + k_n alpha_n = 0。\n\n判断时可把向量作为列组成矩阵，通过齐次线性方程组是否有非零解、矩阵秩是否小于向量个数来判定。",
       [],
-      [PREVIEW_UNIT_PREFIX + "matrix_rank"],
+      [SAMPLE_UNIT_PREFIX + "matrix_rank"],
       3,
       ReviewStatus.LEARNING,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "matrix_rank",
       "矩阵秩与初等变换",
-      "示例：线性代数",
+      "线性代数",
       "计算题",
       "矩阵",
       "矩阵秩可通过初等行变换化阶梯形后读取非零行数。",
-      [PREVIEW_UNIT_PREFIX + "vector_linear_dependence"],
-      [PREVIEW_UNIT_PREFIX + "determinant"],
+      "矩阵秩是行向量组或列向量组的极大线性无关组中向量个数。实际计算通常做初等行变换，把矩阵化为阶梯形，非零行数就是秩。\n\n秩可用于判断线性方程组解的情况，也可用于判定向量组线性相关性。",
+      [SAMPLE_UNIT_PREFIX + "vector_linear_dependence"],
+      [SAMPLE_UNIT_PREFIX + "determinant"],
       5,
       ReviewStatus.REVIEW,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "determinant",
       "行列式按行展开",
-      "示例：线性代数",
+      "线性代数",
       "公式",
       "行列式",
       "按某一行或列展开可将高阶行列式化为代数余子式的组合。",
+      "n 阶行列式可以按第 i 行展开：D = sum_j a_ij A_ij，其中 A_ij 是元素 a_ij 的代数余子式。\n\n选择零元素较多的一行或一列展开可以减少计算量。注意代数余子式符号为 (-1)^{i+j}。",
       [],
-      [PREVIEW_UNIT_PREFIX + "matrix_inverse", PREVIEW_UNIT_PREFIX + "matrix_rank"],
+      [SAMPLE_UNIT_PREFIX + "matrix_inverse", SAMPLE_UNIT_PREFIX + "matrix_rank"],
       4,
       ReviewStatus.REVIEW,
     ))
-    units.push(previewUnit(
+    units.push(sampleUnit(
       "matrix_inverse",
       "可逆矩阵判定",
-      "示例：线性代数",
+      "线性代数",
       "定理",
       "矩阵",
       "方阵可逆等价于行列式非零，也等价于满秩。",
-      [PREVIEW_UNIT_PREFIX + "determinant", PREVIEW_UNIT_PREFIX + "matrix_rank"],
-      [PREVIEW_UNIT_PREFIX + "determinant"],
+      "n 阶方阵 A 可逆的等价条件包括：det(A) != 0，rank(A)=n，齐次方程 Ax=0 只有零解，A 的列向量组线性无关。\n\n计算逆矩阵时常用初等变换 [A | I] -> [I | A^{-1}]，前提是 A 能化为单位矩阵。",
+      [SAMPLE_UNIT_PREFIX + "determinant", SAMPLE_UNIT_PREFIX + "matrix_rank"],
+      [SAMPLE_UNIT_PREFIX + "determinant"],
       9,
       ReviewStatus.GRADUATED,
     ))
@@ -515,21 +544,10 @@ export class KnowledgeGalaxyViewModel {
     }
 
     systems.sort((a: SubjectSystem, b: SubjectSystem): number => {
-      const previewDelta: number = this.previewSubjectRank(a.subject) - this.previewSubjectRank(b.subject)
-      if (previewDelta !== 0) {
-        return previewDelta
-      }
       return b.count - a.count
     })
     this.applyUniverseLayout(systems)
     return systems
-  }
-
-  private previewSubjectRank(subject: string): number {
-    if (!ENABLE_GALAXY_PREVIEW_UNITS) {
-      return 1
-    }
-    return subject.indexOf("示例：") === 0 ? 0 : 1
   }
 
   private buildChapterOrbits(bundles: UnitBundle[]): ChapterOrbit[] {
