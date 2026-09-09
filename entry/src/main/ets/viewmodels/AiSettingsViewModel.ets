@@ -93,6 +93,16 @@ export class AiSettingsViewModel {
     const cvList: CustomVendorConfig[] = llm.getCustomVendors()
     this.customVendors = cvList.map(toCustomVendorFull)
 
+    // PR2-T2 ticket #83 T4 (2026-09-08): legacy data migration
+    // 旧数据无 id 字段(e79e404 之前存的):若有 cachedVendorId 匹配,assign
+    if (this.vendorId.length > 6 && this.vendorId.startsWith('custom')) {
+      for (const v of this.customVendors) {
+        if (v.id === undefined || v.id.length === 0) {
+          v.id = this.vendorId
+        }
+      }
+    }
+
     // PR2-T2 ticket #83 L2 (2026-09-08): 还原 per-vendor models
     this.vendorModels = {}
     for (const p of PROVIDERS) {
@@ -103,6 +113,17 @@ export class AiSettingsViewModel {
     // PR2-T2 ticket #83 L3 (2026-09-08): 还原 per-vendor API Keys
     // Bug fix (2026-09-08): 还原所有 vendor keys(原代码只还原 current)
     this.vendorApiKeys = llm.getAllVendorApiKeys()
+
+    // PR2-T2 ticket #83 T4 (2026-09-08): backfill customVendors[i].apiKey from vendorApiKeys
+    // UI 不撒谎:vendorPicker 的 API Key input 应显示已保存的 key
+    for (const v of this.customVendors) {
+      if (v.id !== undefined && v.id.length > 0) {
+        const stored: string | undefined = this.vendorApiKeys[v.id]
+        if (stored !== undefined && stored.length > 0 && v.apiKey.length === 0) {
+          v.apiKey = stored
+        }
+      }
+    }
 
     // PR2-T2 ticket #83 L4 (2026-09-08): 不再调 syncEndpoint / syncModel(keyword-sniff 已删)
     // PR2-T2 ticket #83 L4: temp / maxT / to 走 LlmConfig cache,不在 VM
