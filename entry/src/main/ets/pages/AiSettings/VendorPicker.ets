@@ -275,6 +275,14 @@ export struct VendorPicker {
               .borderRadius(R_SM)
               .padding({ left: S_2 })
               .onChange((v: string): void => { this.newModelInput = v })
+              // PR2-T2 ticket #83 follow-up (2026-09-08): placeholder 写"回车"但之前无 onSubmit,Enter 实际无效
+              .onSubmit((): void => {
+                const m: string = this.newModelInput.trim()
+                if (m.length > 0) {
+                  this.onAddModel(item.id, m)
+                  this.newModelInput = ''
+                }
+              })
             Text('+')
               .fontSize(18)
               .fontColor(MINT)
