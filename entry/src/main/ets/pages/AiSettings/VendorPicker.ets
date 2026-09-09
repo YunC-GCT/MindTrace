@@ -336,10 +336,11 @@ export struct VendorPicker {
 
           // 添加 model 输入(draft — 加到 localModels,不立即 push)
           Row() {
-            TextInput({ placeholder: '输入模型名后回车', text: this.newModelInput })
+            TextInput({ placeholder: '输入模型', text: this.newModelInput })
               .layoutWeight(1)
               .height(32)
               .fontSize(F_SM)
+              .placeholderFont({ size: F_XS })
               .placeholderColor(TEXT_4)
               .backgroundColor(BG_CARD)
               .border({ width: 1, color: BORDER })

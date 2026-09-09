@@ -9,8 +9,8 @@
 //  依赖: common 令牌(MINT / BG_DARK / TEXT_3 / F_SM / R_MD / S_2)
 //
 //  Props:
-//    onReset: "恢复默认" 按钮回调(清空配置 + 恢复出厂值)
-//    onSave:  "保存配置" 按钮回调(把当前 UI 状态写入 preferences)
+//    onReset: "重置 OCR" 按钮回调
+//    onSave:  "保存 OCR" 按钮回调
 //  ============================================================================
 
 import { MINT, BG_DARK, TEXT_3, F_SM, R_MD, S_2 } from "common"
