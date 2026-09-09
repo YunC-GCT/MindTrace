@@ -11,7 +11,7 @@
  *   AiSettingsPage.vm.vendorId → VendorPicker.props.currentVendorId
  *   onSelect(id) → vm.selectVendor(id)(in-memory, save() 持久化)
  *   onAddCustom() → vm.openAddCustomVendor()(父级弹 modal)
- *   编辑 button 自管 @State editingVendorId(单真理源,不再通知 ViewModel)
+ *   编辑 button 自管 @State editingVendorId(单真理源,不再通知 ViewModel)— 已在 always-visible 改动中删除
  *
  * 5 预设 vendor(2026-09 一手信源调研):
  *   DeepSeek   · deepseek-v4-pro     · api.deepseek.com
@@ -63,7 +63,8 @@ export struct VendorPicker {
 
   // PR2-T2: 编辑 panel 展开状态(单真理源 — VendorPicker 自管,不通知 ViewModel)
   // null = 全折叠;非 null = 该 vendorId 对应 row 下 panel 展开
-  @State editingVendorId: string | null = null;
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 删 @State editingVendorId
+  // (always-visible panel — 无 gating 需要,此 state 死)
 
   // PR2-T2 ticket #83 (2026-09-08): panel 内 model 输入(仅 input 状态,实际数据走 @Prop vendorModels)
   @State newModelInput: string = '';
@@ -80,7 +81,7 @@ export struct VendorPicker {
 
   // 回调
   onSelect: (id: string) => void = (_id: string): void => {};
-  onEdit: (id: string) => void = (_id: string): void => {};
+  // PR2-T2 ticket #83 follow-up (2026-09-08): 删 onEdit callback(no caller after always-visible)
   onAddCustom: () => void = (): void => {};
 
   // PR2-T2 P3: 添加新 vendor 完成回调(把 cfg 传给 ViewModel,ViewModel 加到 customVendors + 切 vendorId)
@@ -174,19 +175,7 @@ export struct VendorPicker {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-
-        // 编辑 button(Text + border 风格,避免 default blue Button)
-        Text('编辑')
-          .fontSize(F_XS)
-          .fontColor(MINT)
-          .fontWeight(W_MEDIUM)
-          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-          .border({ width: 1, color: MINT_BORDER })
-          .borderRadius(R_SM)
-          .onClick((): void => {
-            const opening: boolean = this.editingVendorId !== item.id
-            this.editingVendorId = opening ? item.id : null
-          })
+        // PR2-T2 ticket #83 follow-up (2026-09-08): 删 编辑 button(panel always-visible,无 toggle 需要)
       }
       .width('100%')
       .padding({ left: S_3, right: S_3, top: S_3, bottom: S_3 })
