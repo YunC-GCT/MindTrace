@@ -185,6 +185,33 @@ struct AiSettingsPage {
             },
           })
 
+          // PR2-T2 ticket #83 follow-up (2026-09-08): LLM section 专用 "保存模型设置" 按钮
+          // user 反馈"我这里无法保存这些密钥信息" — 显式 LLM save 入口,不依赖底部 ActionBar
+          // 仅存 LLM(不存 OCR),底部 ActionBar 仍负责 OCR
+          Row() {
+            Text('保存模型设置')
+              .fontSize(F_SM)
+              .fontColor(BG_DARK)
+              .fontWeight(W_SEMIBOLD)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+              .padding(12)
+              .backgroundColor(MINT)
+              .borderRadius(R_MD)
+              .onClick((): void => {
+                this.vm.save().then((ok: boolean): void => {
+                  try {
+                    promptAction.showToast({
+                      message: ok ? '模型设置已保存' : '保存失败',
+                      duration: 1500,
+                    })
+                  } catch (_e) {}
+                })
+              })
+          }
+          .width('100%')
+          .padding({ left: S_4, right: S_4, top: S_2, bottom: S_2 })
+
           Column() {
             Text("OCR 服务")
               .fontSize(F_SM)
