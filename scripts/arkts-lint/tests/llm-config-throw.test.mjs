@@ -7,8 +7,8 @@
  * Per ticket #9 / spec 009:
  *   - normalizeEndpoint('siliconflow...') must throw LlmError, not silently
  *     return DEFAULT_ENDPOINT
- *   - normalizeModel('v3') / 'flash' / 'deepseek-chat' / 'r1' / etc. must
- *     throw LlmError, not silently return DEFAULT_MODEL
+ *   - legacy fallback keywords such as 'v3' / non-allowlisted 'flash' / 'r1'
+ *     must throw LlmError, not silently return DEFAULT_MODEL
  *
  * Note: This is a static AST-level check. The real behavioral test is
  * a Hypium test in entry/src/ohosTest/ets/test/LlmConfig.test.ets.

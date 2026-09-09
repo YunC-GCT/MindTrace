@@ -206,9 +206,10 @@ agents/src/main/ets/
 
 - **多供应商配置**: AI 设置页支持 DeepSeek / 通义千问 / 智谱 GLM / Kimi / 豆包与自定义供应商; 每个供应商独立维护 API Key 与模型目录。
 - **折叠编辑**: 点击供应商右侧「编辑」展开本地草稿;「取消」丢弃草稿,「保存」提交当前供应商 key/models 并执行 LLM-only 持久化; 模型输入支持回车与 `+` 添加。
-- **持久化与调用链**: `LlmConfig` 持久化 vendorId / customVendors / vendorModels / vendorApiKeys; `LlmClient` 按当前 vendor 解析 endpoint、model 与 key; 自定义供应商 id 跨重启保持稳定。
+- **持久化与调用链**: `LlmConfig` 持久化 vendorId / customVendors / vendorModels / activeVendorModels / vendorApiKeys; `LlmClient` 按当前 vendor 解析 endpoint、model 与 key; 自定义供应商 id 跨重启保持稳定。
 - **职责分离**: per-vendor 面板负责保存大模型配置; 页面底部 ActionBar 仅负责「重置 OCR / 保存 OCR」; 顶部连接测试读取当前供应商的 API Key。
-- **验证状态**: 相关 Node 回归测试全绿,`assembleHap` 成功并生成 HAP。真实大模型连接在真机测试中仍未通过,待依据连接错误与设备日志排查; README 不宣称线上 API 已验收。
+- **模型目录**: DeepSeek 默认模型为 `deepseek-v4-pro`; 当前允许 `deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`,模型选择按供应商独立保存。
+- **真实 LLM 验证**: 连接测试与悬浮对话已在设备完成真实 DeepSeek 调用;日志确认 `deepseek-v4-flash` 分别走非流式与 SSE 流式请求且 HTTP 200。请求日志只打印 vendor / model / endpoint / stream,不输出 API Key。
 
 ---
 
@@ -242,6 +243,12 @@ App 内 我的 → AI 设置:
 
 # 当前已知问题
 # 若测试连接失败,保留界面错误信息与设备日志;不得把真实 API Key 写入仓库或测试文件。
+# 若要确认模型切换,查看设备日志中的 [LlmClient] request vendor=... model=... stream=...
+
+# 4. 提交前验证
+node --test "scripts/arkts-lint/tests/*.test.mjs"  # 284 passed
+node scripts/naming-lint/index.mjs                  # 0 violations
+# DevEco / hvigor: BUILD SUCCESSFUL
 ```
 
 完整演示流程(5 分钟 8 步)、失败降级口径、赛前检查清单见 [docs/agents/demo-script-2026-09-06.md](./docs/agents/demo-script-2026-09-06.md)。

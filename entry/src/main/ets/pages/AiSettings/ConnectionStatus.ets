@@ -55,7 +55,7 @@ export struct ConnectionStatus {
         .fill(this.configured ? MINT : TEXT_4)
         .margin({ right: 12 })
 
-      // 测试按钮(放最右,2026-09-08 UX 调整:从 KeyInput 段移到连接状态右侧)
+      // 测试按钮(放最右,2026-09-08 UX 调整)
       Button(this.testing ? "..." : "测试")
         .fontSize(F_XS)
         .fontColor(BG_DARK)

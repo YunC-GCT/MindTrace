@@ -2,7 +2,7 @@
 // L5 + L6 测试 (2026-09-08): PR2-T2 ticket #83 file + page cleanup
 // 范围 (spec 017):
 //   L5 — git rm EndpointPicker.ets / ModelPicker.ets + 字面替换 + test 4 改读 providers.ets
-//   L6 — AiSettingsPage.endpointSummary/modelSummary 改用 getCurrent*(清 useCustomEP/customEP/modelLabel 残留)
+//   L6 — AiSettingsPage 删除未使用的 endpointSummary/modelSummary
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -82,30 +82,12 @@ test('L5: PROVIDERS[0].defaultModel equals LlmConfig.DEFAULT_MODEL (replaces old
   );
 });
 
-// ===== L6: AiSettingsPage.endpointSummary/modelSummary 改用 getCurrent* =====
+// ===== L6: AiSettingsPage 删除未使用的 summary helpers =====
 
-test('L6: AiSettingsPage.endpointSummary uses vm.getCurrentEndpoint()', () => {
+test('L6: AiSettingsPage removes unused summary helpers', () => {
   const page = read('entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets');
-  // endpointSummary 函数体必须调 this.vm.getCurrentEndpoint()
-  const epBody = page.match(/endpointSummary\s*\(\s*\)\s*:\s*string\s*\{([\s\S]*?)\n\s*\}/);
-  assert.ok(epBody !== null, 'AiSettingsPage.endpointSummary() must exist');
-  assert.match(
-    epBody[1],
-    /this\.vm\.getCurrentEndpoint\(\)/,
-    'AiSettingsPage.endpointSummary() must use vm.getCurrentEndpoint()'
-  );
-});
-
-test('L6: AiSettingsPage.modelSummary uses vm.getCurrentModel()', () => {
-  const page = read('entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets');
-  // modelSummary 函数体必须调 this.vm.getCurrentModel()
-  const mBody = page.match(/modelSummary\s*\(\s*\)\s*:\s*string\s*\{([\s\S]*?)\n\s*\}/);
-  assert.ok(mBody !== null, 'AiSettingsPage.modelSummary() must exist');
-  assert.match(
-    mBody[1],
-    /this\.vm\.getCurrentModel\(\)/,
-    'AiSettingsPage.modelSummary() must use vm.getCurrentModel()'
-  );
+  assert.doesNotMatch(page, /\bendpointSummary\s*\(/, 'AiSettingsPage must not retain unused endpointSummary()');
+  assert.doesNotMatch(page, /\bmodelSummary\s*\(/, 'AiSettingsPage must not retain unused modelSummary()');
 });
 
 test('L6: AiSettingsPage no longer references vm.useCustomEP / vm.customEP / vm.modelLabel()', () => {
@@ -113,4 +95,16 @@ test('L6: AiSettingsPage no longer references vm.useCustomEP / vm.customEP / vm.
   assert.doesNotMatch(page, /vm\.useCustomEP/, 'Page must NOT reference vm.useCustomEP (L4 deleted)');
   assert.doesNotMatch(page, /vm\.customEP/, 'Page must NOT reference vm.customEP (L4 deleted)');
   assert.doesNotMatch(page, /vm\.modelLabel\(\)/, 'Page must NOT reference vm.modelLabel() (L4 deleted)');
+});
+
+test('L6: unused settings components and no-op callbacks are removed', () => {
+  const page = read('entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets');
+  const picker = read('entry/src/main/ets/pages/AiSettings/VendorPicker.ets');
+  const vm = read('entry/src/main/ets/viewmodels/AiSettingsViewModel.ets');
+  assert.equal(existsSync(resolve(root, 'entry/src/main/ets/pages/AiSettings/SectionHeader.ets')), false);
+  assert.doesNotMatch(page, /onAddCustom\s*:/, 'AiSettingsPage must not wire a no-op onAddCustom callback');
+  assert.doesNotMatch(picker, /onAddCustom\s*:/, 'VendorPicker must not retain an unused onAddCustom callback');
+  assert.doesNotMatch(vm, /openAddCustomVendor\s*\(/, 'VM must not retain no-op openAddCustomVendor()');
+  assert.doesNotMatch(vm, /async\s+save\s*\(\s*\)/, 'VM must not retain unused aggregate save()');
+  assert.doesNotMatch(vm, /async\s+reset\s*\(\s*\)/, 'VM must not retain unused aggregate reset()');
 });

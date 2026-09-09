@@ -2,7 +2,7 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, TEXT_4, F_SM, F_XS, W_SEMIBOLD, S_2, S_3, S_4 } from "common"
+import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_SM, F_XS, W_SEMIBOLD, S_2, S_4 } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
@@ -79,14 +79,6 @@ struct AiSettingsPage {
     })
   }
 
-  private modelSummary(): string {
-    return this.vm.getCurrentModel()
-  }
-
-  private endpointSummary(): string {
-    return this.vm.getCurrentEndpoint()
-  }
-
   private ocrSummary(): string {
     if (!this.vm.ocrEnabled) {
       return "OCR 已关闭"
@@ -140,7 +132,6 @@ struct AiSettingsPage {
                 .fontWeight(W_SEMIBOLD)
             }
             .alignItems(VerticalAlign.Center)
-            // PR2-T2 P4: 用 vendor 单一真理源解析(替代旧 modelSummary/endpointSummary 关键字嗅探)
             Text(`${this.vm.getCurrentVendor()} · 当前 ${this.vm.getCurrentModel()} · ${this.vm.getCurrentEndpoint()}`)
               .fontSize(F_XS)
               .fontColor(TEXT_3)
@@ -171,9 +162,9 @@ struct AiSettingsPage {
             // PR2-T2 ticket #83 L1+L2+L3 (2026-09-08): per-vendor 数据从 VM 注入
             vendorApiKeys: this.vm.vendorApiKeys,
             vendorModels: this.vm.vendorModels,
+            activeVendorModels: this.vm.activeVendorModels,
             customVendors: this.vm.customVendors,
             onSelect: (id: string): void => { this.vm.selectVendor(id) },
-            onAddCustom: (): void => { this.vm.openAddCustomVendor() },
             // PR2-T2 P3: modal 确认后回调,把 4 字段 cfg 传给 ViewModel
             // PR2-T2 polish: 返回新 vendorId 用于 NEW badge 跟踪(ticket #81 task A4)
             onAddVendorConfirm: (cfg: AddCustomVendorCfg): string => {
@@ -189,6 +180,9 @@ struct AiSettingsPage {
             },
             onRemoveModel: (vendorId: string, model: string): void => {
               this.vm.removeVendorModel(vendorId, model)
+            },
+            onSelectModel: (vendorId: string, model: string): void => {
+              this.vm.selectVendorModel(vendorId, model)
             },
             onSaveEdit: (_vendorId: string): void => {
               this.saveLlm()

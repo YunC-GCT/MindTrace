@@ -27,6 +27,7 @@ const KEY_VENDOR_MODELS = 'vendor_models';
 // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key 持久化
 // Record<vendorId, string> — 用户在 vendor 编辑 panel 填的 key
 const KEY_VENDOR_API_KEYS = 'vendor_api_keys';
+const KEY_ACTIVE_VENDOR_MODELS = 'active_vendor_models';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -56,6 +57,7 @@ export class LlmConfig {
   private cachedVendorModels: Record<string, string[]> = {};
   // PR2-T2 L3 (2026-09-08): per-vendor API Key Record — vendor 编辑 panel 填的 key
   private cachedVendorApiKeys: Record<string, string> = {};
+  private cachedActiveVendorModels: Record<string, string> = {};
 
   private constructor() {}
 
@@ -136,16 +138,25 @@ export class LlmConfig {
         this.cachedVendorApiKeys = {};
       }
     }
+    const activeModelsJson: string = await s.get(KEY_ACTIVE_VENDOR_MODELS, '') as string;
+    if (activeModelsJson.length > 0) {
+      try {
+        const parsed: Record<string, string> = JSON.parse(activeModelsJson);
+        this.cachedActiveVendorModels = parsed ?? {};
+      } catch (_e) {
+        this.cachedActiveVendorModels = {};
+      }
+    }
   }
 
   // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
   // PR2-T2 L3 (2026-09-08): per-vendor API Key — vendorId 给定则查 per-vendor map,否则 fallback 全局
   public async getApiKey(vendorId?: string): Promise<string | null> {
-    if (vendorId !== undefined && vendorId.length > 0) {
-      const per: string | undefined = this.cachedVendorApiKeys[vendorId];
+    const keyVendorId: string = vendorId !== undefined && vendorId.length > 0 ? vendorId : this.cachedVendorId;
+    if (keyVendorId.length > 0) {
+      const per: string | undefined = this.cachedVendorApiKeys[keyVendorId];
       if (per !== undefined && per.length > 0) { return per; }
     }
-    // fallback 全局(AssetStoreKit via ApiKeyVault)
     return ApiKeyVault.get();
   }
 
@@ -176,6 +187,14 @@ export class LlmConfig {
     const snapshot: Record<string, string> = {}
     for (const k of Object.keys(this.cachedVendorApiKeys)) {
       snapshot[k] = this.cachedVendorApiKeys[k]
+    }
+    return snapshot
+  }
+
+  public getAllActiveVendorModels(): Record<string, string> {
+    const snapshot: Record<string, string> = {}
+    for (const k of Object.keys(this.cachedActiveVendorModels)) {
+      snapshot[k] = this.cachedActiveVendorModels[k]
     }
     return snapshot
   }
@@ -221,11 +240,19 @@ export class LlmConfig {
   // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
   public getModel(): string {
     if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
+      const activeModel: string | undefined = this.cachedActiveVendorModels[this.cachedVendorId];
+      if (activeModel !== undefined && activeModel.trim().length > 0) {
+        return activeModel;
+      }
       // PR2-T2 L1: 优先查 customVendors[] 匹配 id
       const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
       if (cv !== null) { return cv.model; }
       // legacy 单数向后兼容
       if (this.cachedCustomVendor !== null) { return this.cachedCustomVendor.model; }
+    }
+    const activeModel: string | undefined = this.cachedActiveVendorModels[this.cachedVendorId];
+    if (activeModel !== undefined && activeModel.trim().length > 0) {
+      return activeModel;
     }
     // PR2-T2 L2: 优先查 vendorModels[vendorId][0](用户加的 model)
     const userModels: string[] | undefined = this.cachedVendorModels[this.cachedVendorId];
@@ -242,6 +269,24 @@ export class LlmConfig {
     this.cachedModel = this.normalizeModel(v);
     await this.store!.put(KEY_MODEL, this.cachedModel);
     await this.store!.flush();
+  }
+
+  public getActiveVendorModel(vendorId: string): string {
+    const activeModel: string | undefined = this.cachedActiveVendorModels[vendorId]
+    if (activeModel !== undefined && activeModel.trim().length > 0) { return activeModel }
+    const models: string[] = this.getVendorModels(vendorId)
+    if (models.length > 0) { return models[0] }
+    return ''
+  }
+
+  public async setActiveVendorModel(vendorId: string, model: string): Promise<void> {
+    this.requireInited()
+    const t: string = model.trim()
+    if (vendorId.length === 0 || t.length === 0) { return }
+    this.cachedActiveVendorModels[vendorId] = t
+    const s = this.store!
+    await s.put(KEY_ACTIVE_VENDOR_MODELS, JSON.stringify(this.cachedActiveVendorModels))
+    await s.flush()
   }
 
   // ===== Temperature =====
@@ -418,6 +463,7 @@ export class LlmConfig {
     this.cachedVendorModels = {};
     // PR2-T2 L3: 同时清 vendorApiKeys
     this.cachedVendorApiKeys = {};
+    this.cachedActiveVendorModels = {};
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
@@ -430,6 +476,7 @@ export class LlmConfig {
     await s.delete(KEY_CUSTOM_VENDORS);
     await s.delete(KEY_VENDOR_MODELS);
     await s.delete(KEY_VENDOR_API_KEYS);
+    await s.delete(KEY_ACTIVE_VENDOR_MODELS);
     await s.flush();
   }
 
@@ -507,22 +554,28 @@ export class LlmConfig {
     }
     if (vendorId === 'deepseek') {
       const lower: string = t.toLowerCase();
+      if (this.isAllowedDeepSeekModel(lower)) {
+        return t;
+      }
       if (
         lower.indexOf('v3') >= 0 ||
         lower.indexOf('flash') >= 0 ||
-        lower.indexOf('deepseek-chat') >= 0 ||
-        lower.indexOf('deepseek-reasoner') >= 0 ||
         lower.indexOf('r1') >= 0
       ) {
         throw new LlmError(
           `LlmConfig.normalizeModel: input "${v}" matches a reserved keyword; ` +
-          `DEFAULT_MODEL is enforced for DeepSeek. Reserved keywords: v3, flash, deepseek-chat, ` +
-          `deepseek-reasoner, r1. ` +
+          `DEFAULT_MODEL is enforced for DeepSeek. Reserved keywords: v3, flash, r1. ` +
           `(DEFAULT_MODEL itself is allowed — see ticket PR0 fix 2026-09-06.)`,
           'NORMALIZE_KEYWORD_REJECTED'
         );
       }
     }
     return t;
+  }
+
+  private isAllowedDeepSeekModel(model: string): boolean {
+    return model === 'deepseek-v4-flash'
+      || model === 'deepseek-v4-pro'
+      || model === 'deepseek-v4-flash-vision-exp';
   }
 }

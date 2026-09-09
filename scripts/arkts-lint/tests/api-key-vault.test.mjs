@@ -244,7 +244,7 @@ const llmConfig = read('common/src/main/ets/llm/LlmConfig.ets');
 // 测试 10: LlmConfig.getApiKey() 委托 ApiKeyVault
 test('LlmConfig.getApiKey() delegates to ApiKeyVault.get()', () => {
   const getApiKeyMatch = llmConfig.match(
-    /public\s+async\s+getApiKey\s*\(\s*\)\s*:\s*Promise\s*<\s*string\s*\|\s*null\s*>\s*\{([^}]*)\}/m
+    /public\s+async\s+getApiKey\s*\(\s*vendorId\s*\?\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*string\s*\|\s*null\s*>\s*\{([\s\S]*?)\n\s*\}\n\s*\n\s*\/\//m
   );
   assert.ok(getApiKeyMatch !== null, 'LlmConfig.getApiKey() method not found');
   assert.match(
@@ -259,7 +259,7 @@ test('LlmConfig.setApiKey() delegates to ApiKeyVault.put()', () => {
   // 用 lazy match 跨多行捕获整个方法 body(含嵌套 {})
   assert.match(
     llmConfig,
-    /public\s+async\s+setApiKey\s*\(\s*\w+\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*void\s*>\s*\{[\s\S]*?ApiKeyVault\.put\s*\(\s*\w+\s*\)/,
+    /public\s+async\s+setApiKey\s*\(\s*\w+\s*:\s*string\s*,\s*vendorId\s*\?\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*void\s*>\s*\{[\s\S]*?ApiKeyVault\.put\s*\(\s*\w+\s*\)/,
     'LlmConfig.setApiKey() must call ApiKeyVault.put(<some-var>)'
   );
 });
@@ -267,7 +267,7 @@ test('LlmConfig.setApiKey() delegates to ApiKeyVault.put()', () => {
 // 测试 12: LlmConfig.clearApiKey() 委托 ApiKeyVault.clear()
 test('LlmConfig.clearApiKey() delegates to ApiKeyVault.clear()', () => {
   const clearApiKeyMatch = llmConfig.match(
-    /public\s+async\s+clearApiKey\s*\(\s*\)\s*:\s*Promise\s*<\s*void\s*>\s*\{([^}]*)\}/m
+    /public\s+async\s+clearApiKey\s*\(\s*vendorId\s*\?\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*void\s*>\s*\{([\s\S]*?)\n\s*\}\n\s*\n\s*\/\//m
   );
   assert.ok(clearApiKeyMatch !== null, 'LlmConfig.clearApiKey() method not found');
   assert.match(
@@ -281,15 +281,16 @@ test('LlmConfig.clearApiKey() delegates to ApiKeyVault.clear()', () => {
 test('LlmConfig no longer uses preferences for api_key', () => {
   // getApiKey / setApiKey / clearApiKey 三个方法内部不应有 preferences.* 调用
   const getApiKeyBody = llmConfig.match(
-    /public\s+async\s+getApiKey\s*\(\s*\)\s*:\s*Promise\s*<\s*string\s*\|\s*null\s*>\s*\{([^}]*)\}/m
+    /public\s+async\s+getApiKey\s*\(\s*vendorId\s*\?\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*string\s*\|\s*null\s*>\s*\{([\s\S]*?)\n\s*\}/m
   );
   const setApiKeyBody = llmConfig.match(
-    /public\s+async\s+setApiKey\s*\(\s*\w+\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*void\s*>\s*\{([^}]*)\}/m
+    /public\s+async\s+setApiKey\s*\(\s*\w+\s*:\s*string\s*,\s*vendorId\s*\?\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*void\s*>\s*\{([\s\S]*?)\n\s*\}/m
   );
   const clearApiKeyBody = llmConfig.match(
-    /public\s+async\s+clearApiKey\s*\(\s*\)\s*:\s*Promise\s*<\s*void\s*>\s*\{([^}]*)\}/m
+    /public\s+async\s+clearApiKey\s*\(\s*vendorId\s*\?\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*void\s*>\s*\{([\s\S]*?)\n\s*\}/m
   );
   for (const [name, body] of [['getApiKey', getApiKeyBody], ['setApiKey', setApiKeyBody], ['clearApiKey', clearApiKeyBody]]) {
+    assert.ok(body !== null, `LlmConfig.${ name }() method not found`);
     assert.doesNotMatch(
       body[1],
       /preferences\./,

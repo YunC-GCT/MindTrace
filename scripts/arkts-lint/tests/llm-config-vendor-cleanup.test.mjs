@@ -69,18 +69,9 @@ test('L4: VM test() uses getCurrent* (not resolve*)', () => {
   assert.doesNotMatch(testBody[1], /this\.resolveModel\(/, 'VM.test() must NOT use this.resolveModel()');
 });
 
-test('L4: VM reset() no longer resets legacy fields', () => {
+test('L4: VM removes unused aggregate reset()', () => {
   const src = readVmSource();
-  const resetBody = src.match(/async\s+reset\s*\(\s*\)\s*:\s*Promise\s*<\s*boolean\s*>\s*\{([\s\S]*?)\n\s*\}/);
-  assert.ok(resetBody !== null, 'VM.reset() body not found');
-  assert.doesNotMatch(resetBody[1], /this\.useCustomEP/, 'VM.reset() must NOT reset useCustomEP');
-  assert.doesNotMatch(resetBody[1], /this\.customEP/, 'VM.reset() must NOT reset customEP');
-  assert.doesNotMatch(resetBody[1], /this\.mdlIdx/, 'VM.reset() must NOT reset mdlIdx');
-  assert.doesNotMatch(resetBody[1], /this\.useCustomMD/, 'VM.reset() must NOT reset useCustomMD');
-  assert.doesNotMatch(resetBody[1], /this\.customMD/, 'VM.reset() must NOT reset customMD');
-  assert.doesNotMatch(resetBody[1], /this\.temp\s*=/, 'VM.reset() must NOT reset temp');
-  assert.doesNotMatch(resetBody[1], /this\.maxT\s*=/, 'VM.reset() must NOT reset maxT');
-  assert.doesNotMatch(resetBody[1], /this\.to\s*=/, 'VM.reset() must NOT reset to');
+  assert.doesNotMatch(src, /async\s+reset\s*\(\s*\)\s*:\s*Promise\s*<\s*boolean\s*>/, 'VM must not retain unused aggregate reset()');
 });
 
 test('L4: VM no longer declares 12 set/toggle/resolve methods', () => {
