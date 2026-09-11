@@ -8,7 +8,7 @@ The single source of truth for what agent-architecture words mean. New agent ses
 
 If a term is **project-specific** (e.g. `KnowledgeUnit` in MindTrace, `PydanticModel` in a FastAPI project), it belongs in the project's glossary (`CONTEXT.md` or equivalent), NOT here.
 
-> **LangGraph note**: the graph vocabulary below (Node / Edge / State / StateGraph / Channel / …) follows LangGraph — adopted as MindTrace's primary orchestration design model, implemented natively in ArkTS as `CaptureGraph` (ADR-0008).
+> **LangGraph note**: the graph vocabulary below (Node / Edge / State / StateGraph / Channel / …) follows LangGraph — adopted as MindTrace's primary Agent workflow architecture model and implemented natively in ArkTS. `CaptureGraph` is the first concrete workflow, not the whole architecture (ADR-0008).
 
 ## Language
 
@@ -37,6 +37,10 @@ A named field within state. Type-safe accessor. E.g. `state["messages"]` reads t
 
 **StateGraph**:
 The complete graph definition: nodes, edges, state schema. Entry point + exit point defined.
+
+**Agent workflow**:
+A domain-specific StateGraph-shaped orchestration with one typed State, a Node set, Edges, an entry and an exit. MindTrace has distinct Capture, conversation, tool-calling and skill intent workflows under one architecture; distinct workflows are not distinct backends.
+_Avoid_: backend (when referring to a workflow), pipeline (for graph-controlled flow), treating CaptureGraph as the entire architecture
 
 **Checkpoint**:
 A persisted snapshot of state at a given point. Allows resume-after-failure. Implementation-specific (in-memory, SQLite, Postgres, Redis).

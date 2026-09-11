@@ -207,6 +207,13 @@ agents/src/main/ets/
 - **多供应商配置**: AI 设置页支持 DeepSeek / 通义千问 / 智谱 GLM / Kimi / 豆包与自定义供应商; 每个供应商独立维护 API Key 与模型目录。
 - **折叠编辑**: 点击供应商右侧「编辑」展开本地草稿;「取消」丢弃草稿,「保存」提交当前供应商 key/models 并执行 LLM-only 持久化; 模型输入支持回车与 `+` 添加。
 - **持久化与调用链**: `LlmConfig` 持久化 vendorId / customVendors / vendorModels / activeVendorModels / vendorApiKeys; `LlmClient` 按当前 vendor 解析 endpoint、model 与 key; 自定义供应商 id 跨重启保持稳定。
+
+### 2026-09-10 · Agent 工作流架构重构 (spec 018)
+
+- **整体 LangGraph 设计**: ArkTS 原生 `StateGraph<State, Step>` 统一承载 Capture、ToolCalling、Conversation、SkillIntent 四个领域 workflow；不是 Python/langgraphjs runtime，也不是多后端。
+- **原链路修复**: 修复 TruthCheckNode 丢 KnowledgeUnit、TruthCheck 通过语义反向/失败仍入库、PersistNode 覆盖分类与难度、payload source 丢失；最终 KnowledgeUnit 原样进入唯一 DAO adapter。
+- **入口收敛**: `Dispatcher.dispatch(req, options)` 是 Capture 唯一入口；`AgentChatService` 收敛为 UI facade，业务只在 `ConversationWorkflow`；ToolLoop 删除旧 while 后委托 ToolCalling workflow。
+- **鸿蒙能力**: BackgroundTasksKit 短时任务、FormKit 卡片刷新与 GSKV 跨进程 snapshot 已接线；卡片固定 mock 删除；skill SearchNote 复用唯一 `note_query` 工具面。
 - **职责分离**: per-vendor 面板负责保存大模型配置; 页面底部 ActionBar 仅负责「重置 OCR / 保存 OCR」; 顶部连接测试读取当前供应商的 API Key。
 - **模型目录**: DeepSeek 默认模型为 `deepseek-v4-pro`; 当前允许 `deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`,模型选择按供应商独立保存。
 - **真实 LLM 验证**: 连接测试与悬浮对话已在设备完成真实 DeepSeek 调用;日志确认 `deepseek-v4-flash` 分别走非流式与 SSE 流式请求且 HTTP 200。请求日志只打印 vendor / model / endpoint / stream,不输出 API Key。

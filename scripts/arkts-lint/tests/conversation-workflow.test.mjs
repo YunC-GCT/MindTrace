@@ -1,0 +1,77 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const root = resolve(import.meta.dirname, '../../..');
+const read = (path) => readFileSync(resolve(root, path), 'utf8');
+const facade = read('entry/src/main/ets/services/AgentChatService.ets');
+const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const state = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+const workflowTypes = read('entry/src/main/ets/workflows/conversation/ConversationTypes.ets');
+const replyService = read('entry/src/main/ets/services/ReplyService.ets');
+const aiService = read('entry/src/main/ets/services/AiService.ets');
+const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+
+test('Conversation workflow has independent typed state and shared graph runtime', () => {
+  assert.match(state, /interface ConversationState/);
+  assert.match(state, /type ConversationRequest/);
+  assert.match(state, /type ConversationStep/);
+  assert.match(state, /memoryContext\?: string/);
+  assert.match(state, /learnerProfileContext\?: string/);
+  assert.match(workflow, /StateGraph<ConversationState, ConversationStep>/);
+  assert.match(workflow, /addConditionalEdge\('START'/);
+  assert.match(workflow, /state\.request\.kind === 'image'/);
+  assert.match(workflow, /state\.intent === 'note_generation'/);
+  assert.match(workflow, /addNode\('load_reply_context'/);
+  assert.match(workflow, /addNode\('save_reply_input'/);
+  assert.match(workflow, /addEdge\('load_reply_context', 'save_reply_input'\)/);
+  assert.doesNotMatch(workflowTypes, /overlays|ChatStatusMeta|setBusy|setStatusMeta/);
+  assert.match(workflow, /replyService\.complete\(/);
+  assert.match(workflow, /replyService\.stream\(/);
+  assert.match(workflow, /generateNoteDraft\(/);
+  assert.doesNotMatch(workflow, /new LlmClient|new LlmGuard|new ContentProtocol/);
+  assert.equal((workflow.match(/this\.cbs\.onFinish\(\)/g) || []).length, 1);
+  assert.match(replyService, /class ReplyService/);
+});
+
+test('AgentChatService is a thin three-entry facade', () => {
+  assert.match(facade, /class AgentChatService/);
+  assert.match(facade, /async captureReply/);
+  assert.match(facade, /async realReply\(/);
+  assert.match(facade, /async realReplyStream/);
+  assert.ok(facade.split('\n').length <= 105);
+  assert.doesNotMatch(facade, /new LlmClient|new AiService|new AgentMemoryService/);
+  assert.match(facade, /private activeRuns: number = 0/);
+  assert.match(facade, /this\.activeRuns \+= 1/);
+  assert.match(facade, /this\.activeRuns -= 1/);
+});
+
+test('Conversation note generation delegates to the canonical Capture entry', () => {
+  assert.match(workflow, /generateNoteDraft\(/);
+  assert.doesNotMatch(workflow, /new CaptureGraph|dispatcher\.buildGraph\(/);
+});
+
+test('Issue 99 note intent produces a typed preview and confirms the exact checkpoint candidate', () => {
+  assert.match(workflowTypes, /onDraftReady/);
+  assert.match(state, /draftStatus\?: 'ready-preview'/);
+  assert.match(workflow, /onDraftReady/);
+  assert.match(aiService, /result: generation/);
+  assert.doesNotMatch(workflow, /summarizeNoteMaterial/);
+  assert.doesNotMatch(workflow, /captureText\(/);
+  assert.match(aiService, /generation:/);
+  assert.match(aiService, /persist: false/);
+  assert.match(dispatcher, /preparedCandidate/);
+  assert.match(dispatcher, /checkpointId/);
+  assert.match(dispatcher, /candidateHash/);
+  assert.match(dispatcher, /buildPreparedGraph/);
+});
+
+test('Conversation workflow owns a single intent classification per text request', () => {
+  assert.equal((workflow.match(/intentClassifier\.classify\(/g) || []).length, 1);
+});
+
+test('ReplyService falls back when a successful stream produces no displayable content', () => {
+  assert.match(replyService, /if\s*\(\s*content\.trim\(\)\.length\s*===\s*0\s*\)/);
+  assert.match(replyService, /stream empty, using fallback/);
+});

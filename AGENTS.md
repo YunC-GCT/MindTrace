@@ -24,9 +24,9 @@
 | 准备 PR / smoke test | [`docs/agents/smoke-test.md`](./docs/agents/smoke-test.md) |
 | 复赛演示脚本 / 赛前检查 | [`docs/agents/demo-script-2026-09-06.md`](./docs/agents/demo-script-2026-09-06.md) |
 | 排查 build / 编码陷阱 | [`docs/agents/file-header-template.md`](./docs/agents/file-header-template.md) §"创建新文件" |
-| 做后端 CaptureGraph / ArkTS 重构 | [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](./docs/agents/d2-capturegraph-teaching-2026-09-05.md) (踩坑与经验) |
+| 做 Agent workflow / CaptureGraph / ToolLoop / Conversation / skill 重构 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) → [`docs/adr/0008-capturegraph-self-built-runtime.md`](./docs/adr/0008-capturegraph-self-built-runtime.md) → [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](./docs/agents/d2-capturegraph-teaching-2026-09-05.md) |
 | 推进 agent 能力级工作 (工具层 / 调用协议 / 拆分) | [`docs/agents/patterns/capability-to-implementation.md`](./docs/agents/patterns/capability-to-implementation.md) (skill 链路) + [`docs/architecture/agent-tool-chain-2026-09-06.md`](./docs/architecture/agent-tool-chain-2026-09-06.md) (派发链总览) |
-| 接手后端架构迁移 (spec 007 PR3 / Kit P0 剩余 / Tool 写路径 / skill IntentRouter / audit C3) | [`docs/agents/backend-migration-handoff.md`](./docs/agents/backend-migration-handoff.md) (5 层地图 + 推进顺序 5 步 + seam 边界 + 双线 workstream 边界) → 对应 spec/ADR |
+| 接手后端架构迁移 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) (当前权威状态) → [`docs/agents/backend-migration-handoff.md`](./docs/agents/backend-migration-handoff.md) (历史推进背景) |
 | 改 entry UI 设计/动效/token | 先读 [`docs/research/frontend-component-audit-2026-09-06.md`](./docs/research/frontend-component-audit-2026-09-06.md) (分层裁决 + C1-C6 候选) → 设计/动效细节 [`docs/research/frontend-ui-design-inventory-2026-09-06.md`](./docs/research/frontend-ui-design-inventory-2026-09-06.md) (96 件三维档案: 令牌/布局/动效) |
 | 写 / 改 / 归档 doc | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) (issue 模板) + `docs/agents/domain.md` (workflow) |
 | 写 issue / 改 spec | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) + [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
@@ -91,8 +91,8 @@
 
 ✅ 已修: **#15** ArkTS 铁律 (规约错误) · **#9** LlmConfig 静默覆盖 (TDD) · **#16** fixture data 泄漏 (TDD)
 ✅ 已处置: **#10** mcp→tools 改名撤销 — OcrTool 是队员改造的 MCP 工具, `mcp/` 保留, `tools/` 留给增删查改类工具 ([ADR-0010](./docs/adr/0010-mcp-tools-semantics.md))
-✅ 已落地: **D2 全链** (2026-09-05, spec [`011`](./docs/specs/011-capturegraph-arkts-refactor.md) + [ADR-0008](./docs/adr/0008-capturegraph-self-built-runtime.md)) — Dispatcher 单入口 + CaptureGraph (capture→classify→structure→truth_check→persist 条件边) + 5 节点, 旧 API 已删 · **D3 部分** (spec [`012`](./docs/specs/012-frontend-component-model.md)) — shared/components → atoms/molecules/organisms · **D4 P0 契约** (spec [`013`](./docs/specs/013-kit-adoption-boundary.md) + [ADR-0009](./docs/adr/0009-kit-facade-injection-boundary.md)) — `common/kit/` 三 facade · **F3 接线** — ReminderFacadeImpl (entry/kit/, @kit.BackgroundTasksKit reminderAgentManager) 组合根注入, UI 入口暂不挂 (用户裁决 2026-09-06); spec 015 PR1-3 全部完成 (KnowledgeModel 保留为轻量编排 agent, 用户裁决 2026-09-06)
-🟡 待修: **#1** doc expiry (2026-09-06 已清理一轮: 计数 / spec 状态行 / 版本日期) · **#7** AgentChatService 拆分 (spec 007: PR1 IntentClassifier 已合入, PR2 ChatStatusMachine / PR3 ReplyService 待做) · 🆕 **OcrNode payload 断链** (capture 节点清空文本与图 URI — `agents/src/main/ets/graph/nodes/OcrNode.ets:9` 把字符串 as never 传给 recognizeText, 且 AgentState 无 payload 字段; 红色证据测试在 `bugfix/ocrnode-payload-break`, 待修, 2026-09-06)
+✅ 已落地: **Agent workflow 架构** (spec [`018`](./docs/specs/018-agent-workflow-architecture.md), 2026-09-10) — LangGraph 作为整体设计根, ArkTS 原生 `StateGraph` 统一承载 Capture / ToolCalling / Conversation / SkillIntent 四个领域 workflow; 单后端、无新旧双轨 · **Capture** — Dispatcher `dispatch(req, options)` 唯一入口, analysis-only 与持久化条件边, State channel/source 保留, TruthCheck 失败短路, KnowledgeUnit 原样写入 · **Conversation** — `AgentChatService` 76 LOC UI facade, `ConversationWorkflow` 唯一编排 · **D4 P0** — Reminder/BackgroundTask/FormCard 三 Kit adapter 真实接线, Form 固定 mock 删除 · **Skill** — SearchNote 复用唯一 `note_query`, 其余 action 明确 unsupported
+🟡 待验/待扩: spec 018 的 Hypium/真机验收 · 小艺其余 6 action 语义确认 · 写类 AgentTool (统一写入 gate 已完成, 工具本体未开放) · **#1** doc expiry 持续清理
 
 详细: [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md) §7 + [`docs/specs/`](./docs/specs/)
 
@@ -106,9 +106,10 @@
 | View Model | `entry/viewmodels/` | UI state + 用户意图 |
 | Business Service | `entry/services/` | 编排, **不持 UI 引用** |
 | **AI Agent (亮点)** | `agents/` | `Dispatcher` (主) + `TypeClassifier` / `KnowledgeModel` (子) |
+| Agent Workflows | `common/workflow/`, `agents/graph/`, `entry/workflows/`, `skill/workflows/` | 共享 StateGraph 内核 + 各领域 State/Node/Edge |
 | Data + Infra | `common/` | `LlmClient` / `LlmGuard` / `ContentProtocol` / RDB 单例 |
 
-**关键 seam**: `AiService.capture → Dispatcher.dispatch → KnowledgeModel.structure → LlmClient.call → LlmGuard`; 全部 Markdown 走 `ContentProtocol` (MM-MD-v1)
+**关键 seam**: `ConversationWorkflow → AiService.captureText → Dispatcher.dispatch → CaptureGraph → KnowledgeModel.structure → TruthCheckNode → NoteDaoAdapter`; LLM 统一走 `LlmClient.call`, 工具统一走 `ToolCatalog/ToolRegistry`, 全部 Markdown 走 `ContentProtocol` (MM-MD-v1)
 
 **5 module 拓扑**: 1 HAP (`entry`, `type:entry`) + 4 HSP (`common` / `agents` / `skill` / `cardservice`, `type:feature`); 跨 module import 必须完整路径
 
