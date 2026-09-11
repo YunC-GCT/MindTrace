@@ -1,5 +1,7 @@
 # 后端架构推进交接 — 2026-09-07
 
+> **状态提示 (2026-09-10)**: 本文的推进清单已被 [`spec 018`](../specs/018-agent-workflow-architecture.md) 部分 supersede。Agent workflow、spec 007 PR3 终态、Kit P0 和 skill SearchNote 的当前状态以 spec 018 与 [`docs/specs/index.md`](../specs/index.md) 为准；本文仅保留历史 seam 背景。
+
 > **给谁**:接手后端(agents/ + common/llm,kit,tools)工作的下一个 session。
 > **不是**:本文不重复 [`docs/agents/handoff-2026-09-06.md`](./handoff-2026-09-06.md) 的一屏现状 / TBD / 已知坑 / 拼窗口 — 那里是**时间点交接**, 本文是**深度推进路线图**。与代码冲突时, **代码 + `docs/specs/index.md` §"Implementation status" 优先**。
 > **何时读**:接手 #7 AgentChatService 拆分 / Kit 集成 / Tool 写路径 / skill IntentRouter / ReviewGraphView 拆分(C3 后续)**之前**必读。

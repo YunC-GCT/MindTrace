@@ -56,7 +56,7 @@ If all three pass, you're set up correctly.
 
 - `agents/src/main/ets/core/Dispatcher.ets` — main agent orchestrator (single entry `dispatch`, runs the CaptureGraph)
 - `common/src/main/ets/llm/LlmClient.ets` — LLM call layer
-- `agents/src/main/ets/agents/KnowledgeModel.ets` — knowledge structuring orchestration agent (spec 015 done: PromptBuilder / TruthCheckService collaborators extracted)
+- `agents/src/main/ets/agents/KnowledgeModel.ets` — knowledge structuring agent (PromptBuilder collaborator); TruthCheckService is owned by the Capture workflow's TruthCheckNode (spec 018)
 - `scripts/arkts-lint/index.mjs` — the custom AST lint engine
 
 ### 3. Run the tests (5 min)

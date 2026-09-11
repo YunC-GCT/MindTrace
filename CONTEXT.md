@@ -78,11 +78,11 @@ A fixed-dimension vector representation of the note content, used for similarity
 The orchestration entry point that runs a Capture through the AI pipeline. Returns either a structured analysis or a KnowledgeUnit.
 
 **Dispatcher**:
-The class in `agents/core/Dispatcher.ets` that runs the pipeline. Single public entry: `dispatch(req, context?, options)`. Sub-agents are private collaborators.
+The class in `agents/core/Dispatcher.ets` that runs the Capture workflow. Single public entry: `dispatch(req, options)`. Sub-agents are private collaborators.
 _Avoid_: Controller, Manager, Handler
 
 **CaptureGraph**:
-The project's native ArkTS implementation of the LangGraph graph model — **LangGraph is the project's primary orchestration design**, and its naming (Node / Edge / State / conditional edge / START / END) is canonical (universal definitions in `docs/agents/agent-glossary.md`). CaptureGraph (in `agents/src/main/ets/graph/`) executes an Order: fixed edges between steps, plus a conditional edge after `truth_check` that reaches `persist` only when the state's `persist` flag is set. Built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008).
+The Capture workflow's native ArkTS implementation of the LangGraph graph model. **LangGraph is the project's primary Agent workflow architecture design**, and its naming (Node / Edge / State / conditional edge / START / END) is canonical (universal definitions in `docs/agents/agent-glossary.md`). CaptureGraph (in `agents/src/main/ets/graph/`) executes an Order: fixed edges between steps, plus a conditional edge after `truth_check` that reaches `persist` only when the state's `persist` flag is set. It is the first concrete workflow, not the name of the whole Agent architecture. Built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008).
 
 **CaptureStep**:
 The node vocabulary of the CaptureGraph: `START | capture | classify | structure | truth_check | persist | END`. Lowercase for steps, uppercase for sentinels.
@@ -91,7 +91,7 @@ The node vocabulary of the CaptureGraph: `START | capture | classify | structure
 The structured error a CaptureGraph node throws on failure: `kind`, `message`, `step`, `retriable`, optional `cause`. It short-circuits the Order — the user sees an error, never a fabricated KnowledgeUnit.
 
 **DispatchOptions**:
-The per-dispatch options bag passed to `Dispatcher.dispatch`: `persist` (may this Order write the KnowledgeUnit?) and `dao` (the injected persistence implementation).
+The per-dispatch options bag passed to `Dispatcher.dispatch`: `analysisOnly`, `persist`, `includeRawText`, and `dao` (the injected persistence implementation).
 
 **Sub-agent**:
 A private collaborator inside the Dispatcher pipeline (TypeClassifier, KnowledgeModel). Sub-agents are not user-facing.
@@ -100,8 +100,12 @@ _Avoid_: agent (overloaded, see below)
 **NoteDaoAdapter**:
 The entry-side adapter that implements `agents`' `NoteDaoInterface` on top of `entry`'s `NoteDao`. The seam that lets the agents module persist without depending on entry.
 
+**KnowledgeUnitWriteService**:
+The entry-side coordination seam for all KnowledgeUnit creates and updates. It delegates the atomic KnowledgeUnit-plus-revision mutation to the sole RDB owner (`NoteDao`), reports optimistic-lock conflicts as `VERSION_CONFLICT`, and treats cache, notesVersion, and card refresh failures as post-commit warnings.
+_Avoid_: writing KnowledgeUnit directly from UI or AI adapters; treating a post-commit refresh warning as a failed save.
+
 **Kit Facade (contract)**:
-An interface in `common/src/main/ets/kit/` (`ReminderFacade`, `BackgroundTaskFacade`, `FormCardFacade`) declaring a HarmonyOS kit capability for the business pipeline. Implementations are injected at the composition root when kit integration lands; this is a seam, not an import ban — DevEco template modules (abilities, FormAbility) import kit APIs directly (ADR-0009).
+An interface in `common/src/main/ets/kit/` (`ReminderFacade`, `BackgroundTaskFacade`, `FormCardFacade`) declaring a HarmonyOS kit capability for a business workflow. Production implementations live in entry/template modules and are injected at the composition root. This is a seam, not an import ban — DevEco template modules import kit APIs directly as part of their platform role (ADR-0009).
 
 **MCP 工具 (mcp/)**:
 A tool in `agents/src/main/ets/mcp/tools/` (currently `OcrTool`), built by the team as an MCP-语义 tool. The directory classifies tools by MCP tool semantics — not by whether an MCP server is running (none does today). CRUD-style tools (增删查改) belong in `tools/` instead (ADR-0010).
@@ -111,9 +115,9 @@ _Avoid_: renaming `mcp/` away; calling it "the MCP server".
 The team-built Python FastAPI OCR service at the **repo-root** `tools/` directory (formula/combined recognition over HTTP :8000, started via `start.bat`), consumed by `OcrTool`. Entirely distinct from `agents/src/main/ets/tools/` — the ArkTS CRUD-tool reservation slot (ADR-0010).
 _Avoid_: confusing repo-root `tools/` (Python 服务) with the agents `tools/` 预留位 (F7, agent-tools inventory 2026-09-06).
 
-**小艺 skill 预留位 (skill/)**:
-The `skill/` HSP, reserved for Xiaoyi (小艺) skill integration. Deliberately a stub today (`SKILL_VERSION` + placeholder `SkillAbility`); retention is a recorded decision ([ADR-0011](./docs/adr/0011-skill-xiaoyi-reservation.md)), and its 7 intent actions are declared in `skill/src/main/module.json5`.
-_Avoid_: calling it dead code or an empty shell; proposing its removal or freeze.
+**小艺 skill (skill/)**:
+The Xiaoyi integration HSP. Its seven declared intent actions enter the typed SkillIntent workflow. `SearchNote` currently reuses the shared `note_query` tool; the other six actions return explicit unsupported results until their product semantics are confirmed (ADR-0011, spec 018).
+_Avoid_: calling it a second backend; implementing unconfirmed actions by guessing.
 
 ## Ambiguous terms
 
