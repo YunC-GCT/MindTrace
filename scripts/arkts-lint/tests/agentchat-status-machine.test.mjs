@@ -8,9 +8,11 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 const machine = read('entry/src/main/ets/services/ChatStatusMachine.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
+const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
 const chatModels = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets');
+const conversationState = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
 
-// spec 007 PR2: 13 步 Chat 状态机从 AgentChatService.statusFromStep 抽取为 ChatStatusMachine。
+// spec 007 PR2: Chat 状态机从 AgentChatService.statusFromStep 抽取为 ChatStatusMachine。
 // 4 个 structural guard (与 PR1 agentchat-intent-classifier.test.mjs 同节奏)。
 
 const ALL_STEPS = [
@@ -23,7 +25,6 @@ const ALL_STEPS = [
   'note_intent_check',
   'note_context_load',
   'note_source_prepare',
-  'note_material_summary',
   'note_structure_save',
   'note_finalize',
   'completed',
@@ -34,7 +35,7 @@ test('ChatStatusMachine exposes a single public advance(step) entry that returns
   assert.match(machine, /public advance\(step: ChatStatusStep\): ChatStatusMeta/);
 });
 
-test('ChatStatusMachine.META_TABLE maps all 13 ChatStatusStep values (intent_check ... completed)', () => {
+test('ChatStatusMachine.META_TABLE maps all ChatStatusStep values', () => {
   for (const step of ALL_STEPS) {
     assert.match(
       machine,
@@ -49,28 +50,30 @@ test('ChatStatusMachine.META_TABLE value type is a typed interface (no untyped o
   assert.match(machine, /Map<ChatStatusStep, MetaEntry>/);
 });
 
-test('AgentChatService delegates setStep via ChatStatusMachine; private statics removed', () => {
-  assert.match(chatService, /private statusMachine: ChatStatusMachine = new ChatStatusMachine\(\);/);
+test('AgentChatService adapter maps workflow progress through ChatStatusMachine', () => {
+  assert.match(chatService, /private readonly statusMachine: ChatStatusMachine = new ChatStatusMachine\(\);/);
   assert.match(chatService, /this\.statusMachine\.advance\(step\)/);
-  assert.doesNotMatch(chatService, /private static statusFromStep/);
-  assert.doesNotMatch(chatService, /private static status\(step: ChatStatusStep/);
+  assert.match(workflow, /this\.cbs\.onProgress\(step\)/);
+  assert.doesNotMatch(workflow, /ChatStatusMachine|setStatusMeta|setBusy/);
 });
 
-test('finishBusy remains in AgentChatService; ChatStatusMachine does not own busy lifecycle', () => {
-  assert.match(chatService, /private finishBusy\(\): void/);
-  assert.match(chatService, /this\.cbs\.setStatusMeta\(null\)/);
-  // ChatStatusMachine.advance must be a pure step→meta function; no callback wiring.
+test('busy lifecycle remains in AgentChatService adapter; workflow emits lifecycle events', () => {
+  assert.match(chatService, /onStart\(\): void/);
+  assert.match(chatService, /onFinish\(\): void/);
+  assert.match(chatService, /this\.callbacks\.setStatusMeta\(null\)/);
+  assert.match(workflow, /this\.cbs\.onStart\(\)/);
+  assert.match(workflow, /this\.cbs\.onFinish\(\)/);
   assert.doesNotMatch(machine, /setBusy|cbs\.setStatusMeta/);
   assert.match(machine, /advance\(step: ChatStatusStep\): ChatStatusMeta \{[^}]*return \{ step/m);
 });
 
-test('ChatStatusStep union is still defined in overlays/.../ChatModels (overlay contract preserved)', () => {
-  assert.match(chatModels, /export type ChatStatusStep/);
+test('ChatStatusStep preserves the workflow progress contract', () => {
+  assert.match(chatModels, /export type ChatStatusStep = ConversationProgressStep/);
   for (const step of ALL_STEPS) {
     assert.match(
-      chatModels,
+      conversationState,
       new RegExp(`'${step}'`),
-      `ChatModels.ChatStatusStep missing value '${step}'`,
+      `ConversationProgressStep missing value '${step}'`,
     );
   }
 });

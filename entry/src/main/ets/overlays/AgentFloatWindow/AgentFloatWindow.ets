@@ -1,4 +1,4 @@
-﻿﻿// ============================================================================
+﻿// ============================================================================
 //  overlays/AgentFloatWindow/AgentFloatWindow.ets — 智能体浮窗(完整版)
 //  ----------------------------------------------------------------------------
 //  特性: 拖拽缩放(floatHeight) · 多会话(SessionBar+ChatSession) · 拍照整链(captureReply)
@@ -25,6 +25,9 @@ import { ChatMsg, ChatSession, ChatStatusMeta } from './chat/ChatModels';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputBar } from './AgentInputBar';
+import { NoteDraftReadyEvent } from 'common';
+import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
+import { KnowledgeUnit } from 'common';
 
 function nowId(): number { return Date.now() * 1000 + Math.floor(Math.random() * 1000); }
 
@@ -54,6 +57,7 @@ export struct AgentFloatWindow {
   @State maskOpacity: number = 0;
   @State sheetOpacity: number = 0;
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
+  @State generatedDraft: NoteDraftReadyEvent | null = null;
   private motionSeq: number = 0;
   private dragStartH: number = 48;
   private mainWindow: window.Window | null = null;
@@ -116,12 +120,12 @@ export struct AgentFloatWindow {
       finishAiMsg: (id: number): void => {
         this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: false, reasoning: m.reasoning } : m);
       },
-      bumpNotesVersion: (): void => { const v: number = AppStorage.get<number>('notesVersion') ?? 0; AppStorage.setOrCreate('notesVersion', v + 1); },
       setBusy: (v: boolean): void => { this.busy = v; },
       setStatusMeta: (meta: ChatStatusMeta | null): void => { this.statusMeta = meta; },
       getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
       getConversationText: (excludeLatestUser: boolean): string => this.buildConversationText(excludeLatestUser),
       getSessionId: (): string => this.activeSid,
+      onDraftReady: (event: NoteDraftReadyEvent): void => { this.generatedDraft = event; },
     };
     this.service = new AgentChatService(cbs);
     const ss: ChatSession[] = await this.sm.init(getContext(this));
@@ -174,7 +178,11 @@ export struct AgentFloatWindow {
     const uri: string = this.imagePreview;
     this.messages = [...this.messages, { id: nowId(), role: 'user', content: msg || '[图片]', ts: Date.now(), streaming: false, reasoning: '' }];
     this.inputText = ''; this.imagePreview = '';
-    this.service?.realReplyStream(msg);
+    if (uri.length > 0) {
+      this.service?.captureReply(uri, msg);
+    } else {
+      this.service?.realReplyStream(msg);
+    }
   };
 
   private modelLabel(): string {
@@ -183,6 +191,13 @@ export struct AgentFloatWindow {
       return 'DeepSeek-V4-Pro'
     }
     return model.length > 0 ? model : 'DeepSeek-V4-Pro'
+  }
+
+  private confirmDraft = async (candidate: KnowledgeUnit): Promise<KnowledgeUnit> => {
+    if (this.generatedDraft === null || this.service === null) {
+      throw new Error('草稿服务不可用');
+    }
+    return await this.service.confirmDraft(this.generatedDraft, candidate);
   }
 
   private openAnimated(): void {
@@ -263,6 +278,21 @@ export struct AgentFloatWindow {
         .borderRadius({ topLeft: R_XL, topRight: R_XL }).padding({ left: S_3, right: S_3 })
         .opacity(this.sheetOpacity)
         .position({ x: 0, y: '100%' }).markAnchor({ x: 0, y: '100%' }).translate({ y: -(74 + this.keyboardHeight) + this.sheetOffset });
+      }
+      if (this.generatedDraft !== null) {
+        NoteDetailOverlay({
+          generatedDraft: this.generatedDraft,
+          onClose: (): void => { this.generatedDraft = null },
+           onDraftCancel: (): void => {
+             const cancelled: NoteDraftReadyEvent | null = this.generatedDraft;
+             this.generatedDraft = null;
+             if (cancelled !== null) {
+               this.service?.cancelDraft(cancelled.runId).catch((): void => {});
+             }
+           },
+          onDraftConfirm: this.confirmDraft,
+          onSaved: (_unit: KnowledgeUnit): void => { this.generatedDraft = null },
+        })
       }
     }.width('100%').height('100%').hitTestBehavior(this.overlayVisible ? HitTestMode.Default : HitTestMode.None);
   }

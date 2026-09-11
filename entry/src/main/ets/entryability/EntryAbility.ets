@@ -11,6 +11,10 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { LlmConfig, OcrConfig, DatabaseHelper } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
+import { BackgroundTaskFacadeImpl } from '../kit/BackgroundTaskFacadeImpl';
+import { getBackgroundTaskFacade } from '../kit/BackgroundTaskFacadeImpl';
+import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
+import { CardSnapshotService } from '../services/CardSnapshotService';
 
 const DOMAIN = 0x0000;
 
@@ -30,15 +34,27 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, 'testTag', 'OcrConfig init failed: %{public}s', e.message);
     });
     // 初始化数据库
-    DatabaseHelper.init(this.context).catch((e: Error) => {
-      hilog.error(DOMAIN, 'testTag', 'DB init failed: %{public}s', e.message);
-    });
+    DatabaseHelper.init(this.context)
+      .then((): Promise<void> => CardSnapshotService.refresh(this.context))
+      .catch((e: Error) => {
+        hilog.error(DOMAIN, 'testTag', 'DB/card init failed: %{public}s', e.message);
+      });
     // F3 最小闭环 (spec 013 / ADR-0009): ReminderFacade 实现在组合根构造并注入
     AppStorage.setOrCreate<ReminderFacadeImpl>('reminderFacade', new ReminderFacadeImpl(this.context));
+    AppStorage.setOrCreate<BackgroundTaskFacadeImpl>(
+      'backgroundTaskFacade',
+      new BackgroundTaskFacadeImpl(),
+    );
+    AppStorage.setOrCreate<FormCardFacadeImpl>('formCardFacade', new FormCardFacadeImpl(this.context));
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 
   onDestroy(): void {
+    const facade = getBackgroundTaskFacade();
+    if (facade !== null) {
+      facade.finish('review_sync');
+      facade.finish('note_backup');
+    }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
@@ -78,5 +94,26 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageDestroy(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy'); }
   onForeground(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground'); }
-  onBackground(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground'); }
+  onBackground(): void {
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+    this.refreshCardSnapshotInBackground().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'testTag', 'Background card refresh failed: %{public}s', e.message);
+    });
+  }
+
+  private async refreshCardSnapshotInBackground(): Promise<void> {
+    const facade = getBackgroundTaskFacade();
+    if (facade === null) {
+      return;
+    }
+    const granted: boolean = await facade.requestOneShot('review_sync');
+    if (!granted) {
+      return;
+    }
+    try {
+      await CardSnapshotService.refresh(this.context);
+    } finally {
+      facade.finish('review_sync');
+    }
+  }
 }

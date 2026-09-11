@@ -8,6 +8,8 @@
 //    ChatSession: 会话 {id, name, messages[]}
 //  ============================================================================
 
+import { ConversationProgressStep } from '../../../workflows/conversation/ConversationState'
+
 export interface ChatMsg {
   // 消息唯一 id(用 Date.now * 1000 + random)
   id: number
@@ -31,20 +33,7 @@ export interface ChatMsg {
   reasoningExpanded?: boolean
 }
 
-export type ChatStatusStep =
-  'intent_check' |
-  'reply_context_load' |
-  'reply_model_call' |
-  'image_message_save' |
-  'image_recognize' |
-  'image_material_save' |
-  'note_intent_check' |
-  'note_context_load' |
-  'note_source_prepare' |
-  'note_material_summary' |
-  'note_structure_save' |
-  'note_finalize' |
-  'completed'
+export type ChatStatusStep = ConversationProgressStep
 
 export interface ChatStatusMeta {
   step: ChatStatusStep

@@ -74,7 +74,8 @@ test('settings: connection test can use API key typed in the open vendor panel',
 
 test('agent chain: StructureNode passes ClassifyNode result into KnowledgeModel', () => {
   assert.match(structureNode, /structureWithClassification\s*\(\s*input\.captureText\s*,\s*input\.classification/, 'StructureNode must call structureWithClassification when classification exists');
-  assert.match(structureNode, /classification:\s*input\.classification/, 'StructureNode must preserve classification in next state');
+  assert.match(structureNode, /input\.source/, 'StructureNode must preserve the payload source');
+  assert.match(structureNode, /copyAgentState\(input\)/, 'StructureNode must preserve all existing state channels');
 });
 
 test('diagnostics: LlmClient logs selected vendor and model without API key', () => {

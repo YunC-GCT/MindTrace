@@ -26,9 +26,13 @@ import { NoteDetailBody } from './NoteDetailBody'
 import { NoteActionBar } from './NoteActionBar'
 import { NoteIconButton } from './NoteIconButton'
 import { NoteEditForm } from './NoteEditForm'
-import { UiDataCacheService } from '../../services/UiDataCacheService'
 import { invalidateDetailRender } from './model/DetailRenderCache'
 import { invalidateMarkdownText } from '../../utils/MarkdownParseCache'
+import {
+  KnowledgeUnitWriteErrorCode,
+  KnowledgeUnitWriteResult,
+} from '../../models/KnowledgeUnitWriteModels'
+import { NoteDraftReadyEvent, IncrementalDiffItem } from 'common'
 
 @Component
 export struct NoteDetailOverlay {
@@ -36,6 +40,11 @@ export struct NoteDetailOverlay {
   @Prop @Watch('onDetailInputChanged') unit: KnowledgeUnit | null = null
   @Prop @Watch('onDetailInputChanged') units: KnowledgeUnit[] = []
   @Prop @Watch('onDetailInputChanged') isCreating: boolean = false
+  @Prop generatedDraft: NoteDraftReadyEvent | null = null
+  onDraftCancel: () => void = (): void => {}
+  onDraftConfirm: (candidate: KnowledgeUnit) => Promise<KnowledgeUnit> = async (_candidate: KnowledgeUnit): Promise<KnowledgeUnit> => {
+    throw new Error('草稿确认不可用')
+  }
   @StorageProp('statusBarHeight') sbh: number = 0
   @State localUnit: KnowledgeUnit | null = null
   @State isEditing: boolean = false
@@ -55,6 +64,11 @@ export struct NoteDetailOverlay {
   onSaved: (unit: KnowledgeUnit) => void = (_unit: KnowledgeUnit): void => {}
 
   aboutToAppear(): void {
+    if (this.generatedDraft !== null) {
+      this.isEditing = true
+      this.loadForm(this.generatedDraft.candidate)
+      return
+    }
     if (this.isCreating) {
       this.isEditing = true
       this.loadForm(null)
@@ -112,6 +126,23 @@ export struct NoteDetailOverlay {
                 onContentChange: (value: string): void => { this.contentText = value },
                 onTagsChange: (value: string): void => { this.tagsText = value },
               })
+              if (this.generatedDraft !== null) {
+                Text('AI 草稿 · 来源 ' + this.generatedDraft.sourceCount.toString()
+                  + ' · soft issues ' + this.generatedDraft.softIssueCount.toString())
+                  .fontSize(F_SM)
+                  .fontColor(TEXT_3)
+                  .width('100%')
+                  .padding({ left: 16, right: 16, bottom: 12 })
+                if (this.generatedDraft.incrementalDiff !== undefined) {
+                  ForEach(this.generatedDraft.incrementalDiff, (item: IncrementalDiffItem) => {
+                    Text(this.diffLabel(item))
+                      .fontSize(F_SM)
+                      .fontColor(TEXT_3)
+                      .width('100%')
+                      .padding({ left: 16, right: 16, bottom: 4 })
+                  }, (item: IncrementalDiffItem): string => item.sectionId)
+                }
+              }
             } else if (!this.canRenderReadOnlyDetail()) {
               this.LoadingState()
             } else {
@@ -288,6 +319,9 @@ export struct NoteDetailOverlay {
   }
 
   private modeTitle = (): string => {
+    if (this.generatedDraft !== null) {
+      return '预览 AI 笔记草稿'
+    }
     if (this.isCreating) {
       return '新建笔记'
     }
@@ -295,6 +329,19 @@ export struct NoteDetailOverlay {
       return '编辑笔记'
     }
     return '笔记详情'
+  }
+
+  private diffLabel = (item: IncrementalDiffItem): string => {
+    if (item.kind === 'added') {
+      return '新增 · ' + item.label
+    }
+    if (item.kind === 'changed') {
+      return '修改 · ' + item.label
+    }
+    if (item.kind === 'locked') {
+      return '锁定 · ' + item.label
+    }
+    return '保留 · ' + item.label
   }
 
   private startEdit = (): void => {
@@ -337,6 +384,10 @@ export struct NoteDetailOverlay {
 
   private discardEdit(): void {
     this.showDiscardConfirm = false
+    if (this.generatedDraft !== null) {
+      this.onDraftCancel()
+      return
+    }
     if (this.isCreating) {
       this.onClose()
       return
@@ -373,26 +424,82 @@ export struct NoteDetailOverlay {
     }
 
     this.saving = true
+    let databaseCommitted: boolean = false
     try {
       const now: number = Date.now()
-      const saved: KnowledgeUnit = this.isCreating
-        ? this.buildManualUnit(now, title, summary, content)
-        : this.buildUpdatedUnit(now, title, summary, content)
-      await NoteEditService.upsert(getContext(this) as common.UIAbilityContext, saved, this.isCreating)
-      this.invalidateSavedRenderCaches(saved)
-      this.localUnit = saved
+      const current: KnowledgeUnit | null = this.effectiveUnit()
+      const expectedVersion: number = current !== null ? current.version : 0
+      const saved: KnowledgeUnit = this.generatedDraft !== null
+        ? this.buildGeneratedUnit(now, title, summary, content)
+        : this.isCreating
+          ? this.buildManualUnit(now, title, summary, content)
+          : this.buildUpdatedUnit(now, title, summary, content)
+      const result: KnowledgeUnitWriteResult = this.generatedDraft !== null
+        ? await this.confirmGeneratedDraft(saved)
+        : await NoteEditService.upsert(getContext(this) as common.UIAbilityContext, saved, this.isCreating, expectedVersion)
+      if (!result.committed) {
+        if (result.errorCode === KnowledgeUnitWriteErrorCode.VERSION_CONFLICT) {
+          promptAction.showToast({ message: '笔记已被修改，请重新打开后再保存', duration: 1800 })
+          this.saving = false
+          return
+        }
+        throw new Error(result.errorMessage ?? '笔记未保存')
+      }
+      databaseCommitted = true
+      const committed: KnowledgeUnit = result.unit
+      this.invalidateSavedRenderCaches(committed)
+      this.localUnit = committed
       this.isEditing = false
       this.showDiscardConfirm = false
-      this.loadForm(saved)
-      this.bumpNotesVersion()
-      UiDataCacheService.setDetail(saved, UiDataCacheService.currentNotesVersion())
-      this.onSaved(saved)
-      promptAction.showToast({ message: this.isCreating ? '笔记已新建' : '笔记已保存', duration: 1200 })
+      this.loadForm(committed)
+      this.onSaved(committed)
+      const suffix: string = result.warnings.length > 0 ? '，部分刷新稍后重试' : ''
+      promptAction.showToast({ message: (this.isCreating ? '笔记已新建' : '笔记已保存') + suffix, duration: 1500 })
     } catch (e) {
       const message: string = (e as Error).message ?? String(e)
-      promptAction.showToast({ message: '保存失败：' + message, duration: 1800 })
+      const prefix: string = databaseCommitted ? '笔记已保存，但页面刷新失败：' : '保存失败：'
+      promptAction.showToast({ message: prefix + message, duration: 1800 })
     }
     this.saving = false
+  }
+
+  private async confirmGeneratedDraft(candidate: KnowledgeUnit): Promise<KnowledgeUnitWriteResult> {
+    if (this.generatedDraft === null) {
+      throw new Error('草稿不可用')
+    }
+    const committed: KnowledgeUnit = await this.onDraftConfirm(candidate)
+    return { committed: true, rowId: 0, unit: committed, warnings: [] }
+  }
+
+  private buildGeneratedUnit(now: number, title: string, summary: string, content: string): KnowledgeUnit {
+    if (this.generatedDraft === null) {
+      throw new Error('草稿不可用')
+    }
+    const source: KnowledgeUnit = this.generatedDraft.candidate
+    return {
+      id: source.id,
+      title: title,
+      content: content,
+      summary: summary,
+      tags: this.parseTags(this.tagsText),
+      subject: source.subject,
+      category: source.category,
+      chapter: source.chapter,
+      difficulty: source.difficulty,
+      source: source.source,
+      createdAt: source.createdAt,
+      updatedAt: now,
+      reviewStatus: source.reviewStatus,
+      nextReviewAt: source.nextReviewAt,
+      intervalDays: source.intervalDays,
+      easeFactor: source.easeFactor,
+      repetitions: source.repetitions,
+      prerequisites: source.prerequisites,
+      related: source.related,
+      embedding: source.embedding,
+      userId: source.userId,
+      version: source.version,
+    }
   }
 
   private buildManualUnit(now: number, title: string, summary: string, content: string): KnowledgeUnit {
@@ -525,14 +632,8 @@ export struct NoteDetailOverlay {
       || this.tagsText !== this.initialTagsText
   }
 
-  private bumpNotesVersion(): void {
-    const v: number = AppStorage.get<number>('notesVersion') ?? 0
-    AppStorage.setOrCreate('notesVersion', v + 1)
-  }
-
   private invalidateSavedRenderCaches = (unit: KnowledgeUnit): void => {
     const previous: KnowledgeUnit | null = this.effectiveUnit()
-    UiDataCacheService.invalidateNote(unit.id)
     invalidateDetailRender(unit.id)
     invalidateMarkdownText(unit.summary)
     invalidateMarkdownText(unit.content)
