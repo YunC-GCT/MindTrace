@@ -30,14 +30,26 @@ export interface LlmRequestBody {
   reasoning_effort?: string;      // 思考强度: "high" | "max"
   tools?: LlmToolDefinition[];    // OpenAI 兼容 function-calling (spec 014, 可选 → 向后兼容)
   tool_choice?: string;           // Phase 1 仅 'auto' | 'none'
+  chat_template_kwargs?: LlmChatTemplateKwargs;
 }
 
 export interface LlmThinkingConfig {
   type: 'enabled' | 'disabled';
 }
 
+export interface LlmChatTemplateKwargs {
+  enable_thinking: boolean;
+}
+
 export interface LlmResponseFormat {
-  type: 'json_object';
+  type: 'json_object' | 'json_schema';
+  json_schema?: LlmJsonSchema;
+}
+
+export interface LlmJsonSchema {
+  name: string;
+  strict: boolean;
+  schema: Record<string, Object>;
 }
 
 // ==================== LlmResponse (OpenAI 兼容响应,只取常用字段)====================
@@ -182,4 +194,5 @@ export interface LlmCallResult {
   streamed: boolean;
   // JSON 路径: 响应携带的模型工具调用 (extractToolCalls 填充; 无工具调用时缺省)
   toolCalls?: LlmToolCall[];
+  usage?: LlmResponseUsage;
 }

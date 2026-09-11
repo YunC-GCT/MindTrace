@@ -7,89 +7,72 @@ import {
   CaptureNode,
   CaptureNodeResult,
   CaptureStep,
+  copyAgentState,
 } from './AgentState';
+import { StateGraph, StateGraphError, StateGraphNode } from 'common';
 
-export interface CaptureGraphOptions {
-  persist?: boolean;
-}
-
-type ConditionalRouter = (state: AgentState) => CaptureStep;
+type GraphRoute = (state: AgentState) => CaptureStep;
 
 export class CaptureGraph {
-  private readonly nodes: Map<CaptureStep, CaptureNode> = new Map<CaptureStep, CaptureNode>();
-  private readonly edges: Map<CaptureStep, CaptureStep> = new Map<CaptureStep, CaptureStep>();
-  private readonly conditionalEdges: Map<CaptureStep, ConditionalRouter> = new Map<CaptureStep, ConditionalRouter>();
+  private readonly graph: StateGraph<AgentState, CaptureStep>;
+
+  constructor() {
+    this.graph = new StateGraph<AgentState, CaptureStep>(
+      'START',
+      'END',
+      (state: AgentState): boolean => state.error !== undefined,
+    );
+  }
 
   addNode(step: CaptureStep, node: CaptureNode): void {
-    this.nodes.set(step, node);
+    const workflowNode: StateGraphNode<AgentState> = async (input: AgentState): Promise<AgentState> => {
+      const nodeInput: AgentState = this.copyState(input, input.persist, step);
+      try {
+        const result: CaptureNodeResult = await node(nodeInput);
+        return result.state;
+      } catch (e) {
+        const message: string = e instanceof Error ? e.message : String(e);
+        return this.withError(nodeInput, 'NODE_ERROR', message, step, false);
+      }
+    };
+    this.graph.addNode(step, workflowNode);
   }
 
   addEdge(from: CaptureStep, to: CaptureStep): void {
-    this.edges.set(from, to);
+    this.graph.addEdge(from, to);
   }
 
-  addConditionalEdge(from: CaptureStep, router: ConditionalRouter): void {
-    this.conditionalEdges.set(from, router);
+  addConditionalEdge(from: CaptureStep, router: GraphRoute): void {
+    this.graph.addConditionalEdge(from, router);
   }
 
-  async run(initialState: AgentState, options: CaptureGraphOptions = {}): Promise<AgentState> {
+  async run(initialState: AgentState): Promise<AgentState> {
     let state: AgentState = this.copyState(initialState, initialState.persist, 'START');
-    let current: CaptureStep = 'START';
-    let lastStep: CaptureStep = 'START';
-
-    while (current !== 'END') {
-      const node: CaptureNode | undefined = this.nodes.get(current);
-      if (node === undefined) {
-        return this.withError(state, 'INVALID_GRAPH', 'Missing graph node: ' + current, current, false);
-      }
-
-      lastStep = current;
-      state = this.copyState(state, state.persist, current);
-      const result: CaptureNodeResult = await node(state);
-      state = result.state;
-
-      if (state.error !== undefined) {
-        state = this.copyState(state, state.persist, 'END');
-        break;
-      }
-
-      const conditional: ConditionalRouter | undefined = this.conditionalEdges.get(current);
-      if (conditional !== undefined) {
-        current = conditional(state);
-      } else {
-        const next: CaptureStep | undefined = this.edges.get(current);
-        if (next === undefined) {
-          return this.withError(state, 'INVALID_GRAPH', 'Missing graph edge: ' + current, current, false);
-        }
-        current = next;
-      }
+    try {
+      state = await this.graph.run(state);
+    } catch (e) {
+      const message: string = e instanceof Error ? e.message : String(e);
+      const step: CaptureStep = e instanceof StateGraphError ? this.captureStep(e.step) : state.currentStep;
+      return this.withError(state, 'INVALID_GRAPH', message, step, false);
     }
+    const finalStep: CaptureStep = state.error === undefined && state.currentStep === 'persist' ? 'persist' : 'END';
+    return this.copyState(state, state.persist, finalStep);
+  }
 
-    const finalStep: CaptureStep = lastStep === 'persist' ? 'persist' : 'END';
-    return this.copyState(state, options.persist ?? state.persist, finalStep);
+  private captureStep(value: string): CaptureStep {
+    if (value === 'capture') { return 'capture'; }
+    if (value === 'classify') { return 'classify'; }
+    if (value === 'structure') { return 'structure'; }
+    if (value === 'truth_check') { return 'truth_check'; }
+    if (value === 'persist') { return 'persist'; }
+    if (value === 'END') { return 'END'; }
+    return 'START';
   }
 
   private copyState(state: AgentState, persist: boolean, currentStep: CaptureStep): AgentState {
-    const copied: AgentState = {
-      captureText: state.captureText,
-      currentStep: currentStep,
-      persist: persist,
-    };
-    if (state.payload !== undefined) {
-      copied.payload = state.payload;
-    }
-    if (state.classification !== undefined) {
-      copied.classification = state.classification;
-    }
-    if (state.knowledgeUnit !== undefined) {
-      copied.knowledgeUnit = state.knowledgeUnit;
-    }
-    if (state.truthCheck !== undefined) {
-      copied.truthCheck = state.truthCheck;
-    }
-    if (state.error !== undefined) {
-      copied.error = state.error;
-    }
+    const copied: AgentState = copyAgentState(state);
+    copied.currentStep = currentStep;
+    copied.persist = persist;
     return copied;
   }
 
@@ -108,21 +91,9 @@ export class CaptureGraph {
   }
 
   private copyStateWithError(state: AgentState, error: CaptureGraphError): AgentState {
-    const copied: AgentState = {
-      captureText: state.captureText,
-      currentStep: 'END',
-      persist: state.persist,
-      error: error,
-    };
-    if (state.classification !== undefined) {
-      copied.classification = state.classification;
-    }
-    if (state.knowledgeUnit !== undefined) {
-      copied.knowledgeUnit = state.knowledgeUnit;
-    }
-    if (state.truthCheck !== undefined) {
-      copied.truthCheck = state.truthCheck;
-    }
+    const copied: AgentState = copyAgentState(state);
+    copied.currentStep = 'END';
+    copied.error = error;
     return copied;
   }
 }

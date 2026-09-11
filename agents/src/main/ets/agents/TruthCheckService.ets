@@ -1,8 +1,7 @@
 // MindTrace - TruthCheckService
 // 2026-09-05 · D2 Ticket #3 · 真值检查服务
 // spec 015 PR1 (2026-09-06): 真值检查实现自 KnowledgeModel 实体化搬入 (纯提取, 行为零变化);
-// 现由 KnowledgeModel.structure 直接调用 (this.truthCheckService.check),
-// CaptureGraph TruthCheckNode 调用面 check(input) 保持不变。
+// 现由 CaptureGraph TruthCheckNode 作为唯一 workflow 步骤调用。
 import { MvpTruthCheckItem, MvpTruthCheckResult } from '../models/TruthCheckResult';
 
 // truthCheck internal interfaces (moved from KnowledgeModel.ets, spec 015 PR1)

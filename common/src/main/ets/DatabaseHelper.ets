@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 4;
+const DB_SCHEMA_VERSION: number = 9;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -50,6 +50,35 @@ CREATE TABLE IF NOT EXISTS study_plan (
   due_date INTEGER NOT NULL DEFAULT 0
 )`;
 
+const SQL_CREATE_NOTE_REVISION: string = `
+CREATE TABLE IF NOT EXISTS note_revision (
+  note_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT "",
+  summary TEXT NOT NULL DEFAULT "",
+  tags TEXT NOT NULL DEFAULT "[]",
+  subject TEXT NOT NULL DEFAULT "",
+  category TEXT NOT NULL DEFAULT "",
+  chapter TEXT NOT NULL DEFAULT "",
+  difficulty INTEGER NOT NULL DEFAULT 1,
+  source TEXT NOT NULL DEFAULT "",
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  review_status TEXT NOT NULL DEFAULT "new",
+  next_review_at INTEGER NOT NULL DEFAULT 0,
+  interval_days INTEGER NOT NULL DEFAULT 0,
+  ease_factor REAL NOT NULL DEFAULT 2.5,
+  repetitions INTEGER NOT NULL DEFAULT 0,
+  prerequisites TEXT NOT NULL DEFAULT "[]",
+  related TEXT NOT NULL DEFAULT "[]",
+  embedding TEXT NOT NULL DEFAULT "[]",
+  user_id TEXT NOT NULL DEFAULT "",
+  generation_metadata TEXT NOT NULL DEFAULT "",
+  revised_at INTEGER NOT NULL,
+  PRIMARY KEY (note_id, version)
+)`;
+
 const SQL_CREATE_CHAT_MESSAGE: string = `
 CREATE TABLE IF NOT EXISTS chat_message (
   id TEXT PRIMARY KEY,
@@ -71,10 +100,84 @@ CREATE TABLE IF NOT EXISTS agent_memory (
   updated_at INTEGER NOT NULL
 )`;
 
+const SQL_CREATE_NOTE_GENERATION_RUN: string = `
+CREATE TABLE IF NOT EXISTS note_generation_run (
+  id TEXT PRIMARY KEY,
+  route TEXT NOT NULL,
+  status TEXT NOT NULL,
+  instruction TEXT NOT NULL DEFAULT '',
+  source_count INTEGER NOT NULL DEFAULT 0,
+  token_budget INTEGER NOT NULL DEFAULT 0,
+  best_checkpoint_id TEXT NOT NULL DEFAULT '',
+  stop_reason TEXT NOT NULL DEFAULT '',
+  issue_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+const SQL_CREATE_NOTE_GENERATION_SOURCE: string = `
+CREATE TABLE IF NOT EXISTS note_generation_source (
+  id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  origin_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  text TEXT NOT NULL,
+  PRIMARY KEY (run_id, id)
+)`;
+const SQL_CREATE_NOTE_GENERATION_CHECKPOINT: string = `
+CREATE TABLE IF NOT EXISTS note_generation_checkpoint (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  iteration INTEGER NOT NULL,
+  stage TEXT NOT NULL,
+  parent_id TEXT NOT NULL DEFAULT '',
+  candidate_hash TEXT NOT NULL,
+  document_json TEXT NOT NULL,
+  accepted INTEGER NOT NULL DEFAULT 0,
+   issue_codes TEXT NOT NULL DEFAULT '[]',
+    outline_json TEXT NOT NULL DEFAULT '',
+    evidence_json TEXT NOT NULL DEFAULT '',
+    verification_json TEXT NOT NULL DEFAULT '',
+    issue_fingerprint TEXT NOT NULL DEFAULT '',
+    coverage_json TEXT NOT NULL DEFAULT '',
+    token_cost INTEGER NOT NULL DEFAULT 0,
+    change_scope REAL NOT NULL DEFAULT 0,
+    decision TEXT NOT NULL DEFAULT 'rejected',
+    created_at INTEGER NOT NULL
+ )`;
+const SQL_CREATE_NOTE_GENERATION_COMMIT: string = `
+CREATE TABLE IF NOT EXISTS note_generation_commit (
+  commit_key TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  checkpoint_id TEXT NOT NULL,
+  note_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  source_ids TEXT NOT NULL DEFAULT '[]',
+  candidate_json TEXT NOT NULL DEFAULT '',
+  committed_at INTEGER NOT NULL,
+  generation_metadata TEXT NOT NULL DEFAULT ''
+ )`;
+const SQL_CREATE_NOTE_GENERATION_LOG: string = `
+CREATE TABLE IF NOT EXISTS note_generation_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  event TEXT NOT NULL,
+  checkpoint_id TEXT NOT NULL DEFAULT '',
+    issue_count INTEGER NOT NULL DEFAULT 0,
+    source_count INTEGER NOT NULL DEFAULT 0,
+    round INTEGER NOT NULL DEFAULT 0,
+    stop_reason TEXT NOT NULL DEFAULT '',
+    rollback INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+ )`;
+
 const SQL_INDEX_KNOWLEDGE_CREATED: string =
   "CREATE INDEX IF NOT EXISTS idx_knowledge_unit_created_at ON knowledge_unit(created_at)";
 const SQL_INDEX_KNOWLEDGE_REVIEW: string =
   "CREATE INDEX IF NOT EXISTS idx_knowledge_unit_review_status ON knowledge_unit(review_status)";
+const SQL_INDEX_NOTE_REVISION_NOTE: string =
+  "CREATE INDEX IF NOT EXISTS idx_note_revision_note ON note_revision(note_id, version)";
 const SQL_INDEX_STUDY_PLAN_DONE: string =
   "CREATE INDEX IF NOT EXISTS idx_study_plan_is_done ON study_plan(is_done)";
 const SQL_INDEX_CHAT_MESSAGE_SESSION_CREATED: string =
@@ -83,6 +186,10 @@ const SQL_INDEX_AGENT_MEMORY_PENDING: string =
   "CREATE INDEX IF NOT EXISTS idx_agent_memory_pending ON agent_memory(session_id, type, used, created_at)";
 const SQL_INDEX_AGENT_MEMORY_SUMMARY: string =
   "CREATE INDEX IF NOT EXISTS idx_agent_memory_summary ON agent_memory(session_id, type, created_at)";
+const SQL_INDEX_NOTE_GENERATION_RUN_STATUS: string =
+  "CREATE INDEX IF NOT EXISTS idx_note_generation_run_status ON note_generation_run(status, updated_at)";
+const SQL_INDEX_NOTE_GENERATION_LOG_RUN: string =
+  "CREATE INDEX IF NOT EXISTS idx_note_generation_log_run ON note_generation_log(run_id, created_at)";
 
 const SQL_MIGRATE_KNOWLEDGE_SUBJECT: string =
   "ALTER TABLE knowledge_unit ADD COLUMN subject TEXT NOT NULL DEFAULT \"\"";
@@ -90,6 +197,49 @@ const SQL_MIGRATE_KNOWLEDGE_CATEGORY: string =
   "ALTER TABLE knowledge_unit ADD COLUMN category TEXT NOT NULL DEFAULT \"\"";
 const SQL_MIGRATE_KNOWLEDGE_CHAPTER: string =
   "ALTER TABLE knowledge_unit ADD COLUMN chapter TEXT NOT NULL DEFAULT \"\"";
+const SQL_MIGRATE_GENERATION_SOURCE_IDS: string =
+  "ALTER TABLE note_generation_run ADD COLUMN source_ids TEXT NOT NULL DEFAULT '[]'";
+const SQL_MIGRATE_GENERATION_SOURCE_SUMMARY: string =
+  "ALTER TABLE note_generation_run ADD COLUMN source_summary TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_GENERATION_PENDING_SOURCE_IDS: string =
+  "ALTER TABLE note_generation_run ADD COLUMN pending_source_ids TEXT NOT NULL DEFAULT '[]'";
+const SQL_MIGRATE_GENERATION_COMMIT_METADATA: string =
+  "ALTER TABLE note_generation_commit ADD COLUMN generation_metadata TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_CHECKPOINT_OUTLINE: string =
+  "ALTER TABLE note_generation_checkpoint ADD COLUMN outline_json TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_CHECKPOINT_EVIDENCE: string =
+  "ALTER TABLE note_generation_checkpoint ADD COLUMN evidence_json TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_CHECKPOINT_VERIFICATION: string =
+  "ALTER TABLE note_generation_checkpoint ADD COLUMN verification_json TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_CHECKPOINT_ISSUE_FINGERPRINT: string =
+  "ALTER TABLE note_generation_checkpoint ADD COLUMN issue_fingerprint TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_CHECKPOINT_COVERAGE: string =
+  "ALTER TABLE note_generation_checkpoint ADD COLUMN coverage_json TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_CHECKPOINT_TOKEN_COST: string =
+  "ALTER TABLE note_generation_checkpoint ADD COLUMN token_cost INTEGER NOT NULL DEFAULT 0";
+const SQL_MIGRATE_CHECKPOINT_CHANGE_SCOPE: string =
+  "ALTER TABLE note_generation_checkpoint ADD COLUMN change_scope REAL NOT NULL DEFAULT 0";
+const SQL_MIGRATE_CHECKPOINT_DECISION: string =
+  "ALTER TABLE note_generation_checkpoint ADD COLUMN decision TEXT NOT NULL DEFAULT 'rejected'";
+const SQL_MIGRATE_GENERATION_LOG_ROUND: string =
+  "ALTER TABLE note_generation_log ADD COLUMN round INTEGER NOT NULL DEFAULT 0";
+const SQL_MIGRATE_GENERATION_LOG_STOP_REASON: string =
+  "ALTER TABLE note_generation_log ADD COLUMN stop_reason TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_GENERATION_LOG_ROLLBACK: string =
+  "ALTER TABLE note_generation_log ADD COLUMN rollback INTEGER NOT NULL DEFAULT 0";
+const SQL_BACKFILL_NOTE_REVISION: string = `
+INSERT OR IGNORE INTO note_revision (
+  note_id, version, title, content, summary, tags, subject, category, chapter,
+  difficulty, source, created_at, updated_at, review_status, next_review_at,
+  interval_days, ease_factor, repetitions, prerequisites, related, embedding,
+  user_id, generation_metadata, revised_at
+)
+SELECT
+  id, version, title, content, summary, tags, subject, category, chapter,
+  difficulty, source, created_at, updated_at, review_status, next_review_at,
+  interval_days, ease_factor, repetitions, prerequisites, related, embedding,
+  user_id, "", updated_at
+FROM knowledge_unit`;
 
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
@@ -121,15 +271,24 @@ export class DatabaseHelper {
   private static async ensureSchema(store: relationalStore.RdbStore): Promise<void> {
     const statements: string[] = [
       SQL_CREATE_KNOWLEDGE,
+      SQL_CREATE_NOTE_REVISION,
       SQL_CREATE_STUDY_PLAN,
       SQL_CREATE_CHAT_MESSAGE,
       SQL_CREATE_AGENT_MEMORY,
+      SQL_CREATE_NOTE_GENERATION_RUN,
+      SQL_CREATE_NOTE_GENERATION_SOURCE,
+      SQL_CREATE_NOTE_GENERATION_CHECKPOINT,
+      SQL_CREATE_NOTE_GENERATION_COMMIT,
+      SQL_CREATE_NOTE_GENERATION_LOG,
       SQL_INDEX_KNOWLEDGE_CREATED,
       SQL_INDEX_KNOWLEDGE_REVIEW,
+      SQL_INDEX_NOTE_REVISION_NOTE,
       SQL_INDEX_STUDY_PLAN_DONE,
       SQL_INDEX_CHAT_MESSAGE_SESSION_CREATED,
       SQL_INDEX_AGENT_MEMORY_PENDING,
       SQL_INDEX_AGENT_MEMORY_SUMMARY,
+      SQL_INDEX_NOTE_GENERATION_RUN_STATUS,
+      SQL_INDEX_NOTE_GENERATION_LOG_RUN,
     ];
 
     for (const sql of statements) {
@@ -148,6 +307,68 @@ export class DatabaseHelper {
     if (!hasChapter) {
       await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_KNOWLEDGE_CHAPTER);
     }
+    const hasSourceIds: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "source_ids");
+    if (!hasSourceIds) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_SOURCE_IDS);
+    }
+    const hasSourceSummary: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "source_summary");
+    if (!hasSourceSummary) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_SOURCE_SUMMARY);
+    }
+    const hasPendingSourceIds: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "pending_source_ids");
+    if (!hasPendingSourceIds) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_PENDING_SOURCE_IDS);
+    }
+    const hasCommitMetadata: boolean = await DatabaseHelper.hasColumn(store, "note_generation_commit", "generation_metadata");
+    if (!hasCommitMetadata) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_COMMIT_METADATA);
+    }
+    const hasOutlineJson: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "outline_json");
+    if (!hasOutlineJson) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_OUTLINE);
+    }
+    const hasEvidenceJson: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "evidence_json");
+    if (!hasEvidenceJson) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_EVIDENCE);
+    }
+    const hasVerificationJson: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "verification_json");
+    if (!hasVerificationJson) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_VERIFICATION);
+    }
+    const hasIssueFingerprint: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "issue_fingerprint");
+    if (!hasIssueFingerprint) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_ISSUE_FINGERPRINT);
+    }
+    const hasCoverage: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "coverage_json");
+    if (!hasCoverage) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_COVERAGE);
+    }
+    const hasTokenCost: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "token_cost");
+    if (!hasTokenCost) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_TOKEN_COST);
+    }
+    const hasChangeScope: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "change_scope");
+    if (!hasChangeScope) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_CHANGE_SCOPE);
+    }
+    const hasDecision: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "decision");
+    if (!hasDecision) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_DECISION);
+    }
+    const hasLogRound: boolean = await DatabaseHelper.hasColumn(store, "note_generation_log", "round");
+    if (!hasLogRound) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_LOG_ROUND);
+    }
+    const hasLogStopReason: boolean = await DatabaseHelper.hasColumn(store, "note_generation_log", "stop_reason");
+    if (!hasLogStopReason) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_LOG_STOP_REASON);
+    }
+    const hasLogRollback: boolean = await DatabaseHelper.hasColumn(store, "note_generation_log", "rollback");
+    if (!hasLogRollback) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_LOG_ROLLBACK);
+    }
+
+    await DatabaseHelper.executeSql(store, SQL_BACKFILL_NOTE_REVISION);
 
     if (store.version < DB_SCHEMA_VERSION) {
       store.version = DB_SCHEMA_VERSION;

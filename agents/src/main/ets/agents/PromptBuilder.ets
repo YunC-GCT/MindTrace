@@ -4,6 +4,15 @@
 // 现由 KnowledgeModel.callAi 直接调用 (this.promptBuilder.buildPrompt)。
 // 工具化预留位: 结构化若改走 ToolLoop (ADR-0012), 提示词组装仍归本类。
 import { NOTE_TYPE_KEYS } from 'common';
+import type { KnowledgeCategory } from '../models/KnowledgeCategory';
+
+export const KNOWLEDGE_INPUT_LIMIT: number = 12000;
+export const KNOWLEDGE_MAX_TOKENS: number = 12000;
+export const KNOWLEDGE_TIMEOUT_MS: number = 300000;
+export const KNOWLEDGE_CLASSIFY_HINT_TIMEOUT_MS: number = 10000;
+export const KNOWLEDGE_HINT_CONFIDENCE_MIN: number = 0.55;
+export const KNOWLEDGE_FALLBACK_CATEGORY: KnowledgeCategory = '概念';
+export const KNOWLEDGE_FALLBACK_SUBJECT: string = '其它';
 
 export class PromptBuilder {
   // ADR-0006 调用面 (保持不变)

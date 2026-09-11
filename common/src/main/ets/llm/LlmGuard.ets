@@ -125,6 +125,7 @@ export class LlmGuard {
       model: options.model,
       timeoutMs: options.timeoutMs,
       responseFormat: options.responseFormat ?? { type: 'json_object' },
+      enableThinking: options.enableThinking,
     };
     return request;
   }

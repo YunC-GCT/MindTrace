@@ -65,12 +65,101 @@ export {
   TruthCheckResult,
   DispatchRequest,
   DispatchResult,
-  DispatchAnalysisResult,
   ApiResponse,
   API_CODE,
   CLASSIFY_CONFIDENCE_THRESHOLD,
 } from './models/CaptureChain';
 export type { ApiCode, DispatchPayload, ImagePayload, TextPayload, FilePayload, NoteCategory } from './models/CaptureChain';
+export type {
+  NoteGenerationMode,
+  SourceKind,
+  NoteGenerationRoute,
+  NoteGenerationStatus,
+  DraftSectionState,
+  SourceFragment,
+  SourceBundle,
+  NoteGenerationRequirement,
+  NoteGenerationRequest,
+  NoteDraftSection,
+  NoteDraftDocument,
+  NoteGenerationIssue,
+  ProcessIssue,
+  NoteGenerationOutlineSection,
+  NoteGenerationOutline,
+  EvidenceItemType,
+  EvidenceVerificationStatus,
+  EvidenceSourceRef,
+  NoteGenerationEvidenceItem,
+  NoteGenerationVerification,
+  NoteGenerationEvidenceDecision,
+  NoteGenerationStandardResult,
+  NoteGenerationLedgerEntry,
+  NoteGenerationLedger,
+  NoteGenerationSegment,
+  NoteGenerationDeepResult,
+  NoteGenerationBudget,
+  NoteGenerationCoverage,
+  NoteGenerationCheckpointDecision,
+  NoteGenerationProgress,
+  NoteGenerationRun,
+  NoteGenerationCheckpoint,
+  NoteDraftReadyEvent,
+  PreparedCandidate,
+  NoteGenerationRecovery,
+  NoteGenerationResult,
+  NoteGenerationRepository,
+  NoteGenerationCommitResult,
+  NoteGenerationLifecycleEvent,
+  NoteGenerationLifecycleLog,
+  IncrementalSectionState,
+  IncrementalDiffKind,
+  IncrementalSection,
+  IncrementalManifestSection,
+  IncrementalManifest,
+  IncrementalRequirement,
+  IncrementalPlan,
+  IncrementalPatch,
+  IncrementalDiffItem,
+  IncrementalMergeResult,
+  IncrementalBase,
+  IncrementalPatchResponse,
+ } from './models/NoteGenerationModels';
+export {
+  NOTE_DRAFT_SCHEMA_VERSION,
+  NOTE_DRAFT_JSON_SCHEMA,
+  NOTE_OUTLINE_SCHEMA_VERSION,
+  NOTE_EVIDENCE_SCHEMA_VERSION,
+  NOTE_VERIFICATION_SCHEMA_VERSION,
+  NOTE_OUTLINE_JSON_SCHEMA,
+  NOTE_EVIDENCE_JSON_SCHEMA,
+  NOTE_VERIFICATION_JSON_SCHEMA,
+  NOTE_STANDARD_JSON_SCHEMA,
+  defaultRequirement,
+  selectLightRoute,
+  selectGenerationRoute,
+  lightBudget,
+  standardBudget,
+  deepBudget,
+  segmentSourceBundle,
+  buildDeepOutline,
+  validateDeepOutline,
+  sourceFingerprint,
+  buildSourceId,
+  stableSectionId,
+  validateSourceBundle,
+  normalizeOutline,
+  validateDraftDocument,
+  validateDraftShape,
+  parseIncrementalSections,
+  buildIncrementalManifest,
+  detectIncrementalLocks,
+  planIncrementalChange,
+  mergeIncrementalPatches,
+   renderIncrementalSections,
+   buildJsonSchema,
+   parseDirectStandardArtifacts,
+  } from './models/NoteGenerationModels';
+export { NoteGenerationEvidenceVerifier } from './models/NoteGenerationModels';
 
 // ========== 统一日志 ==========
 export {
@@ -107,13 +196,18 @@ export type {
   LlmFunctionDefinition,
   LlmToolCall,
   LlmToolDefinition,
+  LlmResponseFormat,
+  LlmJsonSchema,
 } from './llm/LlmTypes';
 export type { LlmGuardJsonOptions, LlmGuardJsonResult, LlmGuardValidationResult, LlmJsonValidator } from './llm/LlmGuard';
 export type { LlmCaller } from './llm/LlmGuard';
 export { ToolRegistry } from './tools/ToolRegistry';
+export { ToolCatalog } from './tools/ToolCatalog';
 export { ToolLoop } from './tools/ToolLoop';
+export { StateGraph, StateGraphError } from './workflow/StateGraph';
 export type { AgentTool, ToolResult } from './tools/ToolRegistry';
-export type { ToolLoopOptions } from './tools/ToolLoop';
+export type { StateGraphNode, StateGraphRoute, StateGraphHalt, StateGraphErrorKind } from './workflow/StateGraph';
+export type { ToolLoopOptions } from './workflow/tool-calling/ToolCallingState';
 export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools } from './tools/NoteQueryTools';
 
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
@@ -160,3 +254,5 @@ export type {
   CardSnapshot,
   FormCardFacade,
 } from './kit/FormCardFacade';
+export { CardSnapshotBinding } from './kit/FormCardFacade';
+export { CardSnapshotStore } from './kit/CardSnapshotStore';
