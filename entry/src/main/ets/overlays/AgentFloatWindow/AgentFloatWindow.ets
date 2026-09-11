@@ -46,7 +46,6 @@ export struct AgentFloatWindow {
   @State inputText: string = '';
   @State busy: boolean = false;
   @State statusMeta: ChatStatusMeta | null = null;
-  @State deepThink: boolean = false;
   @State imagePreview: string = '';
   @State keyboardHeight: number = 0;
   @State sessions: ChatSession[] = [{ id: 's1', name: '会话 1', messages: [] }];
@@ -258,8 +257,6 @@ export struct AgentFloatWindow {
 
           ChatHeader({
             modelName: this.modelLabel(),
-            deepThink: this.deepThink,
-            onToggleThink: (): void => { this.deepThink = !this.deepThink; },
             onNewChat: (): void => { this.newSession(); },
             onClose: this.onClose,
           });
