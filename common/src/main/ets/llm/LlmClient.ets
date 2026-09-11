@@ -42,6 +42,7 @@ import {
   LlmStreamDelta,
   LlmStreamCallback,
   LlmThinkingConfig,
+  LlmChatTemplateKwargs,
   LlmCallRequest,
   LlmCallResult,
   LlmToolCall,
@@ -82,6 +83,9 @@ export class LlmClient {
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
     const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
+    const enableThinking: boolean = request.enableThinking !== undefined
+      ? request.enableThinking
+      : this.config.getEnableThinking();
 
     const body: LlmRequestBody = {
       model: model,
@@ -90,6 +94,8 @@ export class LlmClient {
       max_tokens: maxTokens,
       stream: false,
     };
+    // response_format is the single transport seam for provider-declared
+    // json_schema support; unsupported providers receive json_object instead.
     if (request.responseFormat !== undefined) {
       body.response_format = request.responseFormat;
     }
@@ -98,6 +104,10 @@ export class LlmClient {
     }
     if (request.tool_choice !== undefined) {
       body.tool_choice = request.tool_choice;
+    }
+    if (model.toLowerCase().indexOf('qwen') >= 0) {
+      const chatTemplateKwargs: LlmChatTemplateKwargs = { enable_thinking: enableThinking };
+      body.chat_template_kwargs = chatTemplateKwargs;
     }
 
     // 3. 发 HTTP POST
@@ -138,12 +148,19 @@ export class LlmClient {
     }
 
     // 6. 提取 content / tool_calls
-    console.info('[LlmClient] raw response: ' + JSON.stringify(parsed).substring(0, 800));
+    const promptTokens: number = parsed.usage?.prompt_tokens ?? 0;
+    const completionTokens: number = parsed.usage?.completion_tokens ?? 0;
+    console.info('[LlmClient] response choices=' + parsed.choices.length.toString()
+      + ' promptTokens=' + promptTokens.toString()
+      + ' completionTokens=' + completionTokens.toString());
     if (parsed.choices.length > 0 && parsed.choices[0].finish_reason === 'length') {
       throw new LlmError('LLM response truncated by max_tokens', 'API_ERROR');
     }
     const toolCalls: LlmToolCall[] = this.extractToolCalls(parsed);
     const result: LlmCallResult = { text: '', streamed: false };
+    if (parsed.usage !== undefined) {
+      result.usage = parsed.usage;
+    }
     if (toolCalls.length > 0) {
       // tool_calls 响应: content 常为 null/空, 不走 extractContent 的空内容抛错
       const first: LlmResponseChoice = parsed.choices[0];
@@ -242,7 +259,9 @@ export class LlmClient {
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
     const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
-    const enableThinking: boolean = request.enableThinking === true;
+    const enableThinking: boolean = request.enableThinking !== undefined
+      ? request.enableThinking
+      : this.config.getEnableThinking();
 
     // 构造 body (Record 避免 redacted 匹配问题)
     const bodyObj: Record<string, Object> = {
@@ -265,6 +284,11 @@ export class LlmClient {
       bodyObj['reasoning_effort'] = 'high';
     }
 
+    if (model.toLowerCase().indexOf('qwen') >= 0) {
+      const chatTemplateKwargs: LlmChatTemplateKwargs = { enable_thinking: enableThinking };
+      bodyObj['chat_template_kwargs'] = chatTemplateKwargs as Object;
+    }
+
     if (request.responseFormat !== undefined) {
       bodyObj['response_format'] = request.responseFormat as Object;
     }
@@ -280,6 +304,8 @@ export class LlmClient {
       let sseLineBuffer: string = '';
       let streamEnded: boolean = false;
       let dataReceived: boolean = false;
+      let chunkCount: number = 0;
+      let receivedBytes: number = 0;
 
       // 超时保护 (2 分钟总超时)
       const timer: number = setTimeout((): void => {
@@ -310,7 +336,8 @@ export class LlmClient {
         clearTimeout(firstByteTimer);
         try {
           const text: string = LlmClient.arrayBufferToString(chunk);
-          console.info('[LlmClient] dataReceive: ' + text.length.toString() + ' bytes');
+          chunkCount += 1;
+          receivedBytes += text.length;
           sseLineBuffer += text;
           sseLineBuffer = this.processSseBuffer(sseLineBuffer, onDelta);
         } catch (e) {
@@ -326,7 +353,9 @@ export class LlmClient {
         streamEnded = true;
         clearTimeout(timer);
         clearTimeout(firstByteTimer);
-        console.info('[LlmClient] dataEnd, buffer: ' + sseLineBuffer.length.toString());
+        console.info('[LlmClient] stream completed chunks=' + chunkCount.toString()
+          + ' bytes=' + receivedBytes.toString()
+          + ' remaining=' + sseLineBuffer.length.toString());
 
         // 处理 buffer 中剩余数据
         if (sseLineBuffer.trim().length > 0) {
@@ -410,11 +439,11 @@ export class LlmClient {
       if (trimmed.length === 0) {
         continue;
       }
-      if (trimmed.indexOf('data: ') !== 0) {
+      if (trimmed.indexOf('data:') !== 0) {
         continue;
       }
 
-      const dataStr: string = trimmed.substring(6);
+      const dataStr: string = trimmed.substring(5).trim();
       if (dataStr === '[DONE]') {
         continue; // 流结束信号,由 dataEnd 事件处理
       }
@@ -443,7 +472,7 @@ export class LlmClient {
     }
     const lines: string[] = trimmed.split('\n');
     for (const line of lines) {
-      const dataPrefix: string = 'data: ';
+      const dataPrefix: string = 'data:';
       const prefixIdx: number = line.indexOf(dataPrefix);
       if (prefixIdx < 0) {
         continue;

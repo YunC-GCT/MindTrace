@@ -328,6 +328,15 @@ export class LlmConfig {
   // ===== PR2-T1: Vendor 解析 =====
   public getVendorId(): string { return this.cachedVendorId; }
 
+  public supportsStrictStructuredOutput(): boolean {
+    if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
+      const custom: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId);
+      return custom !== null && custom.strictStructuredOutput === true;
+    }
+    const provider = findProvider(this.cachedVendorId);
+    return provider !== null && provider.strictStructuredOutput;
+  }
+
   public async setVendorId(id: string): Promise<void> {
     this.requireInited();
     this.cachedVendorId = id;

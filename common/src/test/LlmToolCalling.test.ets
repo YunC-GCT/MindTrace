@@ -158,6 +158,20 @@ export default function llmToolCallingTest(): void {
       expect(kind).assertEqual('TOOL_LOOP_MAX_STEPS');
     });
 
+    it('loop_rejects_non_positive_max_steps_before_calling_model', 0, async () => {
+      const llm: ScriptedLlm = new ScriptedLlm([textResult('must not run')]);
+      const registry: ToolRegistry = new ToolRegistry();
+      const loop: ToolLoop = new ToolLoop(llm);
+      let kind: string = '';
+      try {
+        await loop.run([USER_MSG], registry, { maxSteps: 0 });
+      } catch (e) {
+        kind = (e as LlmError).kind;
+      }
+      expect(kind).assertEqual('TOOL_LOOP_MAX_STEPS');
+      expect(llm.seenMessages.length).assertEqual(0);
+    });
+
     it('loop_feeds_tool_error_back_and_model_recovers', 0, async () => {
       const tool: EchoProbeTool = new EchoProbeTool();
       tool.failFirst = true;

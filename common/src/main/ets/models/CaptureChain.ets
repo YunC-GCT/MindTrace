@@ -1,8 +1,9 @@
-﻿// MindTrace - D1 拍照链共享类型
+// MindTrace - D1 拍照链共享类型
 // 跨模块传输的入参/出参/中间结果接口
 // 创建: Z (W1 块 3 主 agent 业务 - 2026-07-13)
 
 import { KnowledgeUnit } from './CommonTypes';
+import { NoteGenerationRequest, NoteGenerationResult, PreparedCandidate } from './NoteGenerationModels';
 
 // ==================== B2 分类结果 ====================
 // B2 classify 入参(Dispatcher 转发,任一字段可单独传)
@@ -78,6 +79,8 @@ export interface DispatchRequest {
   source: 'app' | 'skill' | 'card';
   // 调度入参(2026-07-14 改:从 string 升级为 DispatchPayload)
   payload: DispatchPayload;
+  generation?: NoteGenerationRequest;
+  preparedCandidate?: PreparedCandidate;
 }
 
 // 调度结果出参
@@ -85,23 +88,15 @@ export interface DispatchResult {
   success: boolean;
   // 当前固定 'D1' — 未来加 D2 复习 / D3 问答
   route: 'D1';
-  // 成功时填 KnowledgeUnit(C 完成后自动窄化)
-  // MVP: 允许 Record<string, Object> 以兼容 stub 阶段
-  data?: KnowledgeUnit | Record<string, Object>;
+  data?: KnowledgeUnit;
+  classification?: ClassificationResult;
+  recognizedText?: string;
   // 失败时填描述
   errorMessage?: string;
   // 处理耗时(毫秒)
   durationMs: number;
-}
-
-// 只识别/分类，不生成 KnowledgeUnit，不入库
-export interface DispatchAnalysisResult {
-  success: boolean;
-  route: 'D1';
-  classification?: ClassificationResult;
-  recognizedText?: string;
-  errorMessage?: string;
-  durationMs: number;
+  generation?: NoteGenerationResult;
+  errorCode?: string;
 }
 
 // ==================== 通用 API 响应包装 ====================

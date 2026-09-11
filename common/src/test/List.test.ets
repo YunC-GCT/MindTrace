@@ -11,6 +11,7 @@ import contentProtocolTest from './ContentProtocol.test';
 import contentExcerptBuilderTest from './ContentExcerptBuilder.test';
 import noteToolsTest from './NoteTools.test';
 import llmToolCallingTest from './LlmToolCalling.test';
+import stateGraphTest from './StateGraph.test';
 
 export default function testsuite(): void {
   llmGuardTest();
@@ -19,4 +20,5 @@ export default function testsuite(): void {
   contentExcerptBuilderTest();
   noteToolsTest();
   llmToolCallingTest();
+  stateGraphTest();
 }

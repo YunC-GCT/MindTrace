@@ -22,6 +22,7 @@ export interface ProviderConfig {
   defaultModel: string;          // 该 vendor 当前推荐模型
   protocolKind: 'openai-compatible';
   docsUrl: string;
+  strictStructuredOutput: boolean;
 }
 
 export const PROVIDERS: ProviderConfig[] = [
@@ -32,6 +33,7 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: 'deepseek-v4-pro',
     protocolKind: 'openai-compatible',
     docsUrl: 'https://api-docs.deepseek.com/',
+    strictStructuredOutput: true,
   },
   {
     id: 'tongyi',
@@ -40,6 +42,7 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: 'qwen3-max',
     protocolKind: 'openai-compatible',
     docsUrl: 'https://help.aliyun.com/zh/model-studio/developer-reference/compatibility-of-openai-with-dashscope',
+    strictStructuredOutput: true,
   },
   {
     id: 'glm',
@@ -48,6 +51,7 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: 'glm-5.3',
     protocolKind: 'openai-compatible',
     docsUrl: 'https://docs.bigmodel.cn/cn/guide/start/model-overview',
+    strictStructuredOutput: true,
   },
   {
     id: 'kimi',
@@ -56,6 +60,7 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: 'kimi-k2.6',
     protocolKind: 'openai-compatible',
     docsUrl: 'https://platform.moonshot.cn/docs/api-reference',
+    strictStructuredOutput: true,
   },
   {
     id: 'doubao',
@@ -64,6 +69,7 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: 'doubao-seed-1.6',
     protocolKind: 'openai-compatible',
     docsUrl: 'https://www.volcengine.com/docs/82379',
+    strictStructuredOutput: true,
   },
 ];
 
@@ -76,6 +82,7 @@ export interface CustomVendorConfig {
   vendorName: string;  // 用户填的显示名
   baseUrl: string;      // 用户填的 base URL
   model: string;        // 用户填的 model id
+  strictStructuredOutput?: boolean;
   // apiKey 不在此处,走 ApiKeyVault / per-vendor L3 持久化(不污染 config 类型)
 }
 
