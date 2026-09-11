@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 //  viewmodels/StudyPlanViewModel.ets — 学习计划 UI 状态层
 //  ----------------------------------------------------------------------------
 //  职责: 管理学习计划列表的增删改查 UI 状态。
@@ -202,17 +202,8 @@ export class StudyPlanViewModel {
   async generatePlan(knownTitles: string[]): Promise<void> {
     this.isLoading = true
     try {
-      const titles: string[] = await StudyPlanService.generateTitles(knownTitles)
-
-      for (const title of titles) {
-        const item: StudyPlanItem = new StudyPlanItem(title)
-        if (this.dao !== null) {
-          try {
-            await this.dao.insert(item)
-          } catch (e) {
-            console.error("[StudyPlanViewModel.generatePlan] insert failed: " + (e as Error).message)
-          }
-        }
+      const generated: StudyPlanItem[] = await StudyPlanService.generateAndPersist(knownTitles, this.dao)
+      for (const item of generated) {
         this.items.push(item)
       }
       this.items = this.items.slice(0)
