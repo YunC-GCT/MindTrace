@@ -25,6 +25,7 @@ export class IntentClassifier {
     const normalized: string = userText.trim();
     if (normalized.length === 0) { return 'chat'; }
     if (this.hasNoteGenerationDenyIntent(normalized)) { return 'chat'; }
+    if (this.hasExplicitRegenerationIntent(normalized)) { return 'note_generation'; }
     if (this.hasExplicitNoteGenerationIntent(normalized)) { return 'note_generation'; }
     if (!this.shouldUseRemoteIntentClassifier(normalized)) { return 'chat'; }
 
@@ -189,6 +190,11 @@ export class IntentClassifier {
     return this.hasActionNearTarget(text, createActions, noteTargets, 4)
       || this.hasActionNearTarget(text, transformActions, noteTargets, 6)
       || this.hasActionNearTarget(text, currentTargets, rememberActions, 8);
+  }
+
+  private hasExplicitRegenerationIntent(text: string): boolean {
+    const markers: string[] = ['noteId=', 'noteId:', '笔记ID=', '笔记ID：', '增加例子', '补充例子', '展开推导', '重生成章节'];
+    return this.includesAny(text, markers);
   }
 
   private includesAny(text: string, phrases: string[]): boolean {

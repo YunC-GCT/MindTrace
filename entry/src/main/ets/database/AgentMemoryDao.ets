@@ -95,25 +95,29 @@ export class AgentMemoryDao {
     });
   }
 
-  async markPendingUsed(sessionId: string): Promise<void> {
+  async markPendingUsedByIds(sourceIds: string[]): Promise<void> {
+    if (sourceIds.length === 0) {
+      return;
+    }
     const bucket: relationalStore.ValuesBucket = {
       'used': 1,
       'updated_at': Date.now(),
     };
-    const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('agent_memory');
-    predicates.equalTo('session_id', sessionId);
-    predicates.equalTo('type', 'pending_note');
-    predicates.equalTo('used', 0);
-
-    return new Promise<void>((resolve, reject) => {
-      this.store.update(bucket, predicates, (err: Error, _rows: number) => {
-        if (err) {
-          reject(new Error('AgentMemoryDao.markPendingUsed failed: ' + err.message));
-          return;
-        }
-        resolve();
+    for (const sourceId of sourceIds) {
+      const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('agent_memory');
+      predicates.equalTo('id', sourceId);
+      predicates.equalTo('type', 'pending_note');
+      predicates.equalTo('used', 0);
+      await new Promise<void>((resolve, reject) => {
+        this.store.update(bucket, predicates, (err: Error, _rows: number): void => {
+          if (err) {
+            reject(new Error('AgentMemoryDao.markPendingUsedByIds failed: ' + err.message));
+            return;
+          }
+          resolve();
+        });
       });
-    });
+    }
   }
 
   async deleteBySession(sessionId: string): Promise<void> {

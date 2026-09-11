@@ -15,10 +15,30 @@
 //  ArkTS 1.1 strict: 显式类型, 无 Record<>, 无 RegExpMatchArray
 //  ============================================================================
 
-import { LlmClient } from "common"
+import { LlmClient, StudyPlanItem } from "common"
 import type { ChatMessage, LlmCallResult } from "common"
+import { StudyPlanDao } from "../database/StudyPlanDao"
+import { WritePathValidator } from "./WritePathValidator"
 
 export class StudyPlanService {
+  static async generateAndPersist(knownTitles: string[], dao: StudyPlanDao | null): Promise<StudyPlanItem[]> {
+    const titles: string[] = await StudyPlanService.generateTitles(knownTitles)
+    const items: StudyPlanItem[] = []
+    for (const title of titles) {
+      const item: StudyPlanItem = new StudyPlanItem(title)
+      WritePathValidator.validateStudyPlanItem(item)
+      if (dao !== null) {
+        try {
+          await dao.insert(item)
+        } catch (e) {
+          console.error("[StudyPlanService.generateAndPersist] insert failed: " + (e as Error).message)
+        }
+      }
+      items.push(item)
+    }
+    return items
+  }
+
   // 生成学习计划标题; 解析失败返回空数组 (与原 ViewModel 行为一致)
   static async generateTitles(knownTitles: string[]): Promise<string[]> {
     const contextStr: string = knownTitles.length > 0

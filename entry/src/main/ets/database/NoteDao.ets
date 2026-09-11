@@ -1,16 +1,30 @@
 // ============================================================================
 //  database/NoteDao.ets — 知识单元数据访问层
 //  ----------------------------------------------------------------------------
-//  职责: RDB CRUD 操作，KnowledgeUnit 与 ValuesBucket 互转。
+//  职责: RDB CRUD、KnowledgeUnit/revision 事务写入与 ValuesBucket 互转。
 //  接口:
-//    insert(unit): Promise<number>        — 插入，返回 rowId
+//    createWithRevision(unit, metadata): Promise<KnowledgeUnitPersistenceResult>
+//    updateWithRevision(unit, expectedVersion, metadata): Promise<KnowledgeUnitPersistenceResult>
 //    queryById(id): Promise<KnowledgeUnit | null> — 按 id 查询
+//    queryRevision(id, version): Promise<KnowledgeUnitRevision | null>
 //    rowToUnit(rs): KnowledgeUnit         — ResultSet → KnowledgeUnit
-//  验证方式: insert → 检查 rowId → queryById 验证
+//  验证方式: 事务写入 → queryById / queryRevision 验证
 //  ============================================================================
 
 import { relationalStore } from '@kit.ArkData';
-import { KnowledgeUnit, DifficultyLevel, ReviewStatus } from 'common';
+import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult } from 'common';
+import {
+  KnowledgeUnitPersistenceResult,
+  KnowledgeUnitRevision,
+  KnowledgeUnitWriteError,
+  KnowledgeUnitWriteErrorCode,
+  KnowledgeUnitWriteRepository,
+  NoteGenerationBaseProvider,
+} from '../models/KnowledgeUnitWriteModels';
+
+interface NoteCommitLookup {
+  noteId: string;
+}
 
 const NOTE_METADATA_COLUMNS: string[] = [
   'id', 'title', 'summary', 'tags', 'subject', 'category', 'chapter', 'difficulty', 'source',
@@ -18,43 +32,217 @@ const NOTE_METADATA_COLUMNS: string[] = [
   'ease_factor', 'repetitions', 'user_id', 'version',
 ];
 
-export class NoteDao {
+export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBaseProvider {
   private store: relationalStore.RdbStore;
 
   constructor(store: relationalStore.RdbStore) {
     this.store = store;
   }
 
-  // 插入知识单元, 返回 rowId
-  async insert(unit: KnowledgeUnit): Promise<number> {
-    const valueBucket: relationalStore.ValuesBucket = NoteDao.toBucket(unit);
-
-    return new Promise<number>((resolve, reject) => {
-      this.store.insert('knowledge_unit', valueBucket, (err, rowId) => {
-        if (err) {
-          reject(new Error('NoteDao.insert failed: ' + err.message));
-          return;
-        }
-        resolve(rowId);
-      });
-    });
+  async createWithRevision(
+    unit: KnowledgeUnit,
+    generationMetadata: string,
+  ): Promise<KnowledgeUnitPersistenceResult> {
+    const transaction: relationalStore.Transaction = await this.store.createTransaction();
+    try {
+      const rowId: number = await transaction.insert('knowledge_unit', NoteDao.toBucket(unit));
+      await transaction.insert('note_revision', NoteDao.toRevisionBucket(unit, generationMetadata));
+      await transaction.commit();
+      const result: KnowledgeUnitPersistenceResult = { rowId: rowId, unit: unit };
+      return result;
+    } catch (e) {
+      await NoteDao.rollback(transaction);
+      if (e instanceof Error) {
+        throw e;
+      }
+      throw new Error(String(e));
+    }
   }
 
-  // 更新知识单元
-  async update(unit: KnowledgeUnit): Promise<void> {
-    const predicates = new relationalStore.RdbPredicates('knowledge_unit');
-    predicates.equalTo('id', unit.id);
-    const valueBucket: relationalStore.ValuesBucket = NoteDao.toBucket(unit);
-
-    return new Promise<void>((resolve, reject) => {
-      this.store.update(valueBucket, predicates, (err, _rows) => {
-        if (err) {
-          reject(new Error('NoteDao.update failed: ' + err.message));
-          return;
+  async createWithRevisionAndCommitKey(
+    unit: KnowledgeUnit,
+    generationMetadata: string,
+    commit: NoteGenerationCommitResult,
+  ): Promise<KnowledgeUnitPersistenceResult> {
+    const transaction: relationalStore.Transaction = await this.store.createTransaction();
+    try {
+      const existing = await NoteDao.queryCommitInTransaction(transaction, commit.commitKey);
+      if (existing !== null) {
+        const existingUnit: KnowledgeUnit | null = await NoteDao.queryByIdInTransaction(transaction, existing.noteId);
+        if (existingUnit === null) {
+          throw new Error('idempotent commit record has no KnowledgeUnit');
         }
-        resolve();
-      });
-    });
+        await transaction.commit();
+        return { rowId: 0, unit: existingUnit, duplicate: true };
+      }
+      const rowId: number = await transaction.insert('knowledge_unit', NoteDao.toBucket(unit));
+      await transaction.insert('note_revision', NoteDao.toRevisionBucket(unit, generationMetadata));
+      const commitBucket: relationalStore.ValuesBucket = {
+        'commit_key': commit.commitKey,
+        'run_id': commit.runId,
+        'checkpoint_id': commit.checkpointId,
+        'note_id': commit.noteId,
+        'version': commit.version,
+        'source_ids': JSON.stringify(commit.sourceIds),
+        'candidate_json': commit.candidateJson ?? JSON.stringify(unit),
+        'committed_at': commit.committedAt ?? Date.now(),
+        'generation_metadata': generationMetadata,
+      };
+      await transaction.insert('note_generation_commit', commitBucket);
+      await transaction.commit();
+      return { rowId: rowId, unit: unit, duplicate: false };
+    } catch (e) {
+      await NoteDao.rollback(transaction);
+      if (e instanceof Error) {
+        throw e;
+      }
+      throw new Error(String(e));
+    }
+  }
+
+  async updateWithRevision(
+    unit: KnowledgeUnit,
+    expectedVersion: number,
+    generationMetadata: string,
+  ): Promise<KnowledgeUnitPersistenceResult> {
+    const transaction: relationalStore.Transaction = await this.store.createTransaction();
+    try {
+      const current: KnowledgeUnit | null = await NoteDao.queryByIdInTransaction(transaction, unit.id);
+      if (current === null || current.version !== expectedVersion) {
+        throw new KnowledgeUnitWriteError(
+          KnowledgeUnitWriteErrorCode.VERSION_CONFLICT,
+          'KnowledgeUnit version conflict for id=' + unit.id,
+        );
+      }
+      const updated: KnowledgeUnit = NoteDao.mergeUpdate(current, unit, expectedVersion + 1);
+      const predicates = new relationalStore.RdbPredicates('knowledge_unit');
+      predicates.equalTo('id', unit.id);
+      predicates.equalTo('version', expectedVersion);
+      const rows: number = await transaction.update(NoteDao.toBucket(updated), predicates);
+      if (rows === 0) {
+        throw new KnowledgeUnitWriteError(
+          KnowledgeUnitWriteErrorCode.VERSION_CONFLICT,
+          'KnowledgeUnit version conflict for id=' + unit.id,
+        );
+      }
+      await transaction.insert('note_revision', NoteDao.toRevisionBucket(updated, generationMetadata));
+      await transaction.commit();
+      const result: KnowledgeUnitPersistenceResult = { rowId: 0, unit: updated };
+      return result;
+    } catch (e) {
+      await NoteDao.rollback(transaction);
+      if (e instanceof Error) {
+        throw e;
+      }
+      throw new Error(String(e));
+    }
+  }
+
+  async updateWithRevisionAndCommitKey(
+    unit: KnowledgeUnit,
+    expectedVersion: number,
+    generationMetadata: string,
+    commit: NoteGenerationCommitResult,
+  ): Promise<KnowledgeUnitPersistenceResult> {
+    const transaction: relationalStore.Transaction = await this.store.createTransaction();
+    try {
+      const existingCommit = await NoteDao.queryCommitInTransaction(transaction, commit.commitKey);
+      if (existingCommit !== null) {
+        const existingUnit: KnowledgeUnit | null = await NoteDao.queryByIdInTransaction(transaction, existingCommit.noteId);
+        if (existingUnit === null) {
+          throw new Error('idempotent update record has no KnowledgeUnit');
+        }
+        await transaction.commit();
+        return { rowId: 0, unit: existingUnit, duplicate: true };
+      }
+      const current: KnowledgeUnit | null = await NoteDao.queryByIdInTransaction(transaction, unit.id);
+      if (current === null || current.version !== expectedVersion) {
+        throw new KnowledgeUnitWriteError(KnowledgeUnitWriteErrorCode.VERSION_CONFLICT, 'KnowledgeUnit version conflict for id=' + unit.id);
+      }
+      const updated: KnowledgeUnit = NoteDao.mergeUpdate(current, unit, expectedVersion + 1);
+      const predicates = new relationalStore.RdbPredicates('knowledge_unit');
+      predicates.equalTo('id', unit.id);
+      predicates.equalTo('version', expectedVersion);
+      const rows: number = await transaction.update(NoteDao.toBucket(updated), predicates);
+      if (rows === 0) {
+        throw new KnowledgeUnitWriteError(KnowledgeUnitWriteErrorCode.VERSION_CONFLICT, 'KnowledgeUnit version conflict for id=' + unit.id);
+      }
+      await transaction.insert('note_revision', NoteDao.toRevisionBucket(updated, generationMetadata));
+      const commitBucket: relationalStore.ValuesBucket = {
+        'commit_key': commit.commitKey,
+        'run_id': commit.runId,
+        'checkpoint_id': commit.checkpointId,
+        'note_id': updated.id,
+        'version': updated.version,
+        'source_ids': JSON.stringify(commit.sourceIds),
+      'candidate_json': commit.candidateJson ?? JSON.stringify(updated),
+      'committed_at': commit.committedAt ?? Date.now(),
+      'generation_metadata': generationMetadata,
+      };
+      await transaction.insert('note_generation_commit', commitBucket);
+      await transaction.commit();
+      return { rowId: 0, unit: updated, duplicate: false };
+    } catch (e) {
+      await NoteDao.rollback(transaction);
+      if (e instanceof Error) {
+        throw e;
+      }
+      throw new Error(String(e));
+    }
+  }
+
+  async queryRevision(noteId: string, version: number): Promise<KnowledgeUnitRevision | null> {
+    const predicates = new relationalStore.RdbPredicates('note_revision');
+    predicates.equalTo('note_id', noteId);
+    predicates.equalTo('version', version);
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, ['*']);
+    if (!resultSet.goToFirstRow()) {
+      resultSet.close();
+      return null;
+    }
+    const revision: KnowledgeUnitRevision = NoteDao.rowToRevision(resultSet);
+    resultSet.close();
+    return revision;
+  }
+
+  async queryCurrentUnit(noteId: string): Promise<KnowledgeUnit | null> {
+    return await this.queryById(noteId);
+  }
+
+  async queryLatestRevision(noteId: string): Promise<KnowledgeUnitRevision | null> {
+    const predicates = new relationalStore.RdbPredicates('note_revision');
+    predicates.equalTo('note_id', noteId);
+    predicates.orderByDesc('version');
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, ['*']);
+    if (!resultSet.goToFirstRow()) {
+      resultSet.close();
+      return null;
+    }
+    const revision: KnowledgeUnitRevision = NoteDao.rowToRevision(resultSet);
+    resultSet.close();
+    return revision;
+  }
+
+  async queryLatestGeneratedRevision(noteId: string): Promise<KnowledgeUnitRevision | null> {
+    const predicates = new relationalStore.RdbPredicates('note_revision');
+    predicates.equalTo('note_id', noteId);
+    predicates.orderByDesc('version');
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, ['*']);
+    if (!resultSet.goToFirstRow()) {
+      resultSet.close();
+      return null;
+    }
+    let revision: KnowledgeUnitRevision | null = null;
+    do {
+      const candidate: KnowledgeUnitRevision = NoteDao.rowToRevision(resultSet);
+      if (candidate.generationMetadata.trim().startsWith('{')
+        && candidate.generationMetadata.includes('"sections"')) {
+        revision = candidate;
+        break;
+      }
+    } while (resultSet.goToNextRow());
+    resultSet.close();
+    return revision;
   }
 
   // 删除知识单元
@@ -246,6 +434,142 @@ export class NoteDao {
       'user_id': unit.userId,
       'version': unit.version,
     };
+  }
+
+  private static toRevisionBucket(
+    unit: KnowledgeUnit,
+    generationMetadata: string,
+  ): relationalStore.ValuesBucket {
+    return {
+      'note_id': unit.id,
+      'version': unit.version,
+      'title': unit.title,
+      'content': unit.content,
+      'summary': unit.summary,
+      'tags': NoteDao.stringifyArray(unit.tags),
+      'subject': unit.subject,
+      'category': unit.category,
+      'chapter': unit.chapter,
+      'difficulty': unit.difficulty.valueOf(),
+      'source': unit.source,
+      'created_at': unit.createdAt,
+      'updated_at': unit.updatedAt,
+      'review_status': unit.reviewStatus.valueOf(),
+      'next_review_at': unit.nextReviewAt,
+      'interval_days': unit.intervalDays,
+      'ease_factor': unit.easeFactor,
+      'repetitions': unit.repetitions,
+      'prerequisites': NoteDao.stringifyArray(unit.prerequisites),
+      'related': NoteDao.stringifyArray(unit.related),
+      'embedding': NoteDao.stringifyNumberArray(unit.embedding),
+      'user_id': unit.userId,
+      'generation_metadata': generationMetadata,
+      'revised_at': Date.now(),
+    };
+  }
+
+  private static rowToRevision(rs: relationalStore.ResultSet): KnowledgeUnitRevision {
+    const unit: KnowledgeUnit = {
+      id: NoteDao.readString(rs, 'note_id', ''),
+      title: NoteDao.readString(rs, 'title', ''),
+      content: NoteDao.readString(rs, 'content', ''),
+      summary: NoteDao.readString(rs, 'summary', ''),
+      tags: NoteDao.parseArray(NoteDao.readString(rs, 'tags', '[]')),
+      subject: NoteDao.readString(rs, 'subject', ''),
+      category: NoteDao.readString(rs, 'category', ''),
+      chapter: NoteDao.readString(rs, 'chapter', ''),
+      difficulty: NoteDao.parseDifficulty(NoteDao.readLong(rs, 'difficulty', DifficultyLevel.EASY)),
+      source: NoteDao.readString(rs, 'source', ''),
+      createdAt: NoteDao.readLong(rs, 'created_at', 0),
+      updatedAt: NoteDao.readLong(rs, 'updated_at', 0),
+      reviewStatus: NoteDao.parseReviewStatus(NoteDao.readString(rs, 'review_status', ReviewStatus.NEW)),
+      nextReviewAt: NoteDao.readLong(rs, 'next_review_at', 0),
+      intervalDays: NoteDao.readLong(rs, 'interval_days', 0),
+      easeFactor: NoteDao.readDouble(rs, 'ease_factor', 2.5),
+      repetitions: NoteDao.readLong(rs, 'repetitions', 0),
+      prerequisites: NoteDao.parseArray(NoteDao.readString(rs, 'prerequisites', '[]')),
+      related: NoteDao.parseArray(NoteDao.readString(rs, 'related', '[]')),
+      embedding: NoteDao.parseNumberArray(NoteDao.readString(rs, 'embedding', '[]')),
+      userId: NoteDao.readString(rs, 'user_id', ''),
+      version: NoteDao.readLong(rs, 'version', 1),
+    };
+    const revision: KnowledgeUnitRevision = {
+      noteId: unit.id,
+      version: unit.version,
+      unit: unit,
+      generationMetadata: NoteDao.readString(rs, 'generation_metadata', ''),
+      revisedAt: NoteDao.readLong(rs, 'revised_at', unit.updatedAt),
+    };
+    return revision;
+  }
+
+  private static async queryByIdInTransaction(
+    transaction: relationalStore.Transaction,
+    id: string,
+  ): Promise<KnowledgeUnit | null> {
+    const predicates = new relationalStore.RdbPredicates('knowledge_unit');
+    predicates.equalTo('id', id);
+    const resultSet: relationalStore.ResultSet = await transaction.query(predicates, ['*']);
+    if (!resultSet.goToFirstRow()) {
+      resultSet.close();
+      return null;
+    }
+    const unit: KnowledgeUnit = NoteDao.rowToUnit(resultSet);
+    resultSet.close();
+    return unit;
+  }
+
+  private static async queryCommitInTransaction(
+    transaction: relationalStore.Transaction,
+    commitKey: string,
+  ): Promise<NoteCommitLookup | null> {
+    const predicates = new relationalStore.RdbPredicates('note_generation_commit');
+    predicates.equalTo('commit_key', commitKey);
+    const resultSet: relationalStore.ResultSet = await transaction.query(predicates, ['note_id']);
+    if (!resultSet.goToFirstRow()) {
+      resultSet.close();
+      return null;
+    }
+    const result: NoteCommitLookup = { noteId: resultSet.getString(resultSet.getColumnIndex('note_id')) };
+    resultSet.close();
+    return result;
+  }
+
+  private static mergeUpdate(current: KnowledgeUnit, changed: KnowledgeUnit, version: number): KnowledgeUnit {
+    const updated: KnowledgeUnit = {
+      id: current.id,
+      title: changed.title,
+      content: changed.content,
+      summary: changed.summary,
+      tags: changed.tags,
+      subject: changed.subject,
+      category: changed.category,
+      chapter: changed.chapter,
+      difficulty: changed.difficulty,
+      source: current.source,
+      createdAt: current.createdAt,
+      updatedAt: changed.updatedAt,
+      reviewStatus: current.reviewStatus,
+      nextReviewAt: current.nextReviewAt,
+      intervalDays: current.intervalDays,
+      easeFactor: current.easeFactor,
+      repetitions: current.repetitions,
+      prerequisites: current.prerequisites,
+      related: current.related,
+       embedding: current.content === changed.content ? changed.embedding : [],
+      userId: current.userId,
+      version: version,
+    };
+    return updated;
+  }
+
+  private static async rollback(transaction: relationalStore.Transaction): Promise<void> {
+    try {
+      await transaction.rollback();
+    } catch (e) {
+      const message: string = e instanceof Error ? e.message : String(e);
+      console.error('[NoteDao] transaction rollback failed: ' + message);
+    }
   }
 
   private static stringifyArray(value: string[]): string {

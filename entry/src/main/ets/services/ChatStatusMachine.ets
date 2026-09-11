@@ -28,7 +28,6 @@ export class ChatStatusMachine {
       ['note_intent_check',     { title: '确认整理需求', detail: '确认这轮需要生成可保存的笔记。' }],
       ['note_context_load',     { title: '读取笔记材料', detail: '读取当前会话、图片识别结果和待整理内容。' }],
       ['note_source_prepare',   { title: '整理笔记素材', detail: '确定要写进笔记的原题、公式和关键步骤。' }],
-      ['note_material_summary', { title: '汇总成笔记底稿', detail: '把零散材料合成一份完整底稿。' }],
       ['note_structure_save',   { title: '生成并保存笔记', detail: '结构化标题、章节、标签和正文。' }],
       ['note_finalize',         { title: '更新笔记列表', detail: '刷新本地笔记并标记材料已使用。' }],
       ['completed',             { title: '完成',         detail: '本轮处理已结束。' }],
