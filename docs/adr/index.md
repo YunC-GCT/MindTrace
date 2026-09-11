@@ -20,6 +20,9 @@ choice made, and the reversibility.
 | [0010](./0010-mcp-tools-semantics.md) | `mcp/` keeps MCP-tool semantics (`OcrTool` is a teammate-built MCP 工具); `tools/` reserved for CRUD tools — supersedes ADR-0005, PR #28 rename reverted | accepted |
 | [0011](./0011-skill-xiaoyi-reservation.md) | `skill/` retained for Xiaoyi; SearchNote now routes through the typed SkillIntent workflow to the shared note_query tool, remaining actions explicit unsupported pending semantics | accepted |
 | [0012](./0012-tool-calling-protocol.md) | OpenAI-compatible tool-calling fields in `LlmTypes`; `ToolRegistry` lives in `common/` (shared by the in-app LLM loop and the future `skill/` IntentRouter); read-only tools first — implemented by [spec 014](../specs/014-tool-calling-protocol.md) | accepted |
+| [0013](./0013-llm-provider-presets.md) | LLM provider presets | accepted |
+| [0014](./0014-asset-store-kit-migration.md) | Asset Store Kit migration | accepted |
+| [0015](./0015-structured-stream-events.md) | Structured streaming events (`StreamEvent`, `type ∈ thinking \| text \| tool_call \| tool_result`) replace the `(delta, kind)` callback; reasoning→content fallback removed in the same change; `enableThinking` wired via LlmConfig default `true` | accepted |
 
 ## How to write a new ADR
 

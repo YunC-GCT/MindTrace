@@ -119,6 +119,10 @@ _Avoid_: confusing repo-root `tools/` (Python 服务) with the agents `tools/` �
 The Xiaoyi integration HSP. Its seven declared intent actions enter the typed SkillIntent workflow. `SearchNote` currently reuses the shared `note_query` tool; the other six actions return explicit unsupported results until their product semantics are confirmed (ADR-0011, spec 018).
 _Avoid_: calling it a second backend; implementing unconfirmed actions by guessing.
 
+**StreamEvent**:
+The structured streaming event object emitted on the LLM streaming path: `{type, ...payload}` with `type` one of `thinking | text | tool_call | tool_result`. One event vocabulary for the whole chain (client → workflow → UI). The UI-facing word for `thinking` is 思考; the wire field stays `reasoning_content` — three words, one concept, distinct layers (ADR-0015).
+_Avoid_: `(delta, kind)` string pairs; naming the event type "reasoning" (that is the wire field name).
+
 ## Ambiguous terms
 
 The word **agent** is overloaded in this codebase. Use the precise form:
