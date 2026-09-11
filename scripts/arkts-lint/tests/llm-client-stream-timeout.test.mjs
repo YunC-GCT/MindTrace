@@ -28,7 +28,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
-const agentChatService = read('entry/src/main/ets/services/AgentChatService.ets');
+const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 
 // 测试 1: firstByteTimer 阈值 >= 30000ms
 // 找 callStreamInternal 内的 setTimeout 调用,找到 firstByteTimer 的那个
@@ -46,15 +46,26 @@ test('LlmClient.callStreamInternal firstByteTimer must be >= 30000ms for deepsee
 
 // 测试 2: AgentChatService.realReplyStream 显式传 enableThinking: false
 // (chat 不需要 thinking 过程,只要 content)
-test('AgentChatService.realReplyStream must pass enableThinking: false to skip thinking', () => {
-  // 找 realReplyStream 内的 client.call 调用
+test('ReplyService stream reply must pass enableThinking: false to skip thinking', () => {
   // 必须含 enableThinking: false
-  const realReplyMatch = agentChatService.match(/realReplyStream\s*\([\s\S]*?client\.call\(/);
-  assert.ok(realReplyMatch !== null, 'realReplyStream + client.call must exist');
+  const realReplyMatch = replyService.match(/async stream\s*\([\s\S]*?client\.call\([\s\S]*?enableThinking\s*:\s*false/);
+  assert.ok(realReplyMatch !== null, 'ReplyService.stream client.call must disable thinking');
   const callBlock = realReplyMatch[0];
   assert.match(
     callBlock,
     /enableThinking\s*:\s*false/,
-    'realReplyStream client.call must include enableThinking: false to avoid 10s+ thinking latency'
+    'ReplyService stream call must disable thinking to avoid 10s+ latency'
   );
+});
+
+test('LlmClient maps enableThinking false to the Qwen chat template switch on both transports', () => {
+  const qwenSwitches = llmClient.match(/chat_template_kwargs/g) ?? [];
+  assert.ok(qwenSwitches.length >= 2, 'JSON and SSE request bodies must both carry chat_template_kwargs');
+  assert.match(llmClient, /enable_thinking:\s*enableThinking/);
+});
+
+test('ReplyService fallback preserves enableThinking false', () => {
+  const fallbackMatch = replyService.match(/private async fallback[\s\S]*?client\.call\([\s\S]*?\}\);/);
+  assert.ok(fallbackMatch !== null, 'ReplyService fallback call must exist');
+  assert.match(fallbackMatch[0], /enableThinking:\s*false/);
 });
