@@ -110,13 +110,13 @@ export interface LlmConfigInitResult {
 // 流式响应中每个 chunk 的 delta 字段是增量文本,而非完整消息
 export interface LlmStreamDelta {
   role?: 'assistant';
-  content?: string;            // 正式回答的增量文本
-  reasoning_content?: string;  // 思考模式的思维链增量文本
+  content?: string | null;            // 正式回答的增量文本
+  reasoning_content?: string | null;  // 思考模式的思维链增量文本
 }
 
 export interface LlmStreamChoice {
   index: number;
-  delta: LlmStreamDelta;
+  delta: LlmStreamDelta | null;
   finish_reason: string | null;
 }
 
@@ -129,8 +129,47 @@ export interface LlmStreamChunk {
   usage?: LlmResponseUsage;    // 仅 stream_options.include_usage 时在最后 chunk 有值
 }
 
-// 流式回调: delta 为本次增量文本, kind 区分思考内容 / 正式回答
-export type LlmStreamCallback = (delta: string, kind: 'reasoning' | 'content') => void;
+// ==================== StreamEvent (结构化流式事件, ADR-0015 / spec 019 #111)====================
+export type StreamEventType = 'thinking' | 'text' | 'tool_call' | 'tool_result';
+
+export const STREAM_EVENT_TYPES: StreamEventType[] = [
+  'thinking',
+  'text',
+  'tool_call',
+  'tool_result',
+];
+
+export interface StreamThinkingEvent {
+  type: 'thinking';
+  delta: string;
+}
+
+export interface StreamTextEvent {
+  type: 'text';
+  delta: string;
+}
+
+export interface StreamToolCallEvent {
+  type: 'tool_call';
+  delta: string;
+  toolCallId?: string;
+  toolName?: string;
+  argumentsJson?: string;
+}
+
+export interface StreamToolResultEvent {
+  type: 'tool_result';
+  delta: string;
+  toolCallId?: string;
+  toolName?: string;
+  result?: string;
+  ok?: boolean;
+}
+
+export type StreamEvent = StreamThinkingEvent | StreamTextEvent | StreamToolCallEvent | StreamToolResultEvent;
+
+// 流式回调: 结构化事件对象;P0 emit thinking/text,tool_* 为后续工具过程预留
+export type LlmStreamCallback = (event: StreamEvent) => void;
 
 // ==================== LlmCallOptions (单次调用可选参数)====================
 export interface LlmCallOptions {

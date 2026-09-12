@@ -12,6 +12,7 @@ import contentExcerptBuilderTest from './ContentExcerptBuilder.test';
 import noteToolsTest from './NoteTools.test';
 import llmToolCallingTest from './LlmToolCalling.test';
 import stateGraphTest from './StateGraph.test';
+import llmStreamEventsTest from './LlmStreamEvents.test';
 
 export default function testsuite(): void {
   llmGuardTest();
@@ -21,4 +22,5 @@ export default function testsuite(): void {
   noteToolsTest();
   llmToolCallingTest();
   stateGraphTest();
+  llmStreamEventsTest();
 }

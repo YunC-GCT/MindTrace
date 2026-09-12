@@ -15,7 +15,7 @@ import {
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import window from '@ohos.window';
-import { AgentChatService, AgentChatCallbacks } from '../../services/AgentChatService';
+import { AgentChatService, AgentChatCallbacks, applyStreamEventToChatMsg } from '../../services/AgentChatService';
 import { LlmConfig } from 'common';
 import { ChatHeader } from './chat/ChatHeader';
 import { QuickSuggestions } from './chat/QuickSuggestions';
@@ -28,6 +28,7 @@ import { AgentInputBar } from './AgentInputBar';
 import { NoteDraftReadyEvent } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
+import type { StreamEvent } from 'common';
 
 function nowId(): number { return Date.now() * 1000 + Math.floor(Math.random() * 1000); }
 
@@ -109,12 +110,8 @@ export struct AgentFloatWindow {
         this.messages = [...this.messages, { id, role: 'ai', content: '', ts: Date.now(), streaming: true, reasoning: '' }];
         return id;
       },
-      appendAiMsg: (id: number, delta: string, kind?: 'reasoning' | 'content'): void => {
-        if (kind === 'reasoning') {
-          this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: m.streaming, reasoning: (m.reasoning ?? '') + delta } : m);
-        } else {
-          this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content + delta, ts: m.ts, streaming: m.streaming, reasoning: m.reasoning } : m);
-        }
+      appendAiMsg: (id: number, event: StreamEvent): void => {
+        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m);
       },
       finishAiMsg: (id: number): void => {
         this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: false, reasoning: m.reasoning } : m);

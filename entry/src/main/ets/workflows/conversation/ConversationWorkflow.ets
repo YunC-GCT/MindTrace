@@ -18,6 +18,7 @@ import {
 import { ConversationWorkflowCallbacks } from './ConversationTypes';
 import { ReplyService, StreamReplyResult } from '../../services/ReplyService';
 import { NoteDraftReadyEvent, NoteGenerationRun, SourceFragment } from 'common';
+import type { StreamEvent } from 'common';
 
 const workflowLog: Logger = new Logger('ConversationWorkflow');
 
@@ -332,15 +333,18 @@ export class ConversationWorkflow {
         memoryContext,
         learnerProfileContext,
         userContent,
-        (delta: string, kind: 'reasoning' | 'content'): void => this.cbs.appendAiMsg(msgId, delta, kind),
+        (event: StreamEvent): void => this.cbs.appendAiMsg(msgId, event),
       );
       if (streamResult.usedFallback) {
+        const fallbackEvent: StreamEvent = { type: 'text', delta: streamResult.content };
+        this.cbs.appendAiMsg(msgId, fallbackEvent);
         this.cbs.finishAiMsg(msgId);
-        await this.addAiMessage(sessionId, streamResult.content);
+        await this.safeSaveAssistantMessage(sessionId, streamResult.content);
         return;
       }
       if (streamResult.interrupted) {
-        this.cbs.appendAiMsg(msgId, '\n\n⚠️ *AI 回复中断，请重试*');
+        const interruptedEvent: StreamEvent = { type: 'text', delta: '\n\n⚠️ *AI 回复中断，请重试*' };
+        this.cbs.appendAiMsg(msgId, interruptedEvent);
       } else {
         this.setStep('completed');
       }

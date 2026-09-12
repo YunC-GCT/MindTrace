@@ -13,11 +13,11 @@
 //     ],
 //   });
 //   const text: string = result.text ?? '';
-//   // 流式: 真 SSE (requestInStream), 每 token 触发 onDelta
+//   // 流式: 真 SSE (requestInStream), 每个结构化事件触发 onDelta
 //   await client.call({
 //     messages: [...],
 //     stream: true,
-//     onDelta: (delta: string, kind: 'reasoning' | 'content'): void => { ... },
+//     onDelta: (event: StreamEvent): void => { ... },
 //   });
 //
 // 设计:
@@ -41,6 +41,7 @@ import {
   LlmStreamChunk,
   LlmStreamDelta,
   LlmStreamCallback,
+  StreamEvent,
   LlmThinkingConfig,
   LlmChatTemplateKwargs,
   LlmCallRequest,
@@ -196,9 +197,6 @@ export class LlmClient {
     }
     const content: string = first.message.content;
     if (content === undefined || content === null || content.length === 0) {
-      // 推理模型: 实际内容可能在 reasoning_content
-      const reasoning: string = first.message.reasoning_content ?? '';
-      if (reasoning.length > 0) { return reasoning; }
       throw new LlmError('LLM returned empty content', 'EMPTY_RESPONSE');
     }
     return content;
@@ -453,8 +451,6 @@ export class LlmClient {
         this.tryEmitSseDelta(dataStr, onDelta);
       } catch (e) {
         // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
-        const dataStrHead: string = dataStr.length > 100 ? dataStr.substring(0, 100) : dataStr;
-        const errMsg: string = (e as Error).message !== undefined ? (e as Error).message : String(e);
         return eventText + '\n' + remaining;
       }
     }
@@ -490,35 +486,41 @@ export class LlmClient {
   }
 
   /**
-   * 解析单行 SSE data 并触发 onDelta (JSON 解析失败则抛异常)
-   *
-   * P1 bug fix 2026-09-07: deepseek-v4-pro 默认思考模式,响应可能只含 reasoning_content + 空 content。
-   * AgentChatService.realReplyStream line 158 过滤 kind !== 'content',导致 UI 永远空白。
-   * 修复: content 为空时,fallback 用 reasoning_content 作为 content 调 onDelta,
-   *       保证上层 AgentChatService 总能收到 content token,UI 不会空白。
-   *       reasoning 仍独立 emit(保留 reasoning 字段显示)。
+   * 解析单行 SSE data 并触发 onDelta (JSON 解析失败则抛异常)。
+   * #111: reasoning_content emit thinking,content emit text;不再把 thinking 伪装为 text。
    */
   private tryEmitSseDelta(dataStr: string, onDelta: LlmStreamCallback): void {
+    const events: StreamEvent[] = LlmClient.parseStreamEventsFromSseData(dataStr);
+    for (const event of events) {
+      onDelta(event);
+    }
+  }
+
+  /**
+   * Seam A: 单条 SSE data JSON payload -> 结构化 StreamEvent 数组。
+   * 有效 JSON 中 choices 为空或 delta 为 null 时返回空数组;非法/不完整 JSON 保持抛出供 buffer 重试。
+   */
+  public static parseStreamEventsFromSseData(dataStr: string): StreamEvent[] {
     const chunk: LlmStreamChunk = JSON.parse(dataStr) as LlmStreamChunk;
     if (chunk.choices.length === 0) {
-      return;
+      return [];
     }
-    const delta: LlmStreamDelta = chunk.choices[0].delta;
-    // console.error 显红色 + 默认 logcat 级别可见,避免用户 grep 不到
-    // P1 bug fix 2026-09-07: DeepSeek 流式响应 delta 字段可能是 null (不是 undefined)
-    //   例如 {"content": "...", "reasoning_content": null}
-    //   必须用 != null 同时检查 null + undefined,避免 Cannot read property length of null
-    // DeepSeek 思考模式: reasoning_content 先于 content 到达
-    if (delta.reasoning_content != null && delta.reasoning_content.length > 0) {
-      onDelta(delta.reasoning_content, 'reasoning');
+    const delta: LlmStreamDelta | null = chunk.choices[0].delta;
+    if (delta === undefined || delta === null) {
+      return [];
     }
-    // content emit: 优先用 content;content 空时 fallback 到 reasoning_content
-    // 防止 deepseek-v4-pro 思考模式导致 UI 空白(用户 logcat 显示 38KB 流但 UI 无消息)
-    if (delta.content != null && delta.content.length > 0) {
-      onDelta(delta.content, 'content');
-    } else if (delta.reasoning_content != null && delta.reasoning_content.length > 0) {
-      onDelta(delta.reasoning_content, 'content');
+    const events: StreamEvent[] = [];
+    const reasoning: string = delta.reasoning_content ?? '';
+    if (reasoning.length > 0) {
+      const thinkingEvent: StreamEvent = { type: 'thinking', delta: reasoning };
+      events.push(thinkingEvent);
     }
+    const content: string = delta.content ?? '';
+    if (content.length > 0) {
+      const textEvent: StreamEvent = { type: 'text', delta: content };
+      events.push(textEvent);
+    }
+    return events;
   }
 
   /**

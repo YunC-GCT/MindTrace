@@ -23,6 +23,7 @@ import type {
   LlmCallResult,
   LlmGuardJsonResult,
   LlmGuardValidationResult,
+  StreamEvent,
 } from 'common';
 import { IntentClassifier } from './IntentClassifier';
 
@@ -34,7 +35,7 @@ export interface StreamReplyResult {
   usedFallback: boolean;
 }
 
-export type ReplyDeltaSink = (delta: string, kind: 'reasoning' | 'content') => void;
+export type ReplyDeltaSink = (event: StreamEvent) => void;
 
 export class ReplyService {
   private readonly intentClassifier: IntentClassifier;
@@ -51,7 +52,6 @@ export class ReplyService {
         maxTokens: 4096,
         timeoutMs: 120000,
         label: 'chat answer',
-        enableThinking: false,
       },
       (json: Record<string, Object>): LlmGuardValidationResult => this.validateChatAnswerJson(json),
     );
@@ -68,19 +68,22 @@ export class ReplyService {
   ): Promise<StreamReplyResult> {
     const client: LlmClient = new LlmClient();
     let content: string = '';
+    let receivedEvent: boolean = false;
     try {
       await client.call({
         messages: this.intentClassifier.buildReplyMessages(memoryContext, profileContext, userContent),
         stream: true,
-        onDelta: (delta: string, kind: 'reasoning' | 'content'): void => {
-          content += delta;
-          sink(delta, kind);
+        onDelta: (event: StreamEvent): void => {
+          receivedEvent = true;
+          if (event.type === 'text') {
+            content += event.delta;
+          }
+          sink(event);
         },
         maxTokens: 4096,
         timeoutMs: 120000,
-        enableThinking: false,
       });
-      if (content.trim().length === 0) {
+      if (!receivedEvent) {
         replyLog.warn('stream empty, using fallback');
         return await this.fallback(client, memoryContext, profileContext, userContent);
       }
@@ -92,7 +95,7 @@ export class ReplyService {
       replyLog.info('stream completed chars=' + content.length.toString());
       return success;
     } catch (e) {
-      if (content.length > 0) {
+      if (receivedEvent) {
         const interrupted: StreamReplyResult = {
           content: content,
           interrupted: true,
@@ -120,7 +123,6 @@ export class ReplyService {
       messages: this.intentClassifier.buildReplyMessages(memoryContext, profileContext, userContent),
       maxTokens: 4096,
       timeoutMs: 120000,
-      enableThinking: false,
     });
     const fallbackResult: StreamReplyResult = {
       content: fallback.text ?? '',

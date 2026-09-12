@@ -5,11 +5,13 @@ import { ChatStatusMachine } from './ChatStatusMachine';
 import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
+import type { StreamEvent } from 'common';
+import { ChatMsg } from '../overlays/AgentFloatWindow/chat/ChatModels';
 
 export interface AgentChatCallbacks {
   addAiMsg: (content: string) => void;
   addAiMsgEmpty: () => number;
-  appendAiMsg: (id: number, delta: string, kind?: 'reasoning' | 'content') => void;
+  appendAiMsg: (id: number, event: StreamEvent) => void;
   finishAiMsg: (id: number) => void;
   setBusy: (value: boolean) => void;
   setStatusMeta: (meta: ChatStatusMeta | null) => void;
@@ -17,6 +19,29 @@ export interface AgentChatCallbacks {
   getConversationText: (excludeLatestUser: boolean) => string;
   getSessionId: () => string;
   onDraftReady: (event: NoteDraftReadyEvent) => void;
+}
+
+export function applyStreamEventToChatMsg(message: ChatMsg, event: StreamEvent): ChatMsg {
+  const next: ChatMsg = {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    ts: message.ts,
+    streaming: message.streaming,
+    reasoning: message.reasoning,
+  };
+  if (message.reasoningExpanded !== undefined) {
+    next.reasoningExpanded = message.reasoningExpanded;
+  }
+  if (event.type === 'thinking') {
+    next.reasoning = message.reasoning + event.delta;
+    return next;
+  }
+  if (event.type === 'text') {
+    next.content = message.content + event.delta;
+    return next;
+  }
+  return next;
 }
 
 class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
@@ -27,8 +52,8 @@ class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
 
   addAiMsg(content: string): void { this.callbacks.addAiMsg(content); }
   addAiMsgEmpty(): number { return this.callbacks.addAiMsgEmpty(); }
-  appendAiMsg(id: number, delta: string, kind?: 'reasoning' | 'content'): void {
-    this.callbacks.appendAiMsg(id, delta, kind);
+  appendAiMsg(id: number, event: StreamEvent): void {
+    this.callbacks.appendAiMsg(id, event);
   }
   finishAiMsg(id: number): void { this.callbacks.finishAiMsg(id); }
   onStart(): void {

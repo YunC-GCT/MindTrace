@@ -35,6 +35,7 @@ const DEFAULT_MODEL = 'deepseek-v4-pro';
 const DEFAULT_TEMPERATURE = 0.1;
 const DEFAULT_MAX_TOKENS = 12000;
 const DEFAULT_TIMEOUT_MS = 120000;
+export const DEFAULT_ENABLE_THINKING = true;
 
 export class LlmConfig {
   private static instance: LlmConfig | null = null;
@@ -47,7 +48,7 @@ export class LlmConfig {
   private cachedTemperature: number = DEFAULT_TEMPERATURE;
   private cachedMaxTokens: number = DEFAULT_MAX_TOKENS;
   private cachedTimeoutMs: number = DEFAULT_TIMEOUT_MS;
-  private cachedEnableThinking: boolean = false;
+  private cachedEnableThinking: boolean = DEFAULT_ENABLE_THINKING;
   // PR2-T1: vendor 解析
   private cachedVendorId: string = 'deepseek';
   private cachedCustomVendor: CustomVendorConfig | null = null;
@@ -95,7 +96,7 @@ export class LlmConfig {
     if (mt >= 0) { this.cachedMaxTokens = mt; }
     const tm: number = await s.get(KEY_TIMEOUT_MS, -1) as number;
     if (tm >= 0) { this.cachedTimeoutMs = tm; }
-    const et: boolean = await s.get(KEY_ENABLE_THINKING, false) as boolean;
+    const et: boolean = await s.get(KEY_ENABLE_THINKING, DEFAULT_ENABLE_THINKING) as boolean;
     this.cachedEnableThinking = et;
     // PR2-T1: vendorId + customVendor(JSON 字符串)
     const vid: string = await s.get(KEY_VENDOR_ID, '') as string;
@@ -463,7 +464,7 @@ export class LlmConfig {
     this.cachedTemperature = DEFAULT_TEMPERATURE;
     this.cachedMaxTokens = DEFAULT_MAX_TOKENS;
     this.cachedTimeoutMs = DEFAULT_TIMEOUT_MS;
-    this.cachedEnableThinking = false;
+    this.cachedEnableThinking = DEFAULT_ENABLE_THINKING;
     this.cachedVendorId = 'deepseek';
     this.cachedCustomVendor = null;
     // PR2-T2 L1: 同时清 customVendors[]
@@ -479,7 +480,7 @@ export class LlmConfig {
     await s.put(KEY_TEMPERATURE, DEFAULT_TEMPERATURE);
     await s.put(KEY_MAX_TOKENS, DEFAULT_MAX_TOKENS);
     await s.put(KEY_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
-    await s.put(KEY_ENABLE_THINKING, false);
+    await s.put(KEY_ENABLE_THINKING, DEFAULT_ENABLE_THINKING);
     await s.put(KEY_VENDOR_ID, 'deepseek');
     await s.delete(KEY_CUSTOM_VENDOR);
     await s.delete(KEY_CUSTOM_VENDORS);
