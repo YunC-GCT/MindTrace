@@ -21,6 +21,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **done** (PR1-PR3, 2026-09-06 — 三协作服务拆出, KnowledgeModel 保留为编排 agent) |
 | **PR2-T2 cleanup** | [`017-llm-settings-cleanup.md`](./017-llm-settings-cleanup.md) | (implicit, spec 016 后续;承接 ticket #9) | **draft** (2026-09-08 — grill → to-spec;L4+L5+L6 1 ticket 3 sub-tasks;PR2) |
 | **Agent workflow architecture** | [`018-agent-workflow-architecture.md`](./018-agent-workflow-architecture.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) (scope clarified) | **implemented, device acceptance pending** (2026-09-10 — shared StateGraph + Capture/ToolCalling/Conversation/Skill workflows; single backend) |
+| **Reply body contract** | [`020-reply-body-contract.md`](./020-reply-body-contract.md) | [`0016`](../adr/0016-reply-contract-by-transport.md) | **proposed** (2026-09-12 — grill → to-spec; P0 stream 直出正文 + 持久化门 + 渲染单入口; P1 渲染加固独立 ticket; P2 LlmGuard 容错提取) |
 
 ## P0 tickets without spec
 

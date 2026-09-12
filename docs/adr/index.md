@@ -23,6 +23,7 @@ choice made, and the reversibility.
 | [0013](./0013-llm-provider-presets.md) | LLM provider presets | accepted |
 | [0014](./0014-asset-store-kit-migration.md) | Asset Store Kit migration | accepted |
 | [0015](./0015-structured-stream-events.md) | Structured streaming events (`StreamEvent`, `type ∈ thinking \| text \| tool_call \| tool_result`) replace the `(delta, kind)` callback; reasoning→content fallback removed in the same change; `enableThinking` wired via LlmConfig default `true` | accepted |
+| [0016](./0016-reply-contract-by-transport.md) | Reply contract scoped by transport: stream prompt emits the Reply Body (MM-MD-v1 Markdown) directly, complete keeps the JSON envelope + LlmGuard; ReplyService exclusively owns envelope→body; chat content is always a Reply Body | accepted |
 
 ## How to write a new ADR
 

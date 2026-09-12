@@ -131,6 +131,14 @@ _Avoid_: "raising max_tokens to fit more context" (that is input, not budget); p
 The semantics of hitting the token budget mid-reply (`finish_reason === 'length'`): **not an error**. The already-generated content is kept and a truncation marker is appended; the reply is never dropped, thrown away, or silently cut. Applies to both streaming and non-streaming paths.
 _Avoid_: treating truncation as an exception path (⚠️ with zero content); silently stopping with no marker.
 
+**Reply Envelope**:
+The JSON wrapper an LLM returns on the complete (non-stream) reply transport (`{"answer": "..."}`). A wire-format artifact owned by the reply seam — it is converted to a Reply Body before any consumer sees it. Never a legal value of chat content, history, or memory (ADR-0016).
+_Avoid_: storing it; rendering it; calling it "the reply".
+
+**Reply Body**:
+The canonical chat reply content: MM-MD-v1 Markdown with formulas in `$$` blocks. The only legal value of a chat message's `content` field and of persisted reply history. On the stream transport the model emits it directly; on the complete transport it is extracted from the Reply Envelope. Invariant: chat content is always a Reply Body, never a Reply Envelope (ADR-0016).
+_Avoid_: raw model output; envelope payload (those are wire values, not bodies).
+
 ## Ambiguous terms
 
 The word **agent** is overloaded in this codebase. Use the precise form:
