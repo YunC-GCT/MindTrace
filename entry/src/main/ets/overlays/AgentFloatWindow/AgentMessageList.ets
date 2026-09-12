@@ -9,7 +9,7 @@
 import { S_2, S_4, MINT, TEXT_4 } from 'common';
 import { ChatBubble } from './chat/ChatBubble';
 import { EmptyStateHint } from './chat/EmptyStateHint';
-import { ChatMsg, ChatStatusMeta } from './chat/ChatModels';
+import { ChatMsg, ChatStatusMeta, chatItemKey } from './chat/ChatModels';
 
 function safeIndex(index: number | undefined): number {
   return index === undefined ? 0 : index;
@@ -95,7 +95,7 @@ export struct AgentMessageList {
           .width('100%')
           .padding({ left: S_4, right: S_4, top: safeIndex(index) === 0 ? S_2 : 0 });
         },
-        (msg: ChatMsg): string => msg.id.toString() + '_c' + msg.content.length.toString() + '_s' + (msg.streaming ? '1' : '0') + '_r' + (msg.reasoningExpanded ?? false ? '1' : '0')
+        (msg: ChatMsg): string => chatItemKey(msg)
       );
 
       if (this.busy && (this.statusMeta === null || this.statusMeta.step !== 'completed')) {

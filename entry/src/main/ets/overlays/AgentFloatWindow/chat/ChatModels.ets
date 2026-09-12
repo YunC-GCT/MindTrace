@@ -33,6 +33,14 @@ export interface ChatMsg {
   reasoningExpanded?: boolean
 }
 
+export function chatItemKey(message: ChatMsg): string {
+  const idPart: string = message.id.toString()
+  const contentLengthPart: string = '_contentLength' + message.content.length.toString()
+  const reasoningLengthPart: string = '_reasoningLength' + message.reasoning.length.toString()
+  const streamingPart: string = message.streaming ? '_streaming1' : '_streaming0'
+  return idPart + contentLengthPart + reasoningLengthPart + streamingPart
+}
+
 export type ChatStatusStep = ConversationProgressStep
 
 export interface ChatStatusMeta {

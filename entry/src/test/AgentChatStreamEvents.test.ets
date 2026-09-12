@@ -3,7 +3,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import type { StreamEvent } from 'common';
 import { applyStreamEventToChatMsg } from '../main/ets/services/AgentChatService';
-import { ChatMsg } from '../main/ets/overlays/AgentFloatWindow/chat/ChatModels';
+import { ChatMsg, chatItemKey } from '../main/ets/overlays/AgentFloatWindow/chat/ChatModels';
 
 function message(content: string, reasoning: string): ChatMsg {
   const msg: ChatMsg = {
@@ -14,6 +14,24 @@ function message(content: string, reasoning: string): ChatMsg {
     streaming: true,
     reasoning: reasoning,
   };
+  return msg;
+}
+
+function collapsedMessage(content: string, reasoning: string): ChatMsg {
+  const msg: ChatMsg = message(content, reasoning);
+  msg.reasoningExpanded = false;
+  return msg;
+}
+
+function expandedMessage(content: string, reasoning: string): ChatMsg {
+  const msg: ChatMsg = message(content, reasoning);
+  msg.reasoningExpanded = true;
+  return msg;
+}
+
+function finishedMessage(content: string, reasoning: string): ChatMsg {
+  const msg: ChatMsg = collapsedMessage(content, reasoning);
+  msg.streaming = false;
   return msg;
 }
 
@@ -47,6 +65,28 @@ export default function agentChatStreamEventsTest(): void {
       const result: ChatMsg = applyStreamEventToChatMsg(message('正文', '思考'), event);
       expect(result.reasoning).assertEqual('思考');
       expect(result.content).assertEqual('正文');
+    });
+  });
+
+  describe('AgentChatStreamEvents.issue112_key_test', () => {
+    it('should change key when reasoning grows', 0, () => {
+      const before: string = chatItemKey(collapsedMessage('', '思'));
+      const after: string = chatItemKey(collapsedMessage('', '思考中'));
+      expect(before !== after).assertTrue();
+    });
+
+    it('should keep key when reasoning expanded changes', 0, () => {
+      const before: string = chatItemKey(collapsedMessage('', '思考'));
+      const after: string = chatItemKey(expandedMessage('', '思考'));
+      expect(before).assertEqual(after);
+    });
+
+    it('should change key when content or streaming changes', 0, () => {
+      const base: string = chatItemKey(collapsedMessage('答', '思考'));
+      const contentChanged: string = chatItemKey(collapsedMessage('答案', '思考'));
+      const streamingChanged: string = chatItemKey(finishedMessage('答', '思考'));
+      expect(base !== contentChanged).assertTrue();
+      expect(base !== streamingChanged).assertTrue();
     });
   });
 }
