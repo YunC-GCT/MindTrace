@@ -123,6 +123,14 @@ _Avoid_: calling it a second backend; implementing unconfirmed actions by guessi
 The structured streaming event object emitted on the LLM streaming path: `{type, ...payload}` with `type` one of `thinking | text | tool_call | tool_result`. One event vocabulary for the whole chain (client → workflow → UI). The UI-facing word for `thinking` is 思考; the wire field stays `reasoning_content` — three words, one concept, distinct layers (ADR-0015).
 _Avoid_: `(delta, kind)` string pairs; naming the event type "reasoning" (that is the wire field name).
 
+**Token Budget (输出预算)**:
+`max_tokens` caps the model's **output** only — thinking and the visible reply share one budget. It is unrelated to input-side clipping (memoryContext, counted in chars). Chat replies pass no explicit `maxTokens` and inherit the LLMConfig default via the fallback chain; explicit values are reserved for tasks with a genuine output-size semantic (e.g. intent classification's ~80-token budget).
+_Avoid_: "raising max_tokens to fit more context" (that is input, not budget); per-service chat-budget constants duplicating the config default.
+
+**截断降级 (Truncation Fallback)**:
+The semantics of hitting the token budget mid-reply (`finish_reason === 'length'`): **not an error**. The already-generated content is kept and a truncation marker is appended; the reply is never dropped, thrown away, or silently cut. Applies to both streaming and non-streaming paths.
+_Avoid_: treating truncation as an exception path (⚠️ with zero content); silently stopping with no marker.
+
 ## Ambiguous terms
 
 The word **agent** is overloaded in this codebase. Use the precise form:
