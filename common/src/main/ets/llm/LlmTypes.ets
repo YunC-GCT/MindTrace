@@ -22,23 +22,19 @@ export interface ChatMessage {
 export interface LlmRequestBody {
   model: string;
   messages: ChatMessage[];
-  temperature: number;
+  temperature?: number;
   max_tokens: number;
   stream: boolean;
   response_format?: LlmResponseFormat;
+  enable_thinking?: boolean;
   thinking?: LlmThinkingConfig;   // DeepSeek 思考模式配置
   reasoning_effort?: string;      // 思考强度: "high" | "max"
   tools?: LlmToolDefinition[];    // OpenAI 兼容 function-calling (spec 014, 可选 → 向后兼容)
   tool_choice?: string;           // Phase 1 仅 'auto' | 'none'
-  chat_template_kwargs?: LlmChatTemplateKwargs;
 }
 
 export interface LlmThinkingConfig {
   type: 'enabled' | 'disabled';
-}
-
-export interface LlmChatTemplateKwargs {
-  enable_thinking: boolean;
 }
 
 export interface LlmResponseFormat {
@@ -132,13 +128,6 @@ export interface LlmStreamChunk {
 // ==================== StreamEvent (结构化流式事件, ADR-0015 / spec 019 #111)====================
 export type StreamEventType = 'thinking' | 'text' | 'tool_call' | 'tool_result';
 
-export const STREAM_EVENT_TYPES: StreamEventType[] = [
-  'thinking',
-  'text',
-  'tool_call',
-  'tool_result',
-];
-
 export interface StreamThinkingEvent {
   type: 'thinking';
   delta: string;
@@ -212,7 +201,7 @@ export interface LlmCallRequest {
   messages: ChatMessage[];
   // 流式开关: true 走 requestInStream SSE 适配路径, false (默认) 走 JSON request 适配路径
   stream?: boolean;
-  // 流式回调 (stream=true 时必填), 每个 token 触发一次
+  // 流式事件回调 (字段名 onDelta 为兼容现有调用方,参数是结构化事件)
   onDelta?: LlmStreamCallback;
   // 以下不指定则用 LlmConfig 的默认配置
   temperature?: number;
@@ -227,7 +216,7 @@ export interface LlmCallRequest {
 
 // ==================== LlmCallResult (统一调用出参, spec 005 / ADR-0004)====================
 export interface LlmCallResult {
-  // stream=false 时为完整回复文本; stream=true 时为 undefined (内容经 onDelta 交付)
+  // stream=false 时为完整回复文本; stream=true 时为 undefined (内容经 onDelta 事件回调交付)
   text?: string;
   // 本次调用是否为流式
   streamed: boolean;

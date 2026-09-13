@@ -7,7 +7,7 @@ import {
 } from 'common';
 import { AiService } from '../../services/AiService';
 import { AgentMemoryService } from '../../services/AgentMemoryService';
-import { IntentClassifier } from '../../services/IntentClassifier';
+import { IntentClassifier, ReplyContext } from '../../services/IntentClassifier';
 import type { TextIntent } from '../../services/IntentClassifier';
 import {
   ConversationProgressStep,
@@ -292,7 +292,8 @@ export class ConversationWorkflow {
         return;
       }
       this.setStep('reply_model_call');
-      const reply: string = await this.replyService.complete(memoryContext, learnerProfileContext, userContent);
+      const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent);
+      const reply: string = await this.replyService.complete(replyContext);
       await this.addAiMessage(sessionId, reply);
       await this.safeUpdateLearnerProfileIfNeeded(sessionId);
       await this.safeSummarizeIfNeeded(sessionId);
@@ -329,17 +330,13 @@ export class ConversationWorkflow {
       // 创建空消息占位,拿到 msgId
       const msgId: number = this.cbs.addAiMsgEmpty();
       this.setStep('reply_model_call');
+      const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent);
       const streamResult: StreamReplyResult = await this.replyService.stream(
-        memoryContext,
-        learnerProfileContext,
-        userContent,
+        replyContext,
         (event: StreamEvent): void => this.cbs.appendAiMsg(msgId, event),
       );
       if (streamResult.usedFallback) {
-        const fallbackEvent: StreamEvent = { type: 'text', delta: streamResult.content };
-        this.cbs.appendAiMsg(msgId, fallbackEvent);
-        this.cbs.finishAiMsg(msgId);
-        await this.safeSaveAssistantMessage(sessionId, streamResult.content);
+        await this.appendAssistantReply(sessionId, streamResult.content, msgId);
         return;
       }
       if (streamResult.interrupted) {
@@ -491,9 +488,31 @@ export class ConversationWorkflow {
   }
 
   private async addAiMessage(sessionId: string, content: string): Promise<void> {
+    await this.appendAssistantReply(sessionId, content);
+  }
+
+  private async appendAssistantReply(sessionId: string, content: string, messageId?: number): Promise<void> {
     const displayContent: string = this.replyService.normalize(content);
-    this.cbs.addAiMsg(displayContent);
+    if (messageId === undefined) {
+      this.cbs.addAiMsg(displayContent);
+    } else {
+      const textEvent: StreamEvent = { type: 'text', delta: displayContent };
+      this.cbs.appendAiMsg(messageId, textEvent);
+      this.cbs.finishAiMsg(messageId);
+    }
     await this.safeSaveAssistantMessage(sessionId, displayContent);
+  }
+
+  private createReplyContext(
+    memoryContext: string,
+    learnerProfileContext: string,
+    userContent: string,
+  ): ReplyContext {
+    return {
+      memoryContext: memoryContext,
+      learnerProfileContext: learnerProfileContext,
+      userContent: userContent,
+    };
   }
 
   private async safeSaveUserMessage(sessionId: string, content: string): Promise<void> {

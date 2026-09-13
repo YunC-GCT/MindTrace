@@ -25,9 +25,10 @@ import type {
   LlmGuardValidationResult,
   StreamEvent,
 } from 'common';
-import { IntentClassifier } from './IntentClassifier';
+import { IntentClassifier, ReplyContext } from './IntentClassifier';
 
 const replyLog: Logger = new Logger('ReplyService');
+const CHAT_REPLY_MAX_TOKENS: number = 12000;
 
 export interface StreamReplyResult {
   content: string;
@@ -35,7 +36,7 @@ export interface StreamReplyResult {
   usedFallback: boolean;
 }
 
-export type ReplyDeltaSink = (event: StreamEvent) => void;
+export type ReplyEventSink = (event: StreamEvent) => void;
 
 export class ReplyService {
   private readonly intentClassifier: IntentClassifier;
@@ -45,11 +46,11 @@ export class ReplyService {
     this.intentClassifier = intentClassifier;
   }
 
-  async complete(memoryContext: string, profileContext: string, userContent: string): Promise<string> {
+  async complete(context: ReplyContext): Promise<string> {
     const guarded: LlmGuardJsonResult = await new LlmGuard().callJsonWithRetry(
-      this.intentClassifier.buildReplyMessages(memoryContext, profileContext, userContent),
+      this.intentClassifier.buildReplyMessages(context),
       {
-        maxTokens: 4096,
+        maxTokens: CHAT_REPLY_MAX_TOKENS,
         timeoutMs: 120000,
         label: 'chat answer',
       },
@@ -61,41 +62,51 @@ export class ReplyService {
   }
 
   async stream(
-    memoryContext: string,
-    profileContext: string,
-    userContent: string,
-    sink: ReplyDeltaSink,
+    context: ReplyContext,
+    sink: ReplyEventSink,
   ): Promise<StreamReplyResult> {
     const client: LlmClient = new LlmClient();
     let content: string = '';
     let receivedEvent: boolean = false;
+    let thinkingEvents: number = 0;
+    let thinkingChars: number = 0;
+    let textEvents: number = 0;
+    let textChars: number = 0;
     try {
       await client.call({
-        messages: this.intentClassifier.buildReplyMessages(memoryContext, profileContext, userContent),
+        messages: this.intentClassifier.buildStreamingReplyMessages(context),
         stream: true,
         onDelta: (event: StreamEvent): void => {
           receivedEvent = true;
-          if (event.type === 'text') {
+          if (event.type === 'thinking') {
+            thinkingEvents += 1;
+            thinkingChars += event.delta.length;
+          } else if (event.type === 'text') {
+            textEvents += 1;
+            textChars += event.delta.length;
             content += event.delta;
           }
           sink(event);
         },
-        maxTokens: 4096,
+        maxTokens: CHAT_REPLY_MAX_TOKENS,
         timeoutMs: 120000,
       });
-      if (!receivedEvent) {
+      if (this.shouldUseFallback(content)) {
         replyLog.warn('stream empty, using fallback');
-        return await this.fallback(client, memoryContext, profileContext, userContent);
+        return await this.fallback(client, context);
       }
       const success: StreamReplyResult = {
         content: content,
         interrupted: false,
         usedFallback: false,
       };
-      replyLog.info('stream completed chars=' + content.length.toString());
+      replyLog.info('stream completed thinkingEvents=' + thinkingEvents.toString()
+        + ' thinkingChars=' + thinkingChars.toString()
+        + ' textEvents=' + textEvents.toString()
+        + ' textChars=' + textChars.toString());
       return success;
     } catch (e) {
-      if (receivedEvent) {
+      if (receivedEvent && !this.shouldUseFallback(content)) {
         const interrupted: StreamReplyResult = {
           content: content,
           interrupted: true,
@@ -104,7 +115,7 @@ export class ReplyService {
         replyLog.warn('stream interrupted after chars=' + content.length.toString());
         return interrupted;
       }
-      return await this.fallback(client, memoryContext, profileContext, userContent);
+      return await this.fallback(client, context);
     }
   }
 
@@ -115,13 +126,11 @@ export class ReplyService {
 
   private async fallback(
     client: LlmClient,
-    memoryContext: string,
-    profileContext: string,
-    userContent: string,
+    context: ReplyContext,
   ): Promise<StreamReplyResult> {
     const fallback: LlmCallResult = await client.call({
-      messages: this.intentClassifier.buildReplyMessages(memoryContext, profileContext, userContent),
-      maxTokens: 4096,
+      messages: this.intentClassifier.buildReplyMessages(context),
+      maxTokens: CHAT_REPLY_MAX_TOKENS,
       timeoutMs: 120000,
     });
     const fallbackResult: StreamReplyResult = {
@@ -131,6 +140,10 @@ export class ReplyService {
     };
     replyLog.info('stream fallback completed chars=' + fallbackResult.content.length.toString());
     return fallbackResult;
+  }
+
+  private shouldUseFallback(content: string): boolean {
+    return content.trim().length === 0;
   }
 
   private validateChatAnswerJson(json: Record<string, Object>): LlmGuardValidationResult {

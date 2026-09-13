@@ -1,7 +1,18 @@
-// LlmStreamEvents.test.ets — #111 StreamEvent parser and config regressions
-// Seam A: SSE data payload -> structured StreamEvent objects.
+/**
+ * LlmStreamEvents.test.ets — #111 StreamEvent parser and config regressions
+ *
+ * 路径: common/src/test/LlmStreamEvents.test.ets
+ * 职责: 锁定 SSE delta 到结构化 StreamEvent 的 Seam A 回归行为
+ * 依赖: @ohos/hypium; common LlmClient/LlmConfig/StreamEvent exports
+ *
+ * 数据流:
+ *   fixture SSE payload → LlmClient.parseStreamEventsFromSseData → StreamEvent assertions
+ *
+ * ArkTS 1.1 strict 适配:
+ *   - 测试 fixture 使用显式 string 常量和具名 StreamEvent 数组
+ */
 import { describe, it, expect } from '@ohos/hypium';
-import { LlmClient, LlmConfig, DEFAULT_ENABLE_THINKING, STREAM_EVENT_TYPES } from '../main/ets/Index';
+import { LlmClient, LlmConfig, DEFAULT_ENABLE_THINKING } from '../main/ets/Index';
 import type { StreamEvent } from '../main/ets/Index';
 
 const reasoningOnlyPayload: string = '{"id":"s1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"reasoning_content":"思考一","content":""},"finish_reason":null}]}';
@@ -13,11 +24,17 @@ const emptyChoicesPayload: string = '{"id":"s5","object":"chat.completion.chunk"
 export default function llmStreamEventsTest(): void {
   describe('LlmStreamEvents.issue111_test', () => {
     it('defines_four_forward_compatible_event_categories', 0, () => {
-      expect(STREAM_EVENT_TYPES.length).assertEqual(4);
-      expect(STREAM_EVENT_TYPES.indexOf('thinking') >= 0).assertTrue();
-      expect(STREAM_EVENT_TYPES.indexOf('text') >= 0).assertTrue();
-      expect(STREAM_EVENT_TYPES.indexOf('tool_call') >= 0).assertTrue();
-      expect(STREAM_EVENT_TYPES.indexOf('tool_result') >= 0).assertTrue();
+      const events: StreamEvent[] = [
+        { type: 'thinking', delta: '思考' },
+        { type: 'text', delta: '回答' },
+        { type: 'tool_call', delta: '' },
+        { type: 'tool_result', delta: '' },
+      ];
+      expect(events.length).assertEqual(4);
+      expect(events[0].type).assertEqual('thinking');
+      expect(events[1].type).assertEqual('text');
+      expect(events[2].type).assertEqual('tool_call');
+      expect(events[3].type).assertEqual('tool_result');
     });
 
     it('maps_reasoning_only_payload_to_one_thinking_event', 0, () => {

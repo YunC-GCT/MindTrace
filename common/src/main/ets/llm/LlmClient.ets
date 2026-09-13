@@ -13,7 +13,7 @@
 //     ],
 //   });
 //   const text: string = result.text ?? '';
-//   // 流式: 真 SSE (requestInStream), 每个结构化事件触发 onDelta
+//   // 流式: 真 SSE (requestInStream), 每个结构化事件经 onDelta 交付
 //   await client.call({
 //     messages: [...],
 //     stream: true,
@@ -33,6 +33,7 @@
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { LlmConfig } from './LlmConfig';
+import { Logger } from '../utils/logger';
 import {
   ChatMessage,
   LlmRequestBody,
@@ -43,7 +44,6 @@ import {
   LlmStreamCallback,
   StreamEvent,
   LlmThinkingConfig,
-  LlmChatTemplateKwargs,
   LlmCallRequest,
   LlmCallResult,
   LlmToolCall,
@@ -87,14 +87,18 @@ export class LlmClient {
     const enableThinking: boolean = request.enableThinking !== undefined
       ? request.enableThinking
       : this.config.getEnableThinking();
+    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
+    const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
 
     const body: LlmRequestBody = {
       model: model,
       messages: request.messages,
-      temperature: temperature,
       max_tokens: maxTokens,
       stream: false,
     };
+    if (!isDeepSeek || !enableThinking) {
+      body.temperature = temperature;
+    }
     // response_format is the single transport seam for provider-declared
     // json_schema support; unsupported providers receive json_object instead.
     if (request.responseFormat !== undefined) {
@@ -106,9 +110,15 @@ export class LlmClient {
     if (request.tool_choice !== undefined) {
       body.tool_choice = request.tool_choice;
     }
-    if (model.toLowerCase().indexOf('qwen') >= 0) {
-      const chatTemplateKwargs: LlmChatTemplateKwargs = { enable_thinking: enableThinking };
-      body.chat_template_kwargs = chatTemplateKwargs;
+    if (isDeepSeek) {
+      const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
+      body.thinking = thinkingCfg;
+      if (enableThinking) {
+        body.reasoning_effort = 'high';
+      }
+    }
+    if (isQwen) {
+      body.enable_thinking = enableThinking;
     }
 
     // 3. 发 HTTP POST
@@ -240,11 +250,11 @@ export class LlmClient {
    * SSE 流式适配路径 (原 callStream)
    *
    * 使用 HarmonyOS requestInStream + on('dataReceive') 逐块接收 SSE 事件。
-   * 每收到一个有效 token 即触发 onDelta 回调，实现逐字实时渲染。
+   * 每收到一个有效结构化事件即触发回调，实现逐字实时渲染。
    */
   private async callStreamInternal(
     request: LlmCallRequest,
-    onDelta: LlmStreamCallback,
+    onEvent: LlmStreamCallback,
   ): Promise<void> {
     // 1. 校验 API key — PR2-T2 L3 (2026-09-08): per-vendor key
     const apiKey: string | null = await this.config.getApiKey(this.config.getVendorId());
@@ -260,6 +270,8 @@ export class LlmClient {
     const enableThinking: boolean = request.enableThinking !== undefined
       ? request.enableThinking
       : this.config.getEnableThinking();
+    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
+    const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
 
     // 构造 body (Record 避免 redacted 匹配问题)
     const bodyObj: Record<string, Object> = {
@@ -272,19 +284,20 @@ export class LlmClient {
     bodyObj['max_tokens'] = maxTokens;
 
     // DeepSeek 思考模式不支持 temperature,仅在非思考模式下设置
-    if (!enableThinking) {
+    if (!isDeepSeek || !enableThinking) {
       bodyObj['temperature'] = temperature;
     }
 
-    if (enableThinking) {
-      const thinkingCfg: LlmThinkingConfig = { type: 'enabled' };
+    if (isDeepSeek) {
+      const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
       bodyObj['thinking'] = thinkingCfg as Object;
-      bodyObj['reasoning_effort'] = 'high';
+      if (enableThinking) {
+        bodyObj['reasoning_effort'] = 'high';
+      }
     }
 
-    if (model.toLowerCase().indexOf('qwen') >= 0) {
-      const chatTemplateKwargs: LlmChatTemplateKwargs = { enable_thinking: enableThinking };
-      bodyObj['chat_template_kwargs'] = chatTemplateKwargs as Object;
+    if (isQwen) {
+      bodyObj['enable_thinking'] = enableThinking;
     }
 
     if (request.responseFormat !== undefined) {
@@ -295,7 +308,9 @@ export class LlmClient {
 
     // 3. 创建 HttpRequest 并发起流式请求
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
-    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' endpoint=' + endpointUrl + ' stream=true');
+    const llmLog: Logger = new Logger('LlmClient');
+    llmLog.info('request vendor=' + this.config.getVendorId() + ' model=' + model
+      + ' thinking=' + enableThinking.toString() + ' qwen=' + isQwen.toString() + ' stream=true');
     const httpRequest = http.createHttp();
 
     return new Promise<void>((resolve: (value: void) => void, reject: (reason: Error) => void): void => {
@@ -304,6 +319,20 @@ export class LlmClient {
       let dataReceived: boolean = false;
       let chunkCount: number = 0;
       let receivedBytes: number = 0;
+      let thinkingEvents: number = 0;
+      let thinkingChars: number = 0;
+      let textEvents: number = 0;
+      let textChars: number = 0;
+      const trackedEventSink: LlmStreamCallback = (event: StreamEvent): void => {
+        if (event.type === 'thinking') {
+          thinkingEvents += 1;
+          thinkingChars += event.delta.length;
+        } else if (event.type === 'text') {
+          textEvents += 1;
+          textChars += event.delta.length;
+        }
+        onEvent(event);
+      };
 
       // 超时保护 (2 分钟总超时)
       const timer: number = setTimeout((): void => {
@@ -337,7 +366,7 @@ export class LlmClient {
           chunkCount += 1;
           receivedBytes += text.length;
           sseLineBuffer += text;
-          sseLineBuffer = this.processSseBuffer(sseLineBuffer, onDelta);
+          sseLineBuffer = this.processSseBuffer(sseLineBuffer, trackedEventSink);
         } catch (e) {
           console.warn('[LlmClient] dataReceive error: ' + ((e as Error).message ?? String(e)));
         }
@@ -351,14 +380,18 @@ export class LlmClient {
         streamEnded = true;
         clearTimeout(timer);
         clearTimeout(firstByteTimer);
-        console.info('[LlmClient] stream completed chunks=' + chunkCount.toString()
-          + ' bytes=' + receivedBytes.toString()
-          + ' remaining=' + sseLineBuffer.length.toString());
-
         // 处理 buffer 中剩余数据
         if (sseLineBuffer.trim().length > 0) {
-          this.processSseBufferFinal(sseLineBuffer, onDelta);
+          this.processSseBufferFinal(sseLineBuffer, trackedEventSink);
         }
+
+        llmLog.info('stream completed chunks=' + chunkCount.toString()
+          + ' bytes=' + receivedBytes.toString()
+          + ' thinkingEvents=' + thinkingEvents.toString()
+          + ' thinkingChars=' + thinkingChars.toString()
+          + ' textEvents=' + textEvents.toString()
+          + ' textChars=' + textChars.toString()
+          + ' remaining=' + sseLineBuffer.length.toString());
 
         httpRequest.destroy();
         resolve();
@@ -375,7 +408,7 @@ export class LlmClient {
         connectTimeout: timeoutMs,
         readTimeout: timeoutMs,
       }, (err: Error, data: number): void => {
-        console.info('[LlmClient] requestInStream cb: err=' + (err ? err.message : 'null') + ' code=' + data.toString());
+        llmLog.info('requestInStream cb err=' + (err ? err.message : 'null') + ' code=' + data.toString());
         if (err) {
           console.error('[LlmClient] stream err: ' + err.message);
           if (!streamEnded) {
@@ -408,12 +441,12 @@ export class LlmClient {
   }
 
   /**
-   * 处理 SSE 行缓冲,解析完整的 SSE events 并触发 onDelta
+   * 处理 SSE 行缓冲,解析完整的 SSE events 并触发结构化事件回调
    * 返回未处理完的剩余 buffer
    */
   private processSseBuffer(
     buffer: string,
-    onDelta: LlmStreamCallback,
+    onEvent: LlmStreamCallback,
   ): string {
     let remaining: string = buffer;
 
@@ -448,7 +481,7 @@ export class LlmClient {
 
       // 解析 JSON chunk
       try {
-        this.tryEmitSseDelta(dataStr, onDelta);
+        this.emitSseEvents(dataStr, onEvent);
       } catch (e) {
         // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
         return eventText + '\n' + remaining;
@@ -461,7 +494,7 @@ export class LlmClient {
   /**
    * 流结束时处理 buffer 中可能残留的最后一段数据
    */
-  private processSseBufferFinal(buffer: string, onDelta: LlmStreamCallback): void {
+  private processSseBufferFinal(buffer: string, onEvent: LlmStreamCallback): void {
     const trimmed: string = buffer.trim();
     if (trimmed.length === 0) {
       return;
@@ -478,7 +511,7 @@ export class LlmClient {
         continue;
       }
       try {
-        this.tryEmitSseDelta(dataStr, onDelta);
+        this.emitSseEvents(dataStr, onEvent);
       } catch (e) {
         // 最终残留数据解析失败,静默丢弃
       }
@@ -486,13 +519,13 @@ export class LlmClient {
   }
 
   /**
-   * 解析单行 SSE data 并触发 onDelta (JSON 解析失败则抛异常)。
+   * 解析单行 SSE data 并触发结构化事件回调 (JSON 解析失败则抛异常)。
    * #111: reasoning_content emit thinking,content emit text;不再把 thinking 伪装为 text。
    */
-  private tryEmitSseDelta(dataStr: string, onDelta: LlmStreamCallback): void {
+  private emitSseEvents(dataStr: string, onEvent: LlmStreamCallback): void {
     const events: StreamEvent[] = LlmClient.parseStreamEventsFromSseData(dataStr);
     for (const event of events) {
-      onDelta(event);
+      onEvent(event);
     }
   }
 

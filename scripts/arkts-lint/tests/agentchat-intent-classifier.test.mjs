@@ -11,17 +11,16 @@ const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
 const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 
-// spec 007 PR1: 意图分类 + 提示词构建从 AgentChatService 抽取为 IntentClassifier。
-
-test('IntentClassifier exists with public classify / inlineNoteMaterial / buildReplyMessages', () => {
+test('IntentClassifier exposes its public intent and reply APIs', () => {
   assert.match(classifier, /export class IntentClassifier/);
   assert.match(classifier, /public async classify\(userText: string\): Promise<TextIntent>/);
   assert.match(classifier, /public inlineNoteMaterial\(userInstruction: string\): string/);
-  assert.match(classifier, /public buildReplyMessages\(memoryContext: string, learnerProfileContext: string, userContent: string\): ChatMessage\[\]/);
+  assert.match(classifier, /export interface ReplyContext/);
+  assert.match(classifier, /public buildReplyMessages\(context: ReplyContext\): ChatMessage\[\]/);
   assert.match(classifier, /export type TextIntent = 'note_generation' \| 'chat';/);
 });
 
-test('IntentClassifier takes an injectable LlmGuard seam and reuses guard.extractJsonObject (no duplicate)', () => {
+test('IntentClassifier takes an injectable LlmGuard seam and reuses guard.extractJsonObject', () => {
   assert.match(classifier, /constructor\(guard\?: LlmGuard\)/);
   assert.match(classifier, /this\.guard\.extractJsonObject\(raw\)/);
   assert.doesNotMatch(classifier, /private extractJsonObject/);
@@ -35,6 +34,7 @@ test('ConversationWorkflow owns intent orchestration and AgentChatService stays 
   assert.match(workflow, /this\.intentClassifier\.classify\(/);
   assert.match(workflow, /this\.intentClassifier\.inlineNoteMaterial\(/);
   assert.match(replyService, /this\.intentClassifier\.buildReplyMessages\(/);
+  assert.match(replyService, /this\.intentClassifier\.buildStreamingReplyMessages\(/);
 });
 
 test('ConversationWorkflow owns reply implementation without duplicate facade logic', () => {
