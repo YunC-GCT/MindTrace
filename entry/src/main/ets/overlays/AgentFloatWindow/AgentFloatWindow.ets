@@ -15,13 +15,13 @@ import {
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import window from '@ohos.window';
-import { AgentChatService, AgentChatCallbacks, applyStreamEventToChatMsg } from '../../services/AgentChatService';
+import { AgentChatService, AgentChatCallbacks } from '../../services/AgentChatService';
 import { LlmConfig } from 'common';
 import { ChatHeader } from './chat/ChatHeader';
 import { QuickSuggestions } from './chat/QuickSuggestions';
 import { ChatSessionManager, sid } from './chat/ChatSession';
 import { SessionBar } from './chat/SessionBar';
-import { ChatMsg, ChatSession, ChatStatusMeta } from './chat/ChatModels';
+import { ChatMsg, ChatSession, ChatStatusMeta, applyStreamEventToChatMsg, copyChatMsg } from './chat/ChatModels';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputBar } from './AgentInputBar';
@@ -51,7 +51,6 @@ export struct AgentFloatWindow {
   @State keyboardHeight: number = 0;
   @State sessions: ChatSession[] = [{ id: 's1', name: '会话 1', messages: [] }];
   @State activeSid: string = 's1';
-  @State renderKey: number = 0;
   @State floatHeight: number = 48;
   @State overlayVisible: boolean = false;
   @State maskOpacity: number = 0;
@@ -88,9 +87,7 @@ export struct AgentFloatWindow {
   onPendingImageChange(): void { if (this.pendingImageUri.length > 0) { this.imagePreview = this.pendingImageUri; } }
   onMessagesChange(): void {
     if (this.messages.length > 0) {
-      this.renderKey++;
       this.sync(); this.sm.save(this.sessions);
-      setTimeout((): void => { this.scroller.scrollEdge(Edge.Bottom); }, 200);
     }
   }
 
@@ -114,7 +111,7 @@ export struct AgentFloatWindow {
         this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m);
       },
       finishAiMsg: (id: number): void => {
-        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: false, reasoning: m.reasoning } : m);
+        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m);
       },
       setBusy: (v: boolean): void => { this.busy = v; },
       setStatusMeta: (meta: ChatStatusMeta | null): void => { this.statusMeta = meta; },
@@ -156,7 +153,7 @@ export struct AgentFloatWindow {
     // 取消旧会话中正在进行的流式消息
     if (this.messages.length > 0 && this.messages[this.messages.length - 1].streaming) {
       this.messages = this.messages.map((m: ChatMsg, i: number): ChatMsg =>
-        i === this.messages.length - 1 ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: false, reasoning: m.reasoning } : m
+        i === this.messages.length - 1 ? this.finishMessage(m) : m
       );
     }
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
@@ -164,6 +161,19 @@ export struct AgentFloatWindow {
   }
   private newSession(): void { this.sync(); const s: ChatSession = { id: sid(), name: '会话 ' + (this.sessions.length + 1).toString(), messages: [] }; this.sessions = [...this.sessions, s]; this.activeSid = s.id; this.messages = []; this.sm.save(this.sessions); }
   private deleteSession(sid: string): void { if (this.sessions.length <= 1) { return; } const f = this.sessions.filter((s: ChatSession): boolean => s.id !== sid); this.sessions = f; if (sid === this.activeSid) { this.activeSid = f[0].id; this.messages = f[0].messages; }; this.sm.save(this.sessions); }
+
+  private finishMessage(message: ChatMsg): ChatMsg {
+    const next: ChatMsg = copyChatMsg(message);
+    next.streaming = false;
+    return next;
+  }
+
+  private toggleReasoning(message: ChatMsg): ChatMsg {
+    const next: ChatMsg = copyChatMsg(message);
+    const visible: boolean = message.reasoningExpanded !== undefined ? message.reasoningExpanded : true;
+    next.reasoningExpanded = !visible;
+    return next;
+  }
 
   // ===== 交互逻辑 =====
 
@@ -261,7 +271,7 @@ export struct AgentFloatWindow {
 
           SessionBar({ sessions: this.sessions, activeSid: this.activeSid, onSwitch: (sid: string): void => { this.switchSession(sid); }, onDelete: (sid: string): void => { this.deleteSession(sid); }, onNew: (): void => { this.newSession(); } });
 
-          AgentMessageList({ messages: this.messages, busy: this.busy, statusMeta: this.statusMeta, scroller: this.scroller, onToggleReasoning: (msg: ChatMsg): void => { this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === msg.id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: m.streaming, reasoning: m.reasoning, reasoningExpanded: !(m.reasoningExpanded ?? false) } : m); } });
+          AgentMessageList({ messages: this.messages, busy: this.busy, statusMeta: this.statusMeta, scroller: this.scroller, onToggleReasoning: (msg: ChatMsg): void => { this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === msg.id ? this.toggleReasoning(m) : m); } });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
           QuickSuggestions({ onSelect: (p: string): void => { this.send(p); } });

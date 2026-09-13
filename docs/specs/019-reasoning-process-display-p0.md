@@ -79,7 +79,8 @@ AgentMessageList 的内联 keyGen lambda 提取为 ChatModels 导出纯函数 `c
 ### 8. 展开态保护与动画
 
 - `reasoningExpanded` 沿用现有"append 不触碰"纪律 — 流式写入不夺回用户展开态。
-- 折叠动画走 `animateTo` + if(官方路线);展开态变化通过 @Prop 数据更新驱动,行不重建。
+- 折叠动画走 `animateTo` + if(官方路线);行不重建。
+- **展开态机制(修正 2026-09-13,triage 验证)**:展开态由 ChatBubble **内部 `@State`** 持有(`aboutToAppear` 自 `msg.reasoningExpanded` 初始化,undefined 默认展开),翻转本地驱动 UI,并经 `onToggleReasoning` 回写父数组(仅同步与持久化)。依据 LazyForEach 官方语义(键值不变 → 组件不更新,[FAQ 828](https://developer.huawei.com/consumer/cn/doc/faq/faqs-arkui-828) 场景二),原稿"展开态变化通过 @Prop 数据更新驱动"不成立 — key 不含 `reasoningExpanded` 时父数组新对象无路径进入未重建的行;直接在 key 中加回 `reasoningExpanded` 则行销毁重建,与 animateTo 前提矛盾(2026-09-12 工作区会话实证)。回写父数组不改变 key,行不重建,本地 `@State` 驱动折叠动画;流式事件经 `copyChatMsg` 保留 `reasoningExpanded`,行因 reasoning 增长重建时展开态随之恢复。
 
 ### 9. 事实裁决(非拍板,事实推导)
 

@@ -6,7 +6,6 @@ import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
 import type { StreamEvent } from 'common';
-import { ChatMsg } from '../overlays/AgentFloatWindow/chat/ChatModels';
 
 export interface AgentChatCallbacks {
   addAiMsg: (content: string) => void;
@@ -19,29 +18,6 @@ export interface AgentChatCallbacks {
   getConversationText: (excludeLatestUser: boolean) => string;
   getSessionId: () => string;
   onDraftReady: (event: NoteDraftReadyEvent) => void;
-}
-
-export function applyStreamEventToChatMsg(message: ChatMsg, event: StreamEvent): ChatMsg {
-  const next: ChatMsg = {
-    id: message.id,
-    role: message.role,
-    content: message.content,
-    ts: message.ts,
-    streaming: message.streaming,
-    reasoning: message.reasoning,
-  };
-  if (message.reasoningExpanded !== undefined) {
-    next.reasoningExpanded = message.reasoningExpanded;
-  }
-  if (event.type === 'thinking') {
-    next.reasoning = message.reasoning + event.delta;
-    return next;
-  }
-  if (event.type === 'text') {
-    next.content = message.content + event.delta;
-    return next;
-  }
-  return next;
 }
 
 class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
