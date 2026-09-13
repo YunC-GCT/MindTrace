@@ -4,8 +4,8 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 # Tasks: 019 Reasoning Process Display P0 — #111 StreamEvent Protocol Vertical Slice
 
-**Input**: Design documents from `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\`
-**Prerequisites**: `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\plan.md`, `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\spec.md`
+**Input**: Design documents from `spec/019-reasoning-process-display-p0/`
+**Prerequisites**: `spec/019-reasoning-process-display-p0/plan.md`, `spec/019-reasoning-process-display-p0/spec.md`
 **Verification Scope**: build-only (`Run verification` selected)
 
 **Tests**: Required. User requested TDD where possible, pre-agreed seams are Seam A (`common/src/test`) and Seam B (`entry/src/test`, or documented integration fallback if direct adapter test is not feasible).
@@ -20,21 +20,21 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 ## Path Conventions
 
-- **Project root**: `D:\HMgent\MindTrace`
-- **Feature artifacts**: `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\`
-- **Common LLM source**: `D:\HMgent\MindTrace\common\src\main\ets\llm\`
-- **Entry conversation/UI source**: `D:\HMgent\MindTrace\entry\src\main\ets\`
-- **Common tests**: `D:\HMgent\MindTrace\common\src\test\`
-- **Entry tests**: `D:\HMgent\MindTrace\entry\src\test\`
+- **Project root**: repository root
+- **Feature artifacts**: `spec/019-reasoning-process-display-p0/`
+- **Common LLM source**: `common/src/main/ets/llm/`
+- **Entry conversation/UI source**: `entry/src/main/ets/`
+- **Common tests**: `common/src/test/`
+- **Entry tests**: `entry/src/test/`
 
 ## Phase 1: Setup (Shared Infrastructure)
 
 **Purpose**: Establish branch isolation, implementation constraints, and TDD guardrails before touching `.ets` files.
 
-- [X] T001 Confirm current branch is `feature/spec-019-p0`, identify unrelated pre-existing dirty files to exclude from staging, and record the scoped file inventory in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md`
-- [X] T002 [P] Review ArkTS strict constraints before `.ets` edits in `D:\HMgent\MindTrace\docs\style\arkts-1.1.md`
-- [X] T003 [P] Review ADR-0015 same-PR protocol and fallback constraint before implementation in `D:\HMgent\MindTrace\docs\adr\0015-structured-stream-events.md`
-- [X] T004 [P] Review existing stream callsite inventory and update scoped implementation notes in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md`
+- [X] T001 Confirm current branch is `feature/spec-019-p0`, identify unrelated pre-existing dirty files to exclude from staging, and record the scoped file inventory in `spec/019-reasoning-process-display-p0/delivery-checklist.md`
+- [X] T002 [P] Review ArkTS strict constraints before `.ets` edits in `docs/style/arkts-1.1.md`
+- [X] T003 [P] Review ADR-0015 same-PR protocol and fallback constraint before implementation in `docs/adr/0015-structured-stream-events.md`
+- [X] T004 [P] Review existing stream callsite inventory and update scoped implementation notes in `spec/019-reasoning-process-display-p0/delivery-checklist.md`
 
 ---
 
@@ -42,9 +42,9 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 **Purpose**: Create failing TDD seams and confirm the exact protocol/callsite migration surface. This phase blocks all user story implementation.
 
-- [X] T005 [P] Create failing Seam A tests for SSE delta to StreamEvent conversion in `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`
-- [X] T006 [P] Create failing Seam B tests for stream event to ChatMsg field dispatch, or document direct-test infeasibility in `D:\HMgent\MindTrace\entry\src\test\AgentChatStreamEvents.test.ets`
-- [X] T007 Inventory all old `(delta, kind)` stream callback callsites and record required migrations in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md`
+- [X] T005 [P] Create failing Seam A tests for SSE delta to StreamEvent conversion in `common/src/test/LlmStreamEvents.test.ets`
+- [X] T006 [P] Create failing Seam B tests for stream event to ChatMsg field dispatch, or document direct-test infeasibility in `entry/src/test/AgentChatStreamEvents.test.ets`
+- [X] T007 Inventory all old `(delta, kind)` stream callback callsites and record required migrations in `spec/019-reasoning-process-display-p0/delivery-checklist.md`
 
 **Checkpoint**: TDD seams exist and should fail for the current implementation before production changes begin.
 
@@ -58,15 +58,15 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 ### Tests for User Story 3
 
-- [X] T008 [P] [US3] Extend protocol-oriented assertions in Seam A tests for four defined event categories in `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`
+- [X] T008 [P] [US3] Extend protocol-oriented assertions in Seam A tests for four defined event categories in `common/src/test/LlmStreamEvents.test.ets`
 
 ### Implementation for User Story 3
 
-- [X] T009 [US3] Define the structured StreamEvent event family and migrate `LlmStreamCallback` / `LlmCallRequest.onDelta` contract in `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmTypes.ets`
-- [X] T010 [US3] Export StreamEvent-related types for entry consumers in `D:\HMgent\MindTrace\common\src\main\ets\Index.ets`
-- [X] T011 [US3] Update LlmClient stream callback references to the structured event contract in `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmClient.ets`
-- [X] T012 [US3] Update ReplyService stream sink contract to accept structured stream events in `D:\HMgent\MindTrace\entry\src\main\ets\services\ReplyService.ets`
-- [X] T013 [US3] Update ConversationWorkflow callback contract to accept structured stream events in `D:\HMgent\MindTrace\entry\src\main\ets\workflows\conversation\ConversationTypes.ets`
+- [X] T009 [US3] Define the structured StreamEvent event family and migrate `LlmStreamCallback` / `LlmCallRequest.onDelta` contract in `common/src/main/ets/llm/LlmTypes.ets`
+- [X] T010 [US3] Export StreamEvent-related types for entry consumers in `common/src/main/ets/Index.ets`
+- [X] T011 [US3] Update LlmClient stream callback references to the structured event contract in `common/src/main/ets/llm/LlmClient.ets`
+- [X] T012 [US3] Update ReplyService stream sink contract to accept structured stream events in `entry/src/main/ets/services/ReplyService.ets`
+- [X] T013 [US3] Update ConversationWorkflow callback contract to accept structured stream events in `entry/src/main/ets/workflows/conversation/ConversationTypes.ets`
 
 **Checkpoint**: Structured protocol compiles through type surfaces; old stream callback shape is no longer the primary contract.
 
@@ -80,17 +80,17 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 ### Tests for User Story 1
 
-- [X] T014 [P] [US1] Add/adjust Seam A fixture for reasoning-only stream chunks in `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`
-- [X] T015 [P] [US1] Add/adjust Seam B fixture for thinking event accumulation into ChatMsg.reasoning in `D:\HMgent\MindTrace\entry\src\test\AgentChatStreamEvents.test.ets`
+- [X] T014 [P] [US1] Add/adjust Seam A fixture for reasoning-only stream chunks in `common/src/test/LlmStreamEvents.test.ets`
+- [X] T015 [P] [US1] Add/adjust Seam B fixture for thinking event accumulation into ChatMsg.reasoning in `entry/src/test/AgentChatStreamEvents.test.ets`
 
 ### Implementation for User Story 1
 
-- [X] T016 [US1] Implement SSE payload to StreamEvent conversion for `thinking` and `text` events in `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmClient.ets`
-- [X] T017 [US1] Route parsed StreamEvent objects through LlmClient stream buffer and final-buffer processing in `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmClient.ets`
-- [X] T018 [US1] Forward structured stream events through ReplyService without filtering out `thinking` events in `D:\HMgent\MindTrace\entry\src\main\ets\services\ReplyService.ets`
-- [X] T019 [US1] Forward structured stream events through ConversationWorkflow streaming reply handling in `D:\HMgent\MindTrace\entry\src\main\ets\workflows\conversation\ConversationWorkflow.ets`
-- [X] T020 [US1] Forward structured stream events through AgentChatService adapter callbacks in `D:\HMgent\MindTrace\entry\src\main\ets\services\AgentChatService.ets`
-- [X] T021 [US1] Consume `thinking` events into `reasoning` and `text` events into `content` in `D:\HMgent\MindTrace\entry\src\main\ets\overlays\AgentFloatWindow\AgentFloatWindow.ets`
+- [X] T016 [US1] Implement SSE payload to StreamEvent conversion for `thinking` and `text` events in `common/src/main/ets/llm/LlmClient.ets`
+- [X] T017 [US1] Route parsed StreamEvent objects through LlmClient stream buffer and final-buffer processing in `common/src/main/ets/llm/LlmClient.ets`
+- [X] T018 [US1] Forward structured stream events through ReplyService without filtering out `thinking` events in `entry/src/main/ets/services/ReplyService.ets`
+- [X] T019 [US1] Forward structured stream events through ConversationWorkflow streaming reply handling in `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
+- [X] T020 [US1] Forward structured stream events through AgentChatService adapter callbacks in `entry/src/main/ets/services/AgentChatService.ets`
+- [X] T021 [US1] Consume `thinking` events into `reasoning` and `text` events into `content` in `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets`
 
 **Checkpoint**: Thinking events can flow from SSE parser to UI message state independently of final answer text.
 
@@ -104,15 +104,15 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 ### Tests for User Story 2
 
-- [X] T022 [P] [US2] Add/adjust Seam A regression for reasoning non-empty plus content empty producing exactly one thinking event in `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`
-- [X] T023 [P] [US2] Add/adjust Seam B regression for thinking/text channel separation in `D:\HMgent\MindTrace\entry\src\test\AgentChatStreamEvents.test.ets`
+- [X] T022 [P] [US2] Add/adjust Seam A regression for reasoning non-empty plus content empty producing exactly one thinking event in `common/src/test/LlmStreamEvents.test.ets`
+- [X] T023 [P] [US2] Add/adjust Seam B regression for thinking/text channel separation in `entry/src/test/AgentChatStreamEvents.test.ets`
 
 ### Implementation for User Story 2
 
-- [X] T024 [US2] Remove reasoning-to-content fallback emission from SSE delta handling in `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmClient.ets`
-- [X] T025 [US2] Ensure ReplyService stream result accumulates only `text` events as final answer content in `D:\HMgent\MindTrace\entry\src\main\ets\services\ReplyService.ets`
-- [X] T026 [US2] Ensure interruption and fallback UI messages are appended through the final-answer text path in `D:\HMgent\MindTrace\entry\src\main\ets\workflows\conversation\ConversationWorkflow.ets`
-- [X] T027 [US2] Ensure persisted streamed assistant messages contain final answer text only in `D:\HMgent\MindTrace\entry\src\main\ets\workflows\conversation\ConversationWorkflow.ets`
+- [X] T024 [US2] Remove reasoning-to-content fallback emission from SSE delta handling in `common/src/main/ets/llm/LlmClient.ets`
+- [X] T025 [US2] Ensure ReplyService stream result accumulates only `text` events as final answer content in `entry/src/main/ets/services/ReplyService.ets`
+- [X] T026 [US2] Ensure interruption and fallback UI messages are appended through the final-answer text path in `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
+- [X] T027 [US2] Ensure persisted streamed assistant messages contain final answer text only in `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
 
 **Checkpoint**: The prior duplicate-thinking fallback cannot reappear without failing tests.
 
@@ -126,13 +126,13 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 ### Tests for User Story 4
 
-- [X] T028 [P] [US4] Add/adjust configuration expectations for default thinking behavior in `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`
+- [X] T028 [P] [US4] Add/adjust configuration expectations for default thinking behavior in `common/src/test/LlmStreamEvents.test.ets`
 
 ### Implementation for User Story 4
 
-- [X] T029 [US4] Change LlmConfig initial thinking default to enabled in `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmConfig.ets`
-- [X] T030 [US4] Change LlmConfig preferences load fallback and reset defaults to enabled thinking in `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmConfig.ets`
-- [X] T031 [US4] Remove ReplyService explicit `enableThinking: false` overrides from complete, stream, and fallback reply paths in `D:\HMgent\MindTrace\entry\src\main\ets\services\ReplyService.ets`
+- [X] T029 [US4] Change LlmConfig initial thinking default to enabled in `common/src/main/ets/llm/LlmConfig.ets`
+- [X] T030 [US4] Change LlmConfig preferences load fallback and reset defaults to enabled thinking in `common/src/main/ets/llm/LlmConfig.ets`
+- [X] T031 [US4] Remove ReplyService explicit `enableThinking: false` overrides from complete, stream, and fallback reply paths in `entry/src/main/ets/services/ReplyService.ets`
 
 **Checkpoint**: Chat reply requests use LlmClient config fallback for thinking supply instead of forcing thinking off.
 
@@ -146,10 +146,10 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 ### Tests for User Story 5
 
-- [X] T032 [US5] Make Seam A tests pass for reasoning-only, null delta, empty choices, and thinking-before-text fixtures in `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`
-- [X] T033 [US5] Make Seam B tests pass for thinking-to-reasoning and text-to-content dispatch, or record integration fallback evidence in `D:\HMgent\MindTrace\entry\src\test\AgentChatStreamEvents.test.ets`
-- [X] T034 [US5] Run ArkTS strict checks for changed source and test files, then fix diagnostics in `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmTypes.ets`
-- [X] T035 [US5] Run related single test files regularly and record results in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md`
+- [X] T032 [US5] Make Seam A tests pass for reasoning-only, null delta, empty choices, and thinking-before-text fixtures in `common/src/test/LlmStreamEvents.test.ets`
+- [X] T033 [US5] Make Seam B tests pass for thinking-to-reasoning and text-to-content dispatch, or record integration fallback evidence in `entry/src/test/AgentChatStreamEvents.test.ets`
+- [X] T034 [US5] Run ArkTS strict checks for changed source and test files, then fix diagnostics in `common/src/main/ets/llm/LlmTypes.ets`
+- [X] T035 [US5] Run related single test files regularly and record results in `spec/019-reasoning-process-display-p0/delivery-checklist.md`
 
 **Checkpoint**: Parser and dispatch regressions are test-locked before cross-cutting cleanup.
 
@@ -163,8 +163,8 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 ### Implementation for User Story 6
 
-- [X] T036 [US6] Prepare the code-review reference point, model preference, and model-switching capability note in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\review-report.md`
-- [X] T037 [US6] Run code-review after implementation changes and record findings or no-finding evidence in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\review-report.md`
+- [X] T036 [US6] Prepare the code-review reference point, model preference, and model-switching capability note in `spec/019-reasoning-process-display-p0/review-report.md`
+- [X] T037 [US6] Run code-review after implementation changes and record findings or no-finding evidence in `spec/019-reasoning-process-display-p0/review-report.md`
 
 **Checkpoint**: Code review evidence is available before final delivery commit is created by the main agent after verification.
 
@@ -174,11 +174,11 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 **Purpose**: Final cleanup, full test sweep, scope isolation, and delivery preparation before build/deploy verification.
 
-- [X] T038 Run full project ArkTS lint scan and fix #111-related findings in `D:\HMgent\MindTrace\scripts\arkts-lint\index.mjs`
-- [X] T039 Run full arkts-lint test suite once at the end and record results in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md`
-- [X] T040 Run naming lint for newly created files and record results in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md`
-- [X] T041 Review `git diff` and update the final scoped staging list excluding unrelated dirty files in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md`
-- [X] T042 Update task completion evidence and implementation summary in `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md`
+- [X] T038 Run full project ArkTS lint scan and fix #111-related findings in `scripts/arkts-lint/index.mjs`
+- [X] T039 Run full arkts-lint test suite once at the end and record results in `spec/019-reasoning-process-display-p0/delivery-checklist.md`
+- [X] T040 Run naming lint for newly created files and record results in `spec/019-reasoning-process-display-p0/delivery-checklist.md`
+- [X] T041 Review `git diff` and update the final scoped staging list excluding unrelated dirty files in `spec/019-reasoning-process-display-p0/delivery-checklist.md`
+- [X] T042 Update task completion evidence and implementation summary in `spec/019-reasoning-process-display-p0/delivery-checklist.md`
 
 ---
 
@@ -188,8 +188,8 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 **Purpose**: Build and deploy validation for the implemented feature. UI verification is intentionally omitted because Phase 3 selected `Run verification`.
 
-- [X] T043 Build project and fix compilation errors with HarmonyOS build tooling using `D:\HMgent\MindTrace\build-profile.json5`
-- [X] T044 Deploy application to device/emulator with the entry module metadata in `D:\HMgent\MindTrace\entry\src\main\module.json5`
+- [X] T043 Build project and fix compilation errors with HarmonyOS build tooling using `build-profile.json5`
+- [X] T044 Deploy application to device/emulator with the entry module metadata in `entry/src/main/module.json5`
 
 ---
 
@@ -214,14 +214,14 @@ graph TD
 
 | Phase | Tasks | Required Files | Execution Notes |
 |-------|-------|----------------|-----------------|
-| Setup | T002, T003, T004 | `D:\HMgent\MindTrace\docs\style\arkts-1.1.md`; `D:\HMgent\MindTrace\docs\adr\0015-structured-stream-events.md`; `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\delivery-checklist.md` | Can run in parallel after T001 branch/scope confirmation |
-| Foundational | T005, T006 | `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`; `D:\HMgent\MindTrace\entry\src\test\AgentChatStreamEvents.test.ets` | Both are failing TDD seam setup tasks and touch different modules |
-| US3 | T008 | `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets` | Test task can be prepared before protocol implementation; T009-T013 should be sequential due callback contract dependencies |
-| US1 | T014, T015 | `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`; `D:\HMgent\MindTrace\entry\src\test\AgentChatStreamEvents.test.ets` | Test fixtures can run in parallel; implementation T016-T021 follows stream path order |
-| US2 | T022, T023 | `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets`; `D:\HMgent\MindTrace\entry\src\test\AgentChatStreamEvents.test.ets` | Regression tests can run in parallel; implementation T024-T027 follows parser-to-persistence order |
-| US4 | T028 | `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets` | Test can be prepared before LlmConfig updates; T029-T031 sequential by config/callsite dependency |
-| Polish | T038, T039, T040 | `D:\HMgent\MindTrace\scripts\arkts-lint\index.mjs`; `D:\HMgent\MindTrace\scripts\arkts-lint\package.json`; `D:\HMgent\MindTrace\scripts\naming-lint\package.json` | Run after user story work; results recorded in delivery checklist |
-| Verification | T043, T044 | `D:\HMgent\MindTrace\build-profile.json5`; `D:\HMgent\MindTrace\entry\src\main\module.json5` | Build must pass before deploy |
+| Setup | T002, T003, T004 | `docs/style/arkts-1.1.md`; `docs/adr/0015-structured-stream-events.md`; `spec/019-reasoning-process-display-p0/delivery-checklist.md` | Can run in parallel after T001 branch/scope confirmation |
+| Foundational | T005, T006 | `common/src/test/LlmStreamEvents.test.ets`; `entry/src/test/AgentChatStreamEvents.test.ets` | Both are failing TDD seam setup tasks and touch different modules |
+| US3 | T008 | `common/src/test/LlmStreamEvents.test.ets` | Test task can be prepared before protocol implementation; T009-T013 should be sequential due callback contract dependencies |
+| US1 | T014, T015 | `common/src/test/LlmStreamEvents.test.ets`; `entry/src/test/AgentChatStreamEvents.test.ets` | Test fixtures can run in parallel; implementation T016-T021 follows stream path order |
+| US2 | T022, T023 | `common/src/test/LlmStreamEvents.test.ets`; `entry/src/test/AgentChatStreamEvents.test.ets` | Regression tests can run in parallel; implementation T024-T027 follows parser-to-persistence order |
+| US4 | T028 | `common/src/test/LlmStreamEvents.test.ets` | Test can be prepared before LlmConfig updates; T029-T031 sequential by config/callsite dependency |
+| Polish | T038, T039, T040 | `scripts/arkts-lint/index.mjs`; `scripts/arkts-lint/package.json`; `scripts/naming-lint/package.json` | Run after user story work; results recorded in delivery checklist |
+| Verification | T043, T044 | `build-profile.json5`; `entry/src/main/module.json5` | Build must pass before deploy |
 
 ## Parallel Example
 

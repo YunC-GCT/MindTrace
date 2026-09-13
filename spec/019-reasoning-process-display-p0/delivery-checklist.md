@@ -2,7 +2,7 @@
 
 ## Scope and branch inventory
 
-- Project root checked: `D:\HMgent\MindTrace`
+- Project root checked: repository root
 - Required Harmony project files present before setup work: root `build-profile.json5` and root `oh-package.json5` both exist; no scaffold action required.
 - Current branch confirmed by `git branch --show-current`: `feature/spec-019-p0`
 - Implementation scope: only issue #111 StreamEvent protocol vertical slice; verification tasks T043-T044 are excluded for the later `spec-verify` phase.
@@ -36,8 +36,8 @@ Initial grep inventory for old `(delta, kind)` stream contract:
   - `callStreamInternal`, `processSseBuffer`, `processSseBufferFinal`, and SSE delta parsing consume `LlmStreamCallback`.
   - Old SSE fallback emits `reasoning_content` as content when `content` is empty; must be removed.
 - `entry/src/main/ets/services/ReplyService.ets`
-  - `ReplyDeltaSink = (delta, kind)` old type.
-  - Stream `onDelta` accumulates every delta into final content; must become text-only final answer accumulation.
+- `ReplyEventSink = (event: StreamEvent)` structured event sink.
+  - Stream `onDelta` forwards structured events; only `text` events contribute to final answer content.
   - Three explicit `enableThinking: false` overrides must be removed from complete/stream/fallback paths.
 - `entry/src/main/ets/workflows/conversation/ConversationTypes.ets`
   - `appendAiMsg(id, delta, kind?)` old callback shape.
@@ -61,12 +61,12 @@ Required migration surface is intentionally limited to the files named above plu
 - US3 protocol migration completed:
   - `StreamEventType`, `StreamEvent`, and concrete thinking/text/tool_call/tool_result event interfaces are defined in `common/src/main/ets/llm/LlmTypes.ets`.
   - `LlmStreamCallback` and `LlmCallRequest.onDelta` now use a single structured `StreamEvent` parameter.
-  - `common/src/main/ets/Index.ets` exports the new event family and `STREAM_EVENT_TYPES` for entry consumers.
+  - `common/src/main/ets/Index.ets` exports the new StreamEvent family for entry consumers.
   - `LlmClient`, `ReplyService`, `ConversationWorkflowCallbacks`, and the conversation adapter callback surface now compile against the structured event contract.
 - US1 thinking channel flow completed:
   - Seam A reasoning-only fixture maps to exactly one `thinking` event.
   - Seam B `thinking` fixture maps to `ChatMsg.reasoning` via `applyStreamEventToChatMsg`.
-  - `LlmClient.tryEmitSseDelta` forwards parsed `StreamEvent` objects through regular and final SSE buffer processing.
+  - `LlmClient.emitSseEvents` forwards parsed `StreamEvent` objects through regular and final SSE buffer processing.
   - `ReplyService`, `ConversationWorkflow`, `AgentChatService`, and `AgentFloatWindow` now forward/consume `StreamEvent` objects without filtering out thinking events.
 - ArkTS strict check after US1/US3 implementation group: `arkts_check` on 13 changed `.ets` files returned no errors.
 - US2 final-answer separation completed:
@@ -74,6 +74,7 @@ Required migration surface is intentionally limited to the files named above plu
   - Seam B regression asserts thinking/text events remain separated in `ChatMsg.reasoning` and `ChatMsg.content`.
   - Removed SSE reasoning-to-content masquerade in `LlmClient.parseStreamEventsFromSseData`; `reasoning_content` no longer emits a fallback text event.
   - `ReplyService.stream` accumulates final answer `content` only for `event.type === 'text'`; thinking events are forwarded but not persisted as final answer text.
+  - `ReplyService.stream` still treats blank final-answer content as an empty stream and falls back to non-stream completion, so a thinking-only stream does not persist an empty assistant answer.
   - `ConversationWorkflow` appends fallback and interruption UI deltas as `text` events, and saves `streamResult.content` only, preserving text-only persistence.
 - US4 thinking supply default completed:
   - `common/src/main/ets/llm/LlmConfig.ets` now exports `DEFAULT_ENABLE_THINKING = true`.
@@ -82,7 +83,8 @@ Required migration surface is intentionally limited to the files named above plu
   - Seam A config test asserts `DEFAULT_ENABLE_THINKING` and current singleton fallback are enabled.
 - US5 regression lock evidence:
   - `common/src/test/LlmStreamEvents.test.ets` covers reasoning-only, text-only, both-fields thinking-before-text, null delta, empty choices, no reasoning-to-text fallback, four event categories, and default thinking behavior.
-  - `entry/src/test/AgentChatStreamEvents.test.ets` covers thinking-to-reasoning, text-to-content, ordered separation, and reserved tool-event safe ignore.
+  - `entry/src/test/AgentChatStreamEvents.test.ets` covers thinking-to-reasoning, text-to-content, ordered separation, and reserved tool-event safe ignore through the shared ChatMsg reducer used by `AgentFloatWindow` callbacks.
+  - Remaining untested integration surface: the `ConversationWorkflowAdapter → AgentFloatWindow.appendAiMsg` callback chain is still covered by build/type checks rather than a device-backed Hypium integration test.
   - `arkts_check` on all changed source/test `.ets` files returned: `No errors found in 13 file(s).`
   - `devecocli check lint` was attempted for the new Seam A/B test files and key changed source files. It reported `No defects found` but also `Files checked: 0`; therefore it is recorded as non-authoritative compared with `arkts_check` and the final project lint/test sweep.
   - Direct Hypium single-test execution was not available in this API session without invoking build/deploy-style verification tooling. The new tests were wired into `common/src/test/List.test.ets` and `entry/src/test/List.test.ets` for the next test/build-capable phase.
@@ -129,14 +131,41 @@ Do not stage these unrelated pre-existing files:
 - Removed the old reasoning-to-content masquerade fallback from SSE parsing and non-stream content extraction.
 - Entry chat stream path now carries `StreamEvent` objects through `ReplyService`, `ConversationWorkflow`, `AgentChatService`, and `AgentFloatWindow`.
 - `thinking` events update `ChatMsg.reasoning`; `text` events update `ChatMsg.content`; reserved `tool_*` events are ignored safely in P0.
-- `ReplyService.stream` accumulates final answer content from `text` events only, so persisted streamed assistant content excludes thinking text.
+- `ReplyService.stream` accumulates final answer content from `text` events only, so persisted streamed assistant content excludes thinking text; if text content remains blank, the stream falls back to non-stream completion instead of saving an empty answer.
 - Thinking supply defaults are now enabled through `DEFAULT_ENABLE_THINKING`, preferences fallback, reset defaults, and removal of ReplyService explicit false overrides.
 - Seam A and Seam B tests were added and wired into module test entry points.
 
 ## Polish validation evidence
 
 - `node scripts/arkts-lint/index.mjs --quiet`: passed; no output.
-- `npm --prefix scripts/arkts-lint test`: passed; 80 tests, 80 pass, 0 fail.
+- `npm --prefix scripts/arkts-lint test`: passed; 90 tests, 90 pass, 0 fail.
 - `node scripts/naming-lint/index.mjs`: passed; 0 violations.
 - `git diff --check`: passed; no whitespace errors.
 - `git diff --name-status`: reviewed; only #111 source/test/SDD files listed above should be staged. One unrelated tracked research doc remains dirty and is excluded.
+
+## Follow-up review fix evidence
+
+- Confirmed and fixed Standards H1 by adding full required `.ets` file headers to the two new test files.
+- Confirmed and fixed Standards J1 by moving `applyStreamEventToChatMsg` next to `ChatMsg` in `entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets`.
+- Confirmed and fixed Spec C1 by restoring blank final-answer fallback semantics: a thinking-only stream still triggers non-stream completion instead of saving an empty assistant answer.
+- Confirmed and fixed Spec C2 by normalizing fallback display/persisted text in `ConversationWorkflow` before append/save.
+- Confirmed Spec A2 as a residual integration gap and documented that `ConversationWorkflowAdapter → AgentFloatWindow.appendAiMsg` remains build/type-check covered until device-backed Hypium integration is available.
+- Confirmed Spec C3 and updated T044 after follow-up deploy/start succeeded on `MatePad Pro 13`.
+- `arkts_check` on the 7 follow-up `.ets` files: passed.
+- `node scripts/arkts-lint/index.mjs --quiet`: passed; no output.
+- `npm --prefix scripts/arkts-lint test`: passed; 90 tests, 90 pass, 0 fail.
+- `node scripts/naming-lint/index.mjs`: passed; 0 violations.
+- `git diff --check`: passed; no whitespace errors.
+- `build_project(product=default, build_mode=debug)`: passed; `hvigor BUILD SUCCESSFUL in 2 min 46 s 903 ms`.
+- `start_app(module=entry, target=default, hvd=MatePad Pro 13)`: passed; application `com.example.mathmind/EntryAbility` started successfully.
+
+## Runtime truncation follow-up
+
+- User reproduced `⚠️ AI 回复异常: LLM response truncated by max_tokens` during real chat after #111 follow-up.
+- Root trigger is the non-stream JSON branch in `common/src/main/ets/llm/LlmClient.ets` throwing on `finish_reason === 'length'`.
+- The affected conversation paths in `ReplyService.complete`, `ReplyService.stream`, and `ReplyService.fallback` were still pinning `maxTokens: 4096`; with thinking enabled this budget is too small for detailed math replies and fallback completion.
+- Raised the shared chat reply cap to `CHAT_REPLY_MAX_TOKENS = 12000` in `entry/src/main/ets/services/ReplyService.ets`.
+- Updated `AGENTS.md` with the corrected gotcha and follow-up diagnosis.
+- `arkts_check` on `entry/src/main/ets/services/ReplyService.ets`: passed.
+- Follow-up validation after the token-budget fix passed: `node scripts/arkts-lint/index.mjs --quiet`, `npm --prefix scripts/arkts-lint test` (90/90), `node scripts/naming-lint/index.mjs`, `git diff --check`, `build_project(product=default, build_mode=debug)`, and the previously successful `start_app(module=entry, target=default, hvd=MatePad Pro 13)`.
+- Current rerun after updating the static contract tests also passed lint, tests, naming, diff, ArkTS checks, and debug build. The app installed successfully, but the emulator launch was blocked by its locked screen in developer mode; no retry was performed.

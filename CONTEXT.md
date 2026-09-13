@@ -124,12 +124,12 @@ The structured streaming event object emitted on the LLM streaming path: `{type,
 _Avoid_: `(delta, kind)` string pairs; naming the event type "reasoning" (that is the wire field name).
 
 **Token Budget (输出预算)**:
-`max_tokens` caps the model's **output** only — thinking and the visible reply share one budget. It is unrelated to input-side clipping (memoryContext, counted in chars). Chat replies pass no explicit `maxTokens` and inherit the LLMConfig default via the fallback chain; explicit values are reserved for tasks with a genuine output-size semantic (e.g. intent classification's ~80-token budget).
-_Avoid_: "raising max_tokens to fit more context" (that is input, not budget); per-service chat-budget constants duplicating the config default.
+`max_tokens` caps the model's **output** only — thinking and the visible reply share one budget. It is unrelated to input-side clipping (memoryContext, counted in chars). Current chat reply paths explicitly use `ReplyService.CHAT_REPLY_MAX_TOKENS = 12000` to avoid the historical 4096 truncation failure after thinking was enabled; that value happens to match the current `LlmConfig.DEFAULT_MAX_TOKENS`, but it is not automatic config inheritance.
+_Avoid_: "raising max_tokens to fit more context" (that is input, not budget); assuming the chat reply cap follows `LlmConfig.DEFAULT_MAX_TOKENS` without changing `ReplyService`.
 
-**截断降级 (Truncation Fallback)**:
-The semantics of hitting the token budget mid-reply (`finish_reason === 'length'`): **not an error**. The already-generated content is kept and a truncation marker is appended; the reply is never dropped, thrown away, or silently cut. Applies to both streaming and non-streaming paths.
-_Avoid_: treating truncation as an exception path (⚠️ with zero content); silently stopping with no marker.
+**截断处理 (Truncation Handling)**:
+Current behavior when the non-stream reply path hits the token budget (`finish_reason === 'length'`): `LlmClient` throws `LLM response truncated by max_tokens`, and the conversation layer reports the failure. The stream path does not yet append a truncation marker; if no visible text arrives, `ReplyService` falls back to a non-stream call. Graceful keep-partial-content handling is future work, not the current contract.
+_Avoid_: documenting current behavior as "reply kept with marker"; diagnosing this as a StreamEvent parser failure.
 
 **Reply Envelope**:
 The JSON wrapper an LLM returns on the complete (non-stream) reply transport (`{"answer": "..."}`). A wire-format artifact owned by the reply seam — it is converted to a Reply Body before any consumer sees it. Never a legal value of chat content, history, or memory (ADR-0016).

@@ -35,6 +35,23 @@
 - Standards: 0 blocking findings.
 - Spec: 0 blocking findings.
 
+## Follow-up two-axis review resolution
+
+- Follow-up review reference point: `38955f7...HEAD` after commit `2990579 feat(llm): add structured stream events for reasoning display`.
+- Confirmed Standards H1: the two new `.ets` test files only had short line comments and missed the required file-header fields. Fixed by adding full headers to `common/src/test/LlmStreamEvents.test.ets` and `entry/src/test/AgentChatStreamEvents.test.ets`.
+- Confirmed Standards J1: `applyStreamEventToChatMsg` was a `ChatMsg` reducer living in `AgentChatService`. Fixed by moving it next to `ChatMsg` in `entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets`.
+- Confirmed Spec C1: changing stream fallback from blank final-answer content to any received event would allow thinking-only streams to save an empty assistant answer. Fixed by restoring blank-content fallback through `ReplyService.shouldUseFallback()` while still keeping thinking events separate from final answer text.
+- Confirmed Spec C2: fallback stream content bypassed `ReplyService.normalize()` before append/save. Fixed by normalizing fallback display and persisted content in `ConversationWorkflow`.
+- Confirmed Spec A2 as residual integration coverage gap: Seam B unit tests cover the shared reducer used by UI callbacks; device-backed adapter integration remains for future acceptance.
+- Confirmed Spec C3 during initial review, then resolved after a running emulator became available: deploy/start passed on `MatePad Pro 13`, so T044 is complete.
+- Runtime diagnosis: `⚠️ AI 回复异常: LLM response truncated by max_tokens` is anchored in `LlmClient` non-stream JSON handling and the conversation path's fixed `maxTokens: 4096`; the root condition predates #111, while default thinking can increase token pressure. This gotcha is recorded in `AGENTS.md`.
+
+## Runtime truncation follow-up
+
+- User reproduced `⚠️ AI 回复异常: LLM response truncated by max_tokens` after the first follow-up, proving that diagnosis-only was insufficient.
+- Confirmed actual trigger: `ReplyService.complete`, `ReplyService.stream`, and `ReplyService.fallback` still passed `maxTokens: 4096`, while `LlmClient` throws on non-stream `finish_reason === 'length'`.
+- Fixed by replacing the hardcoded 4096 budget with `CHAT_REPLY_MAX_TOKENS = 12000` for all chat reply paths.
+
 ## Notes for later verification
 
 - Direct Hypium runtime execution was not available without entering verification/build territory; the next phase should execute the module test/build path and T043-T044.

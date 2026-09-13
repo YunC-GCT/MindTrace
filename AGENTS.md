@@ -111,6 +111,8 @@
 
 **关键 seam**: `ConversationWorkflow → AiService.captureText → Dispatcher.dispatch → CaptureGraph → KnowledgeModel.structure → TruthCheckNode → NoteDaoAdapter`; LLM 统一走 `LlmClient.call`, 工具统一走 `ToolCatalog/ToolRegistry`, 全部 Markdown 走 `ContentProtocol` (MM-MD-v1)
 
+**LLM 截断 gotcha**: 浮窗出现 `⚠️ AI 回复异常: LLM response truncated by max_tokens` 时, 锚点是 `common/src/main/ets/llm/LlmClient.ets` 的非流式 JSON 分支 (`finish_reason === 'length'`); 这通常说明 `max_tokens` 覆盖不足, 不是 StreamEvent 协议解析错误。#111 后 thinking / high reasoning 更吃输出预算; `entry/src/main/ets/services/ReplyService.ets` 已将对话回复预算提升为 `CHAT_REPLY_MAX_TOKENS = 12000`。若仍复现, 先确认是否由 stream 空正文 fallback 或 complete 路径进入非流式, 再检查模型实际输出上限、压缩 prompt 或降低 reasoning effort。
+
 **5 module 拓扑**: 1 HAP (`entry`, `type:entry`) + 4 HSP (`common` / `agents` / `skill` / `cardservice`, `type:feature`); 跨 module import 必须完整路径
 
 **已废弃 (不要新建)**: ~~`components/`~~ ~~`atoms/`~~ ~~`archive/`~~ ~~`MindTrace-MVP/`~~ ~~`common/src/main/ets/database/`~~ (顶层) ~~`docs/W3_SUMMARY.md`~~

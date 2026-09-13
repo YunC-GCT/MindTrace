@@ -1,32 +1,32 @@
 # Implementation Plan: 019 Reasoning Process Display P0 — #111 StreamEvent Protocol Vertical Slice
 
-**Input**: Feature specification from `D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\spec.md`
+**Input**: Feature specification from `spec/019-reasoning-process-display-p0/spec.md`
 
 ## Summary
 
-本计划按现有 MindTrace 五模块架构原地改造 #111：在 `D:\HMgent\MindTrace\common` 的 LLM 层定义结构化 `StreamEvent` 协议并替换 `(delta, kind)` 流式回调；在 `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmClient.ets` SSE 适配中输出 `thinking`/`text` 事件并删除 reasoning→content 伪装重发；在 `D:\HMgent\MindTrace\entry` 的 ReplyService、ConversationWorkflow、AgentChatService、AgentFloatWindow 链路中完成双通道分发；在 `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmConfig.ets` 默认开启 thinking；并以 TDD seam 锁定 SSE 解析与事件分发回归。
+本计划按现有 MindTrace 五模块架构原地改造 #111：在 `common` 的 LLM 层定义结构化 `StreamEvent` 协议并替换 `(delta, kind)` 流式回调；在 `common/src/main/ets/llm/LlmClient.ets` SSE 适配中输出 `thinking`/`text` 事件并删除 reasoning→content 伪装重发；在 `entry` 的 ReplyService、ConversationWorkflow、AgentChatService、AgentFloatWindow 链路中完成双通道分发；在 `common/src/main/ets/llm/LlmConfig.ets` 默认开启 thinking；并以 TDD seam 锁定 SSE 解析与事件分发回归。
 
 该切片遵循 ADR-0015 的 same-PR 硬约束：协议改造与 fallback 删除不可拆分。范围仅 #111，不纳入 spec 019 的其他 UI 动画、keyGen、历史会话 UI 完整验收或工具过程展示票。
 
 ## Technical Context
 
 **Language/Version**: ArkTS 1.1 strict（MindTrace 当前 API 9，strict 规则由项目 lint 强制守门）
-**Primary Dependencies**: HarmonyOS `@kit.NetworkKit` HTTP streaming、`@kit.ArkData.preferences`、Hypium 测试框架、项目自研 `D:\HMgent\MindTrace\scripts\arkts-lint`
+**Primary Dependencies**: HarmonyOS `@kit.NetworkKit` HTTP streaming、`@kit.ArkData.preferences`、Hypium 测试框架、项目自研 `scripts/arkts-lint`
 **State Management**: 增量改造现有项目，保留当前 ArkUI State Management V1；不引入 V2 迁移
-**Storage**: `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmConfig.ets` 使用 preferences；ChatMsg 现有 JSON 会话持久化保持字段兼容，不新增持久化字段
-**Testing**: Hypium tests under `D:\HMgent\MindTrace\common\src\test` and `D:\HMgent\MindTrace\entry\src\test`；ArkTS strict check via `arkts_check`；project lint via `node D:\HMgent\MindTrace\scripts\arkts-lint\index.mjs --quiet`；full lint tests via `npm --prefix D:\HMgent\MindTrace\scripts\arkts-lint test`；build via HarmonyOS project build
+**Storage**: `common/src/main/ets/llm/LlmConfig.ets` 使用 preferences；ChatMsg 现有 JSON 会话持久化保持字段兼容，不新增持久化字段
+**Testing**: Hypium tests under `common/src/test` and `entry/src/test`；ArkTS strict check via `arkts_check`；project lint via `node scripts/arkts-lint/index.mjs --quiet`；full lint tests via `npm --prefix scripts/arkts-lint test`；build via HarmonyOS project build
 **Target Platform**: HarmonyOS mobile app，MindTrace `entry` HAP + `common`/`agents`/`skill`/`cardservice` HSP topology
 **Project Type**: Existing HarmonyOS/ArkTS multi-module mobile app
 **Performance Goals**: 流式 token 到达后保持逐增量分发，不引入额外网络轮询或 UI 阻塞；SSE 解析保持线性处理
 **Constraints**: 不保留新旧双轨；不新增 UI 思考开关；不把思考文本复制到最终回答；不混入当前工作区既有无关调研/开关删除改动；最终 code-review 在工具链支持时使用 `GLM-5.3` + reasoning `max`
-**Scale/Scope**: #111 单票纵切，涉及 `D:\HMgent\MindTrace\common` LLM 层、`D:\HMgent\MindTrace\entry` conversation/reply/floating-window adapter 层、2 个测试模块与 SDD 文档
+**Scale/Scope**: #111 单票纵切，涉及 `common` LLM 层、`entry` conversation/reply/floating-window adapter 层、2 个测试模块与 SDD 文档
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\
+spec/019-reasoning-process-display-p0/
 ├── spec.md
 ├── plan.md
 └── tasks.md
@@ -35,14 +35,14 @@ D:\HMgent\MindTrace\spec\019-reasoning-process-display-p0\
 ### Source Code (repository root)
 
 ```text
-D:\HMgent\MindTrace\common\src\main\ets\
+common/src/main/ets/
 ├── llm\
 │   ├── LlmTypes.ets        # StreamEvent / stream callback / call request contract
 │   ├── LlmClient.ets       # requestInStream adapter, SSE data-to-event conversion, fallback removal
 │   └── LlmConfig.ets       # enableThinking default and reset/load fallback behavior
 └── Index.ets               # public exports for StreamEvent-related types
 
-D:\HMgent\MindTrace\entry\src\main\ets\
+entry/src/main/ets/
 ├── services\
 │   ├── ReplyService.ets     # stream sink migration, thinking/text channel handling, explicit false override removal
 │   └── AgentChatService.ets # adapter migration to structured stream events
@@ -52,51 +52,51 @@ D:\HMgent\MindTrace\entry\src\main\ets\
 └── overlays\AgentFloatWindow\
     └── AgentFloatWindow.ets     # UI callback consumption: thinking -> reasoning, text -> content
 
-D:\HMgent\MindTrace\common\src\test\
+common/src/test/
 └── LlmStreamEvents.test.ets      # Seam A: SSE delta -> StreamEvent behavior tests
 
-D:\HMgent\MindTrace\entry\src\test\
+entry/src/test/
 └── AgentChatStreamEvents.test.ets # Seam B: event -> ChatMsg field dispatch behavior tests, if adapter is testable
 ```
 
-**Structure Decision**: 本计划跟随现有 MindTrace 架构和目录约定，不引入 MVVM 迁移或新目录层级。`D:\HMgent\MindTrace\common` 继续拥有 LLM 协议与 transport seam；`D:\HMgent\MindTrace\entry` 继续拥有浮窗 UI、conversation workflow 和 AgentChatService facade；测试分别落在对应模块的既有 `src\test` 目录。该切片是跨层协议纵切，但文件拆分保持最小化，以避免产生新旧流式协议双轨。
+**Structure Decision**: 本计划跟随现有 MindTrace 架构和目录约定，不引入 MVVM 迁移或新目录层级。`common` 继续拥有 LLM 协议与 transport seam；`entry` 继续拥有浮窗 UI、conversation workflow 和 AgentChatService facade；测试分别落在对应模块的既有 `src/test` 目录。该切片是跨层协议纵切，但文件拆分保持最小化，以避免产生新旧流式协议双轨。
 
 ## Complexity Tracking
 
-无计划中的架构违规。复杂性来自必须跨 `D:\HMgent\MindTrace\common` 与 `D:\HMgent\MindTrace\entry` 同步迁移同一流式协议；ADR-0015 已明确这是避免双发/空白中间态的必要复杂度。
+无计划中的架构违规。复杂性来自必须跨 `common` 与 `entry` 同步迁移同一流式协议；ADR-0015 已明确这是避免双发/空白中间态的必要复杂度。
 
 ## Research & Decisions
 
 - **Decision**: 继续使用 HarmonyOS `requestInStream` 自研 SSE 适配，不引入 EventSource 三方库。
-  - **Rationale**: 现有 `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmClient.ets` 已基于 `requestInStream` 接入；官方文档说明 `requestInStream` 通过 `dataReceive` 接收 `ArrayBuffer` 流式数据，通过 `dataEnd` 结束并销毁请求对象，符合当前实现模型。spec 019 明确 EventSource 不采纳。
+  - **Rationale**: 现有 `common/src/main/ets/llm/LlmClient.ets` 已基于 `requestInStream` 接入；官方文档说明 `requestInStream` 通过 `dataReceive` 接收 `ArrayBuffer` 流式数据，通过 `dataEnd` 结束并销毁请求对象，符合当前实现模型。spec 019 明确 EventSource 不采纳。
   - **Alternatives considered**: EventSource 三方库迁移；被 spec 019 排除，且会扩大 #111 范围。
 
-- **Decision**: `StreamEvent` 协议定义在 `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmTypes.ets`，并通过 `D:\HMgent\MindTrace\common\src\main\ets\Index.ets` 导出。
-  - **Rationale**: `D:\HMgent\MindTrace\common` 是 LLM 协议、LlmClient、ToolLoop 的公共所有者；`D:\HMgent\MindTrace\entry` conversation 链路已通过 `common` 导入 LLM 类型。把事件类型放在 common 可避免 entry 与 common 各自定义协议造成漂移。
-  - **Alternatives considered**: 在 `D:\HMgent\MindTrace\entry` 定义 UI 专用事件类型；会导致 LlmClient 与 UI 回调之间存在重复映射协议，不利于 P1 tool event 复用。
+- **Decision**: `StreamEvent` 协议定义在 `common/src/main/ets/llm/LlmTypes.ets`，并通过 `common/src/main/ets/Index.ets` 导出。
+  - **Rationale**: `common` 是 LLM 协议、LlmClient、ToolLoop 的公共所有者；`entry` conversation 链路已通过 `common` 导入 LLM 类型。把事件类型放在 common 可避免 entry 与 common 各自定义协议造成漂移。
+  - **Alternatives considered**: 在 `entry` 定义 UI 专用事件类型；会导致 LlmClient 与 UI 回调之间存在重复映射协议，不利于 P1 tool event 复用。
 
 - **Decision**: P0 完整定义四类事件语义：`thinking`、`text`、`tool_call`、`tool_result`；P0 只实际 emit `thinking` 与 `text`。
   - **Rationale**: ADR-0015 要求一次性完成四值联合定义，避免 P1 工具事件再次改变回调签名。当前 #111 不实现工具事件 emit，以保持范围聚焦。
   - **Alternatives considered**: P0 只定义 `thinking`/`text`；会在 P1 扩展 union 时再次触发全链签名修复。
 
-- **Decision**: 将 SSE delta 到 `StreamEvent` 的转换提取为可测试纯 seam，并保持 `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmClient.ets` buffer/transport 逻辑只负责调用该 seam。
-  - **Rationale**: #111 明确要求 Seam A 覆盖“思考非空/回答空”、“null delta”、“空 choices”、“思考先于回答”。纯 seam 可在 `D:\HMgent\MindTrace\common\src\test` 用 fixture 稳定验证，不依赖网络或设备流式响应时序。
+- **Decision**: 将 SSE delta 到 `StreamEvent` 的转换提取为可测试纯 seam，并保持 `common/src/main/ets/llm/LlmClient.ets` buffer/transport 逻辑只负责调用该 seam。
+  - **Rationale**: #111 明确要求 Seam A 覆盖“思考非空/回答空”、“null delta”、“空 choices”、“思考先于回答”。纯 seam 可在 `common/src/test` 用 fixture 稳定验证，不依赖网络或设备流式响应时序。
   - **Alternatives considered**: 只测 `LlmClient` 私有方法或真机 SSE；会把网络、buffer 与协议转换耦合，回归定位困难。
 
 - **Decision**: 删除 reasoning→content 伪装重发，只保留真实 `thinking` 与真实 `text` 通道。
   - **Rationale**: 这是 ADR-0015 same-PR 硬条款；保留伪装会继续把思考文本复制进最终回答，先删不改消费端会复现 UI 空白。
   - **Alternatives considered**: 保留兼容 fallback 到后续票再删；被 ADR-0015 明确拒绝。
 
-- **Decision**: `D:\HMgent\MindTrace\entry\src\main\ets\services\ReplyService.ets` 的流式结果只把 `text` 事件计入最终回答正文；`thinking` 事件只向上游 sink 传递，不进入最终 answer content。
+- **Decision**: `entry/src/main/ets/services/ReplyService.ets` 的流式结果只把 `text` 事件计入最终回答正文；`thinking` 事件只向上游 sink 传递，不进入最终 answer content。
   - **Rationale**: Chat memory 与最终回答区应保存/展示真实回答，而不是思考链。该边界确保即使 UI 累积 reasoning，也不会污染 assistant content 的持久化。
   - **Alternatives considered**: 把所有事件 delta 都并入 `StreamReplyResult.content`；会重新引入思考文本污染最终回答的问题。
 
-- **Decision**: `D:\HMgent\MindTrace\entry\src\main\ets\services\AgentChatService.ets`、`D:\HMgent\MindTrace\entry\src\main\ets\workflows\conversation\ConversationWorkflow.ets` 与 `D:\HMgent\MindTrace\entry\src\main\ets\overlays\AgentFloatWindow\AgentFloatWindow.ets` 采用结构化事件通道分发：`thinking` 累积到 ChatMsg.reasoning，`text` 累积到 ChatMsg.content，保留未实现事件类型 default 兜底。
+- **Decision**: `entry/src/main/ets/services/AgentChatService.ets`、`entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets` 与 `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` 采用结构化事件通道分发：`thinking` 累积到 ChatMsg.reasoning，`text` 累积到 ChatMsg.content，保留未实现事件类型 default 兜底。
   - **Rationale**: ChatMsg 已有 `reasoning` 与 `content` 字段，P0 零新增字段即可满足功能；默认兜底保证 P1 之前保留事件不会破坏 P0 消费端。
   - **Alternatives considered**: 新增 ChatMsg 字段或分离 UI-only 状态；会引入旧会话兼容风险，不符合 #111 范围。
 
-- **Decision**: `enableThinking` 默认值改为 true，并移除 `D:\HMgent\MindTrace\entry\src\main\ets\services\ReplyService.ets` 中三处显式 false 覆盖。
-  - **Rationale**: issue #111 明确要求稳定开启思考供给；LlmClient 已有 request 未定义时回退 config 的链路。`D:\HMgent\MindTrace\common\src\main\ets\llm\LlmConfig.ets` 的 load/reset/default 三处需要一致，否则“恢复默认”或“无旧配置”仍会关闭 thinking。
+- **Decision**: `enableThinking` 默认值改为 true，并移除 `entry/src/main/ets/services/ReplyService.ets` 中三处显式 false 覆盖。
+  - **Rationale**: issue #111 明确要求稳定开启思考供给；LlmClient 已有 request 未定义时回退 config 的链路。`common/src/main/ets/llm/LlmConfig.ets` 的 load/reset/default 三处需要一致，否则“恢复默认”或“无旧配置”仍会关闭 thinking。
   - **Alternatives considered**: 新增 UI 开关或只改流式路径；UI 开关被 spec 019 排除，只改流式路径会留下配置不一致。
 
 - **Decision**: TDD 优先落在 Seam A 与 Seam B；若 AgentChatService adapter 无法直接单测，则在实施报告中说明降级并用集成/真机验收替代。
@@ -151,10 +151,10 @@ D:\HMgent\MindTrace\entry\src\test\
 
 | Contract | Location | Required Change |
 |----------|----------|-----------------|
-| Stream event type | `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmTypes.ets` | 定义 `thinking/text/tool_call/tool_result` 四类事件语义；P0 只 emit 前两类 |
-| LlmStreamCallback | `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmTypes.ets` | 从 `(delta, kind)` 改为单个结构化 event 参数 |
-| LlmCallRequest.onDelta | `D:\HMgent\MindTrace\common\src\main\ets\llm\LlmTypes.ets` | 跟随新 callback contract |
-| Public exports | `D:\HMgent\MindTrace\common\src\main\ets\Index.ets` | 导出 StreamEvent 相关类型，供 entry 层引用 |
+| Stream event type | `common/src/main/ets/llm/LlmTypes.ets` | 定义 `thinking/text/tool_call/tool_result` 四类事件语义；P0 只 emit 前两类 |
+| LlmStreamCallback | `common/src/main/ets/llm/LlmTypes.ets` | 从 `(delta, kind)` 改为单个结构化 event 参数 |
+| LlmCallRequest.onDelta | `common/src/main/ets/llm/LlmTypes.ets` | 跟随新 callback contract |
+| Public exports | `common/src/main/ets/Index.ets` | 导出 StreamEvent 相关类型，供 entry 层引用 |
 
 ### SSE Parser Seam A
 
@@ -163,24 +163,24 @@ D:\HMgent\MindTrace\entry\src\test\
 | Input | 单条 SSE `data:` 后的 JSON payload 字符串 |
 | Output | 零个或多个 `StreamEvent`，顺序与协议要求一致 |
 | Throws | JSON 语法不完整/非法时可抛出，以保留现有 buffer 重试策略；有效 JSON 的空 choices/null delta 不抛 |
-| Tests | `D:\HMgent\MindTrace\common\src\test\LlmStreamEvents.test.ets` 覆盖四个 #111 fixture |
+| Tests | `common/src/test/LlmStreamEvents.test.ets` 覆盖四个 #111 fixture |
 
 ### Entry Conversation Contract
 
 | Contract | Location | Required Change |
 |----------|----------|-----------------|
-| ReplyDeltaSink | `D:\HMgent\MindTrace\entry\src\main\ets\services\ReplyService.ets` | 接收结构化 stream event；只把 text 事件计入最终回答内容 |
-| Conversation callbacks | `D:\HMgent\MindTrace\entry\src\main\ets\workflows\conversation\ConversationTypes.ets` | append 回调接受结构化 event 或等价语义对象，不再使用旧 `kind` union |
-| AgentChat callbacks | `D:\HMgent\MindTrace\entry\src\main\ets\services\AgentChatService.ets` | adapter 透传结构化事件，不过滤 thinking |
-| FloatWindow append | `D:\HMgent\MindTrace\entry\src\main\ets\overlays\AgentFloatWindow\AgentFloatWindow.ets` | thinking -> reasoning；text -> content；tool_* default 兜底 |
+| ReplyEventSink | `entry/src/main/ets/services/ReplyService.ets` | 接收结构化 stream event；只把 text 事件计入最终回答内容 |
+| Conversation callbacks | `entry/src/main/ets/workflows/conversation/ConversationTypes.ets` | append 回调接受结构化 event 或等价语义对象，不再使用旧 `kind` union |
+| AgentChat callbacks | `entry/src/main/ets/services/AgentChatService.ets` | adapter 透传结构化事件，不过滤 thinking |
+| FloatWindow append | `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` | thinking -> reasoning；text -> content；tool_* default 兜底 |
 
 ### Verification & Delivery Contract
 
 | Requirement | Contract |
 |-------------|----------|
 | Typechecking cadence | 修改 `.ets` 后用 `arkts_check` 覆盖变更文件；实现阶段定期运行相关单测 |
-| Single-test cadence | 优先运行新建/受影响的 `D:\HMgent\MindTrace\common\src\test` 与 `D:\HMgent\MindTrace\entry\src\test` 单测文件 |
-| Full suite | 最终运行 `npm --prefix D:\HMgent\MindTrace\scripts\arkts-lint test` 与 `node D:\HMgent\MindTrace\scripts\arkts-lint\index.mjs --quiet`；再执行 HarmonyOS build |
+| Single-test cadence | 优先运行新建/受影响的 `common/src/test` 与 `entry/src/test` 单测文件 |
+| Full suite | 最终运行 `npm --prefix scripts/arkts-lint test` 与 `node scripts/arkts-lint/index.mjs --quiet`；再执行 HarmonyOS build |
 | Code review | 最终使用 code-review 能力；若可选模型/推理强度，则使用 `GLM-5.3` + `max`，否则报告限制 |
 | Commit isolation | 提交前检查 branch、status、diff 与最近提交；只 stage #111 相关源码、测试与 SDD 产物，排除既有无关 dirty files |
 
