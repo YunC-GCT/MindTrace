@@ -2,6 +2,7 @@ import {
   KnowledgeUnit,
   ClassificationResult,
   LlmConfig,
+  LlmError,
   Logger,
   StateGraph,
 } from 'common';
@@ -301,7 +302,7 @@ export class ConversationWorkflow {
       const errMsg: string = ConversationWorkflow.errorMessage(e);
       if (errMsg.indexOf('NO_API_KEY') >= 0) {
         await this.addAiMessage(sessionId, '⚠️ 请先在「我的 → 设置」中配置 API Key');
-      } else if (errMsg.indexOf('NETWORK_ERROR') >= 0) {
+      } else if (ConversationWorkflow.isNetworkError(e)) {
         await this.addAiMessage(sessionId, '⚠️ 网络连接失败，请检查网络后重试');
       } else {
         await this.addAiMessage(sessionId, '⚠️ AI 回复异常: ' + errMsg.substring(0, 100));
@@ -319,6 +320,7 @@ export class ConversationWorkflow {
     learnerProfileContext: string,
     userContent: string,
   ): Promise<void> {
+    let streamMsgId: number | undefined = undefined;
     try {
       const configured: boolean = await LlmConfig.getInstance().isConfigured();
       if (!configured) {
@@ -329,6 +331,7 @@ export class ConversationWorkflow {
 
       // 创建空消息占位,拿到 msgId
       const msgId: number = this.cbs.addAiMsgEmpty();
+      streamMsgId = msgId;
       this.setStep('reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent);
       const streamResult: StreamReplyResult = await this.replyService.stream(
@@ -354,12 +357,15 @@ export class ConversationWorkflow {
       await this.safeSummarizeIfNeeded(sessionId);
     } catch (e) {
       const errMsg: string = ConversationWorkflow.errorMessage(e);
-      if (errMsg.indexOf('NO_API_KEY') >= 0) {
-        await this.addAiMessage(sessionId, '⚠️ 请先在「我的 → 设置」中配置 API Key');
-      } else if (errMsg.indexOf('NETWORK_ERROR') >= 0) {
-        await this.addAiMessage(sessionId, '⚠️ 网络连接失败，请检查网络后重试');
+      const displayError: string = errMsg.indexOf('NO_API_KEY') >= 0
+        ? '⚠️ 请先在「我的 → 设置」中配置 API Key'
+        : ConversationWorkflow.isNetworkError(e)
+          ? '⚠️ 网络连接失败，请检查网络后重试'
+          : '⚠️ AI 回复异常: ' + errMsg.substring(0, 100);
+      if (streamMsgId !== undefined) {
+        await this.appendAssistantReply(sessionId, displayError, streamMsgId);
       } else {
-        await this.addAiMessage(sessionId, '⚠️ AI 回复异常: ' + errMsg.substring(0, 100));
+        await this.addAiMessage(sessionId, displayError);
       }
     }
   }
@@ -626,5 +632,33 @@ export class ConversationWorkflow {
       return e.message;
     }
     return JSON.stringify(e);
+  }
+
+  private static isNetworkError(e: Object): boolean {
+    if (e instanceof LlmError) {
+      return e.kind === 'NETWORK_ERROR' || e.kind === 'TIMEOUT' || e.kind === 'STREAM_FAILED';
+    }
+    const message: string = ConversationWorkflow.errorMessage(e).toLowerCase();
+    const markers: string[] = [
+      'network error',
+      'failed to resolve',
+      'could not resolve host',
+      'network is unreachable',
+      'could not connect to server',
+      'couldn\'t connect to server',
+      'couldnt connect to server',
+      'connection refused',
+      'connection reset',
+      'connection timed out',
+      'connect timeout',
+      'request timed out',
+      'curlcode result 6',
+    ];
+    for (const marker of markers) {
+      if (message.includes(marker)) {
+        return true;
+      }
+    }
+    return false;
   }
 }

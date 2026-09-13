@@ -72,6 +72,32 @@ test('Conversation workflow owns a single intent classification per text request
 });
 
 test('ReplyService falls back when a successful stream produces no displayable content', () => {
-  assert.match(replyService, /if\s*\(\s*content\.trim\(\)\.length\s*===\s*0\s*\)/);
+  assert.match(replyService, /private shouldUseFallback\(content: string\): boolean/);
+  assert.match(replyService, /return content\.trim\(\)\.length === 0/);
   assert.match(replyService, /stream empty, using fallback/);
+});
+
+test('ReplyService retries a pre-response transport failure once and does not duplicate fallback requests', () => {
+  assert.match(replyService, /while \(streamAttempts < 2\)/);
+  assert.match(replyService, /!receivedEvent && ReplyService\.isNetworkError\(e\)/);
+  assert.match(replyService, /stream transport failed before first event, retrying once/);
+  assert.match(replyService, /if \(ReplyService\.isTransportError\(e\)\) \{[\s\S]*?throw e;/);
+  assert.match(replyService, /e\.kind === 'NETWORK_ERROR' \|\| e\.kind === 'TIMEOUT' \|\| e\.kind === 'STREAM_FAILED'/);
+});
+
+test('Conversation workflow hides DNS and timeout details behind a stable network message', () => {
+  assert.match(workflow, /private static isNetworkError\(e: Object\): boolean/);
+  assert.match(workflow, /e\.kind === 'NETWORK_ERROR' \|\| e\.kind === 'TIMEOUT'/);
+  assert.match(workflow, /'failed to resolve'/);
+  assert.match(workflow, /'couldn\\'t connect to server'/);
+  assert.match(workflow, /'connection timed out'/);
+  assert.match(workflow, /ConversationWorkflow\.isNetworkError\(e\)/);
+  assert.doesNotMatch(workflow, /errMsg\.indexOf\('NETWORK_ERROR'\)/);
+});
+
+test('Conversation workflow finishes the streaming placeholder when the request fails', () => {
+  assert.match(workflow, /let streamMsgId: number \| undefined = undefined/);
+  assert.match(workflow, /streamMsgId = msgId/);
+  assert.match(workflow, /if \(streamMsgId !== undefined\) \{\s*await this\.appendAssistantReply\(sessionId, displayError, streamMsgId\)/);
+  assert.match(workflow, /\} else \{\s*await this\.addAiMessage\(sessionId, displayError\)/);
 });

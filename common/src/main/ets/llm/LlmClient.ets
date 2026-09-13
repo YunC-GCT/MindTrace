@@ -182,6 +182,13 @@ export class LlmClient {
     return v;
   }
 
+  private streamCallbackCode(data: number | undefined): string {
+    if (data === undefined || data === null) {
+      return 'undefined';
+    }
+    return data.toString();
+  }
+
   private resolveEndpointUrl(baseUrl: string): string {
     const endpoint: string = baseUrl.trim();
     if (endpoint.length === 0) {
@@ -361,8 +368,8 @@ export class LlmClient {
         extraData: bodyJson,
         connectTimeout: timeoutMs,
         readTimeout: timeoutMs,
-      }, (err: Error, data: number): void => {
-        llmLog.info('requestInStream cb err=' + (err ? err.message : 'null') + ' code=' + data.toString());
+      }, (err: Error, data: number | undefined): void => {
+        llmLog.info('requestInStream cb err=' + (err ? err.message : 'null') + ' code=' + this.streamCallbackCode(data));
         if (err) {
           console.error('[LlmClient] stream err: ' + err.message);
           if (!streamEnded) {
@@ -372,12 +379,12 @@ export class LlmClient {
             httpRequest.destroy();
             reject(new LlmError(
               'LLM stream request failed: ' + err.message,
-              'STREAM_FAILED',
+              'NETWORK_ERROR',
             ) as Error);
           }
           return;
         }
-        const responseCode: number = data;
+        const responseCode: number = data ?? 0;
         if (responseCode !== 200) {
           if (!streamEnded) {
             streamEnded = true;

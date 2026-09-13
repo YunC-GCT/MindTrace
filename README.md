@@ -3,7 +3,7 @@
 > 工程: [YunC-GCT/MindTrace](https://github.com/YunC-GCT/MindTrace) · HarmonyOS 数学学习助手
 > 作者: YunC-GCT <2549237929@qq.com> · 当前主笔: Z
 > 当前版本: **v1.0**(2026-09-04 release) · 阶段: **复赛冲刺**(2026-09-05 ~ 09-09)
-> 最近更新: 2026-09-09
+> 最近更新: 2026-09-13
 
 MindTrace 通过 **拍照 → OCR → AI 分类 → 知识结构化 → 持久化 → 复习** 的整链,把"看到的数学题"变成"可复习的知识"。5 module: `entry`(HAP) + `common` / `agents` / `skill` / `cardservice`(HSP)。
 
@@ -217,6 +217,20 @@ agents/src/main/ets/
 - **职责分离**: per-vendor 面板负责保存大模型配置; 页面底部 ActionBar 仅负责「重置 OCR / 保存 OCR」; 顶部连接测试读取当前供应商的 API Key。
 - **模型目录**: DeepSeek 默认模型为 `deepseek-v4-pro`; 当前允许 `deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`,模型选择按供应商独立保存。
 - **真实 LLM 验证**: 连接测试与悬浮对话已在设备完成真实 DeepSeek 调用;日志确认 `deepseek-v4-flash` 分别走非流式与 SSE 流式请求且 HTTP 200。请求日志只打印 vendor / model / endpoint / stream,不输出 API Key。
+
+### 2026-09-13 · AI 对话推理流收口 (#111 / #113 / #115)
+
+- **结构化推理流**: `StreamEvent` 统一承载 thinking/text 通道;思考内容进入独立「深度思考」区块,最终回答不再混入推理文本。
+- **交互验收**: 思考区默认展开,支持独立折叠;流式增长保持展开态;折叠不会强制聊天列表滚到底部;状态文案为「生成中」/「已完成」。
+- **截断降级**: 供应商返回 `finish_reason=length` 时,流式与非流式均保留已生成内容并追加截断提示,不再抛出或静默丢失回复。
+- **验证结果**: `arkts_check`、arkts-lint、naming-lint、Hypium 测试与 `assembleApp` 均通过;本组改动已整理到 `feature/spec-019-p0` 分支。
+
+### 2026-09-13 · Chat 网络流容错热修复
+
+- **请求容错**: 修复 HarmonyOS `requestInStream` 错误回调中状态码为空导致的 `toString` 崩溃;网络/DNS/超时错误统一映射为稳定的网络失败提示。
+- **流式恢复**: 首个事件到达前的网络失败最多重试一次;流式占位消息在失败时复用并结束,不再遗留「MindTrace AI 正在生成」。
+- **回复一致性**: 流式空响应的 fallback 复用 JSON 校验与 Reply Body 解码,避免将 `{"answer": ...}` envelope 直接展示给用户。
+- **验证结果**: `arkts_check`、arkts-lint 96/96、naming-lint、debug build 均通过;设备对话验证正常。
 
 ---
 

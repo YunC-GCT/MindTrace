@@ -16,11 +16,11 @@ import {
   ContentProtocol,
   LlmClient,
   LlmGuard,
+  LlmError,
   Logger,
 } from 'common';
 import type {
   ContentValidationResult,
-  LlmCallResult,
   LlmGuardJsonResult,
   LlmGuardValidationResult,
   StreamEvent,
@@ -47,12 +47,16 @@ export class ReplyService {
   }
 
   async complete(context: ReplyContext): Promise<string> {
+    return await this.guardedComplete(context, 'chat answer');
+  }
+
+  private async guardedComplete(context: ReplyContext, label: string): Promise<string> {
     const guarded: LlmGuardJsonResult = await new LlmGuard().callJsonWithRetry(
       this.intentClassifier.buildReplyMessages(context),
       {
         maxTokens: CHAT_REPLY_MAX_TOKENS,
         timeoutMs: 120000,
-        label: 'chat answer',
+        label: label,
       },
       (json: Record<string, Object>): LlmGuardValidationResult => this.validateChatAnswerJson(json),
     );
@@ -72,28 +76,44 @@ export class ReplyService {
     let thinkingChars: number = 0;
     let textEvents: number = 0;
     let textChars: number = 0;
+    let streamAttempts: number = 0;
     try {
-      await client.call({
-        messages: this.intentClassifier.buildStreamingReplyMessages(context),
-        stream: true,
-        onDelta: (event: StreamEvent): void => {
-          receivedEvent = true;
-          if (event.type === 'thinking') {
-            thinkingEvents += 1;
-            thinkingChars += event.delta.length;
-          } else if (event.type === 'text') {
-            textEvents += 1;
-            textChars += event.delta.length;
-            content += event.delta;
+      while (streamAttempts < 2) {
+        try {
+          await client.call({
+            messages: this.intentClassifier.buildStreamingReplyMessages(context),
+            stream: true,
+            onDelta: (event: StreamEvent): void => {
+              receivedEvent = true;
+              if (event.type === 'thinking') {
+                thinkingEvents += 1;
+                thinkingChars += event.delta.length;
+              } else if (event.type === 'text') {
+                textEvents += 1;
+                textChars += event.delta.length;
+                content += event.delta;
+              }
+              sink(event);
+            },
+            maxTokens: CHAT_REPLY_MAX_TOKENS,
+            timeoutMs: 120000,
+          });
+          break;
+        } catch (e) {
+          if (streamAttempts === 0 && !receivedEvent && ReplyService.isNetworkError(e)) {
+            streamAttempts += 1;
+            replyLog.warn('stream transport failed before first event, retrying once');
+            continue;
           }
-          sink(event);
-        },
-        maxTokens: CHAT_REPLY_MAX_TOKENS,
-        timeoutMs: 120000,
-      });
+          if (e instanceof Error) {
+            throw e;
+          }
+          throw new Error(JSON.stringify(e));
+        }
+      }
       if (this.shouldUseFallback(content)) {
         replyLog.warn('stream empty, using fallback');
-        return await this.fallback(client, context);
+        return await this.fallback(context);
       }
       const success: StreamReplyResult = {
         content: content,
@@ -115,7 +135,13 @@ export class ReplyService {
         replyLog.warn('stream interrupted after chars=' + content.length.toString());
         return interrupted;
       }
-      return await this.fallback(client, context);
+      if (ReplyService.isTransportError(e)) {
+        if (e instanceof Error) {
+          throw e;
+        }
+        throw new Error(JSON.stringify(e));
+      }
+      return await this.fallback(context);
     }
   }
 
@@ -125,16 +151,11 @@ export class ReplyService {
   }
 
   private async fallback(
-    client: LlmClient,
     context: ReplyContext,
   ): Promise<StreamReplyResult> {
-    const fallback: LlmCallResult = await client.call({
-      messages: this.intentClassifier.buildReplyMessages(context),
-      maxTokens: CHAT_REPLY_MAX_TOKENS,
-      timeoutMs: 120000,
-    });
+    const content: string = await this.guardedComplete(context, 'chat answer fallback');
     const fallbackResult: StreamReplyResult = {
-      content: fallback.text ?? '',
+      content: content,
       interrupted: false,
       usedFallback: true,
     };
@@ -144,6 +165,20 @@ export class ReplyService {
 
   private shouldUseFallback(content: string): boolean {
     return content.trim().length === 0;
+  }
+
+  private static isNetworkError(e: Object): boolean {
+    if (e instanceof LlmError) {
+      return e.kind === 'NETWORK_ERROR' || e.kind === 'TIMEOUT';
+    }
+    return false;
+  }
+
+  private static isTransportError(e: Object): boolean {
+    if (e instanceof LlmError) {
+      return e.kind === 'NETWORK_ERROR' || e.kind === 'TIMEOUT' || e.kind === 'STREAM_FAILED';
+    }
+    return false;
   }
 
   private validateChatAnswerJson(json: Record<string, Object>): LlmGuardValidationResult {

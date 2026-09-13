@@ -28,8 +28,32 @@ test('LlmClient maps enableThinking to the Qwen HTTP switch on both transports',
   assert.doesNotMatch(llmClient, /chat_template_kwargs/);
 });
 
+test('LlmClient requestInStream callback tolerates undefined status data', () => {
+  assert.match(
+    llmClient,
+    /private streamCallbackCode\(data: number \| undefined\): string[\s\S]*?return data\.toString\(\)/,
+    'requestInStream callback logging must stringify undefined status data safely',
+  );
+  assert.doesNotMatch(
+    llmClient,
+    /requestInStream cb err=[\s\S]*?data\.toString\(\)/,
+    'requestInStream callback must not call data.toString() directly',
+  );
+});
+
+test('LlmClient normalizes stream transport failures as network errors', () => {
+  assert.match(
+    llmClient,
+    /'LLM stream request failed: ' \+ err\.message,[\s\S]*?'NETWORK_ERROR'/,
+    'stream transport failures must use the shared network error kind',
+  );
+});
+
 test('ReplyService fallback does not override enableThinking', () => {
-  const fallbackMatch = replyService.match(/private async fallback[\s\S]*?client\.call\([\s\S]*?\}\);/);
+  const fallbackMatch = replyService.match(/private async fallback[\s\S]*?\n  \}/);
   assert.ok(fallbackMatch !== null, 'ReplyService fallback call must exist');
+  assert.match(fallbackMatch[0], /this\.guardedComplete\(context, 'chat answer fallback'\)/);
+  assert.doesNotMatch(fallbackMatch[0], /client\.call/);
+  assert.doesNotMatch(fallbackMatch[0], /fallback\.text/);
   assert.doesNotMatch(fallbackMatch[0], /enableThinking\s*:/);
 });
