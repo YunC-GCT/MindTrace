@@ -33,20 +33,19 @@
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { LlmConfig } from './LlmConfig';
+import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
 import { Logger } from '../utils/logger';
 import {
-  ChatMessage,
   LlmRequestBody,
   LlmResponse,
-  LlmResponseChoice,
   LlmStreamChunk,
+  LlmStreamChoice,
   LlmStreamDelta,
   LlmStreamCallback,
   StreamEvent,
   LlmThinkingConfig,
   LlmCallRequest,
   LlmCallResult,
-  LlmToolCall,
   LlmError,
 } from './LlmTypes';
 
@@ -164,52 +163,7 @@ export class LlmClient {
     console.info('[LlmClient] response choices=' + parsed.choices.length.toString()
       + ' promptTokens=' + promptTokens.toString()
       + ' completionTokens=' + completionTokens.toString());
-    if (parsed.choices.length > 0 && parsed.choices[0].finish_reason === 'length') {
-      throw new LlmError('LLM response truncated by max_tokens', 'API_ERROR');
-    }
-    const toolCalls: LlmToolCall[] = this.extractToolCalls(parsed);
-    const result: LlmCallResult = { text: '', streamed: false };
-    if (parsed.usage !== undefined) {
-      result.usage = parsed.usage;
-    }
-    if (toolCalls.length > 0) {
-      // tool_calls 响应: content 常为 null/空, 不走 extractContent 的空内容抛错
-      const first: LlmResponseChoice = parsed.choices[0];
-      if (first.message !== undefined && first.message !== null && first.message.content !== undefined && first.message.content !== null) {
-        result.text = first.message.content;
-      }
-      result.toolCalls = toolCalls;
-    } else {
-      result.text = this.extractContent(parsed);
-    }
-    return result;
-  }
-
-  // tool_calls 提取: 以 message.tool_calls 非空为准 (finish_reason 在 OpenAI 兼容端点间有差异, 仅日志参考)
-  private extractToolCalls(parsed: LlmResponse): LlmToolCall[] {
-    if (parsed.choices.length === 0) {
-      return [];
-    }
-    const message: ChatMessage | null = parsed.choices[0].message;
-    if (message === undefined || message === null || message.tool_calls === undefined || message.tool_calls === null) {
-      return [];
-    }
-    return message.tool_calls;
-  }
-
-  private extractContent(parsed: LlmResponse): string {
-    if (parsed.choices.length === 0) {
-      throw new LlmError('LLM returned empty choices', 'EMPTY_RESPONSE');
-    }
-    const first: LlmResponseChoice = parsed.choices[0];
-    if (first.message === undefined || first.message === null) {
-      throw new LlmError('LLM returned empty message', 'EMPTY_RESPONSE');
-    }
-    const content: string = first.message.content;
-    if (content === undefined || content === null || content.length === 0) {
-      throw new LlmError('LLM returned empty content', 'EMPTY_RESPONSE');
-    }
-    return content;
+    return LlmResponseParser.buildCallResult(parsed);
   }
 
   // opts?.xxx 返回 string | undefined,转回 string 或用默认
@@ -538,20 +492,24 @@ export class LlmClient {
     if (chunk.choices.length === 0) {
       return [];
     }
-    const delta: LlmStreamDelta | null = chunk.choices[0].delta;
-    if (delta === undefined || delta === null) {
-      return [];
-    }
     const events: StreamEvent[] = [];
-    const reasoning: string = delta.reasoning_content ?? '';
-    if (reasoning.length > 0) {
-      const thinkingEvent: StreamEvent = { type: 'thinking', delta: reasoning };
-      events.push(thinkingEvent);
+    const choice: LlmStreamChoice = chunk.choices[0];
+    const delta: LlmStreamDelta | null = choice.delta;
+    if (delta !== undefined && delta !== null) {
+      const reasoning: string = delta.reasoning_content ?? '';
+      if (reasoning.length > 0) {
+        const thinkingEvent: StreamEvent = { type: 'thinking', delta: reasoning };
+        events.push(thinkingEvent);
+      }
+      const content: string = delta.content ?? '';
+      if (content.length > 0) {
+        const textEvent: StreamEvent = { type: 'text', delta: content };
+        events.push(textEvent);
+      }
     }
-    const content: string = delta.content ?? '';
-    if (content.length > 0) {
-      const textEvent: StreamEvent = { type: 'text', delta: content };
-      events.push(textEvent);
+    if (choice.finish_reason === 'length') {
+      const truncationEvent: StreamEvent = { type: 'text', delta: '\n\n' + TRUNCATION_MARKER };
+      events.push(truncationEvent);
     }
     return events;
   }

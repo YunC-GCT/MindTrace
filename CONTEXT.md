@@ -128,8 +128,8 @@ _Avoid_: `(delta, kind)` string pairs; naming the event type "reasoning" (that i
 _Avoid_: "raising max_tokens to fit more context" (that is input, not budget); assuming the chat reply cap follows `LlmConfig.DEFAULT_MAX_TOKENS` without changing `ReplyService`.
 
 **截断处理 (Truncation Handling)**:
-Current behavior when the non-stream reply path hits the token budget (`finish_reason === 'length'`): `LlmClient` throws `LLM response truncated by max_tokens`, and the conversation layer reports the failure. The stream path does not yet append a truncation marker; if no visible text arrives, `ReplyService` falls back to a non-stream call. Graceful keep-partial-content handling is future work, not the current contract.
-_Avoid_: documenting current behavior as "reply kept with marker"; diagnosing this as a StreamEvent parser failure.
+When a provider reports `finish_reason === 'length'`, both transports keep the generated content and append `*(回复因长度限制被截断)*`; the non-stream text path returns it instead of throwing, and the stream path emits it as a final text event. If a stream has no visible text for reasons other than truncation, `ReplyService` still falls back to a non-stream call.
+_Avoid_: dropping partial content on truncation; diagnosing this as a StreamEvent parser failure.
 
 **Reply Envelope**:
 The JSON wrapper an LLM returns on the complete (non-stream) reply transport (`{"answer": "..."}`). A wire-format artifact owned by the reply seam — it is converted to a Reply Body before any consumer sees it. Never a legal value of chat content, history, or memory (ADR-0016).
