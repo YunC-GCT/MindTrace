@@ -1,12 +1,19 @@
-// ============================================================================
-//  overlays/AgentFloatWindow/chat/ChatModels.ets — AI 浮窗数据类型定义
-//  ----------------------------------------------------------------------------
-//  职责: 统一 AgentFloatWindow 子组件共享的数据结构。
-//
-//  类型:
-//    ChatMsg:     单条消息 {id, role, content, ts}
-//    ChatSession: 会话 {id, name, messages[]}
-//  ============================================================================
+/**
+ * ChatModels.ets — AI 浮窗共享消息模型与纯函数
+ *
+ * 路径: entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets
+ * 职责: 定义 ChatMsg/ChatSession，并提供消息 key、复制和流事件 reducer。
+ * 依赖: common StreamEvent; conversation ConversationProgressStep
+ *
+ * 数据流:
+ *   StreamEvent → applyStreamEventToChatMsg → ChatMsg → AgentMessageList/ChatBubble
+ *
+ * ArkTS 1.1 strict 适配:
+ *   - 旧会话缺失 reasoning 时统一通过 chatMessageReasoning 提供空字符串
+ */
+
+import { ConversationProgressStep } from '../../../workflows/conversation/ConversationState'
+import type { StreamEvent } from 'common'
 
 export interface ChatMsg {
   // 消息唯一 id(用 Date.now * 1000 + random)
@@ -24,27 +31,54 @@ export interface ChatMsg {
   // 是否正在流式生成中 (仅 ai 消息)
   streaming: boolean
 
-  // 思考链内容 (DeepSeek 思考模式, 仅 ai 消息)
-  reasoning: string
+  // 思考链内容 (DeepSeek 思考模式, 仅 ai 消息; 旧会话可能缺失)
+  reasoning?: string
 
   // 思考面板是否展开 (仅 ai 消息, 默认收起)
   reasoningExpanded?: boolean
 }
 
-export type ChatStatusStep =
-  'intent_check' |
-  'reply_context_load' |
-  'reply_model_call' |
-  'image_message_save' |
-  'image_recognize' |
-  'image_material_save' |
-  'note_intent_check' |
-  'note_context_load' |
-  'note_source_prepare' |
-  'note_material_summary' |
-  'note_structure_save' |
-  'note_finalize' |
-  'completed'
+export function chatItemKey(message: ChatMsg): string {
+  const idPart: string = message.id.toString()
+  const contentLengthPart: string = '_contentLength' + message.content.length.toString()
+  const reasoningLengthPart: string = '_reasoningLength' + chatMessageReasoning(message).length.toString()
+  const streamingPart: string = message.streaming ? '_streaming1' : '_streaming0'
+  return idPart + contentLengthPart + reasoningLengthPart + streamingPart
+}
+
+export function chatMessageReasoning(message: ChatMsg): string {
+  return message.reasoning ?? ''
+}
+
+export function copyChatMsg(message: ChatMsg): ChatMsg {
+  const next: ChatMsg = {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    ts: message.ts,
+    streaming: message.streaming,
+    reasoning: chatMessageReasoning(message),
+  }
+  if (message.reasoningExpanded !== undefined) {
+    next.reasoningExpanded = message.reasoningExpanded
+  }
+  return next
+}
+
+export function applyStreamEventToChatMsg(message: ChatMsg, event: StreamEvent): ChatMsg {
+  const next: ChatMsg = copyChatMsg(message)
+  if (event.type === 'thinking') {
+    next.reasoning = chatMessageReasoning(message) + event.delta
+    return next
+  }
+  if (event.type === 'text') {
+    next.content = message.content + event.delta
+    return next
+  }
+  return next
+}
+
+export type ChatStatusStep = ConversationProgressStep
 
 export interface ChatStatusMeta {
   step: ChatStatusStep

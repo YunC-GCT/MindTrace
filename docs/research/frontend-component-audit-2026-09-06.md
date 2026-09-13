@@ -229,3 +229,49 @@ MindTrace 前端的 shared 三层库收敛在 7 个组件, 全部围绕一条主
 - FloatingButton/AiTabButton 两颗最显眼渐变圆钮零按压反馈 (DUR_INSTANT 在场未用)
 - 真死令牌: LH_HEADING / SUCCESS / WARNING (SUBJECT_COLORS/TYPE_COLORS 经 NoteTaxonomy 间接消费, 非死令牌)
 - rgba/hex 字面量 111 处 (出现次数口径, 高于本文 96 行数口径)
+
+---
+
+# 补充 3：鸿蒙生态核实与更新 (2026-09-11, spec-016 三分支落地前)
+
+> Method: `devecocli docs` (本地 HarmonyOS 官方文档库) 逐条核对本文 C1-C6 及补充/补充 2 的技术主张, 并复查 develop 最新事实 (PR #95/#106 合入后)。目的: 三分支 (PR-A motion-policy / PR-B math-text-renderer / PR-C icon-button-math-preview) 落地前扫清生态级风险。
+
+## 核实结果 (官方文档背书)
+
+| # | 本文主张 | 官方证据 (documentId) | 裁决 |
+|---|---|---|---|
+| C1 技术路线 | MathTextRenderer 用 WebView+KaTeX 渲染公式 | `FAQ/Web框架/.../faqs-arkweb-97`: "HarmonyOS 目前没有提供专门的数学公式渲染组件, 可以使用 WebView 组件来加载支持数学公式渲染的网页" | ✅ **官方推荐路线**; FormulaSplitRenderer 的 LazyForEach+DataSource 按需创建/销毁 WebView 符合官方懒加载指导 |
+| C4 手段 | AppStorage 手工事件总线 → 响应式 | `API参考/.../ts-state-management-storageprop`: @StorageProp 与 AppStorage **单向同步**, AppStorage 侧变化自动刷新组件; `faqs-arkui-1622` (异步数据加载后页面不刷新) 官方解法即 AppStorage+@StorageProp | ✅ 手段与语义确认 |
+| 补充·裁决2 ForEach | index-key ×3 是偏离 | `faqs-arkui-41` / `faqs-arkui-219`: 框架默认 keyGen = `index + '__' + JSON.stringify(item)`, 裸 index 键在数据重排时错位复用/不刷新 | ✅ 有官方依据; 增量: `faqs-arkui-327` 指出默认 JSON.stringify 复杂对象有性能成本, NoteCard/SubjectCard 列表应显式 keyGenerator 用稳定业务 id (如 note.id) |
+| 补充2 GradientRing | setInterval 手摇帧是反模式 | `faqs-arkui-648` + AnimateParam 文档: `iterations: -1` 无限循环 + `PlayMode.Alternate` 正逆交替 = 呼吸效果官方写法, 无需 setInterval | ✅ 有官方替代; 约束: PlayMode.Alternate 时 iterations 应为奇数 (AnimateParam 说明); 测试场景须含 `faqs-arkui-1549` (打断无限循环动画后失效) 与 `faqs-arkui-1479` (循环动画中状态变量不刷新) |
+| PR-A MotionOptions | { delay, iterations, playMode } 透传面 | 与官方 AnimateParam 子集对齐 (delay<0 提前播放语义、tempo/finishCallbackType/expectedFrameRateRange 高级项不透传) | ✅ 最小面可接受 |
+
+## ⚠️ 新发现: PR-A MotionPolicy 使用了废弃 API
+
+官方 `API参考/.../ts-explicit-animation` 原文:
+
+> 全局 `animateTo(value, event)` "从API version 7开始支持, **从API version 18开始废弃**";
+> "从API version 10开始, 可以通过使用 **UIContext 中的 animateTo** 来明确 UI 的执行上下文"。
+
+- 项目 `targetSdkVersion 6.1.1(24)` > 18 → `MotionPolicy.ets` 从 `@kit.ArkUI` import 的全局 `animateTo` 属**废弃接口** (存量 ReviewGraphView/GradientRing ×9 处同病, PR-A 是收口不是引入)。
+- 缓解事实: wrapper 单点收口设计恰好把废弃面收敛到 **1 处调用** (`animateToMotion` 函数体), 未来切 UIContext 版迁移成本 ≈ 1 行。
+- 处置两选一 (**PR-A 验收前必须裁决**):
+  - (a) 本 PR 组接受现状: `animateToMotion` 函数头注释标记 "全局 animateTo API 18 起废弃, 迁移路径 `this.getUIContext().animateTo()`", 记 follow-up issue;
+  - (b) PR-A 内直接改 UIContext 版: 模块级函数需获取 UIContext (组件侧 `this.getUIContext()` 传入或注入 seam), 改动面小但需适配 Hypium 测试 (非组件环境无 UIContext)。
+- 官方另注: "**不推荐在 aboutToAppear/aboutToDisappear 中调用动画**" — GradientRing/ReviewGraphView 入场动画的调用点需按此自查。
+
+## 事实更新 (develop 演进)
+
+- **C4 影响面扩大**: `notesVersion` 手工总线 2026-09-06 口径 6 文件 → 2026-09-11 实测 **9 文件 17 处** (新增 UiDataCacheService / HomeViewModel / NotesViewModel 触点, note-generation-foundation 合入后扩散)。C4 收益升格, 建议优先级从 Worth exploring 上调为 Strong 候补。
+- **PR-A scope 追认**: MotionPolicy.ets 文件头自述 Phase 1b (FloatingButton / AiTabButton / HexLogo 按压反馈与 3 处 raw animateTo) **已裁决 deferred**, 本 PR 组不含 — 与补充 2 "两颗渐变圆钮零按压反馈" 发现的清偿边界一致。
+
+## 战略注记 (不进本 PR 组)
+
+- **V1 vs V2 状态管理**: 官方 V2 (@ComponentV2/@ObservedV2/@Trace/AppStorageV2) 是新代码推荐方向 (`faqs-arkui-885`, V1→V2 迁移指导已有); 本项目全线 V1。**C4 实现保持 V1 @StorageProp** (与存量一致, 风险最小); V1→V2 整体迁移是独立战略决策 (@ReusableV2 亦需先迁 @ComponentV2), 单独立项。
+- **@Reusable 组件复用** (API 10+, V1): FormulaSplitRenderer 的 LazyForEach 块组件可加 @Reusable, 用缓存池降低创建/销毁开销 (官方组件复用最佳实践: 缓存池位于父组件, 按 reuseId 命中) — 记为 **C7 候选** (Worth exploring), C1 落地后再评估。
+
+## 对验收标准的增量 (叠加在 2026-09-11 制定的验收标准之上)
+
+1. PR-A 验收增加: 废弃 API 处置裁决 (上文 a/b 二选一) 落到代码注释或 issue;
+2. PR-A 测试场景增加: 无限循环动画的打断恢复 (faqs-arkui-1549) 与循环期间状态刷新 (faqs-arkui-1479);
+3. C4 未来立项时: 影响面按 9 文件 17 处重估, 实现限定 V1 @StorageProp。

@@ -10,7 +10,7 @@ const tcs = read('agents/src/main/ets/agents/TruthCheckService.ets');
 const km = read('agents/src/main/ets/agents/KnowledgeModel.ets');
 const tcsTestPath = resolve(root, 'agents/src/test/TruthCheckService.test.ets');
 
-// spec 015 PR1: 真值检查实现实体化到 TruthCheckService, KnowledgeModel 仅保留转发。
+// spec 018: 真值检查实现归 TruthCheckService, Capture workflow 节点是唯一调用方。
 test('TruthCheckService holds the real truth-check implementation', () => {
   assert.match(tcs, /truthCheck\(ocrText: string\): MvpTruthCheckResult/, 'truthCheck impl must live in TruthCheckService');
   assert.match(tcs, /checkBracePairing\(text: string\)/, 'brace pairing impl must live in TruthCheckService');
@@ -28,9 +28,9 @@ test('the 4 internal result interfaces moved with the logic', () => {
 });
 
 // spec 015 PR3: KnowledgeModel 重构为轻量编排 agent, 调用点直连协作服务。
-test('KnowledgeModel orchestrates via TruthCheckService and PromptBuilder directly', () => {
+test('KnowledgeModel structures via PromptBuilder while CaptureGraph owns TruthCheck', () => {
   assert.match(km, /export class KnowledgeModel {/);
-  assert.match(km, /this\.truthCheckService\.check\(ocrText\)/, 'structure() must call TruthCheckService directly');
+  assert.doesNotMatch(km, /truthCheckService\.check\(ocrText\)/, 'structure() must not duplicate TruthCheckNode');
   assert.match(km, /this\.promptBuilder\.buildPrompt\(ocrText\)/, 'callAi must call PromptBuilder directly');
   assert.doesNotMatch(km, /checkBracePairing\(/, 'truth checks must live in TruthCheckService');
   assert.doesNotMatch(km, /你是数学学习笔记结构化助手/, 'prompt body must live in PromptBuilder');

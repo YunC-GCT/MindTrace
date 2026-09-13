@@ -178,7 +178,7 @@ export {
 //   LlmTypes:   ChatMessage / LlmCallRequest / LlmCallResult / LlmErrorKind
 //   ApiKeyVault: 凭据 vault (@kit.AssetStoreKit, 兼容读取旧 preferences key)
 //   providers:  5 厂商预设(DeepSeek / Tongyi / GLM / Kimi / Doubao) + findProvider 工厂
-export { LlmConfig } from './llm/LlmConfig';
+export { LlmConfig, DEFAULT_ENABLE_THINKING } from './llm/LlmConfig';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
 export { LlmGuard } from './llm/LlmGuard';
@@ -198,6 +198,12 @@ export type {
   LlmToolDefinition,
   LlmResponseFormat,
   LlmJsonSchema,
+  StreamEvent,
+  StreamEventType,
+  StreamThinkingEvent,
+  StreamTextEvent,
+  StreamToolCallEvent,
+  StreamToolResultEvent,
 } from './llm/LlmTypes';
 export type { LlmGuardJsonOptions, LlmGuardJsonResult, LlmGuardValidationResult, LlmJsonValidator } from './llm/LlmGuard';
 export type { LlmCaller } from './llm/LlmGuard';

@@ -9,7 +9,7 @@
 import { S_2, S_4, MINT, TEXT_4 } from 'common';
 import { ChatBubble } from './chat/ChatBubble';
 import { EmptyStateHint } from './chat/EmptyStateHint';
-import { ChatMsg, ChatStatusMeta } from './chat/ChatModels';
+import { ChatMsg, ChatStatusMeta, chatItemKey } from './chat/ChatModels';
 
 function safeIndex(index: number | undefined): number {
   return index === undefined ? 0 : index;
@@ -19,10 +19,6 @@ class ChatMessageDataSource implements IDataSource {
   private messages: ChatMsg[] = [];
   private listeners: DataChangeListener[] = [];
   private fallback: ChatMsg = { id: 0, role: 'ai', content: '', ts: 0, streaming: false, reasoning: '' };
-
-  constructor(messages: ChatMsg[]) {
-    this.messages = messages.slice(0);
-  }
 
   totalCount(): number {
     return this.messages.length;
@@ -61,7 +57,8 @@ export struct AgentMessageList {
   @Prop busy: boolean = false;
   @Prop statusMeta: ChatStatusMeta | null = null;
   scroller: Scroller = new Scroller();
-  private dataSource: ChatMessageDataSource = new ChatMessageDataSource([]);
+  private dataSource: ChatMessageDataSource = new ChatMessageDataSource();
+  private lastStreamProgressKey: string = '';
   onToggleReasoning: (msg: ChatMsg) => void = (_msg: ChatMsg): void => {};
 
   aboutToAppear(): void {
@@ -71,13 +68,15 @@ export struct AgentMessageList {
   onMessagesChanged(): void {
     this.dataSource.setMessages(this.messages);
     // 流式消息自动滚到底部
-    if (this.messages.length > 0 && this.messages[this.messages.length - 1].streaming) {
+    const progressKey: string = this.currentStreamProgressKey();
+    if (progressKey.length > 0 && progressKey !== this.lastStreamProgressKey) {
+      this.lastStreamProgressKey = progressKey;
       setTimeout((): void => { this.scroller.scrollEdge(Edge.Bottom); }, 50);
     }
   }
 
   build() {
-    List({ scroller: this.scroller, initialIndex: this.initialIndex() }) {
+    List({ scroller: this.scroller }) {
       if (this.messages.length === 0 && !this.busy) {
         ListItem() {
           EmptyStateHint();
@@ -95,7 +94,7 @@ export struct AgentMessageList {
           .width('100%')
           .padding({ left: S_4, right: S_4, top: safeIndex(index) === 0 ? S_2 : 0 });
         },
-        (msg: ChatMsg): string => msg.id.toString() + '_c' + msg.content.length.toString() + '_s' + (msg.streaming ? '1' : '0') + '_r' + (msg.reasoningExpanded ?? false ? '1' : '0')
+        (msg: ChatMsg): string => chatItemKey(msg)
       );
 
       if (this.busy && (this.statusMeta === null || this.statusMeta.step !== 'completed')) {
@@ -123,11 +122,15 @@ export struct AgentMessageList {
     }
     .layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
   }
-
-  private initialIndex = (): number => {
+  private currentStreamProgressKey(): string {
     if (this.messages.length === 0) {
-      return 0;
+      return '';
     }
-    return this.messages.length - 1;
+    const message: ChatMsg = this.messages[this.messages.length - 1];
+    if (!message.streaming) {
+      return '';
+    }
+    const reasoningLength: number = message.reasoning === undefined ? 0 : message.reasoning.length;
+    return message.id.toString() + '_' + message.content.length.toString() + '_' + reasoningLength.toString();
   }
 }

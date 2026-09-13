@@ -1,4 +1,4 @@
-﻿﻿// ============================================================================
+﻿// ============================================================================
 //  overlays/AgentFloatWindow/AgentFloatWindow.ets — 智能体浮窗(完整版)
 //  ----------------------------------------------------------------------------
 //  特性: 拖拽缩放(floatHeight) · 多会话(SessionBar+ChatSession) · 拍照整链(captureReply)
@@ -21,10 +21,14 @@ import { ChatHeader } from './chat/ChatHeader';
 import { QuickSuggestions } from './chat/QuickSuggestions';
 import { ChatSessionManager, sid } from './chat/ChatSession';
 import { SessionBar } from './chat/SessionBar';
-import { ChatMsg, ChatSession, ChatStatusMeta } from './chat/ChatModels';
+import { ChatMsg, ChatSession, ChatStatusMeta, applyStreamEventToChatMsg, copyChatMsg } from './chat/ChatModels';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputBar } from './AgentInputBar';
+import { NoteDraftReadyEvent } from 'common';
+import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
+import { KnowledgeUnit } from 'common';
+import type { StreamEvent } from 'common';
 
 function nowId(): number { return Date.now() * 1000 + Math.floor(Math.random() * 1000); }
 
@@ -43,17 +47,16 @@ export struct AgentFloatWindow {
   @State inputText: string = '';
   @State busy: boolean = false;
   @State statusMeta: ChatStatusMeta | null = null;
-  @State deepThink: boolean = false;
   @State imagePreview: string = '';
   @State keyboardHeight: number = 0;
   @State sessions: ChatSession[] = [{ id: 's1', name: '会话 1', messages: [] }];
   @State activeSid: string = 's1';
-  @State renderKey: number = 0;
   @State floatHeight: number = 48;
   @State overlayVisible: boolean = false;
   @State maskOpacity: number = 0;
   @State sheetOpacity: number = 0;
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
+  @State generatedDraft: NoteDraftReadyEvent | null = null;
   private motionSeq: number = 0;
   private dragStartH: number = 48;
   private mainWindow: window.Window | null = null;
@@ -84,9 +87,7 @@ export struct AgentFloatWindow {
   onPendingImageChange(): void { if (this.pendingImageUri.length > 0) { this.imagePreview = this.pendingImageUri; } }
   onMessagesChange(): void {
     if (this.messages.length > 0) {
-      this.renderKey++;
       this.sync(); this.sm.save(this.sessions);
-      setTimeout((): void => { this.scroller.scrollEdge(Edge.Bottom); }, 200);
     }
   }
 
@@ -106,22 +107,18 @@ export struct AgentFloatWindow {
         this.messages = [...this.messages, { id, role: 'ai', content: '', ts: Date.now(), streaming: true, reasoning: '' }];
         return id;
       },
-      appendAiMsg: (id: number, delta: string, kind?: 'reasoning' | 'content'): void => {
-        if (kind === 'reasoning') {
-          this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: m.streaming, reasoning: (m.reasoning ?? '') + delta } : m);
-        } else {
-          this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content + delta, ts: m.ts, streaming: m.streaming, reasoning: m.reasoning } : m);
-        }
+      appendAiMsg: (id: number, event: StreamEvent): void => {
+        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m);
       },
       finishAiMsg: (id: number): void => {
-        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: false, reasoning: m.reasoning } : m);
+        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m);
       },
-      bumpNotesVersion: (): void => { const v: number = AppStorage.get<number>('notesVersion') ?? 0; AppStorage.setOrCreate('notesVersion', v + 1); },
       setBusy: (v: boolean): void => { this.busy = v; },
       setStatusMeta: (meta: ChatStatusMeta | null): void => { this.statusMeta = meta; },
       getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
       getConversationText: (excludeLatestUser: boolean): string => this.buildConversationText(excludeLatestUser),
       getSessionId: (): string => this.activeSid,
+      onDraftReady: (event: NoteDraftReadyEvent): void => { this.generatedDraft = event; },
     };
     this.service = new AgentChatService(cbs);
     const ss: ChatSession[] = await this.sm.init(getContext(this));
@@ -156,7 +153,7 @@ export struct AgentFloatWindow {
     // 取消旧会话中正在进行的流式消息
     if (this.messages.length > 0 && this.messages[this.messages.length - 1].streaming) {
       this.messages = this.messages.map((m: ChatMsg, i: number): ChatMsg =>
-        i === this.messages.length - 1 ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: false, reasoning: m.reasoning } : m
+        i === this.messages.length - 1 ? this.finishMessage(m) : m
       );
     }
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
@@ -164,6 +161,19 @@ export struct AgentFloatWindow {
   }
   private newSession(): void { this.sync(); const s: ChatSession = { id: sid(), name: '会话 ' + (this.sessions.length + 1).toString(), messages: [] }; this.sessions = [...this.sessions, s]; this.activeSid = s.id; this.messages = []; this.sm.save(this.sessions); }
   private deleteSession(sid: string): void { if (this.sessions.length <= 1) { return; } const f = this.sessions.filter((s: ChatSession): boolean => s.id !== sid); this.sessions = f; if (sid === this.activeSid) { this.activeSid = f[0].id; this.messages = f[0].messages; }; this.sm.save(this.sessions); }
+
+  private finishMessage(message: ChatMsg): ChatMsg {
+    const next: ChatMsg = copyChatMsg(message);
+    next.streaming = false;
+    return next;
+  }
+
+  private toggleReasoning(message: ChatMsg): ChatMsg {
+    const next: ChatMsg = copyChatMsg(message);
+    const visible: boolean = message.reasoningExpanded !== undefined ? message.reasoningExpanded : true;
+    next.reasoningExpanded = !visible;
+    return next;
+  }
 
   // ===== 交互逻辑 =====
 
@@ -174,7 +184,11 @@ export struct AgentFloatWindow {
     const uri: string = this.imagePreview;
     this.messages = [...this.messages, { id: nowId(), role: 'user', content: msg || '[图片]', ts: Date.now(), streaming: false, reasoning: '' }];
     this.inputText = ''; this.imagePreview = '';
-    this.service?.realReplyStream(msg);
+    if (uri.length > 0) {
+      this.service?.captureReply(uri, msg);
+    } else {
+      this.service?.realReplyStream(msg);
+    }
   };
 
   private modelLabel(): string {
@@ -183,6 +197,13 @@ export struct AgentFloatWindow {
       return 'DeepSeek-V4-Pro'
     }
     return model.length > 0 ? model : 'DeepSeek-V4-Pro'
+  }
+
+  private confirmDraft = async (candidate: KnowledgeUnit): Promise<KnowledgeUnit> => {
+    if (this.generatedDraft === null || this.service === null) {
+      throw new Error('草稿服务不可用');
+    }
+    return await this.service.confirmDraft(this.generatedDraft, candidate);
   }
 
   private openAnimated(): void {
@@ -243,8 +264,6 @@ export struct AgentFloatWindow {
 
           ChatHeader({
             modelName: this.modelLabel(),
-            deepThink: this.deepThink,
-            onToggleThink: (): void => { this.deepThink = !this.deepThink; },
             onNewChat: (): void => { this.newSession(); },
             onClose: this.onClose,
           });
@@ -252,7 +271,7 @@ export struct AgentFloatWindow {
 
           SessionBar({ sessions: this.sessions, activeSid: this.activeSid, onSwitch: (sid: string): void => { this.switchSession(sid); }, onDelete: (sid: string): void => { this.deleteSession(sid); }, onNew: (): void => { this.newSession(); } });
 
-          AgentMessageList({ messages: this.messages, busy: this.busy, statusMeta: this.statusMeta, scroller: this.scroller, onToggleReasoning: (msg: ChatMsg): void => { this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === msg.id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: m.streaming, reasoning: m.reasoning, reasoningExpanded: !(m.reasoningExpanded ?? false) } : m); } });
+          AgentMessageList({ messages: this.messages, busy: this.busy, statusMeta: this.statusMeta, scroller: this.scroller, onToggleReasoning: (msg: ChatMsg): void => { this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === msg.id ? this.toggleReasoning(m) : m); } });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
           QuickSuggestions({ onSelect: (p: string): void => { this.send(p); } });
@@ -263,6 +282,21 @@ export struct AgentFloatWindow {
         .borderRadius({ topLeft: R_XL, topRight: R_XL }).padding({ left: S_3, right: S_3 })
         .opacity(this.sheetOpacity)
         .position({ x: 0, y: '100%' }).markAnchor({ x: 0, y: '100%' }).translate({ y: -(74 + this.keyboardHeight) + this.sheetOffset });
+      }
+      if (this.generatedDraft !== null) {
+        NoteDetailOverlay({
+          generatedDraft: this.generatedDraft,
+          onClose: (): void => { this.generatedDraft = null },
+           onDraftCancel: (): void => {
+             const cancelled: NoteDraftReadyEvent | null = this.generatedDraft;
+             this.generatedDraft = null;
+             if (cancelled !== null) {
+               this.service?.cancelDraft(cancelled.runId).catch((): void => {});
+             }
+           },
+          onDraftConfirm: this.confirmDraft,
+          onSaved: (_unit: KnowledgeUnit): void => { this.generatedDraft = null },
+        })
       }
     }.width('100%').height('100%').hitTestBehavior(this.overlayVisible ? HitTestMode.Default : HitTestMode.None);
   }

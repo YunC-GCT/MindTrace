@@ -24,11 +24,11 @@ test('PromptBuilder exposes build(input)', () => {
   assert.match(prompt, /build\(input: string\): string/);
 });
 
-test('Collaborator contract (spec 015): three services extracted, KnowledgeModel orchestrates', () => {
+test('Collaborator contract: Structure and TruthCheck have distinct workflow owners', () => {
   // KnowledgeModel 保留为编排 agent, 不再内联提示词/真值检查实现
   assert.match(km, /async structure\(/);
   assert.match(km, /AI 结构化失败/);
-  assert.match(km, /this\.truthCheckService\.check\(ocrText\)/, 'truth check delegated to TruthCheckService');
+  assert.doesNotMatch(km, /truthCheckService\.check\(ocrText\)/, 'KnowledgeModel must not duplicate the TruthCheck workflow node');
   assert.match(km, /this\.promptBuilder\.buildPrompt\(ocrText\)/, 'prompt delegated to PromptBuilder');
   assert.doesNotMatch(km, /你是数学学习笔记结构化助手/, 'prompt body must live in PromptBuilder');
   assert.doesNotMatch(km, /checkBracePairing\(/, 'truth checks must live in TruthCheckService');

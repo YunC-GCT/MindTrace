@@ -3,7 +3,7 @@
 > 工程: [YunC-GCT/MindTrace](https://github.com/YunC-GCT/MindTrace) · HarmonyOS 数学学习助手
 > 作者: YunC-GCT <2549237929@qq.com> · 当前主笔: Z
 > 当前版本: **v1.0**(2026-09-04 release) · 阶段: **复赛冲刺**(2026-09-05 ~ 09-09)
-> 最近更新: 2026-09-09
+> 最近更新: 2026-09-13
 
 MindTrace 通过 **拍照 → OCR → AI 分类 → 知识结构化 → 持久化 → 复习** 的整链,把"看到的数学题"变成"可复习的知识"。5 module: `entry`(HAP) + `common` / `agents` / `skill` / `cardservice`(HSP)。
 
@@ -207,9 +207,30 @@ agents/src/main/ets/
 - **多供应商配置**: AI 设置页支持 DeepSeek / 通义千问 / 智谱 GLM / Kimi / 豆包与自定义供应商; 每个供应商独立维护 API Key 与模型目录。
 - **折叠编辑**: 点击供应商右侧「编辑」展开本地草稿;「取消」丢弃草稿,「保存」提交当前供应商 key/models 并执行 LLM-only 持久化; 模型输入支持回车与 `+` 添加。
 - **持久化与调用链**: `LlmConfig` 持久化 vendorId / customVendors / vendorModels / activeVendorModels / vendorApiKeys; `LlmClient` 按当前 vendor 解析 endpoint、model 与 key; 自定义供应商 id 跨重启保持稳定。
+
+### 2026-09-10 · Agent 工作流架构重构 (spec 018)
+
+- **整体 LangGraph 设计**: ArkTS 原生 `StateGraph<State, Step>` 统一承载 Capture、ToolCalling、Conversation、SkillIntent 四个领域 workflow；不是 Python/langgraphjs runtime，也不是多后端。
+- **原链路修复**: 修复 TruthCheckNode 丢 KnowledgeUnit、TruthCheck 通过语义反向/失败仍入库、PersistNode 覆盖分类与难度、payload source 丢失；最终 KnowledgeUnit 原样进入唯一 DAO adapter。
+- **入口收敛**: `Dispatcher.dispatch(req, options)` 是 Capture 唯一入口；`AgentChatService` 收敛为 UI facade，业务只在 `ConversationWorkflow`；ToolLoop 删除旧 while 后委托 ToolCalling workflow。
+- **鸿蒙能力**: BackgroundTasksKit 短时任务、FormKit 卡片刷新与 GSKV 跨进程 snapshot 已接线；卡片固定 mock 删除；skill SearchNote 复用唯一 `note_query` 工具面。
 - **职责分离**: per-vendor 面板负责保存大模型配置; 页面底部 ActionBar 仅负责「重置 OCR / 保存 OCR」; 顶部连接测试读取当前供应商的 API Key。
 - **模型目录**: DeepSeek 默认模型为 `deepseek-v4-pro`; 当前允许 `deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`,模型选择按供应商独立保存。
 - **真实 LLM 验证**: 连接测试与悬浮对话已在设备完成真实 DeepSeek 调用;日志确认 `deepseek-v4-flash` 分别走非流式与 SSE 流式请求且 HTTP 200。请求日志只打印 vendor / model / endpoint / stream,不输出 API Key。
+
+### 2026-09-13 · AI 对话推理流收口 (#111 / #113 / #115)
+
+- **结构化推理流**: `StreamEvent` 统一承载 thinking/text 通道;思考内容进入独立「深度思考」区块,最终回答不再混入推理文本。
+- **交互验收**: 思考区默认展开,支持独立折叠;流式增长保持展开态;折叠不会强制聊天列表滚到底部;状态文案为「生成中」/「已完成」。
+- **截断降级**: 供应商返回 `finish_reason=length` 时,流式与非流式均保留已生成内容并追加截断提示,不再抛出或静默丢失回复。
+- **验证结果**: `arkts_check`、arkts-lint、naming-lint、Hypium 测试与 `assembleApp` 均通过;本组改动已整理到 `feature/spec-019-p0` 分支。
+
+### 2026-09-13 · Chat 网络流容错热修复
+
+- **请求容错**: 修复 HarmonyOS `requestInStream` 错误回调中状态码为空导致的 `toString` 崩溃;网络/DNS/超时错误统一映射为稳定的网络失败提示。
+- **流式恢复**: 首个事件到达前的网络失败最多重试一次;流式占位消息在失败时复用并结束,不再遗留「MindTrace AI 正在生成」。
+- **回复一致性**: 流式空响应的 fallback 复用 JSON 校验与 Reply Body 解码,避免将 `{"answer": ...}` envelope 直接展示给用户。
+- **验证结果**: `arkts_check`、arkts-lint 96/96、naming-lint、debug build 均通过;设备对话验证正常。
 
 ---
 

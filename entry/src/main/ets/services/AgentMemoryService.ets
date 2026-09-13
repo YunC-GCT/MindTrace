@@ -11,6 +11,7 @@ import {
   LearnerLevel,
   LearnerProfile,
 } from '../models/AgentMemoryModels';
+import { WritePathValidator } from './WritePathValidator';
 
 const RECENT_REPLY_LIMIT: number = 28;
 const RECENT_NOTE_LIMIT: number = 100;
@@ -45,8 +46,7 @@ export class AgentMemoryService {
       content: text,
       createdAt: now,
     };
-    const store: relationalStore.RdbStore = await this.getStore();
-    await new ChatMessageDao(store).insert(record);
+    await this.insertMessageRecord(record);
   }
 
   async savePendingNoteMaterial(sessionId: string, content: string, source: string): Promise<void> {
@@ -65,8 +65,7 @@ export class AgentMemoryService {
       createdAt: now,
       updatedAt: now,
     };
-    const store: relationalStore.RdbStore = await this.getStore();
-    await new AgentMemoryDao(store).insert(record);
+    await this.insertMemoryRecord(record);
   }
 
   async saveOcrResult(
@@ -113,6 +112,11 @@ export class AgentMemoryService {
     const pendingNotes: AgentMemoryRecord[] = await memoryDao.queryPendingNotes(sessionId);
     const messages: ChatMessageRecord[] = await messageDao.queryRecent(sessionId, RECENT_NOTE_LIMIT);
     return AgentMemoryService.buildContextText(summary, pendingNotes, messages, NOTE_CONTEXT_LIMIT);
+  }
+
+  async getPendingNoteMaterials(sessionId: string): Promise<AgentMemoryRecord[]> {
+    const store: relationalStore.RdbStore = await this.getStore();
+    return await new AgentMemoryDao(store).queryPendingNotes(sessionId);
   }
 
   async getLearnerProfileContext(sessionId: string): Promise<string> {
@@ -164,11 +168,11 @@ export class AgentMemoryService {
       return;
     }
 
-    await memoryDao.insert(AgentMemoryService.toProfileRecord(
+    await this.insertMemoryRecord(AgentMemoryService.toProfileRecord(
       PROFILE_GLOBAL_SESSION_ID,
       AgentMemoryService.withSessionLevel(updated, updated.globalLevel),
     ));
-    await memoryDao.insert(AgentMemoryService.toProfileRecord(sessionId, updated));
+    await this.insertMemoryRecord(AgentMemoryService.toProfileRecord(sessionId, updated));
   }
 
   async summarizeSessionIfNeeded(sessionId: string): Promise<void> {
@@ -219,12 +223,12 @@ export class AgentMemoryService {
       createdAt: now,
       updatedAt: now,
     };
-    await memoryDao.insert(summaryRecord);
+    await this.insertMemoryRecord(summaryRecord);
   }
 
-  async markPendingMaterialUsed(sessionId: string): Promise<void> {
+  async markPendingMaterialsUsed(sourceIds: string[]): Promise<void> {
     const store: relationalStore.RdbStore = await this.getStore();
-    await new AgentMemoryDao(store).markPendingUsed(sessionId);
+    await new AgentMemoryDao(store).markPendingUsedByIds(sourceIds);
   }
 
   private async getStore(): Promise<relationalStore.RdbStore> {
@@ -233,6 +237,18 @@ export class AgentMemoryService {
       store = await DatabaseHelper.init(this.context);
     }
     return store;
+  }
+
+  private async insertMessageRecord(record: ChatMessageRecord): Promise<void> {
+    WritePathValidator.validateChatMessage(record);
+    const store: relationalStore.RdbStore = await this.getStore();
+    await new ChatMessageDao(store).insert(record);
+  }
+
+  private async insertMemoryRecord(record: AgentMemoryRecord): Promise<void> {
+    WritePathValidator.validateAgentMemory(record);
+    const store: relationalStore.RdbStore = await this.getStore();
+    await new AgentMemoryDao(store).insert(record);
   }
 
   private static buildContextText(

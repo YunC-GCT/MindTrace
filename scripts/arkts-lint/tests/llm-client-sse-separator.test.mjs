@@ -66,3 +66,13 @@ test('LlmClient.processSseBuffer substring offset must be +1 for single \\n (not
     'processSseBuffer must NOT use +2 offset (that was for double-newline)'
   );
 });
+
+test('LlmClient.processSseBuffer accepts SSE data fields without a space after colon', () => {
+  const psbMatch = llmClient.match(/processSseBuffer\s*\(\s*buffer\s*:\s*string[\s\S]*?return\s+remaining/);
+  assert.ok(psbMatch !== null, 'processSseBuffer body must exist');
+  assert.match(
+    psbMatch[0],
+    /indexOf\s*\(\s*['"]data:['"]\s*\)\s*!==\s*0/,
+    'processSseBuffer must recognize the SSE field name independently of optional whitespace'
+  );
+});
