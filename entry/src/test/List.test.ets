@@ -4,6 +4,7 @@ import knowledgeUnitWriteServiceTest from './KnowledgeUnitWriteService.test';
 import incrementalRegenerationTest from './IncrementalRegeneration.test';
 import agentChatStreamEventsTest from './AgentChatStreamEvents.test';
 import arkWebWarmupServiceTest from './ArkWebWarmupService.test';
+import stableChatKeyRefreshTest from './StableChatKeyRefresh.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -12,4 +13,5 @@ export default function testsuite() {
   incrementalRegenerationTest();
   agentChatStreamEventsTest();
   arkWebWarmupServiceTest();
+  stableChatKeyRefreshTest();
 }
