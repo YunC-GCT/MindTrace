@@ -11,10 +11,10 @@
 
 | `compatibleSdkVersion` | ArkTS 1.1 strict 行为 | MindTrace 当前状态 |
 |---|---|---|
-| **< 10** | 规则只**警告**,不阻塞构建 | ✅ **当前 (API 9)** |
-| **>= 10** | 规则**编译报错**,强制执行 | ❌ 未升级 |
+| **< 10** | 规则只**警告**,不阻塞构建 | 历史状态 |
+| **>= 10** | 规则**编译报错**,强制执行 | 当前项目以 `build-profile.json5` 配置和实际检查结果为准 |
 
-**含义**: 当前 API 9 下,本文件的 40+ 规则**违反不阻断 build**,只出现在 DevEco Studio Problems 面板。**Lint job 必须强制**这些规则 (Phase 4 ticket #15 计划)。API 升级到 ≥10 后,违规自动编译失败。
+**含义**: MindTrace 当前 API/SDK 基线由 `build-profile.json5`（当前 `6.1.1(24)`）和官方 SDK 文档决定，不再沿用“当前 API 9”的历史假设。无论编译器是否已把某条 strict 规则提升为错误，**Lint job 与 ArkTS check 必须强制**这些规则；使用系统 API 时不得引入高于已配置 SDK 或设备/模型约束不支持的能力。
 
 ---
 
@@ -370,7 +370,7 @@ struct MyComp {
 
 ---
 
-## API 版本矩阵 (ArkUI 1.1, MindTrace 当前 API 9)
+## API 版本矩阵 (ArkUI 1.1, MindTrace 当前 SDK 以 build-profile.json5 为准)
 
 | 特性 | API 版本 | MindTrace 当前可用 |
 |---|---|---|
@@ -378,11 +378,11 @@ struct MyComp {
 | `@Observed` / `@ObjectLink` | 7+ | ✅ |
 | `.translate()` / `.offset()` / `.rotate()` / `.scale()` | 7+ | ✅ |
 | `.stateStyles()` 基础态 (focused / pressed / normal / disabled / clicked) | 7 | ✅ |
-| `.stateStyles().selected` | **10+** | ⚠️ 不能用 |
-| `.blur()` / `.backgroundFilter()` / `.foregroundFilter()` / `.visualEffect()` | **12+** | ❌ 不能用 |
-| `@kit.ArkTS.JSON` 模块 | **12+** | ❌ 用 built-in `JSON` |
-| `@ComponentV2` / `@Local` / `@Param` / `@Once` / `@Event` / `@Provider` / `@Consumer` / `@Monitor` / `@ObservedV2` / `@Trace` / `@Computed` | **12+** | ❌ 用 V1 (`@State`/`@Prop`/...) |
-| `AgentExtensionAbility` | **24+** | ❌ MindTrace 无此能力 |
+| `.stateStyles().selected` | **10+** | 按当前 SDK/官方文档核对后使用 |
+| `.blur()` / `.backgroundFilter()` / `.foregroundFilter()` / `.visualEffect()` | **12+** | 按当前 SDK/官方文档核对后使用 |
+| `@kit.ArkTS.JSON` 模块 | **12+** | 优先沿用项目既有 JSON 策略；使用前核对 SDK |
+| `@ComponentV2` / `@Local` / `@Param` / `@Once` / `@Event` / `@Provider` / `@Consumer` / `@Monitor` / `@ObservedV2` / `@Trace` / `@Computed` | **12+** | 本项目默认仍用 V1 (`@State`/`@Prop`/...); 迁移需专项设计 |
+| `AgentExtensionAbility` | **24+** | 仅在当前 SDK/应用能力配置和官方文档允许时使用 |
 | `@kit.NetworkKit.http.createHttp().requestInStream()` + SSE 手解析 | 7+ | ✅ 用作 LLM 流式 |
 | `@kit.AbilityKit` | 7+ | ✅ |
 | `@kit.CoreVisionKit` (OCR) | 9+ | ✅ |
@@ -390,10 +390,10 @@ struct MyComp {
 | `@kit.ArkData.preferences` | 9+ | ✅ |
 | `@kit.ImageKit` | 9+ | ✅ |
 
-**未来升级路径**:
+**版本路径与当前基线**:
 - **API 10**: ArkTS strict 强制; + `selected` 态; + 部分 V2 装饰器预演
 - **API 12**: `@kit.ArkTS.JSON` 模块; + `@ComponentV2` V2 全套; + Filter / visualEffect
-- **API 24**: `AgentExtensionAbility` (HarmonyOS NEXT 5.0+) — 官方智能体能力
+- **API 24（当前基线）**: `AgentExtensionAbility` (HarmonyOS NEXT 5.0+) — 官方智能体能力；是否使用仍取决于应用能力配置与官方文档
 
 ---
 
@@ -489,14 +489,14 @@ grep -rEn '^\s+(rotate|translate|opacity|scale|backgroundColor)\s*[:=]' --includ
 ### Agent / LLM / Streaming (确认 MindTrace 路径)
 
 - **[HTTP 请求](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/http-request)** — `requestInStream` + SSE 手解析 (确认无 SSE SDK)
-- **[AgentExtensionAbility](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/agent-extension-ability)** — API 24+ 才有的"Agent"概念, 当前**不能用**
+- **[AgentExtensionAbility](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/agent-extension-ability)** — API 24+ 的端侧智能体扩展能力；当前 SDK 已达到 API 24，但仍须按应用能力配置和官方文档核对后使用
 
 ---
 
 ## 维护
 
-- **本文档更新触发**: ArkTS 官方规则表变更 / MindTrace 升级 `compatibleSdkVersion` / 项目偏好调整
-- **当前 MindTrace 状态**: `compatibleSdkVersion = 9` (ArkUI 1.1), 这些规则**只警告不报错**, lint job 强制 (Phase 4 ticket #15)
-- **下一里程碑**: 升级到 `compatibleSdkVersion >= 10` 时, 违规自动编译失败, 本文件 §验证命令 章节可退役
+- **本文档更新触发**: ArkTS 官方规则表变更 / `build-profile.json5` 中 API/SDK 基线变更 / 项目偏好调整
+- **当前 MindTrace 状态**: API/SDK 基线以 `build-profile.json5` 为准；这些规则由 lint job 与 ArkTS check 强制。
+- **当前维护重点**: 以 `build-profile.json5` 的 `6.1.1(24)` 为基线，持续由 lint job 与 ArkTS check 强制这些规则；基线或官方规则变化时重新核对本文件。
 
 **报告结束**。

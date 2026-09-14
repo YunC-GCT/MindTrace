@@ -1,7 +1,7 @@
 // ============================================================================
 //  entryability/EntryAbility.ets — 应用入口
 //  ----------------------------------------------------------------------------
-//  职责: 初始化 LLM 配置 + 数据库 + 沉浸式状态栏 + 加载首页。
+//  职责: ArkWeb 启动期预热门禁 + 初始化 LLM 配置 + 数据库 + 沉浸式状态栏 + 加载首页。
 //  沉浸式状态栏: app 内容延伸到 status bar 下方, status bar 背景透明。
 //  视觉效果: 系统时间/电量/信号/wifi 浮在 app 内容上, 与 app 无缝衔接。
 //  ============================================================================
@@ -15,11 +15,18 @@ import { BackgroundTaskFacadeImpl } from '../kit/BackgroundTaskFacadeImpl';
 import { getBackgroundTaskFacade } from '../kit/BackgroundTaskFacadeImpl';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
+import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
 
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    const warmupResult = ArkWebWarmupService.warmup();
+    if (warmupResult.success) {
+      hilog.info(DOMAIN, 'testTag', '%{public}s', warmupResult.diagnostic);
+    } else {
+      hilog.warn(DOMAIN, 'testTag', '%{public}s', warmupResult.diagnostic);
+    }
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {

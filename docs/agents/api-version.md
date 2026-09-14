@@ -2,8 +2,9 @@
 
 ## 当前版本
 
-- `compileSdkVersion` / `compatibleSdkVersion` = **9** (ArkUI 1.1)
-- ⚠️ **API 9 下 ArkTS strict 规则只警告不报错** — 升级到 ≥10 才进入"标准模式"
+- 当前项目 API/SDK 基线以 `build-profile.json5` 为准；当前为 **6.1.1(24)**。
+- 使用系统 API 前必须核对当前 SDK 与官方文档；禁止使用高于已配置 SDK 的 API。
+- ArkTS strict 规则由项目 lint/检查链强制，不再依赖旧 API 9 假设。
 
 ## ArkTS 1.1 strict 完整规则
 
@@ -25,15 +26,18 @@
 
 CI 已接入: [`.github/workflows/arkts-lint.yml`](../../.github/workflows/arkts-lint.yml)
 
-## API 11+ 才有的特性 (当前**不能用**)
+## API 用法边界
+
+当前是否可用由 `build-profile.json5` 配置的 SDK 与官方文档共同决定。旧文档中“API 12+ 一律不能用”的说法已过期；但任何高于当前 SDK 或当前设备/模型约束不支持的 API 仍然不能引入。
 
 | 特性 | API | 备注 |
 |---|---|---|
 | `.stateStyles()` 基础态 | API 7 ✓ | 可用 |
-| `.stateStyles()` `selected` 子态 | API 10+ ⚠ | 不能用 |
-| `.blur()` / `visualEffect` / `backgroundFilter` | API 12+ ⚠ | 不能用 |
-| `@kit.ArkTS.JSON` 模块 | API 12+ ⚠ | 用 built-in `JSON` |
-| `@ComponentV2` / `@Local` / `@Param` / `@ObservedV2` / `@Trace` | API 12+ ⚠ | 用 V1 装饰器 |
+| `.stateStyles()` `selected` 子态 | API 10+ | 按当前 SDK/官方文档核对后使用 |
+| `.blur()` / `visualEffect` / `backgroundFilter` | API 12+ | 按当前 SDK/官方文档核对后使用 |
+| `@kit.ArkTS.JSON` 模块 | API 12+ | 优先沿用项目既有 JSON 策略；使用前核对 SDK |
+| `@ComponentV2` / `@Local` / `@Param` / `@ObservedV2` / `@Trace` | API 12+ | 本项目默认仍用 V1；迁移需专项设计 |
+| `AgentExtensionAbility` | API 24+ | 当前 SDK 已达到 API 24；使用前仍须核对应用能力配置与官方文档 |
 
 ## API 用法注意
 
