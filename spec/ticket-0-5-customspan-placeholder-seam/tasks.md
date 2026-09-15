@@ -172,7 +172,7 @@ description: "Task list for Ticket 0.5 CustomSpan Formula Placeholder Seam"
 - [X] T039 Build the project and fix any compilation errors using HarmonyOS build tooling with `build-profile.json5`
 - [X] T040 Deploy the application to the device/emulator with entry module metadata in `entry/src/main/module.json5`
 - [X] T041 Resolve the gate status and `ui_verification_result` from the Phase 7 device evidence in `spec/ticket-0-5-customspan-placeholder-seam/verification-record.md`
-- [ ] T042 Run the `/code-review` skill on the scoped diff, pause for user confirmation, then commit the scoped work to the current branch per user instruction
+- [X] T042 Run the `/code-review` skill on the scoped diff, pause for user confirmation, then commit the scoped work to the current branch per user instruction
 
 ---
 
