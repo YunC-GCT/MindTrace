@@ -200,12 +200,12 @@ export class ChatPersistenceCapability {
       fileIo.mkdirSync(directory, true);
       const baseline: fileIo.AtomicFile = new fileIo.AtomicFile(path);
       const baselineStream = baseline.startWrite();
-      baselineStream.write(ROLLBACK_BASELINE_JSON);
+      await ChatPersistenceCapability.writeStreamFully(baselineStream, ROLLBACK_BASELINE_JSON);
       baseline.finishWrite();
 
       const failed: fileIo.AtomicFile = new fileIo.AtomicFile(path);
       const failedStream = failed.startWrite();
-      failedStream.write(serialized.serializedJson);
+      await ChatPersistenceCapability.writeStreamFully(failedStream, serialized.serializedJson);
       failed.failWrite();
       rollbackCalled = true;
       const formalJson: string = fileIo.readTextSync(path);
@@ -373,7 +373,7 @@ export class ChatPersistenceCapability {
     return path.endsWith(suffix) ? path.substring(0, path.length - suffix.length) : path;
   }
 
-  private static writeAtomicJson(json: string): PersistenceCapabilityResult {
+  private static async writeAtomicJson(json: string): Promise<PersistenceCapabilityResult> {
     const path: string | undefined = ChatPersistenceCapability.capabilityPath();
     if (path === undefined) {
       return ChatPersistenceCapability.persistenceFailure(
@@ -388,7 +388,7 @@ export class ChatPersistenceCapability {
       fileIo.mkdirSync(ChatPersistenceCapability.capabilityDirectory(path), true);
       atomic = new fileIo.AtomicFile(path);
       const stream = atomic.startWrite();
-      stream.write(json);
+      await ChatPersistenceCapability.writeStreamFully(stream, json);
     } catch (error) {
       if (atomic !== undefined) {
         ChatPersistenceCapability.safeFailWrite(atomic);
@@ -426,6 +426,18 @@ export class ChatPersistenceCapability {
       atomic.failWrite();
     } catch (error) {
     }
+  }
+
+  private static writeStreamFully(stream: fileIo.WriteStream, content: string): Promise<void> {
+    return new Promise<void>((resolve: () => void, reject: (reason: Error) => void): void => {
+      stream.write(content, 'utf-8', (err: Error | undefined): void => {
+        if (err !== undefined) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 
   private static persistenceFailure(

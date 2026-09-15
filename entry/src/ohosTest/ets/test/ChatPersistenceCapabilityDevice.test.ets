@@ -106,6 +106,7 @@ export default function chatPersistenceCapabilityDeviceTest(): void {
     it('should_commit_and_roll_back_AtomicFile_in_app_private_filesDir_on_device', 0, async () => {
       await publishDeviceFilesDir();
       const commit: PersistenceCapabilityResult = await ChatPersistenceCapability.writeAtomicSnapshot(SAMPLE_SNAPSHOT);
+      expect(commit.diagnostic).assertEqual('stage=VERIFY; verified=true');
       expect(commit.success).assertTrue();
       expect(commit.stage).assertEqual('VERIFY');
       expect(commit.verified).assertTrue();
