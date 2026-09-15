@@ -7,6 +7,7 @@ import arkWebWarmupServiceTest from './ArkWebWarmupService.test';
 import stableChatKeyRefreshTest from './StableChatKeyRefresh.test';
 import chatFilesDirSeamTest from './ChatFilesDirSeam.test';
 import chatPersistenceCapabilityTest from './ChatPersistenceCapability.test';
+import customSpanPlaceholderSeamTest from './CustomSpanPlaceholderSeam.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -18,4 +19,5 @@ export default function testsuite() {
   stableChatKeyRefreshTest();
   chatFilesDirSeamTest();
   chatPersistenceCapabilityTest();
+  customSpanPlaceholderSeamTest();
 }
