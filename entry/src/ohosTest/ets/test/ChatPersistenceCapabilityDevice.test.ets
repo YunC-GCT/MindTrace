@@ -85,7 +85,7 @@ export default function chatPersistenceCapabilityDeviceTest(): void {
       resetChatFilesDirSeamForTest();
     });
 
-    it('should serialize a representative snapshot through TaskPool on device', 0, async () => {
+    it('should_serialize_representative_snapshot_through_TaskPool_on_device', 0, async () => {
       const result: SnapshotTaskResult = await ChatPersistenceCapability.serializeSnapshot(SAMPLE_SNAPSHOT);
       expect(result.success).assertTrue();
       expect(result.stage).assertEqual('VERIFY');
@@ -94,7 +94,7 @@ export default function chatPersistenceCapabilityDeviceTest(): void {
       assertContentSafeDiagnostic(result.diagnostic);
     });
 
-    it('should verify Worker fallback protocol on device', 0, async () => {
+    it('should_verify_Worker_fallback_protocol_on_device', 0, async () => {
       const result: SnapshotTaskResult = await ChatPersistenceCapability.verifyWorkerFallback(SAMPLE_SNAPSHOT);
       expect(result.diagnostic).assertEqual('transport=worker; stage=VERIFY; schemaVersion=1');
       expect(result.success).assertTrue();
@@ -103,7 +103,7 @@ export default function chatPersistenceCapabilityDeviceTest(): void {
       assertContentSafeDiagnostic(result.diagnostic);
     });
 
-    it('should commit and roll back AtomicFile in app-private filesDir on device', 0, async () => {
+    it('should_commit_and_roll_back_AtomicFile_in_app_private_filesDir_on_device', 0, async () => {
       await publishDeviceFilesDir();
       const commit: PersistenceCapabilityResult = await ChatPersistenceCapability.writeAtomicSnapshot(SAMPLE_SNAPSHOT);
       expect(commit.success).assertTrue();
