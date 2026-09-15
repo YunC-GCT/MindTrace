@@ -17,6 +17,7 @@
 
 import fileIo from '@ohos.file.fs';
 import { ErrorEvent, MessageEvents, taskpool, worker } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
 import {
   ChatFilesDirSeam,
   getChatFilesDirSeam,
@@ -197,7 +198,7 @@ export class ChatPersistenceCapability {
     let rollbackCalled: boolean = false;
     try {
       const directory: string = ChatPersistenceCapability.capabilityDirectory(path);
-      fileIo.mkdirSync(directory, true);
+      ChatPersistenceCapability.ensureDirectory(directory);
       const baseline: fileIo.AtomicFile = new fileIo.AtomicFile(path);
       const baselineStream = baseline.startWrite();
       await ChatPersistenceCapability.writeStreamFully(baselineStream, ROLLBACK_BASELINE_JSON);
@@ -213,9 +214,10 @@ export class ChatPersistenceCapability {
       const reason: string = preserved ? 'snapshot-write-rolled-back-preserved' : 'snapshot-write-rolled-back-not-preserved';
       return ChatPersistenceCapability.persistenceFailure('WRITE', false, rollbackCalled, reason);
     } catch (error) {
+      const digest: string = ChatPersistenceCapability.errorDigest(error as Error);
       const reason: string = rollbackCalled
-        ? 'snapshot-write-rollback-attempted'
-        : 'snapshot-write-failed-before-rollback; blocker=atomic-file-write-unavailable';
+        ? 'snapshot-write-rollback-attempted; error=' + digest
+        : 'snapshot-write-failed-before-rollback; error=' + digest + '; blocker=atomic-file-write-unavailable';
       return ChatPersistenceCapability.persistenceFailure('WRITE', false, rollbackCalled, reason);
     }
   }
@@ -385,7 +387,7 @@ export class ChatPersistenceCapability {
     }
     let atomic: fileIo.AtomicFile | undefined;
     try {
-      fileIo.mkdirSync(ChatPersistenceCapability.capabilityDirectory(path), true);
+      ChatPersistenceCapability.ensureDirectory(ChatPersistenceCapability.capabilityDirectory(path));
       atomic = new fileIo.AtomicFile(path);
       const stream = atomic.startWrite();
       await ChatPersistenceCapability.writeStreamFully(stream, json);
@@ -393,7 +395,8 @@ export class ChatPersistenceCapability {
       if (atomic !== undefined) {
         ChatPersistenceCapability.safeFailWrite(atomic);
       }
-      return ChatPersistenceCapability.persistenceFailure('WRITE', false, atomic !== undefined, 'snapshot-write-failed; blocker=atomic-file-write-unavailable');
+      const digest: string = ChatPersistenceCapability.errorDigest(error as Error);
+      return ChatPersistenceCapability.persistenceFailure('WRITE', false, atomic !== undefined, 'snapshot-write-failed; error=' + digest + '; blocker=atomic-file-write-unavailable');
     }
     try {
       if (atomic === undefined) {
@@ -402,12 +405,18 @@ export class ChatPersistenceCapability {
       atomic.finishWrite();
     } catch (error) {
       ChatPersistenceCapability.safeFailWrite(atomic);
-      return ChatPersistenceCapability.persistenceFailure('COMMIT', false, true, 'snapshot-commit-failed');
+      const digest: string = ChatPersistenceCapability.errorDigest(error as Error);
+      return ChatPersistenceCapability.persistenceFailure('COMMIT', false, true, 'snapshot-commit-failed; error=' + digest);
     }
     try {
       const verifiedJson: string = fileIo.readTextSync(path);
       if (verifiedJson !== json) {
-        return ChatPersistenceCapability.persistenceFailure('VERIFY', false, false, 'snapshot-verify-mismatch');
+        return ChatPersistenceCapability.persistenceFailure(
+          'VERIFY',
+          false,
+          false,
+          'snapshot-verify-mismatch; writtenLength=' + json.length.toString() + '; readLength=' + verifiedJson.length.toString(),
+        );
       }
       return {
         success: true,
@@ -417,7 +426,8 @@ export class ChatPersistenceCapability {
         diagnostic: 'stage=VERIFY; verified=true',
       };
     } catch (error) {
-      return ChatPersistenceCapability.persistenceFailure('VERIFY', false, false, 'snapshot-verify-failed');
+      const digest: string = ChatPersistenceCapability.errorDigest(error as Error);
+      return ChatPersistenceCapability.persistenceFailure('VERIFY', false, false, 'snapshot-verify-failed; error=' + digest);
     }
   }
 
@@ -430,14 +440,53 @@ export class ChatPersistenceCapability {
 
   private static writeStreamFully(stream: fileIo.WriteStream, content: string): Promise<void> {
     return new Promise<void>((resolve: () => void, reject: (reason: Error) => void): void => {
-      stream.write(content, 'utf-8', (err: Error | undefined): void => {
-        if (err !== undefined) {
+      stream.end(content, 'utf-8', (err: Error | undefined): void => {
+        if (err !== undefined && err !== null) {
           reject(err);
         } else {
           resolve();
         }
       });
     });
+  }
+
+  private static ensureDirectory(directory: string): void {
+    try {
+      fileIo.mkdirSync(directory, true);
+    } catch (error) {
+      const businessError: BusinessError = error as BusinessError;
+      if (businessError.code !== 13900015) {
+        throw error as Error;
+      }
+    }
+  }
+
+  private static errorDigest(error: Error): string {
+    if (error === null || error === undefined) {
+      return 'Error:null';
+    }
+    const businessError: BusinessError = error as BusinessError;
+    const code: string = businessError.code === undefined ? 'none' : businessError.code.toString();
+    const name: string = error.name === undefined ? 'Error' : error.name;
+    return ChatPersistenceCapability.sanitizeToken(name, 'Error') + ':' + ChatPersistenceCapability.sanitizeToken(code, 'none');
+  }
+
+  private static sanitizeToken(value: string, fallback: string): string {
+    let sanitized: string = '';
+    let index: number = 0;
+    while (index < value.length && sanitized.length < 32) {
+      const character: string = value.charAt(index);
+      const isLowercase: boolean = character >= 'a' && character <= 'z';
+      const isUppercase: boolean = character >= 'A' && character <= 'Z';
+      const isDigit: boolean = character >= '0' && character <= '9';
+      if (isLowercase || isUppercase || isDigit || character === '_' || character === '-' || character === '.') {
+        sanitized += character;
+      } else {
+        sanitized += '_';
+      }
+      index += 1;
+    }
+    return sanitized.length === 0 ? fallback : sanitized;
   }
 
   private static persistenceFailure(

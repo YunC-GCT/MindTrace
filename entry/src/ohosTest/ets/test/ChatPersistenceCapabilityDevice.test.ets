@@ -117,6 +117,7 @@ export default function chatPersistenceCapabilityDeviceTest(): void {
       );
       expect(rollback.success).assertFalse();
       expect(rollback.stage).assertEqual('WRITE');
+      expect(rollback.diagnostic).assertEqual('stage=WRITE; reason=snapshot-write-rolled-back-preserved');
       expect(rollback.rollbackCalled).assertTrue();
       expect(rollback.diagnostic.indexOf('rolled-back-preserved') >= 0).assertTrue();
       assertContentSafeDiagnostic(rollback.diagnostic);
