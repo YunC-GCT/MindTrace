@@ -110,7 +110,7 @@ class FakeIncrementalRepository implements NoteGenerationRepository {
 }
 
 export default function incrementalRegenerationTest(): void {
-  describe('Issue 104 incremental regeneration', () => {
+  describe('IncrementalRegeneration.issue104_incremental_regeneration', () => {
     it('parses stable sections and locks a manually edited latest revision', 0, () => {
       const current = parseIncrementalSections('## 定义\n定义正文\n## 例子\n例子正文');
       const generated: IncrementalManifest = buildIncrementalManifest('note-104', 2, current, ['source-old']);

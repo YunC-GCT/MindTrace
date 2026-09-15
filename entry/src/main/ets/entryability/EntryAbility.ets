@@ -16,6 +16,7 @@ import { getBackgroundTaskFacade } from '../kit/BackgroundTaskFacadeImpl';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
+import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFilesDirSeam';
 
 const DOMAIN = 0x0000;
 
@@ -53,6 +54,14 @@ export default class EntryAbility extends UIAbility {
       new BackgroundTaskFacadeImpl(),
     );
     AppStorage.setOrCreate<FormCardFacadeImpl>('formCardFacade', new FormCardFacadeImpl(this.context));
+    // ticket-0.3 (#121): 应用级 filesDir 缝 — 组合根解析一次,发布纯字符串 seam(无 UI 上下文)
+    const chatFilesDirSeam = ChatFilesDirSeam.fromApplicationContext(this.context.getApplicationContext());
+    publishChatFilesDirSeam(chatFilesDirSeam);
+    if (chatFilesDirSeam.state === 'resolved') {
+      hilog.info(DOMAIN, 'testTag', '%{public}s', chatFilesDirSeam.diagnostic);
+    } else {
+      hilog.warn(DOMAIN, 'testTag', '%{public}s', chatFilesDirSeam.diagnostic);
+    }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 

@@ -5,6 +5,7 @@ import incrementalRegenerationTest from './IncrementalRegeneration.test';
 import agentChatStreamEventsTest from './AgentChatStreamEvents.test';
 import arkWebWarmupServiceTest from './ArkWebWarmupService.test';
 import stableChatKeyRefreshTest from './StableChatKeyRefresh.test';
+import chatFilesDirSeamTest from './ChatFilesDirSeam.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -14,4 +15,5 @@ export default function testsuite() {
   agentChatStreamEventsTest();
   arkWebWarmupServiceTest();
   stableChatKeyRefreshTest();
+  chatFilesDirSeamTest();
 }
