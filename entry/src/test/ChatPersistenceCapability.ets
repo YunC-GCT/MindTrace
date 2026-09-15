@@ -201,13 +201,11 @@ export class ChatPersistenceCapability {
       const baseline: fileIo.AtomicFile = new fileIo.AtomicFile(path);
       const baselineStream = baseline.startWrite();
       baselineStream.write(ROLLBACK_BASELINE_JSON);
-      baselineStream.close();
       baseline.finishWrite();
 
       const failed: fileIo.AtomicFile = new fileIo.AtomicFile(path);
       const failedStream = failed.startWrite();
       failedStream.write(serialized.serializedJson);
-      failedStream.close();
       failed.failWrite();
       rollbackCalled = true;
       const formalJson: string = fileIo.readTextSync(path);
@@ -391,7 +389,6 @@ export class ChatPersistenceCapability {
       atomic = new fileIo.AtomicFile(path);
       const stream = atomic.startWrite();
       stream.write(json);
-      stream.close();
     } catch (error) {
       if (atomic !== undefined) {
         ChatPersistenceCapability.safeFailWrite(atomic);
