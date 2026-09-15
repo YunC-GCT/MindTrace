@@ -57,7 +57,7 @@ interface WorkerProbeResult {
 
 const CAPABILITY_FILE_NAME: string = 'ticket-122-capability.json';
 const ROLLBACK_BASELINE_JSON: string = '{"baseline":true}';
-const WORKER_SCRIPT: string = '../workers/ChatPersistenceWorker.ets';
+const WORKER_SCRIPT: string = '../main/ets/workers/ChatPersistenceWorker.ets';
 const WORKER_PROBE_TIMEOUT_MS: number = 1000;
 const WORKER_SUCCESS_REQUEST: string = 'worker-capability-success';
 const WORKER_SUCCESS_RESPONSE: string = 'worker-capability-ok';
