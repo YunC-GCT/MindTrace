@@ -330,3 +330,31 @@ AgentFloatWindow 是一个**健康的自绘聊天浮窗**: 11 文件 1124 行, �
 ## Last updated
 
 2026-09-11
+
+---
+
+## Update — 2026-09-13 (post-#111 implementation reconciliation)
+
+> **Scope**: amend this research doc so it stops contradicting the implementation &
+> the accepted spec decisions reached on 2026-09-13. The original 2026-09-11 analysis
+> is preserved above for traceability; this section only reconciles.
+
+### Reconciliations
+
+| Original claim (line) | Original wording | Reconciled statement (2026-09-13) | Source of truth |
+|---|---|---|---|
+| L10 (TL;DR) | `ReplyService.ets:54,81,123 硬编码 enableThinking: false` | The three overrides are gone. The current file is a 227-LOC module dated 2026-09-13; `enableThinking` is no longer pinned at the call site. Supply defaults to `DEFAULT_ENABLE_THINKING = true` from `common/src/main/ets/llm/LlmConfig.ets:38`. | commit `2990579`; `ReplyService.ets`; `LlmConfig.ets` |
+| L10 (TL;DR) | "装饰性深度思考开关" | The decorative toggle has been **removed** in commit `489f88a`; only an unused `S_1` import in `ChatHeader.ets:18` was missed and is a static-analysis nit, not user-visible behavior. | commit `489f88a`; see two-axis review Standards (b) §ChatHeader dead import |
+| L68 | `LazyForEach keyGen 含 content.length + streaming + reasoningExpanded (:98)` | **NOT** `reasoningExpanded`. Current `chatItemKey` (in [`entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets)): `id + content.length + reasoning.length + streaming`. Fold state moved to `ChatBubble` internal `@State` (initialized from `msg.reasoningExpanded`; toggle re-syncs the parent via `onToggleReasoning` so persistence and LazyForEach row identity are preserved). See commit `2e27083` and ADR-0015 § "Accepted UI Amendment — 2026-09-13". | commit `2e27083`; `ChatModels.ets:41-47`; `ChatBubble.ets:24-25` |
+| L114 | "ChatMsg 6 字段含 `streaming`/`reasoning`/`reasoningExpanded?`" | Still 6 fields structurally (`id` / `role` / `content` / `ts` / `streaming` / `reasoning` / optional `reasoningExpanded`), but the **default** for legacy messages is `true` (expanded), not collapsed. The `reasoning` field is also now `string \| undefined` with `chatMessageReasoning(msg)` helper for legacy-session safety. | `ChatBubble.ets:24-25`; `AgentFloatWindow.ets:177`; `ChatModels.ets:38-65` |
+| L160 | "streaming/reasoning/reasoningExpanded 三态字段维护" | The three-field invariant still holds at the **ChatMsg persistence** layer (`copyChatMsg` preserves `reasoningExpanded`), but at the **list-row** layer the row identity key no longer carries `reasoningExpanded`. Reducer is centralized in `applyStreamEventToChatMsg` (`ChatModels.ets:73-83`); toggling fold never re-keys. |
+
+### Out-of-scope but worth flagging
+- A parallel design conversation (spec 021 + render-jank research) proposes dropping `content.length` / `reasoning.length` from `chatItemKey` entirely (third position: `id` only, or `id + streaming`). That is **not** part of the #111 slice and is intentionally not adopted here; the 2026-09-13 UI Amendment's choice to keep length-based keys (so the pure-thinking phase does not freeze) and drop only `reasoningExpanded` is a deliberate middle ground.
+
+### Cross-references after reconciliation
+- Spec: [`docs/specs/019-reasoning-process-display-p0.md`](../../specs/019-reasoning-process-display-p0.md)
+- ADR: [`docs/adr/0015-structured-stream-events.md`](../../adr/0015-structured-stream-events.md)
+- Implementation: [`ChatModels.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets), [`ChatBubble.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets), [`AgentFloatWindow.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets)
+
+> 2026-09-13 reconciliation note appended by two-axis code review (no overwrite of the original 2026-09-11 findings, per AGENTS.md red line 3).

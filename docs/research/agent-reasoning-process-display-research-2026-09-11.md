@@ -380,3 +380,34 @@ MindTrace 的思考展示链路**骨架全通但两端哑火**: 传输层 (reque
 ## Last updated
 
 2026-09-11
+
+---
+
+## Update — 2026-09-13 (post-#111 implementation reconciliation)
+
+> **Scope**: amend this research doc so it stops contradicting the implementation & the
+> accepted spec decisions reached on 2026-09-13. The original 2026-09-11 analysis is
+> preserved above for traceability; this section only reconciles.
+
+### Reconciliations (none of which override this document's architectural findings)
+
+| Original claim (line) | Original wording | Reconciled statement (2026-09-13) | Source of truth |
+|---|---|---|---|
+| L45 / L330 / L352 | `LlmStreamCallback :133 (delta: string, kind: 'reasoning' \| 'content')` | The 2-value `(delta, kind)` type has been **replaced** by a 4-value `StreamEvent` family `{type, ...payload}` with `type ∈ 'thinking' \| 'text' \| 'tool_call' \| 'tool_result'`. P0 emits only `thinking` / `text`; `tool_call` / `tool_result` are reserved seats per [ADR-0015](../../adr/0015-structured-stream-events.md). The seam `LlmStreamCallback` no longer exists in `common/src/main/ets/llm/LlmTypes.ets`. | ADR-0015; `common/src/main/ets/llm/LlmTypes.ets:128-160`; `common/src/test/LlmStreamEvents.test.ets` |
+| L128 | `ReplyService.ets:54/:81/:123 enableThinking: false` | The three explicit `enableThinking: false` overrides were **removed** in the same #111 slice. `ReplyService` was rewritten as a fresh module (`entry/src/main/ets/services/ReplyService.ets`, 227 LOC, header block dated 2026-09-13); the old 54/81/123 line numbers no longer exist. `DEFAULT_ENABLE_THINKING = true` now lives in `common/src/main/ets/llm/LlmConfig.ets`.` and is the sole supply. | `LlmConfig.ets:38`; `ReplyService.ets`; commit `2990579` |
+| L186 | `ChatMsg 6 字段 reasoningExpanded? 默认收起` | `reasoningExpanded` exists but the **default is "expanded"**, not "collapsed". Implementation: `reasoningExpanded !== undefined ? msg.reasoningExpanded : true` in both `AgentFloatWindow.ets:177` and `ChatBubble.ets:25`. Legacy messages without explicit value render expanded. | `ChatBubble.ets:24-25`; `AgentFloatWindow.ets:177-178` |
+| L193 / L300 / L322 | `chatItemKey` 含 `reasoningExpanded` (行级重建) | **`reasoningExpanded` is NOT in `chatItemKey`**. Final key shape: `id + content.length + reasoning.length + streaming`. Fold state lives in `ChatBubble` as an internal `@State` (`aboutToAppear` initialized from `msg.reasoningExpanded`); the parent array is updated via `onToggleReasoning` only for persistence, and `copyChatMsg` preserves `reasoningExpanded` so a content-driven rebuild does not lose the expanded state. Rationale (commit `2e27083`): key-flip would destroy the row and kill the `animateTo` fold animation. | `ChatModels.ets:41-47`; `ChatBubble.ets:24-25`; commit `2e27083`; ADR-0015 § "Accepted UI Amendment — 2026-09-13" |
+| L219 | "`reasoningExpanded` 是独立于 content/reasoning 的字段,append 不触碰" | Still true at the **persistence / ChatMsg shape** layer. But at the **list-row layer**, the "no touch" discipline now applies through `copyChatMsg`'s field-by-field copy (not map+spread) in `ChatModels.ets:55-64`; any future P1 field (e.g. `toolCalls`, `processExpanded`) must be added there and to `applyStreamEventToChatMsg` (`:73-83`). The 5 hand-rolled literal sites this line warned about have shifted to one reducer location. |
+
+### Out-of-scope but worth flagging
+
+- The reconciliation above targets the **2026-09-13 accepted UI Amendment** position.
+  A separate design conversation in [`docs/specs/021-chat-streaming-incremental-rendering.md`](../../specs/021-chat-streaming-incremental-rendering.md) and [`docs/research/chat-markdown-latex-render-jank-2026-09-13.md`](../chat-markdown-latex-render-jank-2026-09-13.md) proposes a **third position** (`chatItemKey` = `id` or `id + streaming`, removing length-based keys entirely) to fix finish-time row churn. That proposal is parallel to #111 and is **not part of the #111 slice**; it should be tracked under spec 021 / ticket-0 separately and is intentionally not adopted here.
+- The 2026-09-13 UI Amendment also chose **not** to bring tool-call/tool-result event types into the P0 consumer (default branch in `applyStreamEventToChatMsg` returns the message unchanged). That is consistent with ADR-0015's "reserved seats for P1" wording, not with this document's earlier "P0 emits no tool events" framing which implied consumers might break.
+
+### Cross-references after reconciliation
+- Spec source of truth: [`docs/specs/019-reasoning-process-display-p0.md`](../../specs/019-reasoning-process-display-p0.md) § "Accepted UI Amendment — 2026-09-13"
+- ADR source of truth: [`docs/adr/0015-structured-stream-events.md`](../../adr/0015-structured-stream-events.md)
+- Implementation: [`entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets`](../../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets), [`entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets`](../../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets), [`entry/src/main/ets/services/ReplyService.ets`](../../../entry/src/main/ets/services/ReplyService.ets)
+
+> 2026-09-13 reconciliation note appended by two-axis code review (no overwrite of the original 2026-09-11 findings, per AGENTS.md red line 3).
