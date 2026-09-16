@@ -184,6 +184,7 @@ export { LlmClient } from './llm/LlmClient';
 export { LlmGuard } from './llm/LlmGuard';
 export { JSON_ONLY_RULES, LATEX_GENERATION_RULES, buildGuardRetryMessage } from './llm/LlmOutputRules';
 export { LlmError } from './llm/LlmTypes';
+export { LlmErrorBodyFormatter } from './llm/LlmErrorBodyFormatter';
 export { PROVIDERS, DEFAULT_VENDOR_ID, findProvider } from './llm/providers';
 export type { ProviderConfig, CustomVendorConfig } from './llm/providers';
 export type {
