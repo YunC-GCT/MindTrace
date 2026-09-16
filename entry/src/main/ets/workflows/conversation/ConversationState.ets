@@ -1,3 +1,22 @@
+/**
+ * ConversationState.ets — Conversation workflow State 类型定义
+ *
+ * 路径: entry/src/main/ets/workflows/conversation/ConversationState.ets
+ * 职责: 定义 ConversationStep 状态机节点 / ConversationProgressStep 进度上报 / ConversationRequest 三种请求 / ConversationState 状态结构
+ * 依赖: ../../services/IntentClassifier (TextIntent)
+ *
+ * 数据流:
+ *   ConversationWorkflow.buildGraph → ConversationState (初始 / 中间 / 结束) → 节点函数 copyState → 下游节点
+ *
+ * 设计要点:
+ *   - P0 (spec 018 / 019): 单后端 + 一处 State 类型; draft 状态六字段仅 regenerate_reply / note_reply 节点写入
+ *   - ConversationStep 与 ConversationProgressStep 双层命名: 前者驱动图,后者驱动 UI 进度提示
+ *
+ * ArkTS 1.1 strict 适配:
+ *   - discriminated union 用 type aliases 表达 (无 interface 继承)
+ *   - 所有可选字段显式 `?:` 标注,避免 uninitialized 推断
+ */
+
 import { TextIntent } from '../../services/IntentClassifier';
 
 export type ConversationStep =
