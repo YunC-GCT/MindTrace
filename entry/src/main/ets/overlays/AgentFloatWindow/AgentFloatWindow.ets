@@ -16,6 +16,7 @@ import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import window from '@ohos.window';
 import { AgentChatService, AgentChatCallbacks } from '../../services/AgentChatService';
+import { getChatFilesDirSeam } from '../../services/ChatFilesDirSeam';
 import { LlmConfig } from 'common';
 import { ChatHeader } from './chat/ChatHeader';
 import { QuickSuggestions } from './chat/QuickSuggestions';
@@ -100,6 +101,9 @@ export struct AgentFloatWindow {
   // ===== 会话管理 =====
 
   private async loadHistory(): Promise<void> {
+    // ticket-0.3 (#121): 每次浮窗初始化重读 seam,把解析到的 filesDir 交给非 UI 协作者
+    const seam = getChatFilesDirSeam();
+    this.sm.recordFilesDir(seam !== null ? seam.filesDir : '');
     const cbs: AgentChatCallbacks = {
       addAiMsg: (c: string): void => { this.messages = [...this.messages, { id: nowId(), role: 'ai', content: c, ts: Date.now(), streaming: false, reasoning: '' }]; },
       addAiMsgEmpty: (): number => {

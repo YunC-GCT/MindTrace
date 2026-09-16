@@ -34,7 +34,7 @@ export interface ChatMsg {
   // 思考链内容 (DeepSeek 思考模式, 仅 ai 消息; 旧会话可能缺失)
   reasoning?: string
 
-  // 思考面板是否展开 (仅 ai 消息, 默认收起)
+  // 思考面板是否展开 (仅 ai 消息, 默认展开; undefined 视为展开,见 ChatBubble 与 AgentFloatWindow 的兜底)
   reasoningExpanded?: boolean
 }
 

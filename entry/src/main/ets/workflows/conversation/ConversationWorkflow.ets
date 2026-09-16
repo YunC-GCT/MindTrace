@@ -1,7 +1,30 @@
+/**
+ * ConversationWorkflow.ets — 浮窗对话 StateGraph 编排
+ *
+ * 路径: entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets
+ * 职责: 编排 text/image/regenerate 三种 ConversationRequest,经 classify_intent → load_reply_context → save_reply_input → (stream_reply|complete_reply|image_reply|note_reply|regenerate_reply) → END
+ * 依赖: common (KnowledgeUnit/ClassificationResult/LlmConfig/LlmError/Logger/StateGraph/LlmErrorBodyFormatter); ../services (AiService/AgentMemoryService/IntentClassifier/ReplyService)
+ *
+ * 数据流:
+ *   AgentFloatWindow.realReply → workflow.run(request) → buildGraph (条件边分发) → ReplyService.complete/stream (LLM 调用) → appendAiMsg(StreamEvent) → ChatMsg 累积 → finishAiMsg → safeSaveAssistantMessage (持久化)
+ *
+ * 设计要点:
+ *   - copyState 严格字段复制 (无 map+spread) — 任意 P1 字段须显式添加,避免漏字段
+ *   - isNetworkError 与 ReplyService.isNetworkError 范围不同:本类含 STREAM_FAILED + 12 个 substring fallback,顶层 catch 用
+ *   - parseRegenerationRequest / isIncrementalInstruction 解析用户指令中的 noteId 与增量意图标记(从 'noteId=' / '笔记ID：' / 增量关键词)
+ *   - 错误消息经 LlmErrorBodyFormatter.redactSensitiveText 脱敏后再展示给用户,防止 Bearer / api-key / sk-xxx 泄露
+ *
+ * ArkTS 1.1 strict 适配:
+ *   - StateGraph<Node, Edge> 泛型参数显式标注 (避免 arkts-no-inferred-generic-params)
+ *   - catch 块统一用 ConversationWorkflow.errorMessage(e) 兜底,不写 catch (e: Error)
+ *   - copyState 用显式字段复制,不写解构赋值
+ */
+
 import {
   KnowledgeUnit,
   ClassificationResult,
   LlmConfig,
+  LlmErrorBodyFormatter,
   LlmError,
   Logger,
   StateGraph,
@@ -438,7 +461,7 @@ export class ConversationWorkflow {
       await this.addAiMessage(sessionId, '笔记草稿已准备，请预览并确认保存。');
       return event;
     } catch (e) {
-      const errMsg: string = ConversationWorkflow.errorMessage(e);
+      const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
       await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 120));
       return undefined;
     }
