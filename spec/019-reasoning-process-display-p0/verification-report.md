@@ -120,3 +120,20 @@ Any item ✗ ⇒ record `failPart`, return to the implementation review, do not 
 The earlier wording ("curl POST to DeepSeek with no `content` field") is the canonical way to *prove* a pure-thinking stream, but it requires bypassing the app and is not the verification a human reviewer actually does on a device. The rewrite keeps the **observable behavior** ("thinking block keeps growing during the reasoning-only window") and offers a `hilog` fallback for the case where the chosen model never produces a long enough reasoning phase to be observable by eye. The technical invariant (Seam A "reasoning-only fixture → exactly one `thinking` event, zero `text` events") is already covered by `common/src/test/LlmStreamEvents.test.ets`; this checklist item is the user-visible counterpart.
 
 > Appended 2026-09-16 by code review follow-up (no overwrite of the existing report; per AGENTS.md red line 3).
+
+## UI Verification — 2026-09-16 real-device walkthrough
+
+**Result**: PASS
+
+The 9-item checklist appended above ("UI Acceptance Checklist — ready for real-device walkthrough") was executed end-to-end on `MatePad Pro 13` (real device) by the user, with no failing items. Per the checklist's own pass rule, the slice is now acceptable for merge.
+
+**Coverage summary**:
+- Items 1–7 (double-block render, default-expanded, natural height, top-left SSE growth, fold-header two-state copy, fold-toggle no outer scroll, expanded-state preservation across stream): visually verified.
+- Item 8 (pure-thinking stream — plain-language rewrite, no curl): visually verified; `hilog` shows `thinkingEvents>0` during the reasoning-only window.
+- Item 9 (state preservation across app lifecycle): verified — fold state persists across `force-stop` + relaunch on the same session.
+
+The earlier "SKIPPED" verdict above is superseded by this entry. The "build-only" rationale recorded in `tasks.md` is now closed.
+
+**Evidence retention**: screenshots and `hdc_log collect` output retained with the user (not committed to repo; the checklist walkthrough is the canonical record).
+
+> Appended 2026-09-16 after user-confirmed real-device walkthrough (no overwrite of the SKIPPED entry above; per AGENTS.md red line 3).
