@@ -12,7 +12,6 @@ import { ReviewPage } from "./Review/ReviewPage"
 import { ProfilePage } from "./Profile/ProfilePage"
 import { TabBar } from "./MainTabs/TabBar"
 import { AgentFloatWindow } from "../overlays/AgentFloatWindow/AgentFloatWindow"
-import { CameraOverlay } from "../overlays/CameraOverlay/CameraOverlay"
 import { KeyboardAvoidMode } from "@kit.ArkUI"
 import { OverlayService } from "../services/OverlayService"
 
@@ -29,16 +28,6 @@ struct Index {
 
   aboutToAppear(): void {
     try { this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.NONE); } catch (e) {}
-  }
-
-  // 拍照/选图完成 → 图片传给 AI 浮窗
-  private onCameraConfirm = (uri: string, _src: "camera" | "album"): void => {
-    overlays.close(); // 关相机
-    this.pendingImageUri = "";
-    setTimeout((): void => {
-      this.pendingImageUri = uri;
-      overlays.open('float'); // 开浮窗
-    }, 0);
   }
 
   build() {
@@ -82,14 +71,6 @@ struct Index {
       }
       .width("100%").height("100%").backgroundColor(BG_DARK)
 
-      // CameraOverlay
-      if (this.activeOverlay === 'camera') {
-        CameraOverlay({
-          onClose: (): void => { overlays.close() },
-          onConfirm: this.onCameraConfirm,
-        })
-      }
-
       // AgentFloatWindow
       AgentFloatWindow({
         show: this.activeOverlay === 'float',
@@ -97,7 +78,6 @@ struct Index {
           overlays.close();
           this.pendingImageUri = "";
         },
-        onGoCamera: (): void => overlays.switchTo('camera'),
         pendingImageUri: this.pendingImageUri,
       })
     }

@@ -6,10 +6,10 @@
  * 依赖: ChatBubble, EmptyStateHint, ChatModels
  */
 
-import { S_2, S_4, MINT, TEXT_4 } from 'common';
+import { S_2, S_4 } from 'common';
 import { ChatBubble } from './chat/ChatBubble';
 import { EmptyStateHint } from './chat/EmptyStateHint';
-import { ChatMsg, ChatStatusMeta, chatItemKey } from './chat/ChatModels';
+import { ChatMsg, chatItemKey } from './chat/ChatModels';
 
 function safeIndex(index: number | undefined): number {
   return index === undefined ? 0 : index;
@@ -55,7 +55,6 @@ class ChatMessageDataSource implements IDataSource {
 export struct AgentMessageList {
   @Prop @Watch('onMessagesChanged') messages: ChatMsg[] = [];
   @Prop busy: boolean = false;
-  @Prop statusMeta: ChatStatusMeta | null = null;
   scroller: Scroller = new Scroller();
   private dataSource: ChatMessageDataSource = new ChatMessageDataSource();
   private lastStreamProgressKey: string = '';
@@ -96,22 +95,6 @@ export struct AgentMessageList {
         },
         (msg: ChatMsg): string => chatItemKey(msg)
       );
-
-      if (this.busy && (this.statusMeta === null || this.statusMeta.step !== 'completed')) {
-        ListItem() {
-          Row() {
-            LoadingProgress().width(10).height(10).color(MINT)
-            Text(this.statusMeta?.title ?? '处理中...').fontSize(11).fontColor(TEXT_4).margin({ left: 6 })
-            if (this.statusMeta !== null && (this.statusMeta.detail ?? '').length > 0) {
-              Text('· ' + (this.statusMeta.detail ?? '')).fontSize(10).fontColor(TEXT_4).margin({ left: 4 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-            }
-          }
-          .width('100%')
-          .padding({ left: S_4, top: 4, bottom: 4 })
-          .justifyContent(FlexAlign.Start)
-        }
-        .width('100%')
-      }
 
       ListItem() {
         Column() {

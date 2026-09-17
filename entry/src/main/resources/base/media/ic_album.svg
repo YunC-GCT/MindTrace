@@ -1,8 +1,9 @@
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- 照片框 -->
-  <rect x="3" y="3" width="18" height="18" rx="3" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- 远山 -->
-  <polyline points="3,16 9,10 12,14 15,9 21,16" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- 太阳 -->
-  <circle cx="8" cy="8" r="1.5" fill="white"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+  <!-- 相册框 (白填充, 20×16 ≈ 相机机身大小) -->
+  <rect x="2" y="4" width="20" height="16" rx="3"/>
+  <!-- 远山 (深色线条轮廓, 在大框内) -->
+  <polyline points="4,18 9,13 12,16 16,11 20,18" fill="none" stroke="#FF0A0C10" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 太阳 (深色填充, 右上) -->
+  <circle cx="17" cy="9" r="1.7" fill="#FF0A0C10"/>
 </svg>

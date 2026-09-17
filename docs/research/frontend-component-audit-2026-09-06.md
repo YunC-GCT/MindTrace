@@ -3,6 +3,7 @@
 > **Date:** 2026-09-06
 > **Scope:** MindTrace 前端组件的三层设计 (Atom/Molecule/Organism) 与页面级组装关系 — 只查组件设计与组合, 不涉及服务交互逻辑
 > **Project:** MindTrace (`entry` module)
+> **Status (2026-09-17):** `[obsolete]` `QuickSuggestions` 组件已删除;本文对该组件的引用不再反映当前实现。
 > **Author:** 主线程审查 agent (research skill; 后台代理因并发限制不可用, 由主会话完成)
 
 ---

@@ -3,6 +3,7 @@
 > **Date:** 2026-09-11
 > **Scope:** `entry/src/main/ets/overlays/AgentFloatWindow/` 全部 .ets 文件的组件清点 + 死组件检测 + 容器职责拆解 + 鸿蒙官方替换候选 + React 生态对照 — 只读调研, 不改任何代码
 > **Project:** MindTrace (`entry` module)
+> **Status (2026-09-17):** `[obsolete]` `QuickSuggestions` 组件已删除;本文对 QuickSuggestions 的引用 (4 个推荐 chip) 不再反映当前实现。
 > **Author:** 研究后台 agent (只读代码 + `devecocli docs` 本地官方文档库检索)
 
 ---
