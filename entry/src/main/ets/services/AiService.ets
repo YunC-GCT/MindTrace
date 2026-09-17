@@ -447,10 +447,10 @@ export class AiService {
     // 1) 构造调度请求
     const req: DispatchRequest = { source: 'app', payload };
 
-    // 2) 准备 NoteDao 适配器, 注入到 CaptureGraph PersistNode
+    // 2) 准备 NoteDao 适配器, 注入到 Dispatcher 持久化选项
     const dao: NoteDaoInterface = await this.buildNoteDao();
 
-    // 3) 构造 Dispatcher, 显式传入 dao (T6 收口时再决定是否删除 dao 参数)
+    // 3) 通过 Dispatcher 公共入口执行整链并显式注入 dao
     const dispatcher: Dispatcher = new Dispatcher();
     const result: DispatchResult = await dispatcher.dispatch(req, { persist: true, dao: dao });
     if (!result.success) {
@@ -458,7 +458,7 @@ export class AiService {
     }
     const unit: KnowledgeUnit | undefined = result.data;
     if (unit === undefined) {
-      throw new Error('处理失败: capture graph 未生成 KnowledgeUnit');
+      throw new Error('处理失败: Dispatcher 未生成 KnowledgeUnit');
     }
 
     // 4) Only metadata is logged; note content never enters production logs.

@@ -52,6 +52,8 @@ import type {
   ContentValidationResult,
   KnowledgeUnit,
   LlmGuardJsonResult,
+  LlmGuardJsonExtractionResult,
+  LlmGuardJsonCandidate,
   LlmGuardValidationResult,
   LlmCaller,
   LlmCallResult,
@@ -714,9 +716,67 @@ export class KnowledgeModel {
       timeoutMs: KNOWLEDGE_TIMEOUT_MS,
       responseFormat: this.structuredResponseFormat(NOTE_STANDARD_JSON_SCHEMA, 'mindtrace_note_standard'),
     });
-    const jsonText: string = new LlmGuard().extractJsonObject(result.text ?? '');
+    const jsonText: string = this.selectStandardArtifactsJsonText(result.text ?? '');
     const parsed: Record<string, Object> = this.parseJsonObjectOrThrow(jsonText, 'standard artifacts');
     return this.parseStandardResult(parsed, request.sources);
+  }
+
+  private selectStandardArtifactsJsonText(raw: string): string {
+    const guard: LlmGuard = new LlmGuard();
+    const extraction: LlmGuardJsonExtractionResult = guard.extractJsonObjectWithDetails(raw);
+    if (extraction.candidates.length === 1) {
+      if (extraction.success) {
+        return extraction.jsonText;
+      }
+      throw new Error(this.formatStandardArtifactsSelectionFailure(extraction.category, extraction, 0));
+    }
+    if (extraction.candidates.length === 0) {
+      throw new Error(this.formatStandardArtifactsSelectionFailure(extraction.category, extraction, 0));
+    }
+    const eligible: LlmGuardJsonCandidate[] = [];
+    for (const candidate of extraction.candidates) {
+      if (candidate.parseable && candidate.object !== undefined && this.isStandardArtifactsCandidate(candidate.object)) {
+        eligible.push(candidate);
+      }
+    }
+    if (eligible.length === 1) {
+      return eligible[0].text;
+    }
+    const category: string = eligible.length === 0 ? 'no_eligible_candidate' : 'multiple_eligible_candidates';
+    throw new Error(this.formatStandardArtifactsSelectionFailure(category, extraction, eligible.length));
+  }
+
+  private isStandardArtifactsCandidate(parsed: Record<string, Object>): boolean {
+    const outlineValue: Object | undefined = parsed['outline'];
+    const evidenceValue: Object | undefined = parsed['evidence'];
+    const draftValue: Object | undefined = parsed['draft'];
+    if (outlineValue !== undefined && evidenceValue !== undefined && draftValue !== undefined) {
+      return !Array.isArray(outlineValue) && typeof outlineValue === 'object'
+        && Array.isArray(evidenceValue)
+        && !Array.isArray(draftValue) && typeof draftValue === 'object';
+    }
+    if (draftValue !== undefined && !Array.isArray(draftValue) && typeof draftValue === 'object') {
+      return this.isDraftArtifactsCandidate(draftValue as Record<string, Object>);
+    }
+    return this.isDraftArtifactsCandidate(parsed);
+  }
+
+  private isDraftArtifactsCandidate(parsed: Record<string, Object>): boolean {
+    const titleValue: Object | undefined = parsed['title'];
+    const sectionsValue: Object | undefined = parsed['sections'];
+    return typeof titleValue === 'string' && titleValue.trim().length > 0 && Array.isArray(sectionsValue);
+  }
+
+  private formatStandardArtifactsSelectionFailure(
+    category: string,
+    extraction: LlmGuardJsonExtractionResult,
+    eligibleCount: number,
+  ): string {
+    return 'standard artifacts JSON extraction failed: category=' + category
+      + ', candidates=' + extraction.candidates.length.toString()
+      + ', eligible=' + eligibleCount.toString()
+      + ', detail=' + extraction.detail
+      + ', preview=' + extraction.preview;
   }
 
   private async callIndependentVerifier(

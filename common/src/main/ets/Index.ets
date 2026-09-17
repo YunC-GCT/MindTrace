@@ -214,7 +214,14 @@ export type {
   StreamToolCallEvent,
   StreamToolResultEvent,
 } from './llm/LlmTypes';
-export type { LlmGuardJsonOptions, LlmGuardJsonResult, LlmGuardValidationResult, LlmJsonValidator } from './llm/LlmGuard';
+export type {
+  LlmGuardJsonCandidate,
+  LlmGuardJsonExtractionResult,
+  LlmGuardJsonOptions,
+  LlmGuardJsonResult,
+  LlmGuardValidationResult,
+  LlmJsonValidator,
+} from './llm/LlmGuard';
 export type { LlmCaller } from './llm/LlmGuard';
 export { ToolRegistry } from './tools/ToolRegistry';
 export { ToolCatalog } from './tools/ToolCatalog';
