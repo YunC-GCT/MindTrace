@@ -128,7 +128,6 @@ entry/src/main/ets/
 │       ├── ChatTextSanitizer.ets
 │       ├── EmptyStateHint.ets
 │       ├── MessageInput.ets
-│       ├── QuickSuggestions.ets
 │       ├── SessionBar.ets
 │       └── TypingIndicator.ets
 ├── components/                          # 旧 atom 命名(已废弃)

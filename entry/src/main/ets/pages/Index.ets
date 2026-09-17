@@ -97,7 +97,6 @@ struct Index {
           overlays.close();
           this.pendingImageUri = "";
         },
-        onGoCamera: (): void => overlays.switchTo('camera'),
         pendingImageUri: this.pendingImageUri,
       })
     }

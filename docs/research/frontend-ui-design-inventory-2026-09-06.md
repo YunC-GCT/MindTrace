@@ -3,6 +3,7 @@
 > **Date:** 2026-09-06
 > **Scope:** MindTrace entry 前端全部 96 个 .ets 的设计(视觉语言)、布局(结构模式)、动效(运动系统)三维清点 — 事实字段机器提取, 关键动效件实读
 > **Project:** MindTrace (entry module)
+> **Status (2026-09-17):** `[obsolete]` `QuickSuggestions` 组件已删除;本文对该组件的引用不再反映当前实现。
 > **Author:** 主线程审查 agent (research skill 调度)
 > **可信度**: 令牌/布局/动效 API 计数 = **机器事实** ●; 母题分类与"令牌绕过"判定 = **分析** ▲; 备注列设计债 = **审计** ◆。96 件中仅 GradientRing/FloatingButton/AiTabButton/TabBar 4 件为实读支撑 ▲, 其余凭机器字段+母题库推论
 > **配套**: 叙述与分层裁决在 [`frontend-component-audit-2026-09-06.md`](./frontend-component-audit-2026-09-06.md); 可视化体检在临时目录 `architecture-review-*.html`(禁入 git)

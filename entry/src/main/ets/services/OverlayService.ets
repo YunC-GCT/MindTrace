@@ -27,11 +27,6 @@ export class OverlayService {
     AppStorage.setOrCreate(KEY, '');
   }
 
-  // 切到另一个浮层
-  switchTo(id: string): void {
-    this.open(id);
-  }
-
   // 当前打开的是否为指定浮层
   isActive(id: string): boolean {
     const cur: string = AppStorage.get<string>(KEY) ?? '';
