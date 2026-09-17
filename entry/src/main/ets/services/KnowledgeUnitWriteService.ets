@@ -71,6 +71,9 @@ export class KnowledgeUnitWriteService {
         };
         return conflict;
       }
+      if (e instanceof KnowledgeUnitWriteError) {
+        throw new KnowledgeUnitWriteError(e.code, e.message);
+      }
       if (e instanceof Error) {
         throw new Error(e.message);
       }
@@ -137,6 +140,9 @@ export class KnowledgeUnitWriteService {
           errorCode: KnowledgeUnitWriteErrorCode.VERSION_CONFLICT,
           errorMessage: e.message,
         };
+      }
+      if (e instanceof KnowledgeUnitWriteError) {
+        throw new KnowledgeUnitWriteError(e.code, e.message);
       }
       if (e instanceof Error) {
         throw new Error(e.message);

@@ -456,7 +456,7 @@ export class ChatPersistenceCapability {
     } catch (error) {
       const businessError: BusinessError = error as BusinessError;
       if (businessError.code !== 13900015) {
-        throw error as Error;
+        throw new Error('snapshot-directory-create-failed');
       }
     }
   }

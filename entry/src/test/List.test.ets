@@ -8,6 +8,7 @@ import stableChatKeyRefreshTest from './StableChatKeyRefresh.test';
 import chatFilesDirSeamTest from './ChatFilesDirSeam.test';
 import chatPersistenceCapabilityTest from './ChatPersistenceCapability.test';
 import customSpanPlaceholderSeamTest from './CustomSpanPlaceholderSeam.test';
+import dispatcherNoteGenerationTest from './DispatcherNoteGeneration.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -20,4 +21,5 @@ export default function testsuite() {
   chatFilesDirSeamTest();
   chatPersistenceCapabilityTest();
   customSpanPlaceholderSeamTest();
+  dispatcherNoteGenerationTest();
 }

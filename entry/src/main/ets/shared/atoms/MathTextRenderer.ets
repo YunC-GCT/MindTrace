@@ -11,6 +11,7 @@ import {
 import type { ContentValidationResult, LatexRiskResult } from 'common'
 import webview from '@ohos.web.webview'
 import { uiCacheLog } from '../../utils/UiCacheDebug'
+import { ChatRenderBenchmarkStats } from '../../services/ChatRenderBenchmarkStats'
 
 class MathRenderCacheEntry {
   key: string = ''
@@ -75,10 +76,12 @@ function cacheGet(key: string): MathRenderCacheEntry | null {
       entry.touched = nextCacheTick()
       entry.touchedAt = now
       uiCacheLog('[UiDataCache] math hit key=' + key)
+      ChatRenderBenchmarkStats.recordCacheHit()
       return entry
     }
   }
   uiCacheLog('[UiDataCache] math miss key=' + key)
+  ChatRenderBenchmarkStats.recordCacheMiss()
   return null
 }
 
@@ -210,14 +213,14 @@ export struct MathTextRenderer {
     const renderInput: MathRenderInput = this.normalizeForRender(this.text)
     if (renderInput.renderMode === 'plainFallback') {
       this.renderReady = true
-      this.webHeight = this.clampHeight(this.estimateHeight(renderInput.normalizedText))
+      this.setWebHeight(this.clampHeight(this.estimateHeight(renderInput.normalizedText)), false)
       return
     }
     const markdown: string = this.prepareMarkdownFromResult(renderInput)
     const cached: MathRenderCacheEntry | null = cacheGet(this.cacheKey(markdown))
     if (cached !== null) {
       this.renderReady = true
-      this.webHeight = this.clampHeight(cached.height)
+      this.setWebHeight(this.clampHeight(cached.height), true)
       return
     }
     if (this.shouldDeferWebRender()) {
@@ -227,7 +230,7 @@ export struct MathTextRenderer {
     } else {
       this.renderReady = true
     }
-    this.webHeight = this.estimateHeight(markdown)
+    this.setWebHeight(this.estimateHeight(markdown), false)
   }
 
   aboutToDisappear(): void {
@@ -242,7 +245,7 @@ export struct MathTextRenderer {
     if (renderInput.renderMode === 'plainFallback') {
       this.lastAppliedKey = ''
       this.renderReady = true
-      this.webHeight = this.clampHeight(this.estimateHeight(renderInput.normalizedText))
+      this.setWebHeight(this.clampHeight(this.estimateHeight(renderInput.normalizedText)), false)
       return
     }
     const markdown: string = this.prepareMarkdownFromResult(renderInput)
@@ -250,13 +253,13 @@ export struct MathTextRenderer {
     const cached: MathRenderCacheEntry | null = cacheGet(cacheKey)
     if (cached !== null) {
       this.renderReady = true
-      this.webHeight = this.clampHeight(cached.height)
+      this.setWebHeight(this.clampHeight(cached.height), true)
       if (this.pageReady) {
         this.applyCachedRender(cacheKey, cached)
       }
       return
     }
-    this.webHeight = this.estimateHeight(markdown)
+    this.setWebHeight(this.estimateHeight(markdown), false)
     if (this.shouldDeferWebRender()) {
       this.renderReady = false
       this.pageReady = false
@@ -281,13 +284,15 @@ export struct MathTextRenderer {
     }
     const cached: MathRenderCacheEntry | null = cacheGet(cacheKey)
     if (cached !== null) {
-      this.webHeight = this.clampHeight(cached.height)
+      this.setWebHeight(this.clampHeight(cached.height), true)
       this.applyCachedRender(cacheKey, cached)
       return
     }
     const renderFn: string = this.forceDisplay ? 'renderFormulaForCache' : 'renderForCache'
     const script: string = renderFn + '(' + JSON.stringify(markdown) + ',' + JSON.stringify(this.profile) + ')'
-    this.webHeight = this.estimateHeight(markdown)
+    this.setWebHeight(this.estimateHeight(markdown), false)
+    ChatRenderBenchmarkStats.recordWebCreate()
+    ChatRenderBenchmarkStats.recordWebWorkStart()
     this.controller.runJavaScript(script)
       .then((heightText: string): void => {
         if (cacheKey !== this.currentCacheKey()) {
@@ -297,7 +302,7 @@ export struct MathTextRenderer {
         const payload: MathRenderPayload = this.parseRenderPayload(heightText)
         if (payload.height > 0) {
           const height: number = this.clampHeight(payload.height + 2)
-          this.webHeight = height
+          this.setWebHeight(height, true)
           this.lastAppliedKey = cacheKey
           if (payload.encodedHtml.length > 0) {
             cacheSet(cacheKey, payload.encodedHtml, height)
@@ -310,8 +315,10 @@ export struct MathTextRenderer {
         if (cacheKey !== this.currentCacheKey()) {
           return
         }
+        ChatRenderBenchmarkStats.recordDegradation()
         const fallbackFn: string = this.forceDisplay ? 'renderFormula' : 'render'
         const fallbackScript: string = fallbackFn + '(' + JSON.stringify(markdown) + ',' + JSON.stringify(this.profile) + ')'
+        ChatRenderBenchmarkStats.recordWebWorkStart()
         this.controller.runJavaScript(fallbackScript)
           .then((heightText: string): void => {
             if (cacheKey !== this.currentCacheKey()) {
@@ -320,12 +327,13 @@ export struct MathTextRenderer {
             this.webFailed = false
             const height: number = this.clampHeight(this.parseRenderedHeight(heightText) + 2)
             if (!Number.isNaN(height) && height > 0) {
-              this.webHeight = height
+              this.setWebHeight(height, true)
               this.lastAppliedKey = cacheKey
             }
           })
           .catch((): void => {
             if (cacheKey === this.currentCacheKey()) {
+              ChatRenderBenchmarkStats.recordDegradation()
               this.webFailed = true
               this.lastAppliedKey = ''
             }
@@ -342,7 +350,7 @@ export struct MathTextRenderer {
         const parsed: number = this.parseRenderedHeight(heightText)
         if (!Number.isNaN(parsed) && parsed > 0) {
           const height: number = this.clampHeight(parsed + 2)
-          this.webHeight = height
+          this.setWebHeight(height, true)
           cached.height = height
         }
         this.lastAppliedKey = cacheKey
@@ -351,18 +359,21 @@ export struct MathTextRenderer {
         // 缓存 HTML 作为 bridge 输入也可能超限 → 降级为 renderForCache 重新渲染
         if (cacheKey !== this.currentCacheKey()) { return }
         const retryScript: string = 'renderForCache(' + JSON.stringify(this.text) + ',' + JSON.stringify(this.profile) + ')'
+        ChatRenderBenchmarkStats.recordDegradation()
+        ChatRenderBenchmarkStats.recordWebWorkStart()
         this.controller.runJavaScript(retryScript)
           .then((heightText: string): void => {
             if (cacheKey !== this.currentCacheKey()) { return }
             this.webFailed = false
             const payload: MathRenderPayload = this.parseRenderPayload(heightText)
             if (payload.height > 0) {
-              this.webHeight = this.clampHeight(payload.height + 2)
+              this.setWebHeight(this.clampHeight(payload.height + 2), true)
               this.lastAppliedKey = cacheKey
             }
           })
           .catch((): void => {
             if (cacheKey === this.currentCacheKey()) {
+              ChatRenderBenchmarkStats.recordDegradation()
               this.webFailed = true
               this.lastAppliedKey = ''
             }
@@ -421,6 +432,14 @@ export struct MathTextRenderer {
     }
     // 文本块: 上限 1800vp, 超过时通过 overflow-y:auto 内部滚动
     return Math.min(1800, Math.max(this.minHeight, height))
+  }
+
+  private setWebHeight = (height: number, applied: boolean): void => {
+    ChatRenderBenchmarkStats.recordHeightUpdate()
+    this.webHeight = height
+    if (applied) {
+      ChatRenderBenchmarkStats.recordHeightApplied()
+    }
   }
 
   private normalizeForRender = (raw: string): MathRenderInput => {
