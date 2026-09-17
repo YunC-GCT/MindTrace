@@ -72,7 +72,7 @@ export class KnowledgeUnitWriteService {
         return conflict;
       }
       if (e instanceof Error) {
-        throw e;
+        throw new Error(e.message);
       }
       throw new Error(String(e));
     }
@@ -139,7 +139,7 @@ export class KnowledgeUnitWriteService {
         };
       }
       if (e instanceof Error) {
-        throw e;
+        throw new Error(e.message);
       }
       throw new Error(String(e));
     }

@@ -52,8 +52,11 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       return result;
     } catch (e) {
       await NoteDao.rollback(transaction);
+      if (e instanceof KnowledgeUnitWriteError) {
+        throw new KnowledgeUnitWriteError(e.code, e.message);
+      }
       if (e instanceof Error) {
-        throw e;
+        throw new Error(e.message);
       }
       throw new Error(String(e));
     }
@@ -93,8 +96,11 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       return { rowId: rowId, unit: unit, duplicate: false };
     } catch (e) {
       await NoteDao.rollback(transaction);
+      if (e instanceof KnowledgeUnitWriteError) {
+        throw new KnowledgeUnitWriteError(e.code, e.message);
+      }
       if (e instanceof Error) {
-        throw e;
+        throw new Error(e.message);
       }
       throw new Error(String(e));
     }
@@ -131,8 +137,11 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       return result;
     } catch (e) {
       await NoteDao.rollback(transaction);
+      if (e instanceof KnowledgeUnitWriteError) {
+        throw new KnowledgeUnitWriteError(e.code, e.message);
+      }
       if (e instanceof Error) {
-        throw e;
+        throw new Error(e.message);
       }
       throw new Error(String(e));
     }
@@ -184,8 +193,11 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       return { rowId: 0, unit: updated, duplicate: false };
     } catch (e) {
       await NoteDao.rollback(transaction);
+      if (e instanceof KnowledgeUnitWriteError) {
+        throw new KnowledgeUnitWriteError(e.code, e.message);
+      }
       if (e instanceof Error) {
-        throw e;
+        throw new Error(e.message);
       }
       throw new Error(String(e));
     }
