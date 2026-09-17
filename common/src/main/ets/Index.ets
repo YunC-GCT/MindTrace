@@ -47,6 +47,14 @@ export {
   KGNode,
   KGEdge,
 } from './models/CommonTypes';
+export type {
+  KnowledgeRelationType,
+  KnowledgeRelationSource,
+  KnowledgeRelationStatus,
+  KnowledgeRelation,
+  RagChunk,
+  RagEmbedding,
+} from './models/KnowledgeGraphModels';
 export {
   DifficultyLevel,
   ConfidenceLevel,

@@ -24,6 +24,7 @@
 import { asset } from '@kit.AssetStoreKit';
 import { preferences } from '@kit.ArkData';
 import { util } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 const ASSET_NAME: string = 'llm_api_key';
 const LEGACY_STORE_NAME: string = 'mindtrace_llm';
@@ -98,12 +99,13 @@ export class ApiKeyVault {
       await asset.add(addAttrs);
     } catch (e) {
       // BusinessError 24000003: asset already exists — fallback 到 update
-      const errCode: number = (e as Record<string, Object>)['code'] as number;
+      const error: BusinessError = e as BusinessError;
+      const errCode: number = error.code;
       if (errCode === 24000003) {
         await asset.update(updateQuery, updateAttrs);
         return;
       }
-      throw e as Error;
+      throw new Error(error.message);
     }
   }
 
