@@ -105,8 +105,11 @@ export class ReplyService {
             replyLog.warn('stream transport failed before first event, retrying once');
             continue;
           }
+          if (e instanceof LlmError) {
+            throw new LlmError(e.message, e.kind);
+          }
           if (e instanceof Error) {
-            throw e;
+            throw new Error(e.message);
           }
           throw new Error(JSON.stringify(e));
         }
@@ -136,8 +139,11 @@ export class ReplyService {
         return interrupted;
       }
       if (ReplyService.isTransportError(e)) {
+        if (e instanceof LlmError) {
+          throw new LlmError(e.message, e.kind);
+        }
         if (e instanceof Error) {
-          throw e;
+          throw new Error(e.message);
         }
         throw new Error(JSON.stringify(e));
       }

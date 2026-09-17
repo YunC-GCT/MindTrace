@@ -3,7 +3,17 @@
 // ============================================================================
 
 import { relationalStore } from '@kit.ArkData'
-import { DatabaseHelper, DifficultyLevel, KnowledgeUnit, NoteItem, ReviewStatus, subjectColor, typeColor } from "common"
+import {
+  DatabaseHelper,
+  DifficultyLevel,
+  KnowledgeRelation,
+  KnowledgeUnit,
+  NoteItem,
+  ReviewStatus,
+  subjectColor,
+  typeColor,
+} from "common"
+import { KnowledgeRelationDao } from "../database/KnowledgeRelationDao"
 import { NoteDao } from "../database/NoteDao"
 import { unitToNoteItem } from "../utils/NoteItemMapper"
 
@@ -204,6 +214,16 @@ class UnitBundle {
   }
 }
 
+class GalaxyGraphData {
+  units: KnowledgeUnit[]
+  relations: KnowledgeRelation[]
+
+  constructor(units: KnowledgeUnit[], relations: KnowledgeRelation[]) {
+    this.units = units
+    this.relations = relations
+  }
+}
+
 @Observed
 export class KnowledgeGalaxyViewModel {
   systems: SubjectSystem[] = []
@@ -214,10 +234,12 @@ export class KnowledgeGalaxyViewModel {
 
   async load(context: Context): Promise<boolean> {
     try {
-      const units: KnowledgeUnit[] = this.withPreviewUnits(await this.loadPersistedUnits(context))
+      const graphData: GalaxyGraphData = await this.loadPersistedGraph(context)
+      const units: KnowledgeUnit[] = this.withPreviewUnits(graphData.units)
+      const relations: KnowledgeRelation[] = this.withPreviewRelations(units, graphData.relations)
       this.units = units
       this.notes = this.unitsToNotes(units)
-      this.systems = this.buildSystems(units, this.notes)
+      this.systems = this.buildSystems(units, this.notes, relations)
       this.totalCount = this.countGalaxyPlanets(this.systems)
       this.avgMastery = this.calcAverageMastery(this.systems)
       return true
@@ -232,13 +254,15 @@ export class KnowledgeGalaxyViewModel {
     }
   }
 
-  private async loadPersistedUnits(context: Context): Promise<KnowledgeUnit[]> {
+  private async loadPersistedGraph(context: Context): Promise<GalaxyGraphData> {
     try {
       const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
-      return await new NoteDao(store).queryAll()
+      const units: KnowledgeUnit[] = await new NoteDao(store).queryAllGraphMetadata()
+      const relations: KnowledgeRelation[] = await new KnowledgeRelationDao(store).queryAcceptedEdges()
+      return new GalaxyGraphData(units, relations)
     } catch (e) {
-      console.warn("[KnowledgeGalaxyViewModel] persisted load failed: " + ((e as Error).message ?? String(e)))
-      return []
+      console.warn("[KnowledgeGalaxyViewModel] persisted graph load failed: " + ((e as Error).message ?? String(e)))
+      return new GalaxyGraphData([], [])
     }
   }
 
@@ -293,6 +317,17 @@ export class KnowledgeGalaxyViewModel {
       if (!this.hasUnitId(result, unit.id)) {
         result.push(unit)
       }
+    }
+    return result
+  }
+
+  private withPreviewRelations(units: KnowledgeUnit[], relations: KnowledgeRelation[]): KnowledgeRelation[] {
+    if (!ENABLE_GALAXY_PREVIEW_UNITS) {
+      return relations
+    }
+    const result: KnowledgeRelation[] = relations.slice(0)
+    for (const relation of this.previewRelations(units)) {
+      result.push(relation)
     }
     return result
   }
@@ -465,7 +500,60 @@ export class KnowledgeGalaxyViewModel {
     return units
   }
 
-  private buildSystems(units: KnowledgeUnit[], notes: NoteItem[]): SubjectSystem[] {
+  private previewRelations(units: KnowledgeUnit[]): KnowledgeRelation[] {
+    const relations: KnowledgeRelation[] = []
+    for (const unit of units) {
+      if (!this.isPreviewUnitId(unit.id)) {
+        continue
+      }
+      for (const prerequisiteId of unit.prerequisites) {
+        if (this.isPreviewUnitId(prerequisiteId) && prerequisiteId !== unit.id) {
+          relations.push(this.toPreviewRelation(prerequisiteId, unit.id, "prerequisite"))
+        }
+      }
+      for (const relatedId of unit.related) {
+        if (this.isPreviewUnitId(relatedId) && relatedId !== unit.id) {
+          const fromId: string = unit.id < relatedId ? unit.id : relatedId
+          const toId: string = unit.id < relatedId ? relatedId : unit.id
+          if (!this.hasPreviewRelatedRelation(relations, fromId, toId)) {
+            relations.push(this.toPreviewRelation(fromId, toId, "related"))
+          }
+        }
+      }
+    }
+    return relations
+  }
+
+  private toPreviewRelation(fromUnitId: string, toUnitId: string, relationType: GalaxyLinkType): KnowledgeRelation {
+    const now: number = Date.now()
+    return {
+      id: "preview_relation_" + fromUnitId + "_" + relationType + "_" + toUnitId,
+      fromUnitId: fromUnitId,
+      toUnitId: toUnitId,
+      relationType: relationType,
+      source: "manual",
+      status: "accepted",
+      confidence: 1,
+      weight: 1,
+      reason: "preview",
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    }
+  }
+
+  private hasPreviewRelatedRelation(relations: KnowledgeRelation[], fromUnitId: string, toUnitId: string): boolean {
+    for (const relation of relations) {
+      if (relation.relationType === "related"
+        && relation.fromUnitId === fromUnitId
+        && relation.toUnitId === toUnitId) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private buildSystems(units: KnowledgeUnit[], notes: NoteItem[], relations: KnowledgeRelation[]): SubjectSystem[] {
     const subjectNames: string[] = []
     const subjectBundles: UnitBundle[][] = []
 
@@ -495,7 +583,7 @@ export class KnowledgeGalaxyViewModel {
     while (index < subjectNames.length) {
       const orbits: ChapterOrbit[] = this.buildChapterOrbits(subjectBundles[index])
       const planets: PlanetNode[] = this.flattenPlanets(orbits)
-      const links: GalaxyLink[] = this.buildLinks(subjectBundles[index])
+      const links: GalaxyLink[] = this.buildLinks(subjectBundles[index], relations)
       const mastery: number = this.calcPlanetMastery(planets)
       const count: number = planets.length
       const size: number = this.clamp(38 + Math.sqrt(count) * 5 + mastery * 8, 46, 76)
@@ -618,41 +706,44 @@ export class KnowledgeGalaxyViewModel {
     return planets
   }
 
-  private buildLinks(bundles: UnitBundle[]): GalaxyLink[] {
+  private buildLinks(bundles: UnitBundle[], relations: KnowledgeRelation[]): GalaxyLink[] {
     const links: GalaxyLink[] = []
     const prerequisiteKeys: string[] = []
     const relatedKeys: string[] = []
 
-    for (const bundle of bundles) {
-      for (const prerequisiteId of bundle.unit.prerequisites) {
-        const fromBundle: UnitBundle | null = this.findBundleById(bundles, prerequisiteId)
-        if (fromBundle !== null && fromBundle.unit.id !== bundle.unit.id) {
-          const key: string = fromBundle.unit.id + "->" + bundle.unit.id
+    for (const relation of relations) {
+      if (relation.status !== "accepted") {
+        continue
+      }
+      if (relation.relationType === "prerequisite") {
+        const fromBundle: UnitBundle | null = this.findBundleById(bundles, relation.fromUnitId)
+        const toBundle: UnitBundle | null = this.findBundleById(bundles, relation.toUnitId)
+        if (fromBundle !== null && toBundle !== null && fromBundle.unit.id !== toBundle.unit.id) {
+          const key: string = fromBundle.unit.id + "->" + toBundle.unit.id
           if (prerequisiteKeys.indexOf(key) < 0) {
             prerequisiteKeys.push(key)
             links.push(new GalaxyLink(
               fromBundle.unit.id,
-              bundle.unit.id,
+              toBundle.unit.id,
               "prerequisite",
               fromBundle.chapter,
-              bundle.chapter,
+              toBundle.chapter,
             ))
           }
         }
-      }
-
-      for (const relatedId of bundle.unit.related) {
-        const relatedBundle: UnitBundle | null = this.findBundleById(bundles, relatedId)
-        if (relatedBundle !== null && relatedBundle.unit.id !== bundle.unit.id) {
-          const key: string = this.relatedKey(bundle.unit.id, relatedBundle.unit.id)
+      } else if (relation.relationType === "related") {
+        const fromBundle: UnitBundle | null = this.findBundleById(bundles, relation.fromUnitId)
+        const toBundle: UnitBundle | null = this.findBundleById(bundles, relation.toUnitId)
+        if (fromBundle !== null && toBundle !== null && fromBundle.unit.id !== toBundle.unit.id) {
+          const key: string = this.relatedKey(fromBundle.unit.id, toBundle.unit.id)
           if (relatedKeys.indexOf(key) < 0) {
             relatedKeys.push(key)
             links.push(new GalaxyLink(
-              bundle.unit.id,
-              relatedBundle.unit.id,
+              fromBundle.unit.id,
+              toBundle.unit.id,
               "related",
-              bundle.chapter,
-              relatedBundle.chapter,
+              fromBundle.chapter,
+              toBundle.chapter,
             ))
           }
         }
