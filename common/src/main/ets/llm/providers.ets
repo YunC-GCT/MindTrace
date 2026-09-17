@@ -33,7 +33,7 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: 'deepseek-v4-pro',
     protocolKind: 'openai-compatible',
     docsUrl: 'https://api-docs.deepseek.com/',
-    strictStructuredOutput: true,
+    strictStructuredOutput: false,
   },
   {
     id: 'tongyi',
