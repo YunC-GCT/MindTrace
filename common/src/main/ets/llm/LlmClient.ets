@@ -33,6 +33,7 @@
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { LlmConfig } from './LlmConfig';
+import { LlmErrorBodyFormatter } from './LlmErrorBodyFormatter';
 import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
 import { Logger } from '../utils/logger';
 import {
@@ -122,7 +123,7 @@ export class LlmClient {
 
     // 3. 发 HTTP POST
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
-    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' endpoint=' + endpointUrl + ' stream=false');
+    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' stream=false');
     const httpRequest = http.createHttp();
     let response: http.HttpResponse;
     try {
@@ -135,6 +136,7 @@ export class LlmClient {
         extraData: JSON.stringify(body),
         connectTimeout: timeoutMs,
         readTimeout: timeoutMs,
+        expectDataType: http.HttpDataType.STRING,
       });
     } catch (e) {
       httpRequest.destroy();
@@ -144,12 +146,12 @@ export class LlmClient {
 
     // 4. 状态码校验
     if (response.responseCode !== 200) {
-      const errBody: string = (response.result as string) ?? '';
+      const errBody: string = LlmErrorBodyFormatter.format(response.result);
       throw new LlmError(`LLM API error ${response.responseCode}: ${errBody}`, 'API_ERROR');
     }
 
     // 5. 解析 JSON
-    const raw: string = response.result as string;
+    const raw: string = LlmErrorBodyFormatter.format(response.result);
     let parsed: LlmResponse;
     try {
       parsed = JSON.parse(raw) as LlmResponse;
