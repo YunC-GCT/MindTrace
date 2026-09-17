@@ -18,6 +18,25 @@ export interface LlmGuardJsonResult {
   issues: string[];
 }
 
+export interface LlmGuardJsonCandidate {
+  index: number;
+  start: number;
+  end: number;
+  text: string;
+  parseable: boolean;
+  parseError?: string;
+  object?: Record<string, Object>;
+}
+
+export interface LlmGuardJsonExtractionResult {
+  success: boolean;
+  jsonText: string;
+  candidates: LlmGuardJsonCandidate[];
+  category: string;
+  detail: string;
+  preview: string;
+}
+
 export type LlmJsonValidator = (json: Record<string, Object>) => LlmGuardValidationResult;
 
 export interface LlmGuardJsonOptions extends LlmCallOptions {
@@ -26,6 +45,7 @@ export interface LlmGuardJsonOptions extends LlmCallOptions {
 }
 
 const DEFAULT_MAX_RETRIES: number = 2;
+const DEFAULT_JSON_PREVIEW_LIMIT: number = 180;
 
 export class LlmGuard {
   private client: LlmCaller;
@@ -70,17 +90,112 @@ export class LlmGuard {
   }
 
   extractJsonObject(raw: string): string {
-    const trimmed: string = raw.trim();
-    const codeMatch: RegExpMatchArray | null = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    let source: string = trimmed;
-    if (codeMatch !== null && codeMatch.length >= 2) {
-      source = codeMatch[1].trim();
+    return this.extractJsonObjectWithDetails(raw).jsonText;
+  }
+
+  extractJsonObjectWithDetails(raw: string, previewLimit: number = DEFAULT_JSON_PREVIEW_LIMIT): LlmGuardJsonExtractionResult {
+    const candidates: LlmGuardJsonCandidate[] = this.scanJsonObjectCandidates(raw);
+    const preview: string = this.safePreview(raw, previewLimit);
+    if (candidates.length === 0) {
+      const trimmed: string = raw.trim();
+      let category: string = 'missing';
+      let detail: string = 'none';
+      if (trimmed.startsWith('[') || trimmed === 'null' || trimmed === 'true' || trimmed === 'false'
+        || this.startsWithNumber(trimmed) || trimmed.startsWith('"')) {
+        category = 'non_object';
+        detail = 'top_level_not_object';
+      } else if (trimmed.indexOf('{') >= 0) {
+        category = 'truncated';
+        detail = 'incomplete_object';
+      }
+      return {
+        success: false,
+        jsonText: '',
+        candidates: candidates,
+        category: category,
+        detail: detail,
+        preview: preview,
+      };
     }
-    const braceMatch: RegExpMatchArray | null = source.match(/\{[\s\S]*\}/);
-    if (braceMatch !== null && braceMatch.length > 0) {
-      return braceMatch[0];
+    if (candidates.length > 1) {
+      return {
+        success: false,
+        jsonText: '',
+        candidates: candidates,
+        category: 'ambiguous',
+        detail: 'multiple',
+        preview: preview,
+      };
     }
-    return '';
+    const candidate: LlmGuardJsonCandidate = candidates[0];
+    if (!candidate.parseable) {
+      return {
+        success: false,
+        jsonText: '',
+        candidates: candidates,
+        category: 'parse_error',
+        detail: candidate.parseError ?? 'invalid_json',
+        preview: preview,
+      };
+    }
+    return {
+      success: true,
+      jsonText: candidate.text,
+      candidates: candidates,
+      category: 'ok',
+      detail: 'single',
+      preview: preview,
+    };
+  }
+
+  scanJsonObjectCandidates(raw: string): LlmGuardJsonCandidate[] {
+    const candidates: LlmGuardJsonCandidate[] = [];
+    let objectDepth: number = 0;
+    let arrayDepth: number = 0;
+    let start: number = -1;
+    let inString: boolean = false;
+    let escaping: boolean = false;
+    for (let index: number = 0; index < raw.length; index += 1) {
+      const ch: string = raw[index];
+      if (inString) {
+        if (escaping) {
+          escaping = false;
+        } else if (ch === '\\') {
+          escaping = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (objectDepth === 0) {
+        if (ch === '[') {
+          arrayDepth += 1;
+          continue;
+        }
+        if (ch === ']' && arrayDepth > 0) {
+          arrayDepth -= 1;
+          continue;
+        }
+      }
+      if (ch === '{') {
+        if (objectDepth === 0 && arrayDepth === 0) {
+          start = index;
+        }
+        objectDepth += 1;
+      } else if (ch === '}' && objectDepth > 0) {
+        objectDepth -= 1;
+        if (objectDepth === 0 && start >= 0) {
+          const text: string = raw.substring(start, index + 1);
+          candidates.push(this.buildJsonCandidate(candidates.length, start, index + 1, text));
+          start = -1;
+        }
+      }
+    }
+    return candidates;
   }
 
   private parseAndValidate(
@@ -88,15 +203,16 @@ export class LlmGuard {
     attempts: number,
     validator: LlmJsonValidator,
   ): LlmGuardJsonResult {
-    const jsonText: string = this.extractJsonObject(raw);
-    if (jsonText.length === 0) {
+    const extraction: LlmGuardJsonExtractionResult = this.extractJsonObjectWithDetails(raw);
+    if (!extraction.success) {
       return {
         raw: raw,
         json: {},
         attempts: attempts,
-        issues: ['missing_json_object'],
+        issues: [this.formatJsonExtractionFailure('JSON object', extraction)],
       };
     }
+    const jsonText: string = extraction.jsonText;
     let parsed: Record<string, Object>;
     try {
       parsed = JSON.parse(jsonText) as Record<string, Object>;
@@ -128,5 +244,61 @@ export class LlmGuard {
       enableThinking: options.enableThinking,
     };
     return request;
+  }
+
+  private buildJsonCandidate(index: number, start: number, end: number, text: string): LlmGuardJsonCandidate {
+    try {
+      const parsed: Object = JSON.parse(text) as Object;
+      if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
+        return {
+          index: index,
+          start: start,
+          end: end,
+          text: text,
+          parseable: false,
+          parseError: 'non_object',
+        };
+      }
+      return {
+        index: index,
+        start: start,
+        end: end,
+        text: text,
+        parseable: true,
+        object: parsed as Record<string, Object>,
+      };
+    } catch (e) {
+      return {
+        index: index,
+        start: start,
+        end: end,
+        text: text,
+        parseable: false,
+        parseError: (e as Error).message ?? String(e),
+      };
+    }
+  }
+
+  private formatJsonExtractionFailure(label: string, extraction: LlmGuardJsonExtractionResult): string {
+    return label + ' extraction failed: category=' + extraction.category
+      + ', candidates=' + extraction.candidates.length.toString()
+      + ', detail=' + extraction.detail
+      + ', preview=' + extraction.preview;
+  }
+
+  private safePreview(raw: string, limit: number): string {
+    const compact: string = raw.replace(new RegExp('[\\r\\n\\t]+', 'g'), ' ').trim();
+    let preview: string = compact.length > limit ? compact.substring(0, limit) : compact;
+    preview = preview.split('sk-').join('sk-***');
+    preview = preview.split('Bearer ').join('Bearer ***');
+    return preview;
+  }
+
+  private startsWithNumber(text: string): boolean {
+    if (text.length === 0) {
+      return false;
+    }
+    const code: number = text.charCodeAt(0);
+    return (code >= 48 && code <= 57) || text.startsWith('-');
   }
 }
