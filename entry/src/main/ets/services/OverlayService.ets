@@ -2,15 +2,14 @@
  * OverlayService.ets — 浮层统一调度器
  *
  * 路径: entry/src/main/ets/services/OverlayService.ets
- * 职责: 管理 CameraOverlay / AgentFloatWindow 等全局浮层的互斥开关
+ * 职责: 管理 AgentFloatWindow 等全局浮层的互斥开关
  *       通过 AppStorage 桥接 ArkUI 渲染
  *
  * 参考: v2-ui 的 OM (OverlayManager) — 多通道浮层统一调度
  *
  * 使用:
  *   const overlays = new OverlayService();
- *   overlays.open('camera');   // 开相机(自动关浮窗)
- *   overlays.open('float');    // 开浮窗(自动关相机)
+ *   overlays.open('float');    // 开 AI 浮窗
  *   overlays.close();          // 关当前浮层
  */
 
