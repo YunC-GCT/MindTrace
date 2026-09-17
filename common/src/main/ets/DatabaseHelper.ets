@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 9;
+const DB_SCHEMA_VERSION: number = 10;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -172,6 +172,48 @@ CREATE TABLE IF NOT EXISTS note_generation_log (
     created_at INTEGER NOT NULL
  )`;
 
+const SQL_CREATE_KG_EDGE: string = `
+CREATE TABLE IF NOT EXISTS kg_edge (
+  id TEXT PRIMARY KEY,
+  from_unit_id TEXT NOT NULL,
+  to_unit_id TEXT NOT NULL,
+  relation_type TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'manual',
+  status TEXT NOT NULL DEFAULT 'accepted',
+  confidence REAL NOT NULL DEFAULT 1.0,
+  weight REAL NOT NULL DEFAULT 1.0,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1
+)`;
+
+const SQL_CREATE_RAG_CHUNK: string = `
+CREATE TABLE IF NOT EXISTS rag_chunk (
+  id TEXT PRIMARY KEY,
+  unit_id TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL,
+  content_hash TEXT NOT NULL DEFAULT '',
+  token_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+
+const SQL_CREATE_RAG_EMBEDDING: string = `
+CREATE TABLE IF NOT EXISTS rag_embedding (
+  id TEXT PRIMARY KEY,
+  chunk_id TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  dimension INTEGER NOT NULL DEFAULT 0,
+  metric TEXT NOT NULL DEFAULT 'cosine',
+  vector_json TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+
 const SQL_INDEX_KNOWLEDGE_CREATED: string =
   "CREATE INDEX IF NOT EXISTS idx_knowledge_unit_created_at ON knowledge_unit(created_at)";
 const SQL_INDEX_KNOWLEDGE_REVIEW: string =
@@ -190,6 +232,18 @@ const SQL_INDEX_NOTE_GENERATION_RUN_STATUS: string =
   "CREATE INDEX IF NOT EXISTS idx_note_generation_run_status ON note_generation_run(status, updated_at)";
 const SQL_INDEX_NOTE_GENERATION_LOG_RUN: string =
   "CREATE INDEX IF NOT EXISTS idx_note_generation_log_run ON note_generation_log(run_id, created_at)";
+const SQL_INDEX_KG_EDGE_FROM: string =
+  "CREATE INDEX IF NOT EXISTS idx_kg_edge_from ON kg_edge(from_unit_id)";
+const SQL_INDEX_KG_EDGE_TO: string =
+  "CREATE INDEX IF NOT EXISTS idx_kg_edge_to ON kg_edge(to_unit_id)";
+const SQL_INDEX_KG_EDGE_STATUS: string =
+  "CREATE INDEX IF NOT EXISTS idx_kg_edge_status ON kg_edge(status)";
+const SQL_INDEX_KG_EDGE_RELATION: string =
+  "CREATE UNIQUE INDEX IF NOT EXISTS uq_kg_edge_relation ON kg_edge(from_unit_id, to_unit_id, relation_type)";
+const SQL_INDEX_RAG_CHUNK_UNIT: string =
+  "CREATE INDEX IF NOT EXISTS idx_rag_chunk_unit ON rag_chunk(unit_id, chunk_index)";
+const SQL_INDEX_RAG_EMBEDDING_CHUNK: string =
+  "CREATE INDEX IF NOT EXISTS idx_rag_embedding_chunk ON rag_embedding(chunk_id)";
 
 const SQL_MIGRATE_KNOWLEDGE_SUBJECT: string =
   "ALTER TABLE knowledge_unit ADD COLUMN subject TEXT NOT NULL DEFAULT \"\"";
@@ -280,6 +334,9 @@ export class DatabaseHelper {
       SQL_CREATE_NOTE_GENERATION_CHECKPOINT,
       SQL_CREATE_NOTE_GENERATION_COMMIT,
       SQL_CREATE_NOTE_GENERATION_LOG,
+      SQL_CREATE_KG_EDGE,
+      SQL_CREATE_RAG_CHUNK,
+      SQL_CREATE_RAG_EMBEDDING,
       SQL_INDEX_KNOWLEDGE_CREATED,
       SQL_INDEX_KNOWLEDGE_REVIEW,
       SQL_INDEX_NOTE_REVISION_NOTE,
@@ -289,6 +346,12 @@ export class DatabaseHelper {
       SQL_INDEX_AGENT_MEMORY_SUMMARY,
       SQL_INDEX_NOTE_GENERATION_RUN_STATUS,
       SQL_INDEX_NOTE_GENERATION_LOG_RUN,
+      SQL_INDEX_KG_EDGE_FROM,
+      SQL_INDEX_KG_EDGE_TO,
+      SQL_INDEX_KG_EDGE_STATUS,
+      SQL_INDEX_KG_EDGE_RELATION,
+      SQL_INDEX_RAG_CHUNK_UNIT,
+      SQL_INDEX_RAG_EMBEDDING_CHUNK,
     ];
 
     for (const sql of statements) {

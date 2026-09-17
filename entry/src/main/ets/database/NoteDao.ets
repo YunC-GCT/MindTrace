@@ -330,6 +330,29 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
     });
   }
 
+  // Knowledge graph needs only display/review metadata. It intentionally skips content and embedding.
+  async queryAllGraphMetadata(): Promise<KnowledgeUnit[]> {
+    const predicates = new relationalStore.RdbPredicates('knowledge_unit');
+    predicates.orderByDesc('updated_at');
+
+    return new Promise<KnowledgeUnit[]>((resolve, reject) => {
+      this.store.query(predicates, NOTE_METADATA_COLUMNS, (_err, resultSet) => {
+        if (_err) {
+          reject(new Error('NoteDao.queryAllGraphMetadata failed: ' + _err.message));
+          return;
+        }
+        const units: KnowledgeUnit[] = [];
+        if (resultSet.goToFirstRow()) {
+          do {
+            units.push(NoteDao.rowToMetadataUnit(resultSet));
+          } while (resultSet.goToNextRow());
+        }
+        resultSet.close();
+        resolve(units);
+      });
+    });
+  }
+
   // 按复习状态查询
   async queryByReviewStatus(status: ReviewStatus): Promise<KnowledgeUnit[]> {
     const predicates = new relationalStore.RdbPredicates('knowledge_unit');
