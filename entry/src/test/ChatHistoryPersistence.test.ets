@@ -22,7 +22,11 @@ import {
   ChatHistoryStorePort,
   STREAM_SAVE_THROTTLE_MS,
 } from '../main/ets/services/ChatHistoryPersistence';
-import { ChatSession } from '../main/ets/overlays/AgentFloatWindow/chat/ChatModels';
+import {
+  ChatSession,
+  copyChatSessionsForMemory,
+  copyChatSessionsForPersistence,
+} from '../main/ets/overlays/AgentFloatWindow/chat/ChatModels';
 
 const SAMPLE_SESSIONS: ChatSession[] = [{
   id: 's1',
@@ -78,6 +82,7 @@ class FakeStore implements ChatHistoryStorePort {
       this.failWrites -= 1;
       return {
         success: false,
+        state: 'failed',
         stage: this.failStage,
         transport: 'taskpool',
         retryable: true,
@@ -90,6 +95,7 @@ class FakeStore implements ChatHistoryStorePort {
     this.exists = true;
     return {
       success: true,
+      state: 'completed',
       stage: 'VERIFY',
       transport: 'taskpool',
       retryable: false,
@@ -251,6 +257,17 @@ export default function chatHistoryPersistenceTest(): void {
       expect(result.diagnostic.indexOf('思考') < 0).assertTrue();
     });
 
+    it('should distinguish an idle flush from an actual write stage', 0, async () => {
+      const store: FakeStore = new FakeStore();
+      const persistence: ChatHistoryPersistence = new ChatHistoryPersistence(store, new FakePreferences(''), 'sessions.json');
+      const result: ChatHistorySaveResult = await persistence.flush();
+      expect(result.success).assertTrue();
+      expect(result.state).assertEqual('idle');
+      expect(result.stage === undefined).assertTrue();
+      expect(result.diagnostic).assertContain('state=idle');
+      expect(store.writes.length).assertEqual(0);
+    });
+
     it('should surface prepare commit and verify stage failures for recovery handling', 0, async () => {
       const prepareStore: FakeStore = new FakeStore();
       prepareStore.failWrites = 1;
@@ -347,6 +364,41 @@ export default function chatHistoryPersistenceTest(): void {
       expect(result.success).assertTrue();
       expect(store.writes[0].indexOf('reasoningExpanded') < 0).assertTrue();
       expect(store.writes[0]).assertContain('思考');
+    });
+
+    it('should retain reasoningExpanded only in the in-memory working copy', 0, () => {
+      const sessions: ChatSession[] = [{
+        id: 's1',
+        name: '数学',
+        messages: [{
+          id: 1,
+          role: 'ai',
+          content: '答案',
+          ts: 1,
+          streaming: true,
+          reasoning: '思考',
+          reasoningExpanded: false,
+        }],
+      }];
+      const memory: ChatSession[] = copyChatSessionsForMemory(sessions);
+      const snapshot: ChatSession[] = copyChatSessionsForPersistence(sessions);
+      expect(memory[0].messages[0].reasoningExpanded).assertFalse();
+      expect(snapshot[0].messages[0].reasoningExpanded === undefined).assertTrue();
+      expect(memory[0].messages[0].streaming).assertTrue();
+      expect(snapshot[0].messages[0].reasoning).assertEqual('思考');
+    });
+
+    it('should resolve an in-flight flush with the actual write result', 0, async () => {
+      const store: FakeStore = new FakeStore();
+      const persistence: ChatHistoryPersistence = new ChatHistoryPersistence(store, new FakePreferences(''), 'sessions.json');
+      persistence.save(SAMPLE_SESSIONS, true);
+      await wait(0);
+      const flushing: Promise<ChatHistorySaveResult> = persistence.flush();
+      store.releaseNext();
+      const result: ChatHistorySaveResult = await flushing;
+      expect(result.success).assertTrue();
+      expect(result.state).assertEqual('completed');
+      expect(result.stage).assertEqual('VERIFY');
     });
 
     it('should keep one FIFO writer and force lifecycle saves through the queue', 0, async () => {

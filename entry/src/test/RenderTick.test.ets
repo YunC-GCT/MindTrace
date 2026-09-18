@@ -157,33 +157,54 @@ export default function renderTickTest(): void {
   });
 
   describe('RenderTick.issue140_single_instance', () => {
-    it('rejects_a_second_live_instance_in_development_but_allows_release_noop', 0, () => {
+    it('rejects_a_second_live_instance_in_every_build_path_without_side_effects', 0, () => {
       const firstTimer: RecordingTimer = new RecordingTimer();
       const firstHandlers: RecordingHandlers = new RecordingHandlers();
       const first: RenderTick = new RenderTick(firstHandlers, firstTimer);
-      let rejected: boolean = false;
-      try {
-        const secondTimer: RecordingTimer = new RecordingTimer();
-        const secondHandlers: RecordingHandlers = new RecordingHandlers();
-        const developmentOptions: RenderTickOptions = { developmentGuard: true };
-        const second: RenderTick = new RenderTick(secondHandlers, secondTimer, developmentOptions);
-        second.dispose();
-      } catch (e) {
-        rejected = true;
-      }
-      expect(rejected).assertTrue();
-
+      let releaseRejected: boolean = false;
+      let releaseErrorMessage: string = '';
       const releaseTimer: RecordingTimer = new RecordingTimer();
       const releaseHandlers: RecordingHandlers = new RecordingHandlers();
-      const release: RenderTick = new RenderTick(releaseHandlers, releaseTimer);
-      expect(release.isDisposed()).assertTrue();
-      release.requestTick();
+      try {
+        const second: RenderTick = new RenderTick(releaseHandlers, releaseTimer);
+        second.requestTick();
+      } catch (e) {
+        releaseRejected = true;
+        releaseErrorMessage = (e as Error).message;
+      }
+      expect(releaseRejected).assertTrue();
+      expect(releaseErrorMessage).assertEqual('Only one RenderTick instance is supported');
       expect(releaseTimer.startCount).assertEqual(0);
+      expect(releaseTimer.stopCount).assertEqual(0);
+      expect(releaseHandlers.disconnectCount).assertEqual(0);
+
+      let developmentRejected: boolean = false;
+      let developmentErrorMessage: string = '';
+      const developmentTimer: RecordingTimer = new RecordingTimer();
+      const developmentHandlers: RecordingHandlers = new RecordingHandlers();
+      try {
+        const developmentOptions: RenderTickOptions = { developmentGuard: true };
+        const second: RenderTick = new RenderTick(developmentHandlers, developmentTimer, developmentOptions);
+        second.requestTick();
+      } catch (e) {
+        developmentRejected = true;
+        developmentErrorMessage = (e as Error).message;
+      }
+      expect(developmentRejected).assertTrue();
+      expect(developmentErrorMessage).assertEqual('Only one RenderTick instance is supported');
+      expect(developmentTimer.startCount).assertEqual(0);
+      expect(developmentTimer.stopCount).assertEqual(0);
+      expect(developmentHandlers.disconnectCount).assertEqual(0);
+      first.requestTick();
+      firstTimer.fire();
+      expect(firstHandlers.events.join(',')).assertEqual('data,geometry,scroll');
       first.dispose();
 
       const replacementTimer: RecordingTimer = new RecordingTimer();
       const replacementHandlers: RecordingHandlers = new RecordingHandlers();
       const replacement: RenderTick = new RenderTick(replacementHandlers, replacementTimer);
+      replacement.requestTick();
+      replacementTimer.fire();
       replacement.dispose();
       expect(replacementHandlers.disconnectCount).assertEqual(1);
     });

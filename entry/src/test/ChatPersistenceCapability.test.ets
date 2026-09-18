@@ -1,8 +1,9 @@
 /**
- * ChatPersistenceCapability.test.ets — ticket #122 聊天持久化能力门禁测试
+ * ChatPersistenceCapability.test.ets — test-only 持久化能力探针边界测试
  *
  * 路径: entry/src/test/ChatPersistenceCapability.test.ets
- * 职责: 验证 TaskPool、Worker、AtomicFile 能力探针的成功/失败/显式 blocker 语义。
+ * 职责: 验证 test-only capability probe 与生产私有文件持久化边界，以及
+ * TaskPool、Worker、AtomicFile 的成功/失败/显式 blocker 语义。
  * 依赖: @ohos/hypium; @ohos.file.fs; services/ChatPersistenceCapability; services/ChatFilesDirSeam。
  *
  * 数据流:
@@ -90,7 +91,7 @@ function assertSnapshotStage(result: SnapshotTaskResult, stage: AtomicWriteStage
 }
 
 export default function chatPersistenceCapabilityTest(): void {
-  describe('ChatPersistenceCapability.issue122_snapshot_task', () => {
+  describe('ChatPersistenceCapability.test_only_snapshot_task', () => {
     afterAll((): void => {
       cleanupTestFiles();
       resetChatFilesDirSeamForTest();
@@ -132,7 +133,7 @@ export default function chatPersistenceCapabilityTest(): void {
     });
   });
 
-  describe('ChatPersistenceCapability.issue122_worker_fallback', () => {
+  describe('ChatPersistenceCapability.test_only_worker_protocol', () => {
     it('should expose a build-wired Worker fallback protocol or record a Worker blocker', 0, async () => {
       const result: SnapshotTaskResult = await ChatPersistenceCapability.verifyWorkerFallback(SAMPLE_SNAPSHOT);
       expect(result.transport).assertEqual('worker');
@@ -157,9 +158,23 @@ export default function chatPersistenceCapabilityTest(): void {
       expect(result.diagnostic.indexOf('failure-response-observed') >= 0 || result.diagnostic.indexOf('blocker=') >= 0).assertTrue();
       expect(result.diagnostic.indexOf('content') < 0).assertTrue();
     });
+
+    it('should distinguish an unsupported structured request from a write request', 0, async () => {
+      const result: SnapshotTaskResult = await ChatPersistenceCapability.verifyWorkerUnsupportedRequest();
+      expect(result.success).assertFalse();
+      expect(result.transport).assertEqual('worker');
+      expect(result.stage === 'PREPARE' || result.stage === 'WRITE').assertTrue();
+      if (result.stage === 'PREPARE') {
+        expect(result.diagnostic).assertContain('unsupported-request');
+        expect(result.diagnostic).assertContain('response=unsupported');
+      } else {
+        expect(result.diagnostic).assertContain('blocker=');
+      }
+      assertContentSafeDiagnostic(result.diagnostic);
+    });
   });
 
-  describe('ChatPersistenceCapability.issue122_atomic_file', () => {
+  describe('ChatPersistenceCapability.test_only_atomic_file', () => {
     it('should commit a snapshot with AtomicFile or record an AtomicFile blocker', 0, async () => {
       publishResolvedFilesDirForTest();
       const result: PersistenceCapabilityResult = await ChatPersistenceCapability.writeAtomicSnapshot(SAMPLE_SNAPSHOT);
@@ -199,10 +214,15 @@ export default function chatPersistenceCapabilityTest(): void {
     });
   });
 
-  describe('ChatPersistenceCapability.issue122_production_boundary', () => {
-    it('should enable production chat-history migration', 0, () => {
+  describe('ChatPersistenceCapability.test_only_vs_production_boundary', () => {
+    it('should document private-file production persistence and migration-read-only Preferences', 0, () => {
       expect(ChatPersistenceCapability.productionMigrationEnabled()).assertTrue();
       expect(ChatPersistenceCapability.snapshotPathShape()).assertEqual('chat-history/sessions.json');
+    });
+
+    it('should keep the test capability seam separate from the production service', 0, () => {
+      expect(ChatPersistenceCapability.productionMigrationEnabled()).assertTrue();
+      expect(ChatPersistenceCapability.snapshotPathShape().indexOf('chat-history') >= 0).assertTrue();
     });
   });
 }

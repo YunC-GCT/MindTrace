@@ -1,8 +1,9 @@
 /**
- * ChatPersistenceWorker.ets — 聊天持久化 Worker fallback 能力探针
+ * ChatPersistenceWorker.ets — 聊天持久化 Worker fallback 写入协议
  *
  * 路径: entry/src/main/ets/workers/ChatPersistenceWorker.ets
- * 职责: 响应主线程能力探针,验证 Worker 构建接线与请求/响应失败语义。
+ * 职责: 区分 string capability probe 与 kind=write structured request，并返回可诊断的
+ * unsupported、AtomicFile stage 和 content-safe failure response。
  * 依赖: @kit.ArkTS(worker)。
  *
  * 数据流:
@@ -14,7 +15,7 @@
 
 import { MessageEvents, ThreadWorkerGlobalScope, worker } from '@kit.ArkTS';
 import fileIo from '@ohos.file.fs';
-import { ChatSession } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import { ChatSession, copyChatSessionsForPersistence } from '../overlays/AgentFloatWindow/chat/ChatModels';
 
 const WORKER_SUCCESS_REQUEST: string = 'worker-capability-success';
 const WORKER_SUCCESS_RESPONSE: string = 'worker-capability-ok';
@@ -30,7 +31,9 @@ interface ChatWorkerRequest {
 }
 
 interface ChatWorkerResponse {
-  kind: string;
+  // write-result is a completed write protocol response; unsupported-request
+  // is never interpreted as a write by the caller.
+  kind: 'write-result' | 'unsupported-request';
   success: boolean;
   stage: AtomicWriteStage;
   schemaVersion: number;
@@ -54,6 +57,7 @@ function diagnostic(stage: AtomicWriteStage, token: string): string {
 }
 
 workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
+  // Capability probes are fixed string messages and only verify Worker wiring.
   if (typeof event.data === 'string') {
     const request: string = event.data;
     const response: string = request === WORKER_SUCCESS_REQUEST
@@ -65,11 +69,11 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
   const request: ChatWorkerRequest = event.data;
   if (request.kind !== 'write') {
     const unsupported: ChatWorkerResponse = {
-      kind: 'write-result',
+      kind: 'unsupported-request',
       success: false,
       stage: 'PREPARE',
       schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
-      diagnostic: diagnostic('PREPARE', 'error=unsupported-request'),
+      diagnostic: diagnostic('PREPARE', 'error=unsupported-request; response=unsupported'),
     };
     workerPort.postMessage(unsupported);
     return;
@@ -79,7 +83,9 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
   try {
     const snapshot: ChatWorkerSnapshot = {
       schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
-      sessions: request.sessions,
+      // The production service sends a persistence snapshot. Copy again at
+      // this boundary so UI-only reasoningExpanded can never reach disk.
+      sessions: copyChatSessionsForPersistence(request.sessions),
     };
     if (request.migratedFrom !== undefined && request.migratedFrom.length > 0) {
       snapshot.migratedFrom = request.migratedFrom;

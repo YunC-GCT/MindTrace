@@ -14,6 +14,10 @@
  * - messages 是唯一持久化真源;不保存 reasoningExpanded 等 UI 状态。
  * - 新文件存在但损坏时不回退 Preferences,只返回内存默认会话与可恢复诊断。
  * - filesDir 缺失时阻塞文件持久化,不回退 Preferences 写入。
+ * - Production save ownership is this private-file service. Preferences is a
+ *   migration read source only; ChatPersistenceCapability is test-side evidence.
+ * - AtomicWriteStage describes actual AtomicFile work only. flush() returns
+ *   state=idle with no stage when no pending/in-flight write exists.
  * - 诊断只含阶段、错误码、schemaVersion 与时间戳,不含聊天正文/会话名/推理内容/密钥。
  *
  * ArkTS 1.1 strict 适配: 显式 interface/type;无 any/unknown;对象字面量均有类型上下文。
@@ -22,7 +26,11 @@
 import fileIo from '@ohos.file.fs';
 import { MessageEvents, taskpool, worker } from '@kit.ArkTS';
 import { preferences } from '@kit.ArkData';
-import { ChatMsg, ChatSession } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import {
+  ChatMsg,
+  ChatSession,
+  copyChatSessionsForPersistence,
+} from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { ChatFilesDirSeam } from './ChatFilesDirSeam';
 
 export const CHAT_HISTORY_SCHEMA_VERSION: number = 1;
@@ -31,6 +39,7 @@ export const STREAM_SAVE_THROTTLE_MS: number = 500;
 export type AtomicWriteStage = 'PREPARE' | 'WRITE' | 'COMMIT' | 'VERIFY';
 export type PersistenceTransport = 'taskpool' | 'worker';
 export type ChatHistoryLoadState = 'default' | 'migrated' | 'migrationFailed' | 'loaded' | 'corrupt' | 'blocked';
+export type ChatHistorySaveState = 'idle' | 'completed' | 'failed' | 'blocked' | 'not-initialized';
 
 export interface ChatHistorySnapshot {
   schemaVersion: number;
@@ -46,10 +55,18 @@ export interface ChatHistoryLoadResult {
 
 export interface ChatHistorySaveResult {
   success: boolean;
-  stage: AtomicWriteStage;
+  state: ChatHistorySaveState;
+  stage: AtomicWriteStage | undefined;
   transport: PersistenceTransport;
   retryable: boolean;
   diagnostic: string;
+}
+
+export interface IdleSaveResult extends ChatHistorySaveResult {
+  success: true;
+  state: 'idle';
+  stage: undefined;
+  retryable: false;
 }
 
 export interface ChatHistoryStorePort {
@@ -140,7 +157,7 @@ function parseSessions(raw: string): ChatSession[] | undefined {
         return undefined;
       }
     }
-    return sessions.length > 0 ? copySessions(sessions) : undefined;
+    return sessions.length > 0 ? copyChatSessionsForPersistence(sessions) : undefined;
   } catch (error) {
     return undefined;
   }
@@ -166,7 +183,7 @@ function parseSnapshot(raw: string): ChatHistorySnapshot | undefined {
     if (snapshot.migratedFrom === 'preferences') {
       validated.migratedFrom = 'preferences';
     }
-    validated.sessions = copySessions(validated.sessions);
+    validated.sessions = copyChatSessionsForPersistence(validated.sessions);
     return validated;
   } catch (error) {
     return undefined;
@@ -282,6 +299,7 @@ class FileChatHistoryStore implements ChatHistoryStorePort {
         stage: result.stage,
         transport: 'taskpool',
         retryable: !result.success,
+        state: result.success ? 'completed' : 'failed',
         diagnostic: 'transport=taskpool; ' + result.diagnostic,
       };
     } catch (error) {
@@ -316,6 +334,7 @@ async function runWorkerWrite(
       }
       resolve({
         success: false,
+        state: 'failed',
         stage: 'PREPARE',
         transport: 'worker',
         retryable: true,
@@ -337,8 +356,20 @@ async function runWorkerWrite(
       workerInstance = new worker.ThreadWorker(WORKER_SCRIPT);
       workerInstance.onmessage = (event: MessageEvents): void => {
         const response: WorkerWriteResponse = event.data;
+        if (response.kind !== 'write-result') {
+          finish({
+            success: false,
+            state: 'failed',
+            stage: 'PREPARE',
+            transport: 'worker',
+            retryable: false,
+            diagnostic: 'transport=worker; ' + diagnostic('PREPARE', 'error=unsupported-response'),
+          });
+          return;
+        }
         finish({
           success: response.success,
+          state: response.success ? 'completed' : 'failed',
           stage: response.stage,
           transport: 'worker',
           retryable: !response.success,
@@ -348,6 +379,7 @@ async function runWorkerWrite(
       workerInstance.onAllErrors = (): void => {
         finish({
           success: false,
+          state: 'failed',
           stage: 'WRITE',
           transport: 'worker',
           retryable: true,
@@ -366,6 +398,7 @@ async function runWorkerWrite(
     } catch (error) {
       finish({
         success: false,
+        state: 'failed',
         stage: 'PREPARE',
         transport: 'worker',
         retryable: true,
@@ -390,6 +423,7 @@ export class ChatHistoryPersistence {
   private lastFailedMigratedFrom: string | undefined;
   private pendingMigrationFrom: string | undefined;
   private waiters: SaveWaiter[] = [];
+  private flushWaiters: SaveWaiter[] = [];
 
   constructor(store: ChatHistoryStorePort, preferencesPort: ChatHistoryPreferencesPort, snapshotPath: string) {
     this.store = store;
@@ -441,7 +475,7 @@ export class ChatHistoryPersistence {
     if (!writeResult.success) {
       this.consecutiveFailures += 1;
       this.lastFailure = writeResult.diagnostic;
-      this.lastFailedSessions = copySessions(legacy);
+      this.lastFailedSessions = copyChatSessionsForPersistence(legacy);
       this.lastFailedMigratedFrom = 'preferences';
       this.pendingMigrationFrom = 'preferences';
       return {
@@ -461,7 +495,7 @@ export class ChatHistoryPersistence {
     if (this.snapshotPath.length === 0) {
       return Promise.resolve(ChatHistoryPersistence.blockedSaveResult());
     }
-    this.pending = copySessions(sessions);
+    this.pending = copyChatSessionsForPersistence(sessions);
     this.pendingMigratedFrom = this.pendingMigrationFrom;
     if (force) {
       this.forcePending = true;
@@ -491,9 +525,10 @@ export class ChatHistoryPersistence {
     this.clearTimer();
     if (!this.writeInFlight && this.pending === undefined) {
       this.forcePending = false;
-      const idle: ChatHistorySaveResult = {
+      const idle: IdleSaveResult = {
         success: true,
-        stage: 'PREPARE',
+        state: 'idle',
+        stage: undefined,
         transport: 'taskpool',
         retryable: false,
         diagnostic: 'state=idle; schemaVersion=' + CHAT_HISTORY_SCHEMA_VERSION.toString()
@@ -501,9 +536,14 @@ export class ChatHistoryPersistence {
       };
       return Promise.resolve(idle);
     }
+    if (this.writeInFlight) {
+      return new Promise<ChatHistorySaveResult>((resolve: (value: ChatHistorySaveResult) => void): void => {
+        this.flushWaiters.push({ resolve: resolve });
+      });
+    }
     const result: Promise<ChatHistorySaveResult> = new Promise<ChatHistorySaveResult>(
       (resolve: (value: ChatHistorySaveResult) => void): void => {
-        this.waiters.push({ resolve: resolve });
+        this.flushWaiters.push({ resolve: resolve });
       },
     );
     this.drain();
@@ -512,7 +552,7 @@ export class ChatHistoryPersistence {
 
   retry(): Promise<ChatHistorySaveResult> {
     if (this.lastFailedSessions !== undefined && this.pending === undefined) {
-      this.pending = copySessions(this.lastFailedSessions);
+      this.pending = copyChatSessionsForPersistence(this.lastFailedSessions);
       this.pendingMigratedFrom = this.lastFailedMigratedFrom;
     }
     this.forcePending = true;
@@ -548,11 +588,19 @@ export class ChatHistoryPersistence {
         for (const waiter of currentWaiters) {
           waiter.resolve(reported);
         }
+        if (this.pending === undefined) {
+          const completedFlushWaiters: SaveWaiter[] = this.flushWaiters;
+          this.flushWaiters = [];
+          for (const waiter of completedFlushWaiters) {
+            waiter.resolve(reported);
+          }
+        }
         this.afterDrain(force);
       },
     ).catch((error: Error): void => {
       const failed: ChatHistorySaveResult = {
         success: false,
+        state: 'failed',
         stage: 'WRITE',
         transport: 'taskpool',
         retryable: true,
@@ -562,6 +610,13 @@ export class ChatHistoryPersistence {
       const reported: ChatHistorySaveResult = this.recordResult(failed, sessions, metadata);
       for (const waiter of currentWaiters) {
         waiter.resolve(reported);
+      }
+      if (this.pending === undefined) {
+        const completedFlushWaiters: SaveWaiter[] = this.flushWaiters;
+        this.flushWaiters = [];
+        for (const waiter of completedFlushWaiters) {
+          waiter.resolve(reported);
+        }
       }
       this.afterDrain(force);
     });
@@ -604,6 +659,7 @@ export class ChatHistoryPersistence {
     this.lastFailure = result.diagnostic + recovery;
     return {
       success: false,
+      state: 'failed',
       stage: result.stage,
       transport: result.transport,
       retryable: result.retryable,
@@ -621,6 +677,7 @@ export class ChatHistoryPersistence {
   private static blockedSaveResult(): ChatHistorySaveResult {
     const result: ChatHistorySaveResult = {
       success: false,
+      state: 'blocked',
       stage: 'PREPARE',
       transport: 'taskpool',
       retryable: true,
@@ -628,28 +685,6 @@ export class ChatHistoryPersistence {
     };
     return result;
   }
-}
-
-function copySessions(sessions: ChatSession[]): ChatSession[] {
-  const result: ChatSession[] = [];
-  for (const session of sessions) {
-    const messages: ChatMsg[] = [];
-    for (const message of session.messages) {
-      const copied: ChatMsg = {
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        ts: message.ts,
-        streaming: message.streaming,
-      };
-      if (message.reasoning !== undefined) {
-        copied.reasoning = message.reasoning;
-      }
-      messages.push(copied);
-    }
-    result.push({ id: session.id, name: session.name, messages: messages });
-  }
-  return result;
 }
 
 export class PreferencesChatHistoryPort implements ChatHistoryPreferencesPort {

@@ -51,25 +51,18 @@ export class RenderTick {
   private pending: boolean = false;
   private shown: boolean = true;
   private disposed: boolean = false;
-  private disabled: boolean = false;
-
   constructor(handlers: RenderTickPhaseHandlers, timer: RenderTickTimer = new PlatformRenderTickTimer(),
     options: RenderTickOptions = RELEASE_RENDER_TICK_OPTIONS) {
     this.handlers = handlers;
     this.timer = timer;
     if (RenderTick.activeInstanceCount > 0) {
-      if (options.developmentGuard) {
-        throw new Error('Only one RenderTick instance is supported');
-      }
-      this.disabled = true;
-      this.disposed = true;
-      return;
+      throw new Error('Only one RenderTick instance is supported');
     }
     RenderTick.activeInstanceCount += 1;
   }
 
   requestTick(): void {
-    if (this.disabled || this.disposed) {
+    if (this.disposed) {
       return;
     }
     this.pending = true;
@@ -77,7 +70,7 @@ export class RenderTick {
   }
 
   setShow(show: boolean): void {
-    if (this.disabled || this.disposed || this.shown === show) {
+    if (this.disposed || this.shown === show) {
       return;
     }
     if (!show) {
@@ -91,7 +84,7 @@ export class RenderTick {
   }
 
   dispose(): void {
-    if (this.disabled || this.disposed) {
+    if (this.disposed) {
       return;
     }
     this.disposed = true;
@@ -106,7 +99,7 @@ export class RenderTick {
   }
 
   isDisposed(): boolean {
-    return this.disabled || this.disposed;
+    return this.disposed;
   }
 
   hasPending(): boolean {
@@ -114,7 +107,7 @@ export class RenderTick {
   }
 
   private ensureStarted(): void {
-    if (this.disabled || this.disposed || !this.shown || !this.pending || this.timerId >= 0) {
+    if (this.disposed || !this.shown || !this.pending || this.timerId >= 0) {
       return;
     }
     this.timerId = this.timer.start((): void => { this.onTimer(); }, TICK_MS);
@@ -130,7 +123,7 @@ export class RenderTick {
   }
 
   private onTimer(): void {
-    if (this.disabled || this.disposed || !this.shown) {
+    if (this.disposed || !this.shown) {
       this.stopTimer();
       return;
     }

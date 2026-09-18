@@ -12,13 +12,15 @@
  * 边界:
  * - Preferences 仅作为旧历史迁移读取源,生产保存走应用私有文件快照。
  * - ChatSessionManager 不持 UI 引用;只接收调用方传入的纯 ChatSession[] 快照。
+ * - Active-session handoff uses the full in-memory copy; persistence removes
+ *   UI-only reasoningExpanded through ChatHistoryPersistence.
  * - filesDir 由 ChatFilesDirSeam 注入;缺失时由持久化服务阻塞而不回退 Preferences 写入。
  *
  * ArkTS 1.1 strict 适配: 显式返回类型;无 any/unknown;无构造器参数属性。
  */
 
 import { preferences } from '@kit.ArkData';
-import { ChatMsg, ChatSession } from './ChatModels';
+import { ChatSession, copyChatSessionsForMemory } from './ChatModels';
 import { ChatFilesDirSeam } from '../../../services/ChatFilesDirSeam';
 import {
   ChatHistoryLoadResult,
@@ -121,6 +123,7 @@ export class ChatSessionManager {
     if (ChatSessionManager.activeManager === null || ChatSessionManager.latestSessions === undefined) {
       const result: ChatHistorySaveResult = {
         success: false,
+        state: 'not-initialized',
         stage: 'PREPARE',
         transport: 'taskpool',
         retryable: false,
@@ -128,13 +131,14 @@ export class ChatSessionManager {
       };
       return Promise.resolve(result);
     }
-    const sessions: ChatSession[] = ChatSessionManager.copySessions(ChatSessionManager.latestSessions);
+    const sessions: ChatSession[] = copyChatSessionsForMemory(ChatSessionManager.latestSessions);
     return ChatSessionManager.activeManager.flush(sessions);
   }
 
   private static notInitializedResult(): ChatHistorySaveResult {
     const result: ChatHistorySaveResult = {
       success: false,
+      state: 'not-initialized',
       stage: 'PREPARE',
       transport: 'taskpool',
       retryable: false,
@@ -143,28 +147,4 @@ export class ChatSessionManager {
     return result;
   }
 
-  private static copySessions(sessions: ChatSession[]): ChatSession[] {
-    const copied: ChatSession[] = [];
-    for (const session of sessions) {
-      const messages: ChatMsg[] = [];
-      for (const message of session.messages) {
-        const copiedMessage: ChatMsg = {
-          id: message.id,
-          role: message.role,
-          content: message.content,
-          ts: message.ts,
-          streaming: message.streaming,
-        };
-        if (message.reasoning !== undefined) {
-          copiedMessage.reasoning = message.reasoning;
-        }
-        if (message.reasoningExpanded !== undefined) {
-          copiedMessage.reasoningExpanded = message.reasoningExpanded;
-        }
-        messages.push(copiedMessage);
-      }
-      copied.push({ id: session.id, name: session.name, messages: messages });
-    }
-    return copied;
-  }
 }
