@@ -74,18 +74,33 @@ export struct AgentFloatWindow {
       this.sheetOffset = 0;
     }
   }
-  aboutToDisappear(): void { if (this.mainWindow) { this.mainWindow.off('keyboardHeightChange'); }; this.sm.save(this.sessions); }
+  aboutToDisappear(): void {
+    if (this.mainWindow) {
+      this.mainWindow.off('keyboardHeightChange');
+    }
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+  }
   onShowChange(): void {
     if (this.show) {
       this.openAnimated();
       return;
     }
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
     this.closeAnimated();
   }
-  onPendingImageChange(): void { if (this.pendingImageUri.length > 0) { this.inputVm.setImagePreview(this.pendingImageUri); } }
+  onPendingImageChange(): void {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+    if (this.pendingImageUri.length > 0) {
+      this.inputVm.setImagePreview(this.pendingImageUri);
+    }
+  }
   onMessagesChange(): void {
     if (this.messages.length > 0) {
-      this.sync(); this.sm.save(this.sessions);
+      this.sync();
+      this.sm.save(this.sessions).catch((): void => {});
     }
   }
 
@@ -114,6 +129,8 @@ export struct AgentFloatWindow {
       },
       finishAiMsg: (id: number): void => {
         this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m);
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
       },
       setBusy: (v: boolean): void => { inputVm.setBusy(v); },
       setStatusMeta: (_meta: ChatStatusMeta | null): void => { /* 状态指示 UI 已移除 (多端设计 v3) */ },
@@ -124,6 +141,10 @@ export struct AgentFloatWindow {
     };
     this.service = new AgentChatService(cbs);
     this.inputVm.bind(this.service, (content: string): void => {
+      if (this.finishCurrentStreamingMessage()) {
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      }
       this.messages = [...this.messages, { id: nowId(), role: 'user', content, ts: Date.now(), streaming: false, reasoning: '' }];
     });
     const ss: ChatSession[] = await this.sm.init(getContext(this));
@@ -160,17 +181,34 @@ export struct AgentFloatWindow {
 
   private switchSession(sid: string): void {
     this.sync();
-    // 取消旧会话中正在进行的流式消息
-    if (this.messages.length > 0 && this.messages[this.messages.length - 1].streaming) {
-      this.messages = this.messages.map((m: ChatMsg, i: number): ChatMsg =>
-        i === this.messages.length - 1 ? this.finishMessage(m) : m
-      );
+    if (this.finishCurrentStreamingMessage()) {
+      this.sync();
     }
+    this.sm.flush(this.sessions).catch((): void => {});
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
     if (s !== undefined) { this.activeSid = sid; this.messages = s.messages; }
   }
-  private newSession(): void { this.sync(); const s: ChatSession = SessionCreator.newSession(this.sessions.length); this.sessions = [...this.sessions, s]; this.activeSid = s.id; this.messages = []; this.sm.save(this.sessions); }
-  private deleteSession(sid: string): void { if (this.sessions.length <= 1) { return; } const f = this.sessions.filter((s: ChatSession): boolean => s.id !== sid); this.sessions = f; if (sid === this.activeSid) { this.activeSid = f[0].id; this.messages = f[0].messages; }; this.sm.save(this.sessions); }
+  private newSession(): void {
+    this.sync();
+    const s: ChatSession = SessionCreator.newSession(this.sessions.length);
+    this.sessions = [...this.sessions, s];
+    this.activeSid = s.id;
+    this.messages = [];
+    this.sm.flush(this.sessions).catch((): void => {});
+  }
+  private deleteSession(sid: string): void {
+    if (this.sessions.length <= 1) {
+      return;
+    }
+    this.sync();
+    const f: ChatSession[] = this.sessions.filter((s: ChatSession): boolean => s.id !== sid);
+    this.sessions = f;
+    if (sid === this.activeSid) {
+      this.activeSid = f[0].id;
+      this.messages = f[0].messages;
+    }
+    this.sm.flush(this.sessions).catch((): void => {});
+  }
 
   private finishMessage(message: ChatMsg): ChatMsg {
     const next: ChatMsg = copyChatMsg(message);
@@ -189,7 +227,20 @@ export struct AgentFloatWindow {
 
   private stopStreaming = (): void => {
     this.inputVm.stop();
+    this.finishCurrentStreamingMessage();
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
   };
+
+  private finishCurrentStreamingMessage(): boolean {
+    if (this.messages.length === 0 || !this.messages[this.messages.length - 1].streaming) {
+      return false;
+    }
+    this.messages = this.messages.map((message: ChatMsg, index: number): ChatMsg =>
+      index === this.messages.length - 1 ? this.finishMessage(message) : message,
+    );
+    return true;
+  }
 
   // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
   private showToast(message: string): void {
@@ -205,6 +256,8 @@ export struct AgentFloatWindow {
 
   // + 弹窗 → 相机: 拉起 HarmonyOS 系统相机选择器, 拍完写入 VM + Toast
   private onCameraAction = (): void => {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
     CameraKitLauncher.capture(getContext(this) as common.UIAbilityContext)
       .then((uri: string): void => {
         this.inputVm.setImagePreview(uri);
@@ -217,6 +270,8 @@ export struct AgentFloatWindow {
 
   // + 弹窗 → 相册: 拉起 HarmonyOS 系统相册选择器, 选完写入 VM + Toast
   private onAlbumAction = (): void => {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
     AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext)
       .then((uris: string[]): void => {
         if (uris.length > 0) {

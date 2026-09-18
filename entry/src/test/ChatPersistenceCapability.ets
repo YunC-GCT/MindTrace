@@ -227,7 +227,7 @@ export class ChatPersistenceCapability {
   }
 
   static productionMigrationEnabled(): boolean {
-    return false;
+    return true;
   }
 
   static snapshotPathShape(): string {
