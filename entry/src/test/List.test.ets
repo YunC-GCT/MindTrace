@@ -7,6 +7,7 @@ import arkWebWarmupServiceTest from './ArkWebWarmupService.test';
 import stableChatKeyRefreshTest from './StableChatKeyRefresh.test';
 import chatFilesDirSeamTest from './ChatFilesDirSeam.test';
 import chatPersistenceCapabilityTest from './ChatPersistenceCapability.test';
+import chatHistoryPersistenceTest from './ChatHistoryPersistence.test';
 import customSpanPlaceholderSeamTest from './CustomSpanPlaceholderSeam.test';
 import dispatcherNoteGenerationTest from './DispatcherNoteGeneration.test';
 import rendererSchedulerTest from './RendererScheduler.test';
@@ -22,6 +23,7 @@ export default function testsuite() {
   stableChatKeyRefreshTest();
   chatFilesDirSeamTest();
   chatPersistenceCapabilityTest();
+  chatHistoryPersistenceTest();
   customSpanPlaceholderSeamTest();
   dispatcherNoteGenerationTest();
   rendererSchedulerTest();

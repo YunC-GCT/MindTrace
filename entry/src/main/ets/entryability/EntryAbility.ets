@@ -17,6 +17,7 @@ import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
 import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFilesDirSeam';
+import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';
 
 const DOMAIN = 0x0000;
 
@@ -112,6 +113,9 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground'); }
   onBackground(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+    ChatSessionManager.flushActive().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'testTag', 'Chat history flush failed: %{public}s', e.message);
+    });
     this.refreshCardSnapshotInBackground().catch((e: Error) => {
       hilog.warn(DOMAIN, 'testTag', 'Background card refresh failed: %{public}s', e.message);
     });

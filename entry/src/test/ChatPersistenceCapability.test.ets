@@ -200,8 +200,8 @@ export default function chatPersistenceCapabilityTest(): void {
   });
 
   describe('ChatPersistenceCapability.issue122_production_boundary', () => {
-    it('should not enable production chat-history migration', 0, () => {
-      expect(ChatPersistenceCapability.productionMigrationEnabled()).assertFalse();
+    it('should enable production chat-history migration', 0, () => {
+      expect(ChatPersistenceCapability.productionMigrationEnabled()).assertTrue();
       expect(ChatPersistenceCapability.snapshotPathShape()).assertEqual('chat-history/sessions.json');
     });
   });
