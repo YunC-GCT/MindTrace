@@ -9,6 +9,8 @@ import chatFilesDirSeamTest from './ChatFilesDirSeam.test';
 import chatPersistenceCapabilityTest from './ChatPersistenceCapability.test';
 import customSpanPlaceholderSeamTest from './CustomSpanPlaceholderSeam.test';
 import dispatcherNoteGenerationTest from './DispatcherNoteGeneration.test';
+import rendererSchedulerTest from './RendererScheduler.test';
+import renderTickTest from './RenderTick.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -22,4 +24,6 @@ export default function testsuite() {
   chatPersistenceCapabilityTest();
   customSpanPlaceholderSeamTest();
   dispatcherNoteGenerationTest();
+  rendererSchedulerTest();
+  renderTickTest();
 }
