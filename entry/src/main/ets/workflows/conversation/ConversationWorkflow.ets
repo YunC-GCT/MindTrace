@@ -43,6 +43,8 @@ import { ConversationWorkflowCallbacks } from './ConversationTypes';
 import { ReplyService, StreamReplyResult } from '../../services/ReplyService';
 import { NoteDraftReadyEvent, NoteGenerationRun, SourceFragment } from 'common';
 import type { StreamEvent } from 'common';
+import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
+import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
 
 const workflowLog: Logger = new Logger('ConversationWorkflow');
 
@@ -56,6 +58,7 @@ export class ConversationWorkflow {
   private memory: AgentMemoryService | null = null;
   private intentClassifier: IntentClassifier = new IntentClassifier();
   private replyService: ReplyService = new ReplyService(this.intentClassifier);
+  private evidenceService: NoteEvidenceService | null = null;
 
   constructor(callbacks: ConversationWorkflowCallbacks) {
     this.cbs = callbacks;
@@ -165,6 +168,9 @@ export class ConversationWorkflow {
       const next: ConversationState = this.copyState(input, 'load_reply_context');
       next.memoryContext = await this.safeGetContextForReply(input.sessionId);
       next.learnerProfileContext = await this.safeGetLearnerProfileContext(input.sessionId);
+      if (input.request.kind === 'text') {
+        next.evidence = await this.safeBuildEvidence(input.request.userContent);
+      }
       return next;
     });
     graph.addNode('save_reply_input', async (input: ConversationState): Promise<ConversationState> => {
@@ -177,6 +183,7 @@ export class ConversationWorkflow {
         input.memoryContext ?? '',
         input.learnerProfileContext ?? '',
         input.request.userContent,
+        input.evidence,
       );
       return this.copyState(input, 'complete_reply');
     });
@@ -186,6 +193,7 @@ export class ConversationWorkflow {
         input.memoryContext ?? '',
         input.learnerProfileContext ?? '',
         input.request.userContent,
+        input.evidence,
       );
       return this.copyState(input, 'stream_reply');
     });
@@ -270,6 +278,9 @@ export class ConversationWorkflow {
     if (input.learnerProfileContext !== undefined) {
       next.learnerProfileContext = input.learnerProfileContext;
     }
+    if (input.evidence !== undefined) {
+      next.evidence = input.evidence;
+    }
     if (input.draftRunId !== undefined) {
       next.draftRunId = input.draftRunId;
     }
@@ -307,6 +318,7 @@ export class ConversationWorkflow {
     memoryContext: string,
     learnerProfileContext: string,
     userContent: string,
+    evidence: NoteEvidenceContext | undefined,
   ): Promise<void> {
     try {
       const configured: boolean = await LlmConfig.getInstance().isConfigured();
@@ -316,9 +328,9 @@ export class ConversationWorkflow {
         return;
       }
       this.setStep('reply_model_call');
-      const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent);
+      const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
       const reply: string = await this.replyService.complete(replyContext);
-      await this.addAiMessage(sessionId, reply);
+      await this.addAiMessage(sessionId, this.applyEvidenceToAnswer(evidence, reply));
       await this.safeUpdateLearnerProfileIfNeeded(sessionId);
       await this.safeSummarizeIfNeeded(sessionId);
     } catch (e) {
@@ -342,6 +354,7 @@ export class ConversationWorkflow {
     memoryContext: string,
     learnerProfileContext: string,
     userContent: string,
+    evidence: NoteEvidenceContext | undefined,
   ): Promise<void> {
     let streamMsgId: number | undefined = undefined;
     try {
@@ -356,13 +369,29 @@ export class ConversationWorkflow {
       const msgId: number = this.cbs.addAiMsgEmpty();
       streamMsgId = msgId;
       this.setStep('reply_model_call');
-      const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent);
+      const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
+      const citationFilter: NoteEvidenceStreamFilter = this.getEvidenceService().createStreamFilter(evidence);
       const streamResult: StreamReplyResult = await this.replyService.stream(
         replyContext,
-        (event: StreamEvent): void => this.cbs.appendAiMsg(msgId, event),
+        (event: StreamEvent): void => {
+          if (event.type !== 'text') {
+            this.cbs.appendAiMsg(msgId, event);
+            return;
+          }
+          const safeText: string = citationFilter.push(event.delta);
+          if (safeText.length > 0) {
+            const safeEvent: StreamEvent = { type: 'text', delta: safeText };
+            this.cbs.appendAiMsg(msgId, safeEvent);
+          }
+        },
       );
+      const citationTail: string = citationFilter.flush();
+      if (citationTail.length > 0) {
+        const tailEvent: StreamEvent = { type: 'text', delta: citationTail };
+        this.cbs.appendAiMsg(msgId, tailEvent);
+      }
       if (streamResult.usedFallback) {
-        await this.appendAssistantReply(sessionId, streamResult.content, msgId);
+        await this.appendAssistantReply(sessionId, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
         return;
       }
       if (streamResult.interrupted) {
@@ -371,8 +400,13 @@ export class ConversationWorkflow {
       } else {
         this.setStep('completed');
       }
+      const sources: string = evidence === undefined ? '' : this.getEvidenceService().formatSources(evidence);
+      if (sources.length > 0) {
+        const sourcesEvent: StreamEvent = { type: 'text', delta: '\n\n' + sources };
+        this.cbs.appendAiMsg(msgId, sourcesEvent);
+      }
       this.cbs.finishAiMsg(msgId);
-      await this.safeSaveAssistantMessage(sessionId, streamResult.content);
+      await this.safeSaveAssistantMessage(sessionId, this.applyEvidenceToAnswer(evidence, streamResult.content));
       if (streamResult.interrupted) {
         return;
       }
@@ -536,12 +570,43 @@ export class ConversationWorkflow {
     memoryContext: string,
     learnerProfileContext: string,
     userContent: string,
+    evidence: NoteEvidenceContext | undefined,
   ): ReplyContext {
     return {
       memoryContext: memoryContext,
       learnerProfileContext: learnerProfileContext,
       userContent: userContent,
+      evidenceContext: evidence === undefined ? '' : evidence.contextText,
     };
+  }
+
+  // DEV-006: 模型正文只保留真实 noteId 引用, 并追加由 RDB 证据生成的确定性来源块
+  private applyEvidenceToAnswer(evidence: NoteEvidenceContext | undefined, answer: string): string {
+    if (evidence === undefined || evidence.citations.length === 0) {
+      return answer;
+    }
+    const sanitized: string = this.getEvidenceService().sanitizeAnswer(evidence, answer);
+    const sources: string = this.getEvidenceService().formatSources(evidence);
+    if (sources.length === 0) {
+      return sanitized;
+    }
+    return sanitized + '\n\n' + sources;
+  }
+
+  private getEvidenceService(): NoteEvidenceService {
+    if (this.evidenceService === null) {
+      this.evidenceService = new NoteEvidenceService();
+    }
+    return this.evidenceService;
+  }
+
+  private async safeBuildEvidence(query: string): Promise<NoteEvidenceContext | undefined> {
+    try {
+      return await this.getEvidenceService().build(query);
+    } catch (e) {
+      console.warn('[ConversationWorkflow] build evidence context failed: ' + ConversationWorkflow.errorMessage(e));
+      return undefined;
+    }
   }
 
   private async safeSaveUserMessage(sessionId: string, content: string): Promise<void> {

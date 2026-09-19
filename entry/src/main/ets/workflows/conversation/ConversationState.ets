@@ -18,6 +18,7 @@
  */
 
 import { TextIntent } from '../../services/IntentClassifier';
+import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 
 export type ConversationStep =
   | 'START'
@@ -72,6 +73,8 @@ export interface ConversationState {
   intent?: TextIntent;
   memoryContext?: string;
   learnerProfileContext?: string;
+  // DEV-006: load_reply_context 构造的可追溯检索/图谱证据, 供 complete/stream 引用
+  evidence?: NoteEvidenceContext;
   draftRunId?: string;
   draftCheckpointId?: string;
   draftCandidateHash?: string;

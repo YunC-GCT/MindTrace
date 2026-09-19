@@ -10,6 +10,33 @@ import {
   KnowledgeRelationType,
 } from 'common';
 
+// DEV-005: accepted prerequisite/related 有限深度扩展契约
+// - 默认深度 1, 硬上限 2; 节点硬上限 20; 边硬上限 40
+// - 只走 status='accepted' 且 relation_type in (prerequisite, related) 的边
+// - 两端 note id 必须仍存活于 knowledge_unit, 删除后产生的孤儿边被排除
+export interface GraphExpansionLimits {
+  maxDepth?: number;
+  maxNodes?: number;
+  maxEdges?: number;
+}
+
+export interface GraphExpansionNode {
+  unitId: string;
+  depth: number;
+}
+
+export interface GraphExpansion {
+  nodes: GraphExpansionNode[];
+  edges: KnowledgeRelation[];
+  truncated: boolean;
+}
+
+const EXPANSION_DEFAULT_DEPTH: number = 1;
+const EXPANSION_MAX_DEPTH: number = 2;
+const EXPANSION_MAX_NODES: number = 20;
+const EXPANSION_MAX_EDGES: number = 40;
+const EXPANSION_RELATION_TYPES: string = "('prerequisite', 'related')";
+
 export class KnowledgeRelationDao {
   private store: relationalStore.RdbStore;
 
@@ -68,6 +95,95 @@ export class KnowledgeRelationDao {
     }
     const sql: string = "SELECT * FROM kg_edge WHERE from_unit_id = ? OR to_unit_id = ? ORDER BY updated_at DESC";
     return await this.querySql(sql, [normalizedId, normalizedId]);
+  }
+
+  // 从 seed 笔记出发做有限深度 BFS: 只扩展 accepted prerequisite/related, 去重防环,
+  // 节点/边数量受限, 两端笔记必须存活 (孤儿边被丢弃)
+  async expandAcceptedNeighborhood(
+    seedUnitIds: string[],
+    limits?: GraphExpansionLimits,
+  ): Promise<GraphExpansion> {
+    const depthLimit: number = KnowledgeRelationDao.clampLimit(limits?.maxDepth, EXPANSION_DEFAULT_DEPTH, 1, EXPANSION_MAX_DEPTH);
+    const nodeLimit: number = KnowledgeRelationDao.clampLimit(limits?.maxNodes, EXPANSION_MAX_NODES, 1, EXPANSION_MAX_NODES);
+    const edgeLimit: number = KnowledgeRelationDao.clampLimit(limits?.maxEdges, EXPANSION_MAX_EDGES, 1, EXPANSION_MAX_EDGES);
+    const seeds: string[] = KnowledgeRelationDao.normalizeUnitIds(seedUnitIds);
+    if (seeds.length === 0) {
+      return { nodes: [], edges: [], truncated: false };
+    }
+    const nodes: GraphExpansionNode[] = [];
+    const edges: KnowledgeRelation[] = [];
+    const edgeSeen: Map<string, boolean> = new Map<string, boolean>();
+    const visited: Map<string, number> = new Map<string, number>();
+    let truncated: boolean = false;
+    const liveSeeds: string[] = await this.queryLiveUnitIds(seeds);
+    if (liveSeeds.length < seeds.length) {
+      truncated = true;
+    }
+    const frontier: string[] = [];
+    for (const seedId of liveSeeds) {
+      if (nodes.length >= nodeLimit) {
+        truncated = true;
+        break;
+      }
+      nodes.push({ unitId: seedId, depth: 0 });
+      visited.set(seedId, 0);
+      frontier.push(seedId);
+    }
+    let depth: number = 1;
+    let current: string[] = frontier;
+    while (depth <= depthLimit && current.length > 0) {
+      const levelEdges: KnowledgeRelation[] = await this.queryAcceptedEdgesForUnits(current);
+      const candidates: string[] = [];
+      for (const edge of levelEdges) {
+        const fromVisited: boolean = visited.has(edge.fromUnitId);
+        const toVisited: boolean = visited.has(edge.toUnitId);
+        if (fromVisited && !toVisited) {
+          KnowledgeRelationDao.addUnique(candidates, edge.toUnitId);
+        } else if (toVisited && !fromVisited) {
+          KnowledgeRelationDao.addUnique(candidates, edge.fromUnitId);
+        }
+      }
+      const liveCandidates: string[] = await this.queryLiveUnitIds(candidates);
+      const next: string[] = [];
+      for (const edge of levelEdges) {
+        if (edgeSeen.has(edge.id)) {
+          continue;
+        }
+        const fromVisited: boolean = visited.has(edge.fromUnitId);
+        const toVisited: boolean = visited.has(edge.toUnitId);
+        let neighbor: string = '';
+        if (fromVisited && !toVisited) {
+          neighbor = edge.toUnitId;
+        } else if (toVisited && !fromVisited) {
+          neighbor = edge.fromUnitId;
+        } else if (!fromVisited && !toVisited) {
+          continue;
+        }
+        if (neighbor.length > 0) {
+          // 孤儿边 / 已删除笔记: 直接跳过, 不进入证据
+          if (liveCandidates.indexOf(neighbor) < 0) {
+            continue;
+          }
+          if (nodes.length >= nodeLimit) {
+            truncated = true;
+            continue;
+          }
+          nodes.push({ unitId: neighbor, depth: depth });
+          visited.set(neighbor, depth);
+          next.push(neighbor);
+        }
+        if (edges.length >= edgeLimit) {
+          truncated = true;
+          continue;
+        }
+        edgeSeen.set(edge.id, true);
+        edges.push(edge);
+      }
+      current = next;
+      depth += 1;
+    }
+    const expansion: GraphExpansion = { nodes: nodes, edges: edges, truncated: truncated };
+    return expansion;
   }
 
   async acceptRelation(id: string): Promise<boolean> {
@@ -156,6 +272,93 @@ export class KnowledgeRelationDao {
         resolve(relations);
       });
     });
+  }
+
+  // 只取 accepted 的 prerequisite/related 边; 固定排序保证 BFS 结果确定
+  private async queryAcceptedEdgesForUnits(unitIds: string[]): Promise<KnowledgeRelation[]> {
+    const placeholders: string = KnowledgeRelationDao.placeholders(unitIds.length);
+    const sql: string = "SELECT * FROM kg_edge WHERE status = 'accepted' AND relation_type IN "
+      + EXPANSION_RELATION_TYPES
+      + ' AND (from_unit_id IN (' + placeholders + ') OR to_unit_id IN (' + placeholders + '))'
+      + ' ORDER BY relation_type ASC, from_unit_id ASC, to_unit_id ASC, id ASC';
+    const bindArgs: string[] = [];
+    for (const unitId of unitIds) {
+      bindArgs.push(unitId);
+    }
+    for (const unitId of unitIds) {
+      bindArgs.push(unitId);
+    }
+    return await this.querySql(sql, bindArgs);
+  }
+
+  // 存活校验: knowledge_unit 中不存在的笔记视为已删除, 其关系边不进入证据
+  private async queryLiveUnitIds(unitIds: string[]): Promise<string[]> {
+    if (unitIds.length === 0) {
+      return [];
+    }
+    const placeholders: string = KnowledgeRelationDao.placeholders(unitIds.length);
+    const sql: string = 'SELECT id FROM knowledge_unit WHERE id IN (' + placeholders + ') ORDER BY id ASC';
+    return new Promise<string[]>((resolve, reject) => {
+      this.store.querySql(sql, unitIds, (err, resultSet) => {
+        if (err) {
+          reject(new Error('KnowledgeRelationDao.queryLiveUnitIds failed: ' + err.message));
+          return;
+        }
+        const ids: string[] = [];
+        if (resultSet.goToFirstRow()) {
+          do {
+            ids.push(KnowledgeRelationDao.readString(resultSet, 'id', ''));
+          } while (resultSet.goToNextRow());
+        }
+        resultSet.close();
+        resolve(ids);
+      });
+    });
+  }
+
+  private static placeholders(count: number): string {
+    const parts: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      parts.push('?');
+    }
+    return parts.join(',');
+  }
+
+  private static normalizeUnitIds(unitIds: string[]): string[] {
+    const unique: string[] = [];
+    for (const raw of unitIds) {
+      KnowledgeRelationDao.addUnique(unique, raw.trim());
+    }
+    unique.sort((a: string, b: string): number => {
+      if (a < b) {
+        return -1;
+      }
+      if (a > b) {
+        return 1;
+      }
+      return 0;
+    });
+    return unique;
+  }
+
+  private static addUnique(target: string[], value: string): void {
+    if (value.length > 0 && target.indexOf(value) < 0) {
+      target.push(value);
+    }
+  }
+
+  private static clampLimit(value: number | undefined, fallback: number, min: number, max: number): number {
+    if (value === undefined || Number.isNaN(value)) {
+      return fallback;
+    }
+    let clamped: number = Math.floor(value);
+    if (clamped < min) {
+      clamped = min;
+    }
+    if (clamped > max) {
+      clamped = max;
+    }
+    return clamped;
   }
 
   private static readRelations(resultSet: relationalStore.ResultSet): KnowledgeRelation[] {

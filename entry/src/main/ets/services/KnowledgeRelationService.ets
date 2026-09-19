@@ -8,7 +8,7 @@ import {
   KnowledgeRelationType,
   uuid,
 } from 'common';
-import { KnowledgeRelationDao } from '../database/KnowledgeRelationDao';
+import { KnowledgeRelationDao, GraphExpansion, GraphExpansionLimits } from '../database/KnowledgeRelationDao';
 
 export interface KnowledgeRelationRequest {
   fromUnitId: string;
@@ -52,6 +52,15 @@ export class KnowledgeRelationService {
 
   async queryRelationsByUnitId(unitId: string): Promise<KnowledgeRelation[]> {
     return await this.dao.queryByUnitId(unitId);
+  }
+
+  // DEV-005: 只读图谱扩展 — accepted prerequisite/related 有限深度 (默认 1 最大 2),
+  // 去重防环, 节点 <=20 边 <=40, 两端笔记必须存活
+  async expandAcceptedNeighborhood(
+    seedUnitIds: string[],
+    limits?: GraphExpansionLimits,
+  ): Promise<GraphExpansion> {
+    return await this.dao.expandAcceptedNeighborhood(seedUnitIds, limits);
   }
 
   private async saveRelation(
