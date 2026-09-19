@@ -105,7 +105,7 @@ export class ApiKeyVault {
         await asset.update(updateQuery, updateAttrs);
         return;
       }
-      throw new Error(error.message);
+throw new Error(error.message);
     }
   }
 

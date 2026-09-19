@@ -1,6 +1,14 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ContentProtocol, LlmGuard } from '../main/ets/Index';
-import type { ContentValidationResult, LlmCallRequest, LlmCallResult, LlmCaller, LlmGuardValidationResult, ChatMessage } from '../main/ets/Index';
+import type {
+  ChatMessage,
+  ContentValidationResult,
+  LlmCallRequest,
+  LlmCallResult,
+  LlmCaller,
+  LlmGuardJsonExtractionResult,
+  LlmGuardValidationResult,
+} from '../main/ets/Index';
 
 class FakeCaller implements LlmCaller {
   public calls: ChatMessage[][] = [];
@@ -52,6 +60,20 @@ export default function llmGuardTest(): void {
         (_json: Record<string, Object>): LlmGuardValidationResult => ({ ok: true, issues: [] }),
       );
       expect(result.issues.length > 0).assertTrue();
+    });
+
+    it('scanJsonObjectCandidates_keeps_two_top_level_objects', 0, () => {
+      const guard: LlmGuard = new LlmGuard();
+      const extraction: LlmGuardJsonExtractionResult = guard.extractJsonObjectWithDetails(
+        'preface {"meta":"diagnostic","braces":"{}"} middle {"outline":{"sections":[]},"evidence":[],"draft":{"sections":[]}} suffix',
+      );
+      expect(extraction.success).assertFalse();
+      expect(extraction.category).assertEqual('ambiguous');
+      expect(extraction.candidates.length).assertEqual(2);
+      expect(extraction.candidates[0].parseable).assertTrue();
+      expect(extraction.candidates[1].parseable).assertTrue();
+      expect(extraction.candidates[0].text).assertContain('meta');
+      expect(extraction.candidates[1].text).assertContain('outline');
     });
 
     it('retries_chat_answer_after_mm_md_validation_failure', 0, async () => {

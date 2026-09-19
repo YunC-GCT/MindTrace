@@ -47,14 +47,16 @@ test('knowledge relation model and DAO expose graph-specific relation queries', 
   assert.match(daoSource, /async queryPendingRelations\(\): Promise<KnowledgeRelation\[]>/);
 });
 
-test('manual and LLM relation writes share KnowledgeRelationService', () => {
-  const source = readRepoFile('entry/src/main/ets/services/KnowledgeRelationService.ets');
-  assert.match(source, /async saveManualRelation/);
-  assert.match(source, /return await this\.saveRelation\(request, 'accepted', 'manual'\)/);
-  assert.match(source, /async saveLlmSuggestion/);
-  assert.match(source, /return await this\.saveRelation\(request, 'pending', 'llm'\)/);
-  assert.match(source, /relationType !== 'related'/);
-  assert.match(source, /KnowledgeRelation cannot point to itself/);
+test('relation persistence and evidence expansion share KnowledgeRelationDao', () => {
+  const daoSource = readRepoFile('entry/src/main/ets/database/KnowledgeRelationDao.ets');
+  const evidenceSource = readRepoFile('entry/src/main/ets/services/NoteEvidenceService.ets');
+  assert.match(daoSource, /async saveRelation\(relation: KnowledgeRelation\): Promise<KnowledgeRelation>/);
+  assert.match(daoSource, /async acceptRelation\(id: string\): Promise<boolean>/);
+  assert.match(daoSource, /async rejectRelation\(id: string\): Promise<boolean>/);
+  assert.match(daoSource, /status: relation\.status/);
+  assert.match(daoSource, /async expandAcceptedNeighborhood\(/);
+  assert.match(evidenceSource, /new KnowledgeRelationDao\(store\)/);
+  assert.match(evidenceSource, /dao\.expandAcceptedNeighborhood\(seeds, limits\)/);
 });
 
 test('knowledge galaxy uses graph metadata and accepted kg_edge relations', () => {

@@ -21,7 +21,6 @@ const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const noteGenRepo = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
 const relationDao = read('entry/src/main/ets/database/KnowledgeRelationDao.ets');
-const relationService = read('entry/src/main/ets/services/KnowledgeRelationService.ets');
 
 // Evidence models live in the entry HAP (they reference entry-owned note and
 // graph records); keep this path aligned with the production module boundary.
@@ -156,8 +155,8 @@ test('KnowledgeRelationDao queryAcceptedEdges provides accepted-edge data for ci
   assert.match(relationDao, /equalTo\('status', 'accepted'\)/);
 });
 
-// AC-CITE-04: KnowledgeRelationService must provide accepted relation query for evidence
-test('KnowledgeRelationService queryAcceptedRelations provides accepted edges for citation validation (AC-CITE-04)', () => {
-  assert.match(relationService, /queryAcceptedRelations/);
-  assert.match(relationService, /queryAcceptedEdges/);
+// AC-CITE-04: NoteEvidenceService uses the DAO directly for accepted graph expansion
+test('NoteEvidenceService uses KnowledgeRelationDao for accepted graph evidence (AC-CITE-04)', () => {
+  assert.match(evidenceService, /new KnowledgeRelationDao\(store\)/);
+  assert.match(evidenceService, /dao\.expandAcceptedNeighborhood\(seeds, limits\)/);
 });

@@ -24,6 +24,7 @@ choice made, and the reversibility.
 | [0014](./0014-asset-store-kit-migration.md) | Asset Store Kit migration | accepted |
 | [0015](./0015-structured-stream-events.md) | Structured streaming events (`StreamEvent`, `type ∈ thinking \| text \| tool_call \| tool_result`) replace the `(delta, kind)` callback; reasoning→content fallback removed in the same change; `enableThinking` wired via LlmConfig default `true` | accepted |
 | [0016](./0016-reply-contract-by-transport.md) | Reply contract scoped by transport: stream prompt emits the Reply Body (MM-MD-v1 Markdown) directly, complete keeps the JSON envelope + LlmGuard; ReplyService exclusively owns envelope→body; chat content is always a Reply Body | accepted |
+| [0017](./0017-renderer-scheduler-budget-baseline.md) | Renderer scheduler budget baseline for ticket #124: maxWebCreatesPerFrame=1, maxWebWorkMsPerFrame=16; derived from webWorkDurationSamplesMs (n=16, median=150ms, p75=426ms); DevEco emulator performance target NOT_MET — recorded as ticket-1 follow-up | accepted |
 
 ## How to write a new ADR
 

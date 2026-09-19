@@ -19,7 +19,7 @@ MindTrace 通过 **拍照 → OCR → AI 分类 → 知识结构化 → 持久�
 
 #### W1 · 公共层 + UI 骨架 (07-13 ~ 14) — Z / center 合并
 
-- **Z**: 公共层五件套(CommonTypes 共享类型、logger、uuid、timeWindow、confidenceSort, merge `d6220c4`); 5 Tab 装配 + 沉浸式状态栏; HomePage(Hero/进度环/FAB)、CameraOverlay、AgentFloatWindow(已接真实 LLM)、NoteDetailOverlay。
+- **Z**: 公共层五件套(CommonTypes 共享类型、logger、uuid、timeWindow、confidenceSort, merge `d6220c4`); 5 Tab 装配 + 沉浸式状态栏; HomePage(Hero/进度环/FAB)、AgentFloatWindow(已接真实 LLM)、NoteDetailOverlay。
 - **center 合并**(`53b09c0`): AiSettingsPage(端点/模型/Key/参数/测试连接); LlmConfig `saveAll`/`loadAll` preferences 持久化; DeepSeek V4(`deepseek-v4-pro`)全 Agent 接入。
 - **CameraPicker**(`9db3309` 等): 系统相机 `cameraPicker.pick()`(免 CAMERA 运行时申请)+ 后置镜头枚举 + 相册入口; module.json5 声明 CAMERA/INTERNET。
 
@@ -112,11 +112,9 @@ entry/src/main/ets/
 │       └── SectionHeader.ets
 ├── overlays/                           # 顶层浮层(被 Index 引用)
 │   ├── AgentFloatWindow.ets            # 真实 LLM 对话
-│   ├── CameraOverlay.ets               # 真实 cameraPicker
 │   └── NoteDetailOverlay.ets           # 5 子组件拆分
-├── prototypes/                         # 独立完整的页面级 UI 原型(后退役)
+├── prototypes/                         # 独立完整页面级 UI 原型(后退役)
 │   ├── AgentFloatWindow.ets
-│   ├── CameraOverlay.ets
 │   ├── NoteDetailOverlay.ets
 │   ├── AgentMessageList.ets
 │   ├── NoteDetailOverlay/              # 5 个子组件
@@ -128,7 +126,6 @@ entry/src/main/ets/
 │       ├── ChatTextSanitizer.ets
 │       ├── EmptyStateHint.ets
 │       ├── MessageInput.ets
-│       ├── QuickSuggestions.ets
 │       ├── SessionBar.ets
 │       └── TypingIndicator.ets
 ├── components/                          # 旧 atom 命名(已废弃)

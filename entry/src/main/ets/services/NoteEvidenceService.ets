@@ -6,14 +6,13 @@
 //       产出可追溯证据上下文: prompt 注入文本 + noteId/version/excerpt 引用 +
 //       已确认关系快照; 并对模型输出做虚构引用清洗
 // 依赖: common DatabaseHelper/ToolCatalog/ToolRegistry/ToolResult;
-//       ../database/KnowledgeRelationDao; ./KnowledgeRelationService; ../models/NoteEvidenceModels
+//       ../database/KnowledgeRelationDao; ../models/NoteEvidenceModels
 // 约束: 引用只来自真实 knowledge_unit 行; 不写库; 不引入向量检索
 // ============================================================================
 
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper, ToolCatalog, ToolRegistry, ToolResult } from 'common';
 import { KnowledgeRelationDao, GraphExpansion, GraphExpansionLimits } from '../database/KnowledgeRelationDao';
-import { KnowledgeRelationService } from './KnowledgeRelationService';
 import {
   NoteEvidenceCitation,
   NoteEvidenceContext,
@@ -177,9 +176,9 @@ export class NoteEvidenceService {
     for (const citation of citations) {
       NoteEvidenceService.addUnique(seeds, citation.noteId);
     }
-    const service: KnowledgeRelationService = new KnowledgeRelationService(new KnowledgeRelationDao(store));
+    const dao: KnowledgeRelationDao = new KnowledgeRelationDao(store);
     const limits: GraphExpansionLimits = { maxDepth: maxDepth };
-    const expansion: GraphExpansion = await service.expandAcceptedNeighborhood(seeds, limits);
+    const expansion: GraphExpansion = await dao.expandAcceptedNeighborhood(seeds, limits);
     const relationSeen: string[] = [];
     for (const edge of expansion.edges) {
       if (relationSeen.indexOf(edge.id) >= 0) {

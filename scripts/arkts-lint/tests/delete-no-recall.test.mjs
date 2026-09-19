@@ -48,11 +48,9 @@ test('NoteDao.deleteById or unified delete flow must include kg_edge cleanup (tr
     const unifiedDeleteInVm = notesVm.match(/deleteEdge|deleteRelationsByUnitId|cleanRelations/) ||
       homeVm.match(/deleteEdge|deleteRelationsByUnitId|cleanRelations/);
     const vmHasKgEdgeCleanup = unifiedDeleteInVm !== null;
-    const serviceHasCleanup = read('entry/src/main/ets/services/KnowledgeRelationService.ets')
-      .match(/deleteByUnitId|deleteRelationsByUnitId/);
     const daoHasCleanup = relationDao.match(/deleteByUnitId|deleteByUnit/);
     assert.ok(
-      vmHasKgEdgeCleanup || serviceHasCleanup !== null || daoHasCleanup !== null,
+      vmHasKgEdgeCleanup || daoHasCleanup !== null,
       'deleteById or unified delete must clean kg_edge — implementation not yet merged (DEV-DELETE-TXN)',
     );
   }

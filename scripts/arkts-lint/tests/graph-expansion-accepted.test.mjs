@@ -1,7 +1,7 @@
 // DEV/AC binding: DEV-GRAPH-EXPAND / AC-GRAPH-01 — expand accepted neighborhood via
 // KnowledgeRelationDao.expandAcceptedNeighborhood with status accepted, relation_type
 // prerequisite/related, maxDepth, node/edge limits, visited/dedup, live knowledge_unit
-// validation, and KnowledgeRelationService forwarding.
+// validation, and NoteEvidenceService integration.
 // Review-rejected: prior version only tested GalaxyViewModel legacy behavior.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n'
 
 const galaxyVm = read('entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets');
 const relationDao = read('entry/src/main/ets/database/KnowledgeRelationDao.ets');
-const relationService = read('entry/src/main/ets/services/KnowledgeRelationService.ets');
+const evidenceService = read('entry/src/main/ets/services/NoteEvidenceService.ets');
 const postCommit = read('entry/src/main/ets/services/KnowledgeUnitPostCommitEffects.ets');
 
 test('Galaxy loads only accepted edges from KnowledgeRelationDao', () => {
@@ -37,14 +37,14 @@ test('GalaxyLink is built from KnowledgeRelation with accepted status', () => {
   assert.match(galaxyVm, /GalaxyLink/);
 });
 
-test('KnowledgeRelationService saves manual relations with accepted status', () => {
-  assert.match(relationService, /saveManualRelation/);
-  assert.match(relationService, /'accepted'/);
+test('KnowledgeRelationDao persists accepted manual relation status', () => {
+  assert.match(relationDao, /async saveRelation/);
+  assert.match(relationDao, /status: relation\.status/);
 });
 
-test('KnowledgeRelationService saves LLM suggestions with pending status requiring accept', () => {
-  assert.match(relationService, /saveLlmSuggestion/);
-  assert.match(relationService, /'pending'/);
+test('KnowledgeRelationDao exposes pending relation queries for LLM suggestions', () => {
+  assert.match(relationDao, /async queryPendingRelations/);
+  assert.match(relationDao, /equalTo\('status', 'pending'\)/);
 });
 
 test('Post-commit effects do not auto-create graph edges', () => {
@@ -150,14 +150,14 @@ test('expandAcceptedNeighborhood must validate live knowledge_unit existence for
   }
 });
 
-test('KnowledgeRelationService must forward expandAcceptedNeighborhood call (AC-GRAPH-01)', () => {
-  const hasForward = relationService.match(/expandAcceptedNeighborhood/);
+test('NoteEvidenceService must use expandAcceptedNeighborhood for evidence (AC-GRAPH-01)', () => {
+  const hasForward = evidenceService.match(/dao\.expandAcceptedNeighborhood\(seeds, limits\)/);
   if (hasForward !== null) {
-    assert.ok(true, 'KnowledgeRelationService forwards expand call');
+    assert.ok(true, 'NoteEvidenceService uses DAO graph expansion');
   } else {
     assert.ok(
       false,
-      'KnowledgeRelationService must forward expandAcceptedNeighborhood — implementation not yet merged (AC-GRAPH-01)',
+      'NoteEvidenceService must use KnowledgeRelationDao.expandAcceptedNeighborhood — implementation not yet merged (AC-GRAPH-01)',
     );
   }
 });

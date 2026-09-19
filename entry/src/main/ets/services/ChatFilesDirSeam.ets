@@ -1,22 +1,22 @@
-// ============================================================================
-//  services/ChatFilesDirSeam.ets — 聊天文件目录上下文缝(ticket-0.3, #121)
-//  ----------------------------------------------------------------------------
-//  路径: entry/src/main/ets/services/ChatFilesDirSeam.ets
-//  职责: 解析应用级 filesDir 并发布只读 seam(纯字符串 + 状态 + 形状诊断),
-//        供 AgentFloatWindow/ChatSessionManager 在未来 AtomicFile 快照路径使用。
-//  注入链路: EntryAbility.onCreate → publishChatFilesDirSeam → AppStorage
-//            → AgentFloatWindow.loadHistory → ChatSessionManager.recordFilesDir
-//
-//  边界(ticket-0.3 硬门禁):
-//    - 不 import / 调用 AtomicFile 与 TaskPool;filesDir 只保留不写入。
-//    - 诊断仅由 seam 状态 + filesDir 派生形状构成,绝不含聊天内容/会话名/推理/密钥。
-//    - Preferences 聊天历史(chat_history/sessions)仍是唯一持久化路径,本文件不改动它。
-//
-//  依赖: @kit.AbilityKit(common.ApplicationContext); AppStorage(ArkUI 全局)
-//
-//  ArkTS 1.1 strict 适配:
-//    - static 方法内不用 this,一律用类名;catch 变量不标注类型。
-// ============================================================================
+/**
+ * ChatFilesDirSeam.ets — 聊天文件目录上下文缝(ticket-0.3, #121)
+ *
+ * 路径: entry/src/main/ets/services/ChatFilesDirSeam.ets
+ * 职责: 解析应用级 filesDir 并发布只读 seam(纯字符串 + 状态 + 形状诊断),
+ *      供 AgentFloatWindow/ChatSessionManager 在未来 AtomicFile 快照路径使用。
+ * 依赖: @kit.AbilityKit(common.ApplicationContext); AppStorage(ArkUI 全局)
+ *
+ * 注入链路:
+ *   EntryAbility.onCreate → publishChatFilesDirSeam → AppStorage
+ *   → AgentFloatWindow.loadHistory → ChatSessionManager.recordFilesDir
+ *
+ * 边界(ticket-0.3 硬门禁):
+ * - 不 import / 调用 AtomicFile 与 TaskPool;filesDir 只保留不写入。
+ * - 诊断仅由 seam 状态 + filesDir 派生形状构成,绝不含聊天内容/会话名/推理/密钥。
+ * - Preferences 聊天历史(chat_history/sessions)仍是唯一持久化路径,本文件不改动它。
+ *
+ * ArkTS 1.1 strict 适配: static 方法内不用 this,一律用类名;catch 变量不标注类型。
+ */
 
 import { common } from '@kit.AbilityKit';
 
