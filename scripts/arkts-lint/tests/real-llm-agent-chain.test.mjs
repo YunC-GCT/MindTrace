@@ -80,6 +80,13 @@ test('agent chain: StructureNode passes ClassifyNode result into KnowledgeModel'
 
 test('diagnostics: LlmClient logs selected vendor and model without API key', () => {
   assert.match(llmClient, /request vendor=.*model=.*endpoint=.*stream=false/, 'JSON LLM request log must include vendor/model/endpoint');
-  assert.match(llmClient, /request vendor=.*model=.*endpoint=.*stream=true/, 'stream LLM request log must include vendor/model/endpoint');
-  assert.doesNotMatch(llmClient, /console\.info\('\[LlmClient\] request[^\n]*apiKey/, 'request diagnostics must not log API key');
+  const streamLog = llmClient.match(/llmLog\.info\('request[\s\S]*?stream=true'\);/);
+  assert.ok(streamLog !== null, 'stream LLM request log must include vendor/model metadata');
+  assert.match(streamLog[0], /vendor=[\s\S]*model=[\s\S]*stream=true/);
+  const jsonLog = llmClient.match(/console\.info\('\[LlmClient\] request[\s\S]*?stream=false'\);/);
+  assert.ok(jsonLog !== null, 'JSON request diagnostics must exist');
+  const requestLogs = [jsonLog[0], streamLog[0]];
+  for (const line of requestLogs) {
+    assert.doesNotMatch(line, /apiKey|Authorization|request\.messages|bodyJson|content/i, 'request diagnostics must stay metadata-only');
+  }
 });

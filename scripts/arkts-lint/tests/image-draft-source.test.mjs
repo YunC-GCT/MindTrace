@@ -107,25 +107,11 @@ test('ConversationWorkflow image_reply must call handleImageReply with imageUri 
   assert.match(convWorkflow, /input\.request\.imageUri/);
 });
 
-// AC-IMG-02: saveOcrResult must return a sourceId for downstream source tracking
-test('AgentMemoryService.saveOcrResult must return sourceId for source tracking (AC-IMG-02)', () => {
-  const saveOcrBlock = memService.match(/async saveOcrResult[\s\S]*?\n  \}/);
-  if (saveOcrBlock !== null) {
-    const hasReturnId = saveOcrBlock[0].match(/return.*id|sourceId/);
-    if (hasReturnId !== null) {
-      assert.ok(true, 'saveOcrResult returns sourceId');
-    } else {
-      assert.ok(
-        false,
-        'saveOcrResult must return sourceId — implementation not yet merged (AC-IMG-02)',
-      );
-    }
-  } else {
-    assert.ok(
-      false,
-      'saveOcrResult method structure changed — review and update test (AC-IMG-02)',
-    );
-  }
+// AC-IMG-02: saveOcrResult returns the pending material source id to the
+// workflow, so later draft generation can bind to exactly this image.
+test('ConversationWorkflow returns the saveOcrResult source id (AC-IMG-02)', () => {
+  assert.match(convWorkflow, /return await this\.getMemory\(\)\.saveOcrResult\(/);
+  assert.match(memService, /async saveOcrResult\([\s\S]*?\): Promise<string>/);
 });
 
 // AC-IMG-03: image source must only read current-source pending, not all pending records

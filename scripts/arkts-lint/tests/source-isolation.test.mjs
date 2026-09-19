@@ -99,25 +99,11 @@ test('ConversationWorkflow image_note_reply node must exist for image-to-note so
   }
 });
 
-// AC-SRC-02: saveOcrResult must return sourceId for source tracking
-test('AgentMemoryService.saveOcrResult must return sourceId for downstream source tracking (AC-SRC-02)', () => {
-  const saveOcr = memService.match(/async saveOcrResult[\s\S]*?\n  \}/);
-  if (saveOcr !== null) {
-    const hasReturn = saveOcr[0].match(/return.*id|sourceId/);
-    if (hasReturn !== null) {
-      assert.ok(true, 'saveOcrResult returns sourceId');
-    } else {
-      assert.ok(
-        false,
-        'saveOcrResult must return sourceId — implementation not yet merged (AC-SRC-02)',
-      );
-    }
-  } else {
-    assert.ok(
-      false,
-      'saveOcrResult method signature changed — review and update test (AC-SRC-02)',
-    );
-  }
+// AC-SRC-02: source identity is returned by the memory boundary and written
+// into ConversationState for current-source-only draft generation.
+test('ConversationWorkflow returns saveOcrResult source id (AC-SRC-02)', () => {
+  assert.match(convWorkflow, /return await this\.getMemory\(\)\.saveOcrResult\(/);
+  assert.match(memService, /async saveOcrResult\([\s\S]*?\): Promise<string>/);
 });
 
 // AC-SRC-03: current source must not read all pending materials
