@@ -53,12 +53,21 @@ interface RegenerationInstruction {
   instruction: string;
 }
 
+interface ImageNoteReplyResult {
+  event?: NoteDraftReadyEvent;
+  ocrResult?: ClassificationResult;
+  ocrSourceId?: string;
+  isOcrBlank?: boolean;
+  materialPersistFailed?: boolean;
+}
+
 export class ConversationWorkflow {
   private cbs: ConversationWorkflowCallbacks;
   private memory: AgentMemoryService | null = null;
   private intentClassifier: IntentClassifier = new IntentClassifier();
   private replyService: ReplyService = new ReplyService(this.intentClassifier);
   private evidenceService: NoteEvidenceService | null = null;
+  private pendingConfirmRunId: string | null = null;
 
   constructor(callbacks: ConversationWorkflowCallbacks) {
     this.cbs = callbacks;
@@ -82,32 +91,52 @@ export class ConversationWorkflow {
   }
 
   async confirmDraft(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
+    if (this.pendingConfirmRunId !== null && this.pendingConfirmRunId === event.runId) {
+      await this.addAiMessage(this.currentSessionId(), '正在保存中，请勿重复点击。');
+      throw new Error('DUPLICATE_CONFIRM: 正在保存中');
+    }
+    this.pendingConfirmRunId = event.runId;
     const service: AiService = new AiService(this.cbs.getContext());
     try {
       const committed: KnowledgeUnit = await service.confirmDraft(event, candidate);
       await this.addAiMessage(this.currentSessionId(), '已保存笔记：' + committed.title);
       return committed;
     } catch (e) {
-      const conflict: boolean = ConversationWorkflow.errorMessage(e).indexOf('VERSION_CONFLICT') >= 0;
+      const errMsg: string = ConversationWorkflow.errorMessage(e);
+      const conflict: boolean = errMsg.indexOf('VERSION_CONFLICT') >= 0;
       if (conflict && event.incrementalManifest !== undefined && event.expectedVersion !== undefined) {
-        const refreshed: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).regenerateNoteDraft(
-          'replan-' + Date.now().toString(),
-          event.incrementalManifest.noteId,
-          event.incrementalInstruction ?? '请重新规划增量修改',
-          event.incrementalInstruction ?? '请重新规划增量修改',
-        );
-        this.cbs.onDraftReady(refreshed);
-        await this.addAiMessage(this.currentSessionId(), '笔记版本已变化，已重新加载并生成新的预览，请再次确认。');
+        try {
+          const refreshed: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).regenerateNoteDraft(
+            'replan-' + Date.now().toString(),
+            event.incrementalManifest.noteId,
+            event.incrementalInstruction ?? '请重新规划增量修改',
+            event.incrementalInstruction ?? '请重新规划增量修改',
+          );
+          this.cbs.onDraftReady(refreshed);
+          await this.addAiMessage(this.currentSessionId(), '笔记版本已变化，已重新加载并生成新的预览，请再次确认。');
+        } catch (replanError) {
+          await this.addAiMessage(this.currentSessionId(), '版本冲突且自动重规划失败，请重新整理笔记。');
+        }
+      } else if (conflict) {
+        await this.addAiMessage(this.currentSessionId(), '笔记版本冲突，请重新整理笔记。');
+      } else {
+        await this.addAiMessage(this.currentSessionId(), '保存笔记失败: ' + errMsg.substring(0, 120));
       }
-      await this.addAiMessage(this.currentSessionId(), '保存笔记失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
-      throw new Error(ConversationWorkflow.errorMessage(e));
+      throw new Error(errMsg);
+    } finally {
+      this.pendingConfirmRunId = null;
     }
   }
 
   async restoreDraft(runId: string): Promise<NoteDraftReadyEvent> {
     const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).restoreDraft(runId);
     this.cbs.onDraftReady(event);
-    await this.addAiMessage(this.currentSessionId(), '已恢复笔记草稿，请预览并确认。');
+    const hasPendingSources: boolean = event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0;
+    if (hasPendingSources) {
+      await this.addAiMessage(this.currentSessionId(), '已恢复笔记草稿，请预览并确认。注意：若素材持久化曾失败，草稿可能无法完整恢复。');
+    } else {
+      await this.addAiMessage(this.currentSessionId(), '已恢复笔记草稿，请预览并确认。');
+    }
     return event;
   }
 
@@ -157,11 +186,54 @@ export class ConversationWorkflow {
       next.intent = intent;
       return next;
     });
+    graph.addNode('classify_image_intent', async (input: ConversationState): Promise<ConversationState> => {
+      this.setStep('intent_check');
+      const userText: string = input.request.userContent.trim();
+      let intent: TextIntent = 'chat';
+      if (userText.length > 0 && userText !== '[图片]') {
+        intent = await this.intentClassifier.classify(userText);
+      }
+      const next: ConversationState = this.copyState(input, 'classify_image_intent');
+      next.intent = intent;
+      return next;
+    });
     graph.addNode('image_reply', async (input: ConversationState): Promise<ConversationState> => {
       if (input.request.kind === 'image') {
         await this.handleImageReply(input.sessionId, input.request.imageUri, input.request.userContent);
       }
       return this.copyState(input, 'image_reply');
+    });
+    graph.addNode('image_note_reply', async (input: ConversationState): Promise<ConversationState> => {
+      if (input.request.kind !== 'image') {
+        return this.copyState(input, 'image_note_reply');
+      }
+      const result: ImageNoteReplyResult = await this.handleImageNoteReply(
+        input.sessionId,
+        input.request.imageUri,
+        input.request.userContent,
+      );
+      const next: ConversationState = this.copyState(input, 'image_note_reply');
+      if (result.event !== undefined) {
+        next.draftRunId = result.event.runId;
+        next.draftCheckpointId = result.event.checkpointId;
+        next.draftCandidateHash = result.event.candidateHash;
+        next.draftStatus = 'ready-preview';
+      }
+      if (result.ocrResult !== undefined) {
+        next.ocrResult = result.ocrResult;
+      }
+      if (result.ocrSourceId !== undefined) {
+        next.ocrSourceId = result.ocrSourceId;
+      }
+      if (result.isOcrBlank === true) {
+        next.isOcrBlank = true;
+        next.draftStatus = undefined;
+      }
+      if (result.materialPersistFailed === true) {
+        next.materialPersistFailed = true;
+        next.draftStatus = undefined;
+      }
+      return next;
     });
     graph.addNode('load_reply_context', async (input: ConversationState): Promise<ConversationState> => {
       this.setStep('reply_context_load');
@@ -235,12 +307,18 @@ export class ConversationWorkflow {
     });
     graph.addConditionalEdge('START', (state: ConversationState): ConversationStep => {
       if (state.request.kind === 'image') {
-        return 'image_reply';
+        return 'classify_image_intent';
       }
       if (state.request.kind === 'regenerate') {
         return 'regenerate_reply';
       }
       return 'classify_intent';
+    });
+    graph.addConditionalEdge('classify_image_intent', (state: ConversationState): ConversationStep => {
+      if (state.intent === 'note_generation') {
+        return 'image_note_reply';
+      }
+      return 'image_reply';
     });
     graph.addConditionalEdge('classify_intent', (state: ConversationState): ConversationStep => {
       if (state.intent === 'note_generation') {
@@ -256,6 +334,7 @@ export class ConversationWorkflow {
       return 'complete_reply';
     });
     graph.addEdge('image_reply', 'END');
+    graph.addEdge('image_note_reply', 'END');
     graph.addEdge('complete_reply', 'END');
     graph.addEdge('stream_reply', 'END');
     graph.addEdge('note_reply', 'END');
@@ -293,6 +372,18 @@ export class ConversationWorkflow {
     if (input.draftStatus !== undefined) {
       next.draftStatus = input.draftStatus;
     }
+    if (input.ocrResult !== undefined) {
+      next.ocrResult = input.ocrResult;
+    }
+    if (input.ocrSourceId !== undefined) {
+      next.ocrSourceId = input.ocrSourceId;
+    }
+    if (input.isOcrBlank !== undefined) {
+      next.isOcrBlank = input.isOcrBlank;
+    }
+    if (input.materialPersistFailed !== undefined) {
+      next.materialPersistFailed = input.materialPersistFailed;
+    }
     return next;
   }
 
@@ -304,12 +395,116 @@ export class ConversationWorkflow {
       const result: ClassificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText);
       workflowLog.info('image analysis completed type=' + result.type);
       this.setStep('image_material_save');
-      await this.safeSaveOcrResult(sessionId, imageUri, userText, result);
+      const ocrSourceId: string | null = await this.safeSaveOcrResult(sessionId, imageUri, userText, result);
+      if (ocrSourceId === null) {
+        await this.addAiMessage(sessionId, '图片识别成功，但素材暂存失败，识别结果可能无法恢复。');
+      }
       const reply: string = this.formatAnalyzeReply(result);
       await this.addAiMessage(sessionId, reply);
       this.setStep('completed');
     } catch (e) {
       await this.addAiMessage(sessionId, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
+    }
+  }
+
+  private async handleImageNoteReply(
+    sessionId: string,
+    imageUri: string,
+    userText: string,
+  ): Promise<ImageNoteReplyResult> {
+    this.setStep('image_message_save');
+    await this.safeSaveUserMessage(sessionId, userText.trim().length > 0 ? userText : '[图片]');
+
+    this.setStep('image_note_ocr');
+    let classificationResult: ClassificationResult;
+    try {
+      classificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText);
+    } catch (e) {
+      await this.addAiMessage(sessionId, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
+      return {};
+    }
+
+    const ocrText: string = (classificationResult.ocrText ?? '').trim();
+    if (ocrText.length === 0) {
+      this.setStep('image_ocr_blank');
+      if (this.cbs.onOcrBlank !== undefined) {
+        this.cbs.onOcrBlank(imageUri);
+      }
+      await this.addAiMessage(
+        sessionId,
+        '未识别到有效文字，请重新拍照或手动补充文字后再试。',
+      );
+      this.setStep('completed');
+      return { ocrResult: classificationResult, isOcrBlank: true };
+    }
+
+    this.setStep('image_material_save');
+    const ocrSourceId: string | null = await this.safeSaveOcrResult(sessionId, imageUri, userText, classificationResult);
+    const materialPersistFailed: boolean = ocrSourceId === null;
+    if (materialPersistFailed) {
+      workflowLog.warn('material persist failed for image: ' + imageUri);
+    }
+
+    this.setStep('image_note_draft');
+    try {
+      const configured: boolean = await LlmConfig.getInstance().isConfigured();
+      if (!configured) {
+        await this.addAiMessage(sessionId, '⚠️ 请先在「我的 → 设置」中配置 API Key');
+        return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
+      }
+
+      // DEV-002: 当前图片来源隔离 — 只由当前 userText + classificationResult 组成素材文本
+      // 不调用 safeGetContextForNoteGeneration / getConversationText，
+      // 避免本会话历史 pending OCR 文本混入导致旧图片素材重叠或当前 OCR 重复。
+      // 后续如需合并历史上下文，可在此处添加条件分支（如 mergeMode 参数），本期默认当前图片优先。
+      const ocrLines: string[] = [
+        '图片识别材料',
+        '类型: ' + classificationResult.type,
+        '学科: ' + classificationResult.subject,
+        'OCR:',
+        ocrText,
+      ];
+      if (userText.trim().length > 0) {
+        ocrLines.splice(1, 0, '用户补充: ' + userText.trim());
+      }
+      const conversation: string = ocrLines.join('\n');
+
+      const runId: string = 'img-note-' + Date.now().toString();
+      const pendingSources: SourceFragment[] = [];
+      if (ocrSourceId !== null) {
+        pendingSources.push({
+          id: ocrSourceId,
+          kind: 'ocr',
+          originId: imageUri,
+          sequence: 1,
+          fingerprint: ocrSourceId,
+          text: ocrText,
+        });
+      }
+
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(runId, userText, conversation, pendingSources);
+      this.setStep('note_finalize');
+
+      if (materialPersistFailed) {
+        await this.addAiMessage(
+          sessionId,
+          '⚠️ 笔记草稿已准备，但素材暂存失败，草稿无法在重启后恢复。请尽快确认保存。',
+        );
+      } else {
+        await this.addAiMessage(sessionId, '笔记草稿已准备，请预览并确认保存。');
+      }
+      this.cbs.onDraftReady(event);
+      this.setStep('completed');
+      return {
+        event: event,
+        ocrResult: classificationResult,
+        ocrSourceId: ocrSourceId ?? undefined,
+        materialPersistFailed: materialPersistFailed,
+      };
+    } catch (e) {
+      const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
+      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 120));
+      return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
     }
   }
 
@@ -630,11 +825,12 @@ export class ConversationWorkflow {
     imageUri: string,
     userText: string,
     result: ClassificationResult,
-  ): Promise<void> {
+  ): Promise<string | null> {
     try {
-      await this.getMemory().saveOcrResult(sessionId, imageUri, userText, result);
+      return await this.getMemory().saveOcrResult(sessionId, imageUri, userText, result);
     } catch (e) {
-      console.warn('[ConversationWorkflow] save ocr memory failed: ' + ConversationWorkflow.errorMessage(e));
+      workflowLog.warn('save ocr memory failed: ' + ConversationWorkflow.errorMessage(e));
+      return null;
     }
   }
 
