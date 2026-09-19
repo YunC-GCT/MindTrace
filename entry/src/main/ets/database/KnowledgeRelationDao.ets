@@ -93,7 +93,11 @@ export class KnowledgeRelationDao {
     if (normalizedId.length === 0) {
       return [];
     }
-    const sql: string = "SELECT * FROM kg_edge WHERE from_unit_id = ? OR to_unit_id = ? ORDER BY updated_at DESC";
+    const sql: string = "SELECT edge.* FROM kg_edge AS edge"
+      + " INNER JOIN knowledge_unit AS from_unit ON from_unit.id = edge.from_unit_id"
+      + " INNER JOIN knowledge_unit AS to_unit ON to_unit.id = edge.to_unit_id"
+      + " WHERE (edge.from_unit_id = ? OR edge.to_unit_id = ?)"
+      + " ORDER BY edge.updated_at DESC";
     return await this.querySql(sql, [normalizedId, normalizedId]);
   }
 

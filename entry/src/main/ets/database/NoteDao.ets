@@ -259,18 +259,49 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
 
   // 删除知识单元
   async deleteById(id: string): Promise<void> {
-    const predicates = new relationalStore.RdbPredicates('knowledge_unit');
-    predicates.equalTo('id', id);
+    const transaction: relationalStore.Transaction = await this.store.createTransaction();
+    try {
+      const edgeFromPredicates = new relationalStore.RdbPredicates('kg_edge');
+      edgeFromPredicates.equalTo('from_unit_id', id);
+      await transaction.delete(edgeFromPredicates);
 
-    return new Promise<void>((resolve, reject) => {
-      this.store.delete(predicates, (err, _rows) => {
-        if (err) {
-          reject(new Error('NoteDao.deleteById failed: ' + err.message));
-          return;
+      const edgeToPredicates = new relationalStore.RdbPredicates('kg_edge');
+      edgeToPredicates.equalTo('to_unit_id', id);
+      await transaction.delete(edgeToPredicates);
+
+      const chunkPredicates = new relationalStore.RdbPredicates('rag_chunk');
+      chunkPredicates.equalTo('unit_id', id);
+      const chunkResultSet: relationalStore.ResultSet = await transaction.query(chunkPredicates, ['id']);
+      const chunkIds: string[] = [];
+      try {
+        if (chunkResultSet.goToFirstRow()) {
+          do {
+            const chunkId: string = chunkResultSet.getString(chunkResultSet.getColumnIndex('id'));
+            chunkIds.push(chunkId);
+          } while (chunkResultSet.goToNextRow());
         }
-        resolve();
-      });
-    });
+      } finally {
+        chunkResultSet.close();
+      }
+
+      for (const chunkId of chunkIds) {
+        const embeddingPredicates = new relationalStore.RdbPredicates('rag_embedding');
+        embeddingPredicates.equalTo('chunk_id', chunkId);
+        await transaction.delete(embeddingPredicates);
+      }
+      await transaction.delete(chunkPredicates);
+
+      const predicates = new relationalStore.RdbPredicates('knowledge_unit');
+      predicates.equalTo('id', id);
+      // Keep the final hard delete on the same transaction object as all dependent cleanup.
+      const store: relationalStore.Transaction = transaction;
+      await store.delete(predicates);
+      await transaction.commit();
+    } catch (e) {
+      await NoteDao.rollback(transaction);
+      const message: string = e instanceof Error ? e.message : String(e);
+      throw new Error('NoteDao.deleteById failed: ' + message);
+    }
   }
 
   // 按 id 查询
