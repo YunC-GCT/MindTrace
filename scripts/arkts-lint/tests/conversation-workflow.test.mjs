@@ -43,7 +43,7 @@ test('AgentChatService is a thin three-entry facade', () => {
   // LOC is not a stable contract: callback adapters and public draft
   // lifecycle methods may grow without moving orchestration into the facade.
   // Assert the ownership boundary directly instead of enforcing a line cap.
-  assert.match(facade, /new ConversationWorkflow\(new ConversationWorkflowAdapter/);
+  assert.match(facade, /this\.workflow = new ConversationWorkflow\(this\.adapter\)/);
   assert.doesNotMatch(facade, /new LlmClient|new AiService|new AgentMemoryService/);
   assert.match(facade, /private activeRuns: number = 0/);
   assert.match(facade, /this\.activeRuns \+= 1/);

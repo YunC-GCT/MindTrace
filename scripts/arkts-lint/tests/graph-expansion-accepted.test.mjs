@@ -71,17 +71,14 @@ test('KnowledgeRelationDao must provide expandAcceptedNeighborhood for BFS trave
 });
 
 test('expandAcceptedNeighborhood must filter by status accepted (AC-GRAPH-01)', () => {
-  const expandBlock = relationDao.match(
-    /expandAcceptedNeighborhood[\s\S]*?equalTo\('status', 'accepted'\)/,
+  // The BFS method delegates edge selection to its private SQL helper; the
+  // accepted predicate belongs there rather than in the traversal body.
+  const queryBlock = relationDao.match(
+    /private async queryAcceptedEdgesForUnits[\s\S]*?\n  \}/,
   );
-  if (expandBlock !== null) {
-    assert.ok(true, 'expand filters by status=accepted');
-  } else {
-    assert.ok(
-      false,
-      'expandAcceptedNeighborhood must filter status=accepted — implementation not yet merged (AC-GRAPH-01)',
-    );
-  }
+  assert.ok(queryBlock !== null, 'queryAcceptedEdgesForUnits helper must exist');
+  assert.match(queryBlock[0], /status = 'accepted'/);
+  assert.match(queryBlock[0], /relation_type IN/);
 });
 
 test('expandAcceptedNeighborhood must traverse prerequisite and related relation_type (AC-GRAPH-01)', () => {
