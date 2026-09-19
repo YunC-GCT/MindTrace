@@ -6,7 +6,7 @@
  * when persist=false.
  */
 import { describe, it, expect } from '@ohos/hypium';
-import { Dispatcher, DispatchOptions, NoteCommitResult } from 'agents';
+import { Dispatcher, DispatchOptions, NoteCommitResult, NoteDaoInterface } from 'agents';
 import { KnowledgeModel } from 'agents';
 import {
   DifficultyLevel,
@@ -355,6 +355,35 @@ class CountingDao {
   writes: number = 0;
 }
 
+class CountingNoteDao implements NoteDaoInterface {
+  private readonly counter: CountingDao;
+  private readonly rowId: number;
+  private readonly commitKeyOverride: string;
+
+  constructor(counter: CountingDao, rowId: number, commitKeyOverride: string = '') {
+    this.counter = counter;
+    this.rowId = rowId;
+    this.commitKeyOverride = commitKeyOverride;
+  }
+
+  async insert(_unit: KnowledgeUnit): Promise<number> {
+    this.counter.writes += 1;
+    return this.rowId;
+  }
+
+  async insertWithCommitKey(unit: KnowledgeUnit, commit: NoteGenerationCommitResult): Promise<NoteCommitResult> {
+    this.counter.writes += 1;
+    const result: NoteCommitResult = {
+      commitKey: this.commitKeyOverride.length > 0 ? this.commitKeyOverride : commit.commitKey,
+      rowId: this.rowId,
+      noteId: unit.id,
+      version: unit.version,
+      duplicate: false,
+    };
+    return result;
+  }
+}
+
   const unitForTest: KnowledgeUnit = {
   id: 'candidate-98',
   title: '连续函数',
@@ -399,7 +428,7 @@ export default function dispatcherNoteGenerationTest(): void {
 
       expect(result.success).assertFalse();
       expect(result.generation?.status).assertEqual('needs-input');
-      expect(result.generation?.questions.length > 0).assertTrue();
+      expect(result.generation?.questions !== undefined && result.generation.questions.length > 0).assertTrue();
       expect(repository.runSaves).assertEqual(2);
       expect(repository.checkpointSaves).assertEqual(0);
     });
@@ -427,14 +456,10 @@ export default function dispatcherNoteGenerationTest(): void {
         },
       };
       const model: FakeKnowledgeModel = new FakeKnowledgeModel();
+      const testDao: NoteDaoInterface = new CountingNoteDao(dao, 1);
       const options: DispatchOptions = {
         persist: false,
-        dao: {
-          insert: async (_unit: KnowledgeUnit): Promise<number> => {
-            dao.writes += 1;
-            return 1;
-          },
-        },
+        dao: testDao,
         generationRepository: repository,
         knowledgeModel: model,
       };
@@ -455,40 +480,29 @@ export default function dispatcherNoteGenerationTest(): void {
         candidate: generated,
         commitKey: 'light-98:light-98:0:confirmed',
       };
-      const insertWithCommitKey = async (unit: KnowledgeUnit): Promise<NoteCommitResult> => {
-        dao.writes += unit.title === generated.title ? 1 : 0;
-        return {
-          commitKey: prepared.commitKey ?? '',
-          rowId: 2,
-          noteId: unit.id,
-          version: unit.version,
-          duplicate: false,
-        };
+      const commitDao: NoteDaoInterface = new CountingNoteDao(dao, 2, prepared.commitKey ?? '');
+      const confirmRequest: DispatchRequest = {
+        source: 'app',
+        payload: { kind: 'text', text: generated.content },
+        preparedCandidate: prepared,
       };
-      const confirmResult: DispatchResult = await new Dispatcher().dispatch({
+      const confirmOptions: DispatchOptions = {
+        persist: true,
+        generationRepository: repository,
+        dao: commitDao,
+      };
+      const confirmResult: DispatchResult = await new Dispatcher().dispatch(confirmRequest, confirmOptions);
+      const duplicateRequest: DispatchRequest = {
         source: 'app',
         payload: { kind: 'text', text: generated.content },
         preparedCandidate: prepared,
-      }, {
+      };
+      const duplicateOptions: DispatchOptions = {
         persist: true,
         generationRepository: repository,
-        dao: {
-          insert: async (_unit: KnowledgeUnit): Promise<number> => 2,
-          insertWithCommitKey: insertWithCommitKey,
-        },
-      });
-      const duplicateResult: DispatchResult = await new Dispatcher().dispatch({
-        source: 'app',
-        payload: { kind: 'text', text: generated.content },
-        preparedCandidate: prepared,
-      }, {
-        persist: true,
-        generationRepository: repository,
-        dao: {
-          insert: async (_unit: KnowledgeUnit): Promise<number> => 3,
-          insertWithCommitKey: insertWithCommitKey,
-        },
-      });
+        dao: commitDao,
+      };
+      const duplicateResult: DispatchResult = await new Dispatcher().dispatch(duplicateRequest, duplicateOptions);
       expect(confirmResult.success).assertTrue();
       expect(duplicateResult.success).assertTrue();
       expect(confirmResult.data?.content).assertEqual(generated.content);

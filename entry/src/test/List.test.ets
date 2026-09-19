@@ -12,6 +12,7 @@ import customSpanPlaceholderSeamTest from './CustomSpanPlaceholderSeam.test';
 import dispatcherNoteGenerationTest from './DispatcherNoteGeneration.test';
 import rendererSchedulerTest from './RendererScheduler.test';
 import renderTickTest from './RenderTick.test';
+import streamingReplyDocumentTest from './StreamingReplyDocument.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -28,4 +29,5 @@ export default function testsuite() {
   dispatcherNoteGenerationTest();
   rendererSchedulerTest();
   renderTickTest();
+  streamingReplyDocumentTest();
 }
