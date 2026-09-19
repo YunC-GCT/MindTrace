@@ -18,13 +18,17 @@
  */
 
 import { TextIntent } from '../../services/IntentClassifier';
+import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
+import { ClassificationResult } from 'common';
 
 export type ConversationStep =
   | 'START'
   | 'classify_intent'
+  | 'classify_image_intent'
   | 'load_reply_context'
   | 'save_reply_input'
   | 'image_reply'
+  | 'image_note_reply'
   | 'complete_reply'
   | 'stream_reply'
   | 'note_reply'
@@ -38,6 +42,9 @@ export type ConversationProgressStep =
   | 'image_message_save'
   | 'image_recognize'
   | 'image_material_save'
+  | 'image_ocr_blank'
+  | 'image_note_ocr'
+  | 'image_note_draft'
   | 'note_intent_check'
   | 'note_context_load'
   | 'note_source_prepare'
@@ -72,8 +79,14 @@ export interface ConversationState {
   intent?: TextIntent;
   memoryContext?: string;
   learnerProfileContext?: string;
+  // DEV-006: load_reply_context 构造的可追溯检索/图谱证据, 供 complete/stream 引用
+  evidence?: NoteEvidenceContext;
   draftRunId?: string;
   draftCheckpointId?: string;
   draftCandidateHash?: string;
-  draftStatus?: 'ready-preview' | 'user-edit' | 'confirmed' | 'cancelled';
+  draftStatus?: 'ready-preview' | 'user-edit' | 'confirmed' | 'cancelled' | 'material-failed';
+  ocrResult?: ClassificationResult;
+  ocrSourceId?: string;
+  isOcrBlank?: boolean;
+  materialPersistFailed?: boolean;
 }

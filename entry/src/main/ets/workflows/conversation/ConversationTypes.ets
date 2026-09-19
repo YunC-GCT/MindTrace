@@ -34,4 +34,5 @@ export interface ConversationWorkflowCallbacks {
   getConversationText(excludeLatestUser: boolean): string;
   getSessionId(): string;
   onDraftReady(event: NoteDraftReadyEvent): void;
+  onOcrBlank?(imageUri: string): void;
 }

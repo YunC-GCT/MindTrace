@@ -17,6 +17,8 @@ export interface ReplyContext {
   memoryContext: string;
   learnerProfileContext: string;
   userContent: string;
+  // DEV-006: 检索/图谱证据上下文 (noteId/version/excerpt); 空串表示本轮无证据
+  evidenceContext: string;
 }
 
 export class IntentClassifier {
@@ -321,6 +323,12 @@ export class IntentClassifier {
     const memoryContext: string = context.memoryContext.trim();
     if (memoryContext.length > 0) {
       systemPrompt += '\n\n可参考的会话记忆如下，只在相关时使用，不要主动生成笔记：\n' + this.clip(memoryContext, 12000);
+    }
+    const evidenceContext: string = context.evidenceContext.trim();
+    if (evidenceContext.length > 0) {
+      systemPrompt += '\n\n本次回答可用的已保存笔记证据如下。回答历史问询时优先依据这些证据；'
+        + '正文引用某条笔记时写成 [noteId=... version=...]；只允许引用下面出现的 noteId 与 version，'
+        + '禁止编造来源；没有出现证据时不要声称内容来自用户笔记。\n' + this.clip(evidenceContext, 8000);
     }
     const messages: ChatMessage[] = [
       {

@@ -49,14 +49,15 @@ export class AgentMemoryService {
     await this.insertMessageRecord(record);
   }
 
-  async savePendingNoteMaterial(sessionId: string, content: string, source: string): Promise<void> {
+  async savePendingNoteMaterial(sessionId: string, content: string, source: string): Promise<string> {
     const text: string = content.trim();
     if (sessionId.length === 0 || text.length === 0) {
-      return;
+      return '';
     }
     const now: number = Date.now();
+    const recordId: string = AgentMemoryService.newId('mem');
     const record: AgentMemoryRecord = {
-      id: AgentMemoryService.newId('mem'),
+      id: recordId,
       sessionId: sessionId,
       type: 'pending_note',
       content: text,
@@ -66,6 +67,7 @@ export class AgentMemoryService {
       updatedAt: now,
     };
     await this.insertMemoryRecord(record);
+    return recordId;
   }
 
   async saveOcrResult(
@@ -73,7 +75,7 @@ export class AgentMemoryService {
     imageUri: string,
     userText: string,
     result: ClassificationResult,
-  ): Promise<void> {
+  ): Promise<string> {
     const lines: string[] = [];
     const instruction: string = userText.trim();
     const ocrText: string = (result.ocrText ?? '').trim();
@@ -92,7 +94,7 @@ export class AgentMemoryService {
       lines.push('OCR:');
       lines.push(ocrText);
     }
-    await this.savePendingNoteMaterial(sessionId, lines.join('\n'), imageUri);
+    return await this.savePendingNoteMaterial(sessionId, lines.join('\n'), imageUri);
   }
 
   async getContextForReply(sessionId: string): Promise<string> {
