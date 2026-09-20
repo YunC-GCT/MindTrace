@@ -84,9 +84,13 @@ export class LlmClient {
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
     const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
+    // 非流式调用默认关闭 thinking (2026-09-19): 非流式路径不回传 reasoning_content,
+    // thinking 只会烧 max_tokens 预算 (deepseek reasoning_effort=high 实测 512/800/6000
+    // 预算全被思维链耗尽, finish_reason=length 截断)。需要思考的流式聊天走 requestInStream;
+    // 显式传 enableThinking 的调用方不受此默认影响。
     const enableThinking: boolean = request.enableThinking !== undefined
       ? request.enableThinking
-      : this.config.getEnableThinking();
+      : false;
     const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
     const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
 
@@ -150,8 +154,8 @@ export class LlmClient {
       throw new LlmError(`LLM API error ${response.responseCode}: ${errBody}`, 'API_ERROR');
     }
 
-    // 5. 解析 JSON
-    const raw: string = LlmErrorBodyFormatter.format(response.result);
+    // 5. 解析 JSON (decodeFull: 保留完整响应体, 不能用 format() 的 256 字符预览截断)
+    const raw: string = LlmErrorBodyFormatter.decodeFull(response.result);
     let parsed: LlmResponse;
     try {
       parsed = JSON.parse(raw) as LlmResponse;
