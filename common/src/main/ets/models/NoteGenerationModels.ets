@@ -1485,6 +1485,138 @@ export function normalizeDraftCategory(raw: string): string {
   return '概念';
 }
 
+function sourceIdsFromBundle(bundle: SourceBundle): string[] {
+  const sourceIds: string[] = [];
+  for (const fragment of bundle.fragments) {
+    if (!sourceIds.includes(fragment.id)) {
+      sourceIds.push(fragment.id);
+    }
+  }
+  return sourceIds;
+}
+
+function firstSourceText(bundle: SourceBundle): string {
+  for (const fragment of bundle.fragments) {
+    const text: string = fragment.text.trim();
+    if (text.length > 0) {
+      return text;
+    }
+  }
+  return '';
+}
+
+function findSourceById(bundle: SourceBundle, sourceId: string): SourceFragment | undefined {
+  for (const fragment of bundle.fragments) {
+    if (fragment.id === sourceId) {
+      return fragment;
+    }
+  }
+  return undefined;
+}
+
+function clippedSourceExcerpt(text: string, maxLength: number): string {
+  const clean: string = text.trim();
+  if (clean.length <= maxLength) {
+    return clean;
+  }
+  return clean.substring(0, maxLength);
+}
+
+export function normalizeLightDraft(document: NoteDraftDocument, bundle: SourceBundle): NoteDraftDocument {
+  const sourceIds: string[] = sourceIdsFromBundle(bundle);
+  const fallbackContent: string = clippedSourceExcerpt(firstSourceText(bundle), 1600);
+  const sections: NoteDraftSection[] = [];
+  if (document.sections.length === 0 && fallbackContent.length > 0) {
+    sections.push({
+      id: 'section-1',
+      label: '核心内容',
+      content: fallbackContent,
+      sourceIds: sourceIds.slice(0),
+      state: 'generated',
+      baseHash: '',
+    });
+  }
+  for (let index: number = 0; index < document.sections.length; index += 1) {
+    const section: NoteDraftSection = document.sections[index];
+    const mappedSourceIds: string[] = [];
+    for (const sourceId of section.sourceIds) {
+      if (sourceIds.includes(sourceId) && !mappedSourceIds.includes(sourceId)) {
+        mappedSourceIds.push(sourceId);
+      }
+    }
+    if (mappedSourceIds.length === 0) {
+      for (const sourceId of sourceIds) {
+        mappedSourceIds.push(sourceId);
+      }
+    }
+    const normalizedContent: string = section.content.trim().length > 0 ? section.content : fallbackContent;
+    sections.push({
+      id: section.id.trim().length > 0 ? section.id : 'section-' + (index + 1).toString(),
+      label: section.label.trim().length > 0 ? section.label : '核心内容',
+      content: normalizedContent,
+      sourceIds: mappedSourceIds,
+      state: section.state,
+      baseHash: section.baseHash,
+    });
+  }
+  const difficulty: number = document.difficulty >= 1 && document.difficulty <= 4 ? document.difficulty : 1;
+  return {
+    schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+    title: document.title,
+    summary: document.summary,
+    subject: document.subject.trim().length > 0 ? document.subject : '其它',
+    category: normalizeDraftCategory(document.category),
+    chapter: document.chapter,
+    difficulty: difficulty,
+    tags: document.tags.slice(0),
+    sections: sections,
+    instruction: document.instruction,
+  };
+}
+
+export function buildPipelineEvidence(
+  outline: NoteGenerationOutline,
+  bundle: SourceBundle,
+): NoteGenerationEvidenceItem[] {
+  const evidence: NoteGenerationEvidenceItem[] = [];
+  for (let index: number = 0; index < outline.sections.length; index += 1) {
+    const section: NoteGenerationOutlineSection = outline.sections[index];
+    let sourceId: string = '';
+    for (const candidateId of section.sourceIds) {
+      if (findSourceById(bundle, candidateId) !== undefined) {
+        sourceId = candidateId;
+        break;
+      }
+    }
+    if (sourceId.length === 0 && bundle.fragments.length > 0) {
+      sourceId = bundle.fragments[0].id;
+    }
+    const source: SourceFragment | undefined = findSourceById(bundle, sourceId);
+    if (source === undefined) {
+      continue;
+    }
+    const excerpt: string = clippedSourceExcerpt(source.text, 160);
+    const start: number = excerpt.length > 0 ? source.text.indexOf(excerpt) : 0;
+    const locatedStart: number = start >= 0 ? start : 0;
+    const evidenceType: EvidenceItemType = classifyEvidenceType(section.label);
+    evidence.push({
+      id: 'pipeline-evidence-' + (index + 1).toString(),
+      type: evidenceType,
+      claim: excerpt.length > 0 ? excerpt : section.label,
+      sourceRefs: [{
+        sourceId: sourceId,
+        excerpt: excerpt,
+        start: locatedStart,
+        end: locatedStart + excerpt.length,
+      }],
+      targetSectionId: section.id,
+      verification: 'supported',
+      origin: 'pipeline',
+    });
+  }
+  return evidence;
+}
+
 /**
  * deep section draft 归一化 (2026-09-19 P0-4):
  * callDeepSectionDraft 的内容校验器原先直接校验 LLM 原始输出, 三类系统性

@@ -131,6 +131,13 @@ export default function truthCheckNodeTest(): void {
       expect(result.correctedText).assertUndefined();
     });
 
+    it('change_of_variable_integral_with_du_passes', 0, () => {
+      const service: TruthCheckService = new TruthCheckService();
+      const result: MvpTruthCheckResult = service.truthCheck('$\\int_{-\\infty}^{\\infty}\\varphi(u)\\,du=1$');
+      expect(result.truthFlag).assertTrue();
+      expect(result.correctedText).assertUndefined();
+    });
+
     it('missing_dx_still_patched_within_integrand_window', 0, () => {
       const service: TruthCheckService = new TruthCheckService();
       const result: MvpTruthCheckResult = service.truthCheck('$\\int_{0}^{1} x^2 = 1/3$');
