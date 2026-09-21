@@ -58,15 +58,16 @@ AgentChatService 回调从"仅放行 content"的过滤改为双通道:`thinking`
 - LlmConfig 的 enableThinking 默认值 false→true。该键从未有 UI 写入(`setEnableThinking` 零调用方),改默认即全局生效,无存量兼容包袱。
 - 不建 UI 开关(装饰性开关已删除,不复燃)。
 
-### 5. 分区展示(附件式单折叠)
+### 5. 独立步骤展示
 
-ChatBubble ai 分支双区块化:过程区块在上,最终回答区块在下,采用**附件式单折叠**形态(2026-09-12 细化拍板):
+ChatBubble 的 AI 分支按 `AgentRunPart[]` 原始顺序渲染独立步骤。非回答 Part 放在一个带边框的过程视觉容器中,但不设置总折叠开关:
 
-- 思考区裸露在回答气泡外(Claude 产品形态),折叠头升级(两态文案 + animateTo);回答气泡本体**零改动**(现有长文浅底/短文底色与 maxWidth 逻辑保持)。
-- P1 工具调用列表将作为**过程区块内部的二级折叠**(不新增独立一级折叠头);一级折叠头届时追加工具摘要计数。
-- P0 零空占位:条件渲染,数据未到不渲染对应子块。
+- 每个 thinking Part 对应一个独立 `AgentThinkingStep`,默认折叠,只控制自己的详情。
+- 每个 tool Part 对应一个独立 `AgentToolStep`,工具状态与详情展开不依赖思考组件。
+- status/error/answer 同样各自渲染,不存在父级开关统一隐藏这些步骤。
+- 回答气泡本体保持现有 Markdown/公式渲染与 maxWidth 逻辑。
 
-不做时序混排(P0 单轮思考下分区无信息损失;混排是 P1+ 多轮形态);不做三明治三区并列与大气泡一体化(已评估落选)。
+`AgentRunPanel` 承担有序路由与过程项视觉分组,没有汇总文案和交互状态。
 
 ### 6. keyGen 纯函数
 
@@ -76,11 +77,14 @@ AgentMessageList 的内联 keyGen lambda 提取为 ChatModels 导出纯函数 `c
 
 流式中"思考中…",流结束"已深度思考"。ChatStatusMachine busy 行保留为独立状态通道,与思考折叠头并存。不做"思考 X 次"(单轮恒 1)与用时计量(P1 工具循环落地后再升)。
 
-### 8. 展开态保护与动画
+### 8. 思考模块折叠与动画
 
-- `reasoningExpanded` 沿用现有"append 不触碰"纪律 — 流式写入不夺回用户展开态。
-- 折叠动画走 `animateTo` + if(官方路线);行不重建。
-- **展开态机制(修正 2026-09-13,triage 验证)**:展开态由 ChatBubble **内部 `@State`** 持有(`aboutToAppear` 自 `msg.reasoningExpanded` 初始化,undefined 默认展开),翻转本地驱动 UI,并经 `onToggleReasoning` 回写父数组(仅同步与持久化)。依据 LazyForEach 官方语义(键值不变 → 组件不更新,[FAQ 828](https://developer.huawei.com/consumer/cn/doc/faq/faqs-arkui-828) 场景二),原稿"展开态变化通过 @Prop 数据更新驱动"不成立 — key 不含 `reasoningExpanded` 时父数组新对象无路径进入未重建的行;直接在 key 中加回 `reasoningExpanded` 则行销毁重建,与 animateTo 前提矛盾(2026-09-12 工作区会话实证)。回写父数组不改变 key,行不重建,本地 `@State` 驱动折叠动画;流式事件经 `copyChatMsg` 保留 `reasoningExpanded`,行因 reasoning 增长重建时展开态随之恢复。
+- 每个 `AgentThinkingStep` 用内部 `@State` 持有自己的展开态,初始值固定为折叠。
+- 折叠且运行中时,标题右侧的小字号单行 Marquee 滚动当前思考的最新片段。
+- 思考完成后,同一行停止滚动并在标题右侧显示该 thinking Part 的开头摘要。
+- 点击思考标题只展开当前 thinking Part;不影响工具、状态、其他思考或回答。
+- 思考标题使用紧凑无框行,不显示前置图标或右侧展开箭头;整行保持点击热区。展开后隐藏同行摘要,避免与下方全文重复。
+- 折叠动画使用 `animateTo`。旧 `reasoningExpanded` 仅保留历史 JSON 兼容,不再驱动新的独立步骤 UI。
 
 ### 9. 事实裁决(非拍板,事实推导)
 
@@ -97,16 +101,18 @@ AgentMessageList 的内联 keyGen lambda 提取为 ChatModels 导出纯函数 `c
 - **Seam B — 事件→ChatMsg 字段分发**(`entry/src/test`):复用现有 service 测试模式,经 AgentChatService adapter 注入事件,断言 reasoning/content 累积不串;若结构不适配单测则降级并入真机验收。
 - **Seam C — keyGen 纯函数**(`entry/src/test`):①reasoning 增长 → key 变(防冻结回归锁)②reasoningExpanded 翻转 → key 不变(动画前提)③content.length/streaming 行为保持。
 
-**真机验收(非自动化,含 Open Q1 收尾)**:build + 浮窗对话 + hilog 验证 `enableThinking:true` 态 reasoning 事件稳定供给 + 手动 UI 检查:双区块渲染 / 两态文案 / 折叠动画 / 展开态不被流式收起 / 纯思考阶段不冻结 / 历史会话(旧版本数据)兼容 / 会话体积观察。
+**真机验收(非自动化,含 Open Q1 收尾)**:build + 浮窗对话 + hilog 验证 `enableThinking:true` 态 reasoning 事件稳定供给 + 手动 UI 检查:独立步骤渲染 / 两态文案 / 运行中小字滚动 / 完成后前段摘要 / 单个思考独立展开 / 纯思考阶段不冻结 / 历史会话兼容 / 会话体积观察。
 
 ## Out of Scope
+
+> 2026-09-21 follow-up:有序 Agent 运行 Part 与时间线基础设施已由 [spec 023](./023-agent-run-timeline-foundation.md) 落地。下列 P1 项中的 UI 基础形态不再以“思考区内二级列表”实现;真实 workflow 事件出口与 SSE 工具循环仍未接入。
 
 **P1(工具过程展示,届时单独立 spec)**:
 - ToolCallingWorkflow 事件出口(B7)
 - SSE + 工具循环(spec 014 明确排除,需新 spec)(B2)
-- 工具列表二级折叠 + SymbolGlyph 图标 + 摘要计数升级(F7 / B6 / F4 计量版)
+- 工具步骤详情折叠 + SymbolGlyph 图标与摘要升级(F7 / B6)
 - `tool_call`/`tool_result` 的 emit 侧
-- 多轮 thinking 区块合并(step 分隔)
+- 多轮 thinking 独立步骤的间距与连续阶段视觉
 - ChatMsg `toolCalls` 字段与旧会话兼容 checklist(F8)
 
 **P2(打磨)**:
