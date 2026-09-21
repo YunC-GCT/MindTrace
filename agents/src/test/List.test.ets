@@ -9,10 +9,18 @@ import truthCheckServiceTest from './TruthCheckService.test';
 import promptBuilderTest from './PromptBuilder.test';
 import captureGraphTest from './CaptureGraph.test';
 import captureTextFlowTest from './CaptureTextFlow.test';
+import persistNodeTest from './PersistNode.test';
+import truthCheckNodeTest from './TruthCheckNode.test';
+import generationJsonCallerTest from './GenerationJsonCaller.test';
+import structureNodeTest from './StructureNode.test';
 
 export default function testsuite() {
   truthCheckServiceTest();
   promptBuilderTest();
   captureGraphTest();
   captureTextFlowTest();
+  persistNodeTest();
+  truthCheckNodeTest();
+  generationJsonCallerTest();
+  structureNodeTest();
 }

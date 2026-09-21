@@ -74,6 +74,15 @@ export class PersistNodeFactory {
         };
         const commitResult = await dao.insertWithCommitKey(input.knowledgeUnit, commit);
         const next: AgentState = copyAgentState(input);
+        if (commitResult.success === false) {
+          next.error = {
+            kind: commitResult.errorCode ?? 'PERSIST_ERROR',
+            message: commitResult.errorMessage ?? 'KnowledgeUnit insert failed',
+            step: 'persist',
+            retriable: false,
+          };
+          return { state: next };
+        }
         next.commitResult = commitResult;
         return { state: next };
       } else {

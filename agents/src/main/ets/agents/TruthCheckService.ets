@@ -263,13 +263,20 @@ export class TruthCheckService {
       if (hatClose === -1) {
         break;
       }
+      // 2026-09-20 P0-6: 被积函数在 dx 之前 (如 \int f(x)\,dx), 只检查指数紧邻
+      // 位置会把正确积分误判缺 dx 并注入破坏内容; dx 搜索窗口 = 积分体内
+      // (到最近的公式边界/下一个积分/换行为止), 窗口内已含 dx 则不注入
       const afterIntegral: string = result.substring(hatClose + 1);
-      const trimmedAfter: string = afterIntegral.trim();
-      if (
-        trimmedAfter.indexOf(dxPattern) !== 0 &&
-        trimmedAfter.indexOf('\\,dx') !== 0 &&
-        trimmedAfter.indexOf('\\, dx') !== 0
-      ) {
+      let windowEnd: number = afterIntegral.length;
+      const stoppers: string[] = ['$', '\\]', '\\int', '\n'];
+      for (const stopper of stoppers) {
+        const stopIdx: number = afterIntegral.indexOf(stopper);
+        if (stopIdx >= 0 && stopIdx < windowEnd) {
+          windowEnd = stopIdx;
+        }
+      }
+      const integrandWindow: string = afterIntegral.substring(0, windowEnd);
+      if (integrandWindow.indexOf(dxPattern) < 0) {
         result =
           result.substring(0, hatClose + 1) +
           ' \\, dx' +

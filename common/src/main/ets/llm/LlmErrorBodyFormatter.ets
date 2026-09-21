@@ -3,7 +3,8 @@
 // 责任: 把 http.HttpResponse.result（ArrayBuffer | Object | string）解码成 user-visible 字符串,
 //       并对常见敏感 token (Bearer / api-key= / sk-...) 做 redact,
 //       防止 LLM API 错误消息把 endpoint / Authorization / api-key 泄露到 UI / 日志。
-// 用途: LlmClient API_ERROR 分支调用 LlmErrorBodyFormatter.format(response.result)。
+// 用途: LlmClient API_ERROR 分支调用 LlmErrorBodyFormatter.format(response.result);
+//       LlmClient 成功分支调用 LlmErrorBodyFormatter.decodeFull(response.result) 后 JSON.parse。
 //
 // ArkTS 1.1 严格语法:
 //   - 无 any / unknown
@@ -14,6 +15,24 @@ import { util } from '@kit.ArkTS';
 
 export class LlmErrorBodyFormatter {
   private static readonly BODY_PREVIEW_MAX_CHARS: number = 256;
+
+  /**
+   * 完整解码 HTTP 响应体 (无截断 / 无脱敏), 供 LlmClient 成功分支 JSON.parse 使用。
+   * format() 面向用户可见错误信息 (256 字符预览 + 敏感信息脱敏);
+   * decodeFull() 必须保留原始字节, 否则响应体被截断会导致 JSON.parse 失败。
+   */
+  public static decodeFull(result: Object | ArrayBuffer | string | undefined | null): string {
+    if (result === undefined || result === null) {
+      return '';
+    }
+    if (typeof result === 'string') {
+      return result;
+    }
+    if (result instanceof ArrayBuffer) {
+      return LlmErrorBodyFormatter.decodeArrayBuffer(result);
+    }
+    return LlmErrorBodyFormatter.stringifyObject(result);
+  }
 
   public static format(result: Object | ArrayBuffer | string | undefined | null): string {
     if (result === undefined || result === null) {

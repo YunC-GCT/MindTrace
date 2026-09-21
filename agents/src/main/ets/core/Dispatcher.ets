@@ -336,7 +336,24 @@ export class Dispatcher {
     startedAt: number,
   ): Promise<DispatchResult> {
     const bundle: SourceBundle = this.normalizeBundle(request);
-    const route = request.route ?? selectGenerationRoute(bundle, request.instruction);
+    let route = request.route ?? selectGenerationRoute(bundle, request.instruction);
+    // 2026-09-20 P0-7: deep 源预算超限时自动降级 standard — 原先 preflight 直接
+    // needs-input 终止 (dbpull5 实测 3 连 missing_facts, 用户反复重试均 25ms 拒绝);
+    // standard 单次调用可承载长源, 降级优于中断问询
+    if (route === 'deep') {
+      const deepSourceLimit: number = deepBudget().maxSourceChars ?? 0;
+      if (deepSourceLimit > 0) {
+        let sourceChars: number = 0;
+        for (const fragment of bundle.fragments) {
+          sourceChars += fragment.text.length;
+        }
+        if (sourceChars > deepSourceLimit) {
+          log.info('generation run=' + request.runId + ' downgrade deep->standard: sourceChars='
+            + sourceChars.toString() + ' > ' + deepSourceLimit.toString());
+          route = 'standard';
+        }
+      }
+    }
     const budget = route === 'deep' ? deepBudget() : route === 'standard' ? standardBudget() : lightBudget();
     const requirement = request.requirement ?? defaultRequirement(request.instruction);
     const run: NoteGenerationRun = {
