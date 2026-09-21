@@ -43,6 +43,10 @@ test('No StreamingReplyDocument / RendererScheduler / RenderTick is introduced b
     read('entry/src/main/ets/shared/molecules/FormulaSplitRenderer.ets'),
     read('entry/src/main/ets/shared/molecules/MarkdownRenderer.ets'),
     read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets'),
+    read('entry/src/main/ets/overlays/AgentFloatWindow/chat/UserMessageBubble.ets'),
+    read('entry/src/main/ets/overlays/AgentFloatWindow/chat/AiMessageBubble.ets'),
+    read('entry/src/main/ets/overlays/AgentFloatWindow/chat/AgentRunPanel.ets'),
+    read('entry/src/main/ets/overlays/AgentFloatWindow/chat/AgentAnswerStep.ets'),
     read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatSession.ets'),
     read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets'),
   ].join('\n');

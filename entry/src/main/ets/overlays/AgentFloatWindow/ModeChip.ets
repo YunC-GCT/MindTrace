@@ -7,7 +7,7 @@
  *
  * Props:
  *   label:  胶囊文字
- *   onTap?: 点击回调 (TODO 占位)
+ *   onTap?: 点击回调
  */
 
 import {
@@ -18,7 +18,7 @@ import {
 
 @Component
 export struct ModeChip {
-  label: string = '';
+  @Prop label: string = '';
   onTap?: () => void = (): void => {};
 
   build() {

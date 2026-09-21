@@ -14,6 +14,14 @@
 
 import { ConversationProgressStep } from '../../../workflows/conversation/ConversationState'
 import type { StreamEvent } from 'common'
+import {
+  AgentRunPart,
+  agentRunRevision,
+  applyStreamEventToAgentRun,
+  copyAgentRunParts,
+  finishAgentRun,
+  projectLegacyAgentRun,
+} from './AgentRunModels'
 
 export interface ChatMsg {
   // 消息唯一 id(用 Date.now * 1000 + random)
@@ -34,8 +42,12 @@ export interface ChatMsg {
   // 思考链内容 (DeepSeek 思考模式, 仅 ai 消息; 旧会话可能缺失)
   reasoning?: string
 
-  // 思考面板是否展开 (仅 ai 消息, 默认展开; undefined 视为展开,见 ChatBubble 与 AgentFloatWindow 的兜底)
+  // 旧思考面板展开态;保留用于历史会话兼容
   reasoningExpanded?: boolean
+
+  // AI 单次运行的有序步骤;旧会话缺失时由 reasoning/content 即时投影
+  runParts?: AgentRunPart[]
+
 }
 
 export function chatItemKey(message: ChatMsg): string {
@@ -43,11 +55,19 @@ export function chatItemKey(message: ChatMsg): string {
   const contentLengthPart: string = '_contentLength' + message.content.length.toString()
   const reasoningLengthPart: string = '_reasoningLength' + chatMessageReasoning(message).length.toString()
   const streamingPart: string = message.streaming ? '_streaming1' : '_streaming0'
-  return idPart + contentLengthPart + reasoningLengthPart + streamingPart
+  const runPart: string = '_run' + agentRunRevision(chatMessageRunParts(message))
+  return idPart + contentLengthPart + reasoningLengthPart + streamingPart + runPart
 }
 
 export function chatMessageReasoning(message: ChatMsg): string {
   return message.reasoning ?? ''
+}
+
+export function chatMessageRunParts(message: ChatMsg): AgentRunPart[] {
+  if (message.runParts !== undefined) {
+    return message.runParts
+  }
+  return projectLegacyAgentRun(message.id, chatMessageReasoning(message), message.content, message.streaming)
 }
 
 export function copyChatMsg(message: ChatMsg): ChatMsg {
@@ -62,11 +82,15 @@ export function copyChatMsg(message: ChatMsg): ChatMsg {
   if (message.reasoningExpanded !== undefined) {
     next.reasoningExpanded = message.reasoningExpanded
   }
+  if (message.runParts !== undefined) {
+    next.runParts = copyAgentRunParts(message.runParts)
+  }
   return next
 }
 
 export function applyStreamEventToChatMsg(message: ChatMsg, event: StreamEvent): ChatMsg {
   const next: ChatMsg = copyChatMsg(message)
+  next.runParts = applyStreamEventToAgentRun(chatMessageRunParts(message), event, message.id)
   if (event.type === 'thinking') {
     next.reasoning = chatMessageReasoning(message) + event.delta
     return next
@@ -75,6 +99,13 @@ export function applyStreamEventToChatMsg(message: ChatMsg, event: StreamEvent):
     next.content = message.content + event.delta
     return next
   }
+  return next
+}
+
+export function finishChatMsg(message: ChatMsg): ChatMsg {
+  const next: ChatMsg = copyChatMsg(message)
+  next.streaming = false
+  next.runParts = finishAgentRun(chatMessageRunParts(message))
   return next
 }
 
