@@ -24,6 +24,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **Reply body contract** | [`020-reply-body-contract.md`](./020-reply-body-contract.md) | [`0016`](../adr/0016-reply-contract-by-transport.md) | **proposed** (2026-09-12 — grill → to-spec; P0 stream 直出正文 + 持久化门 + 渲染单入口; P1 渲染加固独立 ticket; P2 LlmGuard 容错提取) |
 | **Knowledge graph RDB** | [`021-knowledge-graph-rdb.md`](./021-knowledge-graph-rdb.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015`](./015-knowledge-model-decomposition-v2.md) | **implemented on feature branch** (2026-09-17 — 空 `kg_edge`、统一关系写入、accepted 边图谱查询、RAG demo 预留表) |
 | **022 / multi-device UI** | [`022-multi-device-ui-adaptation.md`](./022-multi-device-ui-adaptation.md) | (implicit; research + codebase-design) | **ready; implementation deferred** (2026-09-08) |
+| **Agent run timeline** | [`023-agent-run-timeline-foundation.md`](./023-agent-run-timeline-foundation.md) | [`0015`](../adr/0015-structured-stream-events.md) | **foundation implemented; workflow emission pending** (2026-09-21) |
 
 ## P0 tickets without spec
 

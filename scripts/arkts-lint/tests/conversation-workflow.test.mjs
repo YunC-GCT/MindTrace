@@ -35,11 +35,11 @@ test('Conversation workflow has independent typed state and shared graph runtime
   assert.match(replyService, /class ReplyService/);
 });
 
-test('AgentChatService is a thin three-entry facade', () => {
+test('AgentChatService exposes only the active image and streaming text run entries', () => {
   assert.match(facade, /class AgentChatService/);
   assert.match(facade, /async captureReply/);
-  assert.match(facade, /async realReply\(/);
   assert.match(facade, /async realReplyStream/);
+  assert.doesNotMatch(facade, /async realReply\(/);
   // LOC is not a stable contract: callback adapters and public draft
   // lifecycle methods may grow without moving orchestration into the facade.
   // Assert the ownership boundary directly instead of enforcing a line cap.

@@ -1,6 +1,6 @@
 import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
 import { ConversationWorkflowCallbacks } from '../workflows/conversation/ConversationTypes';
-import { ConversationProgressStep, ConversationRequest, ImageConversationRequest, TextConversationRequest } from '../workflows/conversation/ConversationState';
+import { ConversationProgressStep, ConversationRequest, ImageConversationRequest } from '../workflows/conversation/ConversationState';
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
@@ -95,17 +95,6 @@ export class AgentChatService {
     await this.workflow.run(request);
   }
 
-  async realReply(userContent: string): Promise<void> {
-    if (this.busyRunCount > 0) {
-      return;
-    }
-    const request: TextConversationRequest = {
-      kind: 'text',
-      userContent: userContent,
-      responseMode: 'complete',
-    };
-    await this.workflow.run(request);
-  }
   async realReplyStream(userContent: string): Promise<void> {
     if (this.busyRunCount > 0) {
       return;

@@ -542,7 +542,7 @@ export class ConversationWorkflow {
 
   /**
    * 流式回复 — 基于 DeepSeek SSE,逐 token 实时推送 UI
-   * 非流式 realReply() 作为回退保留,当 callStream 失败时自动降级
+   * ReplyService.stream() 在流无正文或非传输错误时执行非流式回退
    */
   private async handleStreamReply(
     sessionId: string,
