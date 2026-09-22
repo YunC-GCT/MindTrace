@@ -2,7 +2,7 @@
  * ChatModels.ets — AI 浮窗共享消息模型与纯函数
  *
  * 路径: entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets
- * 职责: 定义 ChatMsg/ChatSession，并提供消息 key、复制和流事件 reducer。
+ * 职责: 定义 ChatMsg/ChatSession，并提供消息 key、明确的内存/持久化复制契约和流事件 reducer。
  * 依赖: common StreamEvent; conversation ConversationProgressStep
  *
  * 数据流:
@@ -63,14 +63,11 @@ export function chatMessageReasoning(message: ChatMsg): string {
   return message.reasoning ?? ''
 }
 
-export function chatMessageRunParts(message: ChatMsg): AgentRunPart[] {
-  if (message.runParts !== undefined) {
-    return message.runParts
-  }
-  return projectLegacyAgentRun(message.id, chatMessageReasoning(message), message.content, message.streaming)
-}
-
-export function copyChatMsg(message: ChatMsg): ChatMsg {
+/**
+ * Copy contract for an active conversation. This is the full in-memory working
+ * copy and therefore retains UI interaction state such as reasoningExpanded.
+ */
+export function copyChatMsgForMemory(message: ChatMsg): ChatMsg {
   const next: ChatMsg = {
     id: message.id,
     role: message.role,
@@ -88,8 +85,37 @@ export function copyChatMsg(message: ChatMsg): ChatMsg {
   return next
 }
 
+export function chatMessageRunParts(message: ChatMsg): AgentRunPart[] {
+  if (message.runParts !== undefined) {
+    return message.runParts
+  }
+  return projectLegacyAgentRun(message.id, chatMessageReasoning(message), message.content, message.streaming)
+}
+
+/**
+ * Copy contract for file/Worker transfer. The result is pure history data and
+ * deliberately excludes reasoningExpanded, which is UI-only state.
+ */
+export function copyChatMsgForPersistence(message: ChatMsg): ChatMsg {
+  const next: ChatMsg = {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    ts: message.ts,
+    streaming: message.streaming,
+  }
+  if (message.reasoning !== undefined) {
+    next.reasoning = message.reasoning
+  }
+  return next
+}
+
+export function copyChatMsg(message: ChatMsg): ChatMsg {
+  return copyChatMsgForMemory(message)
+}
+
 export function applyStreamEventToChatMsg(message: ChatMsg, event: StreamEvent): ChatMsg {
-  const next: ChatMsg = copyChatMsg(message)
+  const next: ChatMsg = copyChatMsgForMemory(message)
   next.runParts = applyStreamEventToAgentRun(chatMessageRunParts(message), event, message.id)
   if (event.type === 'thinking') {
     next.reasoning = chatMessageReasoning(message) + event.delta
@@ -126,4 +152,44 @@ export interface ChatSession {
 
   // 该会话下的消息列表
   messages: ChatMsg[]
+}
+
+export function copyChatSessionForMemory(session: ChatSession): ChatSession {
+  const messages: ChatMsg[] = []
+  for (const message of session.messages) {
+    messages.push(copyChatMsgForMemory(message))
+  }
+  return {
+    id: session.id,
+    name: session.name,
+    messages: messages,
+  }
+}
+
+export function copyChatSessionForPersistence(session: ChatSession): ChatSession {
+  const messages: ChatMsg[] = []
+  for (const message of session.messages) {
+    messages.push(copyChatMsgForPersistence(message))
+  }
+  return {
+    id: session.id,
+    name: session.name,
+    messages: messages,
+  }
+}
+
+export function copyChatSessionsForMemory(sessions: ChatSession[]): ChatSession[] {
+  const copied: ChatSession[] = []
+  for (const session of sessions) {
+    copied.push(copyChatSessionForMemory(session))
+  }
+  return copied
+}
+
+export function copyChatSessionsForPersistence(sessions: ChatSession[]): ChatSession[] {
+  const copied: ChatSession[] = []
+  for (const session of sessions) {
+    copied.push(copyChatSessionForPersistence(session))
+  }
+  return copied
 }

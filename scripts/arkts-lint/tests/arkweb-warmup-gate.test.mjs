@@ -103,11 +103,28 @@ test('EntryAbility keeps startup work after a recoverable warmup result', () => 
 
 test('Issue 119 preserves the existing chat rendering and persistence paths', () => {
   const chatSession = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatSession.ets');
+  const chatHistoryPersistence = read('entry/src/main/ets/services/ChatHistoryPersistence.ets');
   const markdownRenderer = read('entry/src/main/ets/shared/molecules/MarkdownRenderer.ets');
   const formulaRenderer = read('entry/src/main/ets/shared/molecules/FormulaSplitRenderer.ets');
   assert.doesNotMatch(service + entryAbility, /StreamingReplyDocument/);
-  assert.match(chatSession, /chat_history/);
+  assert.match(chatSession + chatHistoryPersistence, /chat_history/);
   assert.match(chatSession, /preferences\.getPreferences/);
   assert.match(markdownRenderer, /export struct MarkdownRenderer/);
   assert.match(formulaRenderer, /export struct FormulaSplitRenderer/);
+});
+
+test('Issue 141 chat history persistence diagnostics and stream boundaries stay wired', () => {
+  const chatSession = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatSession.ets');
+  const chatHistoryPersistence = read('entry/src/main/ets/services/ChatHistoryPersistence.ets');
+  const chatPersistenceWorker = read('entry/src/main/ets/workers/ChatPersistenceWorker.ets');
+  const agentFloatWindow = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
+  assert.match(chatHistoryPersistence, /schemaVersion=/);
+  assert.match(chatHistoryPersistence, /ts=/);
+  assert.match(chatHistoryPersistence, /pendingMigrationFrom/);
+  assert.match(chatHistoryPersistence, /reasoningExpanded/);
+  assert.match(chatPersistenceWorker, /schemaVersion: number/);
+  assert.match(chatPersistenceWorker, /diagnostic\('VERIFY', 'verified=true'\)/);
+  assert.match(chatSession, /getLastSaveResult\(\)/);
+  assert.match(agentFloatWindow, /finishCurrentStreamingMessage\(\)/);
+  assert.match(agentFloatWindow, /inputVm\.bind\([\s\S]*finishCurrentStreamingMessage\(\)/);
 });
