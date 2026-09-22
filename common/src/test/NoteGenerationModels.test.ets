@@ -24,7 +24,9 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   parseDirectStandardArtifacts,
   normalizeDraftCategory,
+  normalizeLightDraft,
   normalizeDeepSectionDraft,
+  buildPipelineEvidence,
   normalizeEvidenceItems,
   normalizeOutline,
   validateDraftDocument,
@@ -121,6 +123,77 @@ export default function noteGenerationModelsTest(): void {
   });
 
   describe('NoteGenerationModels.standard_contract_normalization', () => {
+    it('light_draft_backfills_empty_section_from_source', 0, () => {
+      const draft: NoteDraftDocument = {
+        schemaVersion: '1.0',
+        title: '单调性',
+        summary: '',
+        subject: '',
+        category: '数学分析',
+        chapter: '',
+        difficulty: 0,
+        tags: [],
+        sections: [{
+          id: '',
+          label: '',
+          content: '',
+          sourceIds: [],
+          state: 'generated',
+          baseHash: '',
+        }],
+      };
+      const bundle: SourceBundle = {
+        fragments: [{
+          id: 'src-light',
+          kind: 'conversation',
+          originId: 'origin-light',
+          sequence: 0,
+          fingerprint: 'fp-light',
+          text: '单调性描述的是函数值随着自变量变化而变化的趋势。',
+        }],
+      };
+      const normalized: NoteDraftDocument = normalizeLightDraft(draft, bundle);
+      expect(normalized.schemaVersion).assertEqual(NOTE_DRAFT_SCHEMA_VERSION);
+      expect(normalized.subject).assertEqual('其它');
+      expect(normalized.category).assertEqual('概念');
+      expect(normalized.difficulty).assertEqual(1);
+      expect(normalized.sections[0].id).assertEqual('section-1');
+      expect(normalized.sections[0].label).assertEqual('核心内容');
+      expect(normalized.sections[0].content).assertContain('单调性描述的是函数值');
+      expect(normalized.sections[0].sourceIds[0]).assertEqual('src-light');
+      const issues: NoteGenerationIssue[] = validateDraftDocument(normalized, ['src-light']);
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('pipeline_evidence_builds_source_anchor_for_empty_model_evidence', 0, () => {
+      const outline: NoteGenerationOutline = {
+        schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
+        sections: [{
+          id: 'sec-definition',
+          label: '定义',
+          order: 0,
+          mustInclude: [],
+          sourceIds: ['src-evidence'],
+        }],
+      };
+      const bundle: SourceBundle = {
+        fragments: [{
+          id: 'src-evidence',
+          kind: 'conversation',
+          originId: 'origin-evidence',
+          sequence: 0,
+          fingerprint: 'fp-evidence',
+          text: '连续函数是指自变量发生很小变化时，函数值也只发生很小变化。',
+        }],
+      };
+      const evidence: NoteGenerationEvidenceItem[] = buildPipelineEvidence(outline, bundle);
+      expect(evidence.length).assertEqual(1);
+      expect(evidence[0].origin).assertEqual('pipeline');
+      expect(evidence[0].targetSectionId).assertEqual('sec-definition');
+      expect(evidence[0].sourceRefs[0].sourceId).assertEqual('src-evidence');
+      expect(evidence[0].sourceRefs[0].excerpt).assertContain('连续函数');
+    });
+
     it('category_subject_level_label_falls_back_to_concept', 0, () => {
       // 2026-09-19: 模型返回学科级标签 ("概率论与统计学") 原判 CATEGORY_INVALID (hard) 判死
       expect(normalizeDraftCategory('概率论与统计学')).assertEqual('概念');

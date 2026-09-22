@@ -244,7 +244,6 @@ export class TruthCheckService {
   private patchIntegralDx(text: string, issues: string[]): string {
     let result: string = text;
     const intPattern: string = '\\int_{';
-    const dxPattern: string = 'dx';
     let searchPos: number = 0;
     while (true) {
       const intIdx: number = result.indexOf(intPattern, searchPos);
@@ -263,9 +262,8 @@ export class TruthCheckService {
       if (hatClose === -1) {
         break;
       }
-      // 2026-09-20 P0-6: 被积函数在 dx 之前 (如 \int f(x)\,dx), 只检查指数紧邻
-      // 位置会把正确积分误判缺 dx 并注入破坏内容; dx 搜索窗口 = 积分体内
-      // (到最近的公式边界/下一个积分/换行为止), 窗口内已含 dx 则不注入
+      // 2026-09-21: 接受任意积分微元 (dx/du/dt/dy...), 避免换元积分
+      // \varphi(u)\,du 被误判缺 dx 并注入错误内容。
       const afterIntegral: string = result.substring(hatClose + 1);
       let windowEnd: number = afterIntegral.length;
       const stoppers: string[] = ['$', '\\]', '\\int', '\n'];
@@ -276,7 +274,7 @@ export class TruthCheckService {
         }
       }
       const integrandWindow: string = afterIntegral.substring(0, windowEnd);
-      if (integrandWindow.indexOf(dxPattern) < 0) {
+      if (!this.hasDifferential(integrandWindow)) {
         result =
           result.substring(0, hatClose + 1) +
           ' \\, dx' +
@@ -286,5 +284,29 @@ export class TruthCheckService {
       searchPos = hatClose + 1;
     }
     return result;
+  }
+
+  private hasDifferential(text: string): boolean {
+    let index: number = 0;
+    while (index < text.length - 1) {
+      const current: string = text.charAt(index);
+      const next: string = text.charAt(index + 1);
+      if (current === 'd' && this.isAsciiLetter(next)) {
+        const previous: string = index > 0 ? text.charAt(index - 1) : '';
+        if (!this.isAsciiLetter(previous)) {
+          return true;
+        }
+      }
+      index += 1;
+    }
+    return false;
+  }
+
+  private isAsciiLetter(value: string): boolean {
+    if (value.length === 0) {
+      return false;
+    }
+    const code: number = value.charCodeAt(0);
+    return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
   }
 }

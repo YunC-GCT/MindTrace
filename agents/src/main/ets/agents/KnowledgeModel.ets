@@ -37,8 +37,10 @@ import {
   ReviewStatus,
   normalizeOutline,
   normalizeDraftCategory,
+  normalizeLightDraft,
   segmentSourceBundle,
   buildDeepOutline,
+  buildPipelineEvidence,
   sourceFingerprint,
   validateSourceBundle,
   NoteGenerationEvidenceVerifier,
@@ -217,7 +219,7 @@ export class KnowledgeModel {
         return { ok: issues.length === 0, issues: issues };
       },
       (json: Record<string, Object>): string[] => {
-        const document: NoteDraftDocument = this.parseDraftDocument(json);
+        const document: NoteDraftDocument = normalizeLightDraft(this.parseDraftDocument(json), request.sources);
         const sourceIds: string[] = [];
         for (const fragment of request.sources.fragments) {
           sourceIds.push(fragment.id);
@@ -230,7 +232,7 @@ export class KnowledgeModel {
         return codes;
       },
     );
-    return this.parseDraftDocument(parsed);
+    return normalizeLightDraft(this.parseDraftDocument(parsed), request.sources);
   }
 
   async structureStandardDraft(request: NoteGenerationRequest): Promise<NoteGenerationStandardResult> {
@@ -1029,7 +1031,7 @@ export class KnowledgeModel {
     // 再做 excerpt 偏移定位 (定位依赖 sourceId 可查)
     const normalizedEvidence: NoteGenerationEvidenceItem[] =
       normalizeEvidenceItems(remappedEvidence, sourceIds, outlineSourceIdsBySectionId);
-    const evidence: NoteGenerationEvidenceItem[] = [];
+    let evidence: NoteGenerationEvidenceItem[] = [];
     for (const item of normalizedEvidence) {
       evidence.push({
         id: item.id,
@@ -1039,7 +1041,11 @@ export class KnowledgeModel {
         sourceRefs: this.relocateEvidenceRefs(item.sourceRefs, bundle),
         targetSectionId: item.targetSectionId,
         verification: item.verification,
+        origin: item.origin,
       });
+    }
+    if (evidence.length === 0) {
+      evidence = buildPipelineEvidence(outline, bundle);
     }
     const normalizedResult: NoteGenerationStandardResult = {
       outline: outline,

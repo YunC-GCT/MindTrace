@@ -657,12 +657,12 @@ export class ConversationWorkflow {
         return undefined;
       }
 
-      let conversation: string = memoryContext.trim();
+      let conversation: string = this.intentClassifier.inlineNoteMaterial(userInstruction).trim();
       if (conversation.length === 0) {
-        conversation = this.cbs.getConversationText(true).trim();
+        conversation = memoryContext.trim();
       }
       if (conversation.length === 0) {
-        conversation = this.intentClassifier.inlineNoteMaterial(userInstruction);
+        conversation = this.cbs.getConversationText(true).trim();
       }
       if (conversation.length === 0) {
         await this.addAiMessage(sessionId, '当前会话还没有可整理的内容');
