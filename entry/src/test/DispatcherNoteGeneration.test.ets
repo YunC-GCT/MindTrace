@@ -675,7 +675,7 @@ export default function dispatcherNoteGenerationTest(): void {
     });
 
     it('returns needs-input instead of silently dropping sources over the deep source budget', 0, async () => {
-      const hugeText: string = '证明步骤和公式。'.repeat(3000);
+      const hugeText: string = '证明步骤和公式。'.repeat(5000);
       const repository: FakeRepository = new FakeRepository();
       const request: DispatchRequest = {
         source: 'app', payload: { kind: 'text', text: hugeText }, generation: {

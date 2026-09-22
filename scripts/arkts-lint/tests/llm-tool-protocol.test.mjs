@@ -8,6 +8,7 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 const llmTypes = read('common/src/main/ets/llm/LlmTypes.ets');
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
+const llmResponseParser = read('common/src/main/ets/llm/LlmResponseParser.ets');
 
 // spec 014 / ADR-0012: OpenAI 兼容 tool-calling 协议字段(全部可选, wire 兼容)。
 
@@ -42,14 +43,19 @@ test('LlmCallResult carries toolCalls; LlmErrorKind has TOOL_LOOP_MAX_STEPS', ()
   assert.match(llmTypes, /'TOOL_LOOP_MAX_STEPS'/);
 });
 
-test('LlmClient passes tools through and extracts tool_calls provider-tolerantly', () => {
-  assert.match(llmClient, /private extractToolCalls\(parsed: LlmResponse\)/);
-  assert.match(llmClient, /request\.tools !== undefined/);
-  assert.match(llmClient, /request\.tool_choice !== undefined/);
-  assert.match(llmClient, /result\.toolCalls = toolCalls/, 'LlmCallResult.toolCalls must be populated');
+test('LlmResponseParser exposes the public tool-call result seam', () => {
+  assert.match(llmResponseParser, /public static buildCallResult\(parsed: LlmResponse\)/);
+  assert.match(llmResponseParser, /private static extractToolCalls\(parsed: LlmResponse\)/);
+  assert.match(llmResponseParser, /result\.toolCalls = toolCalls/);
+  assert.match(llmClient, /LlmResponseParser\.buildCallResult\(parsed\)/);
   assert.doesNotMatch(
-    llmClient,
+    llmResponseParser,
     /finish_reason === 'tool_calls'/,
     'gate must NOT depend on finish_reason (OpenAI-compatible endpoint variance)',
   );
+});
+
+test('LlmClient passes tools through and preserves optional tool choice', () => {
+  assert.match(llmClient, /request\.tools !== undefined/);
+  assert.match(llmClient, /request\.tool_choice !== undefined/);
 });

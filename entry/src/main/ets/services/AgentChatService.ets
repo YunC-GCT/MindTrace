@@ -1,6 +1,6 @@
 import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
 import { ConversationWorkflowCallbacks } from '../workflows/conversation/ConversationTypes';
-import { ConversationProgressStep, ConversationRequest, ImageConversationRequest, TextConversationRequest } from '../workflows/conversation/ConversationState';
+import { ConversationProgressStep, ConversationRequest, ImageConversationRequest } from '../workflows/conversation/ConversationState';
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
@@ -24,7 +24,11 @@ class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   private readonly callbacks: AgentChatCallbacks;
   private readonly statusMachine: ChatStatusMachine = new ChatStatusMachine();
   private activeRuns: number = 0;
-  constructor(callbacks: AgentChatCallbacks) { this.callbacks = callbacks; }
+  private readonly serviceRef: AgentChatService;
+  constructor(callbacks: AgentChatCallbacks, serviceRef: AgentChatService) {
+    this.callbacks = callbacks;
+    this.serviceRef = serviceRef;
+  }
 
   addAiMsg(content: string): void { this.callbacks.addAiMsg(content); }
   addAiMsgEmpty(): number { return this.callbacks.addAiMsgEmpty(); }
@@ -34,6 +38,7 @@ class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   finishAiMsg(id: number): void { this.callbacks.finishAiMsg(id); }
   onStart(): void {
     this.activeRuns += 1;
+    this.serviceRef.notifyBusyChange(true);
     this.callbacks.setBusy(true);
   }
   onProgress(step: ConversationProgressStep): void {
@@ -47,6 +52,7 @@ class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
     if (this.activeRuns > 0) {
       return;
     }
+    this.serviceRef.notifyBusyChange(false);
     this.callbacks.setStatusMeta(null);
     this.callbacks.setBusy(false);
   }
@@ -56,14 +62,31 @@ class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   }
   getSessionId(): string { return this.callbacks.getSessionId(); }
   onDraftReady(event: NoteDraftReadyEvent): void { this.callbacks.onDraftReady(event); }
+  onOcrBlank?(imageUri: string): void { return; }
 }
 
 export class AgentChatService {
   private readonly workflow: ConversationWorkflow;
+  private busyRunCount: number = 0;
+  private adapter: ConversationWorkflowAdapter | null = null;
 
-  constructor(callbacks: AgentChatCallbacks) { this.workflow = new ConversationWorkflow(new ConversationWorkflowAdapter(callbacks)); }
+  constructor(callbacks: AgentChatCallbacks) {
+    this.adapter = new ConversationWorkflowAdapter(callbacks, this);
+    this.workflow = new ConversationWorkflow(this.adapter);
+  }
+
+  notifyBusyChange(busy: boolean): void {
+    if (busy) {
+      this.busyRunCount += 1;
+    } else {
+      this.busyRunCount = Math.max(0, this.busyRunCount - 1);
+    }
+  }
 
   async captureReply(imageUri: string, userText: string): Promise<void> {
+    if (this.busyRunCount > 0) {
+      return;
+    }
     const request: ImageConversationRequest = {
       kind: 'image',
       imageUri: imageUri,
@@ -72,15 +95,10 @@ export class AgentChatService {
     await this.workflow.run(request);
   }
 
-  async realReply(userContent: string): Promise<void> {
-    const request: TextConversationRequest = {
-      kind: 'text',
-      userContent: userContent,
-      responseMode: 'complete',
-    };
-    await this.workflow.run(request);
-  }
   async realReplyStream(userContent: string): Promise<void> {
+    if (this.busyRunCount > 0) {
+      return;
+    }
     const request: ConversationRequest = {
       kind: 'text',
       userContent: userContent,
@@ -99,4 +117,16 @@ export class AgentChatService {
   async regenerateNote(noteId: string, instruction: string): Promise<void> { await this.workflow.regenerateNote(noteId, instruction); }
   async requestRegeneration(noteReference: string, noteIds: string[], instruction: string): Promise<void> { await this.workflow.requestRegeneration(noteReference, noteIds, instruction); }
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> { return await this.workflow.listRecoverableDrafts(); }
+
+  async checkAndRestoreDrafts(): Promise<NoteDraftReadyEvent | null> {
+    const drafts: NoteGenerationRun[] = await this.workflow.listRecoverableDrafts();
+    if (drafts.length === 0) {
+      return null;
+    }
+    const latest: NoteGenerationRun = drafts[0];
+    if (latest.status === 'ready-preview' || latest.status === 'running') {
+      return await this.workflow.restoreDraft(latest.id);
+    }
+    return null;
+  }
 }

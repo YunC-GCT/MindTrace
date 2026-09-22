@@ -9,6 +9,7 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const messageList = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentMessageList.ets');
 const floatWindow = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
 const chatBubble = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets');
+const runPanel = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/AgentRunPanel.ets');
 
 test('AgentMessageList refreshes rows when streamed reasoning grows', () => {
   assert.match(messageList, /LazyForEach\(this\.dataSource/);
@@ -23,7 +24,8 @@ test('reasoning toggle must not scroll chat list to bottom', () => {
   assert.doesNotMatch(floatWindow, /renderKey/);
   assert.match(messageList, /currentStreamProgressKey\(\)/);
   assert.match(messageList, /progressKey\.length > 0 && progressKey !== this\.lastStreamProgressKey/);
-  assert.doesNotMatch(chatBubble, /scrollEdge\(Edge\.Bottom\)/);
-  assert.doesNotMatch(chatBubble, /Scroll\(this\.reasoningScroller\)/);
-  assert.doesNotMatch(chatBubble, /height\(this\.msg\.streaming \? 168 : 124\)/);
+  const processSurface = chatBubble + '\n' + runPanel;
+  assert.doesNotMatch(processSurface, /scrollEdge\(Edge\.Bottom\)/);
+  assert.doesNotMatch(processSurface, /Scroll\(this\.reasoningScroller\)/);
+  assert.doesNotMatch(processSurface, /height\(this\.msg\.streaming \? 168 : 124\)/);
 });

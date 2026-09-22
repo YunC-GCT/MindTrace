@@ -1,18 +1,22 @@
 /**
- * LlmErrorBodyFormatter.test.ets — LLM HTTP 错误响应体格式化回归测试
+ * LlmErrorBodyFormatter.test.ets — LLM HTTP 响应体解码/格式化回归测试
  *
  * 路径: common/src/test/LlmErrorBodyFormatter.test.ets
- * 职责: 锁定 HTTP 400 错误体 ArrayBuffer 不再显示 [object ArrayBuffer]
+ * 职责: 锁定两条解码路径的行为边界 —
+ *   - format(): 错误分支专用, 256 字符预览 + 敏感信息脱敏 (用户可见);
+ *   - decodeFull(): 成功分支专用, 完整解码无截断无脱敏 (JSON.parse 输入)。
+ * 背景: 2026-09-19 冒烟发现 LlmClient 成功分支误用 format() 导致非流式响应
+ *       被 256 字符截断, 全部非流式 LLM 调用报 PARSE_ERROR (P0)。
  * 依赖: @ohos/hypium; common LlmErrorBodyFormatter
  */
 import { describe, it, expect } from '@ohos/hypium';
 import { LlmErrorBodyFormatter } from '../main/ets/llm/LlmErrorBodyFormatter';
-import type { LlmErrorBodyFormatOptions } from '../main/ets/llm/LlmErrorBodyFormatter';
 
-const utf8ErrorBytes: number[] = [123, 34, 101, 114, 114, 111, 114, 34, 58, 123, 34, 109, 101, 115, 115, 97, 103, 101, 34, 58, 34, 229, 143, 130, 230, 149, 176, 233, 148, 153, 232, 175, 175, 34, 125, 125];
+const utf8ErrorBytes: number[] = [123, 34, 101, 114, 114, 111, 114, 34, 58, 34, 229, 143,
+  130, 230, 149, 176, 233, 148, 153, 232, 175, 175, 34, 125];
 
-class UnreadableErrorBody {
-}
+/** format() 预览上限须与实现常量一致 (256 字符 + '...' 后缀) */
+const BODY_PREVIEW_LIMIT: number = 256;
 
 function arrayBufferFromBytes(bytes: number[]): ArrayBuffer {
   const view: Uint8Array = new Uint8Array(bytes.length);
@@ -22,93 +26,61 @@ function arrayBufferFromBytes(bytes: number[]): ArrayBuffer {
   return view.buffer;
 }
 
+function buildLongJsonBody(targetLength: number): string {
+  let body: string = '{"choices":[{"message":{"role":"assistant","content":"';
+  while (body.length < targetLength) {
+    body += 'abcdefghijklmnopqrstuvwxyz0123456789';
+  }
+  body += '"}}]}';
+  return body;
+}
+
 export default function llmErrorBodyFormatterTest(): void {
   describe('LlmErrorBodyFormatter', () => {
-    it('decodes_utf8_array_buffer_without_object_array_buffer', 0, () => {
-      const options: LlmErrorBodyFormatOptions = {
-        statusCode: 400,
-        body: arrayBufferFromBytes(utf8ErrorBytes),
-        contentType: 'application/json',
-      };
-      const message: string = LlmErrorBodyFormatter.format(options);
-      expect(message.includes('LLM API error 400')).assertTrue();
-      expect(message.includes('参数错误')).assertTrue();
-      expect(message.includes('[object ArrayBuffer]')).assertFalse();
+    it('decode_full_keeps_long_body_without_truncation', 0, () => {
+      const body: string = buildLongJsonBody(1200);
+      const decoded: string = LlmErrorBodyFormatter.decodeFull(body);
+      expect(decoded.length).assertEqual(body.length);
+      expect(decoded.endsWith('"}}]}')).assertTrue();
+      expect(decoded.includes('...')).assertFalse();
     });
 
-    it('keeps_multibyte_utf8_array_buffer_readable_for_http_400', 0, () => {
-      const options: LlmErrorBodyFormatOptions = {
-        statusCode: 400,
-        body: arrayBufferFromBytes(utf8ErrorBytes),
-        contentType: 'application/json; charset=utf-8',
-      };
-      const message: string = LlmErrorBodyFormatter.format(options);
-      expect(message.includes('400')).assertTrue();
-      expect(message.includes('参数错误')).assertTrue();
-      expect(message.includes('ArrayBuffer')).assertFalse();
+    it('decode_full_does_not_redact_content', 0, () => {
+      const body: string = '{"error":"Authorization: Bearer sk-test-secret-12345"}';
+      const decoded: string = LlmErrorBodyFormatter.decodeFull(body);
+      expect(decoded).assertEqual(body);
+      expect(decoded.includes('sk-test-secret-12345')).assertTrue();
+      expect(JSON.parse(decoded) !== undefined).assertTrue();
     });
 
-    it('formats_plain_text_error_body', 0, () => {
-      const options: LlmErrorBodyFormatOptions = {
-        statusCode: 400,
-        body: 'bad request: model rejected the prompt',
-        contentType: 'text/plain',
-      };
-      const message: string = LlmErrorBodyFormatter.format(options);
-      expect(message.includes('LLM API error 400')).assertTrue();
-      expect(message.includes('bad request')).assertTrue();
-      expect(message.includes('[object Object]')).assertFalse();
+    it('decode_full_decodes_utf8_array_buffer', 0, () => {
+      const decoded: string = LlmErrorBodyFormatter.decodeFull(arrayBufferFromBytes(utf8ErrorBytes));
+      expect(decoded).assertEqual('{"error":"参数错误"}');
     });
 
-    it('summarizes_json_error_message', 0, () => {
-      const options: LlmErrorBodyFormatOptions = {
-        statusCode: 400,
-        body: '{"error":{"message":"invalid messages field","type":"invalid_request_error"}}',
-        contentType: 'application/json',
-      };
-      const message: string = LlmErrorBodyFormatter.format(options);
-      expect(message.includes('LLM API error 400')).assertTrue();
-      expect(message.includes('invalid messages field')).assertTrue();
-      expect(message.includes('invalid_request_error')).assertFalse();
+    it('decode_full_returns_empty_for_undefined_body', 0, () => {
+      expect(LlmErrorBodyFormatter.decodeFull(undefined)).assertEqual('');
+      expect(LlmErrorBodyFormatter.decodeFull(null)).assertEqual('');
     });
 
-    it('falls_back_for_empty_error_body', 0, () => {
-      const options: LlmErrorBodyFormatOptions = {
-        statusCode: 400,
-        body: '',
-        contentType: 'text/plain',
-      };
-      const message: string = LlmErrorBodyFormatter.format(options);
-      expect(message.includes('LLM API error 400')).assertTrue();
-      expect(message.includes('empty error response body')).assertTrue();
-      expect(message.includes('[object ArrayBuffer]')).assertFalse();
+    it('format_truncates_long_body_to_preview_limit', 0, () => {
+      const body: string = buildLongJsonBody(1200);
+      const preview: string = LlmErrorBodyFormatter.format(body);
+      expect(preview.length <= BODY_PREVIEW_LIMIT + 3).assertTrue();
+      expect(preview.endsWith('...')).assertTrue();
+      expect(preview.startsWith(body.substring(0, 10))).assertTrue();
     });
 
-    it('falls_back_for_unreadable_object_body', 0, () => {
-      const options: LlmErrorBodyFormatOptions = {
-        statusCode: 400,
-        body: new UnreadableErrorBody(),
-        contentType: 'application/octet-stream',
-      };
-      const message: string = LlmErrorBodyFormatter.format(options);
-      expect(message.includes('LLM API error 400')).assertTrue();
-      expect(message.includes('empty error response body')).assertTrue();
-      expect(message.includes('[object Object]')).assertFalse();
+    it('format_redacts_bearer_and_api_key_in_error_body', 0, () => {
+      const preview: string = LlmErrorBodyFormatter
+        .format('Authorization: Bearer sk-test-secret-12345 api_key=sk-test-secret-67890');
+      expect(preview.includes('[REDACTED]')).assertTrue();
+      expect(preview.includes('sk-test-secret')).assertFalse();
     });
 
-    it('redacts_api_key_authorization_cookie_bearer_and_endpoint', 0, () => {
-      const options: LlmErrorBodyFormatOptions = {
-        statusCode: 400,
-        body: '{"error":{"message":"Authorization: Bearer sk-test-secret-12345 Cookie=session=abc api_key=sk-test-secret-67890 endpoint=https://api.example.test/chat/completions"}}',
-        contentType: 'application/json',
-      };
-      const message: string = LlmErrorBodyFormatter.format(options);
-      expect(message.includes('LLM API error 400')).assertTrue();
-      expect(message.includes('<REDACTED>')).assertTrue();
-      expect(message.includes('sk-test-secret')).assertFalse();
-      expect(message.includes('session=abc')).assertFalse();
-      expect(message.includes('https://api.example.test')).assertFalse();
-      expect(message.includes('Bearer sk-')).assertFalse();
+    it('format_keeps_short_body_intact', 0, () => {
+      const preview: string = LlmErrorBodyFormatter.format('{"error":"参数错误"}');
+      expect(preview).assertEqual('{"error":"参数错误"}');
     });
   });
 }

@@ -1,8 +1,7 @@
 /**
  * List.test.ets — common 模块本地单元测试入口
  *
- * common 模块暂无可单独运行的单元测试（纯共享类型/工具/LLM 基础设施）。
- * 此空文件确保测试构建系统不会因缺少测试入口而报错。
+ * 汇总注册 common 模块全部 Hypium 测试套件 (LLM 基础设施 / 协议 / 工作流内核 / 模型解析)。
  */
 
 import llmGuardTest from './LlmGuard.test';
@@ -13,6 +12,8 @@ import noteToolsTest from './NoteTools.test';
 import llmToolCallingTest from './LlmToolCalling.test';
 import stateGraphTest from './StateGraph.test';
 import llmStreamEventsTest from './LlmStreamEvents.test';
+import noteGenerationModelsTest from './NoteGenerationModels.test';
+import llmErrorBodyFormatterTest from './LlmErrorBodyFormatter.test';
 
 export default function testsuite(): void {
   llmGuardTest();
@@ -23,4 +24,6 @@ export default function testsuite(): void {
   llmToolCallingTest();
   stateGraphTest();
   llmStreamEventsTest();
+  noteGenerationModelsTest();
+  llmErrorBodyFormatterTest();
 }
