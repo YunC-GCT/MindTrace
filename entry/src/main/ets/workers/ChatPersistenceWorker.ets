@@ -78,7 +78,7 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
     workerPort.postMessage(unsupported);
     return;
   }
-  let atomic: fileIo.AtomicFile | undefined;
+  let tmpPath: string = '';
   let json: string = '';
   try {
     const snapshot: ChatWorkerSnapshot = {
@@ -105,7 +105,7 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
   try {
     const directory: string = request.path.substring(0, request.path.lastIndexOf('/'));
     fileIo.mkdirSync(directory, true);
-    atomic = new fileIo.AtomicFile(request.path);
+    tmpPath = request.path + '.tmp';
   } catch (error) {
     const result: ChatWorkerResponse = {
       kind: 'write-result',
@@ -118,11 +118,15 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
     return;
   }
   try {
-    const stream: fileIo.WriteStream = atomic.startWrite();
-    await stream.write(json, 'utf-8');
+    const file: fileIo.File = fileIo.openSync(
+      tmpPath,
+      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC,
+    );
+    fileIo.writeSync(file.fd, json);
+    fileIo.closeSync(file.fd);
   } catch (error) {
     try {
-      atomic.failWrite();
+      fileIo.unlinkSync(tmpPath);
     } catch (rollbackError) {
     }
     const result: ChatWorkerResponse = {
@@ -136,10 +140,10 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
     return;
   }
   try {
-    atomic.finishWrite();
+    fileIo.renameSync(tmpPath, request.path);
   } catch (error) {
     try {
-      atomic.failWrite();
+      fileIo.unlinkSync(tmpPath);
     } catch (rollbackError) {
     }
     const result: ChatWorkerResponse = {
@@ -154,12 +158,6 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
   }
   try {
     const formal: string = fileIo.readTextSync(request.path);
-    if (formal !== json) {
-      try {
-        atomic.failWrite();
-      } catch (rollbackError) {
-      }
-    }
     const result: ChatWorkerResponse = {
       kind: 'write-result',
       success: formal === json,

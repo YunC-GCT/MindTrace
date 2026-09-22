@@ -207,9 +207,9 @@ export async function writeChatHistorySnapshotTask(
   sessions: ChatSession[],
   migratedFrom: string,
 ): Promise<AtomicWriteTaskResult> {
-  let atomic: fileIo.AtomicFile | undefined;
   let stage: AtomicWriteStage = 'PREPARE';
   const schemaVersion: number = 1;
+  let tmpPath: string = '';
   try {
     const snapshot: ChatHistorySnapshot = {
       schemaVersion: schemaVersion,
@@ -222,19 +222,19 @@ export async function writeChatHistorySnapshotTask(
     const lastSlash: number = path.lastIndexOf('/');
     const directory: string = lastSlash >= 0 ? path.substring(0, lastSlash) : path;
     fileIo.mkdirSync(directory, true);
-    atomic = new fileIo.AtomicFile(path);
+    tmpPath = path + '.tmp';
     stage = 'WRITE';
-    const stream: fileIo.WriteStream = atomic.startWrite();
-    await stream.write(json, 'utf-8');
+    const file: fileIo.File = fileIo.openSync(
+      tmpPath,
+      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC,
+    );
+    fileIo.writeSync(file.fd, json);
+    fileIo.closeSync(file.fd);
     stage = 'COMMIT';
-    atomic.finishWrite();
+    fileIo.renameSync(tmpPath, path);
     stage = 'VERIFY';
     const formal: string = fileIo.readTextSync(path);
     if (formal !== json) {
-      try {
-        atomic.failWrite();
-      } catch (rollbackError) {
-      }
       return {
         success: false,
         stage: 'VERIFY',
@@ -253,10 +253,10 @@ export async function writeChatHistorySnapshotTask(
         + '; ts=' + Date.now().toString(),
     };
   } catch (error) {
-    if (atomic !== undefined) {
+    if (tmpPath.length > 0) {
       try {
-        atomic.failWrite();
-      } catch (rollbackError) {
+        fileIo.unlinkSync(tmpPath);
+      } catch (cleanupError) {
       }
     }
     const result: AtomicWriteTaskResult = {
