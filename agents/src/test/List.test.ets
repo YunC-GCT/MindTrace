@@ -13,6 +13,7 @@ import persistNodeTest from './PersistNode.test';
 import truthCheckNodeTest from './TruthCheckNode.test';
 import generationJsonCallerTest from './GenerationJsonCaller.test';
 import structureNodeTest from './StructureNode.test';
+import knowledgeModelNoteGenerationTest from './KnowledgeModelNoteGeneration.test';
 
 export default function testsuite() {
   truthCheckServiceTest();
@@ -23,4 +24,5 @@ export default function testsuite() {
   truthCheckNodeTest();
   generationJsonCallerTest();
   structureNodeTest();
+  knowledgeModelNoteGenerationTest();
 }

@@ -16,6 +16,8 @@ import {
   uuid,
   isKnownNoteType,
   normalizeNoteType,
+  ContentExcerptBuilder,
+  NOTE_SUMMARY_MAX_LENGTH,
 } from 'common'
 import { promptAction } from '@kit.ArkUI'
 import { common } from '@kit.AbilityKit'
@@ -58,6 +60,7 @@ export struct NoteDetailOverlay {
   @State initialTagsText: string = ''
   @State saving: boolean = false
   @State showDiscardConfirm: boolean = false
+  private summaryBuilder: ContentExcerptBuilder = new ContentExcerptBuilder()
   onClose: () => void = (): void => {}
   onEdit: (id: number) => void = (_id: number): void => {}
   onDelete: (id: string) => void = (_id: string): void => {}
@@ -412,7 +415,7 @@ export struct NoteDetailOverlay {
       return
     }
     const title: string = this.titleText.trim()
-    const summary: string = this.summaryText.trim()
+    const summary: string = this.summaryBuilder.buildSummary(this.summaryText.trim(), NOTE_SUMMARY_MAX_LENGTH)
     const content: string = this.contentText.trim()
     if (title.length === 0) {
       promptAction.showToast({ message: '请输入标题', duration: 1200 })

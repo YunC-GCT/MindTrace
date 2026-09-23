@@ -650,8 +650,8 @@ export class Dispatcher {
         iteration: round,
         stage: 'truth_check',
         parentId: parentId,
-        candidateHash: sourceFingerprint(JSON.stringify(evaluation.result)),
-        documentJson: JSON.stringify(evaluation.result.draft),
+        candidateHash: sourceFingerprint(JSON.stringify(evaluation.candidate)),
+        documentJson: JSON.stringify(evaluation.candidate),
         accepted: isBetter,
         issueCodes: evaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
         outlineJson: JSON.stringify(evaluation.result.outline),
@@ -748,7 +748,7 @@ export class Dispatcher {
         finalEvaluation === undefined ? [] : finalEvaluation.issues,
         undefined,
         progress,
-        'standard generation requires additional input',
+        this.generationFailureMessage('standard', finalEvaluation?.issues ?? [], progress),
         finalEvaluation?.result,
       );
     }
@@ -824,8 +824,8 @@ export class Dispatcher {
         iteration: round,
         stage: 'truth_check',
         parentId: parentId,
-        candidateHash: sourceFingerprint(JSON.stringify(evaluation.result)),
-        documentJson: JSON.stringify(evaluation.result.draft),
+        candidateHash: sourceFingerprint(JSON.stringify(evaluation.candidate)),
+        documentJson: JSON.stringify(evaluation.candidate),
         accepted: better,
         issueCodes: evaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
         outlineJson: JSON.stringify(evaluation.result.outline),
@@ -919,7 +919,7 @@ export class Dispatcher {
         finalEvaluation?.issues ?? [],
         undefined,
         progress,
-        'deep generation requires additional input',
+        this.generationFailureMessage('deep', finalEvaluation?.issues ?? [], progress),
         deepResult,
         'deep',
       );
@@ -1217,6 +1217,59 @@ export class Dispatcher {
       }
     }
     return total === 0 ? 0 : changed / total;
+  }
+
+  private generationFailureMessage(
+    route: NoteGenerationRoute,
+    issues: NoteGenerationIssue[],
+    progress: NoteGenerationProgress,
+  ): string {
+    const summary: string = this.issueSummary(issues);
+    const routeLabel: string = route === 'deep' ? 'deep generation failed' : 'standard generation failed';
+    const stopReason: string = progress.stopReason ?? '';
+    const stopText: string = stopReason.length > 0 ? stopReason : 'unknown';
+    if (summary.length === 0) {
+      return routeLabel + ': stop=' + stopText + '; no issue details';
+    }
+    return routeLabel + ': stop=' + stopText + '; ' + summary;
+  }
+
+  private issueSummary(issues: NoteGenerationIssue[]): string {
+    const parts: string[] = [];
+    const seen: string[] = [];
+    for (const issue of issues) {
+      const stage: string = issue.stage ?? '';
+      const code: string = issue.code.length > 0 ? issue.code : 'UNKNOWN_ISSUE';
+      const message: string = this.clipDiagnostic(issue.message, 90);
+      const key: string = code + ':' + stage + ':' + message;
+      if (seen.includes(key)) {
+        continue;
+      }
+      seen.push(key);
+      let part: string = '[' + code + ']';
+      if (stage.length > 0) {
+        part += ' stage=' + stage;
+      }
+      if (message.length > 0) {
+        part += ' ' + message;
+      }
+      parts.push(part);
+      if (parts.length >= 4) {
+        break;
+      }
+    }
+    if (issues.length > parts.length) {
+      parts.push('... +' + (issues.length - parts.length).toString() + ' issues');
+    }
+    return parts.join('; ');
+  }
+
+  private clipDiagnostic(text: string, limit: number): string {
+    const normalized: string = text.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= limit) {
+      return normalized;
+    }
+    return normalized.substring(0, limit) + '...';
   }
 
   private async finishStandardGeneration(

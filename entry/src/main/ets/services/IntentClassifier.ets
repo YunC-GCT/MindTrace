@@ -231,7 +231,7 @@ export class IntentClassifier {
 
   // ===== 笔记素材提取 (从用户指令剥离指令语, 留下可保存内容) =====
   public inlineNoteMaterial(userInstruction: string): string {
-    let text: string = userInstruction.trim();
+    const text: string = userInstruction.trim();
     const separators: string[] = ['：', ':', '\n'];
     for (const separator of separators) {
       const idx: number = text.indexOf(separator);
@@ -241,45 +241,6 @@ export class IntentClassifier {
           return tail;
         }
       }
-    }
-
-    const removablePhrases: string[] = [
-      '请帮我',
-      '帮我',
-      '把这个',
-      '把这题',
-      '把这段',
-      '把上面',
-      '把刚才',
-      '生成笔记',
-      '创建笔记',
-      '新建笔记',
-      '整理成笔记',
-      '整理为笔记',
-      '保存为笔记',
-      '保存成笔记',
-      '总结成笔记',
-      '总结为笔记',
-      '归纳成笔记',
-      '归纳为笔记',
-      '做成笔记',
-      '转成笔记',
-      '转为笔记',
-      '收进笔记',
-      '加入笔记',
-      '存到笔记',
-      '存进笔记',
-      '留作笔记',
-      '记一下',
-      '记下来',
-      '记下',
-    ];
-    for (const phrase of removablePhrases) {
-      text = text.replace(phrase, ' ');
-    }
-    text = text.replace(/\s+/g, ' ').trim();
-    if (text.length >= 12) {
-      return text;
     }
     return '';
   }

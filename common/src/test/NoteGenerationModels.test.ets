@@ -24,8 +24,11 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   parseDirectStandardArtifacts,
   normalizeDraftCategory,
+  normalizeDraftSummary,
   normalizeLightDraft,
   normalizeDeepSectionDraft,
+  normalizeDraftSectionLabel,
+  normalizeDraftDifficulty,
   buildPipelineEvidence,
   normalizeEvidenceItems,
   normalizeOutline,
@@ -123,6 +126,46 @@ export default function noteGenerationModelsTest(): void {
   });
 
   describe('NoteGenerationModels.standard_contract_normalization', () => {
+    it('section_labels_hide_internal_ids', 0, () => {
+      expect(normalizeDraftSectionLabel('', 0)).assertEqual('核心内容');
+      expect(normalizeDraftSectionLabel('section-item-811c9dc5', 0)).assertEqual('核心内容');
+      expect(normalizeDraftSectionLabel('section-item-811c9dc5-1', 1)).assertEqual('补充内容2');
+      expect(normalizeDraftSectionLabel('定义', 0)).assertEqual('定义');
+    });
+
+    it('draft_difficulty_stays_within_four_levels', 0, () => {
+      expect(normalizeDraftDifficulty(0)).assertEqual(1);
+      expect(normalizeDraftDifficulty(1)).assertEqual(1);
+      expect(normalizeDraftDifficulty(4)).assertEqual(4);
+      expect(normalizeDraftDifficulty(5)).assertEqual(2);
+    });
+
+    it('draft_summary_is_limited_and_keeps_short_inline_formula', 0, () => {
+      const summary: string = normalizeDraftSummary(
+        '结论是 $a>0$ 时函数递增，且该结论适用于连续可导函数的常见判断场景。',
+      );
+      expect(summary.length <= 60).assertTrue();
+      expect(summary).assertContain('$a>0$');
+      expect(validateDraftDocument({
+        schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+        title: '单调性',
+        summary: summary,
+        subject: '数学分析',
+        category: '概念',
+        chapter: '',
+        difficulty: 2,
+        tags: [],
+        sections: [{
+          id: 'section-1',
+          label: '定义',
+          content: '函数在区间上递增。',
+          sourceIds: [],
+          state: 'generated',
+          baseHash: '',
+        }],
+      }).length).assertEqual(0);
+    });
+
     it('light_draft_backfills_empty_section_from_source', 0, () => {
       const draft: NoteDraftDocument = {
         schemaVersion: '1.0',
@@ -163,6 +206,30 @@ export default function noteGenerationModelsTest(): void {
       expect(normalized.sections[0].sourceIds[0]).assertEqual('src-light');
       const issues: NoteGenerationIssue[] = validateDraftDocument(normalized, ['src-light']);
       expect(issues.length).assertEqual(0);
+    });
+
+    it('light_draft_replaces_internal_section_label', 0, () => {
+      const draft: NoteDraftDocument = {
+        schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+        title: '单调性',
+        summary: '',
+        subject: '数学分析',
+        category: '概念',
+        chapter: '',
+        difficulty: 2,
+        tags: [],
+        sections: [{
+          id: 'section-item-811c9dc5',
+          label: 'section-item-811c9dc5',
+          content: '函数单调性定义。',
+          sourceIds: ['src-light'],
+          state: 'generated',
+          baseHash: '',
+        }],
+      };
+      const normalized: NoteDraftDocument = normalizeLightDraft(draft, bundle);
+      expect(normalized.sections[0].id).assertEqual('section-item-811c9dc5');
+      expect(normalized.sections[0].label).assertEqual('核心内容');
     });
 
     it('pipeline_evidence_builds_source_anchor_for_empty_model_evidence', 0, () => {
@@ -290,6 +357,14 @@ export default function noteGenerationModelsTest(): void {
       const raw: string = '强调 <b>bold</b> 文本';
       const normalized: NoteDraftDocument = normalizeDeepSectionDraft(deepRawDraft(raw), deepOutlineSection());
       expect(normalized.sections[0].content).assertEqual(raw);
+    });
+
+    it('deep_section_replaces_internal_section_label', 0, () => {
+      const raw: NoteDraftDocument = deepRawDraft('密度函数定义。');
+      raw.sections[0].label = 'section-item-811c9dc5';
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(raw, deepOutlineSection());
+      expect(normalized.sections[0].id).assertEqual('section-item-811c9dc5');
+      expect(normalized.sections[0].label).assertEqual('核心内容');
     });
 
     it('deep_section_normalization_keeps_valid_metadata_unchanged', 0, () => {

@@ -4,7 +4,7 @@
  * 新需求（2026-07）：
  *   5 个最小类：概念/定理/公式/证明题/计算题
  *   AI 自分词 + 填充各类的结构化字段
- *   difficulty / importance 为 1~5 星
+ *   difficulty 为 1~4 级，importance 为 1~5 级
  */
 
 import { KnowledgeCategory } from './KnowledgeCategory';
@@ -74,7 +74,7 @@ export interface KnowledgeUnitExt {
   truthDetails: string[];
 
   // ── 评分 ──
-  /** 难度 1~5（⭐~⭐⭐⭐⭐⭐），可由 AI 判定或用户自定义 */
+  /** 难度 1~4（简单/中等/困难/专家），可由 AI 判定或用户自定义 */
   difficulty: number;
   /** 重要程度 1~5，可由 AI 判定或用户自定义 */
   importance: number;
