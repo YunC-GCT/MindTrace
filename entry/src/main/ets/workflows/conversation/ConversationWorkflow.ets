@@ -503,7 +503,7 @@ export class ConversationWorkflow {
       };
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 120));
+      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 300));
       return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
     }
   }
@@ -691,7 +691,7 @@ export class ConversationWorkflow {
       return event;
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 120));
+      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 300));
       return undefined;
     }
   }

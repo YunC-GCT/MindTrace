@@ -30,7 +30,7 @@ export class PromptBuilder {
 - chapter: 章节/知识点短语（如"微分中值定理"/"行列式"），无法判断时返回空字符串
 - title: 严谨名称或题目摘要
 - tags: 返回 2-4 个中文关键词（具体概念/方法/技巧），学科名请填在 subject 字段。示例: ["二次函数", "配方法", "顶点", "对称轴"]
-- difficulty: 1-5，1=简单，5=困难
+- difficulty: 1-4，1=简单，2=中等，3=困难，4=专家
 - importance: 1-5，1=低，5=核心
 - fields: 按 category 返回结构化字段数组 [{key, label, value}]
   概念: 定义/性质/示例/相关概念

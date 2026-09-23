@@ -37,7 +37,10 @@ import {
   ReviewStatus,
   normalizeOutline,
   normalizeDraftCategory,
+  normalizeDraftSummary,
   normalizeLightDraft,
+  normalizeDraftSectionLabel,
+  normalizeDraftDifficulty,
   segmentSourceBundle,
   buildDeepOutline,
   buildPipelineEvidence,
@@ -348,7 +351,7 @@ export class KnowledgeModel {
     const draft: NoteDraftDocument = {
       schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
       title: title.length === 0 ? '数学学习笔记' : title,
-      summary: summary,
+      summary: normalizeDraftSummary(summary),
       subject: subject.length === 0 ? '其它' : subject,
       category: category,
       chapter: chapter,
@@ -549,7 +552,8 @@ export class KnowledgeModel {
         + 'Contract: sections[].sourceIds must use the [source:X] ids from the relevant sources; '
         + 'category must be one of 概念/定理/公式/证明题/计算题; '
         + 'math delimiters are $...$ and $$...$$ (never \\( or \\[); '
-        + 'title and summary must not contain math delimiters. '
+        + 'title must not contain math delimiters; summary may contain short inline math using $...$, '
+        + 'but must be no longer than 60 characters and must not use display math. '
         + 'User instruction=' + request.instruction + '\n'
         + 'section label=' + outlineSection.label + '\n'
         + 'must include=' + outlineSection.mustInclude.join(',') + '\n'
@@ -794,6 +798,8 @@ export class KnowledgeModel {
         + 'Every outline section and every draft section must list its sourceIds using the source IDs from the input.\n'
         + 'Section content: use $...$ for inline math and $$ on their own lines for display math; '
         + 'never use \\( \\) or \\[ \\]; use markdown lists (- item / 1. item) instead of \\begin{itemize} or \\begin{enumerate}.\n'
+        + 'Summary must be no longer than 60 characters; it may contain short inline math using $...$, '
+        + 'but must not contain display math.\n'
         + 'Evidence excerpts must be copied verbatim (character-exact) from the sources.\n'
         + 'Output schema: top-level object with exactly outline, evidence, and draft. '
         + 'outline contains schemaVersion and sections; evidence is an array of evidence items; '
@@ -911,6 +917,8 @@ export class KnowledgeModel {
           }
           return { ok: issues.length === 0, issues: issues };
         },
+        (json: Record<string, Object>): string[] =>
+          this.validateIndependentVerifierJson(json, result.evidence),
       );
       modelVerification = this.parseVerification(parsed);
     } catch (e) {
@@ -992,7 +1000,7 @@ export class KnowledgeModel {
       }
       sections.push({
         id: remappedId,
-        label: section.label,
+        label: normalizeDraftSectionLabel(section.label, oldIndex >= 0 ? oldIndex : sections.length),
         // 2026-09-19: 采用 MM-MD 规范化器的修复结果 (\(\)→$..$, \[→$$)
         content: this.normalizeSectionContent(section.content),
         sourceIds: mappedSourceIds,
@@ -1005,12 +1013,12 @@ export class KnowledgeModel {
       // (实测模型返回 '1.0' 必挂 SCHEMA_VERSION)
       schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
       title: result.draft.title,
-      summary: result.draft.summary,
+      summary: normalizeDraftSummary(result.draft.summary),
       subject: result.draft.subject,
       // 2026-09-19: category 归一化到 5 类题型枚举 (学科级标签判死问题)
       category: normalizeDraftCategory(result.draft.category),
       chapter: result.draft.chapter,
-      difficulty: result.draft.difficulty,
+      difficulty: normalizeDraftDifficulty(result.draft.difficulty),
       tags: result.draft.tags,
       sections: sections,
       instruction: instruction,
@@ -1129,6 +1137,7 @@ export class KnowledgeModel {
         sourceRefs: item.sourceRefs,
         targetSectionId: item.targetSectionId,
         verification: status,
+        origin: item.origin,
       });
     }
     return { outline: result.outline, evidence: evidence, draft: result.draft, verification: verification };
@@ -1186,7 +1195,7 @@ export class KnowledgeModel {
     const frozenDraft: NoteDraftDocument = {
       schemaVersion: repaired.draft.schemaVersion,
       title: repaired.draft.title,
-      summary: repaired.draft.summary,
+      summary: normalizeDraftSummary(repaired.draft.summary),
       subject: repaired.draft.subject,
       category: repaired.draft.category,
       chapter: repaired.draft.chapter,
@@ -1349,10 +1358,56 @@ export class KnowledgeModel {
     return { status: status, issues: issues, checkedEvidenceIds: this.readStringArray(parsed['checkedEvidenceIds']), decisions: decisions };
   }
 
+  private validateIndependentVerifierJson(
+    json: Record<string, Object>,
+    evidence: NoteGenerationEvidenceItem[],
+  ): string[] {
+    const issues: string[] = [];
+    const decisionValue: Object | undefined = json['decisions'];
+    if (decisionValue === undefined || !Array.isArray(decisionValue)) {
+      return ['decisions must be an array'];
+    }
+    const expectedIds: string[] = evidence.map((item: NoteGenerationEvidenceItem): string => item.id);
+    const seenIds: string[] = [];
+    for (const item of decisionValue as Object[]) {
+      if (item === null || typeof item !== 'object') {
+        issues.push('each decision must be an object');
+        continue;
+      }
+      const record: Record<string, Object> = item as Record<string, Object>;
+      const evidenceIdValue: Object | undefined = record['evidenceId'];
+      if (typeof evidenceIdValue !== 'string' || evidenceIdValue.trim().length === 0) {
+        issues.push('each decision must include a non-empty evidenceId');
+      } else if (!expectedIds.includes(evidenceIdValue)) {
+        issues.push('decision references unknown evidenceId: ' + evidenceIdValue);
+      } else if (seenIds.includes(evidenceIdValue)) {
+        issues.push('decision duplicates evidenceId: ' + evidenceIdValue);
+      } else {
+        seenIds.push(evidenceIdValue);
+      }
+      const statusValue: Object | undefined = record['status'];
+      if (statusValue !== 'supported' && statusValue !== 'contradicted' && statusValue !== 'ambiguous') {
+        issues.push('decision status must be supported, contradicted, or ambiguous');
+      }
+    }
+    for (const evidenceId of expectedIds) {
+      if (!seenIds.includes(evidenceId)) {
+        issues.push('decisions missing evidenceId: ' + evidenceId);
+      }
+    }
+    return issues;
+  }
+
   draftToKnowledgeUnit(document: NoteDraftDocument, source: string): KnowledgeUnit {
     const fields: StructuredField[] = [];
+    let index: number = 0;
     for (const section of document.sections) {
-      fields.push({ key: section.id, label: section.label, value: section.content });
+      fields.push({
+        key: section.id,
+        label: normalizeDraftSectionLabel(section.label, index),
+        value: section.content,
+      });
+      index += 1;
     }
     const ext: KnowledgeUnitExt = createUnitExt(
       document.category as KnowledgeCategory,
@@ -1365,7 +1420,7 @@ export class KnowledgeModel {
     ext.difficulty = document.difficulty;
     ext.source = source;
     ext.chapter = document.chapter;
-    return this.toKnowledgeUnit(ext, Date.now());
+    return this.toKnowledgeUnit(ext, Date.now(), document.summary);
   }
 
   private budgetedRequestTokens(request: NoteGenerationRequest, fallback: number): number {
@@ -1450,8 +1505,11 @@ export class KnowledgeModel {
     return result;
   }
 
-  private toKnowledgeUnit(ext: KnowledgeUnitExt, createdAt: number): KnowledgeUnit {
-    const summary: string = this.summaryFromFields(ext);
+  private toKnowledgeUnit(ext: KnowledgeUnitExt, createdAt: number, summaryOverride: string = ''): KnowledgeUnit {
+    const generatedSummary: string = this.summaryFromFields(ext);
+    const summary: string = summaryOverride.trim().length > 0
+      ? this.contentExcerptBuilder.buildSummary(summaryOverride, 60)
+      : generatedSummary;
     const now: number = createdAt > 0 ? createdAt : Date.now();
     return {
       id: this.uuid(),
@@ -1488,7 +1546,7 @@ export class KnowledgeModel {
       }
     }
     const source: string = summaryParts.length > 0 ? summaryParts.join('\n') : ext.content;
-    const summary: string = this.contentExcerptBuilder.buildPlainSummary(source, 220);
+    const summary: string = this.contentExcerptBuilder.buildSummary(source, 60);
     if (summary.length > 0) {
       return summary;
     }
@@ -1497,8 +1555,8 @@ export class KnowledgeModel {
 
   private toDifficultyLevel(value: number): DifficultyLevel {
     if (value <= 1) { return DifficultyLevel.EASY; }
-    if (value === 2 || value === 3) { return DifficultyLevel.MEDIUM; }
-    if (value === 4) { return DifficultyLevel.HARD; }
+    if (value === 2) { return DifficultyLevel.MEDIUM; }
+    if (value === 3) { return DifficultyLevel.HARD; }
     return DifficultyLevel.EXPERT;
   }
 
@@ -1564,7 +1622,7 @@ export class KnowledgeModel {
       chapter: this.normalizeChapter(String(parsed['chapter'] ?? '')),
       title: this.normalizeTitle(String(parsed['title'] ?? ''), userText),
       tags: this.normalizeStringArray(parsed['tags']),
-      difficulty: this.normalizeScore(Number(parsed['difficulty'] ?? 3)),
+      difficulty: normalizeDraftDifficulty(Number(parsed['difficulty'] ?? 3)),
       importance: this.normalizeScore(Number(parsed['importance'] ?? 3)),
       fields: this.normalizeFields(parsed['fields']),
     };
@@ -1604,10 +1662,10 @@ export class KnowledgeModel {
         }
       }
     }
-    if (!this.isScoreValue(parsed['difficulty'])) {
-      issues.push('difficulty must be a number from 1 to 5');
+    if (!this.isScoreValue(parsed['difficulty'], 4)) {
+      issues.push('difficulty must be a number from 1 to 4');
     }
-    if (!this.isScoreValue(parsed['importance'])) {
+    if (!this.isScoreValue(parsed['importance'], 5)) {
       issues.push('importance must be a number from 1 to 5');
     }
     const fieldsValue: Object | undefined = parsed['fields'];
@@ -1650,12 +1708,12 @@ export class KnowledgeModel {
     };
   }
 
-  private isScoreValue(value: Object | undefined): boolean {
+  private isScoreValue(value: Object | undefined, maximum: number): boolean {
     if (typeof value !== 'number' && typeof value !== 'string') {
       return false;
     }
     const score: number = Number(value);
-    return !Number.isNaN(score) && score >= 1 && score <= 5;
+    return !Number.isNaN(score) && score >= 1 && score <= maximum;
   }
   /**
    * 合并标签：AI 返回的标签 + 最小类名，去重
@@ -1691,13 +1749,16 @@ export class KnowledgeModel {
 
   private contentFromFields(ext: KnowledgeUnitExt): string {
     const sections: string[] = [];
+    let index: number = 0;
     for (const field of ext.fields) {
-      const label: string = field.label.trim().length > 0 ? field.label.trim() : field.key.trim();
+      const candidateLabel: string = field.label.trim().length > 0 ? field.label : field.key;
+      const label: string = normalizeDraftSectionLabel(candidateLabel, index);
       const valueResult: ContentValidationResult = this.contentProtocol.normalizeNoteMarkdown(field.value);
       const value: string = valueResult.normalizedText.trim();
       if (value.length > 0) {
         sections.push('## ' + label + '\n' + value);
       }
+      index += 1;
     }
     const raw: string = ext.content.trim();
     if (raw.length > 0) {

@@ -541,6 +541,11 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(result.generation?.verification?.status).assertEqual('supported');
       expect(repository.checkpointSaves).assertEqual(1);
       expect(model.calls).assertEqual(1);
+      const candidate: KnowledgeUnit = result.data ?? unitForTest;
+      const checkpoint: NoteGenerationCheckpoint = repository.checkpoints[0];
+      expect(checkpoint.candidateHash).assertEqual(sourceFingerprint(JSON.stringify(candidate)));
+      const restoredCandidate: KnowledgeUnit = JSON.parse(checkpoint.documentJson) as KnowledgeUnit;
+      expect(restoredCandidate.title).assertEqual(candidate.title);
     });
 
     it('returns needs-input for facts that only the user can supply', 0, async () => {
