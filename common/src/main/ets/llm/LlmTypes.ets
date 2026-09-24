@@ -9,6 +9,8 @@
 //   - 无 C 风格 for 循环
 //   - 无 Record<string, T> 类型断言
 
+import type { CancellationToken } from './CancellationToken';
+
 // ==================== ChatMessage (单轮对话消息)====================
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';  // 'tool': 工具回喂消息 (spec 014)
@@ -159,8 +161,6 @@ export type StreamEvent = StreamThinkingEvent | StreamTextEvent | StreamToolCall
 
 // 流式回调: 结构化事件对象;P0 emit thinking/text,tool_* 为后续工具过程预留
 export type LlmStreamCallback = (event: StreamEvent) => void;
-
-import type { CancellationToken } from './CancellationToken';
 
 // ==================== LlmCallOptions (单次调用可选参数)====================
 export interface LlmCallOptions {
