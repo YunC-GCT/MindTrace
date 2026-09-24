@@ -1,23 +1,17 @@
 /**
- * knowledge-galaxy-fixture-flag.test.mjs — TDD Red phase: ticket #16
+ * knowledge-galaxy-fixture-flag.test.mjs — built-in galaxy sample notes
  *
  * Asserts the source-level state of:
  *   entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets
  *
- * Specifically, the constant `ENABLE_GALAXY_PREVIEW_UNITS` must be `false`.
+ * The built-in notes intentionally remain enabled so a fresh install has a
+ * populated galaxy. Their reserved IDs must remain protected from deletion.
  *
  * This is a SOURCE-LEVEL test (parses the .ets file and inspects the AST).
  * It does not need a HarmonyOS runtime to run. The companion Hypium
  * test in entry/src/ohosTest/ets/test/ is the behavior-level test that
  * runs in Deveco Studio + emulator.
  *
- * Failure mode (before fix):
- *   - The file declares `const ENABLE_GALAXY_PREVIEW_UNITS = true`
- *   - This test FAILS (red) — exposing the production fixture data leak
- *
- * Passing (after fix):
- *   - The file declares `const ENABLE_GALAXY_PREVIEW_UNITS = false`
- *   - This test PASSES (green)
  */
 
 import { test } from 'node:test';
@@ -76,7 +70,7 @@ function readFixtureFlag() {
   return walk(ast);
 }
 
-test('fixture data flag is disabled (ENABLE_GALAXY_PREVIEW_UNITS = false)', () => {
+test('built-in galaxy notes remain enabled', () => {
   const init = readFixtureFlag();
   assert.ok(init, 'Could not find ENABLE_GALAXY_PREVIEW_UNITS declaration');
   assert.equal(
@@ -86,9 +80,17 @@ test('fixture data flag is disabled (ENABLE_GALAXY_PREVIEW_UNITS = false)', () =
   );
   assert.strictEqual(
     init.value,
-    false,
-    'ENABLE_GALAXY_PREVIEW_UNITS must be false to stop production fixture data leak'
+    true,
+    'ENABLE_GALAXY_PREVIEW_UNITS must stay enabled for the built-in galaxy notes'
   );
+});
+
+test('built-in galaxy notes remain protected and include long formulas', () => {
+  const source = readFileSync(TARGET_FILE, 'utf8');
+  assert.match(source, /if \(this\.isPreviewUnitId\(id\)\) \{\s*return false/);
+  assert.match(source, /\\\\sum_\{k=0\}\^\{n\}/);
+  assert.match(source, /\\\\operatorname\{rank\}/);
+  assert.match(source, /\\\\forall \\\\varepsilon>0/);
 });
 
 test('the file is still parseable (regression check)', () => {
