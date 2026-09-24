@@ -7,8 +7,9 @@
 //  ============================================================================
 
 import {
-  BG_DARK, TEXT_4, BORDER,
+  BG_DARK, TEXT, TEXT_4, BORDER,
   S_2, S_3, S_4, S_6, R_XL,
+  F_MD, W_SEMIBOLD,
   OVERLAY_MASK, SCREEN_H,
   DUR_FAST, DUR_BASE,
 } from 'common';
@@ -431,11 +432,26 @@ export struct AgentFloatWindow {
             .onActionStart((): void => { this.dragStartH = this.floatHeight; })
             .onActionUpdate((event: GestureEvent): void => { this.floatHeight = Math.max(30, Math.min(90, this.dragStartH - event.offsetY / SCREEN_H * 100)); }));
 
-          ChatHeader({
-            sessionTitle: this.activeSessionTitle,
-            onToggleHistory: (): void => { this.togglePanel(); },
-            onCreateSession: (): void => { this.newSession(); },
-          });
+          Stack({ alignContent: Alignment.TopStart }) {
+            ChatHeader({
+              onToggleHistory: (): void => { this.togglePanel(); },
+              onCreateSession: (): void => { this.newSession(); },
+            });
+            Text(this.activeSessionTitle)
+              .width('100%')
+              .height(CHAT_HEADER_HEIGHT)
+              .textAlign(TextAlign.Center)
+              .fontSize(F_MD)
+              .fontColor(TEXT)
+              .fontWeight(W_SEMIBOLD)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .padding({ left: S_3, right: S_3 })
+              .position({ x: 0, y: 0 })
+              .hitTestBehavior(HitTestMode.None);
+          }
+          .width('100%')
+          .height(CHAT_HEADER_HEIGHT);
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
           if (this.panelVisible) {

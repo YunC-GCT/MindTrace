@@ -12,19 +12,16 @@
  *                会话 2           ← 覆盖层, 占整行宽, 居中
  *
  * Props:
- *   sessionTitle:    当前会话标题 (默认 "对话标题" 占位)
  *   onToggleHistory?: 左 HistoryChip 点击回调 (toggle 会话列表面板)
  *   onCreateSession?: 右 NewChatPlusButton 点击回调 (直接新建会话)
  */
 
-import { TEXT, S_1, S_2, S_3, S_4, F_MD, W_SEMIBOLD } from 'common';
+import { S_1, S_2, S_3, S_4 } from 'common';
 import { HistoryChip } from './HistoryChip';
 import { NewChatPlusButton } from './NewChatPlusButton';
 
 @Component
 export struct ChatHeader {
-  @Prop sessionTitle: string = '对话标题';
-
   onToggleHistory?: () => void = (): void => {};
   onCreateSession?: () => void = (): void => {};
 
@@ -44,18 +41,6 @@ export struct ChatHeader {
       .padding({ left: S_4, right: S_3, top: S_2, bottom: S_1 });
 
       // 覆盖层: 标题 (占整行宽, textAlign.Center 居中到整行水平中点)
-      Text(this.sessionTitle)
-        .width('100%')
-        .height(44)
-        .textAlign(TextAlign.Center)
-        .fontSize(F_MD)
-        .fontColor(TEXT)
-        .fontWeight(W_SEMIBOLD)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .padding({ left: S_3, right: S_3 })
-        .position({ x: 0, y: 0 })
-        .hitTestBehavior(HitTestMode.None);
     }
     .width('100%')
     .height(44);
