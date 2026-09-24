@@ -12,6 +12,7 @@ import {
   LearnerProfile,
 } from '../models/AgentMemoryModels';
 import { WritePathValidator } from './WritePathValidator';
+import { PROFILE_GLOBAL_SCOPE_ID, SessionIdPolicy } from './ConversationIdentity';
 
 const RECENT_REPLY_LIMIT: number = 28;
 const RECENT_NOTE_LIMIT: number = 100;
@@ -20,7 +21,6 @@ const SUMMARY_UPDATE_MESSAGE_GAP: number = 16;
 const REPLY_CONTEXT_LIMIT: number = 12000;
 const NOTE_CONTEXT_LIMIT: number = 32000;
 const SUMMARY_CONTEXT_LIMIT: number = 24000;
-const PROFILE_GLOBAL_SESSION_ID: string = '__global__';
 const PROFILE_SOURCE: string = 'learner_profile';
 const PROFILE_UPDATE_USER_MESSAGE_GAP: number = 6;
 const PROFILE_CONTEXT_RECENT_LIMIT: number = 24;
@@ -34,8 +34,9 @@ export class AgentMemoryService {
   }
 
   async saveMessage(sessionId: string, role: ChatRole, content: string): Promise<void> {
+    SessionIdPolicy.requireValid(sessionId);
     const text: string = content.trim();
-    if (sessionId.length === 0 || text.length === 0) {
+    if (text.length === 0) {
       return;
     }
     const now: number = Date.now();
@@ -50,8 +51,9 @@ export class AgentMemoryService {
   }
 
   async savePendingNoteMaterial(sessionId: string, content: string, source: string): Promise<string> {
+    SessionIdPolicy.requireValid(sessionId);
     const text: string = content.trim();
-    if (sessionId.length === 0 || text.length === 0) {
+    if (text.length === 0) {
       return '';
     }
     const now: number = Date.now();
@@ -125,7 +127,7 @@ export class AgentMemoryService {
     const store: relationalStore.RdbStore = await this.getStore();
     const memoryDao: AgentMemoryDao = new AgentMemoryDao(store);
     const globalRecord: AgentMemoryRecord | null =
-      await memoryDao.queryLatestProfile(PROFILE_GLOBAL_SESSION_ID, PROFILE_SOURCE);
+      await memoryDao.queryLatestProfile(PROFILE_GLOBAL_SCOPE_ID, PROFILE_SOURCE);
     const sessionRecord: AgentMemoryRecord | null = await memoryDao.queryLatestProfile(sessionId, PROFILE_SOURCE);
     const globalProfile: LearnerProfile | null = AgentMemoryService.parseLearnerProfile(globalRecord);
     const sessionProfile: LearnerProfile | null = AgentMemoryService.parseLearnerProfile(sessionRecord);
@@ -134,9 +136,7 @@ export class AgentMemoryService {
   }
 
   async updateLearnerProfileIfNeeded(sessionId: string): Promise<void> {
-    if (sessionId.length === 0) {
-      return;
-    }
+    SessionIdPolicy.requireValid(sessionId);
     const store: relationalStore.RdbStore = await this.getStore();
     const memoryDao: AgentMemoryDao = new AgentMemoryDao(store);
     const messageDao: ChatMessageDao = new ChatMessageDao(store);
@@ -153,7 +153,7 @@ export class AgentMemoryService {
     }
 
     const globalRecord: AgentMemoryRecord | null =
-      await memoryDao.queryLatestProfile(PROFILE_GLOBAL_SESSION_ID, PROFILE_SOURCE);
+      await memoryDao.queryLatestProfile(PROFILE_GLOBAL_SCOPE_ID, PROFILE_SOURCE);
     const globalProfile: LearnerProfile | null = AgentMemoryService.parseLearnerProfile(globalRecord);
     const sessionProfile: LearnerProfile | null = AgentMemoryService.parseLearnerProfile(sessionRecord);
     const currentProfile: LearnerProfile = AgentMemoryService.mergeLearnerProfile(globalProfile, sessionProfile);
@@ -171,7 +171,7 @@ export class AgentMemoryService {
     }
 
     await this.insertMemoryRecord(AgentMemoryService.toProfileRecord(
-      PROFILE_GLOBAL_SESSION_ID,
+      PROFILE_GLOBAL_SCOPE_ID,
       AgentMemoryService.withSessionLevel(updated, updated.globalLevel),
     ));
     await this.insertMemoryRecord(AgentMemoryService.toProfileRecord(sessionId, updated));

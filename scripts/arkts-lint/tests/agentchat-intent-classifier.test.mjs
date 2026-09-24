@@ -29,7 +29,8 @@ test('IntentClassifier takes an injectable LlmGuard seam and reuses guard.extrac
 test('ConversationWorkflow owns intent orchestration and AgentChatService stays a facade', () => {
   assert.doesNotMatch(chatService, /IntentClassifier|classifyTextIntent|generateNoteFromConversation/);
   assert.match(chatService, /private readonly workflow: ConversationWorkflow/);
-  assert.match(chatService, /await this\.workflow\.run\(request\)/);
+  assert.match(chatService, /executeAcceptedOperation<void>/);
+  assert.match(chatService, /this\.workflow\.run\(request, ref\)/);
   assert.match(workflow, /private intentClassifier: IntentClassifier = new IntentClassifier\(\);/);
   assert.match(workflow, /this\.intentClassifier\.classify\(/);
   assert.match(workflow, /this\.intentClassifier\.inlineNoteMaterial\(/);

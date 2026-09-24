@@ -32,10 +32,7 @@ import {
   createFileChatHistoryStore,
   chatSnapshotPath,
 } from '../../../services/ChatHistoryPersistence';
-
-export function sid(): string {
-  return Date.now().toString(36);
-}
+import { CHAT_HISTORY_SCHEMA_VERSION } from '../../../services/ChatHistorySchema';
 
 export class ChatSessionManager {
   private static activeManager: ChatSessionManager | null = null;
@@ -127,7 +124,7 @@ export class ChatSessionManager {
         stage: 'PREPARE',
         transport: 'taskpool',
         retryable: false,
-        diagnostic: 'stage=PREPARE; reason=no-active-chat-session; schemaVersion=1; ts=' + Date.now().toString(),
+        diagnostic: 'stage=PREPARE; reason=no-active-chat-session; schemaVersion=' + CHAT_HISTORY_SCHEMA_VERSION.toString() + '; ts=' + Date.now().toString(),
       };
       return Promise.resolve(result);
     }
@@ -142,7 +139,7 @@ export class ChatSessionManager {
       stage: 'PREPARE',
       transport: 'taskpool',
       retryable: false,
-      diagnostic: 'stage=PREPARE; reason=not-initialized; schemaVersion=1; ts=' + Date.now().toString(),
+      diagnostic: 'stage=PREPARE; reason=not-initialized; schemaVersion=' + CHAT_HISTORY_SCHEMA_VERSION.toString() + '; ts=' + Date.now().toString(),
     };
     return result;
   }

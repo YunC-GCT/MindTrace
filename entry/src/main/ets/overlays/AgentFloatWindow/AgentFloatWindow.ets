@@ -33,8 +33,12 @@ import { NoteDraftReadyEvent } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
 import type { StreamEvent } from 'common';
-
-function nowId(): number { return Date.now() * 1000 + Math.floor(Math.random() * 1000); }
+import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
+import {
+  ConversationSessionEvent,
+  ConversationSessionReduceResult,
+  ConversationSessionReducer,
+} from '../../services/ConversationSessionReducer';
 
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
@@ -62,6 +66,8 @@ export struct AgentFloatWindow {
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
   @State panelVisible: boolean = false;
   @State generatedDraft: NoteDraftReadyEvent | null = null;
+  private generatedDraftSessionId: string = '';
+  private draftsBySession: Map<string, NoteDraftReadyEvent> = new Map<string, NoteDraftReadyEvent>();
   private motionSeq: number = 0;
   private dragStartH: number = 48;
   private mainWindow: window.Window | null = null;
@@ -126,54 +132,60 @@ export struct AgentFloatWindow {
     this.sm.recordFilesDir(seam !== null ? seam.filesDir : '');
     const inputVm: AgentInputViewModel = this.inputVm;
     const cbs: AgentChatCallbacks = {
-      addAiMsg: (c: string): void => { this.messages = [...this.messages, { id: nowId(), role: 'ai', content: c, ts: Date.now(), streaming: false, reasoning: '' }]; },
-      addAiMsgEmpty: (): number => {
-        const id: number = nowId();
-        this.messages = [...this.messages, { id, role: 'ai', content: '', ts: Date.now(), streaming: true, reasoning: '' }];
+      addUserMsg: (ref: ConversationRunRef, content: string): boolean => {
+        return this.updateSessionMessages(ref, 'add-user-message', (messages: ChatMsg[]): ChatMsg[] => [...messages, { id: chatMessageIdPolicy.create(), role: 'user', content: content, ts: Date.now(), streaming: false, reasoning: '' }]);
+      },
+      addAiMsg: (ref: ConversationRunRef, c: string): void => { this.updateSessionMessages(ref, 'add-ai-message', (messages: ChatMsg[]): ChatMsg[] => [...messages, { id: chatMessageIdPolicy.create(), role: 'ai', content: c, ts: Date.now(), streaming: false, reasoning: '' }]); },
+      addAiMsgEmpty: (ref: ConversationRunRef): number => {
+        const id: number = chatMessageIdPolicy.create();
+        this.updateSessionMessages(ref, 'add-ai-placeholder', (messages: ChatMsg[]): ChatMsg[] => [...messages, { id, role: 'ai', content: '', ts: Date.now(), streaming: true, reasoning: '' }]);
         return id;
       },
-      appendAiMsg: (id: number, event: StreamEvent): void => {
-        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m);
+      appendAiMsg: (ref: ConversationRunRef, id: number, event: StreamEvent): void => {
+        this.updateSessionMessages(ref, 'append-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m));
       },
-      finishAiMsg: (id: number): void => {
-        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m);
+      finishAiMsg: (ref: ConversationRunRef, id: number): void => {
+        this.updateSessionMessages(ref, 'finish-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m));
         this.sync();
         this.sm.flush(this.sessions).catch((): void => {});
       },
-      setBusy: (v: boolean): void => { inputVm.setBusy(v); },
-      setStatusMeta: (_meta: ChatStatusMeta | null): void => { /* 状态指示 UI 已移除 (多端设计 v3) */ },
+      setBusy: (_ref: ConversationRunRef, v: boolean): void => { inputVm.setBusy(v); },
+      setStatusMeta: (_ref: ConversationRunRef, _meta: ChatStatusMeta | null): void => { /* 状态指示 UI 已移除 (多端设计 v3) */ },
       getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
-      getConversationText: (excludeLatestUser: boolean): string => this.buildConversationText(excludeLatestUser),
-      getSessionId: (): string => this.activeSid,
-      onDraftReady: (event: NoteDraftReadyEvent): void => { this.generatedDraft = event; },
+      getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean): string => this.buildConversationTextForSession(ref, excludeLatestUser),
+      onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent): void => {
+        if (this.service?.isCurrentRun(ref) === true && this.sessionExists(ref.sessionId)) {
+          this.draftsBySession.set(ref.sessionId, event);
+          if (ref.sessionId === this.activeSid) {
+            this.generatedDraft = event;
+            this.generatedDraftSessionId = ref.sessionId;
+          }
+        } else {
+          console.warn('[ConversationRun] code=DRAFT_TARGET_REJECTED; sessionId=' + ref.sessionId + '; runId=' + ref.runId);
+        }
+      },
     };
     this.service = new AgentChatService(cbs);
-    this.inputVm.bind(this.service, (content: string): void => {
-      if (this.finishCurrentStreamingMessage()) {
-        this.sync();
-        this.sm.flush(this.sessions).catch((): void => {});
-      }
-      this.messages = [...this.messages, { id: nowId(), role: 'user', content, ts: Date.now(), streaming: false, reasoning: '' }];
-    });
+    this.inputVm.bind(this.service, (): string => this.activeSid);
     const ss: ChatSession[] = await this.sm.init(getContext(this));
     if (ss.length > 0) { this.sessions = ss; this.activeSid = ss[0].id; this.messages = ss[0].messages; return; }
-    this.messages = [{ id: 1, role: 'ai', content: '👋 你好，我是 MindTrace AI。可以帮你分析题目、讲解知识点、整理笔记。试试问我吧 👉', ts: Date.now(), streaming: false, reasoning: '' }];
+    this.messages = [{ id: chatMessageIdPolicy.create(), role: 'ai', content: '👋 你好，我是 MindTrace AI。可以帮你分析题目、讲解知识点、整理笔记。试试问我吧 👉', ts: Date.now(), streaming: false, reasoning: '' }];
   }
 
   private sync(): void {
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === this.activeSid);
     if (s !== undefined) { s.messages = this.messages; }
   }
-  private buildConversationText(excludeLatestUser: boolean): string {
+  private buildConversationText(messages: ChatMsg[], excludeLatestUser: boolean): string {
     const parts: string[] = [];
     const end: number = excludeLatestUser
-      && this.messages.length > 0
-      && this.messages[this.messages.length - 1].role === 'user'
-      ? this.messages.length - 1
-      : this.messages.length;
+      && messages.length > 0
+      && messages[messages.length - 1].role === 'user'
+      ? messages.length - 1
+      : messages.length;
     let i: number = 0;
     while (i < end) {
-      const msg: ChatMsg = this.messages[i];
+      const msg: ChatMsg = messages[i];
       const role: string = msg.role === 'user' ? '用户' : 'AI';
       if (msg.content.trim().length > 0) {
         parts.push(role + ': ' + msg.content.trim());
@@ -182,6 +194,27 @@ export struct AgentFloatWindow {
     }
     return parts.join('\n\n');
   }
+  private sessionExists(sessionId: string): boolean { return this.sessions.some((item: ChatSession): boolean => item.id === sessionId); }
+  private buildConversationTextForSession(ref: ConversationRunRef, excludeLatestUser: boolean): string {
+    if (this.service?.isCurrentRun(ref) !== true) { return ''; }
+    const target: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === ref.sessionId);
+    if (target === undefined) { return ''; }
+    return this.buildConversationText(target.messages, excludeLatestUser);
+  }
+  private updateSessionMessages(ref: ConversationRunRef, event: ConversationSessionEvent, update: (messages: ChatMsg[]) => ChatMsg[]): boolean {
+    const current: boolean = this.service?.isCurrentRun(ref) === true;
+    const result: ConversationSessionReduceResult = ConversationSessionReducer.updateMessages(this.sessions, ref, current, event, update);
+    if (!result.accepted) {
+      console.warn('[ConversationRun] ' + result.diagnostic);
+      return false;
+    }
+    this.sessions = result.sessions;
+    if (ref.sessionId === this.activeSid) {
+      const target: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === ref.sessionId);
+      if (target !== undefined) { this.messages = target.messages; }
+    }
+    return true;
+  }
   private activeSessionTitle(): string {
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === this.activeSid);
     return s !== undefined ? s.name : '对话标题';
@@ -189,12 +222,15 @@ export struct AgentFloatWindow {
 
   private switchSession(sid: string): void {
     this.sync();
-    if (this.finishCurrentStreamingMessage()) {
-      this.sync();
-    }
     this.sm.flush(this.sessions).catch((): void => {});
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
-    if (s !== undefined) { this.activeSid = sid; this.messages = s.messages; }
+    if (s !== undefined) {
+      this.activeSid = sid;
+      this.messages = s.messages;
+      const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(sid);
+      this.generatedDraft = draft ?? null;
+      this.generatedDraftSessionId = draft === undefined ? '' : sid;
+    }
   }
   private newSession(): void {
     this.sync();
@@ -202,6 +238,8 @@ export struct AgentFloatWindow {
     this.sessions = [...this.sessions, session];
     this.activeSid = session.id;
     this.messages = [];
+    this.generatedDraft = null;
+    this.generatedDraftSessionId = '';
     this.sm.flush(this.sessions).catch((): void => {});
     this.panelVisible = false;
   }
@@ -231,12 +269,17 @@ export struct AgentFloatWindow {
     if (this.sessions.length <= 1) {
       return;
     }
+    this.service?.cancelSessionRun(sid);
     this.sync();
     const remaining: ChatSession[] = this.sessions.filter((s: ChatSession): boolean => s.id !== sid);
+    this.draftsBySession.delete(sid);
     this.sessions = remaining;
     if (sid === this.activeSid) {
       this.activeSid = remaining[0].id;
       this.messages = remaining[0].messages;
+      const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(this.activeSid);
+      this.generatedDraft = draft ?? null;
+      this.generatedDraftSessionId = draft === undefined ? '' : this.activeSid;
     }
     this.sm.flush(this.sessions).catch((): void => {});
   }
@@ -309,10 +352,10 @@ export struct AgentFloatWindow {
   };
 
   private confirmDraft = async (candidate: KnowledgeUnit): Promise<KnowledgeUnit> => {
-    if (this.generatedDraft === null || this.service === null) {
+    if (this.generatedDraft === null || this.generatedDraftSessionId.length === 0 || this.service === null) {
       throw new Error('草稿服务不可用');
     }
-    return await this.service.confirmDraft(this.generatedDraft, candidate);
+    return await this.service.confirmDraft(this.generatedDraftSessionId, this.generatedDraft, candidate);
   }
 
   private openAnimated(): void {
@@ -426,16 +469,27 @@ export struct AgentFloatWindow {
       if (this.generatedDraft !== null) {
         NoteDetailOverlay({
           generatedDraft: this.generatedDraft,
-          onClose: (): void => { this.generatedDraft = null },
+          onClose: (): void => {
+            this.draftsBySession.delete(this.generatedDraftSessionId);
+            this.generatedDraft = null;
+            this.generatedDraftSessionId = '';
+          },
            onDraftCancel: (): void => {
              const cancelled: NoteDraftReadyEvent | null = this.generatedDraft;
+             const cancelledSessionId: string = this.generatedDraftSessionId;
+             this.draftsBySession.delete(cancelledSessionId);
              this.generatedDraft = null;
-             if (cancelled !== null) {
-               this.service?.cancelDraft(cancelled.runId).catch((): void => {});
+             this.generatedDraftSessionId = '';
+             if (cancelled !== null && cancelledSessionId.length > 0) {
+               this.service?.cancelDraft(cancelledSessionId, cancelled.runId).catch((): void => {});
              }
            },
           onDraftConfirm: this.confirmDraft,
-          onSaved: (_unit: KnowledgeUnit): void => { this.generatedDraft = null },
+          onSaved: (_unit: KnowledgeUnit): void => {
+            this.draftsBySession.delete(this.generatedDraftSessionId);
+            this.generatedDraft = null;
+            this.generatedDraftSessionId = '';
+          },
         })
       }
     }.width('100%').height('100%').hitTestBehavior(this.overlayVisible ? HitTestMode.Default : HitTestMode.None);

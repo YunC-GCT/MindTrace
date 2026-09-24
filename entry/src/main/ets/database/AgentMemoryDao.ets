@@ -1,5 +1,6 @@
 import { relationalStore } from '@kit.ArkData';
 import { AgentMemoryRecord, AgentMemoryType } from '../models/AgentMemoryModels';
+import { ProfileScopePolicy, SessionIdPolicy } from '../services/ConversationIdentity';
 
 export class AgentMemoryDao {
   private store: relationalStore.RdbStore;
@@ -9,6 +10,11 @@ export class AgentMemoryDao {
   }
 
   async insert(record: AgentMemoryRecord): Promise<number> {
+    if (record.type === 'profile') {
+      ProfileScopePolicy.requireValid(record.sessionId);
+    } else {
+      SessionIdPolicy.requireValid(record.sessionId);
+    }
     const bucket: relationalStore.ValuesBucket = AgentMemoryDao.toBucket(record);
     return new Promise<number>((resolve, reject) => {
       this.store.insert('agent_memory', bucket, (err: Error, rowId: number) => {
@@ -22,6 +28,7 @@ export class AgentMemoryDao {
   }
 
   async queryPendingNotes(sessionId: string): Promise<AgentMemoryRecord[]> {
+    SessionIdPolicy.requireValid(sessionId);
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('agent_memory');
     predicates.equalTo('session_id', sessionId);
     predicates.equalTo('type', 'pending_note');
@@ -47,6 +54,7 @@ export class AgentMemoryDao {
   }
 
   async queryLatestSummary(sessionId: string): Promise<AgentMemoryRecord | null> {
+    SessionIdPolicy.requireValid(sessionId);
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('agent_memory');
     predicates.equalTo('session_id', sessionId);
     predicates.equalTo('type', 'summary');
@@ -71,6 +79,7 @@ export class AgentMemoryDao {
   }
 
   async queryLatestProfile(sessionId: string, source: string): Promise<AgentMemoryRecord | null> {
+    ProfileScopePolicy.requireValid(sessionId);
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('agent_memory');
     predicates.equalTo('session_id', sessionId);
     predicates.equalTo('type', 'profile');
@@ -121,6 +130,7 @@ export class AgentMemoryDao {
   }
 
   async deleteBySession(sessionId: string): Promise<void> {
+    SessionIdPolicy.requireValid(sessionId);
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('agent_memory');
     predicates.equalTo('session_id', sessionId);
 

@@ -15,14 +15,22 @@ import { describe, expect, it } from '@ohos/hypium';
 import {
   CHAT_HISTORY_SCHEMA_VERSION,
   AtomicWriteStage,
+  ChatHistoryDecodeResult,
+  ChatHistoryDecoderCatalog,
+  ChatHistoryDecoderRegistration,
   ChatHistoryLoadResult,
   ChatHistoryPersistence,
   ChatHistoryPreferencesPort,
   ChatHistorySaveResult,
+  ChatHistorySnapshot,
   ChatHistoryStorePort,
   STREAM_SAVE_THROTTLE_MS,
+  createChatHistoryDecoderCatalog,
+  decodeChatHistorySnapshot,
 } from '../main/ets/services/ChatHistoryPersistence';
+import { CHAT_HISTORY_V1_SCHEMA_VERSION } from '../main/ets/services/ChatHistorySchema';
 import {
+  ChatMsg,
   ChatSession,
   copyChatSessionsForMemory,
   copyChatSessionsForPersistence,
@@ -124,6 +132,77 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 export default function chatHistoryPersistenceTest(): void {
+  describe('ChatHistoryPersistence.issue155_decoder_contract', () => {
+    it('should distinguish valid, corrupt, and unsupported root versions', 0, () => {
+      const valid = decodeChatHistorySnapshot(JSON.stringify({ schemaVersion: CHAT_HISTORY_SCHEMA_VERSION, sessions: SAMPLE_SESSIONS }));
+      expect(valid.error).assertEqual('none');
+      const missing = decodeChatHistorySnapshot(JSON.stringify({ sessions: SAMPLE_SESSIONS }));
+      expect(missing.error).assertEqual('corrupt');
+      const stringVersion = decodeChatHistorySnapshot(JSON.stringify({ schemaVersion: '1', sessions: SAMPLE_SESSIONS }));
+      expect(stringVersion.error).assertEqual('corrupt');
+      const zeroVersion = decodeChatHistorySnapshot(JSON.stringify({ schemaVersion: 0, sessions: SAMPLE_SESSIONS }));
+      expect(zeroVersion.error).assertEqual('corrupt');
+      const negativeVersion = decodeChatHistorySnapshot(JSON.stringify({ schemaVersion: -1, sessions: SAMPLE_SESSIONS }));
+      expect(negativeVersion.error).assertEqual('corrupt');
+      const future = decodeChatHistorySnapshot(JSON.stringify({ schemaVersion: 99, sessions: SAMPLE_SESSIONS }));
+      expect(future.error).assertEqual('unsupported-version');
+      expect(future.version).assertEqual(99);
+    });
+
+    it('should register a future decoder without relabeling the v1 decoder', 0, () => {
+      expect(CHAT_HISTORY_SCHEMA_VERSION).assertEqual(CHAT_HISTORY_V1_SCHEMA_VERSION);
+      const futureRegistration: ChatHistoryDecoderRegistration = {
+        version: 2,
+        decode: (snapshot: ChatHistorySnapshot): ChatHistoryDecodeResult => {
+          return { error: 'none', snapshot: snapshot };
+        },
+      };
+      const futureRegistrations: ChatHistoryDecoderRegistration[] = [futureRegistration];
+      const futureCatalog: ChatHistoryDecoderCatalog =
+        createChatHistoryDecoderCatalog(futureRegistrations);
+      const decoded: ChatHistoryDecodeResult = futureCatalog.decode(JSON.stringify({
+        schemaVersion: 2,
+        sessions: SAMPLE_SESSIONS,
+      }));
+      expect(decoded.error).assertEqual('none');
+      expect(decoded.snapshot?.schemaVersion).assertEqual(2);
+      const v1: ChatHistoryDecodeResult = futureCatalog.decode(JSON.stringify({
+        schemaVersion: CHAT_HISTORY_V1_SCHEMA_VERSION,
+        sessions: SAMPLE_SESSIONS,
+      }));
+      expect(v1.error).assertEqual('none');
+      expect(v1.snapshot?.schemaVersion).assertEqual(CHAT_HISTORY_V1_SCHEMA_VERSION);
+    });
+
+    it('should round-trip v1 and reject invalid session or duplicate message identity', 0, () => {
+      const roundTrip = decodeChatHistorySnapshot(JSON.stringify({ schemaVersion: CHAT_HISTORY_SCHEMA_VERSION, sessions: SAMPLE_SESSIONS }));
+      expect(roundTrip.error).assertEqual('none');
+      expect(roundTrip.snapshot?.sessions[0].id).assertEqual('s1');
+      const invalidSessions: ChatSession[] = [{ id: '__global__', name: 'invalid', messages: [] }];
+      const invalidSnapshot: ChatHistorySnapshot = {
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: invalidSessions,
+      };
+      const invalidSession = decodeChatHistorySnapshot(JSON.stringify(invalidSnapshot));
+      expect(invalidSession.error).assertEqual('corrupt');
+      const duplicateMessages: ChatMsg[] = [
+        SAMPLE_SESSIONS[0].messages[0],
+        SAMPLE_SESSIONS[0].messages[0],
+      ];
+      const duplicateSessions: ChatSession[] = [{
+        id: 's1',
+        name: 'duplicate',
+        messages: duplicateMessages,
+      }];
+      const duplicateSnapshot: ChatHistorySnapshot = {
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: duplicateSessions,
+      };
+      const duplicateMessage = decodeChatHistorySnapshot(JSON.stringify(duplicateSnapshot));
+      expect(duplicateMessage.error).assertEqual('corrupt');
+    });
+  });
+
   describe('ChatHistoryPersistence.issue141_load_contract', () => {
     it('should migrate preferences only when the new file is absent', 0, async () => {
       const store: FakeStore = new FakeStore();
@@ -144,7 +223,7 @@ export default function chatHistoryPersistenceTest(): void {
     it('should read a valid file without consulting legacy preferences', 0, async () => {
       const store: FakeStore = new FakeStore();
       store.exists = true;
-      store.raw = JSON.stringify({ schemaVersion: 1, sessions: SAMPLE_SESSIONS });
+      store.raw = JSON.stringify({ schemaVersion: CHAT_HISTORY_SCHEMA_VERSION, sessions: SAMPLE_SESSIONS });
       const result: ChatHistoryLoadResult = await new ChatHistoryPersistence(
         store,
         new FakePreferences('not-json'),
@@ -165,6 +244,20 @@ export default function chatHistoryPersistenceTest(): void {
       ).load();
       expect(result.state).assertEqual('corrupt');
       expect(result.sessions[0].id).assertEqual('s1');
+      expect(store.writes.length).assertEqual(0);
+    });
+
+    it('should preserve an unsupported future file and skip legacy fallback', 0, async () => {
+      const store: FakeStore = new FakeStore();
+      store.exists = true;
+      store.raw = JSON.stringify({ schemaVersion: 99, sessions: SAMPLE_SESSIONS });
+      const result: ChatHistoryLoadResult = await new ChatHistoryPersistence(
+        store,
+        new FakePreferences(JSON.stringify(SAMPLE_SESSIONS)),
+        'chat-history/sessions.json',
+      ).load();
+      expect(result.state).assertEqual('unsupported-version');
+      expect(result.diagnostic).assertContain('version=99');
       expect(store.writes.length).assertEqual(0);
     });
 

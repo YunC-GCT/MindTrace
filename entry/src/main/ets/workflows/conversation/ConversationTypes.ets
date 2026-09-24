@@ -21,18 +21,19 @@ import { common } from '@kit.AbilityKit';
 import { ConversationProgressStep } from './ConversationState';
 import { NoteDraftReadyEvent } from 'common';
 import type { StreamEvent } from 'common';
+import { ConversationRunRef } from '../../services/ConversationIdentity';
 
 export interface ConversationWorkflowCallbacks {
-  addAiMsg(content: string): void;
-  addAiMsgEmpty(): number;
-  appendAiMsg(id: number, event: StreamEvent): void;
-  finishAiMsg(id: number): void;
-  onStart(): void;
-  onProgress(step: ConversationProgressStep): void;
-  onFinish(): void;
+  addAiMsg(ref: ConversationRunRef, content: string): void;
+  addAiMsgEmpty(ref: ConversationRunRef): number;
+  appendAiMsg(ref: ConversationRunRef, id: number, event: StreamEvent): void;
+  finishAiMsg(ref: ConversationRunRef, id: number): void;
+  onStart(ref: ConversationRunRef): void;
+  onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void;
+  onFinish(ref: ConversationRunRef): void;
+  isCurrentRun(ref: ConversationRunRef): boolean;
   getContext(): common.UIAbilityContext;
-  getConversationText(excludeLatestUser: boolean): string;
-  getSessionId(): string;
-  onDraftReady(event: NoteDraftReadyEvent): void;
-  onOcrBlank?(imageUri: string): void;
+  getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string;
+  onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void;
+  onOcrBlank?(ref: ConversationRunRef, imageUri: string): void;
 }

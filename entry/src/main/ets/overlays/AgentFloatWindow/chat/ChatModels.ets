@@ -22,9 +22,10 @@ import {
   finishAgentRun,
   projectLegacyAgentRun,
 } from './AgentRunModels'
+import { ChatMessageIdPolicy, SessionIdPolicy } from '../../../services/ConversationIdentity'
 
 export interface ChatMsg {
-  // 消息唯一 id(用 Date.now * 1000 + random)
+  // 消息唯一 id (由 ChatMessageIdPolicy 生成并校验)
   id: number
 
   // 角色: "user" | "ai"
@@ -68,6 +69,7 @@ export function chatMessageReasoning(message: ChatMsg): string {
  * copy and therefore retains UI interaction state such as reasoningExpanded.
  */
 export function copyChatMsgForMemory(message: ChatMsg): ChatMsg {
+  ChatMessageIdPolicy.requireValid(message.id)
   const next: ChatMsg = {
     id: message.id,
     role: message.role,
@@ -97,6 +99,7 @@ export function chatMessageRunParts(message: ChatMsg): AgentRunPart[] {
  * deliberately excludes reasoningExpanded, which is UI-only state.
  */
 export function copyChatMsgForPersistence(message: ChatMsg): ChatMsg {
+  ChatMessageIdPolicy.requireValid(message.id)
   const next: ChatMsg = {
     id: message.id,
     role: message.role,
@@ -144,7 +147,7 @@ export interface ChatStatusMeta {
 }
 
 export interface ChatSession {
-  // 会话唯一 id(36 进制时间戳)
+  // 会话唯一 id (由 SessionIdPolicy 生成并校验)
   id: string
 
   // 会话名称
@@ -154,7 +157,20 @@ export interface ChatSession {
   messages: ChatMsg[]
 }
 
+export function requireUniqueChatMessageIds(messages: ChatMsg[]): void {
+  const ids: Set<number> = new Set<number>()
+  for (const message of messages) {
+    ChatMessageIdPolicy.requireValid(message.id)
+    if (ids.has(message.id)) {
+      throw new Error('DUPLICATE_CHAT_MESSAGE_ID')
+    }
+    ids.add(message.id)
+  }
+}
+
 export function copyChatSessionForMemory(session: ChatSession): ChatSession {
+  SessionIdPolicy.requireValid(session.id)
+  requireUniqueChatMessageIds(session.messages)
   const messages: ChatMsg[] = []
   for (const message of session.messages) {
     messages.push(copyChatMsgForMemory(message))
@@ -167,6 +183,8 @@ export function copyChatSessionForMemory(session: ChatSession): ChatSession {
 }
 
 export function copyChatSessionForPersistence(session: ChatSession): ChatSession {
+  SessionIdPolicy.requireValid(session.id)
+  requireUniqueChatMessageIds(session.messages)
   const messages: ChatMsg[] = []
   for (const message of session.messages) {
     messages.push(copyChatMsgForPersistence(message))

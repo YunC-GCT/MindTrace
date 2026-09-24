@@ -13,6 +13,7 @@ import dispatcherNoteGenerationTest from './DispatcherNoteGeneration.test';
 import rendererSchedulerTest from './RendererScheduler.test';
 import renderTickTest from './RenderTick.test';
 import streamingReplyDocumentTest from './StreamingReplyDocument.test';
+import conversationIdentityTest from './ConversationIdentity.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -30,4 +31,5 @@ export default function testsuite() {
   rendererSchedulerTest();
   renderTickTest();
   streamingReplyDocumentTest();
+  conversationIdentityTest();
 }

@@ -45,6 +45,8 @@ import { NoteDraftReadyEvent, NoteGenerationRun, SourceFragment } from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
+import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { requireConversationRunRef } from '../../services/ConversationIdentity';
 
 const workflowLog: Logger = new Logger('ConversationWorkflow');
 
@@ -73,33 +75,37 @@ export class ConversationWorkflow {
     this.cbs = callbacks;
   }
 
-  async run(request: ConversationRequest): Promise<void> {
+  async run(request: ConversationRequest, runRef: ConversationRunRef): Promise<void> {
+    requireConversationRunRef(runRef);
+    if (!this.cbs.isCurrentRun(runRef)) {
+      throw new Error('STALE_CONVERSATION_RUN');
+    }
     const initial: ConversationState = {
       request: request,
-      sessionId: this.currentSessionId(),
+      runRef: runRef,
       currentStep: 'START',
     };
     const graph: StateGraph<ConversationState, ConversationStep> = this.buildGraph();
     workflowLog.info('run start kind=' + request.kind);
-    this.cbs.onStart();
+    this.cbs.onStart(runRef);
     try {
       await graph.run(initial);
     } finally {
-      this.cbs.onFinish();
+      this.cbs.onFinish(runRef);
       workflowLog.info('run finish kind=' + request.kind);
     }
   }
 
-  async confirmDraft(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
+  async confirmDraft(ref: ConversationRunRef, event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
     if (this.pendingConfirmRunId !== null && this.pendingConfirmRunId === event.runId) {
-      await this.addAiMessage(this.currentSessionId(), '正在保存中，请勿重复点击。');
+      await this.addAiMessage(ref, '正在保存中，请勿重复点击。');
       throw new Error('DUPLICATE_CONFIRM: 正在保存中');
     }
     this.pendingConfirmRunId = event.runId;
     const service: AiService = new AiService(this.cbs.getContext());
     try {
       const committed: KnowledgeUnit = await service.confirmDraft(event, candidate);
-      await this.addAiMessage(this.currentSessionId(), '已保存笔记：' + committed.title);
+      await this.addAiMessage(ref, '已保存笔记：' + committed.title);
       return committed;
     } catch (e) {
       const errMsg: string = ConversationWorkflow.errorMessage(e);
@@ -112,15 +118,15 @@ export class ConversationWorkflow {
             event.incrementalInstruction ?? '请重新规划增量修改',
             event.incrementalInstruction ?? '请重新规划增量修改',
           );
-          this.cbs.onDraftReady(refreshed);
-          await this.addAiMessage(this.currentSessionId(), '笔记版本已变化，已重新加载并生成新的预览，请再次确认。');
+          this.cbs.onDraftReady(ref, refreshed);
+          await this.addAiMessage(ref, '笔记版本已变化，已重新加载并生成新的预览，请再次确认。');
         } catch (replanError) {
-          await this.addAiMessage(this.currentSessionId(), '版本冲突且自动重规划失败，请重新整理笔记。');
+          await this.addAiMessage(ref, '版本冲突且自动重规划失败，请重新整理笔记。');
         }
       } else if (conflict) {
-        await this.addAiMessage(this.currentSessionId(), '笔记版本冲突，请重新整理笔记。');
+        await this.addAiMessage(ref, '笔记版本冲突，请重新整理笔记。');
       } else {
-        await this.addAiMessage(this.currentSessionId(), '保存笔记失败: ' + errMsg.substring(0, 120));
+        await this.addAiMessage(ref, '保存笔记失败: ' + errMsg.substring(0, 120));
       }
       throw new Error(errMsg);
     } finally {
@@ -128,31 +134,31 @@ export class ConversationWorkflow {
     }
   }
 
-  async restoreDraft(runId: string): Promise<NoteDraftReadyEvent> {
+  async restoreDraft(ref: ConversationRunRef, runId: string): Promise<NoteDraftReadyEvent> {
     const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).restoreDraft(runId);
-    this.cbs.onDraftReady(event);
+    this.cbs.onDraftReady(ref, event);
     const hasPendingSources: boolean = event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0;
     if (hasPendingSources) {
-      await this.addAiMessage(this.currentSessionId(), '已恢复笔记草稿，请预览并确认。注意：若素材持久化曾失败，草稿可能无法完整恢复。');
+      await this.addAiMessage(ref, '已恢复笔记草稿，请预览并确认。注意：若素材持久化曾失败，草稿可能无法完整恢复。');
     } else {
-      await this.addAiMessage(this.currentSessionId(), '已恢复笔记草稿，请预览并确认。');
+      await this.addAiMessage(ref, '已恢复笔记草稿，请预览并确认。');
     }
     return event;
   }
 
-  async cancelDraft(runId: string): Promise<void> {
+  async cancelDraft(ref: ConversationRunRef, runId: string): Promise<void> {
     await new AiService(this.cbs.getContext()).cancelDraft(runId);
-    await this.addAiMessage(this.currentSessionId(), '已取消笔记草稿，待整理材料仍可使用。');
+    await this.addAiMessage(ref, '已取消笔记草稿，待整理材料仍可使用。');
   }
 
-  async regenerateNote(noteId: string, instruction: string): Promise<void> {
+  async regenerateNote(ref: ConversationRunRef, noteId: string, instruction: string): Promise<void> {
     if (noteId.trim().length === 0) {
       throw new Error('增量重生成需要明确 noteId');
     }
-    await this.run({ kind: 'regenerate', noteId: noteId, userContent: instruction });
+    await this.run({ kind: 'regenerate', noteId: noteId, userContent: instruction }, ref);
   }
 
-  async requestRegeneration(noteReference: string, noteIds: string[], instruction: string): Promise<void> {
+  async requestRegeneration(ref: ConversationRunRef, noteReference: string, noteIds: string[], instruction: string): Promise<void> {
     const candidates: string[] = [];
     for (const noteId of noteIds) {
       if (!candidates.includes(noteId)) {
@@ -160,15 +166,15 @@ export class ConversationWorkflow {
       }
     }
     if (candidates.length !== 1 || candidates[0] !== noteReference) {
-      await this.addAiMessage(this.currentSessionId(), '请先选择要修改的明确笔记，再提出增量修改要求。');
+      await this.addAiMessage(ref, '请先选择要修改的明确笔记，再提出增量修改要求。');
       return;
     }
-    await this.regenerateNote(candidates[0], instruction);
+    await this.regenerateNote(ref, candidates[0], instruction);
   }
 
-  async retryDraft(runId: string): Promise<NoteDraftReadyEvent> {
+  async retryDraft(ref: ConversationRunRef, runId: string): Promise<NoteDraftReadyEvent> {
     const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).retryDraft(runId);
-    this.cbs.onDraftReady(event);
+    this.cbs.onDraftReady(ref, event);
     return event;
   }
 
@@ -180,14 +186,14 @@ export class ConversationWorkflow {
     const graph: StateGraph<ConversationState, ConversationStep> =
       new StateGraph<ConversationState, ConversationStep>('START', 'END');
     graph.addNode('classify_intent', async (input: ConversationState): Promise<ConversationState> => {
-      this.setStep('intent_check');
+      this.setStep(input.runRef, 'intent_check');
       const intent: TextIntent = await this.intentClassifier.classify(input.request.userContent);
       const next: ConversationState = this.copyState(input, 'classify_intent');
       next.intent = intent;
       return next;
     });
     graph.addNode('classify_image_intent', async (input: ConversationState): Promise<ConversationState> => {
-      this.setStep('intent_check');
+      this.setStep(input.runRef, 'intent_check');
       const userText: string = input.request.userContent.trim();
       let intent: TextIntent = 'chat';
       if (userText.length > 0 && userText !== '[图片]') {
@@ -199,7 +205,7 @@ export class ConversationWorkflow {
     });
     graph.addNode('image_reply', async (input: ConversationState): Promise<ConversationState> => {
       if (input.request.kind === 'image') {
-        await this.handleImageReply(input.sessionId, input.request.imageUri, input.request.userContent);
+        await this.handleImageReply(input.runRef, input.request.imageUri, input.request.userContent);
       }
       return this.copyState(input, 'image_reply');
     });
@@ -208,7 +214,7 @@ export class ConversationWorkflow {
         return this.copyState(input, 'image_note_reply');
       }
       const result: ImageNoteReplyResult = await this.handleImageNoteReply(
-        input.sessionId,
+        input.runRef,
         input.request.imageUri,
         input.request.userContent,
       );
@@ -236,22 +242,22 @@ export class ConversationWorkflow {
       return next;
     });
     graph.addNode('load_reply_context', async (input: ConversationState): Promise<ConversationState> => {
-      this.setStep('reply_context_load');
+      this.setStep(input.runRef, 'reply_context_load');
       const next: ConversationState = this.copyState(input, 'load_reply_context');
-      next.memoryContext = await this.safeGetContextForReply(input.sessionId);
-      next.learnerProfileContext = await this.safeGetLearnerProfileContext(input.sessionId);
+      next.memoryContext = await this.safeGetContextForReply(input.runRef);
+      next.learnerProfileContext = await this.safeGetLearnerProfileContext(input.runRef);
       if (input.request.kind === 'text') {
         next.evidence = await this.safeBuildEvidence(input.request.userContent);
       }
       return next;
     });
     graph.addNode('save_reply_input', async (input: ConversationState): Promise<ConversationState> => {
-      await this.safeSaveUserMessage(input.sessionId, input.request.userContent);
+      await this.safeSaveUserMessage(input.runRef, input.request.userContent);
       return this.copyState(input, 'save_reply_input');
     });
     graph.addNode('complete_reply', async (input: ConversationState): Promise<ConversationState> => {
       await this.handleCompleteReply(
-        input.sessionId,
+        input.runRef,
         input.memoryContext ?? '',
         input.learnerProfileContext ?? '',
         input.request.userContent,
@@ -261,7 +267,7 @@ export class ConversationWorkflow {
     });
     graph.addNode('stream_reply', async (input: ConversationState): Promise<ConversationState> => {
       await this.handleStreamReply(
-        input.sessionId,
+        input.runRef,
         input.memoryContext ?? '',
         input.learnerProfileContext ?? '',
         input.request.userContent,
@@ -271,10 +277,10 @@ export class ConversationWorkflow {
     });
     graph.addNode('note_reply', async (input: ConversationState): Promise<ConversationState> => {
       const event: NoteDraftReadyEvent | undefined = await this.generateNoteFromConversation(
-        input.sessionId,
+        input.runRef,
         input.request.userContent,
       );
-      this.setStep('completed');
+      this.setStep(input.runRef, 'completed');
       const next: ConversationState = this.copyState(input, 'note_reply');
       if (event !== undefined) {
         next.draftRunId = event.runId;
@@ -289,8 +295,8 @@ export class ConversationWorkflow {
       if (request.kind !== 'regenerate') {
         return this.copyState(input, 'regenerate_reply');
       }
-      this.setStep('note_context_load');
-      await this.safeSaveUserMessage(input.sessionId, request.userContent);
+      this.setStep(input.runRef, 'note_context_load');
+      await this.safeSaveUserMessage(input.runRef, request.userContent);
       try {
         const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).regenerateNoteDraft(
           'regenerate-' + Date.now().toString(),
@@ -298,10 +304,10 @@ export class ConversationWorkflow {
           request.userContent,
           request.userContent,
         );
-        this.cbs.onDraftReady(event);
-        await this.addAiMessage(input.sessionId, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
+        this.cbs.onDraftReady(input.runRef, event);
+        await this.addAiMessage(input.runRef, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
       } catch (e) {
-        await this.addAiMessage(input.sessionId, '增量重生成失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
+        await this.addAiMessage(input.runRef, '增量重生成失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
       }
       return this.copyState(input, 'regenerate_reply');
     });
@@ -345,7 +351,7 @@ export class ConversationWorkflow {
   private copyState(input: ConversationState, step: ConversationStep): ConversationState {
     const next: ConversationState = {
       request: input.request,
-      sessionId: input.sessionId,
+      runRef: input.runRef,
       currentStep: step,
     };
     if (input.intent !== undefined) {
@@ -387,69 +393,69 @@ export class ConversationWorkflow {
     return next;
   }
 
-  private async handleImageReply(sessionId: string, imageUri: string, userText: string): Promise<void> {
-    this.setStep('image_message_save');
+  private async handleImageReply(ref: ConversationRunRef, imageUri: string, userText: string): Promise<void> {
+    this.setStep(ref, 'image_message_save');
     try {
-      await this.safeSaveUserMessage(sessionId, userText.trim().length > 0 ? userText : '[图片]');
-      this.setStep('image_recognize');
+      await this.safeSaveUserMessage(ref, userText.trim().length > 0 ? userText : '[图片]');
+      this.setStep(ref, 'image_recognize');
       const result: ClassificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText);
       workflowLog.info('image analysis completed type=' + result.type);
-      this.setStep('image_material_save');
-      const ocrSourceId: string | null = await this.safeSaveOcrResult(sessionId, imageUri, userText, result);
+      this.setStep(ref, 'image_material_save');
+      const ocrSourceId: string | null = await this.safeSaveOcrResult(ref, imageUri, userText, result);
       if (ocrSourceId === null) {
-        await this.addAiMessage(sessionId, '图片识别成功，但素材暂存失败，识别结果可能无法恢复。');
+        await this.addAiMessage(ref, '图片识别成功，但素材暂存失败，识别结果可能无法恢复。');
       }
       const reply: string = this.formatAnalyzeReply(result);
-      await this.addAiMessage(sessionId, reply);
-      this.setStep('completed');
+      await this.addAiMessage(ref, reply);
+      this.setStep(ref, 'completed');
     } catch (e) {
-      await this.addAiMessage(sessionId, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
+      await this.addAiMessage(ref, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
     }
   }
 
   private async handleImageNoteReply(
-    sessionId: string,
+    ref: ConversationRunRef,
     imageUri: string,
     userText: string,
   ): Promise<ImageNoteReplyResult> {
-    this.setStep('image_message_save');
-    await this.safeSaveUserMessage(sessionId, userText.trim().length > 0 ? userText : '[图片]');
+    this.setStep(ref, 'image_message_save');
+    await this.safeSaveUserMessage(ref, userText.trim().length > 0 ? userText : '[图片]');
 
-    this.setStep('image_note_ocr');
+    this.setStep(ref, 'image_note_ocr');
     let classificationResult: ClassificationResult;
     try {
       classificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText);
     } catch (e) {
-      await this.addAiMessage(sessionId, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
+      await this.addAiMessage(ref, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
       return {};
     }
 
     const ocrText: string = (classificationResult.ocrText ?? '').trim();
     if (ocrText.length === 0) {
-      this.setStep('image_ocr_blank');
+      this.setStep(ref, 'image_ocr_blank');
       if (this.cbs.onOcrBlank !== undefined) {
-        this.cbs.onOcrBlank(imageUri);
+        this.cbs.onOcrBlank(ref, imageUri);
       }
       await this.addAiMessage(
-        sessionId,
+        ref,
         '未识别到有效文字，请重新拍照或手动补充文字后再试。',
       );
-      this.setStep('completed');
+      this.setStep(ref, 'completed');
       return { ocrResult: classificationResult, isOcrBlank: true };
     }
 
-    this.setStep('image_material_save');
-    const ocrSourceId: string | null = await this.safeSaveOcrResult(sessionId, imageUri, userText, classificationResult);
+    this.setStep(ref, 'image_material_save');
+    const ocrSourceId: string | null = await this.safeSaveOcrResult(ref, imageUri, userText, classificationResult);
     const materialPersistFailed: boolean = ocrSourceId === null;
     if (materialPersistFailed) {
       workflowLog.warn('material persist failed for image: ' + imageUri);
     }
 
-    this.setStep('image_note_draft');
+    this.setStep(ref, 'image_note_draft');
     try {
       const configured: boolean = await LlmConfig.getInstance().isConfigured();
       if (!configured) {
-        await this.addAiMessage(sessionId, '⚠️ 请先在「我的 → 设置」中配置 API Key');
+        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key');
         return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
       }
 
@@ -469,7 +475,7 @@ export class ConversationWorkflow {
       }
       const conversation: string = ocrLines.join('\n');
 
-      const runId: string = 'img-note-' + Date.now().toString();
+      const noteGenerationRunId: string = 'img-note-' + Date.now().toString();
       const pendingSources: SourceFragment[] = [];
       if (ocrSourceId !== null) {
         pendingSources.push({
@@ -482,19 +488,19 @@ export class ConversationWorkflow {
         });
       }
 
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(runId, userText, conversation, pendingSources);
-      this.setStep('note_finalize');
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(noteGenerationRunId, userText, conversation, pendingSources);
+      this.setStep(ref, 'note_finalize');
 
       if (materialPersistFailed) {
         await this.addAiMessage(
-          sessionId,
+          ref,
           '⚠️ 笔记草稿已准备，但素材暂存失败，草稿无法在重启后恢复。请尽快确认保存。',
         );
       } else {
-        await this.addAiMessage(sessionId, '笔记草稿已准备，请预览并确认保存。');
+        await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
       }
-      this.cbs.onDraftReady(event);
-      this.setStep('completed');
+      this.cbs.onDraftReady(ref, event);
+      this.setStep(ref, 'completed');
       return {
         event: event,
         ocrResult: classificationResult,
@@ -503,13 +509,13 @@ export class ConversationWorkflow {
       };
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 120));
+      await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120));
       return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
     }
   }
 
   private async handleCompleteReply(
-    sessionId: string,
+    ref: ConversationRunRef,
     memoryContext: string,
     learnerProfileContext: string,
     userContent: string,
@@ -518,24 +524,24 @@ export class ConversationWorkflow {
     try {
       const configured: boolean = await LlmConfig.getInstance().isConfigured();
       if (!configured) {
-        await this.addAiMessage(sessionId, '⚠️ 请先在「我的 → 设置」中配置 API Key');
-        this.setStep('completed');
+        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key');
+        this.setStep(ref, 'completed');
         return;
       }
-      this.setStep('reply_model_call');
+      this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
       const reply: string = await this.replyService.complete(replyContext);
-      await this.addAiMessage(sessionId, this.applyEvidenceToAnswer(evidence, reply));
-      await this.safeUpdateLearnerProfileIfNeeded(sessionId);
-      await this.safeSummarizeIfNeeded(sessionId);
+      await this.addAiMessage(ref, this.applyEvidenceToAnswer(evidence, reply));
+      await this.safeUpdateLearnerProfileIfNeeded(ref);
+      await this.safeSummarizeIfNeeded(ref);
     } catch (e) {
       const errMsg: string = ConversationWorkflow.errorMessage(e);
       if (errMsg.indexOf('NO_API_KEY') >= 0) {
-        await this.addAiMessage(sessionId, '⚠️ 请先在「我的 → 设置」中配置 API Key');
+        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key');
       } else if (ConversationWorkflow.isNetworkError(e)) {
-        await this.addAiMessage(sessionId, '⚠️ 网络连接失败，请检查网络后重试');
+        await this.addAiMessage(ref, '⚠️ 网络连接失败，请检查网络后重试');
       } else {
-        await this.addAiMessage(sessionId, '⚠️ AI 回复异常: ' + errMsg.substring(0, 100));
+        await this.addAiMessage(ref, '⚠️ AI 回复异常: ' + errMsg.substring(0, 100));
       }
     }
   }
@@ -545,7 +551,7 @@ export class ConversationWorkflow {
    * ReplyService.stream() 在流无正文或非传输错误时执行非流式回退
    */
   private async handleStreamReply(
-    sessionId: string,
+    ref: ConversationRunRef,
     memoryContext: string,
     learnerProfileContext: string,
     userContent: string,
@@ -555,58 +561,58 @@ export class ConversationWorkflow {
     try {
       const configured: boolean = await LlmConfig.getInstance().isConfigured();
       if (!configured) {
-        await this.addAiMessage(sessionId, '⚠️ 请先在「我的 → 设置」中配置 API Key');
-        this.setStep('completed');
+        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key');
+        this.setStep(ref, 'completed');
         return;
       }
 
       // 创建空消息占位,拿到 msgId
-      const msgId: number = this.cbs.addAiMsgEmpty();
+      const msgId: number = this.cbs.addAiMsgEmpty(ref);
       streamMsgId = msgId;
-      this.setStep('reply_model_call');
+      this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
       const citationFilter: NoteEvidenceStreamFilter = this.getEvidenceService().createStreamFilter(evidence);
       const streamResult: StreamReplyResult = await this.replyService.stream(
         replyContext,
         (event: StreamEvent): void => {
           if (event.type !== 'text') {
-            this.cbs.appendAiMsg(msgId, event);
+            this.cbs.appendAiMsg(ref, msgId, event);
             return;
           }
           const safeText: string = citationFilter.push(event.delta);
           if (safeText.length > 0) {
             const safeEvent: StreamEvent = { type: 'text', delta: safeText };
-            this.cbs.appendAiMsg(msgId, safeEvent);
+            this.cbs.appendAiMsg(ref, msgId, safeEvent);
           }
         },
       );
       const citationTail: string = citationFilter.flush();
       if (citationTail.length > 0) {
         const tailEvent: StreamEvent = { type: 'text', delta: citationTail };
-        this.cbs.appendAiMsg(msgId, tailEvent);
+        this.cbs.appendAiMsg(ref, msgId, tailEvent);
       }
       if (streamResult.usedFallback) {
-        await this.appendAssistantReply(sessionId, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
+        await this.appendAssistantReply(ref, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
         return;
       }
       if (streamResult.interrupted) {
         const interruptedEvent: StreamEvent = { type: 'text', delta: '\n\n⚠️ *AI 回复中断，请重试*' };
-        this.cbs.appendAiMsg(msgId, interruptedEvent);
+        this.cbs.appendAiMsg(ref, msgId, interruptedEvent);
       } else {
-        this.setStep('completed');
+        this.setStep(ref, 'completed');
       }
       const sources: string = evidence === undefined ? '' : this.getEvidenceService().formatSources(evidence);
       if (sources.length > 0) {
         const sourcesEvent: StreamEvent = { type: 'text', delta: '\n\n' + sources };
-        this.cbs.appendAiMsg(msgId, sourcesEvent);
+        this.cbs.appendAiMsg(ref, msgId, sourcesEvent);
       }
-      this.cbs.finishAiMsg(msgId);
-      await this.safeSaveAssistantMessage(sessionId, this.applyEvidenceToAnswer(evidence, streamResult.content));
+      this.cbs.finishAiMsg(ref, msgId);
+      await this.safeSaveAssistantMessage(ref, this.applyEvidenceToAnswer(evidence, streamResult.content));
       if (streamResult.interrupted) {
         return;
       }
-      await this.safeUpdateLearnerProfileIfNeeded(sessionId);
-      await this.safeSummarizeIfNeeded(sessionId);
+      await this.safeUpdateLearnerProfileIfNeeded(ref);
+      await this.safeSummarizeIfNeeded(ref);
     } catch (e) {
       const errMsg: string = ConversationWorkflow.errorMessage(e);
       const displayError: string = errMsg.indexOf('NO_API_KEY') >= 0
@@ -615,19 +621,22 @@ export class ConversationWorkflow {
           ? '⚠️ 网络连接失败，请检查网络后重试'
           : '⚠️ AI 回复异常: ' + errMsg.substring(0, 100);
       if (streamMsgId !== undefined) {
-        await this.appendAssistantReply(sessionId, displayError, streamMsgId);
+        await this.appendAssistantReply(ref, displayError, streamMsgId);
       } else {
-        await this.addAiMessage(sessionId, displayError);
+        await this.addAiMessage(ref, displayError);
       }
     }
   }
 
-  private async generateNoteFromConversation(sessionId: string, userInstruction: string): Promise<NoteDraftReadyEvent | undefined> {
-    this.setStep('note_intent_check');
-    this.setStep('note_context_load');
+  private async generateNoteFromConversation(
+    ref: ConversationRunRef,
+    userInstruction: string,
+  ): Promise<NoteDraftReadyEvent | undefined> {
+    this.setStep(ref, 'note_intent_check');
+    this.setStep(ref, 'note_context_load');
     const explicitRegeneration = this.parseRegenerationRequest(userInstruction);
     if (explicitRegeneration !== undefined) {
-      await this.safeSaveUserMessage(sessionId, userInstruction);
+      await this.safeSaveUserMessage(ref, userInstruction);
       try {
         const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).regenerateNoteDraft(
           'regenerate-' + Date.now().toString(),
@@ -635,25 +644,25 @@ export class ConversationWorkflow {
           explicitRegeneration.instruction,
           explicitRegeneration.instruction,
         );
-        this.cbs.onDraftReady(event);
-        await this.addAiMessage(sessionId, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
+        this.cbs.onDraftReady(ref, event);
+        await this.addAiMessage(ref, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
         return event;
       } catch (e) {
-        await this.addAiMessage(sessionId, '增量重生成失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
+        await this.addAiMessage(ref, '增量重生成失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
         return undefined;
       }
     }
     if (this.isIncrementalInstruction(userInstruction)) {
-      await this.addAiMessage(sessionId, '请先选择要修改的明确笔记，再提出增量修改要求。');
+      await this.addAiMessage(ref, '请先选择要修改的明确笔记，再提出增量修改要求。');
       return undefined;
     }
-    const memoryContext: string = await this.safeGetContextForNoteGeneration(sessionId);
-    this.setStep('note_source_prepare');
-    await this.safeSaveUserMessage(sessionId, userInstruction);
+    const memoryContext: string = await this.safeGetContextForNoteGeneration(ref);
+    this.setStep(ref, 'note_source_prepare');
+    await this.safeSaveUserMessage(ref, userInstruction);
     try {
       const configured: boolean = await LlmConfig.getInstance().isConfigured();
       if (!configured) {
-        await this.addAiMessage(sessionId, '⚠️ 请先在「我的 → 设置」中配置 API Key');
+        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key');
         return undefined;
       }
 
@@ -662,16 +671,17 @@ export class ConversationWorkflow {
         conversation = memoryContext.trim();
       }
       if (conversation.length === 0) {
-        conversation = this.cbs.getConversationText(true).trim();
+        conversation = this.cbs.getConversationText(ref, true).trim();
       }
       if (conversation.length === 0) {
-        await this.addAiMessage(sessionId, '当前会话还没有可整理的内容');
+        await this.addAiMessage(ref, '当前会话还没有可整理的内容');
         return undefined;
       }
 
-      this.setStep('note_structure_save');
-      const runId: string = 'conversation-' + Date.now().toString();
-      const pendingRecords = await this.getMemory().getPendingNoteMaterials(sessionId);
+      this.setStep(ref, 'note_structure_save');
+      const noteGenerationRunId: string = 'conversation-' + Date.now().toString();
+      if (!this.cbs.isCurrentRun(ref)) { return undefined; }
+      const pendingRecords = await this.getMemory().getPendingNoteMaterials(ref.sessionId);
       const pendingSources: SourceFragment[] = [];
       for (let index = 0; index < pendingRecords.length; index += 1) {
         const pending = pendingRecords[index];
@@ -684,14 +694,14 @@ export class ConversationWorkflow {
           text: pending.content,
         });
       }
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(runId, userInstruction, conversation, pendingSources);
-      this.setStep('note_finalize');
-      this.cbs.onDraftReady(event);
-      await this.addAiMessage(sessionId, '笔记草稿已准备，请预览并确认保存。');
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(noteGenerationRunId, userInstruction, conversation, pendingSources);
+      this.setStep(ref, 'note_finalize');
+      this.cbs.onDraftReady(ref, event);
+      await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
       return event;
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 120));
+      await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120));
       return undefined;
     }
   }
@@ -729,13 +739,8 @@ export class ConversationWorkflow {
     return text.substring(0, limit) + '\n...';
   }
 
-  private setStep(step: ConversationProgressStep): void {
-    this.cbs.onProgress(step);
-  }
-
-  private currentSessionId(): string {
-    const sessionId: string = this.cbs.getSessionId();
-    return sessionId.length > 0 ? sessionId : 's1';
+  private setStep(ref: ConversationRunRef, step: ConversationProgressStep): void {
+    this.cbs.onProgress(ref, step);
   }
 
   private getMemory(): AgentMemoryService {
@@ -745,20 +750,23 @@ export class ConversationWorkflow {
     return this.memory;
   }
 
-  private async addAiMessage(sessionId: string, content: string): Promise<void> {
-    await this.appendAssistantReply(sessionId, content);
+  private async addAiMessage(ref: ConversationRunRef, content: string): Promise<void> {
+    await this.appendAssistantReply(ref, content);
   }
 
-  private async appendAssistantReply(sessionId: string, content: string, messageId?: number): Promise<void> {
+  private async appendAssistantReply(ref: ConversationRunRef, content: string, messageId?: number): Promise<void> {
+    if (!this.cbs.isCurrentRun(ref)) {
+      return;
+    }
     const displayContent: string = this.replyService.normalize(content);
     if (messageId === undefined) {
-      this.cbs.addAiMsg(displayContent);
+      this.cbs.addAiMsg(ref, displayContent);
     } else {
       const textEvent: StreamEvent = { type: 'text', delta: displayContent };
-      this.cbs.appendAiMsg(messageId, textEvent);
-      this.cbs.finishAiMsg(messageId);
+      this.cbs.appendAiMsg(ref, messageId, textEvent);
+      this.cbs.finishAiMsg(ref, messageId);
     }
-    await this.safeSaveAssistantMessage(sessionId, displayContent);
+    await this.safeSaveAssistantMessage(ref, displayContent);
   }
 
   private createReplyContext(
@@ -804,74 +812,82 @@ export class ConversationWorkflow {
     }
   }
 
-  private async safeSaveUserMessage(sessionId: string, content: string): Promise<void> {
+  private async safeSaveUserMessage(ref: ConversationRunRef, content: string): Promise<void> {
+    if (!this.cbs.isCurrentRun(ref)) { return; }
     try {
-      await this.getMemory().saveMessage(sessionId, 'user', content);
+      await this.getMemory().saveMessage(ref.sessionId, 'user', content);
     } catch (e) {
       console.warn('[ConversationWorkflow] save user memory failed: ' + ConversationWorkflow.errorMessage(e));
     }
   }
 
-  private async safeSaveAssistantMessage(sessionId: string, content: string): Promise<void> {
+  private async safeSaveAssistantMessage(ref: ConversationRunRef, content: string): Promise<void> {
+    if (!this.cbs.isCurrentRun(ref)) { return; }
     try {
-      await this.getMemory().saveMessage(sessionId, 'assistant', content);
+      await this.getMemory().saveMessage(ref.sessionId, 'assistant', content);
     } catch (e) {
       console.warn('[ConversationWorkflow] save assistant memory failed: ' + ConversationWorkflow.errorMessage(e));
     }
   }
 
   private async safeSaveOcrResult(
-    sessionId: string,
+    ref: ConversationRunRef,
     imageUri: string,
     userText: string,
     result: ClassificationResult,
   ): Promise<string | null> {
+    if (!this.cbs.isCurrentRun(ref)) { return null; }
     try {
-      return await this.getMemory().saveOcrResult(sessionId, imageUri, userText, result);
+      return await this.getMemory().saveOcrResult(ref.sessionId, imageUri, userText, result);
     } catch (e) {
       workflowLog.warn('save ocr memory failed: ' + ConversationWorkflow.errorMessage(e));
       return null;
     }
   }
 
-  private async safeGetContextForReply(sessionId: string): Promise<string> {
+  private async safeGetContextForReply(ref: ConversationRunRef): Promise<string> {
+    if (!this.cbs.isCurrentRun(ref)) { return ''; }
     try {
-      return await this.getMemory().getContextForReply(sessionId);
+      return await this.getMemory().getContextForReply(ref.sessionId);
     } catch (e) {
       console.warn('[ConversationWorkflow] load reply memory failed: ' + ConversationWorkflow.errorMessage(e));
       return '';
     }
   }
 
-  private async safeGetContextForNoteGeneration(sessionId: string): Promise<string> {
+  private async safeGetContextForNoteGeneration(ref: ConversationRunRef): Promise<string> {
+    if (!this.cbs.isCurrentRun(ref)) { return ''; }
     try {
-      return await this.getMemory().getContextForNoteGeneration(sessionId);
+      return await this.getMemory().getContextForNoteGeneration(ref.sessionId);
     } catch (e) {
       console.warn('[ConversationWorkflow] load note memory failed: ' + ConversationWorkflow.errorMessage(e));
       return '';
     }
   }
 
-  private async safeGetLearnerProfileContext(sessionId: string): Promise<string> {
+  private async safeGetLearnerProfileContext(ref: ConversationRunRef): Promise<string> {
+    if (!this.cbs.isCurrentRun(ref)) { return ''; }
     try {
-      return await this.getMemory().getLearnerProfileContext(sessionId);
+      return await this.getMemory().getLearnerProfileContext(ref.sessionId);
     } catch (e) {
       console.warn('[ConversationWorkflow] load learner profile failed: ' + ConversationWorkflow.errorMessage(e));
       return '';
     }
   }
 
-  private async safeUpdateLearnerProfileIfNeeded(sessionId: string): Promise<void> {
+  private async safeUpdateLearnerProfileIfNeeded(ref: ConversationRunRef): Promise<void> {
+    if (!this.cbs.isCurrentRun(ref)) { return; }
     try {
-      await this.getMemory().updateLearnerProfileIfNeeded(sessionId);
+      await this.getMemory().updateLearnerProfileIfNeeded(ref.sessionId);
     } catch (e) {
       console.warn('[ConversationWorkflow] update learner profile failed: ' + ConversationWorkflow.errorMessage(e));
     }
   }
 
-  private async safeSummarizeIfNeeded(sessionId: string): Promise<void> {
+  private async safeSummarizeIfNeeded(ref: ConversationRunRef): Promise<void> {
+    if (!this.cbs.isCurrentRun(ref)) { return; }
     try {
-      await this.getMemory().summarizeSessionIfNeeded(sessionId);
+      await this.getMemory().summarizeSessionIfNeeded(ref.sessionId);
     } catch (e) {
       console.warn('[ConversationWorkflow] summarize memory failed: ' + ConversationWorkflow.errorMessage(e));
     }

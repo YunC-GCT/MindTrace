@@ -32,13 +32,18 @@ import {
   copyChatSessionsForPersistence,
 } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { ChatFilesDirSeam } from './ChatFilesDirSeam';
+import {
+  CHAT_HISTORY_SCHEMA_VERSION,
+  CHAT_HISTORY_V1_SCHEMA_VERSION,
+} from './ChatHistorySchema';
+import { SessionIdPolicy } from './ConversationIdentity';
+export { CHAT_HISTORY_SCHEMA_VERSION } from './ChatHistorySchema';
 
-export const CHAT_HISTORY_SCHEMA_VERSION: number = 1;
 export const STREAM_SAVE_THROTTLE_MS: number = 500;
 
 export type AtomicWriteStage = 'PREPARE' | 'WRITE' | 'COMMIT' | 'VERIFY';
 export type PersistenceTransport = 'taskpool' | 'worker';
-export type ChatHistoryLoadState = 'default' | 'migrated' | 'migrationFailed' | 'loaded' | 'corrupt' | 'blocked';
+export type ChatHistoryLoadState = 'default' | 'migrated' | 'migrationFailed' | 'loaded' | 'corrupt' | 'unsupported-version' | 'blocked';
 export type ChatHistorySaveState = 'idle' | 'completed' | 'failed' | 'blocked' | 'not-initialized';
 
 export interface ChatHistorySnapshot {
@@ -132,7 +137,8 @@ function isChatMsg(candidate: ChatMsg): boolean {
 }
 
 function isChatSession(candidate: ChatSession): boolean {
-  if (typeof candidate.id !== 'string' || typeof candidate.name !== 'string') {
+  if (typeof candidate.id !== 'string' || !SessionIdPolicy.isValid(candidate.id)
+    || typeof candidate.name !== 'string') {
     return false;
   }
   if (!Array.isArray(candidate.messages)) {
@@ -163,31 +169,91 @@ function parseSessions(raw: string): ChatSession[] | undefined {
   }
 }
 
-function parseSnapshot(raw: string): ChatHistorySnapshot | undefined {
-  try {
-    const snapshot: ChatHistorySnapshot = JSON.parse(raw);
-    if (snapshot.schemaVersion !== CHAT_HISTORY_SCHEMA_VERSION || !Array.isArray(snapshot.sessions)) {
-      return undefined;
-    }
-    const sessions: ChatSession[] = [];
-    for (const session of snapshot.sessions) {
-      if (!isChatSession(session)) {
-        return undefined;
+export interface ChatHistoryDecodeResult {
+  snapshot?: ChatHistorySnapshot;
+  error: 'none' | 'corrupt' | 'unsupported-version';
+  version?: number;
+}
+
+export type ChatHistorySnapshotDecoder = (snapshot: ChatHistorySnapshot) => ChatHistoryDecodeResult;
+
+export interface ChatHistoryDecoderRegistration {
+  readonly version: number;
+  readonly decode: ChatHistorySnapshotDecoder;
+}
+
+export class ChatHistoryDecoderCatalog {
+  private readonly decoders: Map<number, ChatHistorySnapshotDecoder> =
+    new Map<number, ChatHistorySnapshotDecoder>();
+
+  constructor(registrations: ChatHistoryDecoderRegistration[]) {
+    for (const registration of registrations) {
+      if (!Number.isInteger(registration.version) || registration.version <= 0
+        || this.decoders.has(registration.version)) {
+        throw new Error('INVALID_CHAT_HISTORY_DECODER_REGISTRATION');
       }
-      sessions.push(session);
+      this.decoders.set(registration.version, registration.decode);
     }
-    const validated: ChatHistorySnapshot = {
-      schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
-      sessions: sessions,
-    };
-    if (snapshot.migratedFrom === 'preferences') {
-      validated.migratedFrom = 'preferences';
-    }
-    validated.sessions = copyChatSessionsForPersistence(validated.sessions);
-    return validated;
-  } catch (error) {
-    return undefined;
   }
+
+  decode(raw: string): ChatHistoryDecodeResult {
+    try {
+      const snapshot: ChatHistorySnapshot = JSON.parse(raw);
+      if (typeof snapshot.schemaVersion !== 'number' || !Number.isInteger(snapshot.schemaVersion)
+        || snapshot.schemaVersion <= 0) {
+        return { error: 'corrupt' };
+      }
+      const decoder: ChatHistorySnapshotDecoder | undefined =
+        this.decoders.get(snapshot.schemaVersion);
+      if (decoder === undefined) {
+        return { error: 'unsupported-version', version: snapshot.schemaVersion };
+      }
+      return decoder(snapshot);
+    } catch (error) {
+      return { error: 'corrupt' };
+    }
+  }
+}
+
+function decodeChatHistorySnapshotV1(snapshot: ChatHistorySnapshot): ChatHistoryDecodeResult {
+  if (!Array.isArray(snapshot.sessions)) {
+    return { error: 'corrupt' };
+  }
+  const sessions: ChatSession[] = [];
+  for (const session of snapshot.sessions) {
+    if (!isChatSession(session)) {
+      return { error: 'corrupt' };
+    }
+    sessions.push(session);
+  }
+  const validated: ChatHistorySnapshot = {
+    schemaVersion: CHAT_HISTORY_V1_SCHEMA_VERSION,
+    sessions: copyChatSessionsForPersistence(sessions),
+  };
+  if (snapshot.migratedFrom === 'preferences') {
+    validated.migratedFrom = 'preferences';
+  }
+  return { error: 'none', snapshot: validated };
+}
+
+export function createChatHistoryDecoderCatalog(
+  additionalRegistrations: ChatHistoryDecoderRegistration[] = [],
+): ChatHistoryDecoderCatalog {
+  const v1Registration: ChatHistoryDecoderRegistration = {
+    version: CHAT_HISTORY_V1_SCHEMA_VERSION,
+    decode: decodeChatHistorySnapshotV1,
+  };
+  const registrations: ChatHistoryDecoderRegistration[] = [v1Registration];
+  for (const registration of additionalRegistrations) {
+    registrations.push(registration);
+  }
+  return new ChatHistoryDecoderCatalog(registrations);
+}
+
+const CHAT_HISTORY_DECODER_CATALOG: ChatHistoryDecoderCatalog = createChatHistoryDecoderCatalog();
+
+export function decodeChatHistorySnapshot(raw: string): ChatHistoryDecodeResult {
+  return CHAT_HISTORY_DECODER_CATALOG.decode(raw);
 }
 
 function errorToken(error: Object): string {
@@ -208,7 +274,7 @@ export async function writeChatHistorySnapshotTask(
   migratedFrom: string,
 ): Promise<AtomicWriteTaskResult> {
   let stage: AtomicWriteStage = 'PREPARE';
-  const schemaVersion: number = 1;
+  const schemaVersion: number = CHAT_HISTORY_SCHEMA_VERSION;
   let tmpPath: string = '';
   try {
     const snapshot: ChatHistorySnapshot = {
@@ -264,7 +330,7 @@ export async function writeChatHistorySnapshotTask(
       stage: stage,
       schemaVersion: schemaVersion,
       diagnostic: 'stage=' + stage
-        + '; error=atomic-write-failed; schemaVersion=1; ts='
+        + '; error=atomic-write-failed; schemaVersion=' + CHAT_HISTORY_SCHEMA_VERSION.toString() + '; ts='
         + Date.now().toString(),
     };
     return result;
@@ -442,8 +508,15 @@ export class ChatHistoryPersistence {
     if (await this.store.fileExists(this.snapshotPath)) {
       try {
         const raw: string = await this.store.readSnapshot(this.snapshotPath);
-        const snapshot: ChatHistorySnapshot | undefined = parseSnapshot(raw);
-        if (snapshot === undefined) {
+        const decoded: ChatHistoryDecodeResult = decodeChatHistorySnapshot(raw);
+        if (decoded.error === 'unsupported-version') {
+          return {
+            sessions: defaultSessions(),
+            state: 'unsupported-version',
+            diagnostic: 'state=unsupported-version; source=file; version=' + (decoded.version ?? 0).toString(),
+          };
+        }
+        if (decoded.snapshot === undefined) {
           return {
             sessions: defaultSessions(),
             state: 'corrupt',
@@ -451,9 +524,9 @@ export class ChatHistoryPersistence {
           };
         }
         return {
-          sessions: snapshot.sessions,
+          sessions: decoded.snapshot.sessions,
           state: 'loaded',
-          diagnostic: 'state=loaded; source=file; schemaVersion=' + snapshot.schemaVersion.toString(),
+          diagnostic: 'state=loaded; source=file; schemaVersion=' + decoded.snapshot.schemaVersion.toString(),
         };
       } catch (error) {
         return {

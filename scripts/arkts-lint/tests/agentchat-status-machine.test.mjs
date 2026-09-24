@@ -53,16 +53,16 @@ test('ChatStatusMachine.META_TABLE value type is a typed interface (no untyped o
 test('AgentChatService adapter maps workflow progress through ChatStatusMachine', () => {
   assert.match(chatService, /private readonly statusMachine: ChatStatusMachine = new ChatStatusMachine\(\);/);
   assert.match(chatService, /this\.statusMachine\.advance\(step\)/);
-  assert.match(workflow, /this\.cbs\.onProgress\(step\)/);
+  assert.match(workflow, /this\.cbs\.onProgress\(ref, step\)/);
   assert.doesNotMatch(workflow, /ChatStatusMachine|setStatusMeta|setBusy/);
 });
 
 test('busy lifecycle remains in AgentChatService adapter; workflow emits lifecycle events', () => {
-  assert.match(chatService, /onStart\(\): void/);
-  assert.match(chatService, /onFinish\(\): void/);
-  assert.match(chatService, /this\.callbacks\.setStatusMeta\(null\)/);
-  assert.match(workflow, /this\.cbs\.onStart\(\)/);
-  assert.match(workflow, /this\.cbs\.onFinish\(\)/);
+  assert.match(chatService, /onStart\(ref: ConversationRunRef\): void/);
+  assert.match(chatService, /onFinish\(ref: ConversationRunRef\): void/);
+  assert.match(chatService, /this\.callbacks\.setStatusMeta\(ref, null\)/);
+  assert.match(workflow, /this\.cbs\.onStart\(runRef\)/);
+  assert.match(workflow, /this\.cbs\.onFinish\(runRef\)/);
   assert.doesNotMatch(machine, /setBusy|cbs\.setStatusMeta/);
   assert.match(machine, /advance\(step: ChatStatusStep\): ChatStatusMeta \{[^}]*return \{ step/m);
 });

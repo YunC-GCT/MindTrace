@@ -39,11 +39,11 @@ export class AgentInputViewModel {
   busy: boolean = false;
 
   private service: AgentChatService | null = null;
-  private addUserMessage: ((content: string) => void) | null = null;
+  private resolveActiveSessionId: (() => string) | null = null;
 
-  bind(service: AgentChatService, addUserMessage: (content: string) => void): void {
+  bind(service: AgentChatService, resolveActiveSessionId: () => string): void {
     this.service = service;
-    this.addUserMessage = addUserMessage;
+    this.resolveActiveSessionId = resolveActiveSessionId;
   }
 
   canSend(): boolean {
@@ -67,7 +67,7 @@ export class AgentInputViewModel {
   }
 
   send(): void {
-    if (this.service === null || this.addUserMessage === null) {
+    if (this.service === null || this.resolveActiveSessionId === null) {
       return;
     }
     if (!this.canSend()) {
@@ -75,19 +75,20 @@ export class AgentInputViewModel {
     }
     const msg: string = this.inputText.trim();
     const uri: string = this.imagePreview;
-    const display: string = msg.length > 0 ? msg : '[图片]';
-    this.addUserMessage(display);
+    const sessionId: string = this.resolveActiveSessionId();
     this.inputText = '';
     this.imagePreview = '';
     if (uri.length > 0) {
-      this.service.captureReply(uri, msg);
+      this.service.captureReply(sessionId, uri, msg);
     } else {
-      this.service.realReplyStream(msg);
+      this.service.realReplyStream(sessionId, msg);
     }
   }
 
   stop(): void {
-    // TODO: 接 service.cancelReply (AgentChatService 暂无该方法, 需扩展)
+    if (this.service !== null && this.resolveActiveSessionId !== null) {
+      this.service.cancelSessionRun(this.resolveActiveSessionId());
+    }
     this.busy = false;
   }
 }

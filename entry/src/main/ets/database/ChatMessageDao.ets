@@ -1,5 +1,6 @@
 import { relationalStore } from '@kit.ArkData';
 import { ChatMessageRecord, ChatRole } from '../models/AgentMemoryModels';
+import { SessionIdPolicy } from '../services/ConversationIdentity';
 
 export class ChatMessageDao {
   private store: relationalStore.RdbStore;
@@ -9,6 +10,7 @@ export class ChatMessageDao {
   }
 
   async insert(record: ChatMessageRecord): Promise<number> {
+    SessionIdPolicy.requireValid(record.sessionId);
     const bucket: relationalStore.ValuesBucket = ChatMessageDao.toBucket(record);
     return new Promise<number>((resolve, reject) => {
       this.store.insert('chat_message', bucket, (err: Error, rowId: number) => {
@@ -22,6 +24,7 @@ export class ChatMessageDao {
   }
 
   async queryRecent(sessionId: string, limit: number): Promise<ChatMessageRecord[]> {
+    SessionIdPolicy.requireValid(sessionId);
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('chat_message');
     predicates.equalTo('session_id', sessionId);
     predicates.orderByDesc('created_at');
@@ -49,6 +52,7 @@ export class ChatMessageDao {
   }
 
   async queryAll(sessionId: string): Promise<ChatMessageRecord[]> {
+    SessionIdPolicy.requireValid(sessionId);
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('chat_message');
     predicates.equalTo('session_id', sessionId);
     predicates.orderByAsc('created_at');
@@ -72,6 +76,7 @@ export class ChatMessageDao {
   }
 
   async deleteBySession(sessionId: string): Promise<void> {
+    SessionIdPolicy.requireValid(sessionId);
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates('chat_message');
     predicates.equalTo('session_id', sessionId);
 

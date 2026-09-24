@@ -16,6 +16,7 @@
 import { MessageEvents, ThreadWorkerGlobalScope, worker } from '@kit.ArkTS';
 import fileIo from '@ohos.file.fs';
 import { ChatSession, copyChatSessionsForPersistence } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import { CHAT_HISTORY_SCHEMA_VERSION } from '../services/ChatHistorySchema';
 
 const WORKER_SUCCESS_REQUEST: string = 'worker-capability-success';
 const WORKER_SUCCESS_RESPONSE: string = 'worker-capability-ok';
@@ -47,8 +48,6 @@ interface ChatWorkerSnapshot {
 }
 
 const workerPort: ThreadWorkerGlobalScope = worker.workerPort;
-const CHAT_HISTORY_SCHEMA_VERSION: number = 1;
-
 function diagnostic(stage: AtomicWriteStage, token: string): string {
   return 'stage=' + stage
     + '; ' + token
