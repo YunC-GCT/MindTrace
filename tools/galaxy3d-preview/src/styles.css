@@ -1,0 +1,114 @@
+:root {
+  font-family: "HarmonyOS Sans", system-ui, sans-serif;
+  color: #fff;
+  background: #0a0c10;
+}
+
+* { box-sizing: border-box; letter-spacing: 0; }
+html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { touch-action: none; -webkit-font-smoothing: antialiased; }
+canvas { display: block; width: 100%; height: 100%; }
+
+#star-layer,
+#node-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#star-layer {
+  z-index: 2;
+}
+
+#node-layer { z-index: 3; }
+
+.galaxy-star {
+  position: absolute;
+  border-radius: 50%;
+  background: #d9f4ff;
+  box-shadow: 0 0 5px currentColor;
+}
+
+.node-orb {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgb(255 255 255 / 78%);
+  border-radius: 50%;
+  background-color: var(--node-color);
+  background-image: radial-gradient(circle at 35% 30%, #fff 0 8%, var(--node-color) 38%, rgb(10 12 16 / 10%) 72%);
+  box-shadow: 0 0 8px 2px var(--node-color), 0 0 24px 5px var(--node-color);
+  opacity: 0;
+  will-change: left, top, transform, opacity;
+}
+
+.node-orb[data-visible="true"] { opacity: .9; }
+.node-orb[data-selected="true"] { opacity: 1; }
+
+#label-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.node-label {
+  position: absolute;
+  min-width: 42px;
+  max-width: 112px;
+  transform: translate(-50%, -135%);
+  padding: 4px 7px;
+  border: 1px solid rgb(91 227 176 / 34%);
+  border-radius: 7px;
+  color: rgb(255 255 255 / 94%);
+  background: rgb(16 19 26 / 76%);
+  box-shadow: 0 0 18px rgb(91 227 176 / 18%);
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  backdrop-filter: blur(8px);
+}
+
+.node-label[data-visible="true"] { opacity: 1; }
+
+#hud {
+  position: fixed;
+  top: 12px;
+  left: 14px;
+  right: 14px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+#reset-camera {
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 8px;
+  color: #fff;
+  background: rgb(16 19 26 / 78%);
+  font-size: 23px;
+  line-height: 1;
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+}
+
+#fps-pill {
+  min-width: 62px;
+  padding: 7px 9px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 8px;
+  color: rgb(176 179 193 / 92%);
+  background: rgb(16 19 26 / 72%);
+  font-size: 11px;
+  text-align: center;
+  backdrop-filter: blur(12px);
+}

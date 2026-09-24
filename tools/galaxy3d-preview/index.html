@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>MindTrace 知识星系</title>
+  </head>
+  <body>
+    <main id="app" aria-label="知识星系 3D 图谱"></main>
+    <div id="star-layer" aria-hidden="true"></div>
+    <div id="node-layer" aria-hidden="true"></div>
+    <div id="label-layer" aria-hidden="true"></div>
+    <div id="hud">
+      <button id="reset-camera" type="button" title="重置镜头" aria-label="重置镜头">↺</button>
+      <span id="fps-pill">-- fps</span>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
