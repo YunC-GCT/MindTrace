@@ -59,6 +59,7 @@ export struct AgentFloatWindow {
   @State keyboardHeight: number = 0;
   @State sessions: ChatSession[] = [{ id: 's1', name: '会话 1', messages: [] }];
   @State activeSid: string = 's1';
+  @State activeSessionTitle: string = '会话 1';
   @State floatHeight: number = 48;
   @State overlayVisible: boolean = false;
   @State maskOpacity: number = 0;
@@ -169,7 +170,13 @@ export struct AgentFloatWindow {
     this.service = new AgentChatService(cbs);
     this.inputVm.bind(this.service, (): string => this.activeSid);
     const ss: ChatSession[] = await this.sm.init(getContext(this));
-    if (ss.length > 0) { this.sessions = ss; this.activeSid = ss[0].id; this.messages = ss[0].messages; return; }
+    if (ss.length > 0) {
+      this.sessions = ss;
+      this.activeSid = ss[0].id;
+      this.activeSessionTitle = ss[0].name;
+      this.messages = ss[0].messages;
+      return;
+    }
     this.messages = [{ id: chatMessageIdPolicy.create(), role: 'ai', content: '👋 你好，我是 MindTrace AI。可以帮你分析题目、讲解知识点、整理笔记。试试问我吧 👉', ts: Date.now(), streaming: false, reasoning: '' }];
   }
 
@@ -216,17 +223,13 @@ export struct AgentFloatWindow {
     }
     return true;
   }
-  private activeSessionTitle(): string {
-    const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === this.activeSid);
-    return s !== undefined ? s.name : '对话标题';
-  }
-
   private switchSession(sid: string): void {
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
     if (s !== undefined) {
       this.activeSid = sid;
+      this.activeSessionTitle = s.name;
       this.messages = s.messages;
       this.inputVm.syncBusy(sid);
       const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(sid);
@@ -239,6 +242,7 @@ export struct AgentFloatWindow {
     const session: ChatSession = SessionCreator.newSession(this.sessions.length);
     this.sessions = [...this.sessions, session];
     this.activeSid = session.id;
+    this.activeSessionTitle = session.name;
     this.messages = [];
     this.inputVm.syncBusy(session.id);
     this.generatedDraft = null;
@@ -279,6 +283,7 @@ export struct AgentFloatWindow {
     this.sessions = remaining;
     if (sid === this.activeSid) {
       this.activeSid = remaining[0].id;
+      this.activeSessionTitle = remaining[0].name;
       this.messages = remaining[0].messages;
       const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(this.activeSid);
       this.generatedDraft = draft ?? null;
@@ -427,7 +432,7 @@ export struct AgentFloatWindow {
             .onActionUpdate((event: GestureEvent): void => { this.floatHeight = Math.max(30, Math.min(90, this.dragStartH - event.offsetY / SCREEN_H * 100)); }));
 
           ChatHeader({
-            sessionTitle: this.activeSessionTitle(),
+            sessionTitle: this.activeSessionTitle,
             onToggleHistory: (): void => { this.togglePanel(); },
             onCreateSession: (): void => { this.newSession(); },
           });
