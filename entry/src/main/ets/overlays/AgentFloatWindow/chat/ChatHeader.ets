@@ -23,7 +23,7 @@ import { NewChatPlusButton } from './NewChatPlusButton';
 
 @Component
 export struct ChatHeader {
-  sessionTitle: string = '对话标题';
+  @Prop sessionTitle: string = '对话标题';
 
   onToggleHistory?: () => void = (): void => {};
   onCreateSession?: () => void = (): void => {};
