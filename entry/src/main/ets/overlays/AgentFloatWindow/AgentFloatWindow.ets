@@ -58,9 +58,9 @@ export struct AgentFloatWindow {
 
   @State @Watch('onMessagesChange') messages: ChatMsg[] = [];
   @State keyboardHeight: number = 0;
-  @State sessions: ChatSession[] = [{ id: 's1', name: '会话 1', messages: [] }];
-  @State activeSid: string = 's1';
-  @State activeSessionTitle: string = '会话 1';
+  @State sessions: ChatSession[] = [];
+  @State activeSid: string = '';
+  @State activeSessionTitle: string = '新对话';
   @State floatHeight: number = 48;
   @State overlayVisible: boolean = false;
   @State maskOpacity: number = 0;
@@ -168,15 +168,26 @@ export struct AgentFloatWindow {
         }
       },
     };
-    this.service = new AgentChatService(cbs);
-    this.inputVm.bind(this.service, (): string => this.activeSid);
+    const service: AgentChatService = new AgentChatService(cbs);
+    this.service = service;
     const ss: ChatSession[] = await this.sm.init(getContext(this));
-    if (ss.length > 0) {
-      this.sessions = ss;
-      this.activateSession(ss[0]);
-      return;
+    const loadedSessions: ChatSession[] = ss.filter((session: ChatSession): boolean =>
+      session.id !== 's1' || session.messages.length > 0,
+    );
+    if (loadedSessions.length > 0) {
+      this.sessions = loadedSessions;
+      this.activateSession(loadedSessions[0]);
+    } else {
+      this.sessions = [];
+      this.activeSid = '';
+      this.activeSessionTitle = '新对话';
+      this.messages = [];
     }
-    this.messages = [{ id: chatMessageIdPolicy.create(), role: 'ai', content: '👋 你好，我是 MindTrace AI。可以帮你分析题目、讲解知识点、整理笔记。试试问我吧 👉', ts: Date.now(), streaming: false, reasoning: '' }];
+    this.inputVm.bind(
+      service,
+      (): string => this.activeSid,
+      (): string => this.ensureActiveSession(),
+    );
   }
 
   private sync(): void {
@@ -244,6 +255,19 @@ export struct AgentFloatWindow {
     this.generatedDraftSessionId = '';
     this.sm.flush(this.sessions).catch((): void => {});
     this.panelVisible = false;
+  }
+
+  private ensureActiveSession(): string {
+    if (this.activeSid.length > 0 && this.sessionExists(this.activeSid)) {
+      return this.activeSid;
+    }
+    const session: ChatSession = SessionCreator.newSession(this.sessions.length);
+    this.sessions = [...this.sessions, session];
+    this.activateSession(session);
+    this.inputVm.syncBusy(session.id);
+    this.generatedDraft = null;
+    this.generatedDraftSessionId = '';
+    return session.id;
   }
 
   private togglePanel(): void { this.panelVisible = !this.panelVisible; }

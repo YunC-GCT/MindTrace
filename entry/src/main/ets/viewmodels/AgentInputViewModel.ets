@@ -27,7 +27,7 @@
  *   stop()              : 停止当前响应 (TODO: 接 service.cancelReply)
  *
  * 依赖注入:
- *   bind(service, addUserMessage): 延迟绑定 (loadHistory 阶段调用)
+ *   bind(service, resolveActiveSessionId, ensureActiveSession): 延迟绑定 (loadHistory 阶段调用)
  */
 
 import { AgentChatService } from '../services/AgentChatService';
@@ -41,10 +41,16 @@ export class AgentInputViewModel {
 
   private service: AgentChatService | null = null;
   private resolveActiveSessionId: (() => string) | null = null;
+  private ensureActiveSession: (() => string) | null = null;
 
-  bind(service: AgentChatService, resolveActiveSessionId: () => string): void {
+  bind(
+    service: AgentChatService,
+    resolveActiveSessionId: () => string,
+    ensureActiveSession: (() => string) | null = null,
+  ): void {
     this.service = service;
     this.resolveActiveSessionId = resolveActiveSessionId;
+    this.ensureActiveSession = ensureActiveSession;
   }
 
   canSend(): boolean {
@@ -95,7 +101,12 @@ export class AgentInputViewModel {
     }
     const msg: string = this.inputText.trim();
     const uri: string = this.imagePreview;
-    const sessionId: string = this.resolveActiveSessionId();
+    const sessionId: string = this.ensureActiveSession === null
+      ? this.resolveActiveSessionId()
+      : this.ensureActiveSession();
+    if (sessionId.length === 0) {
+      return;
+    }
     this.inputText = '';
     this.imagePreview = '';
     if (uri.length > 0) {

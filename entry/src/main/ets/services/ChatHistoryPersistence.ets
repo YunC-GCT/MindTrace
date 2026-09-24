@@ -12,7 +12,7 @@
  *
  * 边界:
  * - messages 是唯一持久化真源;不保存 reasoningExpanded 等 UI 状态。
- * - 新文件存在但损坏时不回退 Preferences,只返回内存默认会话与可恢复诊断。
+ * - 新文件存在但损坏时不回退 Preferences,只返回空内存会话与可恢复诊断。
  * - filesDir 缺失时阻塞文件持久化,不回退 Preferences 写入。
  * - Production save ownership is this private-file service. Preferences is a
  *   migration read source only; ChatPersistenceCapability is test-side evidence.
@@ -115,12 +115,7 @@ const WORKER_WRITE_TIMEOUT_MS: number = 5000;
 const MAX_CONSECUTIVE_FAILURES: number = 3;
 
 function defaultSessions(): ChatSession[] {
-  const session: ChatSession = {
-    id: 's1',
-    name: '对话 1',
-    messages: [],
-  };
-  return [session];
+  return [];
 }
 
 function isChatMsg(candidate: ChatMsg): boolean {
@@ -163,7 +158,7 @@ function parseSessions(raw: string): ChatSession[] | undefined {
         return undefined;
       }
     }
-    return sessions.length > 0 ? copyChatSessionsForPersistence(sessions) : undefined;
+    return copyChatSessionsForPersistence(sessions);
   } catch (error) {
     return undefined;
   }

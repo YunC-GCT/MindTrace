@@ -243,7 +243,7 @@ export default function chatHistoryPersistenceTest(): void {
         'chat-history/sessions.json',
       ).load();
       expect(result.state).assertEqual('corrupt');
-      expect(result.sessions[0].id).assertEqual('s1');
+      expect(result.sessions.length).assertEqual(0);
       expect(store.writes.length).assertEqual(0);
     });
 
