@@ -1,15 +1,14 @@
 /**
- * ChatHeader.ets — 浮窗头部 (Stack overlay: 左 HistoryChip(对话历史) + 右 NewChatPlusButton(新建对话+); 标题覆盖层居中)
+ * ChatHeader.ets — 浮窗头部 (HistoryChip + NewChatPlusButton)
  *
  * 路径: entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatHeader.ets
  * 职责: 浮窗顶部, 由左到右依次为 HistoryChip(打开/关闭会话列表面板)/ Blank / NewChatPlusButton(快速新建);
  *       关闭按钮已移除 — 关闭浮窗靠点击 sheet 外 mask
- *       标题用 Stack overlay 占据整行宽度, textAlign.Center 自然居中到整个 ChatHeader 的水平中心
+ *       当前会话标题由 AgentFloatWindow 绑定窗口状态渲染, 本组件只负责操作按钮
  * 依赖: common ColorTokens; 子组件: HistoryChip, NewChatPlusButton
  *
- * 布局 (Stack overlay):
- *    [— 背景 Row: HistoryChip | Blank | NewChatPlusButton]
- *                会话 2           ← 覆盖层, 占整行宽, 居中
+ * 布局:
+ *    [HistoryChip | Blank | NewChatPlusButton]
  *
  * Props:
  *   onToggleHistory?: 左 HistoryChip 点击回调 (toggle 会话列表面板)

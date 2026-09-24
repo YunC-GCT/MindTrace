@@ -173,9 +173,7 @@ export struct AgentFloatWindow {
     const ss: ChatSession[] = await this.sm.init(getContext(this));
     if (ss.length > 0) {
       this.sessions = ss;
-      this.activeSid = ss[0].id;
-      this.activeSessionTitle = ss[0].name;
-      this.messages = ss[0].messages;
+      this.activateSession(ss[0]);
       return;
     }
     this.messages = [{ id: chatMessageIdPolicy.create(), role: 'ai', content: '👋 你好，我是 MindTrace AI。可以帮你分析题目、讲解知识点、整理笔记。试试问我吧 👉', ts: Date.now(), streaming: false, reasoning: '' }];
@@ -229,9 +227,7 @@ export struct AgentFloatWindow {
     this.sm.flush(this.sessions).catch((): void => {});
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
     if (s !== undefined) {
-      this.activeSid = sid;
-      this.activeSessionTitle = s.name;
-      this.messages = s.messages;
+      this.activateSession(s);
       this.inputVm.syncBusy(sid);
       const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(sid);
       this.generatedDraft = draft ?? null;
@@ -242,9 +238,7 @@ export struct AgentFloatWindow {
     this.sync();
     const session: ChatSession = SessionCreator.newSession(this.sessions.length);
     this.sessions = [...this.sessions, session];
-    this.activeSid = session.id;
-    this.activeSessionTitle = session.name;
-    this.messages = [];
+    this.activateSession(session);
     this.inputVm.syncBusy(session.id);
     this.generatedDraft = null;
     this.generatedDraftSessionId = '';
@@ -254,6 +248,12 @@ export struct AgentFloatWindow {
 
   private togglePanel(): void { this.panelVisible = !this.panelVisible; }
   private closePanel(): void { this.panelVisible = false; }
+
+  private activateSession(session: ChatSession): void {
+    this.activeSessionTitle = session.name;
+    this.activeSid = session.id;
+    this.messages = session.messages;
+  }
 
   private onSelectSession(sid: string): void { this.switchSession(sid); this.panelVisible = false; }
 
@@ -283,9 +283,7 @@ export struct AgentFloatWindow {
     this.draftsBySession.delete(sid);
     this.sessions = remaining;
     if (sid === this.activeSid) {
-      this.activeSid = remaining[0].id;
-      this.activeSessionTitle = remaining[0].name;
-      this.messages = remaining[0].messages;
+      this.activateSession(remaining[0]);
       const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(this.activeSid);
       this.generatedDraft = draft ?? null;
       this.generatedDraftSessionId = draft === undefined ? '' : this.activeSid;
@@ -438,6 +436,7 @@ export struct AgentFloatWindow {
               onCreateSession: (): void => { this.newSession(); },
             });
             Text(this.activeSessionTitle)
+              .id('chat-session-title-' + this.activeSid)
               .width('100%')
               .height(CHAT_HEADER_HEIGHT)
               .textAlign(TextAlign.Center)

@@ -13,7 +13,10 @@ test('conversation header and session list receive reactive parent state', () =>
   const chip = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/SessionChip.ets');
   assert.match(parent, /@State activeSessionTitle: string/);
   assert.match(parent, /Text\(this\.activeSessionTitle\)/);
-  assert.match(parent, /this\.activeSessionTitle = s\.name/);
+  assert.match(parent, /\.id\('chat-session-title-' \+ this\.activeSid\)/);
+  assert.match(parent, /private activateSession\(session: ChatSession\)/);
+  assert.match(parent, /this\.activateSession\(s\)/);
+  assert.match(parent, /this\.activateSession\(session\)/);
   assert.doesNotMatch(header, /sessionTitle: string/);
   assert.match(panel, /@Prop\s+sessions: ChatSession\[\]/);
   assert.match(panel, /@Prop\s+activeSid: string/);
