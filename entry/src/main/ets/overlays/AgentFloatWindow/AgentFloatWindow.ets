@@ -89,6 +89,7 @@ export struct AgentFloatWindow {
     }
   }
   aboutToDisappear(): void {
+    this.service?.cancelAllRuns();
     if (this.mainWindow) {
       this.mainWindow.off('keyboardHeightChange');
     }
@@ -149,7 +150,7 @@ export struct AgentFloatWindow {
         this.sync();
         this.sm.flush(this.sessions).catch((): void => {});
       },
-      setBusy: (_ref: ConversationRunRef, v: boolean): void => { inputVm.setBusy(v); },
+      setBusy: (ref: ConversationRunRef, v: boolean): void => { inputVm.setBusyForSession(ref.sessionId, v); },
       setStatusMeta: (_ref: ConversationRunRef, _meta: ChatStatusMeta | null): void => { /* 状态指示 UI 已移除 (多端设计 v3) */ },
       getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
       getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean): string => this.buildConversationTextForSession(ref, excludeLatestUser),
@@ -227,6 +228,7 @@ export struct AgentFloatWindow {
     if (s !== undefined) {
       this.activeSid = sid;
       this.messages = s.messages;
+      this.inputVm.syncBusy(sid);
       const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(sid);
       this.generatedDraft = draft ?? null;
       this.generatedDraftSessionId = draft === undefined ? '' : sid;
@@ -238,6 +240,7 @@ export struct AgentFloatWindow {
     this.sessions = [...this.sessions, session];
     this.activeSid = session.id;
     this.messages = [];
+    this.inputVm.syncBusy(session.id);
     this.generatedDraft = null;
     this.generatedDraftSessionId = '';
     this.sm.flush(this.sessions).catch((): void => {});

@@ -37,6 +37,7 @@ export class AgentInputViewModel {
   inputText: string = '';
   imagePreview: string = '';
   busy: boolean = false;
+  private readonly busySessions: Set<string> = new Set<string>();
 
   private service: AgentChatService | null = null;
   private resolveActiveSessionId: (() => string) | null = null;
@@ -47,11 +48,30 @@ export class AgentInputViewModel {
   }
 
   canSend(): boolean {
-    return !this.busy && (this.inputText.trim().length > 0 || this.imagePreview.length > 0);
+    const sessionId: string = this.resolveActiveSessionId === null ? '' : this.resolveActiveSessionId();
+    return !this.isBusy(sessionId) && (this.inputText.trim().length > 0 || this.imagePreview.length > 0);
   }
 
   setBusy(value: boolean): void {
     this.busy = value;
+  }
+
+  setBusyForSession(sessionId: string, value: boolean): void {
+    if (value) {
+      this.busySessions.add(sessionId);
+    } else {
+      this.busySessions.delete(sessionId);
+    }
+    const active: string = this.resolveActiveSessionId === null ? '' : this.resolveActiveSessionId();
+    this.busy = this.busySessions.has(active);
+  }
+
+  isBusy(sessionId: string): boolean {
+    return this.busySessions.has(sessionId);
+  }
+
+  syncBusy(sessionId: string): void {
+    this.busy = this.busySessions.has(sessionId);
   }
 
   updateText(value: string): void {
@@ -89,6 +109,7 @@ export class AgentInputViewModel {
     if (this.service !== null && this.resolveActiveSessionId !== null) {
       this.service.cancelSessionRun(this.resolveActiveSessionId());
     }
-    this.busy = false;
+    const active: string = this.resolveActiveSessionId === null ? '' : this.resolveActiveSessionId();
+    this.setBusyForSession(active, false);
   }
 }

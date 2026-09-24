@@ -9,7 +9,7 @@
     "scan": "node index.mjs --quiet",
     "baseline": "node index.mjs --baseline=docs/lint-baseline-20260901-ast.json --quiet",
     "check-rules": "node index.mjs --check-rules",
-    "test": "node --test tests/parser.test.mjs tests/registry.test.mjs tests/rules-official.test.mjs tests/knowledge-galaxy-fixture-flag.test.mjs tests/knowledge-graph-rdb.test.mjs tests/llm-config-throw.test.mjs tests/agentchat-intent-classifier.test.mjs tests/llm-client-reasoning-fallback.test.mjs tests/llm-client-nullish-delta.test.mjs tests/llm-client-stream-timeout.test.mjs tests/agentchat-status-machine.test.mjs tests/agent-message-list-refresh.test.mjs tests/arkweb-warmup-gate.test.mjs tests/renderer-scheduler-contract.test.mjs tests/study-mode-selector.test.mjs tests/chat-bubble-isolation.test.mjs tests/conversation-workflow.test.mjs tests/conversation-identity.test.mjs"
+    "test": "node --test tests/parser.test.mjs tests/registry.test.mjs tests/rules-official.test.mjs tests/knowledge-galaxy-fixture-flag.test.mjs tests/knowledge-graph-rdb.test.mjs tests/llm-config-throw.test.mjs tests/agentchat-intent-classifier.test.mjs tests/llm-client-reasoning-fallback.test.mjs tests/llm-client-nullish-delta.test.mjs tests/llm-client-stream-timeout.test.mjs tests/agentchat-status-machine.test.mjs tests/agent-message-list-refresh.test.mjs tests/arkweb-warmup-gate.test.mjs tests/renderer-scheduler-contract.test.mjs tests/study-mode-selector.test.mjs tests/chat-bubble-isolation.test.mjs tests/conversation-workflow.test.mjs tests/conversation-identity.test.mjs tests/conversation-cancellation-capacity.test.mjs"
   },
   "dependencies": {
     "@typescript-eslint/parser": "^8.18.0",

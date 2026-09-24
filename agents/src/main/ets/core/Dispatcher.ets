@@ -53,7 +53,7 @@ import {
   buildDeepOutline,
   validateDeepOutline,
 } from 'common';
-import type { DispatchPayload } from 'common';
+import type { DispatchPayload, CancellationToken } from 'common';
 import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
 import { CaptureGraph } from '../graph/CaptureGraph';
 import { OcrNodeFactory } from '../graph/nodes/OcrNode';
@@ -72,6 +72,7 @@ export interface DispatchOptions {
   dao?: NoteDaoInterface;
   generationRepository?: NoteGenerationRepository;
   knowledgeModel?: KnowledgeModel;
+  cancellationToken?: CancellationToken;
 }
 
 interface GenerationCandidateEvaluation {
@@ -100,6 +101,7 @@ export class Dispatcher {
   }
 
   private async dispatchRequest(req: DispatchRequest, options: DispatchOptions): Promise<DispatchResult> {
+    options.cancellationToken?.throwIfCancelled();
     const t0: number = Date.now();
     if (req.preparedCandidate !== undefined) {
       return await this.dispatchPreparedCandidate(req, req.preparedCandidate, options, t0);
@@ -118,9 +120,11 @@ export class Dispatcher {
       currentStep: 'START',
       persist: options.persist !== false,
       analysisOnly: options.analysisOnly === true,
+      cancellationToken: options.cancellationToken,
     };
     const graph: CaptureGraph = this.buildGraph(options);
     const finalState: AgentState = await graph.run(initial);
+    options.cancellationToken?.throwIfCancelled();
     const error: CaptureGraphError | undefined = finalState.error;
     if (error !== undefined) {
       log.error('capture graph failed: ' + error.kind + ' step=' + error.step + ' msg=' + error.message);
@@ -230,7 +234,7 @@ export class Dispatcher {
       result.issues.push({ stage: 'plan', code: 'NO_UNLOCKED_TARGET', severity: 'hard', message: '没有可安全重生成的未锁定目标章节', repairable: false });
       return { success: false, route: 'D1', generation: result, errorCode: 'NO_UNLOCKED_TARGET', errorMessage: '没有可安全重生成的未锁定目标章节', durationMs: Date.now() - startedAt };
     }
-    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel();
+    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
     const sourceBundle: SourceBundle = {
       fragments: base.sources.fragments.concat(request.sources.fragments),
     };
@@ -499,8 +503,9 @@ export class Dispatcher {
       currentStep: 'START',
       persist: false,
       analysisOnly: false,
+      cancellationToken: options.cancellationToken,
     };
-    const graph: CaptureGraph = this.buildGenerationGraph(options.knowledgeModel);
+    const graph: CaptureGraph = this.buildGenerationGraph(options.knowledgeModel, options.cancellationToken);
     const finalState: AgentState = await graph.run(initial);
     const errors: NoteGenerationIssue[] = [];
     if (finalState.error !== undefined) {
@@ -599,7 +604,7 @@ export class Dispatcher {
     budget: NoteGenerationBudget,
     requirement: NoteGenerationRequirement,
   ): Promise<DispatchResult> {
-    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel();
+    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
     const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens);
     let current: NoteGenerationStandardResult;
     try {
@@ -776,7 +781,7 @@ export class Dispatcher {
     budget: NoteGenerationBudget,
     requirement: NoteGenerationRequirement,
   ): Promise<DispatchResult> {
-    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel();
+    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
     const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens);
     let current: NoteGenerationDeepResult;
     try {
@@ -1378,6 +1383,7 @@ export class Dispatcher {
       analysisOnly: false,
       preparedCandidate: prepared,
       knowledgeUnit: prepared.candidate,
+      cancellationToken: options.cancellationToken,
     };
     const graph: CaptureGraph = this.buildPreparedGraph(options.dao);
     const finalState: AgentState = await graph.run(initial);
@@ -1446,9 +1452,9 @@ export class Dispatcher {
     return graph;
   }
 
-  private buildGenerationGraph(model?: KnowledgeModel): CaptureGraph {
+  private buildGenerationGraph(model?: KnowledgeModel, cancellationToken?: CancellationToken): CaptureGraph {
     const graph: CaptureGraph = new CaptureGraph();
-    const structure: KnowledgeModel = model ?? new KnowledgeModel();
+    const structure: KnowledgeModel = model ?? new KnowledgeModel(undefined, cancellationToken);
     const truth: TruthCheckService = new TruthCheckService();
     graph.addNode('structure', StructureNodeFactory.create(structure));
     graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
@@ -1513,8 +1519,8 @@ export class Dispatcher {
 
   private buildGraph(options: DispatchOptions = {}): CaptureGraph {
     const graph: CaptureGraph = new CaptureGraph();
-    const classifier: TypeClassifier = new TypeClassifier();
-    const structure: KnowledgeModel = new KnowledgeModel();
+    const classifier: TypeClassifier = new TypeClassifier(options.cancellationToken);
+    const structure: KnowledgeModel = new KnowledgeModel(undefined, options.cancellationToken);
     const truth: TruthCheckService = new TruthCheckService();
     graph.addNode('capture', OcrNodeFactory.create(classifier));
     graph.addNode('classify', ClassifyNodeFactory.create(classifier));

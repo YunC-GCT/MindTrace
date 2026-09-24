@@ -47,6 +47,7 @@ import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { requireConversationRunRef } from '../../services/ConversationIdentity';
+import { CancellationToken } from 'common';
 
 const workflowLog: Logger = new Logger('ConversationWorkflow');
 
@@ -70,6 +71,7 @@ export class ConversationWorkflow {
   private replyService: ReplyService = new ReplyService(this.intentClassifier);
   private evidenceService: NoteEvidenceService | null = null;
   private pendingConfirmRunId: string | null = null;
+  private readonly cancellationTokens: Map<string, CancellationToken> = new Map<string, CancellationToken>();
 
   constructor(callbacks: ConversationWorkflowCallbacks) {
     this.cbs = callbacks;
@@ -80,6 +82,14 @@ export class ConversationWorkflow {
     if (!this.cbs.isCurrentRun(runRef)) {
       throw new Error('STALE_CONVERSATION_RUN');
     }
+    const cancellationToken: CancellationToken | undefined = this.cbs.getCancellationToken(runRef);
+    if (cancellationToken === undefined) {
+      throw new Error('STALE_CONVERSATION_RUN');
+    }
+    this.cancellationTokens.set(runRef.runId, cancellationToken);
+    const removeCancellationHook: () => void = this.cbs.registerCancellationHook(runRef, (): void => {
+      this.cancellationTokens.delete(runRef.runId);
+    });
     const initial: ConversationState = {
       request: request,
       runRef: runRef,
@@ -92,6 +102,8 @@ export class ConversationWorkflow {
       await graph.run(initial);
     } finally {
       this.cbs.onFinish(runRef);
+      removeCancellationHook();
+      this.cancellationTokens.delete(runRef.runId);
       workflowLog.info('run finish kind=' + request.kind);
     }
   }
@@ -187,7 +199,11 @@ export class ConversationWorkflow {
       new StateGraph<ConversationState, ConversationStep>('START', 'END');
     graph.addNode('classify_intent', async (input: ConversationState): Promise<ConversationState> => {
       this.setStep(input.runRef, 'intent_check');
-      const intent: TextIntent = await this.intentClassifier.classify(input.request.userContent);
+      this.ensureNotCancelled(input.runRef);
+      const token: CancellationToken | undefined = this.cancellationToken(input.runRef);
+      const intent: TextIntent = token === undefined
+        ? await this.intentClassifier.classify(input.request.userContent)
+        : await this.intentClassifier.classifyWithCancellation(input.request.userContent, token);
       const next: ConversationState = this.copyState(input, 'classify_intent');
       next.intent = intent;
       return next;
@@ -197,7 +213,7 @@ export class ConversationWorkflow {
       const userText: string = input.request.userContent.trim();
       let intent: TextIntent = 'chat';
       if (userText.length > 0 && userText !== '[图片]') {
-        intent = await this.intentClassifier.classify(userText);
+        intent = await this.intentClassifier.classifyWithCancellation(userText, this.cancellationToken(input.runRef));
       }
       const next: ConversationState = this.copyState(input, 'classify_image_intent');
       next.intent = intent;
@@ -303,6 +319,7 @@ export class ConversationWorkflow {
           request.noteId,
           request.userContent,
           request.userContent,
+          this.cancellationToken(input.runRef),
         );
         this.cbs.onDraftReady(input.runRef, event);
         await this.addAiMessage(input.runRef, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
@@ -398,7 +415,7 @@ export class ConversationWorkflow {
     try {
       await this.safeSaveUserMessage(ref, userText.trim().length > 0 ? userText : '[图片]');
       this.setStep(ref, 'image_recognize');
-      const result: ClassificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText);
+      const result: ClassificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText, this.cancellationToken(ref));
       workflowLog.info('image analysis completed type=' + result.type);
       this.setStep(ref, 'image_material_save');
       const ocrSourceId: string | null = await this.safeSaveOcrResult(ref, imageUri, userText, result);
@@ -424,7 +441,7 @@ export class ConversationWorkflow {
     this.setStep(ref, 'image_note_ocr');
     let classificationResult: ClassificationResult;
     try {
-      classificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText);
+      classificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText, this.cancellationToken(ref));
     } catch (e) {
       await this.addAiMessage(ref, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120));
       return {};
@@ -488,7 +505,7 @@ export class ConversationWorkflow {
         });
       }
 
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(noteGenerationRunId, userText, conversation, pendingSources);
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(noteGenerationRunId, userText, conversation, pendingSources, this.cancellationToken(ref));
       this.setStep(ref, 'note_finalize');
 
       if (materialPersistFailed) {
@@ -530,7 +547,7 @@ export class ConversationWorkflow {
       }
       this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
-      const reply: string = await this.replyService.complete(replyContext);
+      const reply: string = await this.replyService.complete(replyContext, this.cancellationToken(ref));
       await this.addAiMessage(ref, this.applyEvidenceToAnswer(evidence, reply));
       await this.safeUpdateLearnerProfileIfNeeded(ref);
       await this.safeSummarizeIfNeeded(ref);
@@ -585,6 +602,7 @@ export class ConversationWorkflow {
             this.cbs.appendAiMsg(ref, msgId, safeEvent);
           }
         },
+        this.cancellationToken(ref),
       );
       const citationTail: string = citationFilter.flush();
       if (citationTail.length > 0) {
@@ -643,6 +661,7 @@ export class ConversationWorkflow {
           explicitRegeneration.noteId,
           explicitRegeneration.instruction,
           explicitRegeneration.instruction,
+          this.cancellationToken(ref),
         );
         this.cbs.onDraftReady(ref, event);
         await this.addAiMessage(ref, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
@@ -694,7 +713,7 @@ export class ConversationWorkflow {
           text: pending.content,
         });
       }
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(noteGenerationRunId, userInstruction, conversation, pendingSources);
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(noteGenerationRunId, userInstruction, conversation, pendingSources, this.cancellationToken(ref));
       this.setStep(ref, 'note_finalize');
       this.cbs.onDraftReady(ref, event);
       await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
@@ -724,12 +743,14 @@ export class ConversationWorkflow {
     instruction: string,
     sourceText: string,
     pendingSources: SourceFragment[],
+    cancellationToken?: CancellationToken,
   ): Promise<NoteDraftReadyEvent> {
     return await new AiService(this.cbs.getContext()).generateNoteDraftWithSources(
       runId,
       instruction,
       sourceText,
       pendingSources,
+      cancellationToken,
     );
   }
 
@@ -740,7 +761,19 @@ export class ConversationWorkflow {
   }
 
   private setStep(ref: ConversationRunRef, step: ConversationProgressStep): void {
+    this.ensureNotCancelled(ref);
     this.cbs.onProgress(ref, step);
+  }
+
+  private cancellationToken(ref: ConversationRunRef): CancellationToken | undefined {
+    return this.cancellationTokens.get(ref.runId);
+  }
+
+  private ensureNotCancelled(ref: ConversationRunRef): void {
+    this.cancellationToken(ref)?.throwIfCancelled();
+    if (!this.cbs.isCurrentRun(ref)) {
+      throw new Error('STALE_CONVERSATION_RUN');
+    }
   }
 
   private getMemory(): AgentMemoryService {
@@ -878,7 +911,7 @@ export class ConversationWorkflow {
   private async safeUpdateLearnerProfileIfNeeded(ref: ConversationRunRef): Promise<void> {
     if (!this.cbs.isCurrentRun(ref)) { return; }
     try {
-      await this.getMemory().updateLearnerProfileIfNeeded(ref.sessionId);
+      await this.getMemory().updateLearnerProfileIfNeeded(ref.sessionId, this.cancellationToken(ref));
     } catch (e) {
       console.warn('[ConversationWorkflow] update learner profile failed: ' + ConversationWorkflow.errorMessage(e));
     }
@@ -887,7 +920,7 @@ export class ConversationWorkflow {
   private async safeSummarizeIfNeeded(ref: ConversationRunRef): Promise<void> {
     if (!this.cbs.isCurrentRun(ref)) { return; }
     try {
-      await this.getMemory().summarizeSessionIfNeeded(ref.sessionId);
+      await this.getMemory().summarizeSessionIfNeeded(ref.sessionId, this.cancellationToken(ref));
     } catch (e) {
       console.warn('[ConversationWorkflow] summarize memory failed: ' + ConversationWorkflow.errorMessage(e));
     }

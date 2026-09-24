@@ -22,6 +22,7 @@ import { ConversationProgressStep } from './ConversationState';
 import { NoteDraftReadyEvent } from 'common';
 import type { StreamEvent } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { CancellationToken } from 'common';
 
 export interface ConversationWorkflowCallbacks {
   addAiMsg(ref: ConversationRunRef, content: string): void;
@@ -32,6 +33,8 @@ export interface ConversationWorkflowCallbacks {
   onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void;
   onFinish(ref: ConversationRunRef): void;
   isCurrentRun(ref: ConversationRunRef): boolean;
+  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined;
+  registerCancellationHook(ref: ConversationRunRef, hook: () => void): () => void;
   getContext(): common.UIAbilityContext;
   getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string;
   onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void;

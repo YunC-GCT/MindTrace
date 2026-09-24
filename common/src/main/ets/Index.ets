@@ -194,6 +194,7 @@ export {
 export { LlmConfig, DEFAULT_ENABLE_THINKING } from './llm/LlmConfig';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
+export { CancellationToken } from './llm/CancellationToken';
 export { LlmGuard } from './llm/LlmGuard';
 export { JSON_ONLY_RULES, LATEX_GENERATION_RULES, buildGuardRetryMessage } from './llm/LlmOutputRules';
 export { LlmError } from './llm/LlmTypes';

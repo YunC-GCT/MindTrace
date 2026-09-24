@@ -9,6 +9,7 @@ export class StructureNodeFactory {
   static create(service: KnowledgeModel): CaptureNode {
     return async (input: AgentState): Promise<CaptureNodeResult> => {
       try {
+        input.cancellationToken?.throwIfCancelled();
         let draft: NoteDraftDocument | undefined = undefined;
         let standardResult: NoteGenerationStandardResult | undefined = undefined;
         let unit: KnowledgeUnit;
@@ -43,6 +44,7 @@ export class StructureNodeFactory {
           unit = await service.structureWithClassification(input.captureText, input.classification, input.source);
         }
         const next: AgentState = copyAgentState(input);
+        next.cancellationToken?.throwIfCancelled();
         next.knowledgeUnit = unit;
         if (draft !== undefined) {
           next.draft = draft;

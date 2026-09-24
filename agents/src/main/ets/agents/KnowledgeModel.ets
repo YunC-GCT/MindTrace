@@ -86,6 +86,7 @@ import type {
   IncrementalPatch,
   IncrementalPatchResponse,
   SourceFragment,
+  CancellationToken,
 } from 'common';
 import { NOTE_DRAFT_JSON_SCHEMA, normalizeDeepSectionDraft, normalizeEvidenceItems, parseDirectStandardArtifacts, validateDraftDocument, validateDraftShape } from 'common';
 import { TypeClassifier } from './TypeClassifier';
@@ -110,10 +111,12 @@ export class KnowledgeModel {
   private promptBuilder: PromptBuilder = new PromptBuilder();
   private llm: LlmCaller;
   private jsonCaller: GenerationJsonCaller;
+  private readonly cancellationToken?: CancellationToken;
 
-  constructor(llm?: LlmCaller) {
+  constructor(llm?: LlmCaller, cancellationToken?: CancellationToken) {
     this.llm = llm ?? new LlmClient();
-    this.jsonCaller = new GenerationJsonCaller(this.llm);
+    this.cancellationToken = cancellationToken;
+    this.jsonCaller = new GenerationJsonCaller(this.llm, undefined, cancellationToken);
   }
 
   /**
@@ -129,6 +132,7 @@ export class KnowledgeModel {
     chapter: string = '',
     source: string = 'camera_capture',
   ): Promise<KnowledgeUnit> {
+    this.cancellationToken?.throwIfCancelled();
     const startTime: number = Date.now();
     const classificationHint: ClassificationResult = await this.resolveClassificationHint(
       ocrText,
@@ -1538,6 +1542,7 @@ export class KnowledgeModel {
         maxTokens: KNOWLEDGE_MAX_TOKENS,
         timeoutMs: KNOWLEDGE_TIMEOUT_MS,
         label: 'KnowledgeModel structure',
+        cancellationToken: this.cancellationToken,
       }, (json: Record<string, Object>): LlmGuardValidationResult => this.validateAiJson(json));
       console.info('[KnowledgeModel] callAi response received, len=' + guarded.raw.length.toString()
         + ', attempts=' + guarded.attempts.toString());

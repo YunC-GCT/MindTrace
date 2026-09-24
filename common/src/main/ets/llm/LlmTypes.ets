@@ -160,6 +160,8 @@ export type StreamEvent = StreamThinkingEvent | StreamTextEvent | StreamToolCall
 // 流式回调: 结构化事件对象;P0 emit thinking/text,tool_* 为后续工具过程预留
 export type LlmStreamCallback = (event: StreamEvent) => void;
 
+import type { CancellationToken } from './CancellationToken';
+
 // ==================== LlmCallOptions (单次调用可选参数)====================
 export interface LlmCallOptions {
   // 不指定则用 LlmConfig 的默认配置
@@ -170,6 +172,7 @@ export interface LlmCallOptions {
   responseFormat?: LlmResponseFormat;
   // 流式专用
   enableThinking?: boolean;    // 是否启用思考模式 (DeepSeek thinking: {type: "enabled"})
+  cancellationToken?: CancellationToken;
 }
 
 // ==================== OpenAI 兼容 tool-calling wire 类型 (spec 014 / ADR-0012)====================
@@ -212,6 +215,7 @@ export interface LlmCallRequest {
   enableThinking?: boolean;
   tools?: LlmToolDefinition[];    // 透传 (spec 014)
   tool_choice?: string;           // 透传, Phase 1 仅 'auto' | 'none'
+  cancellationToken?: CancellationToken;
 }
 
 // ==================== LlmCallResult (统一调用出参, spec 005 / ADR-0004)====================

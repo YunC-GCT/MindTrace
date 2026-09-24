@@ -14,6 +14,7 @@ import {
   ConversationRunTerminal,
 } from './ConversationRunCoordinator';
 import { ConversationRunRef } from './ConversationIdentity';
+import { CancellationToken } from 'common';
 
 type ConversationRunLifecycleOwner = 'facade' | 'workflow';
 type ConversationRunOperation<T> = (ref: ConversationRunRef) => Promise<T>;
@@ -62,12 +63,16 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
     if (this.accepts(ref, 'progress')) { this.callbacks.setStatusMeta(ref, this.statusMachine.advance(step)); }
   }
   onFinish(ref: ConversationRunRef): void {
-    if (this.accepts(ref, 'finish') && this.coordinator.activeCount() <= 1) {
+    if (this.accepts(ref, 'finish')) {
       this.callbacks.setStatusMeta(ref, null);
       this.callbacks.setBusy(ref, false);
     }
   }
   isCurrentRun(ref: ConversationRunRef): boolean { return this.coordinator.isCurrent(ref); }
+  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined { return this.coordinator.cancellationToken(ref); }
+  registerCancellationHook(ref: ConversationRunRef, hook: () => void): () => void {
+    return this.coordinator.registerCancellationHook(ref, hook);
+  }
   getContext(): common.UIAbilityContext { return this.callbacks.getContext(); }
   getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string {
     return this.accepts(ref, 'read-conversation') ? this.callbacks.getConversationText(ref, excludeLatestUser) : '';
@@ -92,7 +97,7 @@ export class AgentChatService {
     this.workflow = new ConversationWorkflow(this.adapter);
   }
 
-  async captureReply(sessionId: string, imageUri: string, userText: string): Promise<void> {
+  async captureReply(sessionId: string, imageUri: string, userText: string): Promise<ConversationRunStartResult> {
     const request: ImageConversationRequest = {
       kind: 'image',
       imageUri: imageUri,
@@ -101,20 +106,21 @@ export class AgentChatService {
     const admission: ConversationRunStartResult = this.admit(sessionId, request.kind);
     if (!admission.accepted || admission.ref === undefined) {
       console.warn('[ConversationRun] ' + admission.diagnostic + '; entry=image');
-      return;
+      return admission;
     }
     if (!this.callbacks.addUserMsg(admission.ref, userText.length > 0 ? userText : '[图片]')) {
       this.coordinator.finish(admission.ref, 'cancelled');
-      return;
+      return { accepted: false, diagnostic: 'code=USER_MESSAGE_REJECTED' };
     }
     await this.executeAcceptedOperation<void>(
       admission.ref,
       'workflow',
       (ref: ConversationRunRef): Promise<void> => this.workflow.run(request, ref),
     );
+    return admission;
   }
 
-  async realReplyStream(sessionId: string, userContent: string): Promise<void> {
+  async realReplyStream(sessionId: string, userContent: string): Promise<ConversationRunStartResult> {
     const request: ConversationRequest = {
       kind: 'text',
       userContent: userContent,
@@ -123,28 +129,43 @@ export class AgentChatService {
     const admission: ConversationRunStartResult = this.admit(sessionId, request.kind);
     if (!admission.accepted || admission.ref === undefined) {
       console.warn('[ConversationRun] ' + admission.diagnostic + '; entry=text');
-      return;
+      return admission;
     }
     if (!this.callbacks.addUserMsg(admission.ref, userContent)) {
       this.coordinator.finish(admission.ref, 'cancelled');
-      return;
+      return { accepted: false, diagnostic: 'code=USER_MESSAGE_REJECTED' };
     }
     await this.executeAcceptedOperation<void>(
       admission.ref,
       'workflow',
       (ref: ConversationRunRef): Promise<void> => this.workflow.run(request, ref),
     );
+    return admission;
   }
 
   isCurrentRun(ref: ConversationRunRef): boolean {
     return this.coordinator.isCurrent(ref);
   }
 
+  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined {
+    return this.coordinator.cancellationToken(ref);
+  }
+
   cancelSessionRun(sessionId: string): void {
     const ref: ConversationRunRef | undefined = this.coordinator.currentRef(sessionId);
     if (ref === undefined) { return; }
     if (this.adapter !== null) { this.adapter.onFinish(ref); }
-    this.coordinator.finish(ref, 'cancelled');
+    this.coordinator.cancel(ref);
+  }
+
+  cancelAllRuns(): void {
+    const refs: ConversationRunRef[] = this.coordinator.activeRefs();
+    for (const ref of refs) {
+      if (this.adapter !== null) {
+        this.adapter.onFinish(ref);
+      }
+      this.coordinator.cancel(ref);
+    }
   }
 
   private admit(sessionId: string, kind: ConversationRunRequestKind): ConversationRunStartResult {

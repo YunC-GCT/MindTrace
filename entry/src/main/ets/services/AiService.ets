@@ -48,6 +48,7 @@ import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
 import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFactory';
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from './AgentMemoryService';
+import type { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
 
@@ -79,7 +80,8 @@ export class AiService {
   }
 
   // 图片识别入口: 只 OCR + 分类，返回识别内容，不生成笔记、不入库
-  async analyzeImage(imageUri: string, userText?: string): Promise<ClassificationResult> {
+  async analyzeImage(imageUri: string, userText?: string, cancellationToken?: CancellationToken): Promise<ClassificationResult> {
+    cancellationToken?.throwIfCancelled();
     log.info('analyzeImage start, imageUri=' + imageUri);
     if (this.context === undefined) {
       throw new Error('AiService.analyzeImage 需要 UIAbilityContext 来准备图片文件');
@@ -100,6 +102,7 @@ export class AiService {
       persist: false,
       includeRawText: true,
       analysisOnly: true,
+      cancellationToken: cancellationToken,
     });
     if (!result.success || result.classification === undefined) {
       throw new Error(result.errorMessage ?? '识别失败');
@@ -126,7 +129,9 @@ export class AiService {
     instruction: string,
     sourceText: string,
     pendingSources: SourceFragment[],
+    cancellationToken?: CancellationToken,
   ): Promise<NoteDraftReadyEvent> {
+    cancellationToken?.throwIfCancelled();
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     const fragments: SourceFragment[] = [{
       id: 'conversation:' + runId,
@@ -152,7 +157,7 @@ export class AiService {
       source: 'app',
       payload: { kind: 'text', text: sourceText },
       generation: request,
-    }, { persist: false, generationRepository: repository });
+    }, { persist: false, generationRepository: repository, cancellationToken: cancellationToken });
     if (!result.success || result.generation === undefined || result.data === undefined || result.generation.bestCheckpointId === undefined) {
       throw new Error(result.errorMessage ?? '草稿生成失败');
     }
@@ -202,7 +207,9 @@ export class AiService {
     noteId: string,
     instruction: string,
     sourceText: string,
+    cancellationToken?: CancellationToken,
   ): Promise<NoteDraftReadyEvent> {
+    cancellationToken?.throwIfCancelled();
     if (noteId.trim().length === 0) {
       throw new Error('增量重生成需要明确 noteId');
     }
@@ -233,7 +240,7 @@ export class AiService {
       source: 'app',
       payload: { kind: 'text', text: sourceText },
       generation: request,
-    }, { persist: false, generationRepository: repository });
+    }, { persist: false, generationRepository: repository, cancellationToken: cancellationToken });
     if (!result.success || result.data === undefined || result.generation === undefined
       || result.generation.bestCheckpointId === undefined) {
       throw new Error(result.errorMessage ?? '增量重生成失败');

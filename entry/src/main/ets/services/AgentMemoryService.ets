@@ -2,6 +2,7 @@ import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { ClassificationResult, ChatMessage, DatabaseHelper, LlmCallResult, LlmClient, LlmConfig, LlmGuard } from 'common';
 import type { LlmGuardValidationResult } from 'common';
+import type { CancellationToken } from 'common';
 import { AgentMemoryDao } from '../database/AgentMemoryDao';
 import { ChatMessageDao } from '../database/ChatMessageDao';
 import {
@@ -135,7 +136,8 @@ export class AgentMemoryService {
     return AgentMemoryService.formatLearnerProfileContext(profile, globalProfile, sessionProfile);
   }
 
-  async updateLearnerProfileIfNeeded(sessionId: string): Promise<void> {
+  async updateLearnerProfileIfNeeded(sessionId: string, cancellationToken?: CancellationToken): Promise<void> {
+    cancellationToken?.throwIfCancelled();
     SessionIdPolicy.requireValid(sessionId);
     const store: relationalStore.RdbStore = await this.getStore();
     const memoryDao: AgentMemoryDao = new AgentMemoryDao(store);
@@ -164,20 +166,24 @@ export class AgentMemoryService {
       timeoutMs: 60000,
       responseFormat: { type: 'json_object' },
       label: 'learner profile update',
+      cancellationToken: cancellationToken,
     }, (json: Record<string, Object>): LlmGuardValidationResult => AgentMemoryService.validateLearnerProfileJson(json));
     const updated: LearnerProfile | null = AgentMemoryService.parseLearnerProfileJson(raw.raw, Date.now());
     if (updated === null) {
       return;
     }
 
+    cancellationToken?.throwIfCancelled();
     await this.insertMemoryRecord(AgentMemoryService.toProfileRecord(
       PROFILE_GLOBAL_SCOPE_ID,
       AgentMemoryService.withSessionLevel(updated, updated.globalLevel),
     ));
+    cancellationToken?.throwIfCancelled();
     await this.insertMemoryRecord(AgentMemoryService.toProfileRecord(sessionId, updated));
   }
 
-  async summarizeSessionIfNeeded(sessionId: string): Promise<void> {
+  async summarizeSessionIfNeeded(sessionId: string, cancellationToken?: CancellationToken): Promise<void> {
+    cancellationToken?.throwIfCancelled();
     const store: relationalStore.RdbStore = await this.getStore();
     const memoryDao: AgentMemoryDao = new AgentMemoryDao(store);
     const existingSummary: AgentMemoryRecord | null = await memoryDao.queryLatestSummary(sessionId);
@@ -212,7 +218,9 @@ export class AgentMemoryService {
       messages: llmMessages,
       maxTokens: 2048,
       timeoutMs: 120000,
+      cancellationToken: cancellationToken,
     });
+    cancellationToken?.throwIfCancelled();
     const summaryText: string = summaryResult.text ?? '';
     const now: number = Date.now();
     const summaryRecord: AgentMemoryRecord = {
