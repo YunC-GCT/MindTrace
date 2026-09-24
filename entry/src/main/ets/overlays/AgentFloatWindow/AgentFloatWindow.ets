@@ -59,7 +59,7 @@ export struct AgentFloatWindow {
   @State @Watch('onMessagesChange') messages: ChatMsg[] = [];
   @State keyboardHeight: number = 0;
   @State sessions: ChatSession[] = [];
-  @State activeSid: string = '';
+  @State @Watch('onActiveSessionChange') activeSid: string = '';
   @State activeSessionTitle: string = '新对话';
   @State floatHeight: number = 48;
   @State overlayVisible: boolean = false;
@@ -171,9 +171,9 @@ export struct AgentFloatWindow {
     const service: AgentChatService = new AgentChatService(cbs);
     this.service = service;
     const ss: ChatSession[] = await this.sm.init(getContext(this));
-    const loadedSessions: ChatSession[] = ss.filter((session: ChatSession): boolean =>
-      session.id !== 's1' || session.messages.length > 0,
-    );
+    // Development reset: s1 was the old bootstrap conversation and must not
+    // be promoted to a real history item after the lazy-session migration.
+    const loadedSessions: ChatSession[] = ss.filter((session: ChatSession): boolean => session.id !== 's1');
     if (loadedSessions.length > 0) {
       this.sessions = loadedSessions;
       this.activateSession(loadedSessions[0]);
@@ -277,6 +277,13 @@ export struct AgentFloatWindow {
     this.activeSessionTitle = session.name;
     this.activeSid = session.id;
     this.messages = session.messages;
+  }
+
+  private onActiveSessionChange(): void {
+    const session: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === this.activeSid);
+    if (session !== undefined && this.activeSessionTitle !== session.name) {
+      this.activeSessionTitle = session.name;
+    }
   }
 
   private onSelectSession(sid: string): void { this.switchSession(sid); this.panelVisible = false; }
