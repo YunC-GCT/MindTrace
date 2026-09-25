@@ -9,7 +9,7 @@
  *   AgentFloatWindow ↔ ConversationWorkflow (callbacks) ↔ ConversationWorkflow.run (StateGraph)
  *
  * 设计要点:
- *   - P0: appendAiMsg 接 StreamEvent (structured, 4-value union; tool_* 保留位); addAiMsgEmpty + finishAiMsg 形成"创建空消息 → 累积流 → 完成"三阶段
+ *   - P0: updateAiMsg 以单一 event sink 承载 StreamEvent 增量与最终正文替换; addAiMsgEmpty + finishAiMsg 形成"创建空消息 → 累积流 → 完成"三阶段
  *   - onDraftReady 把草稿事件抛回 UI,UI 端走 NoteDraftPanel;draft 状态字段回写到 ConversationState 在 State.ets 定义
  *
  * ArkTS 1.1 strict 适配:
@@ -24,11 +24,22 @@ import type { StreamEvent } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { CancellationToken } from 'common';
 
+export interface ConversationStreamMessageEvent {
+  kind: 'stream';
+  event: StreamEvent;
+}
+
+export interface ConversationReplaceContentEvent {
+  kind: 'replace-content';
+  content: string;
+}
+
+export type ConversationMessageEvent = ConversationStreamMessageEvent | ConversationReplaceContentEvent;
+
 export interface ConversationWorkflowCallbacks {
   addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number;
   addAiMsgEmpty(ref: ConversationRunRef, origin: ChatMessageOrigin): number;
-  appendAiMsg(ref: ConversationRunRef, id: number, event: StreamEvent): void;
-  replaceAiMsg(ref: ConversationRunRef, id: number, content: string): void;
+  updateAiMsg(ref: ConversationRunRef, id: number, event: ConversationMessageEvent): void;
   finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void;
   getUserMessageId(ref: ConversationRunRef): number;
   commitHistory(ref: ConversationRunRef): Promise<boolean>;

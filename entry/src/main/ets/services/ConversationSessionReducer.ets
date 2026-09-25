@@ -13,14 +13,19 @@
  */
 
 import { ChatMessageIdPolicy, ConversationRunRef, requireConversationRunRef } from './ConversationIdentity';
-import { ChatMsg, ChatSession } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import {
+  applyStreamEventToChatMsg,
+  ChatMsg,
+  ChatSession,
+  replaceChatMsgContent,
+} from '../overlays/AgentFloatWindow/chat/ChatModels';
+import { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
 
 export type ConversationSessionEvent =
   | 'add-user-message'
   | 'add-ai-message'
   | 'add-ai-placeholder'
-  | 'append-ai-message'
-  | 'replace-ai-message'
+  | 'update-ai-message'
   | 'finish-ai-message';
 
 export interface ConversationSessionReduceResult {
@@ -30,6 +35,13 @@ export interface ConversationSessionReduceResult {
 }
 
 export class ConversationSessionReducer {
+  static applyMessageEvent(message: ChatMsg, event: ConversationMessageEvent): ChatMsg {
+    if (event.kind === 'replace-content') {
+      return replaceChatMsgContent(message, event.content);
+    }
+    return applyStreamEventToChatMsg(message, event.event);
+  }
+
   static updateMessages(
     sessions: ChatSession[],
     ref: ConversationRunRef,

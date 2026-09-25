@@ -29,10 +29,8 @@ import {
   ChatMsg,
   ChatSession,
   ChatStatusMeta,
-  applyStreamEventToChatMsg,
   transitionChatMessageOutcome,
   finishChatMsg,
-  replaceChatMsgContent,
 } from './chat/ChatModels';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
@@ -43,8 +41,8 @@ import { SessionsPanelController } from '../../services/SessionsPanelController'
 import { NoteDraftReadyEvent, NoteGenerationRun } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
-import type { StreamEvent } from 'common';
 import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
+import { ConversationMessageEvent } from '../../workflows/conversation/ConversationTypes';
 import { AiService } from '../../services/AiService';
 import { DraftRecoveryService } from '../../services/DraftRecoveryService';
 import {
@@ -189,11 +187,12 @@ export struct AgentFloatWindow {
         }]);
         return id;
       },
-appendAiMsg: (ref: ConversationRunRef, id: number, event: StreamEvent): void => {
-        this.updateSessionMessages(ref, 'append-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m));
-      },
-      replaceAiMsg: (ref: ConversationRunRef, id: number, content: string): void => {
-        this.updateSessionMessages(ref, 'replace-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? replaceChatMsgContent(m, content) : m));
+      updateAiMsg: (ref: ConversationRunRef, id: number, event: ConversationMessageEvent): void => {
+        this.updateSessionMessages(ref, 'update-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map(
+          (message: ChatMsg): ChatMsg => message.id === id
+            ? ConversationSessionReducer.applyMessageEvent(message, event)
+            : message,
+        ));
       },
       finishAiMsg: (ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void => {
         this.updateSessionMessages(ref, 'finish-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? transitionChatMessageOutcome(m, outcome ?? 'completed') : m));

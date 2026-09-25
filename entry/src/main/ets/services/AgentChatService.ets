@@ -1,5 +1,8 @@
 import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
-import { ConversationWorkflowCallbacks } from '../workflows/conversation/ConversationTypes';
+import {
+  ConversationMessageEvent,
+  ConversationWorkflowCallbacks,
+} from '../workflows/conversation/ConversationTypes';
 import {
   ChatMessageOrigin,
   ChatMessageOutcome,
@@ -11,7 +14,6 @@ import { ChatStatusMachine } from './ChatStatusMachine';
 import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
-import type { StreamEvent } from 'common';
 import {
   ConversationRunCoordinator,
   ConversationRunRequest,
@@ -29,8 +31,7 @@ export interface AgentChatCallbacks {
 addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin) => number;
   addAiMsg: (ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome) => number;
   addAiMsgEmpty: (ref: ConversationRunRef, origin: ChatMessageOrigin) => number;
-  appendAiMsg: (ref: ConversationRunRef, id: number, event: StreamEvent) => void;
-  replaceAiMsg: (ref: ConversationRunRef, id: number, content: string) => void;
+  updateAiMsg: (ref: ConversationRunRef, id: number, event: ConversationMessageEvent) => void;
   finishAiMsg: (ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome) => void;
   terminateAiRun: (ref: ConversationRunRef, outcome: ChatMessageOutcome) => void;
   getUserMessageId: (ref: ConversationRunRef) => number;
@@ -71,11 +72,8 @@ private accepts(ref: ConversationRunRef, event: string): boolean {
   addAiMsgEmpty(ref: ConversationRunRef, origin: ChatMessageOrigin): number {
     return this.accepts(ref, 'add-ai-placeholder') ? this.callbacks.addAiMsgEmpty(ref, origin) : -1;
   }
-  appendAiMsg(ref: ConversationRunRef, id: number, event: StreamEvent): void {
-    if (this.accepts(ref, 'append-ai-message')) { this.callbacks.appendAiMsg(ref, id, event); }
-  }
-  replaceAiMsg(ref: ConversationRunRef, id: number, content: string): void {
-    if (this.accepts(ref, 'replace-ai-message')) { this.callbacks.replaceAiMsg(ref, id, content); }
+  updateAiMsg(ref: ConversationRunRef, id: number, event: ConversationMessageEvent): void {
+    if (this.accepts(ref, 'update-ai-message')) { this.callbacks.updateAiMsg(ref, id, event); }
   }
   finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void {
     if (this.accepts(ref, 'finish-ai-message')) { this.callbacks.finishAiMsg(ref, id, outcome ?? 'completed'); }

@@ -6,7 +6,7 @@
  * 依赖: common (KnowledgeUnit/ClassificationResult/LlmConfig/LlmError/Logger/StateGraph/LlmErrorBodyFormatter); ../services (AiService/AgentMemoryService/IntentClassifier/ReplyService)
  *
  * 数据流:
- *   AgentFloatWindow.realReply → workflow.run(request) → buildGraph (条件边分发) → ReplyService.complete/stream (LLM 调用) → appendAiMsg(StreamEvent) → ChatMsg 累积 → finishAiMsg → safeSaveAssistantMessage (持久化)
+ *   AgentFloatWindow.realReply → workflow.run(request) → buildGraph (条件边分发) → ReplyService.complete/stream (LLM 调用) → updateAiMsg(ConversationMessageEvent) → ChatMsg 更新 → finishAiMsg → safeSaveAssistantMessage (持久化)
  *
  * 设计要点:
  *   - copyState 严格字段复制 (无 map+spread) — 任意 P1 字段须显式添加,避免漏字段
@@ -41,7 +41,7 @@ import {
   ChatMessageOrigin,
   ChatMessageOutcome,
 } from './ConversationState';
-import { ConversationWorkflowCallbacks } from './ConversationTypes';
+import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
 import { ReplyService, StreamReplyResult } from '../../services/ReplyService';
 import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun, SourceFragment } from 'common';
 import type { StreamEvent } from 'common';
@@ -629,13 +629,15 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
         replyContext,
         (event: StreamEvent): void => {
           if (event.type !== 'text') {
-            this.cbs.appendAiMsg(ref, msgId, event);
+            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: event };
+            this.cbs.updateAiMsg(ref, msgId, messageEvent);
             return;
           }
           const safeText: string = citationFilter.push(event.delta);
           if (safeText.length > 0) {
             const safeEvent: StreamEvent = { type: 'text', delta: safeText };
-            this.cbs.appendAiMsg(ref, msgId, safeEvent);
+            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: safeEvent };
+            this.cbs.updateAiMsg(ref, msgId, messageEvent);
           }
         },
         this.cancellationToken(ref),
@@ -643,7 +645,8 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
       const citationTail: string = citationFilter.flush();
       if (citationTail.length > 0) {
         const tailEvent: StreamEvent = { type: 'text', delta: citationTail };
-        this.cbs.appendAiMsg(ref, msgId, tailEvent);
+        const messageEvent: ConversationMessageEvent = { kind: 'stream', event: tailEvent };
+        this.cbs.updateAiMsg(ref, msgId, messageEvent);
       }
       if (streamResult.usedFallback) {
         await this.appendAssistantReply(ref, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
@@ -654,10 +657,12 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
         : this.replyService.normalize(
           this.getEvidenceService().sanitizeAnswer(evidence, streamResult.content),
         );
-      this.cbs.replaceAiMsg(ref, msgId, displayAnswer);
+      const normalizedEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayAnswer };
+      this.cbs.updateAiMsg(ref, msgId, normalizedEvent);
       if (streamResult.interrupted) {
         const interruptedEvent: StreamEvent = { type: 'text', delta: '\n\n⚠️ *AI 回复中断，请重试*' };
-        this.cbs.appendAiMsg(ref, msgId, interruptedEvent);
+        const messageEvent: ConversationMessageEvent = { kind: 'stream', event: interruptedEvent };
+        this.cbs.updateAiMsg(ref, msgId, messageEvent);
         this.cbs.finishAiMsg(ref, msgId, 'interrupted');
         return;
       } else {
@@ -666,7 +671,8 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
       const sources: string = evidence === undefined ? '' : this.getEvidenceService().formatSources(evidence);
       if (sources.length > 0) {
         const sourcesEvent: StreamEvent = { type: 'text', delta: '\n\n' + sources };
-        this.cbs.appendAiMsg(ref, msgId, sourcesEvent);
+        const messageEvent: ConversationMessageEvent = { kind: 'stream', event: sourcesEvent };
+        this.cbs.updateAiMsg(ref, msgId, messageEvent);
       }
 const persistedAnswer: string = this.replyService.normalize(
         this.applyEvidenceToAnswer(evidence, streamResult.content),
@@ -860,7 +866,8 @@ cancellationToken?: CancellationToken,
       persistedMessageId = this.cbs.addAiMsg(ref, displayContent, origin, outcome);
     } else {
       const textEvent: StreamEvent = { type: 'text', delta: displayContent };
-      this.cbs.appendAiMsg(ref, messageId, textEvent);
+      const messageEvent: ConversationMessageEvent = { kind: 'stream', event: textEvent };
+      this.cbs.updateAiMsg(ref, messageId, messageEvent);
       this.cbs.finishAiMsg(ref, messageId, outcome);
     }
     if (outcome === 'completed' && persistedMessageId > 0) {
