@@ -22,7 +22,14 @@ import { CameraKitLauncher } from '../../services/CameraKitLauncher';
 import { AlbumPickerLauncher } from '../../services/AlbumPickerLauncher';
 import { ChatHeader } from './chat/ChatHeader';
 import { ChatSessionManager } from './chat/ChatSession';
-import { ChatMsg, ChatSession, ChatStatusMeta, applyStreamEventToChatMsg, finishChatMsg } from './chat/ChatModels';
+import {
+  ChatMsg,
+  ChatSession,
+  ChatStatusMeta,
+  applyStreamEventToChatMsg,
+  finishChatMsg,
+  replaceChatMsgContent,
+} from './chat/ChatModels';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
@@ -134,6 +141,11 @@ export struct AgentFloatWindow {
       },
       appendAiMsg: (id: number, event: StreamEvent): void => {
         this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m);
+      },
+      replaceAiMsg: (id: number, content: string): void => {
+        this.messages = this.messages.map((m: ChatMsg): ChatMsg =>
+          m.id === id ? replaceChatMsgContent(m, content) : m,
+        );
       },
       finishAiMsg: (id: number): void => {
         this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m);

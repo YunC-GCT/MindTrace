@@ -781,7 +781,7 @@ NOTE_STANDARD_SCHEMA_PROPERTIES['draft'] = '{"type":"object","required":["schema
 
 export const NOTE_STANDARD_JSON_SCHEMA: string = buildJsonSchema(
   'mindtrace.note-standard.v1',
-  ['outline', 'evidence', 'draft'],
+  ['outline', 'draft'],
   NOTE_STANDARD_SCHEMA_PROPERTIES,
 );
 
@@ -1691,7 +1691,11 @@ export function normalizeDeepSectionDraft(
   };
 }
 
-export function validateDraftDocument(document: NoteDraftDocument, sourceIds: string[] = []): NoteGenerationIssue[] {
+export function validateDraftDocument(
+  document: NoteDraftDocument,
+  sourceIds: string[] = [],
+  allowRecoverableContentIssues: boolean = false,
+): NoteGenerationIssue[] {
   const issues: NoteGenerationIssue[] = [];
   const contentProtocol: ContentProtocol = new ContentProtocol();
   if (document.schemaVersion !== NOTE_DRAFT_SCHEMA_VERSION) {
@@ -1736,8 +1740,30 @@ export function validateDraftDocument(document: NoteDraftDocument, sourceIds: st
       }
     }
     const contentValidation = contentProtocol.validateNoteMarkdown(section.content);
-    if (!contentValidation.ok) {
-      issues.push({ stage: 'content', code: 'MM_MD_INVALID', severity: 'hard', message: 'section content violates MM-MD-v1', repairable: true, sectionId: section.id });
+    const normalizedValidation = contentValidation.fallbackRequired
+      ? contentValidation
+      : contentProtocol.validateNoteMarkdown(contentValidation.normalizedText);
+    const contentInvalid = allowRecoverableContentIssues
+      ? (!normalizedValidation.ok || normalizedValidation.fallbackRequired)
+      : !contentValidation.ok;
+    if (contentInvalid) {
+      const validationReasons: string[] = [];
+      for (const issue of contentValidation.issues.concat(normalizedValidation.issues)) {
+        if (!validationReasons.includes(issue)) {
+          validationReasons.push(issue);
+        }
+      }
+      const reasonText: string = validationReasons.length > 0
+        ? ': ' + validationReasons.join(', ')
+        : '';
+      issues.push({
+        stage: 'content',
+        code: 'MM_MD_INVALID',
+        severity: 'hard',
+        message: 'section content violates MM-MD-v1' + reasonText,
+        repairable: true,
+        sectionId: section.id,
+      });
     }
   }
   return issues;

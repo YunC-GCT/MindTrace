@@ -31,12 +31,14 @@
  */
 
 import { AgentChatService } from '../services/AgentChatService';
+import type { NoteGenerationRoute } from 'common';
 
 @Observed
 export class AgentInputViewModel {
   inputText: string = '';
   imagePreview: string = '';
   busy: boolean = false;
+  route: NoteGenerationRoute = 'standard';
 
   private service: AgentChatService | null = null;
   private addUserMessage: ((content: string) => void) | null = null;
@@ -58,6 +60,10 @@ export class AgentInputViewModel {
     this.inputText = value;
   }
 
+  setRoute(route: NoteGenerationRoute): void {
+    this.route = route;
+  }
+
   setImagePreview(uri: string): void {
     this.imagePreview = uri;
   }
@@ -75,14 +81,15 @@ export class AgentInputViewModel {
     }
     const msg: string = this.inputText.trim();
     const uri: string = this.imagePreview;
+    const route: NoteGenerationRoute = this.route;
     const display: string = msg.length > 0 ? msg : '[图片]';
     this.addUserMessage(display);
     this.inputText = '';
     this.imagePreview = '';
     if (uri.length > 0) {
-      this.service.captureReply(uri, msg);
+      this.service.captureReply(uri, msg, route);
     } else {
-      this.service.realReplyStream(msg);
+      this.service.realReplyStream(msg, route);
     }
   }
 

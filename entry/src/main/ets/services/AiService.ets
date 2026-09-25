@@ -28,6 +28,7 @@ import {
   Logger,
   NoteDraftReadyEvent,
   NoteGenerationRequest,
+  NoteGenerationRoute,
   PreparedCandidate,
   NoteGenerationCheckpoint,
   NoteGenerationResult,
@@ -126,6 +127,7 @@ export class AiService {
     instruction: string,
     sourceText: string,
     pendingSources: SourceFragment[],
+    route: NoteGenerationRoute = 'standard',
   ): Promise<NoteDraftReadyEvent> {
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     const fragments: SourceFragment[] = [{
@@ -147,6 +149,7 @@ export class AiService {
         fragments: fragments,
       },
       pendingSourceIds: pendingSources.map((fragment): string => fragment.id),
+      route: route,
     };
     const result: DispatchResult = await new Dispatcher().dispatch({
       source: 'app',
@@ -309,7 +312,13 @@ export class AiService {
       }
     }
     await repository.appendLifecycleLog({ runId: runId, event: 'retried', sourceCount: recovery.sources.fragments.length });
-    return await this.generateNoteDraftWithSources(runId, recovery.run.instruction, conversationText, pendingSources);
+    return await this.generateNoteDraftWithSources(
+      runId,
+      recovery.run.instruction,
+      conversationText,
+      pendingSources,
+      recovery.run.route,
+    );
   }
 
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {

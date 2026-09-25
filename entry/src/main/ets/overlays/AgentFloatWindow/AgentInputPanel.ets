@@ -34,6 +34,7 @@ import { StudyModeActionSheet } from './StudyModeActionSheet';
 import { PlusActionSheet } from './PlusActionSheet';
 import { SendButton } from './SendButton';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
+import type { NoteGenerationRoute } from 'common';
 
 @Component
 export struct AgentInputPanel {
@@ -64,7 +65,12 @@ export struct AgentInputPanel {
       Row() {
         Row() {
           ModeChip({ label: this.modelName.length > 0 ? this.modelName : '模型选择' })
-          StudyModeActionSheet()
+          StudyModeActionSheet({
+            selectedRoute: this.vm.route,
+            onRouteChange: (route: NoteGenerationRoute): void => {
+              this.vm.setRoute(route);
+            },
+          })
             .margin({ left: S_2 })
         }
 
