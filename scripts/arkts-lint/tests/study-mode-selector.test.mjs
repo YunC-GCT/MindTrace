@@ -46,8 +46,8 @@ test('study mode popup stacks the three dedicated option components vertically',
 test('study mode selection reaches note generation without changing ordinary reply ownership', () => {
   assert.match(viewModel, /route: NoteGenerationRoute = 'standard'/);
   assert.match(viewModel, /setRoute\(route: NoteGenerationRoute\)/);
-  assert.match(viewModel, /captureReply\(uri, msg, route\)/);
-  assert.match(viewModel, /realReplyStream\(msg, route\)/);
+  assert.match(viewModel, /captureReply\(sessionId, uri, msg, route\)/);
+  assert.match(viewModel, /realReplyStream\(sessionId, msg, route\)/);
   assert.match(chatService, /route: NoteGenerationRoute = 'standard'/);
   assert.match(state, /route\?: NoteGenerationRoute/);
   assert.match(workflow, /input\.request\.kind === 'text' \? input\.request\.route : undefined/);
