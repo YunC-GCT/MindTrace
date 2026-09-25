@@ -654,7 +654,7 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
         : this.replyService.normalize(
           this.getEvidenceService().sanitizeAnswer(evidence, streamResult.content),
         );
-      this.cbs.replaceAiMsg(msgId, displayAnswer);
+      this.cbs.replaceAiMsg(ref, msgId, displayAnswer);
       if (streamResult.interrupted) {
         const interruptedEvent: StreamEvent = { type: 'text', delta: '\n\n⚠️ *AI 回复中断，请重试*' };
         this.cbs.appendAiMsg(ref, msgId, interruptedEvent);

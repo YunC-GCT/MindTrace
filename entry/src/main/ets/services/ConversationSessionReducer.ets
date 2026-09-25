@@ -20,6 +20,7 @@ export type ConversationSessionEvent =
   | 'add-ai-message'
   | 'add-ai-placeholder'
   | 'append-ai-message'
+  | 'replace-ai-message'
   | 'finish-ai-message';
 
 export interface ConversationSessionReduceResult {
