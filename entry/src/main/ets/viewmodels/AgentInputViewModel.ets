@@ -32,6 +32,7 @@
 
 import { AgentChatService } from '../services/AgentChatService';
 import { NoteDraftReadyEvent } from 'common';
+import type { NoteGenerationRoute } from 'common';
 
 export interface SessionUiState {
   composerText: string;
@@ -121,6 +122,7 @@ export class AgentInputViewModel {
   private readonly busySessions: Set<string> = new Set<string>();
   private readonly uiStates: SessionUiStateStore = new SessionUiStateStore();
   private activeSessionId: string = '';
+  route: NoteGenerationRoute = 'standard';
 
   private service: AgentChatService | null = null;
   private resolveActiveSessionId: (() => string) | null = null;
@@ -166,6 +168,10 @@ export class AgentInputViewModel {
   updateText(value: string): void {
     this.inputText = value;
     this.saveProjectedState();
+  }
+
+  setRoute(route: NoteGenerationRoute): void {
+    this.route = route;
   }
 
   setImagePreview(uri: string): void {
@@ -244,13 +250,14 @@ export class AgentInputViewModel {
     if (sessionId.length === 0) {
       return;
     }
+    const route: NoteGenerationRoute = this.route;
     this.inputText = '';
     this.imagePreview = '';
     this.saveProjectedState();
     if (uri.length > 0) {
-      this.service.captureReply(sessionId, uri, msg);
+      this.service.captureReply(sessionId, uri, msg, route);
     } else {
-      this.service.realReplyStream(sessionId, msg);
+      this.service.realReplyStream(sessionId, msg, route);
     }
   }
 

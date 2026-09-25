@@ -31,6 +31,8 @@ import {
   ChatStatusMeta,
   applyStreamEventToChatMsg,
   transitionChatMessageOutcome,
+  finishChatMsg,
+  replaceChatMsgContent,
 } from './chat/ChatModels';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
@@ -187,8 +189,11 @@ export struct AgentFloatWindow {
         }]);
         return id;
       },
-      appendAiMsg: (ref: ConversationRunRef, id: number, event: StreamEvent): void => {
+appendAiMsg: (ref: ConversationRunRef, id: number, event: StreamEvent): void => {
         this.updateSessionMessages(ref, 'append-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m));
+      },
+      replaceAiMsg: (ref: ConversationRunRef, id: number, content: string): void => {
+        this.updateSessionMessages(ref, 'replace-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? replaceChatMsgContent(m, content) : m));
       },
       finishAiMsg: (ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void => {
         this.updateSessionMessages(ref, 'finish-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? transitionChatMessageOutcome(m, outcome ?? 'completed') : m));

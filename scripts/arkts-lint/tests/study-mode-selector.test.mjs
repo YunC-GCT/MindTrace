@@ -8,6 +8,11 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const base = 'entry/src/main/ets/overlays/AgentFloatWindow/';
 const panel = read(base + 'AgentInputPanel.ets');
 const sheet = read(base + 'StudyModeActionSheet.ets');
+const viewModel = read('entry/src/main/ets/viewmodels/AgentInputViewModel.ets');
+const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
+const state = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const aiService = read('entry/src/main/ets/services/AiService.ets');
 const modeChip = read(base + 'ModeChip.ets');
 const optionFiles = [
   ['LightModeChip.ets', '轻量模式'],
@@ -17,7 +22,9 @@ const optionFiles = [
 
 test('study mode selector is wired into the input panel', () => {
   assert.match(panel, /import \{ StudyModeActionSheet \}/);
-  assert.match(panel, /StudyModeActionSheet\(\)/);
+  assert.match(panel, /StudyModeActionSheet\(\{/);
+  assert.match(panel, /selectedRoute: this\.vm\.route/);
+  assert.match(panel, /this\.vm\.setRoute\(route\)/);
   assert.doesNotMatch(panel, /ModeChip\(\{ label: '学习模式' \}\)/);
 });
 
@@ -26,10 +33,27 @@ test('study mode popup stacks the three dedicated option components vertically',
   assert.match(sheet, /LightModeChip\(/);
   assert.match(sheet, /StandardModeChip\(/);
   assert.match(sheet, /DeepModeChip\(/);
-  assert.match(sheet, /@State selectedMode: string/);
-  assert.match(sheet, /label: this\.selectedMode\.length > 0 \? this\.selectedMode : '学习模式'/);
-  assert.match(sheet, /this\.selectedMode = LIGHT_MODE_LABEL/);
+  assert.match(sheet, /@Prop selectedRoute: NoteGenerationRoute = 'standard'/);
+  assert.match(sheet, /selected: this\.selectedRoute === 'light'/);
+  assert.match(sheet, /selected: this\.selectedRoute === 'standard'/);
+  assert.match(sheet, /selected: this\.selectedRoute === 'deep'/);
+  assert.match(sheet, /this\.selectRoute\('light'\)/);
+  assert.match(sheet, /this\.selectRoute\('standard'\)/);
+  assert.match(sheet, /this\.selectRoute\('deep'\)/);
   assert.match(modeChip, /@Prop label: string/);
+});
+
+test('study mode selection reaches note generation without changing ordinary reply ownership', () => {
+  assert.match(viewModel, /route: NoteGenerationRoute = 'standard'/);
+  assert.match(viewModel, /setRoute\(route: NoteGenerationRoute\)/);
+  assert.match(viewModel, /captureReply\(uri, msg, route\)/);
+  assert.match(viewModel, /realReplyStream\(msg, route\)/);
+  assert.match(chatService, /route: NoteGenerationRoute = 'standard'/);
+  assert.match(state, /route\?: NoteGenerationRoute/);
+  assert.match(workflow, /input\.request\.kind === 'text' \? input\.request\.route : undefined/);
+  assert.match(workflow, /generateNoteDraftWithSources\(/);
+  assert.match(aiService, /route: NoteGenerationRoute = 'standard'/);
+  assert.match(aiService, /route: route/);
 });
 
 test('study mode option components remain presentation-only', () => {

@@ -14,13 +14,16 @@ export const LATEX_GENERATION_RULES: string =
     '7. 多行推导使用 \\begin{aligned}...\\end{aligned}, 禁止 align/align* 和自定义宏. ' +
     '8. 禁止原始 HTML、Markdown 表格和嵌套列表. ' +
     '9. 公式不完整或 OCR 字符不确定时保留原文并标注待确认, 不得补造数学内容. ' +
-    '10. JSON 字符串中的每个 LaTeX 反斜杠必须写成双反斜杠 \\\\, 解析后的字段值才能保留单反斜杠.';
+    '10. JSON 字符串中的每个 LaTeX 反斜杠必须写成双反斜杠 \\\\, 解析后的字段值才能保留单反斜杠. ' +
+    '11. 禁止输出 \\begin{enumerate}、\\end{enumerate}、\\begin{itemize}、\\end{itemize} 或 \\item; 列表必须使用 Markdown 的 - item 或 1. item.';
 
 export function buildGuardRetryMessage(label: string, issues: string[]): ChatMessage {
   return {
     role: 'user',
     content: 'The previous ' + label + ' output failed local validation. ' +
-      'Regenerate the answer as a single strict JSON object only. Fix these issues:\n- ' +
+      'Continue answering the original user request. Regenerate the answer as a single strict JSON object only. ' +
+      'Fix these issues, output only the corrected final answer, and do not output a format diagnosis, ' +
+      'validation report, or other meta-commentary:\n- ' +
       issues.join('\n- '),
   };
 }

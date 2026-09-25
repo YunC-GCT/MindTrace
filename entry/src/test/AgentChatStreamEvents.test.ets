@@ -25,6 +25,7 @@ import {
   normalizeDecodedChatMessage,
   transitionChatMessageOutcome,
   usableAsContext,
+  replaceChatMsgContent,
 } from '../main/ets/overlays/AgentFloatWindow/chat/ChatModels';
 import {
   AgentRunPart,
@@ -156,6 +157,22 @@ export default function agentChatStreamEventsTest(): void {
       const result: ChatMsg = applyStreamEventToChatMsg(message('', '已有思考'), event);
       expect(chatMessageReasoning(result)).assertEqual('已有思考');
       expect(result.content).assertEqual('答案');
+    });
+
+    it('should replace streamed raw content with the normalized final answer', 0, () => {
+      const streamed: ChatMsg = applyStreamEventToChatMsg(
+        message('', '思考'),
+        { type: 'text', delta: '\\item 可加性' },
+      );
+      const replaced: ChatMsg = replaceChatMsgContent(streamed, '- 可加性');
+      const parts: AgentRunPart[] = chatMessageRunParts(replaced);
+      expect(replaced.content).assertEqual('- 可加性');
+      expect(chatMessageReasoning(replaced)).assertEqual('思考');
+      expect(replaced.streaming).assertTrue();
+      expect(parts.length).assertEqual(2);
+      expect(parts[1].kind).assertEqual('answer');
+      expect(parts[1].content).assertEqual('- 可加性');
+      expect(streamed.content).assertEqual('\\item 可加性');
     });
 
     it('should keep thinking and text channels separated in order', 0, () => {

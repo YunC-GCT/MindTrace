@@ -154,23 +154,26 @@ export {
   sourceFingerprint,
   buildSourceId,
   stableSectionId,
+  normalizeDraftSectionLabel,
+  normalizeDraftDifficulty,
   validateSourceBundle,
-     normalizeOutline,
-     normalizeDraftCategory,
-     normalizeLightDraft,
-     normalizeDeepSectionDraft,
-     buildPipelineEvidence,
-     normalizeEvidenceItems,
-     validateDraftDocument,
+  normalizeOutline,
+  normalizeDraftCategory,
+  normalizeDraftSummary,
+  normalizeLightDraft,
+  normalizeDeepSectionDraft,
+  buildPipelineEvidence,
+  normalizeEvidenceItems,
+  validateDraftDocument,
   validateDraftShape,
   parseIncrementalSections,
   buildIncrementalManifest,
   detectIncrementalLocks,
   planIncrementalChange,
   mergeIncrementalPatches,
-   renderIncrementalSections,
-   buildJsonSchema,
-   parseDirectStandardArtifacts,
+  renderIncrementalSections,
+  buildJsonSchema,
+  parseDirectStandardArtifacts,
   } from './models/NoteGenerationModels';
 export { NoteGenerationEvidenceVerifier } from './models/NoteGenerationModels';
 
@@ -263,7 +266,10 @@ export type {
 
 // ========== MM-MD-v1 内容渲染协议 ==========
 export { ContentProtocol } from './render/ContentProtocol';
-export { ContentExcerptBuilder } from './render/ContentExcerptBuilder';
+export {
+  ContentExcerptBuilder,
+  NOTE_SUMMARY_MAX_LENGTH,
+} from './render/ContentExcerptBuilder';
 export type {
   ContentProtocolRisk,
   ContentValidationResult,

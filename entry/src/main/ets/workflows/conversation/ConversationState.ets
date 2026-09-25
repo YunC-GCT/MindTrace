@@ -19,7 +19,7 @@
 
 import { TextIntent } from '../../services/IntentClassifier';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
-import { ClassificationResult } from 'common';
+import { ClassificationResult, NoteGenerationRoute } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 
 export type ChatMessageOrigin = 'chat' | 'image' | 'note-regeneration' | 'system' | 'legacy';
@@ -60,12 +60,14 @@ export interface ImageConversationRequest {
   kind: 'image';
   imageUri: string;
   userContent: string;
+  route?: NoteGenerationRoute;
 }
 
 export interface TextConversationRequest {
   kind: 'text';
   userContent: string;
   responseMode: 'complete' | 'stream';
+  route?: NoteGenerationRoute;
 }
 
 export interface RegenerateConversationRequest {

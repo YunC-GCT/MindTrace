@@ -15,6 +15,7 @@ import { ModeChip } from './ModeChip';
 import { LightModeChip, LIGHT_MODE_LABEL } from './LightModeChip';
 import { StandardModeChip, STANDARD_MODE_LABEL } from './StandardModeChip';
 import { DeepModeChip, DEEP_MODE_LABEL } from './DeepModeChip';
+import type { NoteGenerationRoute } from 'common';
 
 interface StudyModePopupStateEvent {
   isVisible: boolean;
@@ -23,12 +24,13 @@ interface StudyModePopupStateEvent {
 @Component
 export struct StudyModeActionSheet {
   @State showPopup: boolean = false;
-  @State selectedMode: string = '';
+  @Prop selectedRoute: NoteGenerationRoute = 'standard';
+  onRouteChange?: (route: NoteGenerationRoute) => void = (_route: NoteGenerationRoute): void => {};
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       ModeChip({
-        label: this.selectedMode.length > 0 ? this.selectedMode : '学习模式',
+        label: this.routeLabel(this.selectedRoute),
         onTap: (): void => {
           this.showPopup = !this.showPopup;
         },
@@ -54,24 +56,21 @@ export struct StudyModeActionSheet {
   popupBuilder() {
     Column({ space: S_2 }) {
       LightModeChip({
-        selected: this.selectedMode === LIGHT_MODE_LABEL,
+        selected: this.selectedRoute === 'light',
         onTap: (): void => {
-          this.selectedMode = LIGHT_MODE_LABEL;
-          this.showPopup = false;
+          this.selectRoute('light');
         },
       })
       StandardModeChip({
-        selected: this.selectedMode === STANDARD_MODE_LABEL,
+        selected: this.selectedRoute === 'standard',
         onTap: (): void => {
-          this.selectedMode = STANDARD_MODE_LABEL;
-          this.showPopup = false;
+          this.selectRoute('standard');
         },
       })
       DeepModeChip({
-        selected: this.selectedMode === DEEP_MODE_LABEL,
+        selected: this.selectedRoute === 'deep',
         onTap: (): void => {
-          this.selectedMode = DEEP_MODE_LABEL;
-          this.showPopup = false;
+          this.selectRoute('deep');
         },
       })
     }
@@ -79,5 +78,22 @@ export struct StudyModeActionSheet {
     .backgroundColor(BG_CARD)
     .borderRadius(R_LG)
     .border({ width: 1, color: BORDER });
+  }
+
+  private selectRoute(route: NoteGenerationRoute): void {
+    if (this.onRouteChange) {
+      this.onRouteChange(route);
+    }
+    this.showPopup = false;
+  }
+
+  private routeLabel(route: NoteGenerationRoute): string {
+    if (route === 'light') {
+      return LIGHT_MODE_LABEL;
+    }
+    if (route === 'deep') {
+      return DEEP_MODE_LABEL;
+    }
+    return STANDARD_MODE_LABEL;
   }
 }

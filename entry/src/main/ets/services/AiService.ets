@@ -28,6 +28,7 @@ import {
   Logger,
   NoteDraftReadyEvent,
   NoteGenerationRequest,
+  NoteGenerationRoute,
   PreparedCandidate,
   NoteGenerationCheckpoint,
   NoteGenerationResult,
@@ -133,6 +134,7 @@ export class AiService {
     cancellationToken?: CancellationToken,
     originSessionId?: string,
     parentConversationRunId?: string,
+    route: NoteGenerationRoute = 'standard',
   ): Promise<NoteDraftReadyEvent> {
     cancellationToken?.throwIfCancelled();
     AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
@@ -158,6 +160,7 @@ export class AiService {
         fragments: fragments,
       },
       pendingSourceIds: pendingSources.map((fragment): string => fragment.id),
+      route: route,
     };
     const result: DispatchResult = await new Dispatcher().dispatch({
       source: 'app',
@@ -339,6 +342,7 @@ export class AiService {
       undefined,
       recovery.run.originSessionId,
       recovery.run.parentConversationRunId,
+      recovery.run.route,
     );
   }
 

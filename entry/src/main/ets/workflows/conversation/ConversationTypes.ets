@@ -28,6 +28,7 @@ export interface ConversationWorkflowCallbacks {
   addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number;
   addAiMsgEmpty(ref: ConversationRunRef, origin: ChatMessageOrigin): number;
   appendAiMsg(ref: ConversationRunRef, id: number, event: StreamEvent): void;
+  replaceAiMsg(ref: ConversationRunRef, id: number, content: string): void;
   finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void;
   getUserMessageId(ref: ConversationRunRef): number;
   commitHistory(ref: ConversationRunRef): Promise<boolean>;

@@ -1,0 +1,19 @@
+{
+  "name": "mindtrace-galaxy3d-preview",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node scripts/inline-web-assets.mjs && node scripts/generate-native-scene.mjs",
+    "test": "node --test --experimental-strip-types src/bridge.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.160.0",
+    "typescript": "^5.7.4",
+    "vite": "^5.4.0"
+  }
+}

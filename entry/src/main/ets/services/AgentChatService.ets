@@ -10,7 +10,7 @@ import {
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
+import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import type { StreamEvent } from 'common';
 import {
   ConversationRunCoordinator,
@@ -26,10 +26,11 @@ type ConversationRunLifecycleOwner = 'facade' | 'workflow';
 type ConversationRunOperation<T> = (ref: ConversationRunRef) => Promise<T>;
 
 export interface AgentChatCallbacks {
-  addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin) => number;
+addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin) => number;
   addAiMsg: (ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome) => number;
   addAiMsgEmpty: (ref: ConversationRunRef, origin: ChatMessageOrigin) => number;
   appendAiMsg: (ref: ConversationRunRef, id: number, event: StreamEvent) => void;
+  replaceAiMsg: (ref: ConversationRunRef, id: number, content: string) => void;
   finishAiMsg: (ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome) => void;
   terminateAiRun: (ref: ConversationRunRef, outcome: ChatMessageOutcome) => void;
   getUserMessageId: (ref: ConversationRunRef) => number;
@@ -54,7 +55,7 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
     this.coordinator = coordinator;
   }
 
-  private accepts(ref: ConversationRunRef, event: string): boolean {
+private accepts(ref: ConversationRunRef, event: string): boolean {
     const accepted: boolean = this.coordinator.isCurrent(ref);
     if (!accepted) {
       console.warn('[ConversationRun] code=STALE_RUN_EVENT; event=' + event
@@ -72,6 +73,9 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
   }
   appendAiMsg(ref: ConversationRunRef, id: number, event: StreamEvent): void {
     if (this.accepts(ref, 'append-ai-message')) { this.callbacks.appendAiMsg(ref, id, event); }
+  }
+  replaceAiMsg(ref: ConversationRunRef, id: number, content: string): void {
+    if (this.accepts(ref, 'replace-ai-message')) { this.callbacks.replaceAiMsg(ref, id, content); }
   }
   finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void {
     if (this.accepts(ref, 'finish-ai-message')) { this.callbacks.finishAiMsg(ref, id, outcome ?? 'completed'); }
@@ -127,11 +131,12 @@ export class AgentChatService {
     this.workflow = new ConversationWorkflow(this.adapter);
   }
 
-  async captureReply(sessionId: string, imageUri: string, userText: string): Promise<ConversationRunStartResult> {
+async captureReply(sessionId: string, imageUri: string, userText: string, route: NoteGenerationRoute = 'standard'): Promise<ConversationRunStartResult> {
     const request: ImageConversationRequest = {
       kind: 'image',
       imageUri: imageUri,
       userContent: userText,
+      route: route,
     };
     const admission: ConversationRunStartResult = this.admit(sessionId, request.kind);
     if (!admission.accepted || admission.ref === undefined) {
@@ -150,11 +155,12 @@ export class AgentChatService {
     return admission;
   }
 
-  async realReplyStream(sessionId: string, userContent: string): Promise<ConversationRunStartResult> {
+async realReplyStream(sessionId: string, userContent: string, route: NoteGenerationRoute = 'standard'): Promise<ConversationRunStartResult> {
     const request: ConversationRequest = {
       kind: 'text',
       userContent: userContent,
       responseMode: 'stream',
+      route: route,
     };
     const admission: ConversationRunStartResult = this.admit(sessionId, request.kind);
     if (!admission.accepted || admission.ref === undefined) {

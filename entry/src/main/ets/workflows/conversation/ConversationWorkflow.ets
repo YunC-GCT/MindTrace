@@ -43,7 +43,7 @@ import {
 } from './ConversationState';
 import { ConversationWorkflowCallbacks } from './ConversationTypes';
 import { ReplyService, StreamReplyResult } from '../../services/ReplyService';
-import { NoteDraftReadyEvent, NoteGenerationRun, SourceFragment } from 'common';
+import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun, SourceFragment } from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
@@ -252,6 +252,7 @@ export class ConversationWorkflow {
         input.runRef,
         input.request.imageUri,
         input.request.userContent,
+        input.request.route,
       );
       const next: ConversationState = this.copyState(input, 'image_note_reply');
       if (result.event !== undefined) {
@@ -314,6 +315,7 @@ export class ConversationWorkflow {
       const event: NoteDraftReadyEvent | undefined = await this.generateNoteFromConversation(
         input.runRef,
         input.request.userContent,
+        input.request.kind === 'text' ? input.request.route : undefined,
       );
       this.setStep(input.runRef, 'completed');
       const next: ConversationState = this.copyState(input, 'note_reply');
@@ -455,6 +457,7 @@ export class ConversationWorkflow {
     ref: ConversationRunRef,
     imageUri: string,
     userText: string,
+    route?: NoteGenerationRoute,
   ): Promise<ImageNoteReplyResult> {
     this.setStep(ref, 'image_message_save');
     await this.safeSaveUserMessage(ref, userText.trim().length > 0 ? userText : '[图片]');
@@ -508,8 +511,12 @@ export class ConversationWorkflow {
         'OCR:',
         ocrText,
       ];
-      if (userText.trim().length > 0) {
-        ocrLines.splice(1, 0, '用户补充: ' + userText.trim());
+      const trimmedUserText: string = userText.trim();
+      const noteInstruction: string = trimmedUserText.length > 0 && trimmedUserText !== '[图片]'
+        ? trimmedUserText
+        : '请根据图片识别材料生成一份数学学习笔记，保留公式、步骤和结论';
+      if (trimmedUserText.length > 0 && trimmedUserText !== '[图片]') {
+        ocrLines.splice(1, 0, '用户补充: ' + trimmedUserText);
       }
       const conversation: string = ocrLines.join('\n');
 
@@ -526,7 +533,15 @@ export class ConversationWorkflow {
         });
       }
 
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(ref, noteGenerationRunId, userText, conversation, pendingSources, this.cancellationToken(ref));
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(
+        ref,
+        noteGenerationRunId,
+        noteInstruction,
+        conversation,
+        pendingSources,
+        this.cancellationToken(ref),
+        route,
+      );
       this.setStep(ref, 'note_finalize');
 
       if (materialPersistFailed) {
@@ -547,7 +562,7 @@ export class ConversationWorkflow {
       };
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-      await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), this.originFor(ref), 'failed');
+await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), this.originFor(ref), 'failed');
       return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
     }
   }
@@ -634,6 +649,12 @@ export class ConversationWorkflow {
         await this.appendAssistantReply(ref, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
         return;
       }
+      const displayAnswer: string = evidence === undefined
+        ? this.replyService.normalize(streamResult.content)
+        : this.replyService.normalize(
+          this.getEvidenceService().sanitizeAnswer(evidence, streamResult.content),
+        );
+      this.cbs.replaceAiMsg(msgId, displayAnswer);
       if (streamResult.interrupted) {
         const interruptedEvent: StreamEvent = { type: 'text', delta: '\n\n⚠️ *AI 回复中断，请重试*' };
         this.cbs.appendAiMsg(ref, msgId, interruptedEvent);
@@ -647,8 +668,11 @@ export class ConversationWorkflow {
         const sourcesEvent: StreamEvent = { type: 'text', delta: '\n\n' + sources };
         this.cbs.appendAiMsg(ref, msgId, sourcesEvent);
       }
+const persistedAnswer: string = this.replyService.normalize(
+        this.applyEvidenceToAnswer(evidence, streamResult.content),
+      );
       this.cbs.finishAiMsg(ref, msgId, 'completed');
-      await this.safeSaveAssistantMessage(ref, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
+      await this.safeSaveAssistantMessage(ref, persistedAnswer, msgId);
       await this.safeUpdateLearnerProfileIfNeeded(ref);
       await this.safeSummarizeIfNeeded(ref);
     } catch (e) {
@@ -667,8 +691,9 @@ export class ConversationWorkflow {
   }
 
   private async generateNoteFromConversation(
-    ref: ConversationRunRef,
+ref: ConversationRunRef,
     userInstruction: string,
+    route?: NoteGenerationRoute,
   ): Promise<NoteDraftReadyEvent | undefined> {
     this.setStep(ref, 'note_intent_check');
     this.setStep(ref, 'note_context_load');
@@ -735,7 +760,7 @@ export class ConversationWorkflow {
           text: pending.content,
         });
       }
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(ref, noteGenerationRunId, userInstruction, conversation, pendingSources, this.cancellationToken(ref));
+const event: NoteDraftReadyEvent = await this.generateNoteDraft(ref, noteGenerationRunId, userInstruction, conversation, pendingSources, this.cancellationToken(ref), route);
       this.setStep(ref, 'note_finalize');
       this.cbs.onDraftReady(ref, event);
       await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
@@ -766,7 +791,8 @@ export class ConversationWorkflow {
     instruction: string,
     sourceText: string,
     pendingSources: SourceFragment[],
-    cancellationToken?: CancellationToken,
+cancellationToken?: CancellationToken,
+    route?: NoteGenerationRoute,
   ): Promise<NoteDraftReadyEvent> {
     return await new AiService(this.cbs.getContext()).generateNoteDraftWithSources(
       runId,
@@ -776,6 +802,7 @@ export class ConversationWorkflow {
       cancellationToken,
       ref.sessionId,
       ref.runId,
+      route,
     );
   }
 

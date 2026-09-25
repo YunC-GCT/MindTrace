@@ -14,6 +14,7 @@
  */
 import { KnowledgeUnit } from './CommonTypes';
 import { ContentProtocol } from '../render/ContentProtocol';
+import { ContentExcerptBuilder, NOTE_SUMMARY_MAX_LENGTH } from '../render/ContentExcerptBuilder';
 
 export type NoteGenerationMode = 'create' | 'regenerate';
 export type SourceKind = 'conversation' | 'ocr' | 'summary' | 'existing_note';
@@ -786,7 +787,7 @@ NOTE_STANDARD_SCHEMA_PROPERTIES['draft'] = '{"type":"object","required":["schema
 
 export const NOTE_STANDARD_JSON_SCHEMA: string = buildJsonSchema(
   'mindtrace.note-standard.v1',
-  ['outline', 'evidence', 'draft'],
+  ['outline', 'draft'],
   NOTE_STANDARD_SCHEMA_PROPERTIES,
 );
 
@@ -801,7 +802,7 @@ export const NOTE_DRAFT_JSON_SCHEMA: string = '{'
   + '"properties":{'
   + '"schemaVersion":{"const":"mindtrace.note-draft.v1"},'
   + '"title":{"type":"string","minLength":1,"maxLength":120},'
-  + '"summary":{"type":"string","maxLength":500},'
+  + '"summary":{"type":"string","maxLength":60},'
   + '"subject":{"type":"string","minLength":1,"maxLength":80},'
   + '"category":{"enum":["概念","定理","公式","证明题","计算题"]},'
   + '"chapter":{"type":"string","maxLength":120},'
@@ -1133,6 +1134,29 @@ export function stableSectionId(index: number, label: string): string {
   return 'section-' + suffix;
 }
 
+export function normalizeDraftSectionLabel(label: string, index: number): string {
+  const normalized: string = label.trim();
+  const lowerLabel: string = normalized.toLowerCase();
+  if (normalized.length === 0 || lowerLabel.startsWith('section-')) {
+    return index === 0 ? '核心内容' : '补充内容' + (index + 1).toString();
+  }
+  return normalized;
+}
+
+export function normalizeDraftDifficulty(value: number): number {
+  if (value >= 1 && value <= 4) {
+    return value;
+  }
+  if (value < 1) {
+    return 1;
+  }
+  return 2;
+}
+
+export function normalizeDraftSummary(summary: string): string {
+  return new ContentExcerptBuilder().buildSummary(summary, NOTE_SUMMARY_MAX_LENGTH);
+}
+
 export function validateSourceBundle(bundle: SourceBundle): NoteGenerationIssue[] {
   const issues: NoteGenerationIssue[] = [];
   const seen: string[] = [];
@@ -1174,14 +1198,15 @@ export function normalizeOutline(outline: NoteGenerationOutline, sourceIds: stri
         mappedSourceIds.push(sourceId);
       }
     }
-    let stableId: string = stableSectionId(index, section.label);
+    const rawLabel: string = section.label.trim();
+    let stableId: string = stableSectionId(index, rawLabel);
     if (usedIds.includes(stableId)) {
       stableId = stableId + '-' + index.toString();
     }
     usedIds.push(stableId);
     sections.push({
       id: stableId,
-      label: section.label.trim(),
+      label: normalizeDraftSectionLabel(rawLabel, index),
       order: index,
       mustInclude: section.mustInclude.slice(0),
       sourceIds: mappedSourceIds,
@@ -1304,7 +1329,7 @@ export function validateStandardArtifacts(
       }
     }
     if (!mapped) {
-      issues.push({ stage: 'outline', code: 'MUST_INCLUDE_UNMAPPED', severity: 'hard', message: 'must-include item has no outline destination', repairable: true });
+      issues.push({ stage: 'outline', code: 'MUST_INCLUDE_UNMAPPED_OPTIONAL', severity: 'soft', message: 'must-include item has no outline destination; draft coverage remains authoritative', repairable: true });
     }
   }
   for (const sourceId of sourceIds) {
@@ -1324,7 +1349,7 @@ export function validateStandardArtifacts(
     }
   }
   if (evidence.length === 0 && outline.sections.length > 0) {
-    issues.push({ stage: 'evidence', code: 'EVIDENCE_REQUIRED', severity: 'hard', message: 'standard route requires an evidence ledger', repairable: true });
+    issues.push({ stage: 'evidence', code: 'EVIDENCE_OPTIONAL', severity: 'soft', message: 'standard route has no evidence ledger; draft can still be previewed', repairable: true });
   }
   for (const item of evidence) {
     if (!sectionIds.includes(item.targetSectionId)) {
@@ -1374,7 +1399,7 @@ export function validateStandardArtifacts(
       }
     }
     if (!formulaEvidence) {
-      issues.push({ stage: 'evidence', code: 'FORMULA_EVIDENCE_REQUIRED', severity: 'hard', message: 'requested formulas require formula evidence', repairable: true });
+      issues.push({ stage: 'evidence', code: 'FORMULA_EVIDENCE_OPTIONAL', severity: 'soft', message: 'requested formulas have no separate evidence ledger; draft content remains the source of truth', repairable: true });
     }
   }
   const draftIssues: NoteGenerationIssue[] = validateDraftDocument(draft, sourceIds);
@@ -1558,18 +1583,18 @@ export function normalizeLightDraft(document: NoteDraftDocument, bundle: SourceB
     const normalizedContent: string = section.content.trim().length > 0 ? section.content : fallbackContent;
     sections.push({
       id: section.id.trim().length > 0 ? section.id : 'section-' + (index + 1).toString(),
-      label: section.label.trim().length > 0 ? section.label : '核心内容',
+      label: normalizeDraftSectionLabel(section.label, index),
       content: normalizedContent,
       sourceIds: mappedSourceIds,
       state: section.state,
       baseHash: section.baseHash,
     });
   }
-  const difficulty: number = document.difficulty >= 1 && document.difficulty <= 4 ? document.difficulty : 1;
+  const difficulty: number = normalizeDraftDifficulty(document.difficulty);
   return {
     schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
     title: document.title,
-    summary: document.summary,
+    summary: normalizeDraftSummary(document.summary),
     subject: document.subject.trim().length > 0 ? document.subject : '其它',
     category: normalizeDraftCategory(document.category),
     chapter: document.chapter,
@@ -1649,9 +1674,10 @@ export function normalizeDeepSectionDraft(
         content = validation.normalizedText;
       }
     }
+    const candidateLabel: string = section.label.trim().length > 0 ? section.label : outlineSection.label;
     sections.push({
       id: section.id.trim().length > 0 ? section.id : outlineSection.id,
-      label: section.label.trim().length > 0 ? section.label : outlineSection.label,
+      label: normalizeDraftSectionLabel(candidateLabel, outlineSection.order),
       content: content,
       sourceIds: outlineSection.sourceIds.slice(0),
       state: section.state,
@@ -1661,17 +1687,21 @@ export function normalizeDeepSectionDraft(
   return {
     schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
     title: document.title,
-    summary: document.summary,
+    summary: normalizeDraftSummary(document.summary),
     subject: document.subject.trim().length > 0 ? document.subject : '其它',
     category: normalizeDraftCategory(document.category),
     chapter: document.chapter,
-    difficulty: document.difficulty,
+    difficulty: normalizeDraftDifficulty(document.difficulty),
     tags: document.tags.slice(0),
     sections: sections,
   };
 }
 
-export function validateDraftDocument(document: NoteDraftDocument, sourceIds: string[] = []): NoteGenerationIssue[] {
+export function validateDraftDocument(
+  document: NoteDraftDocument,
+  sourceIds: string[] = [],
+  allowRecoverableContentIssues: boolean = false,
+): NoteGenerationIssue[] {
   const issues: NoteGenerationIssue[] = [];
   const contentProtocol: ContentProtocol = new ContentProtocol();
   if (document.schemaVersion !== NOTE_DRAFT_SCHEMA_VERSION) {
@@ -1681,8 +1711,11 @@ export function validateDraftDocument(document: NoteDraftDocument, sourceIds: st
     issues.push({ stage: 'domain', code: 'TITLE_REQUIRED', severity: 'hard', message: 'title is required', repairable: true });
   }
   const protocolTitle: ContentProtocol = new ContentProtocol();
-  if (protocolTitle.hasFormulaSyntax(document.title) || protocolTitle.hasFormulaSyntax(document.summary)) {
-    issues.push({ stage: 'content', code: 'FORMULA_IN_METADATA', severity: 'hard', message: 'title and summary must not contain formulas', repairable: true });
+  if (protocolTitle.hasFormulaSyntax(document.title)) {
+    issues.push({ stage: 'content', code: 'FORMULA_IN_TITLE', severity: 'hard', message: 'title must not contain formulas', repairable: true });
+  }
+  if (document.summary.length > NOTE_SUMMARY_MAX_LENGTH) {
+    issues.push({ stage: 'content', code: 'SUMMARY_TOO_LONG', severity: 'hard', message: 'summary must be at most 60 characters', repairable: true });
   }
   if (document.subject.trim().length === 0) {
     issues.push({ stage: 'domain', code: 'SUBJECT_REQUIRED', severity: 'hard', message: 'subject is required', repairable: true });
@@ -1713,8 +1746,30 @@ export function validateDraftDocument(document: NoteDraftDocument, sourceIds: st
       }
     }
     const contentValidation = contentProtocol.validateNoteMarkdown(section.content);
-    if (!contentValidation.ok) {
-      issues.push({ stage: 'content', code: 'MM_MD_INVALID', severity: 'hard', message: 'section content violates MM-MD-v1', repairable: true, sectionId: section.id });
+    const normalizedValidation = contentValidation.fallbackRequired
+      ? contentValidation
+      : contentProtocol.validateNoteMarkdown(contentValidation.normalizedText);
+    const contentInvalid = allowRecoverableContentIssues
+      ? (!normalizedValidation.ok || normalizedValidation.fallbackRequired)
+      : !contentValidation.ok;
+    if (contentInvalid) {
+      const validationReasons: string[] = [];
+      for (const issue of contentValidation.issues.concat(normalizedValidation.issues)) {
+        if (!validationReasons.includes(issue)) {
+          validationReasons.push(issue);
+        }
+      }
+      const reasonText: string = validationReasons.length > 0
+        ? ': ' + validationReasons.join(', ')
+        : '';
+      issues.push({
+        stage: 'content',
+        code: 'MM_MD_INVALID',
+        severity: 'hard',
+        message: 'section content violates MM-MD-v1' + reasonText,
+        repairable: true,
+        sectionId: section.id,
+      });
     }
   }
   return issues;

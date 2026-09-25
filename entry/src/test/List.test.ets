@@ -18,6 +18,8 @@ import sessionUiStateTest from './SessionUiState.test';
 import chatContextProjectionTest from './ChatContextProjection.test';
 import sessionDeletionCoordinatorTest from './SessionDeletionCoordinator.test';
 import conversationTitleServiceTest from './ConversationTitleService.test';
+import intentClassifierNoteMaterialTest from './IntentClassifierNoteMaterial.test';
+import replyServiceFormatTest from './ReplyServiceFormat.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -40,4 +42,6 @@ export default function testsuite() {
   chatContextProjectionTest();
   sessionDeletionCoordinatorTest();
   conversationTitleServiceTest();
+  intentClassifierNoteMaterialTest();
+  replyServiceFormatTest();
 }
