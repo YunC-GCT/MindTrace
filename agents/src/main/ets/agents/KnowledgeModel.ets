@@ -785,6 +785,13 @@ export class KnowledgeModel {
     requirement: NoteGenerationRequirement,
     tokenBudget?: number,
   ): Promise<NoteGenerationVerification> {
+    const local: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
+      result.outline,
+      result.evidence,
+      result.draft,
+      bundle,
+      requirement,
+    );
     const systemMessage: ChatMessage = {
       role: 'system',
       content: 'Act as an independent verifier. Return JSON only. For each evidence item classify only supported, contradicted, or ambiguous. '
@@ -810,13 +817,9 @@ export class KnowledgeModel {
         message: 'independent verifier did not return a result', repairable: true,
       }], checkedEvidenceIds: [], decisions: [] };
     }
-    const local: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
-      result.outline,
-      result.evidence,
-      result.draft,
-      bundle,
-      requirement,
-    );
+    if (result.evidence.length === 0) {
+      modelVerification = this.relaxEmptyEvidenceVerification(modelVerification);
+    }
     const verifierIssues: NoteGenerationIssue[] = [];
     for (const item of result.evidence) {
       let decided: boolean = false;
@@ -842,6 +845,27 @@ export class KnowledgeModel {
     return this.combineVerification(completeModelVerification, local);
   }
 
+  private relaxEmptyEvidenceVerification(verification: NoteGenerationVerification): NoteGenerationVerification {
+    const issues: NoteGenerationIssue[] = [];
+    for (const issue of verification.issues) {
+      issues.push({
+        stage: issue.stage,
+        code: issue.code,
+        severity: 'soft',
+        message: issue.message,
+        repairable: issue.repairable,
+        sourceId: issue.sourceId,
+        sectionId: issue.sectionId,
+      });
+    }
+    return {
+      status: verification.status === 'contradicted' ? 'ambiguous' : verification.status,
+      issues: issues,
+      checkedEvidenceIds: verification.checkedEvidenceIds.slice(0),
+      decisions: verification.decisions.slice(0),
+    };
+  }
+
   private normalizeStandardResult(
     result: NoteGenerationStandardResult,
     bundle: SourceBundle,
@@ -855,7 +879,7 @@ export class KnowledgeModel {
     for (const section of result.outline.sections) {
       originalSectionIds.push(section.id);
     }
-    const outline: NoteGenerationOutline = normalizeOutline(result.outline, sourceIds);
+    const outline: NoteGenerationOutline = this.ensureOutlineSourceMapping(normalizeOutline(result.outline, sourceIds), sourceIds);
     const evidence: NoteGenerationEvidenceItem[] = [];
     for (const item of result.evidence) {
       const oldIndex: number = originalSectionIds.indexOf(item.targetSectionId);
@@ -872,11 +896,15 @@ export class KnowledgeModel {
     const sections: NoteDraftSection[] = [];
     for (const section of result.draft.sections) {
       const oldIndex: number = originalSectionIds.indexOf(section.id);
+      const outlineSection: NoteGenerationOutlineSection | undefined = oldIndex >= 0 ? outline.sections[oldIndex] : undefined;
+      const mappedSourceIds: string[] = section.sourceIds.length > 0
+        ? section.sourceIds
+        : outlineSection === undefined ? sourceIds.slice(0) : outlineSection.sourceIds.slice(0);
       sections.push({
-        id: oldIndex >= 0 ? outline.sections[oldIndex].id : section.id,
+        id: outlineSection === undefined ? section.id : outlineSection.id,
         label: section.label,
         content: section.content,
-        sourceIds: section.sourceIds,
+        sourceIds: mappedSourceIds,
         state: section.state,
         baseHash: section.baseHash,
       });
@@ -901,6 +929,27 @@ export class KnowledgeModel {
       reextractionCount: result.reextractionCount,
     };
     return normalizedResult;
+  }
+
+  private ensureOutlineSourceMapping(outline: NoteGenerationOutline, sourceIds: string[]): NoteGenerationOutline {
+    if (sourceIds.length === 0) {
+      return outline;
+    }
+    const sections: NoteGenerationOutlineSection[] = [];
+    for (const section of outline.sections) {
+      const mappedSourceIds: string[] = section.sourceIds.length > 0 ? section.sourceIds.slice(0) : sourceIds.slice(0);
+      sections.push({
+        id: section.id,
+        label: section.label,
+        order: section.order,
+        mustInclude: section.mustInclude.slice(0),
+        sourceIds: mappedSourceIds,
+        depth: section.depth,
+        parentId: section.parentId,
+        segmentIds: section.segmentIds,
+      });
+    }
+    return { schemaVersion: outline.schemaVersion, sections: sections };
   }
 
   private applyVerification(
@@ -1056,24 +1105,105 @@ export class KnowledgeModel {
   }
 
   private parseStandardResult(parsed: Record<string, Object>, sources: SourceBundle): NoteGenerationStandardResult {
+    return this.parseStandardResultAtDepth(parsed, sources, 0);
+  }
+
+  private parseStandardResultAtDepth(
+    parsed: Record<string, Object>,
+    sources: SourceBundle,
+    depth: number,
+  ): NoteGenerationStandardResult {
     const outlineValue: Object | undefined = parsed['outline'];
     const evidenceValue: Object | undefined = parsed['evidence'];
     const draftValue: Object | undefined = parsed['draft'];
-    if (outlineValue === undefined || evidenceValue === undefined || draftValue === undefined) {
-      if (draftValue !== undefined) {
-        return parseDirectStandardArtifacts(draftValue as Record<string, Object>, sources);
-      }
-      if (parsed['title'] !== undefined && parsed['sections'] !== undefined) {
-        return parseDirectStandardArtifacts(parsed, sources);
-      }
-      throw new Error('standard artifacts require outline, evidence, and draft');
+    if (draftValue !== undefined && draftValue !== null && !Array.isArray(draftValue) && typeof draftValue === 'object') {
+      const draft: NoteDraftDocument = this.parseDraftDocument(draftValue as Record<string, Object>);
+      return {
+        outline: this.parseOptionalOutline(outlineValue, draft),
+        evidence: evidenceValue === undefined ? [] : this.parseEvidence(evidenceValue),
+        draft: draft,
+        verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] },
+      };
     }
-    return {
-      outline: this.parseOutline(outlineValue as Record<string, Object>),
-      evidence: this.parseEvidence(evidenceValue),
-      draft: this.parseDraftDocument(draftValue as Record<string, Object>),
-      verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] },
-    };
+    if (parsed['title'] !== undefined && parsed['sections'] !== undefined) {
+      return parseDirectStandardArtifacts(parsed, sources);
+    }
+    if (depth < 2) {
+      const nested: Record<string, Object> | undefined = this.findNestedStandardArtifacts(parsed);
+      if (nested !== undefined) {
+        return this.parseStandardResultAtDepth(nested, sources, depth + 1);
+      }
+    }
+    throw new Error('standard artifacts require draft; keys=' + Object.keys(parsed).join(','));
+  }
+
+  private findNestedStandardArtifacts(parsed: Record<string, Object>): Record<string, Object> | undefined {
+    const preferredKeys: string[] = ['result', 'data', 'note', 'document', 'draftDocument', 'answer', 'content', 'output'];
+    for (const key of preferredKeys) {
+      const nested: Record<string, Object> | undefined = this.readNestedStandardArtifacts(parsed[key]);
+      if (nested !== undefined) {
+        return nested;
+      }
+    }
+    for (const key of Object.keys(parsed)) {
+      if (preferredKeys.includes(key)) {
+        continue;
+      }
+      const nested: Record<string, Object> | undefined = this.readNestedStandardArtifacts(parsed[key]);
+      if (nested !== undefined) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  private readNestedStandardArtifacts(value: Object | undefined): Record<string, Object> | undefined {
+    if (value === undefined || value === null || Array.isArray(value)) {
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      const jsonText: string = new LlmGuard().extractJsonObject(value);
+      if (jsonText.length === 0) {
+        return undefined;
+      }
+      try {
+        return JSON.parse(jsonText) as Record<string, Object>;
+      } catch (_e) {
+        return undefined;
+      }
+    }
+    if (typeof value === 'object') {
+      const record: Record<string, Object> = value as Record<string, Object>;
+      if (this.isStandardArtifactsCandidate(record)) {
+        return record;
+      }
+    }
+    return undefined;
+  }
+
+  private parseOptionalOutline(value: Object | undefined, draft: NoteDraftDocument): NoteGenerationOutline {
+    if (value !== undefined && value !== null && !Array.isArray(value) && typeof value === 'object') {
+      const outline: NoteGenerationOutline = this.parseOutline(value as Record<string, Object>);
+      if (outline.sections.length > 0) {
+        return outline;
+      }
+    }
+    return this.outlineFromDraft(draft);
+  }
+
+  private outlineFromDraft(draft: NoteDraftDocument): NoteGenerationOutline {
+    const sections: NoteGenerationOutlineSection[] = [];
+    for (let index = 0; index < draft.sections.length; index += 1) {
+      const section: NoteDraftSection = draft.sections[index];
+      sections.push({
+        id: section.id,
+        label: section.label,
+        order: index,
+        mustInclude: [],
+        sourceIds: section.sourceIds.slice(0),
+      });
+    }
+    return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: sections };
   }
 
   private parseOutline(value: Record<string, Object>): NoteGenerationOutline {

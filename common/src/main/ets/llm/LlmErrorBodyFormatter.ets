@@ -15,6 +15,19 @@ import { util } from '@kit.ArkTS';
 export class LlmErrorBodyFormatter {
   private static readonly BODY_PREVIEW_MAX_CHARS: number = 256;
 
+  public static decode(result: Object | ArrayBuffer | string | undefined | null): string {
+    if (result === undefined || result === null) {
+      return '';
+    }
+    if (typeof result === 'string') {
+      return result;
+    }
+    if (result instanceof ArrayBuffer) {
+      return LlmErrorBodyFormatter.decodeArrayBuffer(result);
+    }
+    return LlmErrorBodyFormatter.stringifyObject(result);
+  }
+
   public static format(result: Object | ArrayBuffer | string | undefined | null): string {
     if (result === undefined || result === null) {
       return '';

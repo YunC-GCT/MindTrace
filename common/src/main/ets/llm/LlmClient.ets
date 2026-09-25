@@ -151,7 +151,7 @@ export class LlmClient {
     }
 
     // 5. 解析 JSON
-    const raw: string = LlmErrorBodyFormatter.format(response.result);
+    const raw: string = LlmErrorBodyFormatter.decode(response.result);
     let parsed: LlmResponse;
     try {
       parsed = JSON.parse(raw) as LlmResponse;
