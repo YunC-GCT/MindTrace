@@ -26,7 +26,6 @@ import {
   NoteGenerationResult,
   ReviewStatus,
 } from 'common';
-import type { StreamEvent } from 'common';
 import { ChatMessageRecord } from '../main/ets/models/AgentMemoryModels';
 import { WritePathValidator } from '../main/ets/services/WritePathValidator';
 import { ConversationRunCoordinator } from '../main/ets/services/ConversationRunCoordinator';
@@ -34,6 +33,7 @@ import {
   AgentChatCallbacks,
   ConversationWorkflowAdapter,
 } from '../main/ets/services/AgentChatService';
+import { ConversationMessageEvent } from '../main/ets/workflows/conversation/ConversationTypes';
 import {
   ConversationSessionReduceResult,
   ConversationSessionReducer,
@@ -74,7 +74,9 @@ class RecordingAgentChatCallbacks implements AgentChatCallbacks {
   addUserMsg(_ref: ConversationRunRef, _content: string, _origin: ChatMessageOrigin): number { return 1; }
   addAiMsg(_ref: ConversationRunRef, _content: string): number { this.aiWrites += 1; return this.aiWrites; }
   addAiMsgEmpty(_ref: ConversationRunRef, _origin: ChatMessageOrigin): number { this.aiWrites += 1; return 1; }
-  appendAiMsg(_ref: ConversationRunRef, _id: number, _event: StreamEvent): void { this.aiWrites += 1; }
+  updateAiMsg(_ref: ConversationRunRef, _id: number, _event: ConversationMessageEvent): void {
+    this.aiWrites += 1;
+  }
   finishAiMsg(_ref: ConversationRunRef, _id: number): void { this.completionWrites += 1; }
   terminateAiRun(_ref: ConversationRunRef, _outcome: ChatMessageOutcome): void { this.completionWrites += 1; }
   getUserMessageId(_ref: ConversationRunRef): number { return 1; }
@@ -265,7 +267,7 @@ export default function conversationIdentityTest(): void {
         accepted.sessions,
         ref,
         false,
-        'append-ai-message',
+        'update-ai-message',
         (messages: ChatMsg[]): ChatMsg[] => messages,
       );
       expect(stale.accepted).assertFalse();
@@ -291,6 +293,32 @@ export default function conversationIdentityTest(): void {
       expect(missing.diagnostic).assertContain('SESSION_NOT_FOUND');
     });
 
+    it('should normalize streamed content through one message event sink without duplication', 0, () => {
+      const placeholder: ChatMsg = {
+        id: 7,
+        role: 'ai',
+        content: '',
+        ts: 1,
+        streaming: true,
+        reasoning: 'reasoning',
+        origin: 'chat',
+        runId: 'r-stream',
+      };
+      const streamEvent: ConversationMessageEvent = {
+        kind: 'stream',
+        event: { type: 'text', delta: '\\item additive' },
+      };
+      const streamed: ChatMsg = ConversationSessionReducer.applyMessageEvent(placeholder, streamEvent);
+      const normalizedEvent: ConversationMessageEvent = {
+        kind: 'replace-content',
+        content: '- additive',
+      };
+      const normalized: ChatMsg = ConversationSessionReducer.applyMessageEvent(streamed, normalizedEvent);
+      expect(normalized.content).assertEqual('- additive');
+      expect(normalized.reasoning).assertEqual('reasoning');
+      expect(normalized.streaming).assertTrue();
+    });
+
     it('should isolate run2 from every late run1 adapter event', 0, () => {
       const coordinator: ConversationRunCoordinator = new ConversationRunCoordinator();
       const callbacks: RecordingAgentChatCallbacks = new RecordingAgentChatCallbacks();
@@ -301,7 +329,7 @@ export default function conversationIdentityTest(): void {
         return;
       }
       adapter.onStart(first.ref);
-      adapter.appendAiMsg(first.ref, 1, { type: 'text', delta: 'first' });
+      adapter.updateAiMsg(first.ref, 1, { kind: 'stream', event: { type: 'text', delta: 'first' } });
       adapter.onDraftReady(first.ref, makeDraftEvent());
       adapter.onFinish(first.ref);
       expect(coordinator.finish(first.ref, 'cancelled')).assertTrue();
@@ -317,7 +345,7 @@ export default function conversationIdentityTest(): void {
       const draftWrites: number = callbacks.draftWrites;
       const progressWrites: number = callbacks.progressWrites;
 
-      adapter.appendAiMsg(first.ref, 1, { type: 'text', delta: 'late-delta' });
+      adapter.updateAiMsg(first.ref, 1, { kind: 'stream', event: { type: 'text', delta: 'late-delta' } });
       adapter.addAiMsg(first.ref, 'late-error');
       adapter.onDraftReady(first.ref, makeDraftEvent());
       adapter.onProgress(first.ref, 'reply_model_call');
@@ -333,11 +361,11 @@ export default function conversationIdentityTest(): void {
       expect(coordinator.finish(first.ref, 'failed')).assertFalse();
       expect(coordinator.isCurrent(second.ref)).assertTrue();
 
-      adapter.appendAiMsg(second.ref, 2, { type: 'text', delta: 'current' });
+      adapter.updateAiMsg(second.ref, 2, { kind: 'stream', event: { type: 'text', delta: 'current' } });
       expect(callbacks.aiWrites).assertEqual(aiWrites + 1);
       adapter.onFinish(second.ref);
       expect(coordinator.finish(second.ref, 'completed')).assertTrue();
-      adapter.appendAiMsg(second.ref, 2, { type: 'text', delta: 'terminal' });
+      adapter.updateAiMsg(second.ref, 2, { kind: 'stream', event: { type: 'text', delta: 'terminal' } });
       adapter.finishAiMsg(second.ref, 2);
       expect(callbacks.aiWrites).assertEqual(aiWrites + 1);
       expect(callbacks.completionWrites).assertEqual(completionWrites);

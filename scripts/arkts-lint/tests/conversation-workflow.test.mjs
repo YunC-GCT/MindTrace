@@ -120,3 +120,15 @@ test('Conversation workflow finishes the streaming placeholder when the request 
   assert.match(workflow, /if \(streamMsgId !== undefined\) \{\s*await this\.appendAssistantReply\(ref, displayError, streamMsgId, this\.originFor\(ref\), 'failed'\)/);
   assert.match(workflow, /\} else \{\s*await this\.addAiMessage\(ref, displayError, this\.originFor\(ref\), 'failed'\)/);
 });
+
+test('Conversation workflow normalizes streamed content through one message event sink', () => {
+  assert.match(workflowTypes, /export type ConversationMessageEvent/);
+  assert.match(
+    workflowTypes,
+    /updateAiMsg\(ref: ConversationRunRef, id: number, event: ConversationMessageEvent\): void/,
+  );
+  assert.doesNotMatch(workflowTypes, /replaceAiMsg/);
+  assert.doesNotMatch(workflowTypes, /appendAiMsg/);
+  assert.match(workflow, /kind: 'replace-content', content: displayAnswer/);
+  assert.doesNotMatch(workflow, /this\.cbs\.replaceAiMsg/);
+});
