@@ -353,10 +353,27 @@ export default function noteGenerationModelsTest(): void {
       expect(normalized.sections[0].content.includes('\\(')).assertFalse();
     });
 
-    it('deep_section_keeps_fallback_content_raw', 0, () => {
+    it('draft_validation_accepts_recoverable_mm_md_after_normalization', 0, () => {
+      const raw: NoteDraftDocument = deepRawDraft('密度函数 \\(f(x)\\) 如图');
+      const issues = validateDraftDocument(raw, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('draft_validation_reports_unrecoverable_mm_md_reason', 0, () => {
+      const raw: NoteDraftDocument = deepRawDraft('密度函数 $f(x) 如图');
+      const issues = validateDraftDocument(raw, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(1);
+      expect(issues[0].code).assertEqual('MM_MD_INVALID');
+      expect(issues[0].message).assertContain('unclosed_inline_delimiter');
+    });
+
+    it('deep_section_adopts_safe_html_autofix_content', 0, () => {
       const raw: string = '强调 <b>bold</b> 文本';
       const normalized: NoteDraftDocument = normalizeDeepSectionDraft(deepRawDraft(raw), deepOutlineSection());
-      expect(normalized.sections[0].content).assertEqual(raw);
+      expect(normalized.sections[0].content.indexOf('<b>')).assertEqual(-1);
+      expect(normalized.sections[0].content).assertContain('bold');
+      const issues: NoteGenerationIssue[] = validateDraftDocument(normalized, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(0);
     });
 
     it('deep_section_replaces_internal_section_label', 0, () => {

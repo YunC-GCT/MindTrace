@@ -4,13 +4,14 @@ import { ConversationProgressStep, ConversationRequest, ImageConversationRequest
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
+import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import type { StreamEvent } from 'common';
 
 export interface AgentChatCallbacks {
   addAiMsg: (content: string) => void;
   addAiMsgEmpty: () => number;
   appendAiMsg: (id: number, event: StreamEvent) => void;
+  replaceAiMsg: (id: number, content: string) => void;
   finishAiMsg: (id: number) => void;
   setBusy: (value: boolean) => void;
   setStatusMeta: (meta: ChatStatusMeta | null) => void;
@@ -34,6 +35,9 @@ class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   addAiMsgEmpty(): number { return this.callbacks.addAiMsgEmpty(); }
   appendAiMsg(id: number, event: StreamEvent): void {
     this.callbacks.appendAiMsg(id, event);
+  }
+  replaceAiMsg(id: number, content: string): void {
+    this.callbacks.replaceAiMsg(id, content);
   }
   finishAiMsg(id: number): void { this.callbacks.finishAiMsg(id); }
   onStart(): void {
@@ -83,7 +87,7 @@ export class AgentChatService {
     }
   }
 
-  async captureReply(imageUri: string, userText: string): Promise<void> {
+  async captureReply(imageUri: string, userText: string, route: NoteGenerationRoute = 'standard'): Promise<void> {
     if (this.busyRunCount > 0) {
       return;
     }
@@ -91,11 +95,12 @@ export class AgentChatService {
       kind: 'image',
       imageUri: imageUri,
       userContent: userText,
+      route: route,
     };
     await this.workflow.run(request);
   }
 
-  async realReplyStream(userContent: string): Promise<void> {
+  async realReplyStream(userContent: string, route: NoteGenerationRoute = 'standard'): Promise<void> {
     if (this.busyRunCount > 0) {
       return;
     }
@@ -103,6 +108,7 @@ export class AgentChatService {
       kind: 'text',
       userContent: userContent,
       responseMode: 'stream',
+      route: route,
     };
     await this.workflow.run(request);
   }

@@ -102,6 +102,10 @@ export default function llmGuardTest(): void {
       expect(fake.calls.length).assertEqual(2);
       expect(String(result.json['answer'])).assertEqual('$$\n\\frac{x}{y}\n$$');
       expect(fake.calls[1][fake.calls[1].length - 1].content).assertContain('answer violates MM-MD-v1');
+      expect(fake.calls[1][fake.calls[1].length - 1].content)
+        .assertContain('Continue answering the original user request');
+      expect(fake.calls[1][fake.calls[1].length - 1].content)
+        .assertContain('Do not output a format diagnosis');
     });
   });
 }

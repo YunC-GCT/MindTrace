@@ -42,7 +42,8 @@ export class ContentProtocol {
       issues.push('non_lf_line_ending');
       fixes.push('normalize_line_ending');
     }
-    const normalizedText: string = this.canonicalizeBoundaries(lineNormalized, issues, fixes).trim();
+    const htmlNormalized: string = this.normalizeSafeHtml(lineNormalized, issues, fixes);
+    const normalizedText: string = this.canonicalizeBoundaries(htmlNormalized, issues, fixes).trim();
     const validation: ProtocolValidationState = this.validateCanonicalText(normalizedText);
     for (const issue of validation.issues) {
       issues.push(issue);
@@ -141,6 +142,14 @@ export class ContentProtocol {
         displayFromList = true;
         continue;
       }
+      const listResidueLine: string = this.normalizeLatexListResidue(rawLine, issues, fixes);
+      if (listResidueLine !== rawLine) {
+        if (listResidueLine.trim().length > 0) {
+          const normalizedResidue: string = this.normalizeInlineParentheses(listResidueLine, issues, fixes);
+          output.push(this.normalizeInlineFormulaBodies(normalizedResidue, issues, fixes));
+        }
+        continue;
+      }
       if (this.appendStandaloneDisplay(output, rawLine, issues, fixes)) {
         continue;
       }
@@ -159,6 +168,221 @@ export class ContentProtocol {
       output.push(this.normalizeInlineFormulaBodies(inlineNormalized, issues, fixes));
     }
     return output.join('\n');
+  }
+
+  private normalizeSafeHtml(rawText: string, issues: string[], fixes: string[]): string {
+    const output: string[] = [];
+    const tableBuffer: string[] = [];
+    const lines: string[] = rawText.split('\n');
+    let inCode: boolean = false;
+    let inDisplay: boolean = false;
+    let bufferingTable: boolean = false;
+    for (const rawLine of lines) {
+      const trimmed: string = rawLine.trim();
+      if (trimmed.indexOf('```') === 0) {
+        if (bufferingTable) {
+          output.push(tableBuffer.join('\n'));
+          tableBuffer.splice(0, tableBuffer.length);
+          bufferingTable = false;
+        }
+        inCode = !inCode;
+        output.push(rawLine);
+        continue;
+      }
+      if (inCode) {
+        output.push(rawLine);
+        continue;
+      }
+      if (trimmed === '$$' || trimmed === '\\[') {
+        inDisplay = true;
+        output.push(rawLine);
+        continue;
+      }
+      if (inDisplay) {
+        output.push(rawLine);
+        if (trimmed === '$$' || trimmed === '\\]') {
+          inDisplay = false;
+        }
+        continue;
+      }
+      const lowerLine: string = rawLine.toLowerCase();
+      if (bufferingTable) {
+        tableBuffer.push(rawLine);
+        if (lowerLine.indexOf('</table>') >= 0) {
+          output.push(this.convertHtmlTableToList(tableBuffer.join('\n'), issues, fixes));
+          tableBuffer.splice(0, tableBuffer.length);
+          bufferingTable = false;
+        }
+        continue;
+      }
+      if (lowerLine.indexOf('<table') >= 0) {
+        tableBuffer.push(rawLine);
+        if (lowerLine.indexOf('</table>') >= 0) {
+          output.push(this.convertHtmlTableToList(tableBuffer.join('\n'), issues, fixes));
+          tableBuffer.splice(0, tableBuffer.length);
+        } else {
+          bufferingTable = true;
+        }
+        continue;
+      }
+      output.push(this.normalizeSafeHtmlLine(rawLine, issues, fixes));
+    }
+    if (bufferingTable) {
+      output.push(tableBuffer.join('\n'));
+    }
+    return output.join('\n');
+  }
+
+  private normalizeSafeHtmlLine(line: string, issues: string[], fixes: string[]): string {
+    let output: string = '';
+    let cursor: number = 0;
+    let openIndex: number = this.nextUnescapedDollar(line, cursor);
+    while (openIndex >= 0) {
+      const closeIndex: number = this.nextUnescapedDollar(line, openIndex + 1);
+      if (closeIndex < 0) {
+        output += this.normalizeSafeHtmlFragment(line.substring(cursor, openIndex), issues, fixes);
+        output += line.substring(openIndex);
+        return output;
+      }
+      output += this.normalizeSafeHtmlFragment(line.substring(cursor, openIndex), issues, fixes);
+      output += line.substring(openIndex, closeIndex + 1);
+      cursor = closeIndex + 1;
+      openIndex = this.nextUnescapedDollar(line, cursor);
+    }
+    output += this.normalizeSafeHtmlFragment(line.substring(cursor), issues, fixes);
+    return output;
+  }
+
+  private convertHtmlTableToList(tableHtml: string, issues: string[], fixes: string[]): string {
+    const lower: string = tableHtml.toLowerCase();
+    if (lower.indexOf('rowspan') >= 0 || lower.indexOf('colspan') >= 0) {
+      return tableHtml;
+    }
+    const rowMatches: RegExpMatchArray | null = tableHtml.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi);
+    if (rowMatches === null || rowMatches.length === 0) {
+      return tableHtml;
+    }
+    const output: string[] = [];
+    const headers: string[] = [];
+    let rowIndex: number = 0;
+    for (const rowHtml of rowMatches) {
+      const cells: string[] = this.extractHtmlTableCells(rowHtml, issues, fixes);
+      if (cells.length === 0) {
+        return tableHtml;
+      }
+      if (rowIndex === 0 && rowHtml.toLowerCase().indexOf('<th') >= 0 && cells.length > 1) {
+        for (const cell of cells) {
+          headers.push(cell);
+        }
+        rowIndex += 1;
+        continue;
+      }
+      output.push(this.renderHtmlTableRowAsListItem(cells, headers));
+      rowIndex += 1;
+    }
+    if (output.length === 0) {
+      return tableHtml;
+    }
+    issues.push('html_table_recoverable');
+    fixes.push('convert_html_table_to_list');
+    return output.join('\n');
+  }
+
+  private extractHtmlTableCells(rowHtml: string, issues: string[], fixes: string[]): string[] {
+    const cells: string[] = [];
+    const cellPattern: RegExp = /<(td|th)\b[^>]*>([\s\S]*?)<\/(td|th)>/gi;
+    let match: RegExpExecArray | null = cellPattern.exec(rowHtml);
+    while (match !== null) {
+      const cellText: string = this.normalizeSafeHtmlFragment(match[2].trim(), issues, fixes).trim();
+      if (cellText.length === 0 || this.looksLikeRawHtml(cellText)) {
+        return [];
+      }
+      cells.push(cellText);
+      match = cellPattern.exec(rowHtml);
+    }
+    return cells;
+  }
+
+  private renderHtmlTableRowAsListItem(cells: string[], headers: string[]): string {
+    if (cells.length === 1) {
+      return '- ' + cells[0];
+    }
+    const label: string = cells[0];
+    const parts: string[] = [];
+    let index: number = 1;
+    while (index < cells.length) {
+      if (headers.length === cells.length && headers[index].length > 0) {
+        parts.push(headers[index] + '=' + cells[index]);
+      } else {
+        parts.push(cells[index]);
+      }
+      index += 1;
+    }
+    return '- ' + label + '：' + parts.join('；');
+  }
+
+  private normalizeSafeHtmlFragment(text: string, issues: string[], fixes: string[]): string {
+    const original: string = text;
+    let normalized: string = this.decodeBasicHtmlEntities(text);
+    normalized = normalized.replace(/<br\s*\/?>/gi, '\n');
+    normalized = normalized.replace(/<p\s*>/gi, '');
+    normalized = normalized.replace(/<\/p\s*>/gi, '\n');
+    normalized = normalized.replace(/<strong\s*>/gi, '**');
+    normalized = normalized.replace(/<\/strong\s*>/gi, '**');
+    normalized = normalized.replace(/<b\s*>/gi, '**');
+    normalized = normalized.replace(/<\/b\s*>/gi, '**');
+    normalized = normalized.replace(/<em\s*>/gi, '*');
+    normalized = normalized.replace(/<\/em\s*>/gi, '*');
+    normalized = normalized.replace(/<i\s*>/gi, '*');
+    normalized = normalized.replace(/<\/i\s*>/gi, '*');
+    if (normalized !== original) {
+      issues.push('html_recoverable');
+      fixes.push('normalize_html_tags');
+    }
+    return normalized;
+  }
+
+  private decodeBasicHtmlEntities(text: string): string {
+    return text
+      .split('&nbsp;').join(' ')
+      .split('&lt;').join('<')
+      .split('&gt;').join('>')
+      .split('&amp;').join('&');
+  }
+
+  private normalizeLatexListResidue(line: string, issues: string[], fixes: string[]): string {
+    const trimmed: string = line.trim();
+    const environmentMarkers: string[] = [
+      '\\begin{enumerate}',
+      '\\end{enumerate}',
+      '\\begin{itemize}',
+      '\\end{itemize}',
+      '\\begin{description}',
+      '\\end{description}',
+    ];
+    let normalized: string = line;
+    let changed: boolean = false;
+    for (const marker of environmentMarkers) {
+      if (normalized.indexOf(marker) >= 0) {
+        normalized = normalized.split(marker).join('');
+        changed = true;
+      }
+    }
+    const normalizedTrimmed: string = normalized.trim();
+    if (normalizedTrimmed.indexOf('\\item') === 0) {
+      const itemText: string = normalizedTrimmed.substring('\\item'.length).trim();
+      normalized = itemText.length > 0 ? '- ' + itemText : '-';
+      changed = true;
+    } else if (trimmed === '\\item') {
+      normalized = '-';
+      changed = true;
+    }
+    if (!changed) {
+      return line;
+    }
+    issues.push('latex_list_residue');
+    fixes.push('convert_latex_list_to_markdown');
+    return normalized.trim();
   }
 
   private stripMarkdownListMarker(line: string): string {

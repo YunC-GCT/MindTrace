@@ -119,7 +119,7 @@ export class ReplyService {
         return await this.fallback(context);
       }
       const success: StreamReplyResult = {
-        content: content,
+        content: this.normalize(content),
         interrupted: false,
         usedFallback: false,
       };
@@ -131,7 +131,7 @@ export class ReplyService {
     } catch (e) {
       if (receivedEvent && !this.shouldUseFallback(content)) {
         const interrupted: StreamReplyResult = {
-          content: content,
+          content: this.normalize(content),
           interrupted: true,
           usedFallback: false,
         };

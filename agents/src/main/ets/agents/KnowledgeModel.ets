@@ -202,7 +202,8 @@ export class KnowledgeModel {
     const systemMessage: ChatMessage = {
       role: 'system',
       content: 'Generate one schema-valid math note draft. Preserve the instruction exactly. '
-        + 'Every section must cite source IDs in sourceIds. Return JSON only.\n'
+        + 'If sourceIds are clear from the input, include them; otherwise leave them empty and let the pipeline map them from the original source fragments. '
+        + 'Do not invent source IDs. Evidence is assembled by the pipeline when the first model pass does not provide it. Return JSON only.\n'
         + 'Original source fragments are authoritative; summaries never replace conflicting raw text.\n'
         + request.instruction + '\n' + NOTE_DRAFT_JSON_SCHEMA,
     };
@@ -384,13 +385,40 @@ export class KnowledgeModel {
     issues: NoteGenerationIssue[],
   ): Promise<NoteGenerationDeepResult> {
     const targets: string[] = [];
+    let globalRepairRequired: boolean = false;
     for (const issue of issues) {
       if (issue.sectionId !== undefined && !targets.includes(issue.sectionId)) {
         targets.push(issue.sectionId);
       }
+      if (issue.sourceId !== undefined) {
+        for (const outlineSection of current.outline.sections) {
+          if (outlineSection.sourceIds.includes(issue.sourceId) && !targets.includes(outlineSection.id)) {
+            targets.push(outlineSection.id);
+          }
+        }
+      }
+      if (issue.code === 'DEEP_MUST_INCLUDE_MISSING') {
+        for (const outlineSection of current.outline.sections) {
+          for (const requiredItem of outlineSection.mustInclude) {
+            if (issue.message.includes(requiredItem) && !targets.includes(outlineSection.id)) {
+              targets.push(outlineSection.id);
+            }
+          }
+        }
+      }
+      if (issue.code === 'DEEP_CONTRADICTION' || issue.code === 'TRUTH_CHECK_ERROR') {
+        globalRepairRequired = true;
+      }
     }
-    if (targets.length === 0 && current.outline.sections.length > 0) {
-      targets.push(current.outline.sections[0].id);
+    if (globalRepairRequired) {
+      for (const outlineSection of current.outline.sections) {
+        if (!targets.includes(outlineSection.id)) {
+          targets.push(outlineSection.id);
+        }
+      }
+    }
+    if (targets.length === 0) {
+      throw new Error('deep repair target unresolved');
     }
     const segments: NoteGenerationSegment[] = current.segments ?? segmentSourceBundle(request.sources);
     const ledger: NoteGenerationLedger = {
@@ -549,11 +577,12 @@ export class KnowledgeModel {
         + 'Use only the relevant original segments below and the shared ledger; never invent or read other sections. '
         + 'Preserve formulas, derivation steps and terminology exactly, and return one section with id '
         + outlineSection.id + '. '
-        + 'Contract: sections[].sourceIds must use the [source:X] ids from the relevant sources; '
+        + 'Contract: sections[].sourceIds may be empty when the model cannot safely determine the mapping; '
+        + 'when present, they must use the [source:X] ids from the relevant sources. The pipeline fills missing mappings from the outline and source bundle. '
         + 'category must be one of 概念/定理/公式/证明题/计算题; '
-        + 'math delimiters are $...$ and $$...$$ (never \\( or \\[); '
         + 'title must not contain math delimiters; summary may contain short inline math using $...$, '
         + 'but must be no longer than 60 characters and must not use display math. '
+        + LATEX_GENERATION_RULES + '\n'
         + 'User instruction=' + request.instruction + '\n'
         + 'section label=' + outlineSection.label + '\n'
         + 'must include=' + outlineSection.mustInclude.join(',') + '\n'
@@ -577,10 +606,11 @@ export class KnowledgeModel {
         // 学科级 category / \(...\) 定界符, 直接判 hard 导致 3 次重试全灭;
         // 归一化后校验器只拦截真值类失败 (空 content / 不可渲染 / 伪造引用)
         const document: NoteDraftDocument = normalizeDeepSectionDraft(this.parseDraftDocument(json), outlineSection);
-        const issues: NoteGenerationIssue[] = validateDraftDocument(document, outlineSection.sourceIds);
+        const issues: NoteGenerationIssue[] = validateDraftDocument(document, outlineSection.sourceIds, true);
         const codes: string[] = [];
         for (const issue of issues) {
-          codes.push(issue.code);
+          const detail: string = issue.message.trim().length > 0 ? ': ' + issue.message : '';
+          codes.push(issue.code + detail);
         }
         return codes;
       },
@@ -597,7 +627,7 @@ export class KnowledgeModel {
     const sourceIds: string[] = outlineSection.sourceIds.slice(0);
     // P0-5 (2026-09-20): ledger 是跨节共享上下文, 不是内容仓库 —
     // value 截断 (DEEP_LEDGER_VALUE_MAX_CHARS), 否则 N 节后 prompt 线性膨胀
-    if (content.indexOf('=') >= 0 || content.indexOf('\\(') >= 0) {
+    if (this.contentProtocol.hasFormulaSyntax(content)) {
       ledger.formulas.push({
         key: 'formula-' + outlineSection.id,
         value: content.length > DEEP_LEDGER_VALUE_MAX_CHARS ? content.substring(0, DEEP_LEDGER_VALUE_MAX_CHARS) : content,
@@ -792,17 +822,19 @@ export class KnowledgeModel {
       role: 'system',
       content: 'Return JSON only for a math note standard route. ' + purpose + '\n'
         + 'Preserve the exact user instruction, formulas, steps, examples and source mapping. '
-        + 'Every evidence item must use a source excerpt and target section. '
-        + 'Use stable section labels and source IDs from the input.\n'
+        + 'When evidence is returned, each item should use a source excerpt and target section. '
+        + 'Evidence may be an empty array or be omitted on the first pass; the pipeline will build evidence from the original source fragments when needed. '
+        + 'Use stable section labels and source IDs from the input when they are unambiguous.\n'
         + 'category must be exactly one of: 概念, 定理, 公式, 证明题, 计算题.\n'
-        + 'Every outline section and every draft section must list its sourceIds using the source IDs from the input.\n'
+        + 'Outline and draft section sourceIds may be empty when the mapping is not yet known. Do not invent IDs; the pipeline will fill missing mappings from the real source bundle.\n'
         + 'Section content: use $...$ for inline math and $$ on their own lines for display math; '
         + 'never use \\( \\) or \\[ \\]; use markdown lists (- item / 1. item) instead of \\begin{itemize} or \\begin{enumerate}.\n'
         + 'Summary must be no longer than 60 characters; it may contain short inline math using $...$, '
         + 'but must not contain display math.\n'
         + 'Evidence excerpts must be copied verbatim (character-exact) from the sources.\n'
-        + 'Output schema: top-level object with exactly outline, evidence, and draft. '
-        + 'outline contains schemaVersion and sections; evidence is an array of evidence items; '
+        + LATEX_GENERATION_RULES + '\n'
+        + 'Output schema: top-level object with outline and draft; evidence is an optional array of evidence items. '
+        + 'outline contains schemaVersion and sections; '
         + 'draft contains schemaVersion, title, summary, subject, category, chapter, difficulty, tags, and sections.\n'
         + 'instruction=' + request.instruction + '\n'
         + 'mustInclude=' + requirement.mustInclude.join(',') + '\n'
@@ -1263,6 +1295,14 @@ export class KnowledgeModel {
     const outlineValue: Object | undefined = parsed['outline'];
     const evidenceValue: Object | undefined = parsed['evidence'];
     const draftValue: Object | undefined = parsed['draft'];
+    if (outlineValue !== undefined && draftValue !== undefined && evidenceValue === undefined) {
+      return {
+        outline: this.parseOutline(outlineValue as Record<string, Object>),
+        evidence: [],
+        draft: this.parseDraftDocument(draftValue as Record<string, Object>),
+        verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] },
+      };
+    }
     if (outlineValue === undefined || evidenceValue === undefined || draftValue === undefined) {
       if (draftValue !== undefined) {
         return parseDirectStandardArtifacts(draftValue as Record<string, Object>, sources);

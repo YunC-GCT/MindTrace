@@ -128,6 +128,43 @@ export function applyStreamEventToChatMsg(message: ChatMsg, event: StreamEvent):
   return next
 }
 
+export function replaceChatMsgContent(message: ChatMsg, content: string): ChatMsg {
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.content = content
+
+  const sourceParts: AgentRunPart[] = copyAgentRunParts(chatMessageRunParts(message))
+  const answerIndexes: number[] = []
+  let sourceIndex: number = 0
+  while (sourceIndex < sourceParts.length) {
+    if (sourceParts[sourceIndex].kind === 'answer') {
+      answerIndexes.push(sourceIndex)
+    }
+    sourceIndex += 1
+  }
+
+  if (answerIndexes.length === 0) {
+    next.runParts = content.length > 0
+      ? applyStreamEventToAgentRun(sourceParts, { type: 'text', delta: content }, message.id)
+      : sourceParts
+    return next
+  }
+
+  const lastAnswerIndex: number = answerIndexes[answerIndexes.length - 1]
+  const nextParts: AgentRunPart[] = []
+  sourceIndex = 0
+  while (sourceIndex < sourceParts.length) {
+    if (sourceParts[sourceIndex].kind !== 'answer' || sourceIndex === lastAnswerIndex) {
+      if (sourceIndex === lastAnswerIndex) {
+        sourceParts[sourceIndex].content = content
+      }
+      nextParts.push(sourceParts[sourceIndex])
+    }
+    sourceIndex += 1
+  }
+  next.runParts = nextParts
+  return next
+}
+
 export function finishChatMsg(message: ChatMsg): ChatMsg {
   const next: ChatMsg = copyChatMsg(message)
   next.streaming = false

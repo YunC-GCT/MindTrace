@@ -25,4 +25,6 @@ test('standard schema describes nested outline, evidence, and draft fields', () 
   assert.match(models, /requiredKeys: string\[\]/);
   assert.match(models, /buildJsonSchema\(/);
   assert.match(models, /NOTE_STANDARD_JSON_SCHEMA: string = buildJsonSchema/);
+  assert.match(models, /\['outline', 'draft'\]/);
+  assert.doesNotMatch(models, /\['outline', 'evidence', 'draft'\]/);
 });

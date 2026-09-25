@@ -14,6 +14,7 @@ import rendererSchedulerTest from './RendererScheduler.test';
 import renderTickTest from './RenderTick.test';
 import streamingReplyDocumentTest from './StreamingReplyDocument.test';
 import intentClassifierNoteMaterialTest from './IntentClassifierNoteMaterial.test';
+import replyServiceFormatTest from './ReplyServiceFormat.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -32,3 +33,5 @@ export default function testsuite() {
   renderTickTest();
   streamingReplyDocumentTest();
   intentClassifierNoteMaterialTest();
+  replyServiceFormatTest();
+}

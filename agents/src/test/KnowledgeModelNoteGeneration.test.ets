@@ -17,31 +17,51 @@ import type {
   LlmCallRequest,
   LlmCallResult,
   LlmCaller,
+  NoteGenerationDeepResult,
+  NoteGenerationIssue,
   NoteGenerationRequest,
 } from 'common';
 
 class StandardGenerationCaller implements LlmCaller {
   private callCount: number = 0;
   private verifierResponseMode: 'complete' | 'incomplete_then_complete' | 'wrong_field_then_complete' = 'complete';
+  private attributionMode: 'complete' | 'missing' = 'complete';
+  private omitEvidence: boolean = false;
 
   setVerifierResponseMode(mode: 'complete' | 'incomplete_then_complete' | 'wrong_field_then_complete'): void {
     this.verifierResponseMode = mode;
   }
 
+  setAttributionMode(mode: 'complete' | 'missing'): void {
+    this.attributionMode = mode;
+  }
+
+  setOmitEvidence(value: boolean): void {
+    this.omitEvidence = value;
+  }
+
   async call(_request: LlmCallRequest): Promise<LlmCallResult> {
     this.callCount += 1;
     if (this.callCount === 1) {
+      const outlineSourceIds: string = this.attributionMode === 'missing'
+        ? ''
+        : ',"sourceIds":["src-1"]';
+      const draftSourceIds: string = this.attributionMode === 'missing'
+        ? ''
+        : ',"sourceIds":["src-1"]';
+      const draftContent: string = this.omitEvidence ? '连续性的整理说明。' : '函数在一点连续。';
+      const evidenceField: string = this.omitEvidence ? '' : '"evidence":[],';
       const standardJson: string = '{'
         + '"outline":{"schemaVersion":"mm-note-outline-v1","sections":['
-        + '{"id":"sec-1","label":"定义","order":0,"mustInclude":[],"sourceIds":["src-1"]}'
-        + ']},'
-        + '"evidence":[],'
+        + '{"id":"sec-1","label":"定义","order":0,"mustInclude":[]' + outlineSourceIds + '}'
+        + ']},' + evidenceField
         + '"draft":{"schemaVersion":"mm-note-draft-v1","title":"连续性",'
         + '"summary":"函数连续性的定义",'
         + '"subject":"数学分析","category":"概念","chapter":"连续性",'
         + '"difficulty":1,"tags":[],"sections":['
-        + '{"id":"sec-1","label":"定义","content":"函数在一点连续。",'
-        + '"sourceIds":["src-1"],"state":"generated","baseHash":""}]}}';
+        + '{"id":"sec-1","label":"定义","content":"' + draftContent + '"'
+        + draftSourceIds
+        + ',"state":"generated","baseHash":""}]}}';
       return { text: standardJson, streamed: false };
     }
     if (this.verifierResponseMode === 'incomplete_then_complete' && this.callCount === 2) {
@@ -77,6 +97,36 @@ class LegacyDifficultyCaller implements LlmCaller {
   }
 }
 
+class DeepGenerationCaller implements LlmCaller {
+  public requestedLabels: string[] = [];
+  public prompts: string[] = [];
+
+  async call(request: LlmCallRequest): Promise<LlmCallResult> {
+    const system: string = request.messages.length > 0 ? request.messages[0].content : '';
+    this.prompts.push(system);
+    const marker: string = 'section label=';
+    const markerIndex: number = system.indexOf(marker);
+    let label: string = '材料';
+    if (markerIndex >= 0) {
+      const labelStart: number = markerIndex + marker.length;
+      const lineEnd: number = system.indexOf('\n', labelStart);
+      label = (lineEnd >= 0 ? system.substring(labelStart, lineEnd) : system.substring(labelStart)).trim();
+    }
+    this.requestedLabels.push(label);
+    const content: string = label.includes('公式')
+      ? '公式：$\\\\pi$。'
+      : '定义：\\\\(f(x)\\\\) 在一点连续。';
+    const response: string = '{'
+      + '"schemaVersion":"mindtrace.note-draft.v1","title":"深度笔记",'
+      + '"summary":"连续性与公式",'
+      + '"subject":"数学分析","category":"概念","chapter":"连续性",'
+      + '"difficulty":2,"tags":[],"sections":['
+      + '{"id":"model-section","label":"' + label + '","content":"' + content
+      + '","sourceIds":[],"state":"generated","baseHash":""}]}';
+    return { text: response, streamed: false };
+  }
+}
+
 function request(): NoteGenerationRequest {
   return {
     runId: 'origin-regression',
@@ -95,6 +145,31 @@ function request(): NoteGenerationRequest {
   };
 }
 
+function deepRequest(): NoteGenerationRequest {
+  return {
+    runId: 'deep-knowledge-model-regression',
+    instruction: '保留定义和公式',
+    mode: 'create',
+    sources: {
+      fragments: [{
+        id: 'deep-source-a',
+        kind: 'conversation',
+        originId: 'origin-a',
+        sequence: 0,
+        fingerprint: 'deep-fp-a',
+        text: '# 定义\n函数 f(x) 在一点连续。',
+      }, {
+        id: 'deep-source-b',
+        kind: 'conversation',
+        originId: 'origin-b',
+        sequence: 1,
+        fingerprint: 'deep-fp-b',
+        text: '$$\n\\pi\n$$',
+      }],
+    },
+  };
+}
+
 export default function knowledgeModelNoteGenerationTest(): void {
   describe('KnowledgeModel.pipeline_evidence_origin', () => {
     it('preserves_pipeline_origin_after_verification', 0, async () => {
@@ -103,6 +178,19 @@ export default function knowledgeModelNoteGenerationTest(): void {
       expect(result.evidence.length).assertEqual(1);
       expect(result.evidence[0].origin).assertEqual('pipeline');
       expect(result.evidence[0].id).assertEqual('pipeline-evidence-1');
+    });
+
+    it('fills_missing_source_ids_and_evidence_from_real_sources', 0, async () => {
+      const caller: StandardGenerationCaller = new StandardGenerationCaller();
+      caller.setAttributionMode('missing');
+      caller.setOmitEvidence(true);
+      const model: KnowledgeModel = new KnowledgeModel(caller);
+      const result = await model.structureStandardDraft(request());
+      expect(result.outline.sections[0].sourceIds[0]).assertEqual('src-1');
+      expect(result.draft.sections[0].sourceIds[0]).assertEqual('src-1');
+      expect(result.evidence.length).assertEqual(1);
+      expect(result.evidence[0].origin).assertEqual('pipeline');
+      expect(result.verification.issues.length).assertEqual(0);
     });
   });
 
@@ -132,6 +220,43 @@ export default function knowledgeModelNoteGenerationTest(): void {
       const model: KnowledgeModel = new KnowledgeModel(new LegacyDifficultyCaller());
       const result = await model.structureLightDraft(request());
       expect(result.difficulty).assertEqual(2);
+    });
+  });
+
+  describe('KnowledgeModel.deep_generation_contract', () => {
+    it('runs_real_deep_structure_with_multiple_sections', 0, async () => {
+      const caller: DeepGenerationCaller = new DeepGenerationCaller();
+      const model: KnowledgeModel = new KnowledgeModel(caller);
+      const result: NoteGenerationDeepResult = await model.structureDeepDraft(deepRequest());
+      expect(result.outline.sections.length).assertEqual(2);
+      expect(result.draft.sections.length).assertEqual(2);
+      expect(result.evidence.length).assertEqual(2);
+      expect(result.draft.summary.length <= 60).assertTrue();
+      expect(result.draft.sections[0].sourceIds[0]).assertEqual('deep-source-a');
+      expect(result.draft.sections[1].sourceIds[0]).assertEqual('deep-source-b');
+      expect(result.draft.sections[0].content.includes('\\(')).assertFalse();
+      expect(result.evidence[0].origin).assertEqual('pipeline');
+      expect(result.evidence[1].origin).assertEqual('pipeline');
+      expect(result.verification.issues.length).assertEqual(0);
+      expect(result.ledger.formulas.length).assertEqual(1);
+      expect(caller.prompts[0].indexOf('MM-MD-v1 公式输出规则') >= 0).assertTrue();
+    });
+
+    it('repairs_the_section_selected_by_issue_source_id', 0, async () => {
+      const caller: DeepGenerationCaller = new DeepGenerationCaller();
+      const model: KnowledgeModel = new KnowledgeModel(caller);
+      const initial: NoteGenerationDeepResult = await model.structureDeepDraft(deepRequest());
+      const expectedLabel: string = initial.outline.sections[1].label;
+      const issue: NoteGenerationIssue = {
+        stage: 'merge',
+        code: 'DEEP_REFERENCE_INVALID',
+        severity: 'hard',
+        message: 'deep section reference needs repair',
+        repairable: true,
+        sourceId: 'deep-source-b',
+      };
+      await model.repairDeepDraft(deepRequest(), initial, [issue]);
+      expect(caller.requestedLabels[caller.requestedLabels.length - 1]).assertEqual(expectedLabel);
     });
   });
 }
