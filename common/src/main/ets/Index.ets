@@ -154,8 +154,16 @@ export {
   sourceFingerprint,
   buildSourceId,
   stableSectionId,
+  normalizeDraftSectionLabel,
+  normalizeDraftDifficulty,
   validateSourceBundle,
   normalizeOutline,
+  normalizeDraftCategory,
+  normalizeDraftSummary,
+  normalizeLightDraft,
+  normalizeDeepSectionDraft,
+  buildPipelineEvidence,
+  normalizeEvidenceItems,
   validateDraftDocument,
   validateDraftShape,
   parseIncrementalSections,
@@ -163,9 +171,9 @@ export {
   detectIncrementalLocks,
   planIncrementalChange,
   mergeIncrementalPatches,
-   renderIncrementalSections,
-   buildJsonSchema,
-   parseDirectStandardArtifacts,
+  renderIncrementalSections,
+  buildJsonSchema,
+  parseDirectStandardArtifacts,
   } from './models/NoteGenerationModels';
 export { NoteGenerationEvidenceVerifier } from './models/NoteGenerationModels';
 
@@ -192,6 +200,7 @@ export { LlmClient } from './llm/LlmClient';
 export { LlmGuard } from './llm/LlmGuard';
 export { JSON_ONLY_RULES, LATEX_GENERATION_RULES, buildGuardRetryMessage } from './llm/LlmOutputRules';
 export { LlmError } from './llm/LlmTypes';
+export { TRUNCATION_MARKER } from './llm/LlmResponseParser';
 export { LlmErrorBodyFormatter } from './llm/LlmErrorBodyFormatter';
 export { PROVIDERS, DEFAULT_VENDOR_ID, findProvider } from './llm/providers';
 export type { ProviderConfig, CustomVendorConfig } from './llm/providers';
@@ -256,7 +265,10 @@ export type {
 
 // ========== MM-MD-v1 内容渲染协议 ==========
 export { ContentProtocol } from './render/ContentProtocol';
-export { ContentExcerptBuilder } from './render/ContentExcerptBuilder';
+export {
+  ContentExcerptBuilder,
+  NOTE_SUMMARY_MAX_LENGTH,
+} from './render/ContentExcerptBuilder';
 export type {
   ContentProtocolRisk,
   ContentValidationResult,

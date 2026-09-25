@@ -336,7 +336,24 @@ export class Dispatcher {
     startedAt: number,
   ): Promise<DispatchResult> {
     const bundle: SourceBundle = this.normalizeBundle(request);
-    const route = request.route ?? selectGenerationRoute(bundle, request.instruction);
+    let route = request.route ?? selectGenerationRoute(bundle, request.instruction);
+    // 2026-09-20 P0-7: deep 源预算超限时自动降级 standard — 原先 preflight 直接
+    // needs-input 终止 (dbpull5 实测 3 连 missing_facts, 用户反复重试均 25ms 拒绝);
+    // standard 单次调用可承载长源, 降级优于中断问询
+    if (route === 'deep') {
+      const deepSourceLimit: number = deepBudget().maxSourceChars ?? 0;
+      if (deepSourceLimit > 0) {
+        let sourceChars: number = 0;
+        for (const fragment of bundle.fragments) {
+          sourceChars += fragment.text.length;
+        }
+        if (sourceChars > deepSourceLimit) {
+          log.info('generation run=' + request.runId + ' downgrade deep->standard: sourceChars='
+            + sourceChars.toString() + ' > ' + deepSourceLimit.toString());
+          route = 'standard';
+        }
+      }
+    }
     const budget = route === 'deep' ? deepBudget() : route === 'standard' ? standardBudget() : lightBudget();
     const requirement = request.requirement ?? defaultRequirement(request.instruction);
     const run: NoteGenerationRun = {
@@ -633,8 +650,8 @@ export class Dispatcher {
         iteration: round,
         stage: 'truth_check',
         parentId: parentId,
-        candidateHash: sourceFingerprint(JSON.stringify(evaluation.result)),
-        documentJson: JSON.stringify(evaluation.result.draft),
+        candidateHash: sourceFingerprint(JSON.stringify(evaluation.candidate)),
+        documentJson: JSON.stringify(evaluation.candidate),
         accepted: isBetter,
         issueCodes: evaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
         outlineJson: JSON.stringify(evaluation.result.outline),
@@ -731,7 +748,7 @@ export class Dispatcher {
         finalEvaluation === undefined ? [] : finalEvaluation.issues,
         undefined,
         progress,
-        'standard generation requires additional input',
+        this.generationFailureMessage('standard', finalEvaluation?.issues ?? [], progress),
         finalEvaluation?.result,
       );
     }
@@ -807,8 +824,8 @@ export class Dispatcher {
         iteration: round,
         stage: 'truth_check',
         parentId: parentId,
-        candidateHash: sourceFingerprint(JSON.stringify(evaluation.result)),
-        documentJson: JSON.stringify(evaluation.result.draft),
+        candidateHash: sourceFingerprint(JSON.stringify(evaluation.candidate)),
+        documentJson: JSON.stringify(evaluation.candidate),
         accepted: better,
         issueCodes: evaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
         outlineJson: JSON.stringify(evaluation.result.outline),
@@ -902,7 +919,7 @@ export class Dispatcher {
         finalEvaluation?.issues ?? [],
         undefined,
         progress,
-        'deep generation requires additional input',
+        this.generationFailureMessage('deep', finalEvaluation?.issues ?? [], progress),
         deepResult,
         'deep',
       );
@@ -1200,6 +1217,59 @@ export class Dispatcher {
       }
     }
     return total === 0 ? 0 : changed / total;
+  }
+
+  private generationFailureMessage(
+    route: NoteGenerationRoute,
+    issues: NoteGenerationIssue[],
+    progress: NoteGenerationProgress,
+  ): string {
+    const summary: string = this.issueSummary(issues);
+    const routeLabel: string = route === 'deep' ? 'deep generation failed' : 'standard generation failed';
+    const stopReason: string = progress.stopReason ?? '';
+    const stopText: string = stopReason.length > 0 ? stopReason : 'unknown';
+    if (summary.length === 0) {
+      return routeLabel + ': stop=' + stopText + '; no issue details';
+    }
+    return routeLabel + ': stop=' + stopText + '; ' + summary;
+  }
+
+  private issueSummary(issues: NoteGenerationIssue[]): string {
+    const parts: string[] = [];
+    const seen: string[] = [];
+    for (const issue of issues) {
+      const stage: string = issue.stage ?? '';
+      const code: string = issue.code.length > 0 ? issue.code : 'UNKNOWN_ISSUE';
+      const message: string = this.clipDiagnostic(issue.message, 90);
+      const key: string = code + ':' + stage + ':' + message;
+      if (seen.includes(key)) {
+        continue;
+      }
+      seen.push(key);
+      let part: string = '[' + code + ']';
+      if (stage.length > 0) {
+        part += ' stage=' + stage;
+      }
+      if (message.length > 0) {
+        part += ' ' + message;
+      }
+      parts.push(part);
+      if (parts.length >= 4) {
+        break;
+      }
+    }
+    if (issues.length > parts.length) {
+      parts.push('... +' + (issues.length - parts.length).toString() + ' issues');
+    }
+    return parts.join('; ');
+  }
+
+  private clipDiagnostic(text: string, limit: number): string {
+    const normalized: string = text.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= limit) {
+      return normalized;
+    }
+    return normalized.substring(0, limit) + '...';
   }
 
   private async finishStandardGeneration(

@@ -231,7 +231,7 @@ export class IntentClassifier {
 
   // ===== 笔记素材提取 (从用户指令剥离指令语, 留下可保存内容) =====
   public inlineNoteMaterial(userInstruction: string): string {
-    let text: string = userInstruction.trim();
+    const text: string = userInstruction.trim();
     const separators: string[] = ['：', ':', '\n'];
     for (const separator of separators) {
       const idx: number = text.indexOf(separator);
@@ -241,45 +241,6 @@ export class IntentClassifier {
           return tail;
         }
       }
-    }
-
-    const removablePhrases: string[] = [
-      '请帮我',
-      '帮我',
-      '把这个',
-      '把这题',
-      '把这段',
-      '把上面',
-      '把刚才',
-      '生成笔记',
-      '创建笔记',
-      '新建笔记',
-      '整理成笔记',
-      '整理为笔记',
-      '保存为笔记',
-      '保存成笔记',
-      '总结成笔记',
-      '总结为笔记',
-      '归纳成笔记',
-      '归纳为笔记',
-      '做成笔记',
-      '转成笔记',
-      '转为笔记',
-      '收进笔记',
-      '加入笔记',
-      '存到笔记',
-      '存进笔记',
-      '留作笔记',
-      '记一下',
-      '记下来',
-      '记下',
-    ];
-    for (const phrase of removablePhrases) {
-      text = text.replace(phrase, ' ');
-    }
-    text = text.replace(/\s+/g, ' ').trim();
-    if (text.length >= 12) {
-      return text;
     }
     return '';
   }
@@ -312,6 +273,7 @@ export class IntentClassifier {
       + '13. 重要公式、长公式和多行推导使用展示公式，起止 $$ 必须各占独立一行；不要写成 $$公式$$，不要在 $$ 内嵌套单个美元符，也不要用 Markdown 代码块包公式。\n'
       + '14. 多行公式只能在独立的 $$ 块内使用 \\begin{aligned}...\\end{aligned}；不要使用 align 或 align* 环境。\n'
       + '15. 列表项内只允许短行内公式；长公式和 $$ 定界符必须移到列表外，绝不能写成“1. $$”“2. 公式”“3. $$”。如需分步推导，用“第 1 步：”文字段落，再另起独立 $$ 块。\n\n'
+      + '16. 如果发现格式问题，请在内部修正后继续回答原问题；禁止输出“格式问题”“校验失败”“上一条回答存在问题”等格式诊断或元评论，只输出最终答案。\n'
       + LATEX_GENERATION_RULES;
     if (strictJson) {
       systemPrompt += '\n' + JSON_ONLY_RULES;

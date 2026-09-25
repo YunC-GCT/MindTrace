@@ -57,7 +57,7 @@ test('LlmClient success JSON path must decode full body without preview truncati
   const source = readLlmClient();
   assert.match(
     source,
-    /const\s+raw\s*:\s*string\s*=\s*LlmErrorBodyFormatter\.decode\(response\.result\)/,
+    /const\s+raw\s*:\s*string\s*=\s*LlmErrorBodyFormatter\.decodeFull\(response\.result\)/,
     'LlmClient success JSON branch must decode the complete response body before JSON.parse.',
   );
   assert.doesNotMatch(

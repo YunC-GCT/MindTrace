@@ -14,6 +14,7 @@
  */
 import { KnowledgeUnit } from './CommonTypes';
 import { ContentProtocol } from '../render/ContentProtocol';
+import { ContentExcerptBuilder, NOTE_SUMMARY_MAX_LENGTH } from '../render/ContentExcerptBuilder';
 
 export type NoteGenerationMode = 'create' | 'regenerate';
 export type SourceKind = 'conversation' | 'ocr' | 'summary' | 'existing_note';
@@ -124,6 +125,9 @@ export interface NoteGenerationEvidenceItem {
   sourceRefs: EvidenceSourceRef[];
   targetSectionId: string;
   verification: EvidenceVerificationStatus;
+  // 2026-09-20 P0-7: 'pipeline' = deep 管线代算的溯源证据 (章节由该 segment
+  // 生成是结构性事实); 缺省视为 'model' (LLM 声明, 需逐字保留契约约束)
+  origin?: 'pipeline' | 'model';
 }
 
 export interface NoteGenerationVerification {
@@ -777,7 +781,7 @@ NOTE_STANDARD_SCHEMA_PROPERTIES['draft'] = '{"type":"object","required":["schema
 
 export const NOTE_STANDARD_JSON_SCHEMA: string = buildJsonSchema(
   'mindtrace.note-standard.v1',
-  ['outline', 'evidence', 'draft'],
+  ['outline', 'draft'],
   NOTE_STANDARD_SCHEMA_PROPERTIES,
 );
 
@@ -792,7 +796,7 @@ export const NOTE_DRAFT_JSON_SCHEMA: string = '{'
   + '"properties":{'
   + '"schemaVersion":{"const":"mindtrace.note-draft.v1"},'
   + '"title":{"type":"string","minLength":1,"maxLength":120},'
-  + '"summary":{"type":"string","maxLength":500},'
+  + '"summary":{"type":"string","maxLength":60},'
   + '"subject":{"type":"string","minLength":1,"maxLength":80},'
   + '"category":{"enum":["概念","定理","公式","证明题","计算题"]},'
   + '"chapter":{"type":"string","maxLength":120},'
@@ -873,7 +877,8 @@ export function selectGenerationRoute(bundle: SourceBundle, instruction: string)
 }
 
 export function lightBudget(): NoteGenerationBudget {
-  return { maxTokens: 1200, maxNodeRuns: 8, maxRepairRounds: 0 };
+  // 1200 -> 3000 (2026-09-19): 结构化 draft JSON (含 LaTeX 字段值) 偶超 1200, 留安全余量
+  return { maxTokens: 3000, maxNodeRuns: 8, maxRepairRounds: 0 };
 }
 
 export function standardBudget(): NoteGenerationBudget {
@@ -881,7 +886,7 @@ export function standardBudget(): NoteGenerationBudget {
 }
 
 export function deepBudget(): NoteGenerationBudget {
-  return { maxTokens: 14000, maxNodeRuns: 20, maxRepairRounds: 4, maxSourceChars: 20000 };
+  return { maxTokens: 14000, maxNodeRuns: 20, maxRepairRounds: 4, maxSourceChars: 36000 };
 }
 
 function segmentBoundary(line: string): 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph' | undefined {
@@ -946,6 +951,55 @@ export function segmentSourceBundle(bundle: SourceBundle): NoteGenerationSegment
   return segments;
 }
 
+/**
+ * deep outline 节数上限 (2026-09-20 P0-5):
+ * buildDeepOutline 按 segment 1:1 建节且无上限 — 17k 字符对话实录被切成
+ * 347 节 = 347 次串行 LLM 调用 (叠加 ledger 膨胀, 冒烟实测 5 分钟烧掉
+ * 765 万 prompt tokens)。封顶后尾部 segment 合并入最后一节, 初始草稿
+ * 调用数上界 = 8 节 × ≤3 守门重试 = ≤24 次。
+ */
+const MAX_DEEP_OUTLINE_SECTIONS: number = 8;
+
+function capDeepOutlineSections(sections: NoteGenerationOutlineSection[]): NoteGenerationOutlineSection[] {
+  if (sections.length <= MAX_DEEP_OUTLINE_SECTIONS) {
+    return sections;
+  }
+  const capped: NoteGenerationOutlineSection[] = sections.slice(0, MAX_DEEP_OUTLINE_SECTIONS - 1);
+  const last: NoteGenerationOutlineSection = sections[MAX_DEEP_OUTLINE_SECTIONS - 1];
+  const mergedSegmentIds: string[] = [];
+  const mergedSourceIds: string[] = [];
+  const mergedMustInclude: string[] = [];
+  for (let index: number = MAX_DEEP_OUTLINE_SECTIONS - 1; index < sections.length; index += 1) {
+    const section: NoteGenerationOutlineSection = sections[index];
+    for (const segmentId of section.segmentIds ?? []) {
+      if (!mergedSegmentIds.includes(segmentId)) {
+        mergedSegmentIds.push(segmentId);
+      }
+    }
+    for (const sourceId of section.sourceIds) {
+      if (!mergedSourceIds.includes(sourceId)) {
+        mergedSourceIds.push(sourceId);
+      }
+    }
+    for (const item of section.mustInclude) {
+      if (!mergedMustInclude.includes(item)) {
+        mergedMustInclude.push(item);
+      }
+    }
+  }
+  capped.push({
+    id: last.id,
+    label: last.label.length > 0 ? last.label : '综合材料',
+    order: last.order,
+    mustInclude: mergedMustInclude.length > 0 ? mergedMustInclude : last.mustInclude,
+    sourceIds: mergedSourceIds.length > 0 ? mergedSourceIds : last.sourceIds,
+    depth: last.depth,
+    parentId: last.parentId,
+    segmentIds: mergedSegmentIds.length > 0 ? mergedSegmentIds : last.segmentIds,
+  });
+  return capped;
+}
+
 export function buildDeepOutline(
   segments: NoteGenerationSegment[],
   requirement: NoteGenerationRequirement,
@@ -987,7 +1041,7 @@ export function buildDeepOutline(
     });
     order += 1;
   }
-  return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: sections };
+  return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: capDeepOutlineSections(sections) };
 }
 
 export function validateDeepOutline(
@@ -1074,6 +1128,29 @@ export function stableSectionId(index: number, label: string): string {
   return 'section-' + suffix;
 }
 
+export function normalizeDraftSectionLabel(label: string, index: number): string {
+  const normalized: string = label.trim();
+  const lowerLabel: string = normalized.toLowerCase();
+  if (normalized.length === 0 || lowerLabel.startsWith('section-')) {
+    return index === 0 ? '核心内容' : '补充内容' + (index + 1).toString();
+  }
+  return normalized;
+}
+
+export function normalizeDraftDifficulty(value: number): number {
+  if (value >= 1 && value <= 4) {
+    return value;
+  }
+  if (value < 1) {
+    return 1;
+  }
+  return 2;
+}
+
+export function normalizeDraftSummary(summary: string): string {
+  return new ContentExcerptBuilder().buildSummary(summary, NOTE_SUMMARY_MAX_LENGTH);
+}
+
 export function validateSourceBundle(bundle: SourceBundle): NoteGenerationIssue[] {
   const issues: NoteGenerationIssue[] = [];
   const seen: string[] = [];
@@ -1108,14 +1185,22 @@ export function normalizeOutline(outline: NoteGenerationOutline, sourceIds: stri
         mappedSourceIds.push(sourceId);
       }
     }
-    let stableId: string = stableSectionId(index, section.label);
+    // 2026-09-19: 模型常省略 outline section 的 sourceIds (单源场景尤甚),
+    // 空映射直接判 hard (OUTLINE_SOURCE_MAPPING_REQUIRED) 不可修 → 回填全部源 id
+    if (mappedSourceIds.length === 0 && sourceIds.length > 0) {
+      for (const sourceId of sourceIds) {
+        mappedSourceIds.push(sourceId);
+      }
+    }
+    const rawLabel: string = section.label.trim();
+    let stableId: string = stableSectionId(index, rawLabel);
     if (usedIds.includes(stableId)) {
       stableId = stableId + '-' + index.toString();
     }
     usedIds.push(stableId);
     sections.push({
       id: stableId,
-      label: section.label.trim(),
+      label: normalizeDraftSectionLabel(rawLabel, index),
       order: index,
       mustInclude: section.mustInclude.slice(0),
       sourceIds: mappedSourceIds,
@@ -1123,6 +1208,76 @@ export function normalizeOutline(outline: NoteGenerationOutline, sourceIds: stri
     index += 1;
   }
   return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: sections };
+}
+
+export function normalizeEvidenceItems(
+  evidence: NoteGenerationEvidenceItem[],
+  validSourceIds: string[],
+  sourceIdsBySectionId: Map<string, string[]>,
+): NoteGenerationEvidenceItem[] {
+  const normalized: NoteGenerationEvidenceItem[] = [];
+  const usedIds: string[] = [];
+  let index: number = 0;
+  for (const item of evidence) {
+    let hasExcerpt: boolean = false;
+    for (const ref of item.sourceRefs) {
+      if (ref.excerpt.trim().length > 0) {
+        hasExcerpt = true;
+        break;
+      }
+    }
+    // 2026-09-20 P0-6: 全空 evidence 壳 (无 claim 无 excerpt) 直接丢弃 —
+    // round 0 实测 LLM 输出 8 个空壳, 留下必挂 EVIDENCE_SOURCE_REQUIRED
+    if (item.claim.trim().length === 0 && !hasExcerpt) {
+      continue;
+    }
+    index += 1;
+    const baseId: string = item.id.trim().length > 0
+      ? item.id.trim() : 'evidence-' + index.toString();
+    let id: string = baseId;
+    let suffix: number = 2;
+    // 2026-09-20 P0-6: 重复 id 去重 — verifier 按 id 匹配判定,
+    // 撞号 = VERIFIER_DECISION_MISSING (round 1 'evidence-1'×3 实测)
+    while (usedIds.includes(id)) {
+      id = baseId + '-' + suffix.toString();
+      suffix += 1;
+    }
+    usedIds.push(id);
+    const sectionSourceIds: string[] = sourceIdsBySectionId.get(item.targetSectionId) ?? [];
+    const fallbackSourceId: string = sectionSourceIds.length > 0 ? sectionSourceIds[0]
+      : (validSourceIds.length > 0 ? validSourceIds[0] : '');
+    const refs: EvidenceSourceRef[] = [];
+    for (const ref of item.sourceRefs) {
+      let sourceId: string = ref.sourceId;
+      // 2026-09-20 P0-6: 空/非法 sourceId (LLM 常写 run id 缺前缀) 回退到
+      // 目标 section 的首个源, 否则首个 fragment
+      if (!validSourceIds.includes(sourceId)) {
+        if (fallbackSourceId.length === 0) {
+          continue;
+        }
+        sourceId = fallbackSourceId;
+      }
+      refs.push({ sourceId: sourceId, excerpt: ref.excerpt, start: ref.start, end: ref.end });
+    }
+    // 2026-09-20 P0-6: 全部 ref 被丢弃时补一条锚点 (excerpt 允许为空,
+    // 见 validateStandardArtifacts 的空 excerpt 放宽)
+    if (refs.length === 0 && fallbackSourceId.length > 0) {
+      refs.push({ sourceId: fallbackSourceId, excerpt: '', start: 0, end: 0 });
+    }
+    if (refs.length === 0) {
+      continue;
+    }
+    normalized.push({
+      id: id,
+      type: item.type,
+      claim: item.claim,
+      sourceRefs: refs,
+      targetSectionId: item.targetSectionId,
+      verification: item.verification,
+      origin: item.origin,
+    });
+  }
+  return normalized;
 }
 
 export function validateStandardArtifacts(
@@ -1204,10 +1359,15 @@ export function validateStandardArtifacts(
         issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_INVALID', severity: 'hard', message: 'evidence references an unknown source', repairable: true, sourceId: ref.sourceId });
         continue;
       }
-      const located: number = source.text.indexOf(ref.excerpt);
-      if (ref.excerpt.trim().length === 0 || located < 0 || ref.start !== located
-        || ref.end < ref.start || ref.end - ref.start < ref.excerpt.length) {
-        issues.push({ stage: 'evidence', code: 'EVIDENCE_EXCERPT_NOT_LOCATABLE', severity: 'hard', message: 'evidence excerpt cannot be located in source', repairable: true, sourceId: ref.sourceId });
+      // 2026-09-20 P0-6: LLM 系统性返回空 excerpt (round 1 修复轮 16/16 全空);
+      // 空 excerpt 只保留 sourceId 锚点, 跳过定位检查 — claim 真实性仍由
+      // independent verifier 的 LLM 校验兜底; 提供但伪造的 excerpt 仍判 hard
+      if (ref.excerpt.trim().length > 0) {
+        const located: number = source.text.indexOf(ref.excerpt);
+        if (located < 0 || ref.start !== located
+          || ref.end < ref.start || ref.end - ref.start < ref.excerpt.length) {
+          issues.push({ stage: 'evidence', code: 'EVIDENCE_EXCERPT_NOT_LOCATABLE', severity: 'hard', message: 'evidence excerpt cannot be located in source', repairable: true, sourceId: ref.sourceId });
+        }
       }
       if (source.sequence < previousSourceSequence) {
         issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_ORDER_INVALID', severity: 'hard', message: 'evidence source references are out of order', repairable: true, sourceId: ref.sourceId });
@@ -1248,6 +1408,7 @@ export function validateStandardArtifacts(
   if (draft.instruction === undefined || draft.instruction.trim().length === 0) {
     issues.push({ stage: 'draft', code: 'INSTRUCTION_NOT_PRESERVED', severity: 'hard', message: 'draft must preserve the user instruction', repairable: true });
   }
+  const preservationProtocol: ContentProtocol = new ContentProtocol();
   for (const item of evidence) {
     let target: NoteDraftSection | undefined = undefined;
     for (const section of draft.sections) {
@@ -1261,9 +1422,25 @@ export function validateStandardArtifacts(
         if (!target.sourceIds.includes(ref.sourceId)) {
           issues.push({ stage: 'draft', code: 'DRAFT_SOURCE_MAPPING_MISSING', severity: 'hard', message: 'draft section lost an evidence source mapping', repairable: true, sectionId: target.id, sourceId: ref.sourceId });
         }
+        // 2026-09-20 P0-7: 管线代算证据 (origin='pipeline') 是溯源元数据 —
+        // 章节由该 segment 生成是结构性事实, 「草稿逐字包含 excerpt」对改写型
+        // 笔记必然不成立 (dbpull5 deep run 实测 FORMULA_NOT_PRESERVED ×4
+        // EVIDENCE_NOT_PRESERVED ×2 全为结构性误报); 内容质量由 deepMergeIssues
+        // (DEEP_SYMBOL_DRIFT 等) 与 truth check 兜底。LLM 声明证据行为不变。
+        if (item.origin === 'pipeline') {
+          continue;
+        }
         if (!target.content.includes(ref.excerpt)) {
-          const code: string = item.type === 'formula' ? 'FORMULA_NOT_PRESERVED' : 'EVIDENCE_NOT_PRESERVED';
-          issues.push({ stage: 'draft', code: code, severity: 'hard', message: 'draft section does not preserve evidence content', repairable: true, sectionId: target.id, sourceId: ref.sourceId });
+          // 2026-09-19: 草稿内容已经 MM-MD 规范化 (\(\)→$..$, \[→$$), 原始 excerpt
+          // 需同时按规范化形态比对; 双双未命中才计 issue。
+          const normalizedExcerpt: string = preservationProtocol.validateNoteMarkdown(ref.excerpt).normalizedText;
+          if (!target.content.includes(normalizedExcerpt)) {
+            // 公式类仍为 hard (公式必须逐字保留);
+            // 非公式 claim/step/例题属于改写场景, 逐字包含要求过严 → 降为 soft
+            const code: string = item.type === 'formula' ? 'FORMULA_NOT_PRESERVED' : 'EVIDENCE_NOT_PRESERVED';
+            const severity: 'hard' | 'soft' = item.type === 'formula' ? 'hard' : 'soft';
+            issues.push({ stage: 'draft', code: code, severity: severity, message: 'draft section does not preserve evidence content', repairable: true, sectionId: target.id, sourceId: ref.sourceId });
+          }
         }
       }
     }
@@ -1305,7 +1482,220 @@ export class NoteGenerationEvidenceVerifier {
   }
 }
 
-export function validateDraftDocument(document: NoteDraftDocument, sourceIds: string[] = []): NoteGenerationIssue[] {
+const DRAFT_CATEGORY_ALLOWED: string[] = ['概念', '定理', '公式', '证明题', '计算题'];
+
+/**
+ * 归一化 draft.category 到 5 类题型枚举 (2026-09-19):
+ * 模型常返回学科级标签 ("概率论与统计学") 导致 CATEGORY_INVALID (hard) 判死;
+ * 归一化策略: 精确命中 → 原样; 前缀/包含命中 → 映射 (证明→证明题, 计算→计算题,
+ * 定义→概念); 其余 → '概念' (知识笔记的保守缺省)。
+ */
+export function normalizeDraftCategory(raw: string): string {
+  const value: string = raw.trim();
+  if (DRAFT_CATEGORY_ALLOWED.includes(value)) {
+    return value;
+  }
+  if (value.indexOf('证明') >= 0) {
+    return '证明题';
+  }
+  if (value.indexOf('计算') >= 0) {
+    return '计算题';
+  }
+  if (value.indexOf('定理') >= 0) {
+    return '定理';
+  }
+  if (value.indexOf('公式') >= 0) {
+    return '公式';
+  }
+  return '概念';
+}
+
+function sourceIdsFromBundle(bundle: SourceBundle): string[] {
+  const sourceIds: string[] = [];
+  for (const fragment of bundle.fragments) {
+    if (!sourceIds.includes(fragment.id)) {
+      sourceIds.push(fragment.id);
+    }
+  }
+  return sourceIds;
+}
+
+function firstSourceText(bundle: SourceBundle): string {
+  for (const fragment of bundle.fragments) {
+    const text: string = fragment.text.trim();
+    if (text.length > 0) {
+      return text;
+    }
+  }
+  return '';
+}
+
+function findSourceById(bundle: SourceBundle, sourceId: string): SourceFragment | undefined {
+  for (const fragment of bundle.fragments) {
+    if (fragment.id === sourceId) {
+      return fragment;
+    }
+  }
+  return undefined;
+}
+
+function clippedSourceExcerpt(text: string, maxLength: number): string {
+  const clean: string = text.trim();
+  if (clean.length <= maxLength) {
+    return clean;
+  }
+  return clean.substring(0, maxLength);
+}
+
+export function normalizeLightDraft(document: NoteDraftDocument, bundle: SourceBundle): NoteDraftDocument {
+  const sourceIds: string[] = sourceIdsFromBundle(bundle);
+  const fallbackContent: string = clippedSourceExcerpt(firstSourceText(bundle), 1600);
+  const sections: NoteDraftSection[] = [];
+  if (document.sections.length === 0 && fallbackContent.length > 0) {
+    sections.push({
+      id: 'section-1',
+      label: '核心内容',
+      content: fallbackContent,
+      sourceIds: sourceIds.slice(0),
+      state: 'generated',
+      baseHash: '',
+    });
+  }
+  for (let index: number = 0; index < document.sections.length; index += 1) {
+    const section: NoteDraftSection = document.sections[index];
+    const mappedSourceIds: string[] = [];
+    for (const sourceId of section.sourceIds) {
+      if (sourceIds.includes(sourceId) && !mappedSourceIds.includes(sourceId)) {
+        mappedSourceIds.push(sourceId);
+      }
+    }
+    if (mappedSourceIds.length === 0) {
+      for (const sourceId of sourceIds) {
+        mappedSourceIds.push(sourceId);
+      }
+    }
+    const normalizedContent: string = section.content.trim().length > 0 ? section.content : fallbackContent;
+    sections.push({
+      id: section.id.trim().length > 0 ? section.id : 'section-' + (index + 1).toString(),
+      label: normalizeDraftSectionLabel(section.label, index),
+      content: normalizedContent,
+      sourceIds: mappedSourceIds,
+      state: section.state,
+      baseHash: section.baseHash,
+    });
+  }
+  const difficulty: number = normalizeDraftDifficulty(document.difficulty);
+  return {
+    schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+    title: document.title,
+    summary: normalizeDraftSummary(document.summary),
+    subject: document.subject.trim().length > 0 ? document.subject : '其它',
+    category: normalizeDraftCategory(document.category),
+    chapter: document.chapter,
+    difficulty: difficulty,
+    tags: document.tags.slice(0),
+    sections: sections,
+    instruction: document.instruction,
+  };
+}
+
+export function buildPipelineEvidence(
+  outline: NoteGenerationOutline,
+  bundle: SourceBundle,
+): NoteGenerationEvidenceItem[] {
+  const evidence: NoteGenerationEvidenceItem[] = [];
+  for (let index: number = 0; index < outline.sections.length; index += 1) {
+    const section: NoteGenerationOutlineSection = outline.sections[index];
+    let sourceId: string = '';
+    for (const candidateId of section.sourceIds) {
+      if (findSourceById(bundle, candidateId) !== undefined) {
+        sourceId = candidateId;
+        break;
+      }
+    }
+    if (sourceId.length === 0 && bundle.fragments.length > 0) {
+      sourceId = bundle.fragments[0].id;
+    }
+    const source: SourceFragment | undefined = findSourceById(bundle, sourceId);
+    if (source === undefined) {
+      continue;
+    }
+    const excerpt: string = clippedSourceExcerpt(source.text, 160);
+    const start: number = excerpt.length > 0 ? source.text.indexOf(excerpt) : 0;
+    const locatedStart: number = start >= 0 ? start : 0;
+    const evidenceType: EvidenceItemType = classifyEvidenceType(section.label);
+    evidence.push({
+      id: 'pipeline-evidence-' + (index + 1).toString(),
+      type: evidenceType,
+      claim: excerpt.length > 0 ? excerpt : section.label,
+      sourceRefs: [{
+        sourceId: sourceId,
+        excerpt: excerpt,
+        start: locatedStart,
+        end: locatedStart + excerpt.length,
+      }],
+      targetSectionId: section.id,
+      verification: 'supported',
+      origin: 'pipeline',
+    });
+  }
+  return evidence;
+}
+
+/**
+ * deep section draft 归一化 (2026-09-19 P0-4):
+ * callDeepSectionDraft 的内容校验器原先直接校验 LLM 原始输出, 三类系统性
+ * 契约错位导致守门重试 3 次全灭 (SOURCE_REFERENCE_REQUIRED 判死, 冒烟实测):
+ *   ① sections[].sourceIds — LLM 常省略 (对话流实测 8/8 全空), 而管线装配
+ *      (structureDeepDraft) 本就取 outlineSection.sourceIds, LLM 回显无消费方;
+ *   ② category — 学科级标签导致 CATEGORY_INVALID (hard);
+ *   ③ section content — MM-MD auto-fix 内容 (如 \(...\)) 被误判 MM_MD_INVALID (hard)。
+ * 归一化策略与 standard 路线 (§23.8) 一致: 管线代算 LLM 做不到的事;
+ * schemaVersion 定值、subject/id/label 缺省回填、content 采用 normalizedText
+ * (仅 fallbackRequired 或规范化为空时保留原值, 交由校验器判 hard)。
+ */
+export function normalizeDeepSectionDraft(
+  document: NoteDraftDocument,
+  outlineSection: NoteGenerationOutlineSection,
+): NoteDraftDocument {
+  const protocol: ContentProtocol = new ContentProtocol();
+  const sections: NoteDraftSection[] = [];
+  for (const section of document.sections) {
+    let content: string = section.content;
+    if (content.trim().length > 0) {
+      const validation = protocol.validateNoteMarkdown(content);
+      if (!validation.fallbackRequired && validation.normalizedText.trim().length > 0) {
+        content = validation.normalizedText;
+      }
+    }
+    const candidateLabel: string = section.label.trim().length > 0 ? section.label : outlineSection.label;
+    sections.push({
+      id: section.id.trim().length > 0 ? section.id : outlineSection.id,
+      label: normalizeDraftSectionLabel(candidateLabel, outlineSection.order),
+      content: content,
+      sourceIds: outlineSection.sourceIds.slice(0),
+      state: section.state,
+      baseHash: section.baseHash,
+    });
+  }
+  return {
+    schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+    title: document.title,
+    summary: normalizeDraftSummary(document.summary),
+    subject: document.subject.trim().length > 0 ? document.subject : '其它',
+    category: normalizeDraftCategory(document.category),
+    chapter: document.chapter,
+    difficulty: normalizeDraftDifficulty(document.difficulty),
+    tags: document.tags.slice(0),
+    sections: sections,
+  };
+}
+
+export function validateDraftDocument(
+  document: NoteDraftDocument,
+  sourceIds: string[] = [],
+  allowRecoverableContentIssues: boolean = false,
+): NoteGenerationIssue[] {
   const issues: NoteGenerationIssue[] = [];
   const contentProtocol: ContentProtocol = new ContentProtocol();
   if (document.schemaVersion !== NOTE_DRAFT_SCHEMA_VERSION) {
@@ -1315,8 +1705,11 @@ export function validateDraftDocument(document: NoteDraftDocument, sourceIds: st
     issues.push({ stage: 'domain', code: 'TITLE_REQUIRED', severity: 'hard', message: 'title is required', repairable: true });
   }
   const protocolTitle: ContentProtocol = new ContentProtocol();
-  if (protocolTitle.hasFormulaSyntax(document.title) || protocolTitle.hasFormulaSyntax(document.summary)) {
-    issues.push({ stage: 'content', code: 'FORMULA_IN_METADATA', severity: 'hard', message: 'title and summary must not contain formulas', repairable: true });
+  if (protocolTitle.hasFormulaSyntax(document.title)) {
+    issues.push({ stage: 'content', code: 'FORMULA_IN_TITLE', severity: 'hard', message: 'title must not contain formulas', repairable: true });
+  }
+  if (document.summary.length > NOTE_SUMMARY_MAX_LENGTH) {
+    issues.push({ stage: 'content', code: 'SUMMARY_TOO_LONG', severity: 'hard', message: 'summary must be at most 60 characters', repairable: true });
   }
   if (document.subject.trim().length === 0) {
     issues.push({ stage: 'domain', code: 'SUBJECT_REQUIRED', severity: 'hard', message: 'subject is required', repairable: true });
@@ -1347,8 +1740,30 @@ export function validateDraftDocument(document: NoteDraftDocument, sourceIds: st
       }
     }
     const contentValidation = contentProtocol.validateNoteMarkdown(section.content);
-    if (!contentValidation.ok) {
-      issues.push({ stage: 'content', code: 'MM_MD_INVALID', severity: 'hard', message: 'section content violates MM-MD-v1', repairable: true, sectionId: section.id });
+    const normalizedValidation = contentValidation.fallbackRequired
+      ? contentValidation
+      : contentProtocol.validateNoteMarkdown(contentValidation.normalizedText);
+    const contentInvalid = allowRecoverableContentIssues
+      ? (!normalizedValidation.ok || normalizedValidation.fallbackRequired)
+      : !contentValidation.ok;
+    if (contentInvalid) {
+      const validationReasons: string[] = [];
+      for (const issue of contentValidation.issues.concat(normalizedValidation.issues)) {
+        if (!validationReasons.includes(issue)) {
+          validationReasons.push(issue);
+        }
+      }
+      const reasonText: string = validationReasons.length > 0
+        ? ': ' + validationReasons.join(', ')
+        : '';
+      issues.push({
+        stage: 'content',
+        code: 'MM_MD_INVALID',
+        severity: 'hard',
+        message: 'section content violates MM-MD-v1' + reasonText,
+        repairable: true,
+        sectionId: section.id,
+      });
     }
   }
   return issues;
@@ -1460,6 +1875,15 @@ function parseDirectDraftDocument(parsed: Record<string, Object>): NoteDraftDocu
     };
     sections.push(section);
   }
+  const tagsValue: Object | undefined = parsed['tags'];
+  const tags: string[] = [];
+  if (tagsValue !== undefined && Array.isArray(tagsValue)) {
+    for (const tagItem of tagsValue as Object[]) {
+      if (typeof tagItem === 'string') {
+        tags.push(tagItem);
+      }
+    }
+  }
   return {
     schemaVersion: String(parsed['schemaVersion'] ?? ''),
     title: String(parsed['title'] ?? ''),
@@ -1468,7 +1892,7 @@ function parseDirectDraftDocument(parsed: Record<string, Object>): NoteDraftDocu
     category: String(parsed['category'] ?? ''),
     chapter: String(parsed['chapter'] ?? ''),
     difficulty: Number(parsed['difficulty'] ?? 0),
-    tags: [],
+    tags: tags,
     sections: sections,
     instruction: parsed['instruction'] === undefined ? undefined : String(parsed['instruction']),
   };

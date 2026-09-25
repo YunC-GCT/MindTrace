@@ -7,7 +7,7 @@ import { TruthCheckService } from '../../agents/TruthCheckService';
 export class TruthCheckNodeFactory {
   static create(service: TruthCheckService): CaptureNode {
     return async (input: AgentState): Promise<CaptureNodeResult> => {
-       const truthInput: string = (input.generationRequest !== undefined || input.preparedCandidate !== undefined) && input.knowledgeUnit !== undefined
+       const truthInput: string = input.knowledgeUnit !== undefined
          ? input.captureText + '\n' + input.knowledgeUnit.content
          : input.captureText;
        const result = service.check(truthInput);

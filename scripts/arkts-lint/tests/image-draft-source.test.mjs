@@ -110,7 +110,7 @@ test('ConversationWorkflow image_reply must call handleImageReply with imageUri 
 test('ConversationWorkflow image note uses a default instruction when image text is empty', () => {
   assert.match(convWorkflow, /const noteInstruction: string = trimmedUserText\.length > 0 && trimmedUserText !== '\[图片\]'/);
   assert.match(convWorkflow, /请根据图片识别材料生成一份数学学习笔记/);
-  assert.match(convWorkflow, /this\.generateNoteDraft\(runId, noteInstruction, conversation, pendingSources\)/);
+  assert.match(convWorkflow, /this\.generateNoteDraft\(\s*runId,\s*noteInstruction,\s*conversation,\s*pendingSources,\s*route,/);
 });
 
 // AC-IMG-02: saveOcrResult returns the pending material source id to the

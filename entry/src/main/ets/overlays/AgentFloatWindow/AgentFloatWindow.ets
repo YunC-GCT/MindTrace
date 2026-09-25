@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 //  overlays/AgentFloatWindow/AgentFloatWindow.ets — 智能体浮窗(完整版)
 //  ----------------------------------------------------------------------------
 //  特性: 拖拽缩放(floatHeight) · 多会话(ChatSession + SessionCreator) · 拍照整链(captureReply)
@@ -8,7 +8,7 @@
 
 import {
   BG_DARK, TEXT_4, BORDER,
-  S_3, S_6, R_XL,
+  S_2, S_3, S_4, S_6, R_XL,
   OVERLAY_MASK, SCREEN_H,
   DUR_FAST, DUR_BASE,
 } from 'common';
@@ -22,11 +22,20 @@ import { CameraKitLauncher } from '../../services/CameraKitLauncher';
 import { AlbumPickerLauncher } from '../../services/AlbumPickerLauncher';
 import { ChatHeader } from './chat/ChatHeader';
 import { ChatSessionManager } from './chat/ChatSession';
-import { ChatMsg, ChatSession, ChatStatusMeta, applyStreamEventToChatMsg, copyChatMsg } from './chat/ChatModels';
+import {
+  ChatMsg,
+  ChatSession,
+  ChatStatusMeta,
+  applyStreamEventToChatMsg,
+  finishChatMsg,
+  replaceChatMsgContent,
+} from './chat/ChatModels';
+import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputPanel } from './AgentInputPanel';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
+import { SessionsPanelController } from '../../services/SessionsPanelController';
 import { NoteDraftReadyEvent } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
@@ -37,6 +46,11 @@ function nowId(): number { return Date.now() * 1000 + Math.floor(Math.random() *
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
 const FLOAT_UNMOUNT_DELAY_MS: number = DUR_FAST + 40;
+const CHAT_HEADER_HEIGHT: number = 44;
+const HEADER_SEPARATOR_HEIGHT: number = 0.5;
+const PANEL_MASK_TOP: number = S_6 + CHAT_HEADER_HEIGHT + HEADER_SEPARATOR_HEIGHT;
+const PANEL_Z_INDEX: number = 2;
+const PANEL_MASK_Z_INDEX: number = 1;
 
 @Component
 export struct AgentFloatWindow {
@@ -53,6 +67,7 @@ export struct AgentFloatWindow {
   @State maskOpacity: number = 0;
   @State sheetOpacity: number = 0;
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
+  @State panelVisible: boolean = false;
   @State generatedDraft: NoteDraftReadyEvent | null = null;
   private motionSeq: number = 0;
   private dragStartH: number = 48;
@@ -74,18 +89,33 @@ export struct AgentFloatWindow {
       this.sheetOffset = 0;
     }
   }
-  aboutToDisappear(): void { if (this.mainWindow) { this.mainWindow.off('keyboardHeightChange'); }; this.sm.save(this.sessions); }
+  aboutToDisappear(): void {
+    if (this.mainWindow) {
+      this.mainWindow.off('keyboardHeightChange');
+    }
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+  }
   onShowChange(): void {
     if (this.show) {
       this.openAnimated();
       return;
     }
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
     this.closeAnimated();
   }
-  onPendingImageChange(): void { if (this.pendingImageUri.length > 0) { this.inputVm.setImagePreview(this.pendingImageUri); } }
+  onPendingImageChange(): void {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+    if (this.pendingImageUri.length > 0) {
+      this.inputVm.setImagePreview(this.pendingImageUri);
+    }
+  }
   onMessagesChange(): void {
     if (this.messages.length > 0) {
-      this.sync(); this.sm.save(this.sessions);
+      this.sync();
+      this.sm.save(this.sessions).catch((): void => {});
     }
   }
 
@@ -112,8 +142,15 @@ export struct AgentFloatWindow {
       appendAiMsg: (id: number, event: StreamEvent): void => {
         this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m);
       },
+      replaceAiMsg: (id: number, content: string): void => {
+        this.messages = this.messages.map((m: ChatMsg): ChatMsg =>
+          m.id === id ? replaceChatMsgContent(m, content) : m,
+        );
+      },
       finishAiMsg: (id: number): void => {
         this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m);
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
       },
       setBusy: (v: boolean): void => { inputVm.setBusy(v); },
       setStatusMeta: (_meta: ChatStatusMeta | null): void => { /* 状态指示 UI 已移除 (多端设计 v3) */ },
@@ -124,6 +161,10 @@ export struct AgentFloatWindow {
     };
     this.service = new AgentChatService(cbs);
     this.inputVm.bind(this.service, (content: string): void => {
+      if (this.finishCurrentStreamingMessage()) {
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      }
       this.messages = [...this.messages, { id: nowId(), role: 'user', content, ts: Date.now(), streaming: false, reasoning: '' }];
     });
     const ss: ChatSession[] = await this.sm.init(getContext(this));
@@ -160,36 +201,80 @@ export struct AgentFloatWindow {
 
   private switchSession(sid: string): void {
     this.sync();
-    // 取消旧会话中正在进行的流式消息
-    if (this.messages.length > 0 && this.messages[this.messages.length - 1].streaming) {
-      this.messages = this.messages.map((m: ChatMsg, i: number): ChatMsg =>
-        i === this.messages.length - 1 ? this.finishMessage(m) : m
-      );
+    if (this.finishCurrentStreamingMessage()) {
+      this.sync();
     }
+    this.sm.flush(this.sessions).catch((): void => {});
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
     if (s !== undefined) { this.activeSid = sid; this.messages = s.messages; }
   }
-  private newSession(): void { this.sync(); const s: ChatSession = SessionCreator.newSession(this.sessions.length); this.sessions = [...this.sessions, s]; this.activeSid = s.id; this.messages = []; this.sm.save(this.sessions); }
-  private deleteSession(sid: string): void { if (this.sessions.length <= 1) { return; } const f = this.sessions.filter((s: ChatSession): boolean => s.id !== sid); this.sessions = f; if (sid === this.activeSid) { this.activeSid = f[0].id; this.messages = f[0].messages; }; this.sm.save(this.sessions); }
-
-  private finishMessage(message: ChatMsg): ChatMsg {
-    const next: ChatMsg = copyChatMsg(message);
-    next.streaming = false;
-    return next;
+  private newSession(): void {
+    this.sync();
+    const session: ChatSession = SessionCreator.newSession(this.sessions.length);
+    this.sessions = [...this.sessions, session];
+    this.activeSid = session.id;
+    this.messages = [];
+    this.sm.flush(this.sessions).catch((): void => {});
+    this.panelVisible = false;
   }
 
-  private toggleReasoning(message: ChatMsg): ChatMsg {
-    const next: ChatMsg = copyChatMsg(message);
-    const visible: boolean = message.reasoningExpanded !== undefined ? message.reasoningExpanded : true;
-    next.reasoningExpanded = !visible;
-    return next;
+  private togglePanel(): void { this.panelVisible = !this.panelVisible; }
+  private closePanel(): void { this.panelVisible = false; }
+
+  private onSelectSession(sid: string): void { this.switchSession(sid); this.panelVisible = false; }
+
+  private onRequestSessionDelete(sid: string): void {
+    if (this.sessions.length <= 1) {
+      return;
+    }
+    const target: ChatSession | undefined = this.sessions.find((s: ChatSession): boolean => s.id === sid);
+    if (target === undefined) {
+      return;
+    }
+    SessionsPanelController.requestDelete(
+      this.getUIContext().getPromptAction(),
+      sid,
+      target.name,
+      (deletedSid: string): void => { this.deleteSession(deletedSid); },
+      (): void => { this.showToast('无法打开删除确认，请稍后重试'); }
+    );
+  }
+  private deleteSession(sid: string): void {
+    if (this.sessions.length <= 1) {
+      return;
+    }
+    this.sync();
+    const remaining: ChatSession[] = this.sessions.filter((s: ChatSession): boolean => s.id !== sid);
+    this.sessions = remaining;
+    if (sid === this.activeSid) {
+      this.activeSid = remaining[0].id;
+      this.messages = remaining[0].messages;
+    }
+    this.sm.flush(this.sessions).catch((): void => {});
+  }
+
+  private finishMessage(message: ChatMsg): ChatMsg {
+    return finishChatMsg(message);
   }
 
   // ===== 交互逻辑 (输入面板已迁出至 AgentInputViewModel; 模型显示已迁出至 ModelSelector; 会话创建已迁出至 SessionCreator; 相机/相册已迁出至 CameraKitLauncher / AlbumPickerLauncher) =====
 
   private stopStreaming = (): void => {
     this.inputVm.stop();
+    this.finishCurrentStreamingMessage();
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
   };
+
+  private finishCurrentStreamingMessage(): boolean {
+    if (this.messages.length === 0 || !this.messages[this.messages.length - 1].streaming) {
+      return false;
+    }
+    this.messages = this.messages.map((message: ChatMsg, index: number): ChatMsg =>
+      index === this.messages.length - 1 ? this.finishMessage(message) : message,
+    );
+    return true;
+  }
 
   // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
   private showToast(message: string): void {
@@ -205,6 +290,8 @@ export struct AgentFloatWindow {
 
   // + 弹窗 → 相机: 拉起 HarmonyOS 系统相机选择器, 拍完写入 VM + Toast
   private onCameraAction = (): void => {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
     CameraKitLauncher.capture(getContext(this) as common.UIAbilityContext)
       .then((uri: string): void => {
         this.inputVm.setImagePreview(uri);
@@ -217,6 +304,8 @@ export struct AgentFloatWindow {
 
   // + 弹窗 → 相册: 拉起 HarmonyOS 系统相册选择器, 选完写入 VM + Toast
   private onAlbumAction = (): void => {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
     AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext)
       .then((uris: string[]): void => {
         if (uris.length > 0) {
@@ -260,6 +349,7 @@ export struct AgentFloatWindow {
   private closeAnimated(): void {
     this.motionSeq += 1;
     const seq: number = this.motionSeq;
+    this.panelVisible = false;
     if (!this.overlayVisible) {
       return;
     }
@@ -304,12 +394,31 @@ export struct AgentFloatWindow {
 
           ChatHeader({
             sessionTitle: this.activeSessionTitle(),
-            onNewChat: (): void => { this.newSession(); },
-            onClose: this.onClose,
+            onToggleHistory: (): void => { this.togglePanel(); },
+            onCreateSession: (): void => { this.newSession(); },
           });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
-          AgentMessageList({ messages: this.messages, busy: this.inputVm.busy, scroller: this.scroller, onToggleReasoning: (msg: ChatMsg): void => { this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === msg.id ? this.toggleReasoning(m) : m); } });
+          if (this.panelVisible) {
+            Column()
+              .width('100%').height('100%')
+              .backgroundColor(Color.Transparent)
+              .position({ x: 0, y: PANEL_MASK_TOP })
+              .markAnchor({ x: 0, y: 0 })
+              .zIndex(PANEL_MASK_Z_INDEX)
+              .onClick((): void => { this.closePanel(); });
+            SessionsPanel({
+              sessions: this.sessions,
+              activeSid: this.activeSid,
+              onSelect: (sid: string): void => { this.onSelectSession(sid); },
+              onRequestDelete: (sid: string): void => { this.onRequestSessionDelete(sid); },
+            })
+              .position({ x: S_3 + S_4, y: PANEL_MASK_TOP + S_2 })
+              .markAnchor({ x: 0, y: 0 })
+              .zIndex(PANEL_Z_INDEX);
+          }
+
+          AgentMessageList({ messages: this.messages, busy: this.inputVm.busy, scroller: this.scroller });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
           ImagePreviewBar({ imagePreview: this.inputVm.imagePreview, onClear: (): void => { this.inputVm.clearImagePreview(); } });

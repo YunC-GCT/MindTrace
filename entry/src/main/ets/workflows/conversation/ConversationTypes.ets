@@ -26,6 +26,7 @@ export interface ConversationWorkflowCallbacks {
   addAiMsg(content: string): void;
   addAiMsgEmpty(): number;
   appendAiMsg(id: number, event: StreamEvent): void;
+  replaceAiMsg(id: number, content: string): void;
   finishAiMsg(id: number): void;
   onStart(): void;
   onProgress(step: ConversationProgressStep): void;

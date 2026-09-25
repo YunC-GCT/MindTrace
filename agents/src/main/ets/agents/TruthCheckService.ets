@@ -244,7 +244,6 @@ export class TruthCheckService {
   private patchIntegralDx(text: string, issues: string[]): string {
     let result: string = text;
     const intPattern: string = '\\int_{';
-    const dxPattern: string = 'dx';
     let searchPos: number = 0;
     while (true) {
       const intIdx: number = result.indexOf(intPattern, searchPos);
@@ -263,13 +262,19 @@ export class TruthCheckService {
       if (hatClose === -1) {
         break;
       }
+      // 2026-09-21: 接受任意积分微元 (dx/du/dt/dy...), 避免换元积分
+      // \varphi(u)\,du 被误判缺 dx 并注入错误内容。
       const afterIntegral: string = result.substring(hatClose + 1);
-      const trimmedAfter: string = afterIntegral.trim();
-      if (
-        trimmedAfter.indexOf(dxPattern) !== 0 &&
-        trimmedAfter.indexOf('\\,dx') !== 0 &&
-        trimmedAfter.indexOf('\\, dx') !== 0
-      ) {
+      let windowEnd: number = afterIntegral.length;
+      const stoppers: string[] = ['$', '\\]', '\\int', '\n'];
+      for (const stopper of stoppers) {
+        const stopIdx: number = afterIntegral.indexOf(stopper);
+        if (stopIdx >= 0 && stopIdx < windowEnd) {
+          windowEnd = stopIdx;
+        }
+      }
+      const integrandWindow: string = afterIntegral.substring(0, windowEnd);
+      if (!this.hasDifferential(integrandWindow)) {
         result =
           result.substring(0, hatClose + 1) +
           ' \\, dx' +
@@ -279,5 +284,29 @@ export class TruthCheckService {
       searchPos = hatClose + 1;
     }
     return result;
+  }
+
+  private hasDifferential(text: string): boolean {
+    let index: number = 0;
+    while (index < text.length - 1) {
+      const current: string = text.charAt(index);
+      const next: string = text.charAt(index + 1);
+      if (current === 'd' && this.isAsciiLetter(next)) {
+        const previous: string = index > 0 ? text.charAt(index - 1) : '';
+        if (!this.isAsciiLetter(previous)) {
+          return true;
+        }
+      }
+      index += 1;
+    }
+    return false;
+  }
+
+  private isAsciiLetter(value: string): boolean {
+    if (value.length === 0) {
+      return false;
+    }
+    const code: number = value.charCodeAt(0);
+    return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
   }
 }

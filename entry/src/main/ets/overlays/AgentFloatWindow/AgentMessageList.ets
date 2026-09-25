@@ -58,7 +58,6 @@ export struct AgentMessageList {
   scroller: Scroller = new Scroller();
   private dataSource: ChatMessageDataSource = new ChatMessageDataSource();
   private lastStreamProgressKey: string = '';
-  onToggleReasoning: (msg: ChatMsg) => void = (_msg: ChatMsg): void => {};
 
   aboutToAppear(): void {
     this.dataSource.setMessages(this.messages);
@@ -85,10 +84,7 @@ export struct AgentMessageList {
       LazyForEach(this.dataSource,
         (msg: ChatMsg, index: number | undefined): void => {
           ListItem() {
-            ChatBubble({
-              msg: msg,
-              onToggleReasoning: (toggleMsg: ChatMsg): void => { this.onToggleReasoning(toggleMsg); },
-            });
+            ChatBubble({ msg: msg });
           }
           .width('100%')
           .padding({ left: S_4, right: S_4, top: safeIndex(index) === 0 ? S_2 : 0 });
@@ -113,7 +109,6 @@ export struct AgentMessageList {
     if (!message.streaming) {
       return '';
     }
-    const reasoningLength: number = message.reasoning === undefined ? 0 : message.reasoning.length;
-    return message.id.toString() + '_' + message.content.length.toString() + '_' + reasoningLength.toString();
+    return chatItemKey(message);
   }
 }

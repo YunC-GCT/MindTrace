@@ -2,8 +2,8 @@
  * AgentInputPanel.ets — AI 浮窗输入面板 (ViewModel 版)
  *
  * 路径: entry/src/main/ets/overlays/AgentFloatWindow/AgentInputPanel.ets
- * 职责: 外层面板容器, 自适应高度; 编排 ModeChip / PlusButton / SendButton
- * 依赖: common; 子组件: ModeChip / PlusButton / SendButton; ViewModel: AgentInputViewModel
+ * 职责: 外层面板容器, 自适应高度; 编排 ModeChip / StudyModeActionSheet / PlusActionSheet / SendButton
+ * 依赖: common; 子组件: ModeChip / StudyModeActionSheet / PlusActionSheet / SendButton; ViewModel: AgentInputViewModel
  *
  * 布局:
  *   ┌─ 面板 (外层 Column, GLASS_8 底 + R_LG 圆角 + 1vp BORDER) ──┐
@@ -11,7 +11,7 @@
  *   │  placeholder: "给 MindTrace 发送消息"                     │
  *   │                                                          │
  *   │  Row (alignItems center):                                │
- *   │    ModeChip("模型选择")  ModeChip("学习模式")            │
+ *   │    ModeChip("模型选择")  StudyModeActionSheet            │
  *   │                                PlusButton  SendButton    │
  *   └──────────────────────────────────────────────────────────┘
  *
@@ -21,7 +21,6 @@
  *   onCamera?:  + 弹窗 → 相机按钮 (转交至父组件 onCameraAction)
  *   onAlbum?:   + 弹窗 → 相册按钮 (转交至父组件 onAlbumAction)
  *   onStop?:    停止后副作用钩 (父组件清 statusMeta)
- * 胶囊: 暂无回调 (后续告知)
  */
 
 import {
@@ -31,9 +30,11 @@ import {
   F_SM,
 } from 'common';
 import { ModeChip } from './ModeChip';
+import { StudyModeActionSheet } from './StudyModeActionSheet';
 import { PlusActionSheet } from './PlusActionSheet';
 import { SendButton } from './SendButton';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
+import type { NoteGenerationRoute } from 'common';
 
 @Component
 export struct AgentInputPanel {
@@ -64,7 +65,12 @@ export struct AgentInputPanel {
       Row() {
         Row() {
           ModeChip({ label: this.modelName.length > 0 ? this.modelName : '模型选择' })
-          ModeChip({ label: '学习模式' })
+          StudyModeActionSheet({
+            selectedRoute: this.vm.route,
+            onRouteChange: (route: NoteGenerationRoute): void => {
+              this.vm.setRoute(route);
+            },
+          })
             .margin({ left: S_2 })
         }
 

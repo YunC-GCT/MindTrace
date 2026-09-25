@@ -28,6 +28,7 @@ import {
   isKnownNoteType,
   JSON_ONLY_RULES,
   LATEX_GENERATION_RULES,
+  LlmError,
   LlmGuard,
   LlmClient,
   LlmConfig,
@@ -35,8 +36,14 @@ import {
   NOTE_TYPE_KEYS,
   ReviewStatus,
   normalizeOutline,
+  normalizeDraftCategory,
+  normalizeDraftSummary,
+  normalizeLightDraft,
+  normalizeDraftSectionLabel,
+  normalizeDraftDifficulty,
   segmentSourceBundle,
   buildDeepOutline,
+  buildPipelineEvidence,
   sourceFingerprint,
   validateSourceBundle,
   NoteGenerationEvidenceVerifier,
@@ -56,7 +63,6 @@ import type {
   LlmGuardJsonCandidate,
   LlmGuardValidationResult,
   LlmCaller,
-  LlmCallResult,
   LlmJsonSchema,
   LlmResponseFormat,
   NoteDraftDocument,
@@ -84,8 +90,9 @@ import type {
   IncrementalPatchResponse,
   SourceFragment,
 } from 'common';
-import { NOTE_DRAFT_JSON_SCHEMA, parseDirectStandardArtifacts, validateDraftDocument, validateDraftShape } from 'common';
+import { NOTE_DRAFT_JSON_SCHEMA, normalizeDeepSectionDraft, normalizeEvidenceItems, parseDirectStandardArtifacts, validateDraftDocument, validateDraftShape } from 'common';
 import { TypeClassifier } from './TypeClassifier';
+import { GenerationJsonCaller } from './GenerationJsonCaller';
 import {
   KNOWLEDGE_CLASSIFY_HINT_TIMEOUT_MS,
   KNOWLEDGE_FALLBACK_CATEGORY,
@@ -97,14 +104,19 @@ import {
   PromptBuilder,
 } from './PromptBuilder';
 
+/** deep ledger 单条 value 上限 (字符): 防止共享 ledger 随节数膨胀推高 prompt (P0-5) */
+const DEEP_LEDGER_VALUE_MAX_CHARS: number = 160;
+
 export class KnowledgeModel {
   private contentProtocol: ContentProtocol = new ContentProtocol();
   private contentExcerptBuilder: ContentExcerptBuilder = new ContentExcerptBuilder();
   private promptBuilder: PromptBuilder = new PromptBuilder();
   private llm: LlmCaller;
+  private jsonCaller: GenerationJsonCaller;
 
   constructor(llm?: LlmCaller) {
     this.llm = llm ?? new LlmClient();
+    this.jsonCaller = new GenerationJsonCaller(this.llm);
   }
 
   /**
@@ -190,48 +202,41 @@ export class KnowledgeModel {
     const systemMessage: ChatMessage = {
       role: 'system',
       content: 'Generate one schema-valid math note draft. Preserve the instruction exactly. '
-        + 'Every section must cite source IDs in sourceIds. Return JSON only.\n'
+        + 'If sourceIds are clear from the input, include them; otherwise leave them empty and let the pipeline map them from the original source fragments. '
+        + 'Do not invent source IDs. Evidence is assembled by the pipeline when the first model pass does not provide it. Return JSON only.\n'
         + 'Original source fragments are authoritative; summaries never replace conflicting raw text.\n'
         + request.instruction + '\n' + NOTE_DRAFT_JSON_SCHEMA,
     };
     const userMessage: ChatMessage = { role: 'user', content: sourceText };
     const messages: ChatMessage[] = [systemMessage, userMessage];
     const responseFormat = this.structuredResponseFormat();
-    const callResult: LlmCallResult = await this.llm.call({
-      messages: messages,
-      maxTokens: this.budgetedRequestTokens(request, 1200),
-      timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-      responseFormat: responseFormat,
-    });
-    const raw: string = callResult.text ?? '';
-    const jsonText: string = new LlmGuard().extractJsonObject(raw);
-    if (jsonText.length === 0) {
-      throw new Error('light draft missing JSON object');
-    }
-    let parsed: Record<string, Object>;
-    try {
-      parsed = JSON.parse(jsonText) as Record<string, Object>;
-    } catch (e) {
-      throw new Error('light draft invalid JSON');
-    }
-    const shapeIssues: string[] = validateDraftShape(parsed);
-    if (shapeIssues.length > 0) {
-      throw new Error('light draft schema failed: ' + shapeIssues.join(','));
-    }
-    const document: NoteDraftDocument = this.parseDraftDocument(parsed);
-    const sourceIds: string[] = [];
-    for (const fragment of request.sources.fragments) {
-      sourceIds.push(fragment.id);
-    }
-    const issues: NoteGenerationIssue[] = validateDraftDocument(document, sourceIds);
-    if (issues.length > 0) {
-      const codes: string[] = [];
-      for (const issue of issues) {
-        codes.push(issue.code);
-      }
-      throw new Error('light draft validation failed: ' + codes.join(','));
-    }
-    return document;
+    const parsed: Record<string, Object> = await this.jsonCaller.callJson(
+      messages,
+      {
+        label: 'light draft',
+        maxTokens: this.budgetedRequestTokens(request, 1200),
+        timeoutMs: KNOWLEDGE_TIMEOUT_MS,
+        responseFormat: responseFormat,
+      },
+      (json: Record<string, Object>): LlmGuardValidationResult => {
+        const issues: string[] = validateDraftShape(json);
+        return { ok: issues.length === 0, issues: issues };
+      },
+      (json: Record<string, Object>): string[] => {
+        const document: NoteDraftDocument = normalizeLightDraft(this.parseDraftDocument(json), request.sources);
+        const sourceIds: string[] = [];
+        for (const fragment of request.sources.fragments) {
+          sourceIds.push(fragment.id);
+        }
+        const issues: NoteGenerationIssue[] = validateDraftDocument(document, sourceIds);
+        const codes: string[] = [];
+        for (const issue of issues) {
+          codes.push(issue.code);
+        }
+        return codes;
+      },
+    );
+    return normalizeLightDraft(this.parseDraftDocument(parsed), request.sources);
   }
 
   async structureStandardDraft(request: NoteGenerationRequest): Promise<NoteGenerationStandardResult> {
@@ -347,7 +352,7 @@ export class KnowledgeModel {
     const draft: NoteDraftDocument = {
       schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
       title: title.length === 0 ? '数学学习笔记' : title,
-      summary: summary,
+      summary: normalizeDraftSummary(summary),
       subject: subject.length === 0 ? '其它' : subject,
       category: category,
       chapter: chapter,
@@ -356,7 +361,7 @@ export class KnowledgeModel {
       sections: sections,
       instruction: request.instruction,
     };
-    const evidence: NoteGenerationEvidenceItem[] = this.buildDeepEvidence(outline, sections, segments);
+    const evidence: NoteGenerationEvidenceItem[] = this.buildDeepEvidence(outline, sections, segments, request.sources);
     const verification: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
       outline,
       evidence,
@@ -380,13 +385,40 @@ export class KnowledgeModel {
     issues: NoteGenerationIssue[],
   ): Promise<NoteGenerationDeepResult> {
     const targets: string[] = [];
+    let globalRepairRequired: boolean = false;
     for (const issue of issues) {
       if (issue.sectionId !== undefined && !targets.includes(issue.sectionId)) {
         targets.push(issue.sectionId);
       }
+      if (issue.sourceId !== undefined) {
+        for (const outlineSection of current.outline.sections) {
+          if (outlineSection.sourceIds.includes(issue.sourceId) && !targets.includes(outlineSection.id)) {
+            targets.push(outlineSection.id);
+          }
+        }
+      }
+      if (issue.code === 'DEEP_MUST_INCLUDE_MISSING') {
+        for (const outlineSection of current.outline.sections) {
+          for (const requiredItem of outlineSection.mustInclude) {
+            if (issue.message.includes(requiredItem) && !targets.includes(outlineSection.id)) {
+              targets.push(outlineSection.id);
+            }
+          }
+        }
+      }
+      if (issue.code === 'DEEP_CONTRADICTION' || issue.code === 'TRUTH_CHECK_ERROR') {
+        globalRepairRequired = true;
+      }
     }
-    if (targets.length === 0 && current.outline.sections.length > 0) {
-      targets.push(current.outline.sections[0].id);
+    if (globalRepairRequired) {
+      for (const outlineSection of current.outline.sections) {
+        if (!targets.includes(outlineSection.id)) {
+          targets.push(outlineSection.id);
+        }
+      }
+    }
+    if (targets.length === 0) {
+      throw new Error('deep repair target unresolved');
     }
     const segments: NoteGenerationSegment[] = current.segments ?? segmentSourceBundle(request.sources);
     const ledger: NoteGenerationLedger = {
@@ -434,7 +466,7 @@ export class KnowledgeModel {
       sections: sections,
       instruction: request.instruction,
     };
-    const evidence: NoteGenerationEvidenceItem[] = this.buildDeepEvidence(current.outline, sections, segments);
+    const evidence: NoteGenerationEvidenceItem[] = this.buildDeepEvidence(current.outline, sections, segments, request.sources);
     const verification: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
       current.outline,
       evidence,
@@ -480,34 +512,49 @@ export class KnowledgeModel {
         + 'targets=' + JSON.stringify(targetSections) + '\n'
         + 'relevant sources=\n' + relevantSources.join('\n'),
     };
-    const result: LlmCallResult = await this.llm.call({
-      messages: [systemMessage, { role: 'user', content: 'Return section RepairPatch objects only.' }],
-      maxTokens: this.budgetedRequestTokens(request, 2400),
-      timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-      responseFormat: { type: 'json_object' },
-    });
-    const jsonText: string = new LlmGuard().extractJsonObject(result.text ?? '');
-    if (jsonText.length === 0) {
-      throw new Error('incremental repair missing JSON object');
-    }
-    const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
-    const value: Object | undefined = parsed['patches'];
-    if (value === undefined || !Array.isArray(value)) {
-      throw new Error('incremental repair requires patches only');
-    }
+    const parsed: Record<string, Object> = await this.jsonCaller.callJson(
+      [systemMessage, { role: 'user', content: 'Return section RepairPatch objects only.' }],
+      {
+        label: 'incremental repair',
+        maxTokens: this.budgetedRequestTokens(request, 2400),
+        timeoutMs: KNOWLEDGE_TIMEOUT_MS,
+        responseFormat: { type: 'json_object' },
+      },
+      (json: Record<string, Object>): LlmGuardValidationResult => {
+        const value: Object | undefined = json['patches'];
+        if (value === undefined || !Array.isArray(value)) {
+          return { ok: false, issues: ['patches must be an array'] };
+        }
+        return { ok: true, issues: [] };
+      },
+      (json: Record<string, Object>): string[] => {
+        const value: Object | undefined = json['patches'];
+        if (value === undefined || !Array.isArray(value)) {
+          return ['patches must be an array'];
+        }
+        const issues: string[] = [];
+        for (const item of value as Object[]) {
+          const record: Record<string, Object> = item as Record<string, Object>;
+          const sectionId: string = String(record['sectionId'] ?? '');
+          if (!plan.targetSectionIds.includes(sectionId) || record['operation'] !== 'replace') {
+            issues.push('incremental repair contains an unplanned patch: ' + sectionId);
+          }
+        }
+        return issues;
+      },
+    );
     const patches: IncrementalPatch[] = [];
-    for (const item of value as Object[]) {
-      const record: Record<string, Object> = item as Record<string, Object>;
-      const sectionId: string = String(record['sectionId'] ?? '');
-      if (!plan.targetSectionIds.includes(sectionId) || record['operation'] !== 'replace') {
-        throw new Error('incremental repair contains an unplanned patch');
+    const patchValue: Object | undefined = parsed['patches'];
+    if (patchValue !== undefined && Array.isArray(patchValue)) {
+      for (const item of patchValue as Object[]) {
+        const record: Record<string, Object> = item as Record<string, Object>;
+        patches.push({
+          sectionId: String(record['sectionId'] ?? ''),
+          operation: 'replace',
+          content: String(record['content'] ?? ''),
+          sourceIds: this.readStringArray(record['sourceIds']),
+        });
       }
-      patches.push({
-        sectionId: sectionId,
-        operation: 'replace',
-        content: String(record['content'] ?? ''),
-        sourceIds: this.readStringArray(record['sourceIds']),
-      });
     }
     return { patches: patches };
   }
@@ -529,33 +576,46 @@ export class KnowledgeModel {
       content: 'Generate exactly one schema-valid math note section as JSON. This is a sequential deep route. '
         + 'Use only the relevant original segments below and the shared ledger; never invent or read other sections. '
         + 'Preserve formulas, derivation steps and terminology exactly, and return one section with id '
-        + outlineSection.id + '. User instruction=' + request.instruction + '\n'
+        + outlineSection.id + '. '
+        + 'Contract: sections[].sourceIds may be empty when the model cannot safely determine the mapping; '
+        + 'when present, they must use the [source:X] ids from the relevant sources. The pipeline fills missing mappings from the outline and source bundle. '
+        + 'category must be one of 概念/定理/公式/证明题/计算题; '
+        + 'title must not contain math delimiters; summary may contain short inline math using $...$, '
+        + 'but must be no longer than 60 characters and must not use display math. '
+        + LATEX_GENERATION_RULES + '\n'
+        + 'User instruction=' + request.instruction + '\n'
         + 'section label=' + outlineSection.label + '\n'
         + 'must include=' + outlineSection.mustInclude.join(',') + '\n'
         + 'shared ledger=' + JSON.stringify(ledger) + '\n'
         + 'relevant sources:\n' + relevantLines.join('\n') + '\n' + NOTE_DRAFT_JSON_SCHEMA,
     };
-    const result: LlmCallResult = await this.llm.call({
-      messages: [systemMessage, { role: 'user', content: 'Draft only this section in document JSON.' }],
-      maxTokens: this.budgetedRequestTokens(request, 2400),
-      timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-      responseFormat: this.structuredResponseFormat(),
-    });
-    const jsonText: string = new LlmGuard().extractJsonObject(result.text ?? '');
-    const parsed: Record<string, Object> = this.parseJsonObjectOrThrow(
-      jsonText.length === 0 ? '' : jsonText,
-      'deep section draft',
+    const parsed: Record<string, Object> = await this.jsonCaller.callJson(
+      [systemMessage, { role: 'user', content: 'Draft only this section in document JSON.' }],
+      {
+        label: 'deep section draft',
+        maxTokens: this.budgetedRequestTokens(request, 2400),
+        timeoutMs: KNOWLEDGE_TIMEOUT_MS,
+        responseFormat: this.structuredResponseFormat(),
+      },
+      (json: Record<string, Object>): LlmGuardValidationResult => {
+        const issues: string[] = validateDraftShape(json);
+        return { ok: issues.length === 0, issues: issues };
+      },
+      (json: Record<string, Object>): string[] => {
+        // P0-4 (2026-09-19): 先归一化再校验 — LLM 原始输出系统性缺 sourceIds /
+        // 学科级 category / \(...\) 定界符, 直接判 hard 导致 3 次重试全灭;
+        // 归一化后校验器只拦截真值类失败 (空 content / 不可渲染 / 伪造引用)
+        const document: NoteDraftDocument = normalizeDeepSectionDraft(this.parseDraftDocument(json), outlineSection);
+        const issues: NoteGenerationIssue[] = validateDraftDocument(document, outlineSection.sourceIds, true);
+        const codes: string[] = [];
+        for (const issue of issues) {
+          const detail: string = issue.message.trim().length > 0 ? ': ' + issue.message : '';
+          codes.push(issue.code + detail);
+        }
+        return codes;
+      },
     );
-    if (jsonText.length === 0) {
-      throw new Error('deep section draft missing JSON object: ' + outlineSection.id);
-    }
-    const document: NoteDraftDocument = this.parseDraftDocument(parsed);
-    const sourceIds: string[] = outlineSection.sourceIds.slice(0);
-    const localIssues: NoteGenerationIssue[] = validateDraftDocument(document, sourceIds);
-    if (localIssues.length > 0) {
-      throw new Error('deep section validation failed: ' + localIssues[0].code);
-    }
-    return document;
+    return normalizeDeepSectionDraft(this.parseDraftDocument(parsed), outlineSection);
   }
 
   private updateDeepLedger(
@@ -565,20 +625,54 @@ export class KnowledgeModel {
     segments: NoteGenerationSegment[],
   ): void {
     const sourceIds: string[] = outlineSection.sourceIds.slice(0);
-    if (content.indexOf('=') >= 0 || content.indexOf('\\(') >= 0) {
-      ledger.formulas.push({ key: 'formula-' + outlineSection.id, value: content, sourceIds: sourceIds, sectionId: outlineSection.id });
+    // P0-5 (2026-09-20): ledger 是跨节共享上下文, 不是内容仓库 —
+    // value 截断 (DEEP_LEDGER_VALUE_MAX_CHARS), 否则 N 节后 prompt 线性膨胀
+    if (this.contentProtocol.hasFormulaSyntax(content)) {
+      ledger.formulas.push({
+        key: 'formula-' + outlineSection.id,
+        value: content.length > DEEP_LEDGER_VALUE_MAX_CHARS ? content.substring(0, DEEP_LEDGER_VALUE_MAX_CHARS) : content,
+        sourceIds: sourceIds,
+        sectionId: outlineSection.id,
+      });
     }
     const words: string[] = content.split(' ');
     if (words.length > 0) {
       const term: string = words[0].trim();
       if (term.length > 0) {
-        ledger.terminology.push({ key: term, value: term, sourceIds: sourceIds, sectionId: outlineSection.id });
+        ledger.terminology.push({
+          key: term.length > 24 ? term.substring(0, 24) : term,
+          value: term.length > 24 ? term.substring(0, 24) : term,
+          sourceIds: sourceIds,
+          sectionId: outlineSection.id,
+        });
+      }
+    }
+    // P0-5: 原实现遍历全部 segments 按 sourceId 匹配 — 单源对话流下每节
+    // 重录全部"因此/结论" segment, N 节后二次方膨胀 (实测 55 节 19×55 条)。
+    // 收紧为: 仅本节 segmentIds 内的结论 + 按 segment id 去重 + value 截断。
+    const existingConclusionKeys: string[] = [];
+    for (const entry of ledger.conclusions) {
+      if (!existingConclusionKeys.includes(entry.key)) {
+        existingConclusionKeys.push(entry.key);
       }
     }
     for (const segment of segments) {
-      if (sourceIds.includes(segment.sourceId) && (segment.text.includes('因此') || segment.text.includes('结论'))) {
-        ledger.conclusions.push({ key: 'conclusion-' + outlineSection.id, value: segment.text, sourceIds: sourceIds, sectionId: outlineSection.id });
+      const belongsToSection: boolean = outlineSection.segmentIds?.includes(segment.id) === true;
+      if (!belongsToSection || !(segment.text.includes('因此') || segment.text.includes('结论'))) {
+        continue;
       }
+      const key: string = 'conclusion-' + segment.id;
+      if (existingConclusionKeys.includes(key)) {
+        continue;
+      }
+      existingConclusionKeys.push(key);
+      ledger.conclusions.push({
+        key: key,
+        value: segment.text.length > DEEP_LEDGER_VALUE_MAX_CHARS
+          ? segment.text.substring(0, DEEP_LEDGER_VALUE_MAX_CHARS) : segment.text,
+        sourceIds: sourceIds,
+        sectionId: outlineSection.id,
+      });
     }
   }
 
@@ -586,6 +680,7 @@ export class KnowledgeModel {
     outline: NoteGenerationOutline,
     sections: NoteDraftSection[],
     segments: NoteGenerationSegment[],
+    bundle: SourceBundle,
   ): NoteGenerationEvidenceItem[] {
     const evidence: NoteGenerationEvidenceItem[] = [];
     for (const section of sections) {
@@ -606,13 +701,34 @@ export class KnowledgeModel {
         continue;
       }
       const excerpt: string = segment.text.substring(0, Math.min(segment.text.length, 240));
+      // 2026-09-20 P0-7: segment 文本是 fragment 的切片 (经 trim), 偏移由管线
+      // 重算 — 原先 start:0 写死, 除首节外全部 EVIDENCE_EXCERPT_NOT_LOCATABLE
+      // (dbpull5 deep run 实测 ×6); 找不到时降级为空 excerpt 锚点 (与 P0-6 放宽一致)
+      let fragment: SourceFragment | undefined = undefined;
+      for (const candidate of bundle.fragments) {
+        if (candidate.id === sourceId) {
+          fragment = candidate;
+          break;
+        }
+      }
+      let ref: EvidenceSourceRef = { sourceId: sourceId, excerpt: '', start: 0, end: 0 };
+      if (fragment !== undefined) {
+        const located: number = fragment.text.indexOf(excerpt);
+        if (located >= 0) {
+          ref = { sourceId: sourceId, excerpt: excerpt, start: located, end: located + excerpt.length };
+        }
+      }
       evidence.push({
         id: 'evidence-' + section.id,
         type: segment.boundary === 'formula_block' ? 'formula' : segment.boundary === 'derivation' ? 'step' : 'claim',
         claim: excerpt,
-        sourceRefs: [{ sourceId: sourceId, excerpt: excerpt, start: 0, end: excerpt.length }],
+        sourceRefs: [ref],
         targetSectionId: section.id,
-        verification: section.content.includes(excerpt) ? 'supported' : 'ambiguous',
+        // 2026-09-20 P0-7: 溯源是结构性的 (章节由该 segment 生成), 不再按
+        // 「内容逐字包含原文头」猜测 ambiguous — 该猜测叠加校验器 hard 判定
+        // 使改写型 deep 草稿必然全灭 (dbpull5 实测 EVIDENCE_AMBIGUOUS ×6)
+        verification: 'supported',
+        origin: 'pipeline',
       });
     }
     return evidence;
@@ -675,19 +791,26 @@ export class KnowledgeModel {
         + 'mustInclude=' + requirement.mustInclude.join(','),
     };
     const userMessage: ChatMessage = { role: 'user', content: 'Repair only contradicted, ambiguous, or uncovered evidence.' };
-    const result: LlmCallResult = await this.llm.call({
-      messages: [systemMessage, userMessage],
-      maxTokens: this.budgetedRequestTokens(request, 2400),
-      timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-      responseFormat: this.structuredResponseFormat(NOTE_EVIDENCE_JSON_SCHEMA, 'mindtrace_note_evidence_repair'),
-    });
-    const jsonText: string = new LlmGuard().extractJsonObject(result.text ?? '');
-    if (jsonText.length === 0) {
-      return [];
-    }
-    const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+    // 行为变更 (2026-09-19): 提取/校验失败不再静默返回 [], GenerationJsonError 向上传播,
+    // 由 Dispatcher 归入 repair_failed 并保留 best checkpoint (spec §13.12)
+    const parsed: Record<string, Object> = await this.jsonCaller.callJson(
+      [systemMessage, userMessage],
+      {
+        label: 'evidence repair',
+        maxTokens: this.budgetedRequestTokens(request, 2400),
+        timeoutMs: KNOWLEDGE_TIMEOUT_MS,
+        responseFormat: this.structuredResponseFormat(NOTE_EVIDENCE_JSON_SCHEMA, 'mindtrace_note_evidence_repair'),
+      },
+      (json: Record<string, Object>): LlmGuardValidationResult => {
+        const value: Object | undefined = json['evidence'];
+        if (value === undefined || !Array.isArray(value)) {
+          return { ok: false, issues: ['evidence must be an array'] };
+        }
+        return { ok: true, issues: [] };
+      },
+    );
     const evidenceValue: Object | undefined = parsed['evidence'];
-    return evidenceValue === undefined ? [] : this.parseEvidence(evidenceValue);
+    return this.parseEvidence(evidenceValue as Object);
   }
 
   private async callStandardArtifacts(
@@ -699,10 +822,19 @@ export class KnowledgeModel {
       role: 'system',
       content: 'Return JSON only for a math note standard route. ' + purpose + '\n'
         + 'Preserve the exact user instruction, formulas, steps, examples and source mapping. '
-        + 'Every evidence item must use a source excerpt and target section. '
-        + 'Use stable section labels and source IDs from the input.\n'
-        + 'Output schema: top-level object with exactly outline, evidence, and draft. '
-        + 'outline contains schemaVersion and sections; evidence is an array of evidence items; '
+        + 'When evidence is returned, each item should use a source excerpt and target section. '
+        + 'Evidence may be an empty array or be omitted on the first pass; the pipeline will build evidence from the original source fragments when needed. '
+        + 'Use stable section labels and source IDs from the input when they are unambiguous.\n'
+        + 'category must be exactly one of: 概念, 定理, 公式, 证明题, 计算题.\n'
+        + 'Outline and draft section sourceIds may be empty when the mapping is not yet known. Do not invent IDs; the pipeline will fill missing mappings from the real source bundle.\n'
+        + 'Section content: use $...$ for inline math and $$ on their own lines for display math; '
+        + 'never use \\( \\) or \\[ \\]; use markdown lists (- item / 1. item) instead of \\begin{itemize} or \\begin{enumerate}.\n'
+        + 'Summary must be no longer than 60 characters; it may contain short inline math using $...$, '
+        + 'but must not contain display math.\n'
+        + 'Evidence excerpts must be copied verbatim (character-exact) from the sources.\n'
+        + LATEX_GENERATION_RULES + '\n'
+        + 'Output schema: top-level object with outline and draft; evidence is an optional array of evidence items. '
+        + 'outline contains schemaVersion and sections; '
         + 'draft contains schemaVersion, title, summary, subject, category, chapter, difficulty, tags, and sections.\n'
         + 'instruction=' + request.instruction + '\n'
         + 'mustInclude=' + requirement.mustInclude.join(',') + '\n'
@@ -710,40 +842,48 @@ export class KnowledgeModel {
     };
     const userMessage: ChatMessage = { role: 'user', content: 'Generate Outline, Evidence ledger, and Draft document.' };
     const messages: ChatMessage[] = [systemMessage, userMessage];
-    const result: LlmCallResult = await this.llm.call({
-      messages: messages,
-      maxTokens: this.budgetedRequestTokens(request, KNOWLEDGE_MAX_TOKENS),
-      timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-      responseFormat: this.structuredResponseFormat(NOTE_STANDARD_JSON_SCHEMA, 'mindtrace_note_standard'),
-    });
-    const jsonText: string = this.selectStandardArtifactsJsonText(result.text ?? '');
-    const parsed: Record<string, Object> = this.parseJsonObjectOrThrow(jsonText, 'standard artifacts');
+    const parsed: Record<string, Object> = await this.jsonCaller.callJson(
+      messages,
+      {
+        label: 'standard artifacts',
+        maxTokens: this.budgetedRequestTokens(request, KNOWLEDGE_MAX_TOKENS),
+        timeoutMs: KNOWLEDGE_TIMEOUT_MS,
+        responseFormat: this.structuredResponseFormat(NOTE_STANDARD_JSON_SCHEMA, 'mindtrace_note_standard'),
+        candidateSelector: (extraction: LlmGuardJsonExtractionResult): LlmGuardJsonCandidate | undefined =>
+          this.selectStandardArtifactsCandidate(extraction),
+      },
+      (json: Record<string, Object>): LlmGuardValidationResult => {
+        if (this.isStandardArtifactsCandidate(json)) {
+          return { ok: true, issues: [] };
+        }
+        return { ok: false, issues: ['standard artifacts require draft'] };
+      },
+    );
     return this.parseStandardResult(parsed, request.sources);
   }
 
-  private selectStandardArtifactsJsonText(raw: string): string {
-    const guard: LlmGuard = new LlmGuard();
-    const extraction: LlmGuardJsonExtractionResult = guard.extractJsonObjectWithDetails(raw);
-    if (extraction.candidates.length === 1) {
-      if (extraction.success) {
-        return extraction.jsonText;
-      }
-      throw new Error(this.formatStandardArtifactsSelectionFailure(extraction.category, extraction, 0));
-    }
+  /**
+   * standard 路线候选选择策略 (原 selectStandardArtifactsJsonText 的候选版):
+   * 0 候选 / 唯一候选不可解析 / 多候选且命中数 ≠ 1 → undefined (seam 终止, 保持 fail-fast 旧行为)
+   */
+  private selectStandardArtifactsCandidate(
+    extraction: LlmGuardJsonExtractionResult,
+  ): LlmGuardJsonCandidate | undefined {
     if (extraction.candidates.length === 0) {
-      throw new Error(this.formatStandardArtifactsSelectionFailure(extraction.category, extraction, 0));
+      return undefined;
     }
-    const eligible: LlmGuardJsonCandidate[] = [];
+    if (extraction.candidates.length === 1) {
+      return extraction.success ? extraction.candidates[0] : undefined;
+    }
+    let eligible: LlmGuardJsonCandidate | undefined = undefined;
+    let eligibleCount: number = 0;
     for (const candidate of extraction.candidates) {
       if (candidate.parseable && candidate.object !== undefined && this.isStandardArtifactsCandidate(candidate.object)) {
-        eligible.push(candidate);
+        eligible = candidate;
+        eligibleCount += 1;
       }
     }
-    if (eligible.length === 1) {
-      return eligible[0].text;
-    }
-    const category: string = eligible.length === 0 ? 'no_eligible_candidate' : 'multiple_eligible_candidates';
-    throw new Error(this.formatStandardArtifactsSelectionFailure(category, extraction, eligible.length));
+    return eligibleCount === 1 ? eligible : undefined;
   }
 
   private isStandardArtifactsCandidate(parsed: Record<string, Object>): boolean {
@@ -758,7 +898,10 @@ export class KnowledgeModel {
     if (draftValue !== undefined && !Array.isArray(draftValue) && typeof draftValue === 'object') {
       return this.isDraftArtifactsCandidate(draftValue as Record<string, Object>);
     }
-    return this.isDraftArtifactsCandidate(parsed);
+    if (this.isDraftArtifactsCandidate(parsed)) {
+      return true;
+    }
+    return this.findNestedStandardArtifacts(parsed) !== undefined;
   }
 
   private isDraftArtifactsCandidate(parsed: Record<string, Object>): boolean {
@@ -767,16 +910,48 @@ export class KnowledgeModel {
     return typeof titleValue === 'string' && titleValue.trim().length > 0 && Array.isArray(sectionsValue);
   }
 
-  private formatStandardArtifactsSelectionFailure(
-    category: string,
-    extraction: LlmGuardJsonExtractionResult,
-    eligibleCount: number,
-  ): string {
-    return 'standard artifacts JSON extraction failed: category=' + category
-      + ', candidates=' + extraction.candidates.length.toString()
-      + ', eligible=' + eligibleCount.toString()
-      + ', detail=' + extraction.detail
-      + ', preview=' + extraction.preview;
+  private findNestedStandardArtifacts(parsed: Record<string, Object>): Record<string, Object> | undefined {
+    const preferredKeys: string[] = ['result', 'data', 'note', 'document', 'draftDocument', 'answer', 'content', 'output'];
+    for (const key of preferredKeys) {
+      const nested: Record<string, Object> | undefined = this.readNestedStandardArtifacts(parsed[key]);
+      if (nested !== undefined) {
+        return nested;
+      }
+    }
+    for (const key of Object.keys(parsed)) {
+      if (preferredKeys.includes(key)) {
+        continue;
+      }
+      const nested: Record<string, Object> | undefined = this.readNestedStandardArtifacts(parsed[key]);
+      if (nested !== undefined) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  private readNestedStandardArtifacts(value: Object | undefined): Record<string, Object> | undefined {
+    if (value === undefined || value === null || Array.isArray(value)) {
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      const jsonText: string = new LlmGuard().extractJsonObject(value);
+      if (jsonText.length === 0) {
+        return undefined;
+      }
+      try {
+        return JSON.parse(jsonText) as Record<string, Object>;
+      } catch (_e) {
+        return undefined;
+      }
+    }
+    if (typeof value === 'object') {
+      const record: Record<string, Object> = value as Record<string, Object>;
+      if (this.isStandardArtifactsCandidate(record) || this.isDraftArtifactsCandidate(record)) {
+        return record;
+      }
+    }
+    return undefined;
   }
 
   private async callIndependentVerifier(
@@ -785,17 +960,12 @@ export class KnowledgeModel {
     requirement: NoteGenerationRequirement,
     tokenBudget?: number,
   ): Promise<NoteGenerationVerification> {
-    const local: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
-      result.outline,
-      result.evidence,
-      result.draft,
-      bundle,
-      requirement,
-    );
     const systemMessage: ChatMessage = {
       role: 'system',
-      content: 'Act as an independent verifier. Return JSON only. For each evidence item classify only supported, contradicted, or ambiguous. '
+      content: 'Act as an independent verifier. Return JSON only. Classify EVERY evidence item listed below '
+        + 'as supported, contradicted, or ambiguous, using its exact id in the decisions array. '
         + 'Do not rewrite evidence, draft, or decide persistence.\n'
+        + 'evidence ids to classify: ' + result.evidence.map((item: NoteGenerationEvidenceItem): string => item.id).join(',') + '\n'
         + 'evidence=' + JSON.stringify(result.evidence) + '\n'
         + 'sources=' + this.standardSourceText(bundle) + '\n'
         + 'mustInclude=' + requirement.mustInclude.join(','),
@@ -804,13 +974,32 @@ export class KnowledgeModel {
     const messages: ChatMessage[] = [systemMessage, userMessage];
     let modelVerification: NoteGenerationVerification;
     try {
-      const callResult: LlmCallResult = await this.llm.call({
-        messages: messages,
-        maxTokens: this.budgetedTokens(tokenBudget, 1600),
-        timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-        responseFormat: this.structuredResponseFormat(NOTE_VERIFICATION_JSON_SCHEMA, 'mindtrace_note_verification'),
-      });
-      modelVerification = this.parseVerification(new LlmGuard().extractJsonObject(callResult.text ?? ''));
+      // 外层降级策略保留: seam 任何失败 (含重试耗尽) → VERIFIER_UNAVAILABLE
+      const parsed: Record<string, Object> = await this.jsonCaller.callJson(
+        messages,
+        {
+          label: 'independent verifier',
+          // 2600 (2026-09-19): decisions 数组需覆盖全部 evidence id, 1600 实测不够
+          maxTokens: this.budgetedTokens(tokenBudget, 2600),
+          timeoutMs: KNOWLEDGE_TIMEOUT_MS,
+          responseFormat: this.structuredResponseFormat(NOTE_VERIFICATION_JSON_SCHEMA, 'mindtrace_note_verification'),
+        },
+        (json: Record<string, Object>): LlmGuardValidationResult => {
+          const issues: string[] = [];
+          const decisionsValue: Object | undefined = json['decisions'];
+          if (decisionsValue !== undefined && !Array.isArray(decisionsValue)) {
+            issues.push('decisions must be an array');
+          }
+          const issuesValue: Object | undefined = json['issues'];
+          if (issuesValue !== undefined && !Array.isArray(issuesValue)) {
+            issues.push('issues must be an array');
+          }
+          return { ok: issues.length === 0, issues: issues };
+        },
+        (json: Record<string, Object>): string[] =>
+          this.validateIndependentVerifierJson(json, result.evidence),
+      );
+      modelVerification = this.parseVerification(parsed);
     } catch (e) {
       modelVerification = { status: 'ambiguous', issues: [{
         stage: 'evidence', code: 'VERIFIER_UNAVAILABLE', severity: 'hard',
@@ -820,6 +1009,13 @@ export class KnowledgeModel {
     if (result.evidence.length === 0) {
       modelVerification = this.relaxEmptyEvidenceVerification(modelVerification);
     }
+    const local: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
+      result.outline,
+      result.evidence,
+      result.draft,
+      bundle,
+      requirement,
+    );
     const verifierIssues: NoteGenerationIssue[] = [];
     for (const item of result.evidence) {
       let decided: boolean = false;
@@ -879,48 +1075,89 @@ export class KnowledgeModel {
     for (const section of result.outline.sections) {
       originalSectionIds.push(section.id);
     }
-    const outline: NoteGenerationOutline = this.ensureOutlineSourceMapping(normalizeOutline(result.outline, sourceIds), sourceIds);
-    const evidence: NoteGenerationEvidenceItem[] = [];
-    for (const item of result.evidence) {
-      const oldIndex: number = originalSectionIds.indexOf(item.targetSectionId);
-      const targetSectionId: string = oldIndex >= 0 ? outline.sections[oldIndex].id : item.targetSectionId;
-      evidence.push({
-        id: item.id,
-        type: item.type,
-        claim: item.claim,
-        sourceRefs: item.sourceRefs,
-        targetSectionId: targetSectionId,
-        verification: item.verification,
-      });
+    const outline: NoteGenerationOutline = normalizeOutline(result.outline, sourceIds);
+    const outlineSourceIdsBySectionId: Map<string, string[]> = new Map<string, string[]>();
+    for (const section of outline.sections) {
+      outlineSourceIdsBySectionId.set(section.id, section.sourceIds);
     }
     const sections: NoteDraftSection[] = [];
     for (const section of result.draft.sections) {
       const oldIndex: number = originalSectionIds.indexOf(section.id);
-      const outlineSection: NoteGenerationOutlineSection | undefined = oldIndex >= 0 ? outline.sections[oldIndex] : undefined;
-      const mappedSourceIds: string[] = section.sourceIds.length > 0
-        ? section.sourceIds
-        : outlineSection === undefined ? sourceIds.slice(0) : outlineSection.sourceIds.slice(0);
+      const remappedId: string = oldIndex >= 0 ? outline.sections[oldIndex].id : section.id;
+      // 2026-09-20 P0-6: draft section sourceIds 先过滤非法 (LLM 常写 run id /
+      // 缺 'conversation:' 前缀 → SOURCE_REFERENCE_INVALID), 空后再回填
+      // (outline 对应节优先, 否则全部源)
+      const mappedSourceIds: string[] = [];
+      for (const sourceId of section.sourceIds) {
+        if (sourceIds.includes(sourceId) && !mappedSourceIds.includes(sourceId)) {
+          mappedSourceIds.push(sourceId);
+        }
+      }
+      if (mappedSourceIds.length === 0) {
+        const fromOutline: string[] | undefined = outlineSourceIdsBySectionId.get(remappedId);
+        const fallbackIds: string[] = fromOutline !== undefined && fromOutline.length > 0
+          ? fromOutline : sourceIds;
+        for (const sourceId of fallbackIds) {
+          mappedSourceIds.push(sourceId);
+        }
+      }
       sections.push({
-        id: outlineSection === undefined ? section.id : outlineSection.id,
-        label: section.label,
-        content: section.content,
+        id: remappedId,
+        label: normalizeDraftSectionLabel(section.label, oldIndex >= 0 ? oldIndex : sections.length),
+        // 2026-09-19: 采用 MM-MD 规范化器的修复结果 (\(\)→$..$, \[→$$)
+        content: this.normalizeSectionContent(section.content),
         sourceIds: mappedSourceIds,
         state: section.state,
         baseHash: section.baseHash,
       });
     }
     const draft: NoteDraftDocument = {
-      schemaVersion: result.draft.schemaVersion,
+      // 2026-09-20 P0-6: schemaVersion 用管线常量, 不透传模型输出
+      // (实测模型返回 '1.0' 必挂 SCHEMA_VERSION)
+      schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
       title: result.draft.title,
-      summary: result.draft.summary,
+      summary: normalizeDraftSummary(result.draft.summary),
       subject: result.draft.subject,
-      category: result.draft.category,
+      // 2026-09-19: category 归一化到 5 类题型枚举 (学科级标签判死问题)
+      category: normalizeDraftCategory(result.draft.category),
       chapter: result.draft.chapter,
-      difficulty: result.draft.difficulty,
+      difficulty: normalizeDraftDifficulty(result.draft.difficulty),
       tags: result.draft.tags,
       sections: sections,
       instruction: instruction,
     };
+    const remappedEvidence: NoteGenerationEvidenceItem[] = [];
+    for (const item of result.evidence) {
+      const oldIndex: number = originalSectionIds.indexOf(item.targetSectionId);
+      remappedEvidence.push({
+        id: item.id,
+        type: item.type,
+        claim: item.claim,
+        sourceRefs: item.sourceRefs,
+        targetSectionId: oldIndex >= 0 ? outline.sections[oldIndex].id : item.targetSectionId,
+        verification: item.verification,
+      });
+    }
+    // 2026-09-20 P0-6: 先做 evidence 契约归一化 (丢空壳/回填 id/修 sourceId),
+    // 再做 excerpt 偏移定位 (定位依赖 sourceId 可查)
+    const normalizedEvidence: NoteGenerationEvidenceItem[] =
+      normalizeEvidenceItems(remappedEvidence, sourceIds, outlineSourceIdsBySectionId);
+    let evidence: NoteGenerationEvidenceItem[] = [];
+    for (const item of normalizedEvidence) {
+      evidence.push({
+        id: item.id,
+        type: item.type,
+        claim: item.claim,
+        // 2026-09-19: excerpt 偏移自动定位 (LLM 数不准字符偏移, 管线代算)
+        sourceRefs: this.relocateEvidenceRefs(item.sourceRefs, bundle),
+        targetSectionId: item.targetSectionId,
+        verification: item.verification,
+        origin: item.origin,
+      });
+    }
+    if (evidence.length === 0) {
+      evidence = buildPipelineEvidence(outline, bundle);
+    }
     const normalizedResult: NoteGenerationStandardResult = {
       outline: outline,
       evidence: evidence,
@@ -931,25 +1168,56 @@ export class KnowledgeModel {
     return normalizedResult;
   }
 
-  private ensureOutlineSourceMapping(outline: NoteGenerationOutline, sourceIds: string[]): NoteGenerationOutline {
-    if (sourceIds.length === 0) {
-      return outline;
+  /**
+   * evidence excerpt 偏移自动定位 (2026-09-19):
+   * validateStandardArtifacts 要求 ref.start 精确等于 source 中 excerpt 的
+   * indexOf 结果 — LLM 无法可靠计算字符偏移, 必挂 EVIDENCE_EXCERPT_NOT_LOCATABLE。
+   * excerpt 真实存在于源时由管线重算 start/end; 找不到则保留原值 (校验器判 hard,
+   * 杜绝伪造 excerpt)。
+   */
+  private relocateEvidenceRefs(refs: EvidenceSourceRef[], bundle: SourceBundle): EvidenceSourceRef[] {
+    const relocated: EvidenceSourceRef[] = [];
+    for (const ref of refs) {
+      let fragment: SourceFragment | undefined = undefined;
+      for (const candidate of bundle.fragments) {
+        if (candidate.id === ref.sourceId) {
+          fragment = candidate;
+          break;
+        }
+      }
+      if (fragment !== undefined && ref.excerpt.trim().length > 0) {
+        const located: number = fragment.text.indexOf(ref.excerpt);
+        if (located >= 0) {
+          relocated.push({
+            sourceId: ref.sourceId,
+            excerpt: ref.excerpt,
+            start: located,
+            end: located + ref.excerpt.length,
+          });
+          continue;
+        }
+      }
+      relocated.push(ref);
     }
-    const sections: NoteGenerationOutlineSection[] = [];
-    for (const section of outline.sections) {
-      const mappedSourceIds: string[] = section.sourceIds.length > 0 ? section.sourceIds.slice(0) : sourceIds.slice(0);
-      sections.push({
-        id: section.id,
-        label: section.label,
-        order: section.order,
-        mustInclude: section.mustInclude.slice(0),
-        sourceIds: mappedSourceIds,
-        depth: section.depth,
-        parentId: section.parentId,
-        segmentIds: section.segmentIds,
-      });
+    return relocated;
+  }
+
+  /**
+   * 章节内容采用 MM-MD 规范化器的修复结果 (2026-09-19):
+   * validateDraftDocument 把 ok=false (含规范化器已自动修复的兼容项, 如 \(\)→$..$)
+   * 一律判 MM_MD_INVALID (hard), 而 LLM 天然输出 \( \) / \[ \] — 原判据下
+   * 数学笔记几乎必然全灭。修复: fallbackRequired=false 时采用 normalizedText
+   * (规范化器本职), 仅真正不可渲染的内容保留原值交由校验器判 hard。
+   */
+  private normalizeSectionContent(content: string): string {
+    if (content.trim().length === 0) {
+      return content;
     }
-    return { schemaVersion: outline.schemaVersion, sections: sections };
+    const validation: ContentValidationResult = this.contentProtocol.validateNoteMarkdown(content);
+    if (!validation.fallbackRequired && validation.normalizedText.trim().length > 0) {
+      return validation.normalizedText;
+    }
+    return content;
   }
 
   private applyVerification(
@@ -972,6 +1240,7 @@ export class KnowledgeModel {
         sourceRefs: item.sourceRefs,
         targetSectionId: item.targetSectionId,
         verification: status,
+        origin: item.origin,
       });
     }
     return { outline: result.outline, evidence: evidence, draft: result.draft, verification: verification };
@@ -1029,7 +1298,7 @@ export class KnowledgeModel {
     const frozenDraft: NoteDraftDocument = {
       schemaVersion: repaired.draft.schemaVersion,
       title: repaired.draft.title,
-      summary: repaired.draft.summary,
+      summary: normalizeDraftSummary(repaired.draft.summary),
       subject: repaired.draft.subject,
       category: repaired.draft.category,
       chapter: repaired.draft.chapter,
@@ -1093,117 +1362,38 @@ export class KnowledgeModel {
     return lines.join('\n');
   }
 
-  private parseJsonObjectOrThrow(jsonText: string, label: string): Record<string, Object> {
-    if (jsonText.length === 0) {
-      throw new Error(label + ' missing JSON object');
-    }
-    try {
-      return JSON.parse(jsonText) as Record<string, Object>;
-    } catch (e) {
-      throw new Error(label + ' invalid JSON');
-    }
-  }
-
   private parseStandardResult(parsed: Record<string, Object>, sources: SourceBundle): NoteGenerationStandardResult {
-    return this.parseStandardResultAtDepth(parsed, sources, 0);
-  }
-
-  private parseStandardResultAtDepth(
-    parsed: Record<string, Object>,
-    sources: SourceBundle,
-    depth: number,
-  ): NoteGenerationStandardResult {
+    const nested: Record<string, Object> | undefined = this.findNestedStandardArtifacts(parsed);
+    if (nested !== undefined && !this.isDraftArtifactsCandidate(parsed)
+      && parsed['draft'] === undefined && parsed['outline'] === undefined) {
+      return this.parseStandardResult(nested, sources);
+    }
     const outlineValue: Object | undefined = parsed['outline'];
     const evidenceValue: Object | undefined = parsed['evidence'];
     const draftValue: Object | undefined = parsed['draft'];
-    if (draftValue !== undefined && draftValue !== null && !Array.isArray(draftValue) && typeof draftValue === 'object') {
-      const draft: NoteDraftDocument = this.parseDraftDocument(draftValue as Record<string, Object>);
+    if (outlineValue !== undefined && draftValue !== undefined && evidenceValue === undefined) {
       return {
-        outline: this.parseOptionalOutline(outlineValue, draft),
-        evidence: evidenceValue === undefined ? [] : this.parseEvidence(evidenceValue),
-        draft: draft,
+        outline: this.parseOutline(outlineValue as Record<string, Object>),
+        evidence: [],
+        draft: this.parseDraftDocument(draftValue as Record<string, Object>),
         verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] },
       };
     }
-    if (parsed['title'] !== undefined && parsed['sections'] !== undefined) {
-      return parseDirectStandardArtifacts(parsed, sources);
-    }
-    if (depth < 2) {
-      const nested: Record<string, Object> | undefined = this.findNestedStandardArtifacts(parsed);
-      if (nested !== undefined) {
-        return this.parseStandardResultAtDepth(nested, sources, depth + 1);
+    if (outlineValue === undefined || evidenceValue === undefined || draftValue === undefined) {
+      if (draftValue !== undefined) {
+        return parseDirectStandardArtifacts(draftValue as Record<string, Object>, sources);
       }
-    }
-    throw new Error('standard artifacts require draft; keys=' + Object.keys(parsed).join(','));
-  }
-
-  private findNestedStandardArtifacts(parsed: Record<string, Object>): Record<string, Object> | undefined {
-    const preferredKeys: string[] = ['result', 'data', 'note', 'document', 'draftDocument', 'answer', 'content', 'output'];
-    for (const key of preferredKeys) {
-      const nested: Record<string, Object> | undefined = this.readNestedStandardArtifacts(parsed[key]);
-      if (nested !== undefined) {
-        return nested;
+      if (parsed['title'] !== undefined && parsed['sections'] !== undefined) {
+        return parseDirectStandardArtifacts(parsed, sources);
       }
+      throw new Error('standard artifacts require draft; keys=' + Object.keys(parsed).join(','));
     }
-    for (const key of Object.keys(parsed)) {
-      if (preferredKeys.includes(key)) {
-        continue;
-      }
-      const nested: Record<string, Object> | undefined = this.readNestedStandardArtifacts(parsed[key]);
-      if (nested !== undefined) {
-        return nested;
-      }
-    }
-    return undefined;
-  }
-
-  private readNestedStandardArtifacts(value: Object | undefined): Record<string, Object> | undefined {
-    if (value === undefined || value === null || Array.isArray(value)) {
-      return undefined;
-    }
-    if (typeof value === 'string') {
-      const jsonText: string = new LlmGuard().extractJsonObject(value);
-      if (jsonText.length === 0) {
-        return undefined;
-      }
-      try {
-        return JSON.parse(jsonText) as Record<string, Object>;
-      } catch (_e) {
-        return undefined;
-      }
-    }
-    if (typeof value === 'object') {
-      const record: Record<string, Object> = value as Record<string, Object>;
-      if (this.isStandardArtifactsCandidate(record)) {
-        return record;
-      }
-    }
-    return undefined;
-  }
-
-  private parseOptionalOutline(value: Object | undefined, draft: NoteDraftDocument): NoteGenerationOutline {
-    if (value !== undefined && value !== null && !Array.isArray(value) && typeof value === 'object') {
-      const outline: NoteGenerationOutline = this.parseOutline(value as Record<string, Object>);
-      if (outline.sections.length > 0) {
-        return outline;
-      }
-    }
-    return this.outlineFromDraft(draft);
-  }
-
-  private outlineFromDraft(draft: NoteDraftDocument): NoteGenerationOutline {
-    const sections: NoteGenerationOutlineSection[] = [];
-    for (let index = 0; index < draft.sections.length; index += 1) {
-      const section: NoteDraftSection = draft.sections[index];
-      sections.push({
-        id: section.id,
-        label: section.label,
-        order: index,
-        mustInclude: [],
-        sourceIds: section.sourceIds.slice(0),
-      });
-    }
-    return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: sections };
+    return {
+      outline: this.parseOutline(outlineValue as Record<string, Object>),
+      evidence: this.parseEvidence(evidenceValue),
+      draft: this.parseDraftDocument(draftValue as Record<string, Object>),
+      verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] },
+    };
   }
 
   private parseOutline(value: Record<string, Object>): NoteGenerationOutline {
@@ -1248,11 +1438,8 @@ export class KnowledgeModel {
     return evidence;
   }
 
-  private parseVerification(jsonText: string): NoteGenerationVerification {
-    if (jsonText.length === 0) {
-      return { status: 'ambiguous', issues: [{ stage: 'evidence', code: 'VERIFIER_JSON_REQUIRED', severity: 'hard', message: 'verifier JSON is required', repairable: true }], checkedEvidenceIds: [], decisions: [] };
-    }
-    const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+  // 入参由 seam 预解析并保证顶层对象, 空文分支不再存在 (2026-09-19 统一 JSON 生命周期)
+  private parseVerification(parsed: Record<string, Object>): NoteGenerationVerification {
     const statusValue: string = String(parsed['status'] ?? 'ambiguous');
     const status: EvidenceVerificationStatus = statusValue === 'supported' ? 'supported' : statusValue === 'contradicted' ? 'contradicted' : 'ambiguous';
     const decisions: NoteGenerationEvidenceDecision[] = [];
@@ -1287,10 +1474,56 @@ export class KnowledgeModel {
     return { status: status, issues: issues, checkedEvidenceIds: this.readStringArray(parsed['checkedEvidenceIds']), decisions: decisions };
   }
 
+  private validateIndependentVerifierJson(
+    json: Record<string, Object>,
+    evidence: NoteGenerationEvidenceItem[],
+  ): string[] {
+    const issues: string[] = [];
+    const decisionValue: Object | undefined = json['decisions'];
+    if (decisionValue === undefined || !Array.isArray(decisionValue)) {
+      return ['decisions must be an array'];
+    }
+    const expectedIds: string[] = evidence.map((item: NoteGenerationEvidenceItem): string => item.id);
+    const seenIds: string[] = [];
+    for (const item of decisionValue as Object[]) {
+      if (item === null || typeof item !== 'object') {
+        issues.push('each decision must be an object');
+        continue;
+      }
+      const record: Record<string, Object> = item as Record<string, Object>;
+      const evidenceIdValue: Object | undefined = record['evidenceId'];
+      if (typeof evidenceIdValue !== 'string' || evidenceIdValue.trim().length === 0) {
+        issues.push('each decision must include a non-empty evidenceId');
+      } else if (!expectedIds.includes(evidenceIdValue)) {
+        issues.push('decision references unknown evidenceId: ' + evidenceIdValue);
+      } else if (seenIds.includes(evidenceIdValue)) {
+        issues.push('decision duplicates evidenceId: ' + evidenceIdValue);
+      } else {
+        seenIds.push(evidenceIdValue);
+      }
+      const statusValue: Object | undefined = record['status'];
+      if (statusValue !== 'supported' && statusValue !== 'contradicted' && statusValue !== 'ambiguous') {
+        issues.push('decision status must be supported, contradicted, or ambiguous');
+      }
+    }
+    for (const evidenceId of expectedIds) {
+      if (!seenIds.includes(evidenceId)) {
+        issues.push('decisions missing evidenceId: ' + evidenceId);
+      }
+    }
+    return issues;
+  }
+
   draftToKnowledgeUnit(document: NoteDraftDocument, source: string): KnowledgeUnit {
     const fields: StructuredField[] = [];
+    let index: number = 0;
     for (const section of document.sections) {
-      fields.push({ key: section.id, label: section.label, value: section.content });
+      fields.push({
+        key: section.id,
+        label: normalizeDraftSectionLabel(section.label, index),
+        value: section.content,
+      });
+      index += 1;
     }
     const ext: KnowledgeUnitExt = createUnitExt(
       document.category as KnowledgeCategory,
@@ -1303,7 +1536,7 @@ export class KnowledgeModel {
     ext.difficulty = document.difficulty;
     ext.source = source;
     ext.chapter = document.chapter;
-    return this.toKnowledgeUnit(ext, Date.now());
+    return this.toKnowledgeUnit(ext, Date.now(), document.summary);
   }
 
   private budgetedRequestTokens(request: NoteGenerationRequest, fallback: number): number {
@@ -1388,8 +1621,11 @@ export class KnowledgeModel {
     return result;
   }
 
-  private toKnowledgeUnit(ext: KnowledgeUnitExt, createdAt: number): KnowledgeUnit {
-    const summary: string = this.summaryFromFields(ext);
+  private toKnowledgeUnit(ext: KnowledgeUnitExt, createdAt: number, summaryOverride: string = ''): KnowledgeUnit {
+    const generatedSummary: string = this.summaryFromFields(ext);
+    const summary: string = summaryOverride.trim().length > 0
+      ? this.contentExcerptBuilder.buildSummary(summaryOverride, 60)
+      : generatedSummary;
     const now: number = createdAt > 0 ? createdAt : Date.now();
     return {
       id: this.uuid(),
@@ -1426,7 +1662,7 @@ export class KnowledgeModel {
       }
     }
     const source: string = summaryParts.length > 0 ? summaryParts.join('\n') : ext.content;
-    const summary: string = this.contentExcerptBuilder.buildPlainSummary(source, 220);
+    const summary: string = this.contentExcerptBuilder.buildSummary(source, 60);
     if (summary.length > 0) {
       return summary;
     }
@@ -1435,8 +1671,8 @@ export class KnowledgeModel {
 
   private toDifficultyLevel(value: number): DifficultyLevel {
     if (value <= 1) { return DifficultyLevel.EASY; }
-    if (value === 2 || value === 3) { return DifficultyLevel.MEDIUM; }
-    if (value === 4) { return DifficultyLevel.HARD; }
+    if (value === 2) { return DifficultyLevel.MEDIUM; }
+    if (value === 3) { return DifficultyLevel.HARD; }
     return DifficultyLevel.EXPERT;
   }
 
@@ -1481,6 +1717,11 @@ export class KnowledgeModel {
         + ', attempts=' + guarded.attempts.toString());
     } catch (llmErr) {
       console.error('[KnowledgeModel] callAi LLM error: ' + (llmErr as Error).message);
+      // §13.5: LlmError 原样上抛 (保留 kind 供 StructureNode 映射 retriable),
+      // 仅包装非 LlmError 的意外异常
+      if (llmErr instanceof LlmError) {
+        throw llmErr;
+      }
       throw new Error('LLM 调用失败: ' + (llmErr as Error).message);
     }
 
@@ -1497,7 +1738,7 @@ export class KnowledgeModel {
       chapter: this.normalizeChapter(String(parsed['chapter'] ?? '')),
       title: this.normalizeTitle(String(parsed['title'] ?? ''), userText),
       tags: this.normalizeStringArray(parsed['tags']),
-      difficulty: this.normalizeScore(Number(parsed['difficulty'] ?? 3)),
+      difficulty: normalizeDraftDifficulty(Number(parsed['difficulty'] ?? 3)),
       importance: this.normalizeScore(Number(parsed['importance'] ?? 3)),
       fields: this.normalizeFields(parsed['fields']),
     };
@@ -1537,10 +1778,10 @@ export class KnowledgeModel {
         }
       }
     }
-    if (!this.isScoreValue(parsed['difficulty'])) {
-      issues.push('difficulty must be a number from 1 to 5');
+    if (!this.isScoreValue(parsed['difficulty'], 4)) {
+      issues.push('difficulty must be a number from 1 to 4');
     }
-    if (!this.isScoreValue(parsed['importance'])) {
+    if (!this.isScoreValue(parsed['importance'], 5)) {
       issues.push('importance must be a number from 1 to 5');
     }
     const fieldsValue: Object | undefined = parsed['fields'];
@@ -1583,12 +1824,12 @@ export class KnowledgeModel {
     };
   }
 
-  private isScoreValue(value: Object | undefined): boolean {
+  private isScoreValue(value: Object | undefined, maximum: number): boolean {
     if (typeof value !== 'number' && typeof value !== 'string') {
       return false;
     }
     const score: number = Number(value);
-    return !Number.isNaN(score) && score >= 1 && score <= 5;
+    return !Number.isNaN(score) && score >= 1 && score <= maximum;
   }
   /**
    * 合并标签：AI 返回的标签 + 最小类名，去重
@@ -1624,13 +1865,16 @@ export class KnowledgeModel {
 
   private contentFromFields(ext: KnowledgeUnitExt): string {
     const sections: string[] = [];
+    let index: number = 0;
     for (const field of ext.fields) {
-      const label: string = field.label.trim().length > 0 ? field.label.trim() : field.key.trim();
+      const candidateLabel: string = field.label.trim().length > 0 ? field.label : field.key;
+      const label: string = normalizeDraftSectionLabel(candidateLabel, index);
       const valueResult: ContentValidationResult = this.contentProtocol.normalizeNoteMarkdown(field.value);
       const value: string = valueResult.normalizedText.trim();
       if (value.length > 0) {
         sections.push('## ' + label + '\n' + value);
       }
+      index += 1;
     }
     const raw: string = ext.content.trim();
     if (raw.length > 0) {

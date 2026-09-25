@@ -41,7 +41,7 @@ import {
 } from './ConversationState';
 import { ConversationWorkflowCallbacks } from './ConversationTypes';
 import { ReplyService, StreamReplyResult } from '../../services/ReplyService';
-import { NoteDraftReadyEvent, NoteGenerationRun, SourceFragment } from 'common';
+import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun, SourceFragment } from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
@@ -211,6 +211,7 @@ export class ConversationWorkflow {
         input.sessionId,
         input.request.imageUri,
         input.request.userContent,
+        input.request.route,
       );
       const next: ConversationState = this.copyState(input, 'image_note_reply');
       if (result.event !== undefined) {
@@ -273,6 +274,7 @@ export class ConversationWorkflow {
       const event: NoteDraftReadyEvent | undefined = await this.generateNoteFromConversation(
         input.sessionId,
         input.request.userContent,
+        input.request.kind === 'text' ? input.request.route : undefined,
       );
       this.setStep('completed');
       const next: ConversationState = this.copyState(input, 'note_reply');
@@ -411,6 +413,7 @@ export class ConversationWorkflow {
     sessionId: string,
     imageUri: string,
     userText: string,
+    route?: NoteGenerationRoute,
   ): Promise<ImageNoteReplyResult> {
     this.setStep('image_message_save');
     await this.safeSaveUserMessage(sessionId, userText.trim().length > 0 ? userText : '[图片]');
@@ -486,7 +489,13 @@ export class ConversationWorkflow {
         });
       }
 
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(runId, noteInstruction, conversation, pendingSources);
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(
+        runId,
+        noteInstruction,
+        conversation,
+        pendingSources,
+        route,
+      );
       this.setStep('note_finalize');
 
       if (materialPersistFailed) {
@@ -507,7 +516,7 @@ export class ConversationWorkflow {
       };
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 120));
+      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 300));
       return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
     }
   }
@@ -546,7 +555,7 @@ export class ConversationWorkflow {
 
   /**
    * 流式回复 — 基于 DeepSeek SSE,逐 token 实时推送 UI
-   * 非流式 realReply() 作为回退保留,当 callStream 失败时自动降级
+   * ReplyService.stream() 在流无正文或非传输错误时执行非流式回退
    */
   private async handleStreamReply(
     sessionId: string,
@@ -593,6 +602,12 @@ export class ConversationWorkflow {
         await this.appendAssistantReply(sessionId, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
         return;
       }
+      const displayAnswer: string = evidence === undefined
+        ? this.replyService.normalize(streamResult.content)
+        : this.replyService.normalize(
+          this.getEvidenceService().sanitizeAnswer(evidence, streamResult.content),
+        );
+      this.cbs.replaceAiMsg(msgId, displayAnswer);
       if (streamResult.interrupted) {
         const interruptedEvent: StreamEvent = { type: 'text', delta: '\n\n⚠️ *AI 回复中断，请重试*' };
         this.cbs.appendAiMsg(msgId, interruptedEvent);
@@ -605,7 +620,10 @@ export class ConversationWorkflow {
         this.cbs.appendAiMsg(msgId, sourcesEvent);
       }
       this.cbs.finishAiMsg(msgId);
-      await this.safeSaveAssistantMessage(sessionId, this.applyEvidenceToAnswer(evidence, streamResult.content));
+      const persistedAnswer: string = this.replyService.normalize(
+        this.applyEvidenceToAnswer(evidence, streamResult.content),
+      );
+      await this.safeSaveAssistantMessage(sessionId, persistedAnswer);
       if (streamResult.interrupted) {
         return;
       }
@@ -626,7 +644,11 @@ export class ConversationWorkflow {
     }
   }
 
-  private async generateNoteFromConversation(sessionId: string, userInstruction: string): Promise<NoteDraftReadyEvent | undefined> {
+  private async generateNoteFromConversation(
+    sessionId: string,
+    userInstruction: string,
+    route?: NoteGenerationRoute,
+  ): Promise<NoteDraftReadyEvent | undefined> {
     this.setStep('note_intent_check');
     this.setStep('note_context_load');
     const explicitRegeneration = this.parseRegenerationRequest(userInstruction);
@@ -661,12 +683,12 @@ export class ConversationWorkflow {
         return undefined;
       }
 
-      let conversation: string = memoryContext.trim();
+      let conversation: string = this.intentClassifier.inlineNoteMaterial(userInstruction).trim();
       if (conversation.length === 0) {
-        conversation = this.cbs.getConversationText(true).trim();
+        conversation = memoryContext.trim();
       }
       if (conversation.length === 0) {
-        conversation = this.intentClassifier.inlineNoteMaterial(userInstruction);
+        conversation = this.cbs.getConversationText(true).trim();
       }
       if (conversation.length === 0) {
         await this.addAiMessage(sessionId, '当前会话还没有可整理的内容');
@@ -688,14 +710,14 @@ export class ConversationWorkflow {
           text: pending.content,
         });
       }
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(runId, userInstruction, conversation, pendingSources);
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(runId, userInstruction, conversation, pendingSources, route);
       this.setStep('note_finalize');
       this.cbs.onDraftReady(event);
       await this.addAiMessage(sessionId, '笔记草稿已准备，请预览并确认保存。');
       return event;
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 120));
+      await this.addAiMessage(sessionId, '生成笔记失败: ' + errMsg.substring(0, 300));
       return undefined;
     }
   }
@@ -718,12 +740,14 @@ export class ConversationWorkflow {
     instruction: string,
     sourceText: string,
     pendingSources: SourceFragment[],
+    route?: NoteGenerationRoute,
   ): Promise<NoteDraftReadyEvent> {
     return await new AiService(this.cbs.getContext()).generateNoteDraftWithSources(
       runId,
       instruction,
       sourceText,
       pendingSources,
+      route,
     );
   }
 

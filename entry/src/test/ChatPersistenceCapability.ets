@@ -2,14 +2,15 @@
  * ChatPersistenceCapability.ets — ticket #122 聊天持久化能力门禁
  *
  * 路径: entry/src/test/ChatPersistenceCapability.ets
- * 职责: 验证 TaskPool 纯数据快照序列化、Worker fallback 协议、AtomicFile 提交/回滚阶段诊断。
+ * 职责: 作为 test-only ChatPersistenceCapability，验证 TaskPool 纯数据快照序列化、Worker fallback 协议、AtomicFile 提交/回滚阶段诊断。
  * 依赖: @ohos.file.fs; @kit.ArkTS(taskpool/worker); main/ets/services/ChatFilesDirSeam。
  *
  * 数据流:
  *   SnapshotTaskInput → TaskPool/Worker/AtomicFile probe → SnapshotTaskResult/PersistenceCapabilityResult
  *
  * 设计边界:
- *   本文件仅为 test 侧能力门禁探针,不接入生产聊天历史迁移,不读取/写入 Preferences。
+ *   本文件仅为 test 侧能力探针，不是生产 ChatHistoryPersistence；不接入生产聊天历史迁移，不读取/写入 Preferences。
+ *   生产保存边界是 entry 私有文件快照服务，Preferences 仅由生产服务作为迁移读取源。
  *
  * ArkTS 1.1 strict 适配:
  *   - @Concurrent 任务只接收 number/string;结果和失败诊断均使用显式 interface/type。
@@ -56,6 +57,18 @@ interface WorkerProbeResult {
   reason: string;
 }
 
+interface WorkerUnsupportedRequest {
+  kind: string;
+}
+
+interface WorkerProtocolResponse {
+  kind: string;
+  success: boolean;
+  stage: AtomicWriteStage;
+  schemaVersion: number;
+  diagnostic: string;
+}
+
 const CAPABILITY_FILE_NAME: string = 'ticket-122-capability.json';
 const ROLLBACK_BASELINE_JSON: string = '{"baseline":true}';
 const WORKER_SCRIPT: string = '../main/ets/workers/ChatPersistenceWorker.ets';
@@ -82,6 +95,8 @@ export function serializeSnapshotTask(schemaVersion: number, sessionsJson: strin
 }
 
 export class ChatPersistenceCapability {
+  // This API is deliberately test-only. Production chat history is owned by
+  // ChatHistoryPersistence and does not call this capability probe.
   static async serializeSnapshot(input: SnapshotTaskInput): Promise<SnapshotTaskResult> {
     if (!snapshotInputIsValid(input.schemaVersion, input.sessionsJson)) {
       return ChatPersistenceCapability.taskFailure('PREPARE', 'taskpool', 'snapshot-task-rejected');
@@ -161,6 +176,29 @@ export class ChatPersistenceCapability {
     }
   }
 
+  static async verifyWorkerUnsupportedRequest(): Promise<SnapshotTaskResult> {
+    try {
+      const response: WorkerProtocolResponse = await ChatPersistenceCapability.runWorkerUnsupportedProbe();
+      const safe: boolean = response.diagnostic.indexOf('答案') < 0
+        && response.diagnostic.indexOf('数学') < 0;
+      if (response.kind === 'unsupported-request' && !response.success && safe) {
+        return {
+          success: false,
+          stage: response.stage,
+          transport: 'worker',
+          schemaVersion: response.schemaVersion,
+          jsonLength: 0,
+          snapshotInputLength: 0,
+          serializedJson: '',
+          diagnostic: 'transport=worker; stage=' + response.stage + '; reason=unsupported-request; response=unsupported',
+        };
+      }
+      return ChatPersistenceCapability.workerFailure('snapshot-worker-unsupported-response-mismatch');
+    } catch (error) {
+      return ChatPersistenceCapability.workerFailure('snapshot-worker-unsupported-probe-rejected');
+    }
+  }
+
   static async writeAtomicSnapshot(input: SnapshotTaskInput): Promise<PersistenceCapabilityResult> {
     const serialized: SnapshotTaskResult = await ChatPersistenceCapability.serializeSnapshot(input);
     if (!serialized.success) {
@@ -227,7 +265,7 @@ export class ChatPersistenceCapability {
   }
 
   static productionMigrationEnabled(): boolean {
-    return false;
+    return true;
   }
 
   static snapshotPathShape(): string {
@@ -358,6 +396,49 @@ export class ChatPersistenceCapability {
         workerInstance.postMessage(request);
       } catch (error) {
         fail('snapshot-worker-create-failed');
+      }
+    });
+  }
+
+  private static runWorkerUnsupportedProbe(): Promise<WorkerProtocolResponse> {
+    return new Promise<WorkerProtocolResponse>((resolve: (result: WorkerProtocolResponse) => void,
+      reject: (reason: Error) => void): void => {
+      let settled: boolean = false;
+      let workerInstance: worker.ThreadWorker | undefined;
+      const timeoutId: number = setTimeout((): void => {
+        if (!settled) {
+          settled = true;
+          if (workerInstance !== undefined) {
+            workerInstance.terminate();
+          }
+          reject(new Error('snapshot-worker-unsupported-timeout'));
+        }
+      }, WORKER_PROBE_TIMEOUT_MS);
+      try {
+        workerInstance = new worker.ThreadWorker(WORKER_SCRIPT);
+        workerInstance.onmessage = (event: MessageEvents): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeoutId);
+          if (workerInstance !== undefined) {
+            workerInstance.terminate();
+          }
+          const response: WorkerProtocolResponse = event.data;
+          resolve(response);
+        };
+        const request: WorkerUnsupportedRequest = { kind: 'read' };
+        workerInstance.postMessage(request);
+      } catch (error) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeoutId);
+          if (workerInstance !== undefined) {
+            workerInstance.terminate();
+          }
+          reject(new Error('snapshot-worker-unsupported-create-failed'));
+        }
       }
     });
   }
