@@ -40,6 +40,8 @@ import {
 } from '../main/ets/services/ConversationSessionReducer';
 import {
   ChatMsg,
+  ChatMessageOrigin,
+  ChatMessageOutcome,
   ChatSession,
   ChatStatusMeta,
 } from '../main/ets/overlays/AgentFloatWindow/chat/ChatModels';
@@ -69,11 +71,16 @@ class RecordingAgentChatCallbacks implements AgentChatCallbacks {
   progressWrites: number = 0;
   busy: boolean = false;
 
-  addUserMsg(_ref: ConversationRunRef, _content: string): boolean { return true; }
-  addAiMsg(_ref: ConversationRunRef, _content: string): void { this.aiWrites += 1; }
-  addAiMsgEmpty(_ref: ConversationRunRef): number { this.aiWrites += 1; return 1; }
+  addUserMsg(_ref: ConversationRunRef, _content: string, _origin: ChatMessageOrigin): number { return 1; }
+  addAiMsg(_ref: ConversationRunRef, _content: string): number { this.aiWrites += 1; return this.aiWrites; }
+  addAiMsgEmpty(_ref: ConversationRunRef, _origin: ChatMessageOrigin): number { this.aiWrites += 1; return 1; }
   appendAiMsg(_ref: ConversationRunRef, _id: number, _event: StreamEvent): void { this.aiWrites += 1; }
   finishAiMsg(_ref: ConversationRunRef, _id: number): void { this.completionWrites += 1; }
+  terminateAiRun(_ref: ConversationRunRef, _outcome: ChatMessageOutcome): void { this.completionWrites += 1; }
+  getUserMessageId(_ref: ConversationRunRef): number { return 1; }
+  async commitHistory(_ref: ConversationRunRef): Promise<boolean> { return true; }
+  reportDiagnostic(_ref: ConversationRunRef, _diagnostic: string): void {}
+  async cancelDraftsBySession(_sessionId: string): Promise<void> {}
   setBusy(_ref: ConversationRunRef, value: boolean): void { this.busy = value; }
   setStatusMeta(_ref: ConversationRunRef, _meta: ChatStatusMeta | null): void {
     this.progressWrites += 1;
@@ -193,9 +200,13 @@ export default function conversationIdentityTest(): void {
     it('should validate session identity without rejecting legal message content', 0, () => {
       const record: ChatMessageRecord = {
         id: 'message-record-1',
+        messageKey: 'message-record-1',
         sessionId: 's1',
         role: 'user',
         content: 'f(x) = x^2\n\t推导过程',
+        sequence: 1,
+        origin: 'chat',
+        outcome: 'completed',
         createdAt: 1,
       };
       WritePathValidator.validateChatMessage(record);

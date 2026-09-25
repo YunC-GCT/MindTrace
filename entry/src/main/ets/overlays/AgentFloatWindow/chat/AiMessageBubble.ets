@@ -12,11 +12,13 @@
 import { MINT, S_1, S_2, TEXT_4, W_SEMIBOLD } from 'common'
 import { AgentRunPart } from './AgentRunModels'
 import { AgentRunPanel } from './AgentRunPanel'
+import { ChatMessageOutcome } from './ChatModels'
 
 @Component
 export struct AiMessageBubble {
   @Prop parts: AgentRunPart[] = []
   @Prop streaming: boolean = false
+  @Prop outcome: ChatMessageOutcome = 'completed'
 
   build() {
     Row() {
@@ -28,6 +30,11 @@ export struct AiMessageBubble {
             .fontWeight(W_SEMIBOLD)
           if (this.streaming) {
             Text('正在处理')
+              .fontSize(9)
+              .fontColor(TEXT_4)
+              .margin({ left: S_1 })
+          } else if (this.outcome !== 'completed') {
+            Text(this.outcomeLabel())
               .fontSize(9)
               .fontColor(TEXT_4)
               .margin({ left: S_1 })
@@ -45,5 +52,12 @@ export struct AiMessageBubble {
     }
     .width('100%')
     .margin({ top: S_2 })
+  }
+
+  private outcomeLabel = (): string => {
+    if (this.outcome === 'cancelled') { return '已取消' }
+    if (this.outcome === 'interrupted') { return '已中断' }
+    if (this.outcome === 'failed') { return '失败' }
+    return ''
   }
 }

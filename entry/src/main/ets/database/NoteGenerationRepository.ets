@@ -23,6 +23,7 @@ import {
   parseIncrementalSections,
 } from 'common';
 import { NoteGenerationBaseProvider } from '../models/KnowledgeUnitWriteModels';
+import { ConversationRunIdPolicy, SessionIdPolicy } from '../services/ConversationIdentity';
 
 export class NoteGenerationRepository implements NoteGenerationRepositoryContract {
   private store: relationalStore.RdbStore;
@@ -44,6 +45,8 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       'best_checkpoint_id': run.bestCheckpointId ?? '',
       'stop_reason': run.stopReason ?? '',
       'issue_count': run.issueCount ?? 0,
+      'origin_session_id': run.originSessionId ?? '',
+      'parent_conversation_run_id': run.parentConversationRunId ?? '',
       'source_ids': JSON.stringify(run.sourceIds ?? []),
       'pending_source_ids': JSON.stringify(run.pendingSourceIds ?? []),
       'source_summary': run.sourceSummary ?? '',
@@ -321,7 +324,7 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
     if (resultSet.goToFirstRow()) {
       do {
         const run: NoteGenerationRun = NoteGenerationRepository.rowToRun(resultSet);
-        if (run.status === 'ready-preview' || run.status === 'incomplete'
+        if (run.status === 'running' || run.status === 'ready-preview' || run.status === 'incomplete'
           || run.status === 'failed' || run.status === 'needs-input') {
           runs.push(run);
         }
@@ -329,6 +332,47 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
     }
     resultSet.close();
     return runs;
+  }
+
+  async listIncompleteByOriginSession(sessionId: string): Promise<NoteGenerationRun[]> {
+    SessionIdPolicy.requireValid(sessionId);
+    const predicates = new relationalStore.RdbPredicates('note_generation_run');
+    predicates.equalTo('origin_session_id', sessionId);
+    predicates.orderByDesc('updated_at');
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, ['*']);
+    const runs: NoteGenerationRun[] = [];
+    if (resultSet.goToFirstRow()) {
+      do {
+        const run: NoteGenerationRun = NoteGenerationRepository.rowToRun(resultSet);
+        if (run.status !== 'committed') { runs.push(run); }
+      } while (resultSet.goToNextRow());
+    }
+    resultSet.close();
+    return runs;
+  }
+
+  async listIncompleteByParentRun(sessionId: string, parentConversationRunId: string): Promise<NoteGenerationRun[]> {
+    SessionIdPolicy.requireValid(sessionId);
+    ConversationRunIdPolicy.requireValid(parentConversationRunId);
+    const predicates = new relationalStore.RdbPredicates('note_generation_run');
+    predicates.equalTo('origin_session_id', sessionId);
+    predicates.equalTo('parent_conversation_run_id', parentConversationRunId);
+    predicates.orderByDesc('updated_at');
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, ['*']);
+    const runs: NoteGenerationRun[] = [];
+    if (resultSet.goToFirstRow()) {
+      do {
+        const run: NoteGenerationRun = NoteGenerationRepository.rowToRun(resultSet);
+        if (run.status !== 'committed') { runs.push(run); }
+      } while (resultSet.goToNextRow());
+    }
+    resultSet.close();
+    return runs;
+  }
+
+  async cancelIncompleteByParentRun(sessionId: string, parentConversationRunId: string): Promise<void> {
+    const runs: NoteGenerationRun[] = await this.listIncompleteByParentRun(sessionId, parentConversationRunId);
+    for (const run of runs) { await this.cancelRun(run.id); }
   }
 
   async getRegenerationBase(noteId: string): Promise<IncrementalBase | undefined> {
@@ -425,6 +469,8 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
     }
     const result: NoteGenerationRun = {
       id: rs.getString(rs.getColumnIndex('id')),
+      originSessionId: NoteGenerationRepository.readOptionalString(rs, 'origin_session_id') || undefined,
+      parentConversationRunId: NoteGenerationRepository.readOptionalString(rs, 'parent_conversation_run_id') || undefined,
       route: rs.getString(rs.getColumnIndex('route')) as 'light' | 'standard' | 'deep',
       status: rs.getString(rs.getColumnIndex('status')) as 'running' | 'incomplete' | 'ready-preview' | 'needs-input' | 'failed' | 'cancelled' | 'committed',
       instruction: rs.getString(rs.getColumnIndex('instruction')),

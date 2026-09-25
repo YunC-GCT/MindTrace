@@ -240,6 +240,8 @@ export class Dispatcher {
     };
     const run: NoteGenerationRun = {
       id: request.runId,
+      originSessionId: request.originSessionId,
+      parentConversationRunId: request.parentConversationRunId,
       route: 'standard',
       status: 'running',
       instruction: request.instruction,
@@ -362,6 +364,8 @@ export class Dispatcher {
     const requirement = request.requirement ?? defaultRequirement(request.instruction);
     const run: NoteGenerationRun = {
       id: request.runId,
+      originSessionId: request.originSessionId,
+      parentConversationRunId: request.parentConversationRunId,
       route: route,
       status: 'running',
       instruction: request.instruction,
@@ -438,6 +442,8 @@ export class Dispatcher {
       if (options.generationRepository !== undefined) {
         const completedRun: NoteGenerationRun = {
           id: run.id,
+          originSessionId: run.originSessionId,
+          parentConversationRunId: run.parentConversationRunId,
           route: run.route,
           status: preflightStatus,
           instruction: run.instruction,
@@ -565,6 +571,8 @@ export class Dispatcher {
     if (options.generationRepository !== undefined) {
       const completedRun: NoteGenerationRun = {
         id: run.id,
+        originSessionId: run.originSessionId,
+        parentConversationRunId: run.parentConversationRunId,
         route: run.route,
         status: status,
         instruction: run.instruction,
@@ -1263,6 +1271,8 @@ export class Dispatcher {
     if (options.generationRepository !== undefined) {
       const completedRun: NoteGenerationRun = {
         id: run.id,
+        originSessionId: run.originSessionId,
+        parentConversationRunId: run.parentConversationRunId,
         route: run.route,
         status: status,
         instruction: run.instruction,

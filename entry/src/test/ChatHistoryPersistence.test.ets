@@ -23,8 +23,10 @@ import {
   ChatHistoryPreferencesPort,
   ChatHistorySaveResult,
   ChatHistorySnapshot,
+  ChatHistorySnapshotWire,
   ChatHistoryStorePort,
   STREAM_SAVE_THROTTLE_MS,
+  combineFallbackResult,
   createChatHistoryDecoderCatalog,
   decodeChatHistorySnapshot,
 } from '../main/ets/services/ChatHistoryPersistence';
@@ -132,6 +134,58 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 export default function chatHistoryPersistenceTest(): void {
+  describe('ChatHistoryPersistence.issue165_fallback_contract', () => {
+    it('should report worker recovery while retaining the primary transport diagnostic', 0, () => {
+      const primary: ChatHistorySaveResult = {
+        success: false,
+        state: 'failed',
+        stage: 'PREPARE',
+        transport: 'taskpool',
+        retryable: true,
+        diagnostic: 'transport=taskpool; stage=PREPARE; error=atomic-write-failed; errorType=Error; errorCode=13',
+      };
+      const fallback: ChatHistorySaveResult = {
+        success: true,
+        state: 'completed',
+        stage: 'VERIFY',
+        transport: 'worker',
+        retryable: false,
+        diagnostic: 'transport=worker; stage=VERIFY; verified=true',
+      };
+      const result: ChatHistorySaveResult = combineFallbackResult(primary, fallback);
+      expect(result.success).assertTrue();
+      expect(result.transport).assertEqual('worker');
+      expect(result.diagnostic).assertContain('fallback=worker');
+      expect(result.diagnostic).assertContain('transport=taskpool');
+      expect(result.diagnostic).assertContain('transport=worker');
+    });
+
+    it('should keep both transport failures retryable for recovery', 0, () => {
+      const primary: ChatHistorySaveResult = {
+        success: false,
+        state: 'failed',
+        stage: 'PREPARE',
+        transport: 'taskpool',
+        retryable: true,
+        diagnostic: 'transport=taskpool; stage=PREPARE; error=taskpool-exception',
+      };
+      const fallback: ChatHistorySaveResult = {
+        success: false,
+        state: 'failed',
+        stage: 'WRITE',
+        transport: 'worker',
+        retryable: true,
+        diagnostic: 'transport=worker; stage=WRITE; error=worker-write-failed',
+      };
+      const result: ChatHistorySaveResult = combineFallbackResult(primary, fallback);
+      expect(result.success).assertFalse();
+      expect(result.retryable).assertTrue();
+      expect(result.stage).assertEqual('WRITE');
+      expect(result.diagnostic).assertContain('taskpool-exception');
+      expect(result.diagnostic).assertContain('worker-write-failed');
+    });
+  });
+
   describe('ChatHistoryPersistence.issue155_decoder_contract', () => {
     it('should distinguish valid, corrupt, and unsupported root versions', 0, () => {
       const valid = decodeChatHistorySnapshot(JSON.stringify({ schemaVersion: CHAT_HISTORY_SCHEMA_VERSION, sessions: SAMPLE_SESSIONS }));
@@ -153,8 +207,12 @@ export default function chatHistoryPersistenceTest(): void {
       expect(CHAT_HISTORY_SCHEMA_VERSION).assertEqual(CHAT_HISTORY_V1_SCHEMA_VERSION);
       const futureRegistration: ChatHistoryDecoderRegistration = {
         version: 2,
-        decode: (snapshot: ChatHistorySnapshot): ChatHistoryDecodeResult => {
-          return { error: 'none', snapshot: snapshot };
+        decode: (snapshot: ChatHistorySnapshotWire): ChatHistoryDecodeResult => {
+          return {
+            error: 'none',
+            snapshot: { schemaVersion: snapshot.schemaVersion, sessions: SAMPLE_SESSIONS },
+            diagnostic: '',
+          };
         },
       };
       const futureRegistrations: ChatHistoryDecoderRegistration[] = [futureRegistration];
@@ -201,6 +259,90 @@ export default function chatHistoryPersistenceTest(): void {
       const duplicateMessage = decodeChatHistorySnapshot(JSON.stringify(duplicateSnapshot));
       expect(duplicateMessage.error).assertEqual('corrupt');
     });
+    it('should report content-safe field diagnostics for v1 validation failures', 0, () => {
+      const invalidNumber: ChatHistoryDecodeResult = decodeChatHistorySnapshot(
+        '{"schemaVersion":1,"sessions":[{"id":"s1","name":"A","messages":'
+          + '[{"id":1,"role":"ai","content":"secret-body","ts":1e400,"streaming":false}]}]}',
+      );
+      expect(invalidNumber.error).assertEqual('corrupt');
+      expect(invalidNumber.diagnostic).assertContain('stage=validate');
+      expect(invalidNumber.diagnostic).assertContain('code=INVALID_TIMESTAMP');
+      expect(invalidNumber.diagnostic).assertContain('path=sessions[0].messages[0].ts');
+      expect(invalidNumber.diagnostic.indexOf('secret-body') < 0).assertTrue();
+
+      const duplicateSession: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: [SAMPLE_SESSIONS[0], SAMPLE_SESSIONS[0]],
+      }));
+      expect(duplicateSession.error).assertEqual('corrupt');
+      expect(duplicateSession.diagnostic).assertContain('code=DUPLICATE_SESSION_ID');
+      expect(duplicateSession.diagnostic).assertContain('path=sessions[1].id');
+    });
+
+    it('should enforce v1 collection and control-character boundaries', 0, () => {
+      const tooManySessions: ChatSession[] = [];
+      let sessionIndex: number = 0;
+      while (sessionIndex < 201) {
+        tooManySessions.push({ id: 's' + (sessionIndex + 1).toString(), name: 'A', messages: [] });
+        sessionIndex += 1;
+      }
+      const sessionsResult: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: tooManySessions,
+      }));
+      expect(sessionsResult.diagnostic).assertContain('code=SESSION_LIMIT_EXCEEDED');
+
+      const invalidControl: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: [{
+          id: 's1', name: 'A',
+          messages: [{ id: 1, role: 'ai', content: 'ok\n\tbad\u0001', ts: 1, streaming: false }],
+        }],
+      }));
+      expect(invalidControl.diagnostic).assertContain('code=INVALID_MESSAGE_CONTROL');
+
+      const validMath: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: [{
+          id: 's1', name: 'Chinese math',
+          messages: [{ id: 1, role: 'ai', content: '$$\\\\frac{1}{2}$$\n\tvalue', ts: 1, streaming: false }],
+        }],
+      }));
+      expect(validMath.error).assertEqual('none');
+    });
+
+    it('should reject malformed elements, duplicate keys, and overlong strings without partial decode', 0, () => {
+      const malformed: ChatHistoryDecodeResult = decodeChatHistorySnapshot('{"schemaVersion":1');
+      expect(malformed.diagnostic).assertContain('code=MALFORMED_JSON');
+      const nullMessage: ChatHistoryDecodeResult = decodeChatHistorySnapshot(
+        '{"schemaVersion":1,"sessions":[{"id":"s1","name":"A","messages":[null]}]}',
+      );
+      expect(nullMessage.diagnostic).assertContain('code=MESSAGE_NOT_OBJECT');
+      const duplicateKey: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: [{
+          id: 's1', name: 'A', messages: [
+            { id: 1, role: 'user', content: 'one', ts: 1, streaming: false, messageKey: 'same' },
+            { id: 2, role: 'user', content: 'two', ts: 2, streaming: false, messageKey: 'same' },
+          ],
+        }],
+      }));
+      expect(duplicateKey.diagnostic).assertContain('code=DUPLICATE_MESSAGE_KEY');
+      const overlongName: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: [{ id: 's1', name: 'x'.repeat(81), messages: [] }],
+      }));
+      expect(overlongName.diagnostic).assertContain('code=INVALID_SESSION_NAME');
+      expect(overlongName.snapshot === undefined).assertTrue();
+      const negativeMessageId: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+        schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+        sessions: [{
+          id: 's1', name: 'A',
+          messages: [{ id: -1, role: 'user', content: 'x', ts: 0, streaming: false }],
+        }],
+      }));
+      expect(negativeMessageId.diagnostic).assertContain('code=INVALID_MESSAGE_ID');
+    });
   });
 
   describe('ChatHistoryPersistence.issue141_load_contract', () => {
@@ -218,6 +360,20 @@ export default function chatHistoryPersistenceTest(): void {
       expect(result.state).assertEqual('migrated');
       expect(result.diagnostic).assertContain('migratedFrom=preferences');
       expect(store.writes.length).assertEqual(1);
+    });
+
+    it('should preserve structured diagnostics for corrupt legacy preferences', 0, async () => {
+      const store: FakeStore = new FakeStore();
+      const persistence: ChatHistoryPersistence = new ChatHistoryPersistence(
+        store,
+        new FakePreferences('{"sessions":[{"id":"bad"}]}'),
+        '/data/storage/el2/base/files/chat-history.json',
+      );
+      const result: ChatHistoryLoadResult = await persistence.load();
+      expect(result.state).assertEqual('corrupt');
+      expect(result.diagnostic).assertContain('stage=validate');
+      expect(result.diagnostic).assertContain('code=INVALID_SESSION_NAME');
+      expect(result.diagnostic).assertContain('path=sessions[0].name');
     });
 
     it('should read a valid file without consulting legacy preferences', 0, async () => {

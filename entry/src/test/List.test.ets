@@ -14,6 +14,10 @@ import rendererSchedulerTest from './RendererScheduler.test';
 import renderTickTest from './RenderTick.test';
 import streamingReplyDocumentTest from './StreamingReplyDocument.test';
 import conversationIdentityTest from './ConversationIdentity.test';
+import sessionUiStateTest from './SessionUiState.test';
+import chatContextProjectionTest from './ChatContextProjection.test';
+import sessionDeletionCoordinatorTest from './SessionDeletionCoordinator.test';
+import conversationTitleServiceTest from './ConversationTitleService.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -32,4 +36,8 @@ export default function testsuite() {
   renderTickTest();
   streamingReplyDocumentTest();
   conversationIdentityTest();
+  sessionUiStateTest();
+  chatContextProjectionTest();
+  sessionDeletionCoordinatorTest();
+  conversationTitleServiceTest();
 }

@@ -44,6 +44,7 @@ import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
 import { NoteDaoAdapter } from '../adapters/NoteDaoAdapter';
+import { ConversationRunIdPolicy, SessionIdPolicy } from './ConversationIdentity';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
 import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFactory';
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
@@ -130,8 +131,11 @@ export class AiService {
     sourceText: string,
     pendingSources: SourceFragment[],
     cancellationToken?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
   ): Promise<NoteDraftReadyEvent> {
     cancellationToken?.throwIfCancelled();
+    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     const fragments: SourceFragment[] = [{
       id: 'conversation:' + runId,
@@ -146,6 +150,8 @@ export class AiService {
     }
     const request: NoteGenerationRequest = {
       runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
       instruction: instruction,
       mode: 'create',
       sources: {
@@ -188,6 +194,8 @@ export class AiService {
     }
     return {
       runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
       checkpointId: result.generation.bestCheckpointId,
       candidateHash: sourceFingerprint(JSON.stringify(candidate)),
       candidate: candidate,
@@ -208,8 +216,11 @@ export class AiService {
     instruction: string,
     sourceText: string,
     cancellationToken?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
   ): Promise<NoteDraftReadyEvent> {
     cancellationToken?.throwIfCancelled();
+    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
     if (noteId.trim().length === 0) {
       throw new Error('增量重生成需要明确 noteId');
     }
@@ -223,6 +234,8 @@ export class AiService {
     }
     const request: NoteGenerationRequest = {
       runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
       instruction: instruction,
       mode: 'regenerate',
       targetNoteId: noteId,
@@ -247,6 +260,8 @@ export class AiService {
     }
     return {
       runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
       checkpointId: result.generation.bestCheckpointId,
       candidateHash: sourceFingerprint(JSON.stringify(result.data)),
       candidate: result.data,
@@ -316,12 +331,25 @@ export class AiService {
       }
     }
     await repository.appendLifecycleLog({ runId: runId, event: 'retried', sourceCount: recovery.sources.fragments.length });
-    return await this.generateNoteDraftWithSources(runId, recovery.run.instruction, conversationText, pendingSources);
+    return await this.generateNoteDraftWithSources(
+      runId,
+      recovery.run.instruction,
+      conversationText,
+      pendingSources,
+      undefined,
+      recovery.run.originSessionId,
+      recovery.run.parentConversationRunId,
+    );
   }
 
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     return await repository.listRecoverableRuns();
+  }
+
+  async cancelDraftsByParentRun(sessionId: string, parentConversationRunId: string): Promise<void> {
+    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    await repository.cancelIncompleteByParentRun(sessionId, parentConversationRunId);
   }
 
   async updateDraftCheckpoint(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<NoteGenerationCheckpoint> {
@@ -437,6 +465,8 @@ export class AiService {
     };
     return {
       runId: recovery.run.id,
+      originSessionId: recovery.run.originSessionId,
+      parentConversationRunId: recovery.run.parentConversationRunId,
       checkpointId: checkpoint.id,
       candidateHash: checkpoint.candidateHash,
       candidate: candidate,
@@ -447,6 +477,18 @@ export class AiService {
       pendingSourceIds: pendingSourceIds,
       incrementalInstruction: recovery.run.instruction,
     };
+  }
+
+  private static validateConversationOrigin(
+    originSessionId: string | undefined,
+    parentConversationRunId: string | undefined,
+  ): void {
+    if (originSessionId === undefined && parentConversationRunId === undefined) { return; }
+    if (originSessionId === undefined || parentConversationRunId === undefined) {
+      throw new Error('INCOMPLETE_CONVERSATION_DRAFT_ORIGIN');
+    }
+    SessionIdPolicy.requireValid(originSessionId);
+    ConversationRunIdPolicy.requireValid(parentConversationRunId);
   }
 
   // 内部: 调度 -> 校验 -> 入库

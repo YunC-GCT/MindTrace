@@ -35,8 +35,19 @@ export class WritePathValidator {
 
   static validateChatMessage(record: ChatMessageRecord): void {
     WritePathValidator.requireText(record.id, 'ChatMessageRecord.id');
+    WritePathValidator.requireText(record.messageKey, 'ChatMessageRecord.messageKey');
     SessionIdPolicy.requireValid(record.sessionId);
     WritePathValidator.requireText(record.content, 'ChatMessageRecord.content');
+    if (!Number.isSafeInteger(record.sequence) || record.sequence <= 0) {
+      throw new Error('ChatMessageRecord.sequence must be a positive safe integer');
+    }
+    if (record.origin !== 'chat' && record.origin !== 'image' && record.origin !== 'note-regeneration'
+      && record.origin !== 'system' && record.origin !== 'legacy') {
+      throw new Error('ChatMessageRecord.origin is invalid');
+    }
+    if (record.outcome !== 'completed') {
+      throw new Error('Only completed chat messages may enter context projection');
+    }
   }
 
   static validateAgentMemory(record: AgentMemoryRecord): void {

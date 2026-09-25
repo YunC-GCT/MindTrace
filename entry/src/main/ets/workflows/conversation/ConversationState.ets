@@ -22,6 +22,9 @@ import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { ClassificationResult } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 
+export type ChatMessageOrigin = 'chat' | 'image' | 'note-regeneration' | 'system' | 'legacy';
+export type ChatMessageOutcome = 'completed' | 'interrupted' | 'cancelled' | 'failed';
+
 export type ConversationStep =
   | 'START'
   | 'classify_intent'

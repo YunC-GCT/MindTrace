@@ -44,6 +44,8 @@ export interface NoteGenerationRequirement {
 
 export interface NoteGenerationRequest {
   runId: string;
+  originSessionId?: string;
+  parentConversationRunId?: string;
   instruction: string;
   mode: NoteGenerationMode;
   sources: SourceBundle;
@@ -198,6 +200,8 @@ export interface NoteGenerationProgress {
 
 export interface NoteGenerationRun {
   id: string;
+  originSessionId?: string;
+  parentConversationRunId?: string;
   route: NoteGenerationRoute;
   status: NoteGenerationStatus;
   instruction: string;
@@ -236,6 +240,8 @@ export interface NoteGenerationCheckpoint {
 
 export interface NoteDraftReadyEvent {
   runId: string;
+  originSessionId?: string;
+  parentConversationRunId?: string;
   checkpointId: string;
   candidateHash: string;
   candidate: KnowledgeUnit;

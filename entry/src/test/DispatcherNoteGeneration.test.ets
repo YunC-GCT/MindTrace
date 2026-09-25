@@ -45,9 +45,11 @@ class FakeRepository implements NoteGenerationRepository {
   checkpointSaves: number = 0;
   checkpoints: NoteGenerationCheckpoint[] = [];
   commits: NoteGenerationCommitResult[] = [];
+  lastRun: NoteGenerationRun | undefined = undefined;
 
   async saveRun(_run: NoteGenerationRun, _bundle: SourceBundle): Promise<void> {
     this.runSaves += 1;
+    this.lastRun = _run;
   }
 
   async saveCheckpoint(_checkpoint: NoteGenerationCheckpoint): Promise<void> {
@@ -441,6 +443,8 @@ export default function dispatcherNoteGenerationTest(): void {
         payload: { kind: 'text', text: '函数在闭区间上连续。' },
         generation: {
           runId: 'light-98',
+          originSessionId: 's1',
+          parentConversationRunId: 'r101',
           instruction: '保留定义',
           mode: 'create',
           sources: {
@@ -471,6 +475,8 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(result.generation?.status).assertEqual('ready-preview');
       expect(dao.writes).assertEqual(0);
       expect(repository.checkpointSaves).assertEqual(1);
+      expect(repository.lastRun?.originSessionId).assertEqual('s1');
+      expect(repository.lastRun?.parentConversationRunId).assertEqual('r101');
 
       const generated: KnowledgeUnit = result.data ?? unitForTest;
       const prepared: PreparedCandidate = {

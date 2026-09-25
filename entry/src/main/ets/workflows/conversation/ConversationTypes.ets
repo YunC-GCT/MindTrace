@@ -18,17 +18,20 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { ConversationProgressStep } from './ConversationState';
+import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
 import { NoteDraftReadyEvent } from 'common';
 import type { StreamEvent } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { CancellationToken } from 'common';
 
 export interface ConversationWorkflowCallbacks {
-  addAiMsg(ref: ConversationRunRef, content: string): void;
-  addAiMsgEmpty(ref: ConversationRunRef): number;
+  addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number;
+  addAiMsgEmpty(ref: ConversationRunRef, origin: ChatMessageOrigin): number;
   appendAiMsg(ref: ConversationRunRef, id: number, event: StreamEvent): void;
-  finishAiMsg(ref: ConversationRunRef, id: number): void;
+  finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void;
+  getUserMessageId(ref: ConversationRunRef): number;
+  commitHistory(ref: ConversationRunRef): Promise<boolean>;
+  reportDiagnostic(ref: ConversationRunRef, diagnostic: string): void;
   onStart(ref: ConversationRunRef): void;
   onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void;
   onFinish(ref: ConversationRunRef): void;

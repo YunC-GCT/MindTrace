@@ -29,14 +29,17 @@ import { preferences } from '@kit.ArkData';
 import {
   ChatMsg,
   ChatSession,
+  ChatMessageOrigin,
+  ChatMessageOutcome,
   copyChatSessionsForPersistence,
+  normalizeDecodedChatMessage,
 } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { ChatFilesDirSeam } from './ChatFilesDirSeam';
 import {
   CHAT_HISTORY_SCHEMA_VERSION,
   CHAT_HISTORY_V1_SCHEMA_VERSION,
 } from './ChatHistorySchema';
-import { SessionIdPolicy } from './ConversationIdentity';
+import { ConversationRunIdPolicy, SessionIdPolicy } from './ConversationIdentity';
 export { CHAT_HISTORY_SCHEMA_VERSION } from './ChatHistorySchema';
 
 export const STREAM_SAVE_THROTTLE_MS: number = 500;
@@ -49,6 +52,33 @@ export type ChatHistorySaveState = 'idle' | 'completed' | 'failed' | 'blocked' |
 export interface ChatHistorySnapshot {
   schemaVersion: number;
   sessions: ChatSession[];
+  migratedFrom?: string;
+}
+
+export interface ChatHistoryMessageWire {
+  id: number;
+  role: string;
+  content: string;
+  ts: number;
+  streaming: boolean;
+  reasoning?: string;
+  reasoningExpanded?: boolean;
+  origin?: string;
+  outcome?: string;
+  runId?: string;
+  sequence?: number;
+  messageKey?: string;
+}
+
+export interface ChatHistorySessionWire {
+  id: string;
+  name: string;
+  messages: ChatHistoryMessageWire[];
+}
+
+export interface ChatHistorySnapshotWire {
+  schemaVersion: number;
+  sessions: ChatHistorySessionWire[];
   migratedFrom?: string;
 }
 
@@ -113,54 +143,243 @@ interface WorkerWriteRequest {
 const WORKER_SCRIPT: string = 'entry/ets/workers/ChatPersistenceWorker.ets';
 const WORKER_WRITE_TIMEOUT_MS: number = 5000;
 const MAX_CONSECUTIVE_FAILURES: number = 3;
+const MAX_SNAPSHOT_BYTES: number = 16 * 1024 * 1024;
+const MAX_SESSION_COUNT: number = 200;
+const MAX_MESSAGES_PER_SESSION: number = 5000;
+const MAX_SESSION_NAME_LENGTH: number = 80;
+const MAX_MESSAGE_TEXT_LENGTH: number = 262144;
+const MAX_MESSAGE_KEY_LENGTH: number = 256;
 
-function defaultSessions(): ChatSession[] {
-  return [];
+function defaultSessions(): ChatSession[] { return []; }
+
+function decodeDiagnostic(stage: string, code: string, path: string): string {
+  return 'stage=' + stage + ';code=' + code + ';path=' + path;
 }
 
-function isChatMsg(candidate: ChatMsg): boolean {
-  const reasoningValid: boolean = candidate.reasoning === undefined || typeof candidate.reasoning === 'string';
-  const expansionValid: boolean = candidate.reasoningExpanded === undefined
-    || typeof candidate.reasoningExpanded === 'boolean';
-  return typeof candidate.id === 'number'
-    && (candidate.role === 'user' || candidate.role === 'ai')
-    && typeof candidate.content === 'string'
-    && typeof candidate.ts === 'number'
-    && typeof candidate.streaming === 'boolean'
-    && reasoningValid
-    && expansionValid;
+function corrupt(code: string, path: string, stage: string = 'validate'): ChatHistoryDecodeResult {
+  return { error: 'corrupt', diagnostic: decodeDiagnostic(stage, code, path) };
 }
 
-function isChatSession(candidate: ChatSession): boolean {
-  if (typeof candidate.id !== 'string' || !SessionIdPolicy.isValid(candidate.id)
-    || typeof candidate.name !== 'string') {
-    return false;
+function hasForbiddenIdentityControl(value: string): boolean {
+  let index: number = 0;
+  while (index < value.length) {
+    const code: number = value.charCodeAt(index);
+    if (code < 32 || code === 127) { return true; }
+    index += 1;
   }
-  if (!Array.isArray(candidate.messages)) {
-    return false;
+  return false;
+}
+
+function hasForbiddenMessageControl(value: string): boolean {
+  let index: number = 0;
+  while (index < value.length) {
+    const code: number = value.charCodeAt(index);
+    if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127) { return true; }
+    index += 1;
   }
-  for (const message of candidate.messages) {
-    if (!isChatMsg(message)) {
-      return false;
+  return false;
+}
+
+function utf8ByteLengthAtMost(value: string, limit: number): number {
+  let bytes: number = 0;
+  let index: number = 0;
+  while (index < value.length && bytes <= limit) {
+    const code: number = value.charCodeAt(index);
+    if (code < 128) { bytes += 1; }
+    else if (code < 2048) { bytes += 2; }
+    else if (code >= 55296 && code <= 56319 && index + 1 < value.length
+      && value.charCodeAt(index + 1) >= 56320 && value.charCodeAt(index + 1) <= 57343) {
+      bytes += 4;
+      index += 1;
+    } else { bytes += 3; }
+    index += 1;
+  }
+  return bytes;
+}
+
+function isOrigin(value: string): boolean {
+  return value === 'chat' || value === 'image' || value === 'note-regeneration'
+    || value === 'system' || value === 'legacy';
+}
+
+function isOutcome(value: string): boolean {
+  return value === 'completed' || value === 'interrupted' || value === 'cancelled' || value === 'failed';
+}
+
+interface SessionValidationResult {
+  sessions?: ChatSession[];
+  diagnostic: string;
+}
+
+interface LegacyParseResult {
+  sessions?: ChatSession[];
+  diagnostic: string;
+}
+
+interface MessageValidationResult {
+  message?: ChatMsg;
+  diagnostic: string;
+}
+
+function validateMessage(
+  message: ChatHistoryMessageWire,
+  path: string,
+  legacyInput: boolean,
+): MessageValidationResult {
+  if (message === null || typeof message !== 'object') {
+    return { diagnostic: decodeDiagnostic('validate', 'MESSAGE_NOT_OBJECT', path) };
+  }
+  if (typeof message.id !== 'number' || !Number.isSafeInteger(message.id) || message.id <= 0) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_MESSAGE_ID', path + '.id') };
+  }
+  if (message.role !== 'user' && message.role !== 'ai') {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_ROLE', path + '.role') };
+  }
+  if (typeof message.content !== 'string' || message.content.length > MAX_MESSAGE_TEXT_LENGTH) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_CONTENT', path + '.content') };
+  }
+  if (hasForbiddenMessageControl(message.content)) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_MESSAGE_CONTROL', path + '.content') };
+  }
+  if (typeof message.ts !== 'number' || !Number.isFinite(message.ts) || message.ts < 0) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_TIMESTAMP', path + '.ts') };
+  }
+  if (typeof message.streaming !== 'boolean') {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_STREAMING', path + '.streaming') };
+  }
+  if (message.reasoning !== undefined && (typeof message.reasoning !== 'string'
+    || message.reasoning.length > MAX_MESSAGE_TEXT_LENGTH
+    || hasForbiddenMessageControl(message.reasoning))) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_REASONING', path + '.reasoning') };
+  }
+  if (!legacyInput && message.reasoningExpanded !== undefined) {
+    return { diagnostic: decodeDiagnostic('validate', 'UI_STATE_IN_SNAPSHOT', path + '.reasoningExpanded') };
+  }
+  if (message.origin !== undefined && !isOrigin(message.origin)) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_ORIGIN', path + '.origin') };
+  }
+  if (message.outcome !== undefined && !isOutcome(message.outcome)) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_OUTCOME', path + '.outcome') };
+  }
+  if (message.runId !== undefined && (typeof message.runId !== 'string'
+    || !ConversationRunIdPolicy.isValid(message.runId) || hasForbiddenIdentityControl(message.runId))) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_ID', path + '.runId') };
+  }
+  if (message.sequence !== undefined && (typeof message.sequence !== 'number'
+    || !Number.isSafeInteger(message.sequence) || message.sequence <= 0)) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_SEQUENCE', path + '.sequence') };
+  }
+  if (message.messageKey !== undefined && (typeof message.messageKey !== 'string'
+    || message.messageKey.length === 0 || message.messageKey.length > MAX_MESSAGE_KEY_LENGTH
+    || hasForbiddenIdentityControl(message.messageKey))) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_MESSAGE_KEY', path + '.messageKey') };
+  }
+  if (message.streaming && message.outcome !== undefined) {
+    return { diagnostic: decodeDiagnostic('validate', 'STREAMING_WITH_TERMINAL_OUTCOME', path + '.outcome') };
+  }
+  if (message.role === 'ai' && message.origin !== undefined && message.origin !== 'legacy') {
+    if (message.runId === undefined) {
+      return { diagnostic: decodeDiagnostic('validate', 'AI_MESSAGE_RUN_ID_REQUIRED', path + '.runId') };
+    }
+    if (!message.streaming && message.outcome === undefined) {
+      return { diagnostic: decodeDiagnostic('validate', 'AI_MESSAGE_OUTCOME_REQUIRED', path + '.outcome') };
     }
   }
-  return true;
+  const trusted: ChatMsg = {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    ts: message.ts,
+    streaming: message.streaming,
+  };
+  if (message.reasoning !== undefined) { trusted.reasoning = message.reasoning; }
+  if (legacyInput && message.reasoningExpanded !== undefined) {
+    trusted.reasoningExpanded = message.reasoningExpanded;
+  }
+  if (message.origin !== undefined) { trusted.origin = message.origin as ChatMessageOrigin; }
+  if (message.outcome !== undefined) { trusted.outcome = message.outcome as ChatMessageOutcome; }
+  if (message.runId !== undefined) { trusted.runId = message.runId; }
+  if (message.sequence !== undefined) { trusted.sequence = message.sequence; }
+  if (message.messageKey !== undefined) { trusted.messageKey = message.messageKey; }
+  return { message: normalizeDecodedChatMessage(trusted), diagnostic: '' };
 }
 
-function parseSessions(raw: string): ChatSession[] | undefined {
-  try {
-    const sessions: ChatSession[] = JSON.parse(raw);
-    if (!Array.isArray(sessions)) {
-      return undefined;
+function validateSessions(input: ChatHistorySessionWire[], legacyInput: boolean): SessionValidationResult {
+  if (!Array.isArray(input)) {
+    return { diagnostic: decodeDiagnostic('validate', 'SESSIONS_NOT_ARRAY', 'sessions') };
+  }
+  if (input.length > MAX_SESSION_COUNT) {
+    return { diagnostic: decodeDiagnostic('validate', 'SESSION_LIMIT_EXCEEDED', 'sessions') };
+  }
+  const sessionIds: Set<string> = new Set<string>();
+  const sessions: ChatSession[] = [];
+  let sessionIndex: number = 0;
+  for (const session of input) {
+    const sessionPath: string = 'sessions[' + sessionIndex.toString() + ']';
+    if (session === null || typeof session !== 'object') {
+      return { diagnostic: decodeDiagnostic('validate', 'SESSION_NOT_OBJECT', sessionPath) };
     }
-    for (const session of sessions) {
-      if (!isChatSession(session)) {
-        return undefined;
+    if (typeof session.id !== 'string' || !SessionIdPolicy.isValid(session.id)
+      || hasForbiddenIdentityControl(session.id)) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_SESSION_ID', sessionPath + '.id') };
+    }
+    if (sessionIds.has(session.id)) {
+      return { diagnostic: decodeDiagnostic('validate', 'DUPLICATE_SESSION_ID', sessionPath + '.id') };
+    }
+    sessionIds.add(session.id);
+    if (typeof session.name !== 'string' || session.name.length > MAX_SESSION_NAME_LENGTH
+      || hasForbiddenIdentityControl(session.name)) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_SESSION_NAME', sessionPath + '.name') };
+    }
+    if (!Array.isArray(session.messages) || session.messages.length > MAX_MESSAGES_PER_SESSION) {
+      return { diagnostic: decodeDiagnostic('validate', 'MESSAGE_LIMIT_EXCEEDED', sessionPath + '.messages') };
+    }
+    const messageIds: Set<number> = new Set<number>();
+    const messageKeys: Set<string> = new Set<string>();
+    const unfinishedRuns: Set<string> = new Set<string>();
+    const messages: ChatMsg[] = [];
+    let messageIndex: number = 0;
+    for (const message of session.messages) {
+      const messagePath: string = sessionPath + '.messages[' + messageIndex.toString() + ']';
+      const messageResult: MessageValidationResult = validateMessage(message, messagePath, legacyInput);
+      if (messageResult.message === undefined) { return { diagnostic: messageResult.diagnostic }; }
+      const validatedMessage: ChatMsg = messageResult.message;
+      if (messageIds.has(message.id)) {
+        return { diagnostic: decodeDiagnostic('validate', 'DUPLICATE_MESSAGE_ID', messagePath + '.id') };
       }
+      messageIds.add(message.id);
+      if (validatedMessage.messageKey !== undefined) {
+        if (messageKeys.has(validatedMessage.messageKey)) {
+          return { diagnostic: decodeDiagnostic('validate', 'DUPLICATE_MESSAGE_KEY', messagePath + '.messageKey') };
+        }
+        messageKeys.add(validatedMessage.messageKey);
+      }
+      if (message.role === 'ai' && message.streaming && message.runId !== undefined) {
+        if (unfinishedRuns.has(message.runId)) {
+          return { diagnostic: decodeDiagnostic('validate', 'DUPLICATE_UNFINISHED_RUN', messagePath + '.runId') };
+        }
+        unfinishedRuns.add(message.runId);
+      }
+      if (legacyInput) { validatedMessage.reasoningExpanded = undefined; }
+      messages.push(validatedMessage);
+      messageIndex += 1;
     }
-    return copyChatSessionsForPersistence(sessions);
+    sessions.push({ id: session.id, name: session.name, messages: messages });
+    sessionIndex += 1;
+  }
+  return { sessions: sessions, diagnostic: '' };
+}
+
+function parseSessions(raw: string): LegacyParseResult {
+  if (raw.length > MAX_SNAPSHOT_BYTES || utf8ByteLengthAtMost(raw, MAX_SNAPSHOT_BYTES) > MAX_SNAPSHOT_BYTES) {
+    return { diagnostic: decodeDiagnostic('parse', 'SNAPSHOT_SIZE_EXCEEDED', '$') };
+  }
+  try {
+    const sessions: ChatHistorySessionWire[] = JSON.parse(raw) as ChatHistorySessionWire[];
+    const validation: SessionValidationResult = validateSessions(sessions, true);
+    return { sessions: validation.sessions, diagnostic: validation.diagnostic };
   } catch (error) {
-    return undefined;
+    return { diagnostic: decodeDiagnostic('parse', 'MALFORMED_JSON', '$') };
   }
 }
 
@@ -168,9 +387,10 @@ export interface ChatHistoryDecodeResult {
   snapshot?: ChatHistorySnapshot;
   error: 'none' | 'corrupt' | 'unsupported-version';
   version?: number;
+  diagnostic: string;
 }
 
-export type ChatHistorySnapshotDecoder = (snapshot: ChatHistorySnapshot) => ChatHistoryDecodeResult;
+export type ChatHistorySnapshotDecoder = (snapshot: ChatHistorySnapshotWire) => ChatHistoryDecodeResult;
 
 export interface ChatHistoryDecoderRegistration {
   readonly version: number;
@@ -192,43 +412,51 @@ export class ChatHistoryDecoderCatalog {
   }
 
   decode(raw: string): ChatHistoryDecodeResult {
+    if (raw.length > MAX_SNAPSHOT_BYTES || utf8ByteLengthAtMost(raw, MAX_SNAPSHOT_BYTES) > MAX_SNAPSHOT_BYTES) {
+      return corrupt('SNAPSHOT_SIZE_EXCEEDED', '$', 'parse');
+    }
     try {
-      const snapshot: ChatHistorySnapshot = JSON.parse(raw);
+      const snapshot: ChatHistorySnapshotWire = JSON.parse(raw) as ChatHistorySnapshotWire;
+      if (snapshot === null || typeof snapshot !== 'object') {
+        return corrupt('SNAPSHOT_NOT_OBJECT', '$', 'parse');
+      }
       if (typeof snapshot.schemaVersion !== 'number' || !Number.isInteger(snapshot.schemaVersion)
         || snapshot.schemaVersion <= 0) {
-        return { error: 'corrupt' };
+        return corrupt('INVALID_SCHEMA_VERSION', 'schemaVersion', 'dispatch');
       }
       const decoder: ChatHistorySnapshotDecoder | undefined =
         this.decoders.get(snapshot.schemaVersion);
       if (decoder === undefined) {
-        return { error: 'unsupported-version', version: snapshot.schemaVersion };
+        return {
+          error: 'unsupported-version',
+          version: snapshot.schemaVersion,
+          diagnostic: decodeDiagnostic('dispatch', 'UNSUPPORTED_SCHEMA_VERSION', 'schemaVersion'),
+        };
       }
       return decoder(snapshot);
     } catch (error) {
-      return { error: 'corrupt' };
+      return corrupt('MALFORMED_JSON', '$', 'parse');
     }
   }
 }
 
-function decodeChatHistorySnapshotV1(snapshot: ChatHistorySnapshot): ChatHistoryDecodeResult {
+function decodeChatHistorySnapshotV1(snapshot: ChatHistorySnapshotWire): ChatHistoryDecodeResult {
   if (!Array.isArray(snapshot.sessions)) {
-    return { error: 'corrupt' };
+    return corrupt('SESSIONS_NOT_ARRAY', 'sessions');
   }
-  const sessions: ChatSession[] = [];
-  for (const session of snapshot.sessions) {
-    if (!isChatSession(session)) {
-      return { error: 'corrupt' };
-    }
-    sessions.push(session);
+  const validation: SessionValidationResult = validateSessions(snapshot.sessions, false);
+  if (validation.sessions === undefined) { return { error: 'corrupt', diagnostic: validation.diagnostic }; }
+  if (snapshot.migratedFrom !== undefined && snapshot.migratedFrom !== 'preferences') {
+    return corrupt('INVALID_MIGRATION_SOURCE', 'migratedFrom');
   }
   const validated: ChatHistorySnapshot = {
     schemaVersion: CHAT_HISTORY_V1_SCHEMA_VERSION,
-    sessions: copyChatSessionsForPersistence(sessions),
+    sessions: copyChatSessionsForPersistence(validation.sessions),
   };
   if (snapshot.migratedFrom === 'preferences') {
     validated.migratedFrom = 'preferences';
   }
-  return { error: 'none', snapshot: validated };
+  return { error: 'none', snapshot: validated, diagnostic: '' };
 }
 
 export function createChatHistoryDecoderCatalog(
@@ -251,8 +479,26 @@ export function decodeChatHistorySnapshot(raw: string): ChatHistoryDecodeResult 
   return CHAT_HISTORY_DECODER_CATALOG.decode(raw);
 }
 
+interface DiagnosticErrorShape {
+  name?: string;
+  code?: number;
+  message?: string;
+}
+
+function sanitizeDiagnosticValue(value: string): string {
+  const normalized: string = value.replace(/[\r\n;]/g, '_');
+  return normalized.length > 160 ? normalized.substring(0, 160) : normalized;
+}
+
 function errorToken(error: Object): string {
-  return error instanceof Error ? error.name : 'unknown';
+  if (!(error instanceof Error)) {
+    return 'errorType=unknown';
+  }
+  const detail: DiagnosticErrorShape = error as DiagnosticErrorShape;
+  const name: string = sanitizeDiagnosticValue(detail.name ?? 'Error');
+  const code: string = typeof detail.code === 'number' ? detail.code.toString() : 'none';
+  const message: string = sanitizeDiagnosticValue(detail.message ?? '');
+  return 'errorType=' + name + '; errorCode=' + code + '; errorMessage=' + message;
 }
 
 function diagnostic(stage: AtomicWriteStage, token: string): string {
@@ -282,7 +528,22 @@ export async function writeChatHistorySnapshotTask(
     const json: string = JSON.stringify(snapshot);
     const lastSlash: number = path.lastIndexOf('/');
     const directory: string = lastSlash >= 0 ? path.substring(0, lastSlash) : path;
-    fileIo.mkdirSync(directory, true);
+    if (!fileIo.accessSync(directory)) {
+      try {
+        fileIo.mkdirSync(directory, true);
+      } catch (error) {
+        if (!fileIo.accessSync(directory)) {
+          const errorType: string = error instanceof Error
+            ? error.name.replace(/[\r\n;]/g, '_').substring(0, 160) : 'unknown';
+          const errorCode: string = error instanceof Error && typeof (error as DiagnosticErrorShape).code === 'number'
+            ? (error as DiagnosticErrorShape).code?.toString() ?? 'none' : 'none';
+          const errorMessage: string = error instanceof Error
+            ? error.message.replace(/[\r\n;]/g, '_').substring(0, 160) : '';
+          throw new Error('directory-create-failed; originalErrorType=' + errorType
+            + '; originalErrorCode=' + errorCode + '; originalErrorMessage=' + errorMessage);
+        }
+      }
+    }
     tmpPath = path + '.tmp';
     stage = 'WRITE';
     const file: fileIo.File = fileIo.openSync(
@@ -325,7 +586,13 @@ export async function writeChatHistorySnapshotTask(
       stage: stage,
       schemaVersion: schemaVersion,
       diagnostic: 'stage=' + stage
-        + '; error=atomic-write-failed; schemaVersion=' + CHAT_HISTORY_SCHEMA_VERSION.toString() + '; ts='
+        + '; error=atomic-write-failed; errorType='
+        + (error instanceof Error ? error.name.replace(/[\r\n;]/g, '_').substring(0, 160) : 'unknown')
+        + '; errorCode=' + (error instanceof Error && typeof (error as DiagnosticErrorShape).code === 'number'
+          ? (error as DiagnosticErrorShape).code?.toString() ?? 'none' : 'none')
+        + '; errorMessage='
+        + (error instanceof Error ? error.message.replace(/[\r\n;]/g, '_').substring(0, 160) : '')
+        + '; schemaVersion=' + CHAT_HISTORY_SCHEMA_VERSION.toString() + '; ts='
         + Date.now().toString(),
     };
     return result;
@@ -355,7 +622,7 @@ class FileChatHistoryStore implements ChatHistoryStorePort {
         [string, ChatSession[], string],
         AtomicWriteTaskResult
       >(task);
-      return {
+      const taskpoolResult: ChatHistorySaveResult = {
         success: result.success,
         stage: result.stage,
         transport: 'taskpool',
@@ -363,8 +630,20 @@ class FileChatHistoryStore implements ChatHistoryStorePort {
         state: result.success ? 'completed' : 'failed',
         diagnostic: 'transport=taskpool; ' + result.diagnostic,
       };
+      if (taskpoolResult.success) {
+        return taskpoolResult;
+      }
+      return combineFallbackResult(taskpoolResult, await runWorkerWrite(path, sessions, migratedFrom));
     } catch (error) {
-      return await runWorkerWrite(path, sessions, migratedFrom);
+      const taskpoolFailure: ChatHistorySaveResult = {
+        success: false,
+        state: 'failed',
+        stage: 'PREPARE',
+        transport: 'taskpool',
+        retryable: true,
+        diagnostic: 'transport=taskpool; ' + diagnostic('PREPARE', 'error=taskpool-exception; ' + errorToken(error)),
+      };
+      return combineFallbackResult(taskpoolFailure, await runWorkerWrite(path, sessions, migratedFrom));
     }
   }
 
@@ -375,6 +654,20 @@ class FileChatHistoryStore implements ChatHistoryStorePort {
       return false;
     }
   }
+}
+
+export function combineFallbackResult(
+  primary: ChatHistorySaveResult,
+  fallback: ChatHistorySaveResult,
+): ChatHistorySaveResult {
+  return {
+    success: fallback.success,
+    state: fallback.state,
+    stage: fallback.stage,
+    transport: fallback.transport,
+    retryable: primary.retryable || fallback.retryable,
+    diagnostic: 'fallback=worker; primary={' + primary.diagnostic + '}; result={' + fallback.diagnostic + '}',
+  };
 }
 
 async function runWorkerWrite(
@@ -515,7 +808,7 @@ export class ChatHistoryPersistence {
           return {
             sessions: defaultSessions(),
             state: 'corrupt',
-            diagnostic: 'state=corrupt; source=file; fallback=memory',
+            diagnostic: 'state=corrupt; source=file; fallback=memory; ' + decoded.diagnostic,
           };
         }
         return {
@@ -531,12 +824,13 @@ export class ChatHistoryPersistence {
         };
       }
     }
-    const legacy: ChatSession[] | undefined = parseSessions(this.preferences.readSessions());
+    const legacyResult: LegacyParseResult = parseSessions(this.preferences.readSessions());
+    const legacy: ChatSession[] | undefined = legacyResult.sessions;
     if (legacy === undefined) {
       return {
         sessions: defaultSessions(),
-        state: 'default',
-        diagnostic: 'state=default; source=empty',
+        state: 'corrupt',
+        diagnostic: 'state=corrupt; source=preferences; ' + legacyResult.diagnostic,
       };
     }
     const writeResult: ChatHistorySaveResult = await this.store.writeSnapshot(this.snapshotPath, legacy, 'preferences');

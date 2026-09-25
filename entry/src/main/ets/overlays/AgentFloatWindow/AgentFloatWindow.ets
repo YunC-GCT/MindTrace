@@ -23,23 +23,41 @@ import { CameraKitLauncher } from '../../services/CameraKitLauncher';
 import { AlbumPickerLauncher } from '../../services/AlbumPickerLauncher';
 import { ChatHeader } from './chat/ChatHeader';
 import { ChatSessionManager } from './chat/ChatSession';
-import { ChatMsg, ChatSession, ChatStatusMeta, applyStreamEventToChatMsg, finishChatMsg } from './chat/ChatModels';
+import {
+  ChatMessageOrigin,
+  ChatMessageOutcome,
+  ChatMsg,
+  ChatSession,
+  ChatStatusMeta,
+  applyStreamEventToChatMsg,
+  transitionChatMessageOutcome,
+} from './chat/ChatModels';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputPanel } from './AgentInputPanel';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
 import { SessionsPanelController } from '../../services/SessionsPanelController';
-import { NoteDraftReadyEvent } from 'common';
+import { NoteDraftReadyEvent, NoteGenerationRun } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
 import type { StreamEvent } from 'common';
 import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
+import { AiService } from '../../services/AiService';
+import { DraftRecoveryService } from '../../services/DraftRecoveryService';
+import {
+  SessionDeletionCoordinator,
+  SessionDeletionResult,
+} from '../../services/SessionDeletionCoordinator';
+import { ChatContextProjectionService } from '../../services/ChatContextProjectionService';
+import { ConversationSnapshotMapper } from '../../services/ConversationSnapshotMapper';
+import { ConversationTitleService } from '../../services/ConversationTitleService';
 import {
   ConversationSessionEvent,
   ConversationSessionReduceResult,
   ConversationSessionReducer,
 } from '../../services/ConversationSessionReducer';
+import { ConversationSessionSnapshot } from '../../models/ConversationSnapshotModels';
 
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
@@ -69,13 +87,14 @@ export struct AgentFloatWindow {
   @State panelVisible: boolean = false;
   @State generatedDraft: NoteDraftReadyEvent | null = null;
   private generatedDraftSessionId: string = '';
-  private draftsBySession: Map<string, NoteDraftReadyEvent> = new Map<string, NoteDraftReadyEvent>();
   private motionSeq: number = 0;
   private dragStartH: number = 48;
   private mainWindow: window.Window | null = null;
   private scroller: Scroller = new Scroller();
   private sm: ChatSessionManager = new ChatSessionManager();
   private service: AgentChatService | null = null;
+  private deletionCoordinator: SessionDeletionCoordinator | null = null;
+  private draftRecovery: DraftRecoveryService | null = null;
   @State inputVm: AgentInputViewModel = new AgentInputViewModel();
 
   // ===== 生命周期 =====
@@ -135,30 +154,88 @@ export struct AgentFloatWindow {
     this.sm.recordFilesDir(seam !== null ? seam.filesDir : '');
     const inputVm: AgentInputViewModel = this.inputVm;
     const cbs: AgentChatCallbacks = {
-      addUserMsg: (ref: ConversationRunRef, content: string): boolean => {
-        return this.updateSessionMessages(ref, 'add-user-message', (messages: ChatMsg[]): ChatMsg[] => [...messages, { id: chatMessageIdPolicy.create(), role: 'user', content: content, ts: Date.now(), streaming: false, reasoning: '' }]);
-      },
-      addAiMsg: (ref: ConversationRunRef, c: string): void => { this.updateSessionMessages(ref, 'add-ai-message', (messages: ChatMsg[]): ChatMsg[] => [...messages, { id: chatMessageIdPolicy.create(), role: 'ai', content: c, ts: Date.now(), streaming: false, reasoning: '' }]); },
-      addAiMsgEmpty: (ref: ConversationRunRef): number => {
+      addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin): number => {
         const id: number = chatMessageIdPolicy.create();
-        this.updateSessionMessages(ref, 'add-ai-placeholder', (messages: ChatMsg[]): ChatMsg[] => [...messages, { id, role: 'ai', content: '', ts: Date.now(), streaming: true, reasoning: '' }]);
+        const session: ChatSession | undefined = this.sessions.find(
+          (item: ChatSession): boolean => item.id === ref.sessionId,
+        );
+        const firstUserMessage: boolean = session !== undefined
+          && !session.messages.some((message: ChatMsg): boolean => message.role === 'user');
+        const accepted: boolean = this.updateSessionMessages(ref, 'add-user-message', (messages: ChatMsg[]): ChatMsg[] => [...messages, {
+          id: id, messageKey: ref.runId + ':user', sequence: id, role: 'user', content: content,
+          ts: Date.now(), streaming: false, reasoning: '', origin: origin, outcome: 'completed', runId: ref.runId,
+        }]);
+        if (accepted && firstUserMessage) {
+          this.updateSessionTitle(ref.sessionId, ConversationTitleService.fromFirstMessage(content));
+        }
+        return accepted ? id : -1;
+      },
+      addAiMsg: (ref: ConversationRunRef, c: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number => {
+        const id: number = chatMessageIdPolicy.create();
+        this.updateSessionMessages(ref, 'add-ai-message', (messages: ChatMsg[]): ChatMsg[] => [...messages, {
+          id: id, messageKey: ref.runId + ':assistant:' + id.toString(), sequence: id, role: 'ai', content: c,
+          ts: Date.now(), streaming: false, reasoning: '', origin: origin ?? 'chat',
+          outcome: outcome ?? 'completed', runId: ref.runId,
+        }]);
+        return id;
+      },
+      addAiMsgEmpty: (ref: ConversationRunRef, origin: ChatMessageOrigin): number => {
+        const id: number = chatMessageIdPolicy.create();
+        this.updateSessionMessages(ref, 'add-ai-placeholder', (messages: ChatMsg[]): ChatMsg[] => [...messages, {
+          id: id, messageKey: ref.runId + ':assistant:' + id.toString(), sequence: id, role: 'ai', content: '',
+          ts: Date.now(), streaming: true, reasoning: '', origin: origin, runId: ref.runId,
+        }]);
         return id;
       },
       appendAiMsg: (ref: ConversationRunRef, id: number, event: StreamEvent): void => {
         this.updateSessionMessages(ref, 'append-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m));
       },
-      finishAiMsg: (ref: ConversationRunRef, id: number): void => {
-        this.updateSessionMessages(ref, 'finish-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m));
+      finishAiMsg: (ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void => {
+        this.updateSessionMessages(ref, 'finish-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? transitionChatMessageOutcome(m, outcome ?? 'completed') : m));
         this.sync();
         this.sm.flush(this.sessions).catch((): void => {});
       },
+      terminateAiRun: (ref: ConversationRunRef, outcome: ChatMessageOutcome): void => {
+        this.updateSessionMessages(ref, 'finish-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => {
+          if (m.role === 'ai' && m.runId === ref.runId && m.outcome === undefined) {
+            return transitionChatMessageOutcome(m, outcome);
+          }
+          return m;
+        }));
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      },
+      getUserMessageId: (ref: ConversationRunRef): number => {
+        const session: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === ref.sessionId);
+        if (session === undefined) { return -1; }
+        for (const message of session.messages) {
+          if (message.role === 'user' && message.runId === ref.runId) { return message.id; }
+        }
+        return -1;
+      },
+      commitHistory: async (ref: ConversationRunRef): Promise<boolean> => {
+        if (!this.sessionExists(ref.sessionId)) { return false; }
+        this.sync();
+        const result = await this.sm.flush(this.sessions);
+        return result.success;
+      },
+      reportDiagnostic: (ref: ConversationRunRef, diagnostic: string): void => {
+        this.inputVm.setErrorForSession(ref.sessionId, diagnostic);
+        this.inputVm.setRetryTargetForSession(ref.sessionId, ref.runId);
+      },
+      cancelDraftsByRun: async (sessionId: string, parentConversationRunId: string): Promise<void> => {
+        await new AiService(getContext(this) as common.UIAbilityContext)
+          .cancelDraftsByParentRun(sessionId, parentConversationRunId);
+      },
       setBusy: (ref: ConversationRunRef, v: boolean): void => { inputVm.setBusyForSession(ref.sessionId, v); },
-      setStatusMeta: (_ref: ConversationRunRef, _meta: ChatStatusMeta | null): void => { /* 状态指示 UI 已移除 (多端设计 v3) */ },
+      setStatusMeta: (ref: ConversationRunRef, meta: ChatStatusMeta | null): void => {
+        inputVm.setProgressForSession(ref.sessionId, meta === null ? undefined : meta.title);
+      },
       getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
       getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean): string => this.buildConversationTextForSession(ref, excludeLatestUser),
       onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent): void => {
-        if (this.service?.isCurrentRun(ref) === true && this.sessionExists(ref.sessionId)) {
-          this.draftsBySession.set(ref.sessionId, event);
+        if (event.originSessionId === ref.sessionId && this.service?.isCurrentRun(ref) === true
+          && this.sessionExists(ref.sessionId) && this.inputVm.setDraftForSession(ref.sessionId, event)) {
           if (ref.sessionId === this.activeSid) {
             this.generatedDraft = event;
             this.generatedDraftSessionId = ref.sessionId;
@@ -170,10 +247,25 @@ export struct AgentFloatWindow {
     };
     const service: AgentChatService = new AgentChatService(cbs);
     this.service = service;
+    this.draftRecovery = new DraftRecoveryService(getContext(this) as common.UIAbilityContext);
     const ss: ChatSession[] = await this.sm.init(getContext(this));
+    const snapshotPath: string = this.sm.getResolvedSnapshotPath();
+    this.deletionCoordinator = new SessionDeletionCoordinator(
+      getContext(this) as common.UIAbilityContext,
+      snapshotPath.length > 0 ? snapshotPath + '.deletions' : '',
+      (sessions: ConversationSessionSnapshot[]) => this.sm.flush(ConversationSnapshotMapper.retainExistingSessions(sessions, this.sessions)),
+      async (sessionId: string): Promise<void> => {
+        await service.cancelSessionRun(sessionId);
+      },
+    );
     // Development reset: s1 was the old bootstrap conversation and must not
     // be promoted to a real history item after the lazy-session migration.
     const loadedSessions: ChatSession[] = ss.filter((session: ChatSession): boolean => session.id !== 's1');
+    await this.deletionCoordinator.replay(ConversationSnapshotMapper.fromSessions(loadedSessions));
+    const projection = await new ChatContextProjectionService(
+      getContext(this) as common.UIAbilityContext,
+    ).reconcile(ConversationSnapshotMapper.fromSessions(loadedSessions));
+    if (projection.failures > 0) { console.warn('[ChatProjection] ' + projection.diagnostic); }
     if (loadedSessions.length > 0) {
       this.sessions = loadedSessions;
       this.activateSession(loadedSessions[0]);
@@ -188,12 +280,60 @@ export struct AgentFloatWindow {
       (): string => this.activeSid,
       (): string => this.ensureActiveSession(),
     );
+    for (const session of loadedSessions) {
+      this.inputVm.registerSession(session.id);
+    }
+    await this.restoreDraftsAfterHistoryLoad(service, loadedSessions);
+  }
+
+  private async restoreDraftsAfterHistoryLoad(
+    service: AgentChatService,
+    loadedSessions: ChatSession[],
+  ): Promise<void> {
+    let detached: NoteDraftReadyEvent | null = null;
+    try {
+      const recoverable: NoteGenerationRun[] = await service.listRecoverableDrafts();
+      for (const draft of recoverable) {
+        if (draft.originSessionId === undefined) {
+          try {
+            if (this.draftRecovery === null) { throw new Error('DETACHED_DRAFT_RECOVERY_UNAVAILABLE'); }
+            detached = await this.draftRecovery.restore(draft.id);
+          } catch (error) {
+            console.warn('[NoteDraftRecovery] code=DETACHED_DRAFT_RESTORE_FAILED; runId=' + draft.id);
+          }
+          continue;
+        }
+        const session: ChatSession | undefined = loadedSessions.find(
+          (candidate: ChatSession): boolean => candidate.id === draft.originSessionId,
+        );
+        if (session === undefined) { continue; }
+        try {
+          const event: NoteDraftReadyEvent | null = await service.checkAndRestoreDrafts(session.id);
+          if (event !== null) {
+            this.inputVm.setDraftForSession(session.id, event);
+            if (session.id === this.activeSid) {
+              this.generatedDraft = event;
+              this.generatedDraftSessionId = session.id;
+            }
+          }
+        } catch (error) {
+          console.warn('[NoteDraftRecovery] code=SESSION_DRAFT_RESTORE_FAILED; sessionId=' + session.id);
+        }
+      }
+    } catch (error) {
+      console.warn('[NoteDraftRecovery] code=LIST_RECOVERABLE_DRAFTS_FAILED');
+    }
+    if (this.generatedDraft === null && detached !== null) {
+      this.generatedDraft = detached;
+      this.generatedDraftSessionId = '';
+    }
   }
 
   private sync(): void {
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === this.activeSid);
     if (s !== undefined) { s.messages = this.messages; }
   }
+
   private buildConversationText(messages: ChatMsg[], excludeLatestUser: boolean): string {
     const parts: string[] = [];
     const end: number = excludeLatestUser
@@ -233,6 +373,19 @@ export struct AgentFloatWindow {
     }
     return true;
   }
+
+  private updateSessionTitle(sessionId: string, title: string): void {
+    const next: ChatSession[] = [];
+    for (const session of this.sessions) {
+      if (session.id === sessionId) {
+        next.push({ id: session.id, name: title, messages: session.messages });
+      } else {
+        next.push(session);
+      }
+    }
+    this.sessions = next;
+    if (this.activeSid === sessionId) { this.activeSessionTitle = title; }
+  }
   private switchSession(sid: string): void {
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
@@ -240,7 +393,7 @@ export struct AgentFloatWindow {
     if (s !== undefined) {
       this.activateSession(s);
       this.inputVm.syncBusy(sid);
-      const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(sid);
+      const draft: NoteDraftReadyEvent | undefined = this.inputVm.draftForSession(sid);
       this.generatedDraft = draft ?? null;
       this.generatedDraftSessionId = draft === undefined ? '' : sid;
     }
@@ -250,7 +403,7 @@ export struct AgentFloatWindow {
     const session: ChatSession = SessionCreator.newSession(this.sessions.length);
     this.sessions = [...this.sessions, session];
     this.activateSession(session);
-    this.inputVm.syncBusy(session.id);
+    this.inputVm.switchSession(session.id);
     this.generatedDraft = null;
     this.generatedDraftSessionId = '';
     this.sm.flush(this.sessions).catch((): void => {});
@@ -264,7 +417,7 @@ export struct AgentFloatWindow {
     const session: ChatSession = SessionCreator.newSession(this.sessions.length);
     this.sessions = [...this.sessions, session];
     this.activateSession(session);
-    this.inputVm.syncBusy(session.id);
+    this.inputVm.switchSession(session.id);
     this.generatedDraft = null;
     this.generatedDraftSessionId = '';
     return session.id;
@@ -274,6 +427,8 @@ export struct AgentFloatWindow {
   private closePanel(): void { this.panelVisible = false; }
 
   private activateSession(session: ChatSession): void {
+    this.inputVm.registerSession(session.id);
+    this.inputVm.switchSession(session.id);
     this.activeSessionTitle = session.name;
     this.activeSid = session.id;
     this.messages = session.messages;
@@ -300,31 +455,39 @@ export struct AgentFloatWindow {
       this.getUIContext().getPromptAction(),
       sid,
       target.name,
-      (deletedSid: string): void => { this.deleteSession(deletedSid); },
+      (deletedSid: string): void => { this.deleteSession(deletedSid).catch((): void => {}); },
       (): void => { this.showToast('无法打开删除确认，请稍后重试'); }
     );
   }
-  private deleteSession(sid: string): void {
+  private async deleteSession(sid: string): Promise<void> {
     if (this.sessions.length <= 1) {
       return;
     }
-    this.service?.cancelSessionRun(sid);
     this.sync();
     const remaining: ChatSession[] = this.sessions.filter((s: ChatSession): boolean => s.id !== sid);
-    this.draftsBySession.delete(sid);
+    if (this.deletionCoordinator === null) { return; }
+    const result: SessionDeletionResult = await this.deletionCoordinator.deleteSession(
+      sid,
+      ConversationSnapshotMapper.fromSessions(remaining),
+    );
+    if (result.state === 'failed-before-commit') {
+      console.warn('[SessionDeletion] ' + result.diagnostic + '; sessionId=' + sid);
+      return;
+    }
+    this.inputVm.removeSession(sid);
     this.sessions = remaining;
     if (sid === this.activeSid) {
       this.activateSession(remaining[0]);
-      const draft: NoteDraftReadyEvent | undefined = this.draftsBySession.get(this.activeSid);
+      const draft: NoteDraftReadyEvent | undefined = this.inputVm.draftForSession(this.activeSid);
       this.generatedDraft = draft ?? null;
       this.generatedDraftSessionId = draft === undefined ? '' : this.activeSid;
     }
-    this.sm.flush(this.sessions).catch((): void => {});
+    if (result.state === 'cleanup-pending') {
+      console.warn('[SessionDeletion] ' + result.diagnostic + '; sessionId=' + sid);
+    }
   }
 
-  private finishMessage(message: ChatMsg): ChatMsg {
-    return finishChatMsg(message);
-  }
+  private finishMessage(message: ChatMsg): ChatMsg { return transitionChatMessageOutcome(message, 'completed'); }
 
   // ===== 交互逻辑 (输入面板已迁出至 AgentInputViewModel; 模型显示已迁出至 ModelSelector; 会话创建已迁出至 SessionCreator; 相机/相册已迁出至 CameraKitLauncher / AlbumPickerLauncher) =====
 
@@ -361,9 +524,13 @@ export struct AgentFloatWindow {
   private onCameraAction = (): void => {
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
+    const originSessionId: string = this.ensureActiveSession();
     CameraKitLauncher.capture(getContext(this) as common.UIAbilityContext)
       .then((uri: string): void => {
-        this.inputVm.setImagePreview(uri);
+        if (!this.inputVm.setImagePreviewForSession(originSessionId, uri)) {
+          console.warn('[SessionUiState] code=LATE_PICKER_TARGET_DELETED; sessionId=' + originSessionId);
+          return;
+        }
         this.showToast('已选图片');
       })
       .catch((e: Error): void => {
@@ -375,10 +542,14 @@ export struct AgentFloatWindow {
   private onAlbumAction = (): void => {
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
+    const originSessionId: string = this.ensureActiveSession();
     AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext)
       .then((uris: string[]): void => {
         if (uris.length > 0) {
-          this.inputVm.setImagePreview(uris[0]);
+          if (!this.inputVm.setImagePreviewForSession(originSessionId, uris[0])) {
+            console.warn('[SessionUiState] code=LATE_PICKER_TARGET_DELETED; sessionId=' + originSessionId);
+            return;
+          }
           this.showToast('已选图片');
         } else {
           this.showToast('未选择图片');
@@ -390,8 +561,12 @@ export struct AgentFloatWindow {
   };
 
   private confirmDraft = async (candidate: KnowledgeUnit): Promise<KnowledgeUnit> => {
-    if (this.generatedDraft === null || this.generatedDraftSessionId.length === 0 || this.service === null) {
+    if (this.generatedDraft === null || this.service === null) {
       throw new Error('草稿服务不可用');
+    }
+    if (this.generatedDraftSessionId.length === 0) {
+      if (this.draftRecovery === null) { throw new Error('DETACHED_DRAFT_RECOVERY_UNAVAILABLE'); }
+      return await this.draftRecovery.confirm(this.generatedDraft, candidate);
     }
     return await this.service.confirmDraft(this.generatedDraftSessionId, this.generatedDraft, candidate);
   }
@@ -524,23 +699,27 @@ export struct AgentFloatWindow {
         NoteDetailOverlay({
           generatedDraft: this.generatedDraft,
           onClose: (): void => {
-            this.draftsBySession.delete(this.generatedDraftSessionId);
+            this.inputVm.setDraftForSession(this.generatedDraftSessionId, undefined);
             this.generatedDraft = null;
             this.generatedDraftSessionId = '';
           },
            onDraftCancel: (): void => {
              const cancelled: NoteDraftReadyEvent | null = this.generatedDraft;
              const cancelledSessionId: string = this.generatedDraftSessionId;
-             this.draftsBySession.delete(cancelledSessionId);
+             this.inputVm.setDraftForSession(cancelledSessionId, undefined);
              this.generatedDraft = null;
              this.generatedDraftSessionId = '';
-             if (cancelled !== null && cancelledSessionId.length > 0) {
-               this.service?.cancelDraft(cancelledSessionId, cancelled.runId).catch((): void => {});
+             if (cancelled !== null) {
+               if (cancelledSessionId.length > 0 && this.service !== null) {
+                 this.service.cancelDraft(cancelledSessionId, cancelled.runId).catch((): void => {});
+               } else if (cancelledSessionId.length === 0) {
+                 this.draftRecovery?.cancel(cancelled.runId).catch((): void => {});
+               }
              }
            },
           onDraftConfirm: this.confirmDraft,
           onSaved: (_unit: KnowledgeUnit): void => {
-            this.draftsBySession.delete(this.generatedDraftSessionId);
+            this.inputVm.setDraftForSession(this.generatedDraftSessionId, undefined);
             this.generatedDraft = null;
             this.generatedDraftSessionId = '';
           },
