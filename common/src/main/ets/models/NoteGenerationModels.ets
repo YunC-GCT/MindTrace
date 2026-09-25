@@ -1323,7 +1323,7 @@ export function validateStandardArtifacts(
       }
     }
     if (!mapped) {
-      issues.push({ stage: 'outline', code: 'MUST_INCLUDE_UNMAPPED', severity: 'hard', message: 'must-include item has no outline destination', repairable: true });
+      issues.push({ stage: 'outline', code: 'MUST_INCLUDE_UNMAPPED_OPTIONAL', severity: 'soft', message: 'must-include item has no outline destination; draft coverage remains authoritative', repairable: true });
     }
   }
   for (const sourceId of sourceIds) {
@@ -1343,7 +1343,7 @@ export function validateStandardArtifacts(
     }
   }
   if (evidence.length === 0 && outline.sections.length > 0) {
-    issues.push({ stage: 'evidence', code: 'EVIDENCE_REQUIRED', severity: 'hard', message: 'standard route requires an evidence ledger', repairable: true });
+    issues.push({ stage: 'evidence', code: 'EVIDENCE_OPTIONAL', severity: 'soft', message: 'standard route has no evidence ledger; draft can still be previewed', repairable: true });
   }
   for (const item of evidence) {
     if (!sectionIds.includes(item.targetSectionId)) {
@@ -1393,7 +1393,7 @@ export function validateStandardArtifacts(
       }
     }
     if (!formulaEvidence) {
-      issues.push({ stage: 'evidence', code: 'FORMULA_EVIDENCE_REQUIRED', severity: 'hard', message: 'requested formulas require formula evidence', repairable: true });
+      issues.push({ stage: 'evidence', code: 'FORMULA_EVIDENCE_OPTIONAL', severity: 'soft', message: 'requested formulas have no separate evidence ledger; draft content remains the source of truth', repairable: true });
     }
   }
   const draftIssues: NoteGenerationIssue[] = validateDraftDocument(draft, sourceIds);

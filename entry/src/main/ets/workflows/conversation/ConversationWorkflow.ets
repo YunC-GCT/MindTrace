@@ -467,8 +467,12 @@ export class ConversationWorkflow {
         'OCR:',
         ocrText,
       ];
-      if (userText.trim().length > 0) {
-        ocrLines.splice(1, 0, '用户补充: ' + userText.trim());
+      const trimmedUserText: string = userText.trim();
+      const noteInstruction: string = trimmedUserText.length > 0 && trimmedUserText !== '[图片]'
+        ? trimmedUserText
+        : '请根据图片识别材料生成一份数学学习笔记，保留公式、步骤和结论';
+      if (trimmedUserText.length > 0 && trimmedUserText !== '[图片]') {
+        ocrLines.splice(1, 0, '用户补充: ' + trimmedUserText);
       }
       const conversation: string = ocrLines.join('\n');
 
@@ -485,7 +489,13 @@ export class ConversationWorkflow {
         });
       }
 
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(runId, userText, conversation, pendingSources, route);
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(
+        runId,
+        noteInstruction,
+        conversation,
+        pendingSources,
+        route,
+      );
       this.setStep('note_finalize');
 
       if (materialPersistFailed) {

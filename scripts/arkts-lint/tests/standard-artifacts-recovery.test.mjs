@@ -21,6 +21,29 @@ test('standard generation accepts a direct draft-shaped provider response', () =
   assert.match(models, /classifyEvidenceType/);
 });
 
+test('standard generation unwraps common provider envelope fields before failing', () => {
+  assert.match(knowledgeModel, /findNestedStandardArtifacts/);
+  assert.match(knowledgeModel, /preferredKeys: string\[\] = \['result', 'data', 'note', 'document', 'draftDocument', 'answer', 'content', 'output'\]/);
+  assert.match(knowledgeModel, /return this\.parseStandardResult\(nested, sources\)/);
+  assert.match(knowledgeModel, /require draft; keys=' \+ Object\.keys\(parsed\)\.join\(','\)/);
+});
+
+test('standard generation degrades missing outline and evidence when draft is present', () => {
+  assert.match(knowledgeModel, /Evidence may be an empty array or be omitted on the first pass/);
+  assert.match(knowledgeModel, /evidence = buildPipelineEvidence\(outline, bundle\)/);
+  assert.match(knowledgeModel, /pipeline will fill missing mappings from the real source bundle/);
+  assert.match(models, /EVIDENCE_OPTIONAL/);
+  assert.match(models, /FORMULA_EVIDENCE_OPTIONAL/);
+});
+
+test('standard generation keeps draft previewable when optional evidence or sourceIds are absent', () => {
+  assert.match(knowledgeModel, /if \(result\.evidence\.length === 0\) \{\s*modelVerification = this\.relaxEmptyEvidenceVerification\(modelVerification\);\s*\}/);
+  assert.match(knowledgeModel, /private relaxEmptyEvidenceVerification/);
+  assert.match(knowledgeModel, /const outline: NoteGenerationOutline = normalizeOutline\(result\.outline, sourceIds\)/);
+  assert.match(knowledgeModel, /if \(mappedSourceIds\.length === 0\)/);
+  assert.match(models, /MUST_INCLUDE_UNMAPPED_OPTIONAL/);
+});
+
 test('standard schema describes nested outline, evidence, and draft fields', () => {
   assert.match(models, /requiredKeys: string\[\]/);
   assert.match(models, /buildJsonSchema\(/);
