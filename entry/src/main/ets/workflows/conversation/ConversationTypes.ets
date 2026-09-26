@@ -21,6 +21,7 @@ import { common } from '@kit.AbilityKit';
 import { ConversationProgressStep } from './ConversationState';
 import { NoteDraftReadyEvent } from 'common';
 import type { StreamEvent } from 'common';
+import { NoteReviewAnswer } from '../../models/NoteReviewModels';
 
 export interface ConversationWorkflowCallbacks {
   addAiMsg(content: string): void;
@@ -35,5 +36,6 @@ export interface ConversationWorkflowCallbacks {
   getConversationText(excludeLatestUser: boolean): string;
   getSessionId(): string;
   onDraftReady(event: NoteDraftReadyEvent): void;
+  onNoteReviewReady?(messageId: number, review: NoteReviewAnswer): void;
   onOcrBlank?(imageUri: string): void;
 }

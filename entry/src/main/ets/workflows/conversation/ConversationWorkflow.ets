@@ -45,6 +45,12 @@ import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun, SourceFrag
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
+import { NoteReviewAnswer } from '../../models/NoteReviewModels';
+import {
+  NoteReviewFinalization,
+  NoteReviewPlan,
+  NoteReviewService,
+} from '../../services/NoteReviewService';
 
 const workflowLog: Logger = new Logger('ConversationWorkflow');
 
@@ -67,6 +73,7 @@ export class ConversationWorkflow {
   private intentClassifier: IntentClassifier = new IntentClassifier();
   private replyService: ReplyService = new ReplyService(this.intentClassifier);
   private evidenceService: NoteEvidenceService | null = null;
+  private reviewService: NoteReviewService | null = null;
   private pendingConfirmRunId: string | null = null;
 
   constructor(callbacks: ConversationWorkflowCallbacks) {
@@ -242,7 +249,15 @@ export class ConversationWorkflow {
       next.memoryContext = await this.safeGetContextForReply(input.sessionId);
       next.learnerProfileContext = await this.safeGetLearnerProfileContext(input.sessionId);
       if (input.request.kind === 'text') {
-        next.evidence = await this.safeBuildEvidence(input.request.userContent);
+        const reviewPlan: NoteReviewPlan = await this.getReviewService().plan(input.request.userContent);
+        if (reviewPlan.kind !== 'none') {
+          next.noteReviewPlan = reviewPlan;
+          if (reviewPlan.evidence !== undefined) {
+            next.evidence = reviewPlan.evidence;
+          }
+        } else {
+          next.evidence = await this.safeBuildEvidence(input.request.userContent);
+        }
       }
       return next;
     });
@@ -257,6 +272,7 @@ export class ConversationWorkflow {
         input.learnerProfileContext ?? '',
         input.request.userContent,
         input.evidence,
+        input.noteReviewPlan,
       );
       return this.copyState(input, 'complete_reply');
     });
@@ -267,6 +283,7 @@ export class ConversationWorkflow {
         input.learnerProfileContext ?? '',
         input.request.userContent,
         input.evidence,
+        input.noteReviewPlan,
       );
       return this.copyState(input, 'stream_reply');
     });
@@ -361,6 +378,9 @@ export class ConversationWorkflow {
     }
     if (input.evidence !== undefined) {
       next.evidence = input.evidence;
+    }
+    if (input.noteReviewPlan !== undefined) {
+      next.noteReviewPlan = input.noteReviewPlan;
     }
     if (input.draftRunId !== undefined) {
       next.draftRunId = input.draftRunId;
@@ -527,7 +547,12 @@ export class ConversationWorkflow {
     learnerProfileContext: string,
     userContent: string,
     evidence: NoteEvidenceContext | undefined,
+    reviewPlan: NoteReviewPlan | undefined,
   ): Promise<void> {
+    if (reviewPlan !== undefined && reviewPlan.kind !== 'none') {
+      await this.handleNoteReviewComplete(sessionId, memoryContext, learnerProfileContext, reviewPlan);
+      return;
+    }
     try {
       const configured: boolean = await LlmConfig.getInstance().isConfigured();
       if (!configured) {
@@ -563,7 +588,12 @@ export class ConversationWorkflow {
     learnerProfileContext: string,
     userContent: string,
     evidence: NoteEvidenceContext | undefined,
+    reviewPlan: NoteReviewPlan | undefined,
   ): Promise<void> {
+    if (reviewPlan !== undefined && reviewPlan.kind !== 'none') {
+      await this.handleNoteReviewStream(sessionId, memoryContext, learnerProfileContext, reviewPlan);
+      return;
+    }
     let streamMsgId: number | undefined = undefined;
     try {
       const configured: boolean = await LlmConfig.getInstance().isConfigured();
@@ -642,6 +672,136 @@ export class ConversationWorkflow {
         await this.addAiMessage(sessionId, displayError);
       }
     }
+  }
+
+  private async handleNoteReviewComplete(
+    sessionId: string,
+    memoryContext: string,
+    learnerProfileContext: string,
+    plan: NoteReviewPlan,
+  ): Promise<void> {
+    const msgId: number = this.cbs.addAiMsgEmpty();
+    if (plan.kind === 'terminal') {
+      await this.finishNoteReviewMessage(sessionId, msgId, plan.displayText, plan.answer);
+      this.setStep('completed');
+      return;
+    }
+    try {
+      const configured: boolean = await LlmConfig.getInstance().isConfigured();
+      if (!configured) {
+        const noKey: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'llm-not-configured');
+        await this.finishNoteReviewMessage(sessionId, msgId, noKey.displayText, noKey.answer);
+        this.setStep('completed');
+        return;
+      }
+      this.setStep('reply_model_call');
+      const replyContext: ReplyContext = this.createReplyContext(
+        memoryContext,
+        learnerProfileContext,
+        plan.modelUserContent,
+        plan.evidence,
+      );
+      const reply: string = await this.replyService.complete(replyContext);
+      const finalization: NoteReviewFinalization = this.getReviewService().finalizeModelAnswer(plan, reply);
+      await this.finishNoteReviewMessage(sessionId, msgId, finalization.displayText, finalization.answer);
+      this.setStep('completed');
+      if (finalization.answer.status === 'grounded') {
+        await this.safeUpdateLearnerProfileIfNeeded(sessionId);
+        await this.safeSummarizeIfNeeded(sessionId);
+      }
+    } catch (e) {
+      const failed: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'model-failed');
+      await this.finishNoteReviewMessage(sessionId, msgId, failed.displayText, failed.answer);
+      this.setStep('completed');
+    }
+  }
+
+  private async handleNoteReviewStream(
+    sessionId: string,
+    memoryContext: string,
+    learnerProfileContext: string,
+    plan: NoteReviewPlan,
+  ): Promise<void> {
+    const msgId: number = this.cbs.addAiMsgEmpty();
+    if (plan.kind === 'terminal') {
+      await this.finishNoteReviewMessage(sessionId, msgId, plan.displayText, plan.answer);
+      this.setStep('completed');
+      return;
+    }
+    try {
+      const configured: boolean = await LlmConfig.getInstance().isConfigured();
+      if (!configured) {
+        const noKey: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'llm-not-configured');
+        await this.finishNoteReviewMessage(sessionId, msgId, noKey.displayText, noKey.answer);
+        this.setStep('completed');
+        return;
+      }
+      this.setStep('reply_model_call');
+      const replyContext: ReplyContext = this.createReplyContext(
+        memoryContext,
+        learnerProfileContext,
+        plan.modelUserContent,
+        plan.evidence,
+      );
+      const citationFilter: NoteEvidenceStreamFilter = this.getReviewService().createStreamFilter(plan);
+      const streamResult: StreamReplyResult = await this.replyService.stream(
+        replyContext,
+        (event: StreamEvent): void => {
+          if (event.type !== 'text') {
+            this.cbs.appendAiMsg(msgId, event);
+            return;
+          }
+          const safeText: string = citationFilter.push(event.delta);
+          if (safeText.length > 0) {
+            const safeEvent: StreamEvent = { type: 'text', delta: safeText };
+            this.cbs.appendAiMsg(msgId, safeEvent);
+          }
+        },
+      );
+      const citationTail: string = citationFilter.flush();
+      if (citationTail.length > 0) {
+        const tailEvent: StreamEvent = { type: 'text', delta: citationTail };
+        this.cbs.appendAiMsg(msgId, tailEvent);
+      }
+      if (streamResult.usedFallback) {
+        const fallback: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'stream-fallback');
+        await this.finishNoteReviewMessage(sessionId, msgId, fallback.displayText, fallback.answer);
+        this.setStep('completed');
+        return;
+      }
+      if (streamResult.interrupted) {
+        const interrupted: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'stream-interrupted');
+        await this.finishNoteReviewMessage(sessionId, msgId, interrupted.displayText, interrupted.answer);
+        this.setStep('completed');
+        return;
+      }
+      const finalization: NoteReviewFinalization = this.getReviewService().finalizeModelAnswer(plan, streamResult.content);
+      await this.finishNoteReviewMessage(sessionId, msgId, finalization.displayText, finalization.answer);
+      this.setStep('completed');
+      if (finalization.answer.status === 'grounded') {
+        await this.safeUpdateLearnerProfileIfNeeded(sessionId);
+        await this.safeSummarizeIfNeeded(sessionId);
+      }
+    } catch (e) {
+      const failed: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'model-failed');
+      await this.finishNoteReviewMessage(sessionId, msgId, failed.displayText, failed.answer);
+      this.setStep('completed');
+    }
+  }
+
+  private async finishNoteReviewMessage(
+    sessionId: string,
+    messageId: number,
+    content: string,
+    review: NoteReviewAnswer,
+  ): Promise<void> {
+    const displayContent: string = this.replyService.normalize(content);
+    this.cbs.replaceAiMsg(messageId, displayContent);
+    if (this.cbs.onNoteReviewReady !== undefined) {
+      this.cbs.onNoteReviewReady(messageId, review);
+    }
+    this.cbs.finishAiMsg(messageId);
+    await this.safeSaveAssistantMessage(sessionId, displayContent);
   }
 
   private async generateNoteFromConversation(
@@ -821,6 +981,13 @@ export class ConversationWorkflow {
       this.evidenceService = new NoteEvidenceService();
     }
     return this.evidenceService;
+  }
+
+  private getReviewService(): NoteReviewService {
+    if (this.reviewService === null) {
+      this.reviewService = new NoteReviewService();
+    }
+    return this.reviewService;
   }
 
   private async safeBuildEvidence(query: string): Promise<NoteEvidenceContext | undefined> {

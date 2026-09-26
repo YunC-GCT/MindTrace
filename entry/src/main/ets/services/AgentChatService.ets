@@ -6,6 +6,7 @@ import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import type { StreamEvent } from 'common';
+import { NoteReviewAnswer } from '../models/NoteReviewModels';
 
 export interface AgentChatCallbacks {
   addAiMsg: (content: string) => void;
@@ -19,6 +20,7 @@ export interface AgentChatCallbacks {
   getConversationText: (excludeLatestUser: boolean) => string;
   getSessionId: () => string;
   onDraftReady: (event: NoteDraftReadyEvent) => void;
+  onNoteReviewReady?: (messageId: number, review: NoteReviewAnswer) => void;
 }
 
 class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
@@ -66,6 +68,11 @@ class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   }
   getSessionId(): string { return this.callbacks.getSessionId(); }
   onDraftReady(event: NoteDraftReadyEvent): void { this.callbacks.onDraftReady(event); }
+  onNoteReviewReady?(messageId: number, review: NoteReviewAnswer): void {
+    if (this.callbacks.onNoteReviewReady !== undefined) {
+      this.callbacks.onNoteReviewReady(messageId, review);
+    }
+  }
   onOcrBlank?(imageUri: string): void { return; }
 }
 
