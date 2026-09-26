@@ -34,7 +34,7 @@ test('AgentMemoryService owns validated chat and memory inserts', () => {
   assert.match(memoryService, /private async insertMemoryRecord/);
   assert.match(memoryService, /WritePathValidator\.validateChatMessage\(record\)/);
   assert.match(memoryService, /WritePathValidator\.validateAgentMemory\(record\)/);
-  assert.equal((memoryService.match(/ChatMessageDao\(store\)\.insert/g) || []).length, 1);
+  assert.equal((memoryService.match(/ChatMessageDao\(store\)\.upsert/g) || []).length, 1);
   assert.equal((memoryService.match(/AgentMemoryDao\(store\)\.insert/g) || []).length, 1);
 });
 

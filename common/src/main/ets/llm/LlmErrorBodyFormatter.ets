@@ -58,12 +58,81 @@ export class LlmErrorBodyFormatter {
   }
 
   private static decodeArrayBuffer(buffer: ArrayBuffer): string {
+    const bytes: Uint8Array = new Uint8Array(buffer);
     try {
       const decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
-      return decoder.decodeToString(new Uint8Array(buffer));
+      const decoded: string = decoder.decodeToString(bytes);
+      if (decoded.length > 0 || bytes.length === 0) {
+        return decoded;
+      }
     } catch (_e) {
-      return '';
+      // Fall through to the deterministic decoder below.
     }
+    return LlmErrorBodyFormatter.decodeUtf8Fallback(bytes);
+  }
+
+  /** Host-side Hypium may not provide @kit.ArkTS TextDecoder; keep HTTP decoding deterministic. */
+  private static decodeUtf8Fallback(bytes: Uint8Array): string {
+    let output: string = '';
+    let index: number = 0;
+    if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      index = 3;
+    }
+    while (index < bytes.length) {
+      const first: number = bytes[index];
+      if (first <= 0x7F) {
+        output += String.fromCharCode(first);
+        index += 1;
+        continue;
+      }
+      if (first >= 0xC2 && first <= 0xDF && index + 1 < bytes.length) {
+        const second: number = bytes[index + 1];
+        if (LlmErrorBodyFormatter.isUtf8Continuation(second)) {
+          const codePoint: number = ((first & 0x1F) << 6) | (second & 0x3F);
+          output += String.fromCharCode(codePoint);
+          index += 2;
+          continue;
+        }
+      }
+      if (first >= 0xE0 && first <= 0xEF && index + 2 < bytes.length) {
+        const second: number = bytes[index + 1];
+        const third: number = bytes[index + 2];
+        const validSecond: boolean = LlmErrorBodyFormatter.isUtf8Continuation(second)
+          && (first !== 0xE0 || second >= 0xA0)
+          && (first !== 0xED || second < 0xA0);
+        if (validSecond && LlmErrorBodyFormatter.isUtf8Continuation(third)) {
+          const codePoint: number = ((first & 0x0F) << 12) | ((second & 0x3F) << 6) | (third & 0x3F);
+          output += String.fromCharCode(codePoint);
+          index += 3;
+          continue;
+        }
+      }
+      if (first >= 0xF0 && first <= 0xF4 && index + 3 < bytes.length) {
+        const second: number = bytes[index + 1];
+        const third: number = bytes[index + 2];
+        const fourth: number = bytes[index + 3];
+        const validSecond: boolean = LlmErrorBodyFormatter.isUtf8Continuation(second)
+          && (first !== 0xF0 || second >= 0x90)
+          && (first !== 0xF4 || second <= 0x8F);
+        if (validSecond && LlmErrorBodyFormatter.isUtf8Continuation(third)
+          && LlmErrorBodyFormatter.isUtf8Continuation(fourth)) {
+          const codePoint: number = ((first & 0x07) << 18) | ((second & 0x3F) << 12)
+            | ((third & 0x3F) << 6) | (fourth & 0x3F);
+          const adjusted: number = codePoint - 0x10000;
+          output += String.fromCharCode(0xD800 + (adjusted >> 10));
+          output += String.fromCharCode(0xDC00 + (adjusted & 0x3FF));
+          index += 4;
+          continue;
+        }
+      }
+      output += '\uFFFD';
+      index += 1;
+    }
+    return output;
+  }
+
+  private static isUtf8Continuation(value: number): boolean {
+    return (value & 0xC0) === 0x80;
   }
 
   private static stringifyObject(value: Object): string {

@@ -923,6 +923,7 @@ export function segmentSourceBundle(bundle: SourceBundle): NoteGenerationSegment
   for (const fragment of bundle.fragments) {
     const lines: string[] = fragment.text.split('\n');
     let current: string[] = [];
+    let inDisplayFormula: boolean = false;
     let currentBoundary: 'message' | 'ocr_page' | 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph' = fragment.kind === 'ocr' ? 'ocr_page' : 'message';
     const flush = (): void => {
       const text: string = current.join('\n').trim();
@@ -939,6 +940,14 @@ export function segmentSourceBundle(bundle: SourceBundle): NoteGenerationSegment
       current = [];
     };
     for (const line of lines) {
+      const trimmed: string = line.trim();
+      if (inDisplayFormula) {
+        current.push(line);
+        if (trimmed === '$$' || trimmed === '\\]') {
+          inDisplayFormula = false;
+        }
+        continue;
+      }
       const boundary: 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph' | undefined = segmentBoundary(line);
       if (boundary !== undefined && current.length > 0) {
         flush();
@@ -947,7 +956,9 @@ export function segmentSourceBundle(bundle: SourceBundle): NoteGenerationSegment
         currentBoundary = boundary;
       }
       current.push(line);
-      if (line.trim().length === 0 && current.length > 1) {
+      if (trimmed === '$$' || trimmed === '\\[') {
+        inDisplayFormula = true;
+      } else if (trimmed.length === 0 && current.length > 1) {
         flush();
         currentBoundary = fragment.kind === 'ocr' ? 'ocr_page' : 'message';
       }

@@ -28,9 +28,7 @@ import {
   ChatMessageOutcome,
   ChatMsg,
   ChatSession,
-  ChatStatusMeta,
   transitionChatMessageOutcome,
-  finishChatMsg,
 } from './chat/ChatModels';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
@@ -38,7 +36,7 @@ import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputPanel } from './AgentInputPanel';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
 import { SessionsPanelController } from '../../services/SessionsPanelController';
-import { NoteDraftReadyEvent, NoteGenerationRun } from 'common';
+import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
 import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
@@ -58,6 +56,7 @@ import {
   ConversationSessionReducer,
 } from '../../services/ConversationSessionReducer';
 import { ConversationSessionSnapshot } from '../../models/ConversationSnapshotModels';
+import { IConversationNoteRoutePort } from '../../workflows/conversation/ConversationWorkflowPorts';
 
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
@@ -67,6 +66,14 @@ const HEADER_SEPARATOR_HEIGHT: number = 0.5;
 const PANEL_MASK_TOP: number = S_6 + CHAT_HEADER_HEIGHT + HEADER_SEPARATOR_HEIGHT;
 const PANEL_Z_INDEX: number = 2;
 const PANEL_MASK_Z_INDEX: number = 1;
+
+class AgentInputNoteRouteAdapter implements IConversationNoteRoutePort {
+  private readonly input: AgentInputViewModel;
+
+  constructor(input: AgentInputViewModel) { this.input = input; }
+
+  select(_ref: ConversationRunRef): NoteGenerationRoute | undefined { return this.input.route; }
+}
 
 @Component
 export struct AgentFloatWindow {
@@ -171,15 +178,40 @@ export struct AgentFloatWindow {
         return accepted ? id : -1;
       },
       addAiMsg: (ref: ConversationRunRef, c: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number => {
-        const id: number = chatMessageIdPolicy.create();
-        this.updateSessionMessages(ref, 'add-ai-message', (messages: ChatMsg[]): ChatMsg[] => [...messages, {
-          id: id, messageKey: ref.runId + ':assistant:' + id.toString(), sequence: id, role: 'ai', content: c,
-          ts: Date.now(), streaming: false, reasoning: '', origin: origin ?? 'chat',
-          outcome: outcome ?? 'completed', runId: ref.runId,
-        }]);
+        const session: ChatSession | undefined = this.sessions.find(
+          (candidate: ChatSession): boolean => candidate.id === ref.sessionId,
+        );
+        const pending: ChatMsg | undefined = session?.messages.find(
+          (message: ChatMsg): boolean => message.role === 'ai' && message.runId === ref.runId
+            && message.outcome === undefined,
+        );
+        const id: number = pending?.id ?? chatMessageIdPolicy.create();
+        this.updateSessionMessages(ref, 'add-ai-message', (messages: ChatMsg[]): ChatMsg[] => {
+          if (pending !== undefined) {
+            return messages.map((message: ChatMsg): ChatMsg => message.id === id
+              ? transitionChatMessageOutcome(
+                ConversationSessionReducer.applyMessageEvent(message, { kind: 'replace-content', content: c }),
+                outcome ?? 'completed',
+              )
+              : message);
+          }
+          return [...messages, {
+            id: id, messageKey: ref.runId + ':assistant:' + id.toString(), sequence: id, role: 'ai', content: c,
+            ts: Date.now(), streaming: false, reasoning: '', origin: origin ?? 'chat',
+            outcome: outcome ?? 'completed', runId: ref.runId,
+          }];
+        });
         return id;
       },
       addAiMsgEmpty: (ref: ConversationRunRef, origin: ChatMessageOrigin): number => {
+        const session: ChatSession | undefined = this.sessions.find(
+          (candidate: ChatSession): boolean => candidate.id === ref.sessionId,
+        );
+        const pending: ChatMsg | undefined = session?.messages.find(
+          (message: ChatMsg): boolean => message.role === 'ai' && message.runId === ref.runId
+            && message.outcome === undefined,
+        );
+        if (pending !== undefined) { return pending.id; }
         const id: number = chatMessageIdPolicy.create();
         this.updateSessionMessages(ref, 'add-ai-placeholder', (messages: ChatMsg[]): ChatMsg[] => [...messages, {
           id: id, messageKey: ref.runId + ':assistant:' + id.toString(), sequence: id, role: 'ai', content: '',
@@ -227,14 +259,41 @@ export struct AgentFloatWindow {
         this.inputVm.setErrorForSession(ref.sessionId, diagnostic);
         this.inputVm.setRetryTargetForSession(ref.sessionId, ref.runId);
       },
+      updateRunEvent: (ref: ConversationRunRef, event: ConversationMessageEvent): void => {
+        const session: ChatSession | undefined = this.sessions.find(
+          (candidate: ChatSession): boolean => candidate.id === ref.sessionId,
+        );
+        const pending: ChatMsg | undefined = session?.messages.find(
+          (message: ChatMsg): boolean => message.role === 'ai' && message.runId === ref.runId
+            && message.outcome === undefined,
+        );
+        const id: number = pending?.id ?? chatMessageIdPolicy.create();
+        this.updateSessionMessages(ref, 'update-ai-message', (messages: ChatMsg[]): ChatMsg[] => {
+          if (pending !== undefined) {
+            return messages.map((message: ChatMsg): ChatMsg => message.id === id
+              ? ConversationSessionReducer.applyMessageEvent(message, event)
+              : message);
+          }
+          const created: ChatMsg = {
+            id: id,
+            messageKey: ref.runId + ':assistant:' + id.toString(),
+            sequence: id,
+            role: 'ai',
+            content: '',
+            ts: Date.now(),
+            streaming: true,
+            reasoning: '',
+            origin: 'chat',
+            runId: ref.runId,
+          };
+          return [...messages, ConversationSessionReducer.applyMessageEvent(created, event)];
+        });
+      },
       cancelDraftsByRun: async (sessionId: string, parentConversationRunId: string): Promise<void> => {
         await new AiService(getContext(this) as common.UIAbilityContext)
           .cancelDraftsByParentRun(sessionId, parentConversationRunId);
       },
       setBusy: (ref: ConversationRunRef, v: boolean): void => { inputVm.setBusyForSession(ref.sessionId, v); },
-      setStatusMeta: (ref: ConversationRunRef, meta: ChatStatusMeta | null): void => {
-        inputVm.setProgressForSession(ref.sessionId, meta === null ? undefined : meta.title);
-      },
       getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
       getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean): string => this.buildConversationTextForSession(ref, excludeLatestUser),
       onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent): void => {
@@ -249,7 +308,8 @@ export struct AgentFloatWindow {
         }
       },
     };
-    const service: AgentChatService = new AgentChatService(cbs);
+    const noteRoute: IConversationNoteRoutePort = new AgentInputNoteRouteAdapter(inputVm);
+    const service: AgentChatService = new AgentChatService(cbs, noteRoute);
     this.service = service;
     this.draftRecovery = new DraftRecoveryService(getContext(this) as common.UIAbilityContext);
     const ss: ChatSession[] = await this.sm.init(getContext(this));
@@ -491,26 +551,13 @@ export struct AgentFloatWindow {
     }
   }
 
-  private finishMessage(message: ChatMsg): ChatMsg { return transitionChatMessageOutcome(message, 'completed'); }
-
   // ===== 交互逻辑 (输入面板已迁出至 AgentInputViewModel; 模型显示已迁出至 ModelSelector; 会话创建已迁出至 SessionCreator; 相机/相册已迁出至 CameraKitLauncher / AlbumPickerLauncher) =====
 
   private stopStreaming = (): void => {
     this.inputVm.stop();
-    this.finishCurrentStreamingMessage();
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
   };
-
-  private finishCurrentStreamingMessage(): boolean {
-    if (this.messages.length === 0 || !this.messages[this.messages.length - 1].streaming) {
-      return false;
-    }
-    this.messages = this.messages.map((message: ChatMsg, index: number): ChatMsg =>
-      index === this.messages.length - 1 ? this.finishMessage(message) : message,
-    );
-    return true;
-  }
 
   // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
   private showToast(message: string): void {

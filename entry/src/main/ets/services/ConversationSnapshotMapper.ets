@@ -4,6 +4,9 @@
  * Path: entry/src/main/ets/services/ConversationSnapshotMapper.ets
  * Responsibility: Keep ChatSession presentation details out of persistence services.
  * Dependencies: ChatModels, ConversationSnapshotModels.
+ *
+ * Data flow:
+ *   UI ChatSession[] -> validated snapshot DTOs -> file/RDB persistence coordinators.
  */
 import { ChatMsg, ChatSession, usableAsContext } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import {

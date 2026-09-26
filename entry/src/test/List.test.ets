@@ -19,7 +19,8 @@ import chatContextProjectionTest from './ChatContextProjection.test';
 import sessionDeletionCoordinatorTest from './SessionDeletionCoordinator.test';
 import conversationTitleServiceTest from './ConversationTitleService.test';
 import intentClassifierNoteMaterialTest from './IntentClassifierNoteMaterial.test';
-import replyServiceFormatTest from './ReplyServiceFormat.test';
+import conversationDraftOwnershipTest from './ConversationDraftOwnership.test';
+import conversationWorkflowFailureTest from './ConversationWorkflowFailure.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -43,5 +44,6 @@ export default function testsuite() {
   sessionDeletionCoordinatorTest();
   conversationTitleServiceTest();
   intentClassifierNoteMaterialTest();
-  replyServiceFormatTest();
+  conversationDraftOwnershipTest();
+  conversationWorkflowFailureTest();
 }

@@ -15,6 +15,11 @@ import { common } from '@kit.AbilityKit';
 import { AiService } from './AiService';
 import { KnowledgeUnit, NoteDraftReadyEvent } from 'common';
 
+interface DetachedDraftContext {
+  service: AiService;
+  event: NoteDraftReadyEvent;
+}
+
 export class DraftRecoveryService {
   private readonly context: common.UIAbilityContext;
 
@@ -23,14 +28,36 @@ export class DraftRecoveryService {
   }
 
   async restore(runId: string): Promise<NoteDraftReadyEvent> {
-    return await new AiService(this.context).restoreDraft(runId);
+    const context: DetachedDraftContext = await this.loadDetached(runId);
+    return context.event;
   }
 
   async cancel(runId: string): Promise<void> {
-    await new AiService(this.context).cancelDraft(runId);
+    const context: DetachedDraftContext = await this.loadDetached(runId);
+    await context.service.cancelDraft(runId);
   }
 
   async confirm(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
-    return await new AiService(this.context).confirmDraft(event, candidate);
+    DraftRecoveryService.requireDetached(event);
+    const context: DetachedDraftContext = await this.loadDetached(event.runId);
+    const persisted: NoteDraftReadyEvent = context.event;
+    DraftRecoveryService.requireDetached(persisted);
+    if (persisted.checkpointId !== event.checkpointId || persisted.candidateHash !== event.candidateHash) {
+      throw new Error('DETACHED_DRAFT_CHECKPOINT_MISMATCH');
+    }
+    return await context.service.confirmDraft(event, candidate);
+  }
+
+  private async loadDetached(runId: string): Promise<DetachedDraftContext> {
+    const service: AiService = new AiService(this.context);
+    const event: NoteDraftReadyEvent = await service.restoreDraft(runId);
+    DraftRecoveryService.requireDetached(event);
+    return { service: service, event: event };
+  }
+
+  private static requireDetached(event: NoteDraftReadyEvent): void {
+    if (event.originSessionId !== undefined || event.parentConversationRunId !== undefined) {
+      throw new Error('SESSION_DRAFT_REQUIRES_CONVERSATION_ENTRY');
+    }
   }
 }

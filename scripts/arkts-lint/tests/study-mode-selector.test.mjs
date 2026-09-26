@@ -12,6 +12,7 @@ const viewModel = read('entry/src/main/ets/viewmodels/AgentInputViewModel.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const state = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const workflowPorts = read('entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const modeChip = read(base + 'ModeChip.ets');
 const optionFiles = [
@@ -46,11 +47,12 @@ test('study mode popup stacks the three dedicated option components vertically',
 test('study mode selection reaches note generation without changing ordinary reply ownership', () => {
   assert.match(viewModel, /route: NoteGenerationRoute = 'standard'/);
   assert.match(viewModel, /setRoute\(route: NoteGenerationRoute\)/);
-  assert.match(viewModel, /captureReply\(sessionId, uri, msg, route\)/);
-  assert.match(viewModel, /realReplyStream\(sessionId, msg, route\)/);
-  assert.match(chatService, /route: NoteGenerationRoute = 'standard'/);
-  assert.match(state, /route\?: NoteGenerationRoute/);
-  assert.match(workflow, /input\.request\.kind === 'text' \? input\.request\.route : undefined/);
+  assert.match(viewModel, /captureReply\(sessionId, uri, msg\)/);
+  assert.match(viewModel, /realReplyStream\(sessionId, msg\)/);
+  assert.doesNotMatch(chatService, /realReplyStream\([^)]*NoteGenerationRoute/);
+  assert.doesNotMatch(state, /route\?: NoteGenerationRoute/);
+  assert.match(workflowPorts, /interface IConversationNoteRoutePort/);
+  assert.match(workflow, /this\.noteRoute\.select\(input\.runRef\)/);
   assert.match(workflow, /generateNoteDraftWithSources\(/);
   assert.match(aiService, /route: NoteGenerationRoute = 'standard'/);
   assert.match(aiService, /route: route/);

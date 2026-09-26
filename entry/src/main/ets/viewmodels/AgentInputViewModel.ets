@@ -250,14 +250,13 @@ export class AgentInputViewModel {
     if (sessionId.length === 0) {
       return;
     }
-    const route: NoteGenerationRoute = this.route;
     this.inputText = '';
     this.imagePreview = '';
     this.saveProjectedState();
     if (uri.length > 0) {
-      this.service.captureReply(sessionId, uri, msg, route);
+      this.service.captureReply(sessionId, uri, msg);
     } else {
-      this.service.realReplyStream(sessionId, msg, route);
+      this.service.realReplyStream(sessionId, msg);
     }
   }
 

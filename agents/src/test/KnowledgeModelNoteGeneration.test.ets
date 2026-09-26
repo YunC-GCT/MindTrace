@@ -238,7 +238,7 @@ export default function knowledgeModelNoteGenerationTest(): void {
       expect(result.evidence[0].origin).assertEqual('pipeline');
       expect(result.evidence[1].origin).assertEqual('pipeline');
       expect(result.verification.issues.length).assertEqual(0);
-      expect(result.ledger.formulas.length).assertEqual(1);
+      expect(result.ledger.formulas.length).assertEqual(2);
       expect(caller.prompts[0].indexOf('MM-MD-v1 公式输出规则') >= 0).assertTrue();
     });
 

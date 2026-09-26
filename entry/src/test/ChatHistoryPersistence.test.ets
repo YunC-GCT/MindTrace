@@ -292,22 +292,25 @@ export default function chatHistoryPersistenceTest(): void {
       }));
       expect(sessionsResult.diagnostic).assertContain('code=SESSION_LIMIT_EXCEEDED');
 
-      const invalidControl: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+      const invalidControlSnapshot: ChatHistorySnapshotWire = {
         schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
         sessions: [{
           id: 's1', name: 'A',
           messages: [{ id: 1, role: 'ai', content: 'ok\n\tbad\u0001', ts: 1, streaming: false }],
         }],
-      }));
+      };
+      const invalidControl: ChatHistoryDecodeResult =
+        decodeChatHistorySnapshot(JSON.stringify(invalidControlSnapshot));
       expect(invalidControl.diagnostic).assertContain('code=INVALID_MESSAGE_CONTROL');
 
-      const validMath: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+      const validMathSnapshot: ChatHistorySnapshotWire = {
         schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
         sessions: [{
           id: 's1', name: 'Chinese math',
           messages: [{ id: 1, role: 'ai', content: '$$\\\\frac{1}{2}$$\n\tvalue', ts: 1, streaming: false }],
         }],
-      }));
+      };
+      const validMath: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify(validMathSnapshot));
       expect(validMath.error).assertEqual('none');
     });
 
@@ -318,7 +321,7 @@ export default function chatHistoryPersistenceTest(): void {
         '{"schemaVersion":1,"sessions":[{"id":"s1","name":"A","messages":[null]}]}',
       );
       expect(nullMessage.diagnostic).assertContain('code=MESSAGE_NOT_OBJECT');
-      const duplicateKey: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+      const duplicateKeySnapshot: ChatHistorySnapshotWire = {
         schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
         sessions: [{
           id: 's1', name: 'A', messages: [
@@ -326,21 +329,27 @@ export default function chatHistoryPersistenceTest(): void {
             { id: 2, role: 'user', content: 'two', ts: 2, streaming: false, messageKey: 'same' },
           ],
         }],
-      }));
+      };
+      const duplicateKey: ChatHistoryDecodeResult =
+        decodeChatHistorySnapshot(JSON.stringify(duplicateKeySnapshot));
       expect(duplicateKey.diagnostic).assertContain('code=DUPLICATE_MESSAGE_KEY');
-      const overlongName: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+      const overlongNameSnapshot: ChatHistorySnapshotWire = {
         schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
         sessions: [{ id: 's1', name: 'x'.repeat(81), messages: [] }],
-      }));
+      };
+      const overlongName: ChatHistoryDecodeResult =
+        decodeChatHistorySnapshot(JSON.stringify(overlongNameSnapshot));
       expect(overlongName.diagnostic).assertContain('code=INVALID_SESSION_NAME');
       expect(overlongName.snapshot === undefined).assertTrue();
-      const negativeMessageId: ChatHistoryDecodeResult = decodeChatHistorySnapshot(JSON.stringify({
+      const negativeMessageIdSnapshot: ChatHistorySnapshotWire = {
         schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
         sessions: [{
           id: 's1', name: 'A',
           messages: [{ id: -1, role: 'user', content: 'x', ts: 0, streaming: false }],
         }],
-      }));
+      };
+      const negativeMessageId: ChatHistoryDecodeResult =
+        decodeChatHistorySnapshot(JSON.stringify(negativeMessageIdSnapshot));
       expect(negativeMessageId.diagnostic).assertContain('code=INVALID_MESSAGE_ID');
     });
   });
@@ -366,7 +375,7 @@ export default function chatHistoryPersistenceTest(): void {
       const store: FakeStore = new FakeStore();
       const persistence: ChatHistoryPersistence = new ChatHistoryPersistence(
         store,
-        new FakePreferences('{"sessions":[{"id":"bad"}]}'),
+        new FakePreferences('[{"id":"bad"}]'),
         '/data/storage/el2/base/files/chat-history.json',
       );
       const result: ChatHistoryLoadResult = await persistence.load();

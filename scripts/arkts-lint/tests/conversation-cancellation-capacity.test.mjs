@@ -21,6 +21,7 @@ test('Cancellation reaches transport, retry/fallback, workflow, and lifecycle ow
   const reply = read('entry/src/main/ets/services/ReplyService.ets');
   const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
   const service = read('entry/src/main/ets/services/AgentChatService.ets');
+  const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
   const window = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
   assert.match(client, /request\.cancellationToken\?\.onCancel/);
   assert.match(client, /httpRequest\.destroy\(\)/);
@@ -30,7 +31,8 @@ test('Cancellation reaches transport, retry/fallback, workflow, and lifecycle ow
   assert.match(workflow, /this\.cbs\.getCancellationToken\(runRef\)/);
   assert.match(workflow, /safeSaveAssistantMessage/);
   assert.match(service, /cancelSessionRun\(sessionId: string\)/);
-  assert.match(service, /this\.coordinator\.cancel\(ref\)/);
+  assert.match(service, /this\.runtime\.cancelSessionRun\(sessionId\)/);
+  assert.match(runtime, /this\.coordinator\.cancel\(ref\)/);
   assert.match(window, /this\.service\?\.cancelAllRuns\(\)/);
   assert.match(window, /private switchSession\(sid: string\)/);
   const switchBody = window.match(/private switchSession[\s\S]*?\n  private newSession/);

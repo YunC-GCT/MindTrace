@@ -20,8 +20,11 @@ import {
 import type { StreamEvent } from 'common'
 import {
   AgentRunPart,
+  AgentRunPartStatus,
   agentRunRevision,
   applyStreamEventToAgentRun,
+  appendAgentRunError,
+  appendAgentRunStatus,
   copyAgentRunParts,
   finishAgentRun,
   projectLegacyAgentRun,
@@ -240,6 +243,22 @@ export function replaceChatMsgContent(message: ChatMsg, content: string): ChatMs
     sourceIndex += 1
   }
   next.runParts = nextParts
+  return next
+}
+
+export function appendChatMsgStatus(
+  message: ChatMsg,
+  content: string,
+  status: AgentRunPartStatus,
+): ChatMsg {
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.runParts = appendAgentRunStatus(chatMessageRunParts(message), message.id, content, status)
+  return next
+}
+
+export function appendChatMsgError(message: ChatMsg, content: string): ChatMsg {
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.runParts = appendAgentRunError(chatMessageRunParts(message), message.id, content)
   return next
 }
 

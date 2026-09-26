@@ -23,6 +23,7 @@ import { NoteDraftReadyEvent } from 'common';
 import type { StreamEvent } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { CancellationToken } from 'common';
+export type ConversationRunEventStatus = 'pending' | 'running' | 'success' | 'failed';
 
 export interface ConversationStreamMessageEvent {
   kind: 'stream';
@@ -34,7 +35,21 @@ export interface ConversationReplaceContentEvent {
   content: string;
 }
 
-export type ConversationMessageEvent = ConversationStreamMessageEvent | ConversationReplaceContentEvent;
+export interface ConversationStatusMessageEvent {
+  kind: 'status';
+  content: string;
+  status: ConversationRunEventStatus;
+}
+
+export interface ConversationErrorMessageEvent {
+  kind: 'error';
+  content: string;
+}
+
+export type ConversationMessageEvent = ConversationStreamMessageEvent
+  | ConversationReplaceContentEvent
+  | ConversationStatusMessageEvent
+  | ConversationErrorMessageEvent;
 
 export interface ConversationWorkflowCallbacks {
   addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number;
@@ -46,6 +61,7 @@ export interface ConversationWorkflowCallbacks {
   reportDiagnostic(ref: ConversationRunRef, diagnostic: string): void;
   onStart(ref: ConversationRunRef): void;
   onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void;
+  onError(ref: ConversationRunRef, message: string): void;
   onFinish(ref: ConversationRunRef): void;
   isCurrentRun(ref: ConversationRunRef): boolean;
   getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined;

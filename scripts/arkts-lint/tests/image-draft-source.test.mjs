@@ -15,6 +15,7 @@ const captureChain = read('common/src/main/ets/models/CaptureChain.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const ocrNode = read('agents/src/main/ets/graph/nodes/OcrNode.ets');
 const convWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
 const convState = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
 const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 
@@ -110,21 +111,25 @@ test('ConversationWorkflow image_reply must call handleImageReply with imageUri 
 test('ConversationWorkflow image note uses a default instruction when image text is empty', () => {
   assert.match(convWorkflow, /const noteInstruction: string = trimmedUserText\.length > 0 && trimmedUserText !== '\[图片\]'/);
   assert.match(convWorkflow, /请根据图片识别材料生成一份数学学习笔记/);
-  assert.match(convWorkflow, /this\.generateNoteDraft\(\s*runId,\s*noteInstruction,\s*conversation,\s*pendingSources,\s*route,/);
+  assert.match(
+    convWorkflow,
+    /this\.generateNoteDraft\(\s*ref,\s*noteGenerationRunId,\s*noteInstruction,\s*conversation,\s*pendingSources,/,
+  );
 });
 
 // AC-IMG-02: saveOcrResult returns the pending material source id to the
 // workflow, so later draft generation can bind to exactly this image.
 test('ConversationWorkflow returns the saveOcrResult source id (AC-IMG-02)', () => {
-  assert.match(convWorkflow, /return await this\.getMemory\(\)\.saveOcrResult\(/);
+  assert.match(convWorkflow, /return await this\.memoryProjection\.saveOcr\(ref, imageUri, userText, result\)/);
+  assert.match(memoryProjection, /return await this\.service\(\)\.saveOcrResult\(ref\.sessionId, imageUri, userText, result\)/);
   assert.match(memService, /async saveOcrResult\([\s\S]*?\): Promise<string>/);
 });
 
 // AC-IMG-03: image source must only read current-source pending, not all pending records
 test('ConversationWorkflow generateNoteFromConversation reads pending only for current source scope (AC-IMG-03)', () => {
-  const pendingRead = convWorkflow.match(/getPendingNoteMaterials/);
+  const pendingRead = memoryProjection.match(/getPendingNoteMaterials\(ref\.sessionId\)/);
   assert.ok(pendingRead !== null, 'getPendingNoteMaterials is called for note generation');
-  const fullScan = convWorkflow.match(/queryAll.*pending|loadAll.*pending|getAll.*pending/);
+  const fullScan = memoryProjection.match(/queryAll.*pending|loadAll.*pending|getAll.*pending/);
   assert.ok(fullScan === null, 'must not read all pending records indiscriminately');
 });
 

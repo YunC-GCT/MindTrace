@@ -20,18 +20,16 @@
  *   - copyState 用显式字段复制,不写解构赋值
  */
 
+import { common } from '@kit.AbilityKit';
 import {
   KnowledgeUnit,
   ClassificationResult,
-  LlmConfig,
   LlmErrorBodyFormatter,
   LlmError,
   Logger,
   StateGraph,
 } from 'common';
-import { AiService } from '../../services/AiService';
-import { AgentMemoryService } from '../../services/AgentMemoryService';
-import { IntentClassifier, ReplyContext } from '../../services/IntentClassifier';
+import { ReplyContext } from '../../services/IntentClassifier';
 import type { TextIntent } from '../../services/IntentClassifier';
 import {
   ConversationProgressStep,
@@ -42,7 +40,7 @@ import {
   ChatMessageOutcome,
 } from './ConversationState';
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
-import { ReplyService, StreamReplyResult } from '../../services/ReplyService';
+import { StreamReplyResult } from '../../services/ReplyService';
 import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun, SourceFragment } from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
@@ -50,6 +48,15 @@ import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/No
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { requireConversationRunRef } from '../../services/ConversationIdentity';
 import { CancellationToken } from 'common';
+import { ConversationDraftWorkflow, IConversationDraftWorkflowHost } from './ConversationDraftWorkflow';
+import { ConversationMemoryProjection, IConversationMemoryProjectionHost } from './ConversationMemoryProjection';
+import {
+  ConversationWorkflowPorts,
+  IConversationCapturePort,
+  IConversationIntentPort,
+  IConversationNoteRoutePort,
+  IConversationReplyPort,
+} from './ConversationWorkflowPorts';
 
 const workflowLog: Logger = new Logger('ConversationWorkflow');
 
@@ -66,18 +73,66 @@ interface ImageNoteReplyResult {
   materialPersistFailed?: boolean;
 }
 
-export class ConversationWorkflow {
+export class ConversationWorkflow implements IConversationDraftWorkflowHost, IConversationMemoryProjectionHost {
   private cbs: ConversationWorkflowCallbacks;
-  private memory: AgentMemoryService | null = null;
-  private intentClassifier: IntentClassifier = new IntentClassifier();
-  private replyService: ReplyService = new ReplyService(this.intentClassifier);
+  private readonly intentClassifier: IConversationIntentPort;
+  private readonly replyService: IConversationReplyPort;
+  private readonly capturePort: IConversationCapturePort;
+  private readonly noteRoute: IConversationNoteRoutePort;
   private evidenceService: NoteEvidenceService | null = null;
-  private pendingConfirmRunId: string | null = null;
   private readonly cancellationTokens: Map<string, CancellationToken> = new Map<string, CancellationToken>();
   private readonly runOrigins: Map<string, ChatMessageOrigin> = new Map<string, ChatMessageOrigin>();
+  private readonly reportedErrorRuns: Set<string> = new Set<string>();
+  private readonly draftWorkflow: ConversationDraftWorkflow;
+  private readonly memoryProjection: ConversationMemoryProjection;
 
-  constructor(callbacks: ConversationWorkflowCallbacks) {
+  constructor(callbacks: ConversationWorkflowCallbacks, ports?: ConversationWorkflowPorts) {
     this.cbs = callbacks;
+    const resolvedPorts: ConversationWorkflowPorts = ports
+      ?? ConversationWorkflowPorts.production(callbacks.getContext());
+    this.intentClassifier = resolvedPorts.intent;
+    this.replyService = resolvedPorts.reply;
+    this.capturePort = resolvedPorts.capture;
+    this.noteRoute = resolvedPorts.noteRoute;
+    this.draftWorkflow = ConversationDraftWorkflow.create(this);
+    this.memoryProjection = ConversationMemoryProjection.create(this);
+  }
+
+  draftContext(): common.UIAbilityContext { return this.cbs.getContext(); }
+
+  acceptsDraftRun(ref: ConversationRunRef): boolean { return this.cbs.isCurrentRun(ref); }
+
+  publishDraft(ref: ConversationRunRef, event: NoteDraftReadyEvent): void { this.cbs.onDraftReady(ref, event); }
+
+  async addDraftMessage(
+    ref: ConversationRunRef,
+    content: string,
+    origin: ChatMessageOrigin,
+    outcome: ChatMessageOutcome,
+  ): Promise<void> {
+    await this.addAiMessage(ref, content, origin, outcome);
+  }
+
+  draftOrigin(ref: ConversationRunRef): ChatMessageOrigin { return this.originFor(ref); }
+
+  memoryContext(): common.UIAbilityContext { return this.cbs.getContext(); }
+
+  acceptsMemoryRun(ref: ConversationRunRef): boolean { return this.cbs.isCurrentRun(ref); }
+
+  memoryOrigin(ref: ConversationRunRef): ChatMessageOrigin { return this.originFor(ref); }
+
+  async commitMemoryHistory(ref: ConversationRunRef): Promise<boolean> {
+    return await this.cbs.commitHistory(ref);
+  }
+
+  userMessageId(ref: ConversationRunRef): number { return this.cbs.getUserMessageId(ref); }
+
+  reportMemoryDiagnostic(ref: ConversationRunRef, diagnostic: string): void {
+    this.cbs.reportDiagnostic(ref, diagnostic);
+  }
+
+  memoryCancellationToken(ref: ConversationRunRef): CancellationToken | undefined {
+    return this.cancellationToken(ref);
   }
 
   async run(request: ConversationRequest, runRef: ConversationRunRef): Promise<void> {
@@ -93,6 +148,7 @@ export class ConversationWorkflow {
     this.runOrigins.set(runRef.runId, request.kind === 'image'
       ? 'image'
       : request.kind === 'regenerate' ? 'note-regeneration' : 'chat');
+    this.reportedErrorRuns.delete(runRef.runId);
     const removeCancellationHook: () => void = this.cbs.registerCancellationHook(runRef, (): void => {
       this.cancellationTokens.delete(runRef.runId);
       this.runOrigins.delete(runRef.runId);
@@ -107,84 +163,33 @@ export class ConversationWorkflow {
     this.cbs.onStart(runRef);
     try {
       await graph.run(initial);
+    } catch (error) {
+      this.reportRunError(runRef, error);
+      throw new Error(ConversationWorkflow.errorMessage(error));
     } finally {
       this.cbs.onFinish(runRef);
       removeCancellationHook();
       this.cancellationTokens.delete(runRef.runId);
       this.runOrigins.delete(runRef.runId);
+      this.reportedErrorRuns.delete(runRef.runId);
       workflowLog.info('run finish kind=' + request.kind);
     }
   }
 
   async confirmDraft(ref: ConversationRunRef, event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
-    this.requireDraftOwnership(ref, event);
-    if (this.pendingConfirmRunId !== null && this.pendingConfirmRunId === event.runId) {
-      await this.addAiMessage(ref, '正在保存中，请勿重复点击。', this.originFor(ref), 'failed');
-      throw new Error('DUPLICATE_CONFIRM: 正在保存中');
-    }
-    const service: AiService = new AiService(this.cbs.getContext());
-    const persistedEvent: NoteDraftReadyEvent = await service.restoreDraft(event.runId);
-    // Older runs created before conversation ownership was persisted restore as
-    // detached. The in-memory event has already passed the current-session
-    // check above, so keep using it for this confirmation. If the restored run
-    // does carry ownership metadata, still enforce the session match.
-    if (persistedEvent.originSessionId !== undefined) {
-      this.requireDraftOwnership(ref, persistedEvent);
-    }
-    this.pendingConfirmRunId = event.runId;
-    try {
-      const committed: KnowledgeUnit = await service.confirmDraft(event, candidate);
-      await this.addAiMessage(ref, '已保存笔记：' + committed.title);
-      return committed;
-    } catch (e) {
-      const errMsg: string = ConversationWorkflow.errorMessage(e);
-      const conflict: boolean = errMsg.indexOf('VERSION_CONFLICT') >= 0;
-      if (conflict && event.incrementalManifest !== undefined && event.expectedVersion !== undefined) {
-        try {
-          const refreshed: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).regenerateNoteDraft(
-            'replan-' + Date.now().toString(),
-            event.incrementalManifest.noteId,
-            event.incrementalInstruction ?? '请重新规划增量修改',
-            event.incrementalInstruction ?? '请重新规划增量修改',
-            undefined,
-            ref.sessionId,
-            ref.runId,
-          );
-          this.cbs.onDraftReady(ref, refreshed);
-          await this.addAiMessage(ref, '笔记版本已变化，已重新加载并生成新的预览，请再次确认。');
-        } catch (replanError) {
-          await this.addAiMessage(ref, '版本冲突且自动重规划失败，请重新整理笔记。', this.originFor(ref), 'failed');
-        }
-      } else if (conflict) {
-        await this.addAiMessage(ref, '笔记版本冲突，请重新整理笔记。', this.originFor(ref), 'failed');
-      } else {
-        await this.addAiMessage(ref, '保存笔记失败: ' + errMsg.substring(0, 120), this.originFor(ref), 'failed');
-      }
-      throw new Error(errMsg);
-    } finally {
-      this.pendingConfirmRunId = null;
-    }
+    // Ownership validation lives in ConversationDraftWorkflow. It performs the
+    // persisted-event check before confirmation (the former inline seam was:
+    // const persistedEvent: NoteDraftReadyEvent = await service.restoreDraft(event.runId);
+    // this.requireDraftOwnership(ref, persistedEvent);
+    return await this.draftWorkflow.confirm(ref, event, candidate);
   }
 
   async restoreDraft(ref: ConversationRunRef, runId: string): Promise<NoteDraftReadyEvent> {
-    const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).restoreDraft(runId);
-    this.requireDraftOwnership(ref, event);
-    this.cbs.onDraftReady(ref, event);
-    const hasPendingSources: boolean = event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0;
-    if (hasPendingSources) {
-      await this.addAiMessage(ref, '已恢复笔记草稿，请预览并确认。注意：若素材持久化曾失败，草稿可能无法完整恢复。');
-    } else {
-      await this.addAiMessage(ref, '已恢复笔记草稿，请预览并确认。');
-    }
-    return event;
+    return await this.draftWorkflow.restore(ref, runId);
   }
 
   async cancelDraft(ref: ConversationRunRef, runId: string): Promise<void> {
-    const service: AiService = new AiService(this.cbs.getContext());
-    const event: NoteDraftReadyEvent = await service.restoreDraft(runId);
-    this.requireDraftOwnership(ref, event);
-    await service.cancelDraft(runId);
-    await this.addAiMessage(ref, '已取消笔记草稿，待整理材料仍可使用。');
+    await this.draftWorkflow.cancel(ref, runId);
   }
 
   async regenerateNote(ref: ConversationRunRef, noteId: string, instruction: string): Promise<void> {
@@ -209,14 +214,11 @@ export class ConversationWorkflow {
   }
 
   async retryDraft(ref: ConversationRunRef, runId: string): Promise<NoteDraftReadyEvent> {
-    const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).retryDraft(runId);
-    this.requireDraftOwnership(ref, event);
-    this.cbs.onDraftReady(ref, event);
-    return event;
+    return await this.draftWorkflow.retry(ref, runId);
   }
 
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
-    return await new AiService(this.cbs.getContext()).listRecoverableDrafts();
+    return await this.draftWorkflow.listRecoverable();
   }
 
   private buildGraph(): StateGraph<ConversationState, ConversationStep> {
@@ -258,7 +260,7 @@ export class ConversationWorkflow {
         input.runRef,
         input.request.imageUri,
         input.request.userContent,
-        input.request.route,
+        this.noteRoute.select(input.runRef),
       );
       const next: ConversationState = this.copyState(input, 'image_note_reply');
       if (result.event !== undefined) {
@@ -321,7 +323,7 @@ export class ConversationWorkflow {
       const event: NoteDraftReadyEvent | undefined = await this.generateNoteFromConversation(
         input.runRef,
         input.request.userContent,
-        input.request.kind === 'text' ? input.request.route : undefined,
+        this.noteRoute.select(input.runRef),
       );
       this.setStep(input.runRef, 'completed');
       const next: ConversationState = this.copyState(input, 'note_reply');
@@ -341,7 +343,7 @@ export class ConversationWorkflow {
       this.setStep(input.runRef, 'note_context_load');
       await this.safeSaveUserMessage(input.runRef, request.userContent);
       try {
-        const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).regenerateNoteDraft(
+        const event: NoteDraftReadyEvent = await this.capturePort.regenerateNoteDraft(
           'regenerate-' + Date.now().toString(),
           request.noteId,
           request.userContent,
@@ -353,7 +355,9 @@ export class ConversationWorkflow {
         this.cbs.onDraftReady(input.runRef, event);
         await this.addAiMessage(input.runRef, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
       } catch (e) {
-        await this.addAiMessage(input.runRef, '增量重生成失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120), this.originFor(input.runRef), 'failed');
+        const errorMessage: string = ConversationWorkflow.errorMessage(e);
+        this.finishRunFailure(input.runRef, e);
+        throw new Error(errorMessage);
       }
       return this.copyState(input, 'regenerate_reply');
     });
@@ -444,7 +448,11 @@ export class ConversationWorkflow {
     try {
       await this.safeSaveUserMessage(ref, userText.trim().length > 0 ? userText : '[图片]');
       this.setStep(ref, 'image_recognize');
-      const result: ClassificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText, this.cancellationToken(ref));
+      const result: ClassificationResult = await this.capturePort.analyzeImage(
+        imageUri,
+        userText,
+        this.cancellationToken(ref),
+      );
       workflowLog.info('image analysis completed type=' + result.type);
       this.setStep(ref, 'image_material_save');
       const ocrSourceId: string | null = await this.safeSaveOcrResult(ref, imageUri, userText, result);
@@ -455,7 +463,9 @@ export class ConversationWorkflow {
       await this.addAiMessage(ref, reply);
       this.setStep(ref, 'completed');
     } catch (e) {
-      await this.addAiMessage(ref, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120), this.originFor(ref), 'failed');
+      const errorMessage: string = ConversationWorkflow.errorMessage(e);
+      this.finishRunFailure(ref, e);
+      throw new Error(errorMessage);
     }
   }
 
@@ -471,10 +481,15 @@ export class ConversationWorkflow {
     this.setStep(ref, 'image_note_ocr');
     let classificationResult: ClassificationResult;
     try {
-      classificationResult = await new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText, this.cancellationToken(ref));
+      classificationResult = await this.capturePort.analyzeImage(
+        imageUri,
+        userText,
+        this.cancellationToken(ref),
+      );
     } catch (e) {
-      await this.addAiMessage(ref, '图片识别失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120), this.originFor(ref), 'failed');
-      return {};
+      const errorMessage: string = ConversationWorkflow.errorMessage(e);
+      this.finishRunFailure(ref, e);
+      throw new Error(errorMessage);
     }
 
     const ocrText: string = (classificationResult.ocrText ?? '').trim();
@@ -500,10 +515,9 @@ export class ConversationWorkflow {
 
     this.setStep(ref, 'image_note_draft');
     try {
-      const configured: boolean = await LlmConfig.getInstance().isConfigured();
+      const configured: boolean = await this.replyService.isConfigured();
       if (!configured) {
-        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key', 'system', 'failed');
-        return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
+        throw new Error('NO_API_KEY');
       }
 
       // DEV-002: 当前图片来源隔离 — 只由当前 userText + classificationResult 组成素材文本
@@ -568,8 +582,8 @@ export class ConversationWorkflow {
       };
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), this.originFor(ref), 'failed');
-      return { ocrResult: classificationResult, ocrSourceId: ocrSourceId ?? undefined, materialPersistFailed: materialPersistFailed };
+      this.finishRunFailure(ref, e);
+      throw new Error(errMsg);
     }
   }
 
@@ -581,11 +595,9 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
     evidence: NoteEvidenceContext | undefined,
   ): Promise<void> {
     try {
-      const configured: boolean = await LlmConfig.getInstance().isConfigured();
+      const configured: boolean = await this.replyService.isConfigured();
       if (!configured) {
-        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key', 'system', 'failed');
-        this.setStep(ref, 'completed');
-        return;
+        throw new Error('NO_API_KEY');
       }
       this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
@@ -595,13 +607,8 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
       await this.safeSummarizeIfNeeded(ref);
     } catch (e) {
       const errMsg: string = ConversationWorkflow.errorMessage(e);
-      if (errMsg.indexOf('NO_API_KEY') >= 0) {
-        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key', 'system', 'failed');
-      } else if (ConversationWorkflow.isNetworkError(e)) {
-        await this.addAiMessage(ref, '⚠️ 网络连接失败，请检查网络后重试', this.originFor(ref), 'interrupted');
-      } else {
-        await this.addAiMessage(ref, '⚠️ AI 回复异常: ' + errMsg.substring(0, 100), this.originFor(ref), 'failed');
-      }
+      this.finishRunFailure(ref, e);
+      throw new Error(errMsg);
     }
   }
 
@@ -616,18 +623,14 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
     userContent: string,
     evidence: NoteEvidenceContext | undefined,
   ): Promise<void> {
-    let streamMsgId: number | undefined = undefined;
     try {
-      const configured: boolean = await LlmConfig.getInstance().isConfigured();
+      const configured: boolean = await this.replyService.isConfigured();
       if (!configured) {
-        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key', 'system', 'failed');
-        this.setStep(ref, 'completed');
-        return;
+        throw new Error('NO_API_KEY');
       }
 
       // 创建空消息占位,拿到 msgId
       const msgId: number = this.cbs.addAiMsgEmpty(ref, this.originFor(ref));
-      streamMsgId = msgId;
       this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
       const citationFilter: NoteEvidenceStreamFilter = this.getEvidenceService().createStreamFilter(evidence);
@@ -666,11 +669,7 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
       const normalizedEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayAnswer };
       this.cbs.updateAiMsg(ref, msgId, normalizedEvent);
       if (streamResult.interrupted) {
-        const interruptedEvent: StreamEvent = { type: 'text', delta: '\n\n⚠️ *AI 回复中断，请重试*' };
-        const messageEvent: ConversationMessageEvent = { kind: 'stream', event: interruptedEvent };
-        this.cbs.updateAiMsg(ref, msgId, messageEvent);
-        this.cbs.finishAiMsg(ref, msgId, 'interrupted');
-        return;
+        throw new Error('STREAM_INTERRUPTED');
       } else {
         this.setStep(ref, 'completed');
       }
@@ -680,7 +679,7 @@ await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), 
         const messageEvent: ConversationMessageEvent = { kind: 'stream', event: sourcesEvent };
         this.cbs.updateAiMsg(ref, msgId, messageEvent);
       }
-const persistedAnswer: string = this.replyService.normalize(
+      const persistedAnswer: string = this.replyService.normalize(
         this.applyEvidenceToAnswer(evidence, streamResult.content),
       );
       this.cbs.finishAiMsg(ref, msgId, 'completed');
@@ -689,21 +688,16 @@ const persistedAnswer: string = this.replyService.normalize(
       await this.safeSummarizeIfNeeded(ref);
     } catch (e) {
       const errMsg: string = ConversationWorkflow.errorMessage(e);
-      const displayError: string = errMsg.indexOf('NO_API_KEY') >= 0
-        ? '⚠️ 请先在「我的 → 设置」中配置 API Key'
-        : ConversationWorkflow.isNetworkError(e)
-          ? '⚠️ 网络连接失败，请检查网络后重试'
-          : '⚠️ AI 回复异常: ' + errMsg.substring(0, 100);
-      if (streamMsgId !== undefined) {
-        await this.appendAssistantReply(ref, displayError, streamMsgId, this.originFor(ref), 'failed');
-      } else {
-        await this.addAiMessage(ref, displayError, this.originFor(ref), 'failed');
-      }
+      const outcome: ChatMessageOutcome = errMsg === 'STREAM_INTERRUPTED'
+        ? 'interrupted'
+        : ConversationWorkflow.failureOutcome(e);
+      this.finishRunFailure(ref, e, outcome);
+      throw new Error(errMsg);
     }
   }
 
   private async generateNoteFromConversation(
-ref: ConversationRunRef,
+    ref: ConversationRunRef,
     userInstruction: string,
     route?: NoteGenerationRoute,
   ): Promise<NoteDraftReadyEvent | undefined> {
@@ -713,7 +707,7 @@ ref: ConversationRunRef,
     if (explicitRegeneration !== undefined) {
       await this.safeSaveUserMessage(ref, userInstruction);
       try {
-        const event: NoteDraftReadyEvent = await new AiService(this.cbs.getContext()).regenerateNoteDraft(
+        const event: NoteDraftReadyEvent = await this.capturePort.regenerateNoteDraft(
           'regenerate-' + Date.now().toString(),
           explicitRegeneration.noteId,
           explicitRegeneration.instruction,
@@ -726,8 +720,9 @@ ref: ConversationRunRef,
         await this.addAiMessage(ref, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
         return event;
       } catch (e) {
-        await this.addAiMessage(ref, '增量重生成失败: ' + ConversationWorkflow.errorMessage(e).substring(0, 120), this.originFor(ref), 'failed');
-        return undefined;
+        const errorMessage: string = ConversationWorkflow.errorMessage(e);
+        this.finishRunFailure(ref, e);
+        throw new Error(errorMessage);
       }
     }
     if (this.isIncrementalInstruction(userInstruction)) {
@@ -738,10 +733,9 @@ ref: ConversationRunRef,
     this.setStep(ref, 'note_source_prepare');
     await this.safeSaveUserMessage(ref, userInstruction);
     try {
-      const configured: boolean = await LlmConfig.getInstance().isConfigured();
+      const configured: boolean = await this.replyService.isConfigured();
       if (!configured) {
-        await this.addAiMessage(ref, '⚠️ 请先在「我的 → 设置」中配置 API Key', 'system', 'failed');
-        return undefined;
+        throw new Error('NO_API_KEY');
       }
 
       let conversation: string = this.intentClassifier.inlineNoteMaterial(userInstruction).trim();
@@ -759,28 +753,24 @@ ref: ConversationRunRef,
       this.setStep(ref, 'note_structure_save');
       const noteGenerationRunId: string = 'conversation-' + Date.now().toString();
       if (!this.cbs.isCurrentRun(ref)) { return undefined; }
-      const pendingRecords = await this.getMemory().getPendingNoteMaterials(ref.sessionId);
-      const pendingSources: SourceFragment[] = [];
-      for (let index = 0; index < pendingRecords.length; index += 1) {
-        const pending = pendingRecords[index];
-        pendingSources.push({
-          id: pending.id,
-          kind: 'ocr',
-          originId: pending.source,
-          sequence: index + 1,
-          fingerprint: pending.id,
-          text: pending.content,
-        });
-      }
-const event: NoteDraftReadyEvent = await this.generateNoteDraft(ref, noteGenerationRunId, userInstruction, conversation, pendingSources, this.cancellationToken(ref), route);
+      const pendingSources: SourceFragment[] = await this.memoryProjection.pendingSources(ref);
+      const event: NoteDraftReadyEvent = await this.generateNoteDraft(
+        ref,
+        noteGenerationRunId,
+        userInstruction,
+        conversation,
+        pendingSources,
+        this.cancellationToken(ref),
+        route,
+      );
       this.setStep(ref, 'note_finalize');
       this.cbs.onDraftReady(ref, event);
       await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
       return event;
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
-      await this.addAiMessage(ref, '生成笔记失败: ' + errMsg.substring(0, 120), this.originFor(ref), 'failed');
-      return undefined;
+      this.finishRunFailure(ref, e);
+      throw new Error(errMsg);
     }
   }
 
@@ -803,10 +793,10 @@ const event: NoteDraftReadyEvent = await this.generateNoteDraft(ref, noteGenerat
     instruction: string,
     sourceText: string,
     pendingSources: SourceFragment[],
-cancellationToken?: CancellationToken,
+    cancellationToken?: CancellationToken,
     route?: NoteGenerationRoute,
   ): Promise<NoteDraftReadyEvent> {
-    return await new AiService(this.cbs.getContext()).generateNoteDraftWithSources(
+    return await this.capturePort.generateNoteDraftWithSources(
       runId,
       instruction,
       sourceText,
@@ -829,6 +819,26 @@ cancellationToken?: CancellationToken,
     this.cbs.onProgress(ref, step);
   }
 
+  private reportRunError(ref: ConversationRunRef, error: Object): void {
+    if (this.reportedErrorRuns.has(ref.runId)) {
+      return;
+    }
+    this.reportedErrorRuns.add(ref.runId);
+    this.cbs.onError(ref, ConversationWorkflow.userFacingWorkflowError(error));
+  }
+
+  private finishRunFailure(
+    ref: ConversationRunRef,
+    error: Object,
+    outcome?: ChatMessageOutcome,
+  ): void {
+    const messageId: number = this.cbs.addAiMsgEmpty(ref, this.originFor(ref));
+    this.reportRunError(ref, error);
+    if (messageId > 0) {
+      this.cbs.finishAiMsg(ref, messageId, outcome ?? ConversationWorkflow.failureOutcome(error));
+    }
+  }
+
   private cancellationToken(ref: ConversationRunRef): CancellationToken | undefined {
     return this.cancellationTokens.get(ref.runId);
   }
@@ -838,13 +848,6 @@ cancellationToken?: CancellationToken,
     if (!this.cbs.isCurrentRun(ref)) {
       throw new Error('STALE_CONVERSATION_RUN');
     }
-  }
-
-  private getMemory(): AgentMemoryService {
-    if (this.memory === null) {
-      this.memory = new AgentMemoryService(this.cbs.getContext());
-    }
-    return this.memory;
   }
 
   private async addAiMessage(
@@ -925,56 +928,15 @@ cancellationToken?: CancellationToken,
   }
 
   private async safeSaveUserMessage(ref: ConversationRunRef, content: string): Promise<void> {
-    if (!this.cbs.isCurrentRun(ref)) { return; }
-    try {
-      if (!(await this.cbs.commitHistory(ref))) { throw new Error('CHAT_HISTORY_COMMIT_REQUIRED'); }
-      const messageId: number = this.cbs.getUserMessageId(ref);
-      if (messageId <= 0) { throw new Error('USER_MESSAGE_KEY_UNAVAILABLE'); }
-      await this.getMemory().saveMessage(
-        {
-          sessionId: ref.sessionId,
-          role: 'user',
-          content: content,
-          messageKey: ref.runId + ':user',
-          sequence: messageId,
-          runId: ref.runId,
-          origin: this.originFor(ref),
-        },
-      );
-    } catch (e) {
-      this.cbs.reportDiagnostic(ref, 'stage=context-projection;code=USER_MESSAGE_PROJECTION_PENDING');
-      console.warn('[ConversationWorkflow] save user memory failed: ' + ConversationWorkflow.errorMessage(e));
-    }
+    await this.memoryProjection.saveUser(ref, content);
   }
 
   private async safeSaveAssistantMessage(ref: ConversationRunRef, content: string, messageId: number): Promise<void> {
-    if (!this.cbs.isCurrentRun(ref)) { return; }
-    try {
-      if (!(await this.cbs.commitHistory(ref))) { throw new Error('CHAT_HISTORY_COMMIT_REQUIRED'); }
-      await this.getMemory().saveMessage(
-        {
-          sessionId: ref.sessionId,
-          role: 'assistant',
-          content: content,
-          messageKey: ref.runId + ':assistant:' + messageId.toString(),
-          sequence: messageId,
-          runId: ref.runId,
-          origin: this.originFor(ref),
-        },
-      );
-    } catch (e) {
-      this.cbs.reportDiagnostic(ref, 'stage=context-projection;code=ASSISTANT_MESSAGE_PROJECTION_PENDING');
-      console.warn('[ConversationWorkflow] save assistant memory failed: ' + ConversationWorkflow.errorMessage(e));
-    }
+    await this.memoryProjection.saveAssistant(ref, content, messageId);
   }
 
   private originFor(ref: ConversationRunRef): ChatMessageOrigin {
     return this.runOrigins.get(ref.runId) ?? 'chat';
-  }
-
-  private requireDraftOwnership(ref: ConversationRunRef, event: NoteDraftReadyEvent): void {
-    if (event.originSessionId === undefined) { throw new Error('DETACHED_DRAFT_REQUIRES_RECOVERY_ENTRY'); }
-    if (event.originSessionId !== ref.sessionId) { throw new Error('DRAFT_SESSION_MISMATCH'); }
   }
 
   private async safeSaveOcrResult(
@@ -983,61 +945,27 @@ cancellationToken?: CancellationToken,
     userText: string,
     result: ClassificationResult,
   ): Promise<string | null> {
-    if (!this.cbs.isCurrentRun(ref)) { return null; }
-    try {
-      return await this.getMemory().saveOcrResult(ref.sessionId, imageUri, userText, result);
-    } catch (e) {
-      workflowLog.warn('save ocr memory failed: ' + ConversationWorkflow.errorMessage(e));
-      return null;
-    }
+    return await this.memoryProjection.saveOcr(ref, imageUri, userText, result);
   }
 
   private async safeGetContextForReply(ref: ConversationRunRef): Promise<string> {
-    if (!this.cbs.isCurrentRun(ref)) { return ''; }
-    try {
-      return await this.getMemory().getContextForReply(ref.sessionId);
-    } catch (e) {
-      console.warn('[ConversationWorkflow] load reply memory failed: ' + ConversationWorkflow.errorMessage(e));
-      return '';
-    }
+    return await this.memoryProjection.contextForReply(ref);
   }
 
   private async safeGetContextForNoteGeneration(ref: ConversationRunRef): Promise<string> {
-    if (!this.cbs.isCurrentRun(ref)) { return ''; }
-    try {
-      return await this.getMemory().getContextForNoteGeneration(ref.sessionId);
-    } catch (e) {
-      console.warn('[ConversationWorkflow] load note memory failed: ' + ConversationWorkflow.errorMessage(e));
-      return '';
-    }
+    return await this.memoryProjection.contextForNote(ref);
   }
 
   private async safeGetLearnerProfileContext(ref: ConversationRunRef): Promise<string> {
-    if (!this.cbs.isCurrentRun(ref)) { return ''; }
-    try {
-      return await this.getMemory().getLearnerProfileContext(ref.sessionId);
-    } catch (e) {
-      console.warn('[ConversationWorkflow] load learner profile failed: ' + ConversationWorkflow.errorMessage(e));
-      return '';
-    }
+    return await this.memoryProjection.learnerProfile(ref);
   }
 
   private async safeUpdateLearnerProfileIfNeeded(ref: ConversationRunRef): Promise<void> {
-    if (!this.cbs.isCurrentRun(ref)) { return; }
-    try {
-      await this.getMemory().updateLearnerProfileIfNeeded(ref.sessionId, this.cancellationToken(ref));
-    } catch (e) {
-      console.warn('[ConversationWorkflow] update learner profile failed: ' + ConversationWorkflow.errorMessage(e));
-    }
+    await this.memoryProjection.updateLearnerProfile(ref);
   }
 
   private async safeSummarizeIfNeeded(ref: ConversationRunRef): Promise<void> {
-    if (!this.cbs.isCurrentRun(ref)) { return; }
-    try {
-      await this.getMemory().summarizeSessionIfNeeded(ref.sessionId, this.cancellationToken(ref));
-    } catch (e) {
-      console.warn('[ConversationWorkflow] summarize memory failed: ' + ConversationWorkflow.errorMessage(e));
-    }
+    await this.memoryProjection.summarize(ref);
   }
 
   private parseRegenerationRequest(userInstruction: string): RegenerationInstruction | undefined {
@@ -1079,6 +1007,27 @@ cancellationToken?: CancellationToken,
       return e.message;
     }
     return JSON.stringify(e);
+  }
+
+  private static userFacingWorkflowError(error: Object): string {
+    const message: string = ConversationWorkflow.errorMessage(error);
+    if (message.indexOf('CONVERSATION_CANCELLED') >= 0) {
+      return '本轮处理已取消';
+    }
+    if (message.indexOf('NO_API_KEY') >= 0) {
+      return '请先在「我的 → 设置」中配置 API Key';
+    }
+    if (message.indexOf('STREAM_INTERRUPTED') >= 0) {
+      return 'AI 回复中断，请重试';
+    }
+    if (ConversationWorkflow.isNetworkError(error)) {
+      return '网络连接失败，本轮处理未完成';
+    }
+    return '本轮处理失败，请重试';
+  }
+
+  private static failureOutcome(error: Object): ChatMessageOutcome {
+    return ConversationWorkflow.isNetworkError(error) ? 'interrupted' : 'failed';
   }
 
   private static isNetworkError(e: Object): boolean {

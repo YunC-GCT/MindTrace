@@ -4,6 +4,9 @@
  * Path: entry/src/main/ets/services/ConversationTitleService.ets
  * Responsibility: Derive a short conversation title without a model request.
  * Dependencies: none.
+ *
+ * Data flow:
+ *   First user message -> normalized bounded title -> session header.
  */
 
 export const MAX_CONVERSATION_TITLE_LENGTH: number = 10;

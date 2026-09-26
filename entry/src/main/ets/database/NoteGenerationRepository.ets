@@ -252,9 +252,33 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
           resolve();
         });
       });
-      return;
+    } else {
+      await this.insertRow('note_generation_commit', bucket);
     }
-    await this.insertRow('note_generation_commit', bucket);
+    await this.markRunCommitted(result.runId);
+  }
+
+  private async markRunCommitted(runId: string): Promise<void> {
+    const predicates = new relationalStore.RdbPredicates('note_generation_run');
+    predicates.equalTo('id', runId);
+    const bucket: relationalStore.ValuesBucket = {
+      'status': 'committed',
+      'stop_reason': 'committed',
+      'updated_at': Date.now(),
+    };
+    await new Promise<void>((resolve, reject) => {
+      this.store.update(bucket, predicates, (error: Error, _rows: number): void => {
+        if (error) {
+          reject(new Error('NoteGenerationRepository.markRunCommitted failed: ' + error.message));
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+
+  private async hasCommitForRun(runId: string): Promise<boolean> {
+    return await this.hasRow('note_generation_commit', 'run_id', runId);
   }
 
   async getCommitResult(commitKey: string): Promise<NoteGenerationCommitResult | undefined> {
@@ -320,17 +344,28 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
     const predicates = new relationalStore.RdbPredicates('note_generation_run');
     predicates.orderByDesc('updated_at');
     const resultSet: relationalStore.ResultSet = await this.store.query(predicates, ['*']);
-    const runs: NoteGenerationRun[] = [];
+    const candidates: NoteGenerationRun[] = [];
     if (resultSet.goToFirstRow()) {
       do {
         const run: NoteGenerationRun = NoteGenerationRepository.rowToRun(resultSet);
         if (run.status === 'running' || run.status === 'ready-preview' || run.status === 'incomplete'
           || run.status === 'failed' || run.status === 'needs-input') {
-          runs.push(run);
+          candidates.push(run);
         }
       } while (resultSet.goToNextRow());
     }
     resultSet.close();
+    const runs: NoteGenerationRun[] = [];
+    for (const candidate of candidates) {
+      // The KnowledgeUnit and its commit marker are written in one transaction.
+      // Treat that durable marker as authoritative even when the process stopped
+      // before the generation run could be advanced to its terminal status.
+      if (await this.hasCommitForRun(candidate.id)) {
+        await this.markRunCommitted(candidate.id);
+      } else {
+        runs.push(candidate);
+      }
+    }
     return runs;
   }
 

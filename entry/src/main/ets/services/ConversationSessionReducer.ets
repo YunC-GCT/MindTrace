@@ -14,6 +14,8 @@
 
 import { ChatMessageIdPolicy, ConversationRunRef, requireConversationRunRef } from './ConversationIdentity';
 import {
+  appendChatMsgError,
+  appendChatMsgStatus,
   applyStreamEventToChatMsg,
   ChatMsg,
   ChatSession,
@@ -39,7 +41,13 @@ export class ConversationSessionReducer {
     if (event.kind === 'replace-content') {
       return replaceChatMsgContent(message, event.content);
     }
-    return applyStreamEventToChatMsg(message, event.event);
+    if (event.kind === 'stream') {
+      return applyStreamEventToChatMsg(message, event.event);
+    }
+    if (event.kind === 'status') {
+      return appendChatMsgStatus(message, event.content, event.status);
+    }
+    return appendChatMsgError(message, event.content);
   }
 
   static updateMessages(
@@ -66,9 +74,8 @@ export class ConversationSessionReducer {
       return ConversationSessionReducer.rejected(sessions, ref, event, 'DUPLICATE_CHAT_MESSAGE_ID');
     }
     const nextSessions: ChatSession[] = [];
-    for (let index: number = 0; index < sessions.length; index += 1) {
-      const session: ChatSession = sessions[index];
-      if (index === targetIndex) {
+    for (const session of sessions) {
+      if (session.id === ref.sessionId) {
         nextSessions.push({ id: session.id, name: session.name, messages: nextMessages });
       } else {
         nextSessions.push(session);

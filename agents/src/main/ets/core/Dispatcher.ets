@@ -1417,6 +1417,9 @@ export class Dispatcher {
     const existingCommit: NoteGenerationCommitResult | undefined = await options.generationRepository.getCommitResult(commitKey);
     if (existingCommit !== undefined && existingCommit.candidateJson !== undefined && existingCommit.candidateJson.length > 0) {
       const restoredCandidate: KnowledgeUnit = JSON.parse(existingCommit.candidateJson) as KnowledgeUnit;
+      // Re-saving an idempotent commit also heals a stale ready-preview run left
+      // by a process interruption between the durable note commit and run update.
+      await options.generationRepository.saveCommitResult(existingCommit);
       await options.generationRepository.appendLifecycleLog({
         runId: prepared.runId,
         event: 'duplicate-confirm',

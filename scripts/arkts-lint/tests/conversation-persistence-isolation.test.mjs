@@ -12,6 +12,7 @@ const chatDao = read('entry/src/main/ets/database/ChatMessageDao.ets');
 const generation = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
 const deletion = read('entry/src/main/ets/services/SessionDeletionCoordinator.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
 const floatWindow = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
 const mapper = read('entry/src/main/ets/services/ConversationSnapshotMapper.ets');
 const titleService = read('entry/src/main/ets/services/ConversationTitleService.ets');
@@ -31,7 +32,7 @@ test('chat context schema and DAO use correlated atomic upsert and stable orderi
   assert.match(chatDao, /ON_CONFLICT_REPLACE/);
   assert.match(chatDao, /orderByDesc\('sequence'\)/);
   assert.match(chatDao, /orderByAsc\('sequence'\)/);
-  assert.match(workflow, /commitHistory\(ref\)[\s\S]*saveMessage\(/);
+  assert.match(memoryProjection, /commitMemoryHistory\(ref\)[\s\S]*saveMessage\(/);
 });
 
 test('conversation note runs persist origin and deletion includes cancelled uncommitted runs', () => {
@@ -51,21 +52,33 @@ test('completed note-generation runs retain conversation ownership metadata', ()
   assert.match(completedRun, /parentConversationRunId: run\.parentConversationRunId,/);
 });
 
-test('confirming a legacy detached run keeps the already-validated in-memory owner', () => {
+test('legacy detached runs cannot inherit the visible conversation owner', () => {
   assert.match(
     workflow,
-    /const persistedEvent: NoteDraftReadyEvent = await service\.restoreDraft\(event\.runId\);[\s\S]*?if \(persistedEvent\.originSessionId !== undefined\) \{\s*this\.requireDraftOwnership\(ref, persistedEvent\);\s*\}/,
+    /const persistedEvent: NoteDraftReadyEvent = await service\.restoreDraft\(event\.runId\);[\s\S]*?this\.requireDraftOwnership\(ref, persistedEvent\);/,
   );
+  const recovery = read('entry/src/main/ets/services/DraftRecoveryService.ets');
+  assert.match(recovery, /DraftRecoveryService\.requireDetached\(persisted\)/);
+  assert.match(recovery, /SESSION_DRAFT_REQUIRES_CONVERSATION_ENTRY/);
+  const draftWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationDraftWorkflow.ets');
+  const restoreBody = draftWorkflow.match(/async restore[\s\S]*?\n  async cancel/);
+  assert.ok(restoreBody !== null);
+  assert.doesNotMatch(restoreBody[0], /addMessage/);
 });
 
 test('conversation cancellation stays scoped to the parent run and recovery includes interrupted runs', () => {
-  const service = read('entry/src/main/ets/services/AgentChatService.ets');
+  const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
+  const draftCoordinator = read('entry/src/main/ets/services/ConversationDraftCoordinator.ets');
   const aiService = read('entry/src/main/ets/services/AiService.ets');
   assert.match(generation, /run\.status === 'running' \|\| run\.status === 'ready-preview'/);
   assert.match(generation, /equalTo\('parent_conversation_run_id', parentConversationRunId\)/);
   assert.doesNotMatch(generation, /cancelIncompleteByOriginSession/);
-  assert.match(service, /cancelDraftsByRun\(sessionId, ref\.runId\)/);
-  assert.doesNotMatch(service, /cancelDraftsBySession\(sessionId\)/);
+  assert.match(runtime, /draftCoordinator\.cancelAssociatedDrafts\(sessionId, ref\.runId\)/);
+  assert.doesNotMatch(runtime, /cancelDraftsBySession\(sessionId\)/);
+  assert.match(
+    draftCoordinator,
+    /async cancelAssociatedDrafts\(sessionId: string, parentRunId: string\)[\s\S]*cancelAssociated\(sessionId, parentRunId\)/,
+  );
   assert.doesNotMatch(aiService, /cancelDraftsByOriginSession/);
   assert.match(aiService, /cancelDraftsByParentRun\(sessionId: string, parentConversationRunId: string\)/);
 });

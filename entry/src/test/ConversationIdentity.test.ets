@@ -29,10 +29,8 @@ import {
 import { ChatMessageRecord } from '../main/ets/models/AgentMemoryModels';
 import { WritePathValidator } from '../main/ets/services/WritePathValidator';
 import { ConversationRunCoordinator } from '../main/ets/services/ConversationRunCoordinator';
-import {
-  AgentChatCallbacks,
-  ConversationWorkflowAdapter,
-} from '../main/ets/services/AgentChatService';
+import { AgentChatCallbacks } from '../main/ets/services/AgentChatService';
+import { ConversationWorkflowAdapter } from '../main/ets/services/ConversationWorkflowAdapter';
 import { ConversationMessageEvent } from '../main/ets/workflows/conversation/ConversationTypes';
 import {
   ConversationSessionReduceResult,
@@ -77,6 +75,7 @@ class RecordingAgentChatCallbacks implements AgentChatCallbacks {
   updateAiMsg(_ref: ConversationRunRef, _id: number, _event: ConversationMessageEvent): void {
     this.aiWrites += 1;
   }
+  updateRunEvent(_ref: ConversationRunRef, _event: ConversationMessageEvent): void { this.aiWrites += 1; }
   finishAiMsg(_ref: ConversationRunRef, _id: number): void { this.completionWrites += 1; }
   terminateAiRun(_ref: ConversationRunRef, _outcome: ChatMessageOutcome): void { this.completionWrites += 1; }
   getUserMessageId(_ref: ConversationRunRef): number { return 1; }

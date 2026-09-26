@@ -1,363 +1,62 @@
-import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
-import {
-  ConversationMessageEvent,
-  ConversationWorkflowCallbacks,
-} from '../workflows/conversation/ConversationTypes';
-import {
-  ChatMessageOrigin,
-  ChatMessageOutcome,
-  ConversationProgressStep,
-  ConversationRequest,
-  ImageConversationRequest,
-} from '../workflows/conversation/ConversationState';
-import { ChatStatusMachine } from './ChatStatusMachine';
-import { common } from '@kit.AbilityKit';
-import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
-import {
-  ConversationRunCoordinator,
-  ConversationRunRequest,
-  ConversationRunRequestKind,
-  ConversationRunStartResult,
-  ConversationRunTerminal,
-} from './ConversationRunCoordinator';
+/**
+ * AgentChatService.ets - Thin conversation UI facade.
+ *
+ * Path: entry/src/main/ets/services/AgentChatService.ets
+ * Responsibility: Expose UI-facing conversation commands and delegate execution to ConversationRuntime.
+ * Dependencies: AgentChatContracts; ConversationRuntime; public conversation contracts.
+ *
+ * Data flow:
+ *   UI command -> AgentChatService -> ConversationRuntime.
+ */
+import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
 import { ConversationRunRef } from './ConversationIdentity';
-import { CancellationToken } from 'common';
+import { ConversationRunStartResult } from './ConversationRunCoordinator';
+import { AgentChatCallbacks } from './AgentChatContracts';
+import { ConversationRuntime } from './ConversationRuntime';
+import { IConversationNoteRoutePort } from '../workflows/conversation/ConversationWorkflowPorts';
 
-type ConversationRunLifecycleOwner = 'facade' | 'workflow';
-type ConversationRunOperation<T> = (ref: ConversationRunRef) => Promise<T>;
-
-export interface AgentChatCallbacks {
-addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin) => number;
-  addAiMsg: (ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome) => number;
-  addAiMsgEmpty: (ref: ConversationRunRef, origin: ChatMessageOrigin) => number;
-  updateAiMsg: (ref: ConversationRunRef, id: number, event: ConversationMessageEvent) => void;
-  finishAiMsg: (ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome) => void;
-  terminateAiRun: (ref: ConversationRunRef, outcome: ChatMessageOutcome) => void;
-  getUserMessageId: (ref: ConversationRunRef) => number;
-  commitHistory: (ref: ConversationRunRef) => Promise<boolean>;
-  reportDiagnostic: (ref: ConversationRunRef, diagnostic: string) => void;
-  /** Cancel only generation runs owned by the active conversation run. */
-  cancelDraftsByRun?: (sessionId: string, parentConversationRunId: string) => Promise<void>;
-  setBusy: (ref: ConversationRunRef, value: boolean) => void;
-  setStatusMeta: (ref: ConversationRunRef, meta: ChatStatusMeta | null) => void;
-  getContext: () => common.UIAbilityContext;
-  getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean) => string;
-  onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent) => void;
-  onOcrBlank?: (ref: ConversationRunRef, imageUri: string) => void;
-}
-
-export class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
-  private readonly callbacks: AgentChatCallbacks;
-  private readonly statusMachine: ChatStatusMachine = new ChatStatusMachine();
-  private readonly coordinator: ConversationRunCoordinator;
-  constructor(callbacks: AgentChatCallbacks, coordinator: ConversationRunCoordinator) {
-    this.callbacks = callbacks;
-    this.coordinator = coordinator;
-  }
-
-private accepts(ref: ConversationRunRef, event: string): boolean {
-    const accepted: boolean = this.coordinator.isCurrent(ref);
-    if (!accepted) {
-      console.warn('[ConversationRun] code=STALE_RUN_EVENT; event=' + event
-        + '; sessionId=' + ref.sessionId + '; runId=' + ref.runId);
-    }
-    return accepted;
-  }
-  addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number {
-    return this.accepts(ref, 'add-ai-message')
-      ? this.callbacks.addAiMsg(ref, content, origin ?? 'chat', outcome ?? 'completed')
-      : -1;
-  }
-  addAiMsgEmpty(ref: ConversationRunRef, origin: ChatMessageOrigin): number {
-    return this.accepts(ref, 'add-ai-placeholder') ? this.callbacks.addAiMsgEmpty(ref, origin) : -1;
-  }
-  updateAiMsg(ref: ConversationRunRef, id: number, event: ConversationMessageEvent): void {
-    if (this.accepts(ref, 'update-ai-message')) { this.callbacks.updateAiMsg(ref, id, event); }
-  }
-  finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void {
-    if (this.accepts(ref, 'finish-ai-message')) { this.callbacks.finishAiMsg(ref, id, outcome ?? 'completed'); }
-  }
-  onStart(ref: ConversationRunRef): void {
-    if (this.accepts(ref, 'start')) { this.callbacks.setBusy(ref, true); }
-  }
-  onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void {
-    if (this.accepts(ref, 'progress')) { this.callbacks.setStatusMeta(ref, this.statusMachine.advance(step)); }
-  }
-  onFinish(ref: ConversationRunRef): void {
-    if (this.accepts(ref, 'finish')) {
-      this.callbacks.setStatusMeta(ref, null);
-      this.callbacks.setBusy(ref, false);
-    }
-  }
-  isCurrentRun(ref: ConversationRunRef): boolean { return this.coordinator.isCurrent(ref); }
-  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined { return this.coordinator.cancellationToken(ref); }
-  registerCancellationHook(ref: ConversationRunRef, hook: () => void): () => void {
-    return this.coordinator.registerCancellationHook(ref, hook);
-  }
-  getContext(): common.UIAbilityContext { return this.callbacks.getContext(); }
-  getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string {
-    return this.accepts(ref, 'read-conversation') ? this.callbacks.getConversationText(ref, excludeLatestUser) : '';
-  }
-  getUserMessageId(ref: ConversationRunRef): number {
-    return this.accepts(ref, 'read-user-message-id') ? this.callbacks.getUserMessageId(ref) : -1;
-  }
-  async commitHistory(ref: ConversationRunRef): Promise<boolean> {
-    return this.accepts(ref, 'commit-history') ? await this.callbacks.commitHistory(ref) : false;
-  }
-  reportDiagnostic(ref: ConversationRunRef, diagnostic: string): void {
-    if (this.accepts(ref, 'report-diagnostic')) { this.callbacks.reportDiagnostic(ref, diagnostic); }
-  }
-  onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void { if (this.accepts(ref, 'draft-ready')) { this.callbacks.onDraftReady(ref, event); } }
-  onOcrBlank?(ref: ConversationRunRef, imageUri: string): void {
-    if (this.accepts(ref, 'ocr-blank') && this.callbacks.onOcrBlank !== undefined) {
-      this.callbacks.onOcrBlank(ref, imageUri);
-    }
-  }
-}
+export { AgentChatCallbacks } from './AgentChatContracts';
 
 export class AgentChatService {
-  private readonly workflow: ConversationWorkflow;
-  private readonly callbacks: AgentChatCallbacks;
-  private adapter: ConversationWorkflowAdapter | null = null;
-  private readonly coordinator: ConversationRunCoordinator = new ConversationRunCoordinator();
-  private readonly inFlight: Map<string, Promise<void>> = new Map<string, Promise<void>>();
+  private readonly runtime: ConversationRuntime;
 
-  constructor(callbacks: AgentChatCallbacks) {
-    this.callbacks = callbacks;
-    this.adapter = new ConversationWorkflowAdapter(callbacks, this.coordinator);
-    this.workflow = new ConversationWorkflow(this.adapter);
+  constructor(callbacks: AgentChatCallbacks, noteRoute?: IConversationNoteRoutePort) {
+    this.runtime = new ConversationRuntime(callbacks, noteRoute);
   }
 
-async captureReply(sessionId: string, imageUri: string, userText: string, route: NoteGenerationRoute = 'standard'): Promise<ConversationRunStartResult> {
-    const request: ImageConversationRequest = {
-      kind: 'image',
-      imageUri: imageUri,
-      userContent: userText,
-      route: route,
-    };
-    const admission: ConversationRunStartResult = this.admit(sessionId, request.kind);
-    if (!admission.accepted || admission.ref === undefined) {
-      console.warn('[ConversationRun] ' + admission.diagnostic + '; entry=image');
-      return admission;
-    }
-    if (this.callbacks.addUserMsg(admission.ref, userText.length > 0 ? userText : '[图片]', 'image') <= 0) {
-      this.coordinator.finish(admission.ref, 'cancelled');
-      return { accepted: false, diagnostic: 'code=USER_MESSAGE_REJECTED' };
-    }
-    await this.executeAcceptedOperation<void>(
-      admission.ref,
-      'workflow',
-      (ref: ConversationRunRef): Promise<void> => this.workflow.run(request, ref),
-    );
-    return admission;
+  async captureReply(sessionId: string, imageUri: string, userText: string): Promise<ConversationRunStartResult> {
+    return await this.runtime.captureReply(sessionId, imageUri, userText);
   }
 
-async realReplyStream(sessionId: string, userContent: string, route: NoteGenerationRoute = 'standard'): Promise<ConversationRunStartResult> {
-    const request: ConversationRequest = {
-      kind: 'text',
-      userContent: userContent,
-      responseMode: 'stream',
-      route: route,
-    };
-    const admission: ConversationRunStartResult = this.admit(sessionId, request.kind);
-    if (!admission.accepted || admission.ref === undefined) {
-      console.warn('[ConversationRun] ' + admission.diagnostic + '; entry=text');
-      return admission;
-    }
-    if (this.callbacks.addUserMsg(admission.ref, userContent, 'chat') <= 0) {
-      this.coordinator.finish(admission.ref, 'cancelled');
-      return { accepted: false, diagnostic: 'code=USER_MESSAGE_REJECTED' };
-    }
-    await this.executeAcceptedOperation<void>(
-      admission.ref,
-      'workflow',
-      (ref: ConversationRunRef): Promise<void> => this.workflow.run(request, ref),
-    );
-    return admission;
+  async realReplyStream(sessionId: string, userContent: string): Promise<ConversationRunStartResult> {
+    return await this.runtime.realReplyStream(sessionId, userContent);
   }
 
   isCurrentRun(ref: ConversationRunRef): boolean {
-    return this.coordinator.isCurrent(ref);
-  }
-
-  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined {
-    return this.coordinator.cancellationToken(ref);
+    return this.runtime.isCurrentRun(ref);
   }
 
   async cancelSessionRun(sessionId: string): Promise<void> {
-    const ref: ConversationRunRef | undefined = this.coordinator.currentRef(sessionId);
-    const operation: Promise<void> | undefined = this.inFlight.get(sessionId);
-    if (ref !== undefined) {
-      this.callbacks.terminateAiRun(ref, 'cancelled');
-      if (this.adapter !== null) { this.adapter.onFinish(ref); }
-      this.coordinator.cancel(ref);
-    }
-    let cancellationError: Error | null = null;
-    if (ref !== undefined && this.callbacks.cancelDraftsByRun !== undefined) {
-      try {
-        await this.callbacks.cancelDraftsByRun(sessionId, ref.runId);
-      } catch (error) {
-        cancellationError = AgentChatService.normalizeError(error);
-      }
-    }
-    if (operation !== undefined) {
-      try { await operation; } catch (_error) {}
-    }
-    if (cancellationError !== null) {
-      throw cancellationError;
-    }
+    await this.runtime.cancelSessionRun(sessionId);
   }
 
   cancelAllRuns(): void {
-    const refs: ConversationRunRef[] = this.coordinator.activeRefs();
-    for (const ref of refs) {
-      this.callbacks.terminateAiRun(ref, 'cancelled');
-      if (this.adapter !== null) {
-        this.adapter.onFinish(ref);
-      }
-      this.coordinator.cancel(ref);
-    }
-  }
-
-  private admit(sessionId: string, kind: ConversationRunRequestKind): ConversationRunStartResult {
-    const request: ConversationRunRequest = { kind: kind };
-    return this.coordinator.start(sessionId, request);
-  }
-
-  private async executeOperation<T>(
-    sessionId: string,
-    kind: ConversationRunRequestKind,
-    lifecycleOwner: ConversationRunLifecycleOwner,
-    operation: ConversationRunOperation<T>,
-  ): Promise<T> {
-    const admission: ConversationRunStartResult = this.admit(sessionId, kind);
-    if (!admission.accepted || admission.ref === undefined) {
-      throw new Error(admission.diagnostic);
-    }
-    return await this.executeAcceptedOperation<T>(admission.ref, lifecycleOwner, operation);
-  }
-
-  private async executeAcceptedOperation<T>(
-    ref: ConversationRunRef,
-    lifecycleOwner: ConversationRunLifecycleOwner,
-    operation: ConversationRunOperation<T>,
-  ): Promise<T> {
-    if (lifecycleOwner === 'facade' && this.adapter !== null) {
-      this.adapter.onStart(ref);
-    }
-    let completion: Promise<void>;
-    const operationPromise: Promise<T> = (async (): Promise<T> => {
-      try {
-        const result: T = await operation(ref);
-        this.finishOperation(ref, 'completed', lifecycleOwner);
-        return result;
-      } catch (error) {
-        this.callbacks.terminateAiRun(ref, 'failed');
-        this.finishOperation(ref, 'failed', lifecycleOwner);
-        throw new Error(AgentChatService.normalizeError(error).message);
-      }
-    })();
-    completion = operationPromise.then((): void => {}, (): void => {});
-    this.inFlight.set(ref.sessionId, completion);
-    try {
-      return await operationPromise;
-    } finally {
-      if (this.inFlight.get(ref.sessionId) === completion) {
-        this.inFlight.delete(ref.sessionId);
-      }
-    }
-  }
-
-  private finishOperation(
-    ref: ConversationRunRef,
-    terminal: ConversationRunTerminal,
-    lifecycleOwner: ConversationRunLifecycleOwner,
-  ): void {
-    if (lifecycleOwner === 'facade' && this.adapter !== null) {
-      this.adapter.onFinish(ref);
-    }
-    this.coordinator.finish(ref, terminal);
+    this.runtime.cancelAllRuns();
   }
 
   async confirmDraft(sessionId: string, event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
-    return await this.executeOperation<KnowledgeUnit>(
-      sessionId,
-      'confirm-draft',
-      'facade',
-      (ref: ConversationRunRef): Promise<KnowledgeUnit> => this.workflow.confirmDraft(ref, event, candidate),
-    );
-  }
-
-  async restoreDraft(sessionId: string, runId: string): Promise<NoteDraftReadyEvent> {
-    return await this.executeOperation<NoteDraftReadyEvent>(
-      sessionId,
-      'restore-draft',
-      'facade',
-      (ref: ConversationRunRef): Promise<NoteDraftReadyEvent> => this.workflow.restoreDraft(ref, runId),
-    );
-  }
-
-  async retryDraft(sessionId: string, runId: string): Promise<NoteDraftReadyEvent> {
-    return await this.executeOperation<NoteDraftReadyEvent>(
-      sessionId,
-      'retry-draft',
-      'facade',
-      (ref: ConversationRunRef): Promise<NoteDraftReadyEvent> => this.workflow.retryDraft(ref, runId),
-    );
+    return await this.runtime.confirmDraft(sessionId, event, candidate);
   }
 
   async cancelDraft(sessionId: string, runId: string): Promise<void> {
-    await this.executeOperation<void>(
-      sessionId,
-      'cancel-draft',
-      'facade',
-      (ref: ConversationRunRef): Promise<void> => this.workflow.cancelDraft(ref, runId),
-    );
+    await this.runtime.cancelDraft(sessionId, runId);
   }
 
-  async regenerateNote(sessionId: string, noteId: string, instruction: string): Promise<void> {
-    await this.executeOperation<void>(
-      sessionId,
-      'regenerate',
-      'workflow',
-      (ref: ConversationRunRef): Promise<void> => this.workflow.regenerateNote(ref, noteId, instruction),
-    );
+  async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
+    return await this.runtime.listRecoverableDrafts();
   }
-
-  async requestRegeneration(sessionId: string, noteReference: string, noteIds: string[], instruction: string): Promise<void> {
-    await this.executeOperation<void>(
-      sessionId,
-      'regenerate',
-      'workflow',
-      (ref: ConversationRunRef): Promise<void> => this.workflow.requestRegeneration(
-        ref,
-        noteReference,
-        noteIds,
-        instruction,
-      ),
-    );
-  }
-  async listRecoverableDrafts(): Promise<NoteGenerationRun[]> { return await this.workflow.listRecoverableDrafts(); }
 
   async checkAndRestoreDrafts(sessionId: string): Promise<NoteDraftReadyEvent | null> {
-    const drafts: NoteGenerationRun[] = await this.workflow.listRecoverableDrafts();
-    for (const draft of drafts) {
-      if (draft.originSessionId === sessionId
-        && (draft.status === 'ready-preview' || draft.status === 'running')) {
-        return await this.restoreDraft(sessionId, draft.id);
-      }
-    }
-    return null;
-  }
-
-  private static normalizeError(error: Object): Error {
-    if (error instanceof Error) {
-      return error;
-    }
-    if (typeof error === 'string' && error.length > 0) {
-      return new Error(error);
-    }
-    return new Error('UNKNOWN_CONVERSATION_OPERATION_ERROR');
+    return await this.runtime.checkAndRestoreDrafts(sessionId);
   }
 }
