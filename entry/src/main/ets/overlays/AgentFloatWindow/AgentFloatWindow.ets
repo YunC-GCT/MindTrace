@@ -98,7 +98,9 @@ export struct AgentFloatWindow {
   private service: AgentChatService | null = null;
   private sourceResolver: NoteReviewSourceService = new NoteReviewSourceService();
   private requestSessionId: string = '';
+  private serviceRunActive: boolean = false;
   private messageSessionIds: Map<number, string> = new Map<number, string>();
+  private feedbackRequestSeqByMessage: Map<number, number> = new Map<number, number>();
   @State inputVm: AgentInputViewModel = new AgentInputViewModel();
 
   // ===== 生命周期 =====
@@ -183,9 +185,13 @@ export struct AgentFloatWindow {
         if (v && this.requestSessionId.length === 0) {
           this.requestSessionId = this.activeSid;
         }
+        if (v) {
+          this.serviceRunActive = true;
+        }
         inputVm.setBusy(v);
         if (!v) {
           this.requestSessionId = '';
+          this.serviceRunActive = false;
         }
       },
       setStatusMeta: (_meta: ChatStatusMeta | null): void => { /* 状态指示 UI 已移除 (多端设计 v3) */ },
@@ -202,6 +208,11 @@ export struct AgentFloatWindow {
     };
     this.service = new AgentChatService(cbs);
     this.inputVm.bind(this.service, (content: string): void => {
+      if (this.serviceRunActive) {
+        this.showToast('当前回答仍在处理，请稍后再试');
+        return;
+      }
+      this.serviceRunActive = true;
       this.requestSessionId = this.activeSid;
       if (this.finishCurrentStreamingMessage()) {
         this.sync();
@@ -423,6 +434,7 @@ export struct AgentFloatWindow {
 
   private onNoteReviewFeedback = (messageId: number, feedback: NoteReviewFeedback): void => {
     const previous: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
+    const requestSeq: number = this.nextFeedbackRequestSeq(messageId);
     this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
       setChatMsgNoteReviewFeedback(message, feedback)
     );
@@ -430,15 +442,36 @@ export struct AgentFloatWindow {
     this.sm.flush(this.sessions)
       .then((result: ChatHistorySaveResult): void => {
         if (!result.success) {
-          this.rollbackFeedbackIfCurrent(messageId, feedback, previous);
+          this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestSeq);
           this.showToast('反馈保存失败，请稍后重试');
+          return;
         }
+        this.clearFeedbackRequestSeq(messageId, requestSeq);
       })
       .catch((): void => {
-        this.rollbackFeedbackIfCurrent(messageId, feedback, previous);
+        this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestSeq);
         this.showToast('反馈保存失败，请稍后重试');
       });
   };
+
+  private nextFeedbackRequestSeq(messageId: number): number {
+    const current: number | undefined = this.feedbackRequestSeqByMessage.get(messageId);
+    const next: number = current === undefined ? 1 : current + 1;
+    this.feedbackRequestSeqByMessage.set(messageId, next);
+    return next;
+  }
+
+  private clearFeedbackRequestSeq(messageId: number, requestSeq: number): void {
+    const current: number | undefined = this.feedbackRequestSeqByMessage.get(messageId);
+    if (current === requestSeq) {
+      this.feedbackRequestSeqByMessage.delete(messageId);
+    }
+  }
+
+  private isCurrentFeedbackRequest(messageId: number, requestSeq: number): boolean {
+    const current: number | undefined = this.feedbackRequestSeqByMessage.get(messageId);
+    return current === requestSeq;
+  }
 
   private feedbackForMessage(messageId: number): NoteReviewFeedback | undefined {
     const sessionId: string = this.findSessionIdForMessage(messageId);
@@ -455,7 +488,11 @@ export struct AgentFloatWindow {
     messageId: number,
     attempted: NoteReviewFeedback,
     previous: NoteReviewFeedback | undefined,
+    requestSeq: number,
   ): void {
+    if (!this.isCurrentFeedbackRequest(messageId, requestSeq)) {
+      return;
+    }
     const current: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
     if (current !== attempted) {
       return;

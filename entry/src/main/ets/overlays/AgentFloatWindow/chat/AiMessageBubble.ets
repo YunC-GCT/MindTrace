@@ -99,15 +99,13 @@ export struct AiMessageBubble {
             .fontColor(MINT)
             .fontWeight(W_SEMIBOLD)
             .width('100%')
-          if (review.reason.length > 0) {
-            Text(review.reason)
-              .fontSize(11)
-              .fontColor(TEXT_2)
-              .fontWeight(W_MEDIUM)
-              .lineHeight(16)
-              .width('100%')
-              .margin({ top: S_1 })
-          }
+          Text(this.reviewReasonText(review))
+            .fontSize(11)
+            .fontColor(TEXT_2)
+            .fontWeight(W_MEDIUM)
+            .lineHeight(16)
+            .width('100%')
+            .margin({ top: S_1 })
         }
         .width('100%')
         .padding({ left: S_3, right: S_3, top: S_2, bottom: S_2 })
@@ -153,5 +151,36 @@ export struct AiMessageBubble {
       return '证据不足'
     }
     return '笔记暂不可用'
+  }
+
+  private reviewReasonText = (review: NoteReviewAnswer): string => {
+    if (review.reason === 'ambiguous-topic') {
+      return '请补充要查询的笔记主题，例如“根据我的笔记解释极限”。'
+    }
+    if (review.reason === 'ambiguous-pronoun') {
+      return '这里的指代还不够明确，请补充具体笔记主题。'
+    }
+    if (review.reason === 'no-match') {
+      return '没有在个人笔记中找到足够依据。可以换一个更具体的主题，或先保存相关笔记。'
+    }
+    if (review.reason === 'compare-needs-two-topics') {
+      return '比较至少需要两个明确主题。'
+    }
+    if (review.reason === 'compare-topic-missing') {
+      return '比较证据不足，请补充缺少的主题或先保存相关笔记。'
+    }
+    if (review.reason === 'no-accepted-prerequisite') {
+      return '没有找到已确认的前置关系。可以先补充相关笔记或关系后再试。'
+    }
+    if (review.reason === 'missing-evidence') {
+      return '回答证据丢失，请重试。'
+    }
+    if (review.reason === 'model-missing-valid-citation') {
+      return '这次回答没有生成可验证来源。请换一个更具体的主题或重试。'
+    }
+    if (review.status === 'unavailable') {
+      return '个人笔记检索暂不可用，请稍后重试。'
+    }
+    return '暂时没有足够的已保存笔记依据。可以换一个更具体的主题，或先保存相关笔记。'
   }
 }

@@ -12,7 +12,6 @@ import {
   GLASS_10,
   MINT,
   OVERLAY_MASK_SOLID,
-  R_LG,
   R_MD,
   R_XL,
   S_1,
