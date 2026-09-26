@@ -45,10 +45,12 @@ import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
 import { NoteDaoAdapter } from '../adapters/NoteDaoAdapter';
+import { ConversationRunIdPolicy, SessionIdPolicy } from './ConversationIdentity';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
 import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFactory';
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from './AgentMemoryService';
+import type { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
 
@@ -80,7 +82,8 @@ export class AiService {
   }
 
   // 图片识别入口: 只 OCR + 分类，返回识别内容，不生成笔记、不入库
-  async analyzeImage(imageUri: string, userText?: string): Promise<ClassificationResult> {
+  async analyzeImage(imageUri: string, userText?: string, cancellationToken?: CancellationToken): Promise<ClassificationResult> {
+    cancellationToken?.throwIfCancelled();
     log.info('analyzeImage start, imageUri=' + imageUri);
     if (this.context === undefined) {
       throw new Error('AiService.analyzeImage 需要 UIAbilityContext 来准备图片文件');
@@ -101,6 +104,7 @@ export class AiService {
       persist: false,
       includeRawText: true,
       analysisOnly: true,
+      cancellationToken: cancellationToken,
     });
     if (!result.success || result.classification === undefined) {
       throw new Error(result.errorMessage ?? '识别失败');
@@ -127,8 +131,13 @@ export class AiService {
     instruction: string,
     sourceText: string,
     pendingSources: SourceFragment[],
+    cancellationToken?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
     route: NoteGenerationRoute = 'standard',
   ): Promise<NoteDraftReadyEvent> {
+    cancellationToken?.throwIfCancelled();
+    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     const fragments: SourceFragment[] = [{
       id: 'conversation:' + runId,
@@ -143,6 +152,8 @@ export class AiService {
     }
     const request: NoteGenerationRequest = {
       runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
       instruction: instruction,
       mode: 'create',
       sources: {
@@ -155,7 +166,7 @@ export class AiService {
       source: 'app',
       payload: { kind: 'text', text: sourceText },
       generation: request,
-    }, { persist: false, generationRepository: repository });
+    }, { persist: false, generationRepository: repository, cancellationToken: cancellationToken });
     if (!result.success || result.generation === undefined || result.data === undefined || result.generation.bestCheckpointId === undefined) {
       throw new Error(result.errorMessage ?? '草稿生成失败');
     }
@@ -186,6 +197,8 @@ export class AiService {
     }
     return {
       runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
       checkpointId: result.generation.bestCheckpointId,
       candidateHash: sourceFingerprint(JSON.stringify(candidate)),
       candidate: candidate,
@@ -205,7 +218,12 @@ export class AiService {
     noteId: string,
     instruction: string,
     sourceText: string,
+    cancellationToken?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
   ): Promise<NoteDraftReadyEvent> {
+    cancellationToken?.throwIfCancelled();
+    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
     if (noteId.trim().length === 0) {
       throw new Error('增量重生成需要明确 noteId');
     }
@@ -219,6 +237,8 @@ export class AiService {
     }
     const request: NoteGenerationRequest = {
       runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
       instruction: instruction,
       mode: 'regenerate',
       targetNoteId: noteId,
@@ -236,13 +256,15 @@ export class AiService {
       source: 'app',
       payload: { kind: 'text', text: sourceText },
       generation: request,
-    }, { persist: false, generationRepository: repository });
+    }, { persist: false, generationRepository: repository, cancellationToken: cancellationToken });
     if (!result.success || result.data === undefined || result.generation === undefined
       || result.generation.bestCheckpointId === undefined) {
       throw new Error(result.errorMessage ?? '增量重生成失败');
     }
     return {
       runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
       checkpointId: result.generation.bestCheckpointId,
       candidateHash: sourceFingerprint(JSON.stringify(result.data)),
       candidate: result.data,
@@ -317,6 +339,9 @@ export class AiService {
       recovery.run.instruction,
       conversationText,
       pendingSources,
+      undefined,
+      recovery.run.originSessionId,
+      recovery.run.parentConversationRunId,
       recovery.run.route,
     );
   }
@@ -324,6 +349,11 @@ export class AiService {
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     return await repository.listRecoverableRuns();
+  }
+
+  async cancelDraftsByParentRun(sessionId: string, parentConversationRunId: string): Promise<void> {
+    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    await repository.cancelIncompleteByParentRun(sessionId, parentConversationRunId);
   }
 
   async updateDraftCheckpoint(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<NoteGenerationCheckpoint> {
@@ -439,6 +469,8 @@ export class AiService {
     };
     return {
       runId: recovery.run.id,
+      originSessionId: recovery.run.originSessionId,
+      parentConversationRunId: recovery.run.parentConversationRunId,
       checkpointId: checkpoint.id,
       candidateHash: checkpoint.candidateHash,
       candidate: candidate,
@@ -449,6 +481,18 @@ export class AiService {
       pendingSourceIds: pendingSourceIds,
       incrementalInstruction: recovery.run.instruction,
     };
+  }
+
+  private static validateConversationOrigin(
+    originSessionId: string | undefined,
+    parentConversationRunId: string | undefined,
+  ): void {
+    if (originSessionId === undefined && parentConversationRunId === undefined) { return; }
+    if (originSessionId === undefined || parentConversationRunId === undefined) {
+      throw new Error('INCOMPLETE_CONVERSATION_DRAFT_ORIGIN');
+    }
+    SessionIdPolicy.requireValid(originSessionId);
+    ConversationRunIdPolicy.requireValid(parentConversationRunId);
   }
 
   // 内部: 调度 -> 校验 -> 入库

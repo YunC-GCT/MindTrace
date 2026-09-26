@@ -1,138 +1,363 @@
 import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
-import { ConversationWorkflowCallbacks } from '../workflows/conversation/ConversationTypes';
-import { ConversationProgressStep, ConversationRequest, ImageConversationRequest } from '../workflows/conversation/ConversationState';
+import {
+  ConversationMessageEvent,
+  ConversationWorkflowCallbacks,
+} from '../workflows/conversation/ConversationTypes';
+import {
+  ChatMessageOrigin,
+  ChatMessageOutcome,
+  ConversationProgressStep,
+  ConversationRequest,
+  ImageConversationRequest,
+} from '../workflows/conversation/ConversationState';
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { common } from '@kit.AbilityKit';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
-import type { StreamEvent } from 'common';
+import {
+  ConversationRunCoordinator,
+  ConversationRunRequest,
+  ConversationRunRequestKind,
+  ConversationRunStartResult,
+  ConversationRunTerminal,
+} from './ConversationRunCoordinator';
+import { ConversationRunRef } from './ConversationIdentity';
+import { CancellationToken } from 'common';
+
+type ConversationRunLifecycleOwner = 'facade' | 'workflow';
+type ConversationRunOperation<T> = (ref: ConversationRunRef) => Promise<T>;
 
 export interface AgentChatCallbacks {
-  addAiMsg: (content: string) => void;
-  addAiMsgEmpty: () => number;
-  appendAiMsg: (id: number, event: StreamEvent) => void;
-  replaceAiMsg: (id: number, content: string) => void;
-  finishAiMsg: (id: number) => void;
-  setBusy: (value: boolean) => void;
-  setStatusMeta: (meta: ChatStatusMeta | null) => void;
+addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin) => number;
+  addAiMsg: (ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome) => number;
+  addAiMsgEmpty: (ref: ConversationRunRef, origin: ChatMessageOrigin) => number;
+  updateAiMsg: (ref: ConversationRunRef, id: number, event: ConversationMessageEvent) => void;
+  finishAiMsg: (ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome) => void;
+  terminateAiRun: (ref: ConversationRunRef, outcome: ChatMessageOutcome) => void;
+  getUserMessageId: (ref: ConversationRunRef) => number;
+  commitHistory: (ref: ConversationRunRef) => Promise<boolean>;
+  reportDiagnostic: (ref: ConversationRunRef, diagnostic: string) => void;
+  /** Cancel only generation runs owned by the active conversation run. */
+  cancelDraftsByRun?: (sessionId: string, parentConversationRunId: string) => Promise<void>;
+  setBusy: (ref: ConversationRunRef, value: boolean) => void;
+  setStatusMeta: (ref: ConversationRunRef, meta: ChatStatusMeta | null) => void;
   getContext: () => common.UIAbilityContext;
-  getConversationText: (excludeLatestUser: boolean) => string;
-  getSessionId: () => string;
-  onDraftReady: (event: NoteDraftReadyEvent) => void;
+  getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean) => string;
+  onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent) => void;
+  onOcrBlank?: (ref: ConversationRunRef, imageUri: string) => void;
 }
 
-class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
+export class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   private readonly callbacks: AgentChatCallbacks;
   private readonly statusMachine: ChatStatusMachine = new ChatStatusMachine();
-  private activeRuns: number = 0;
-  private readonly serviceRef: AgentChatService;
-  constructor(callbacks: AgentChatCallbacks, serviceRef: AgentChatService) {
+  private readonly coordinator: ConversationRunCoordinator;
+  constructor(callbacks: AgentChatCallbacks, coordinator: ConversationRunCoordinator) {
     this.callbacks = callbacks;
-    this.serviceRef = serviceRef;
+    this.coordinator = coordinator;
   }
 
-  addAiMsg(content: string): void { this.callbacks.addAiMsg(content); }
-  addAiMsgEmpty(): number { return this.callbacks.addAiMsgEmpty(); }
-  appendAiMsg(id: number, event: StreamEvent): void {
-    this.callbacks.appendAiMsg(id, event);
-  }
-  replaceAiMsg(id: number, content: string): void {
-    this.callbacks.replaceAiMsg(id, content);
-  }
-  finishAiMsg(id: number): void { this.callbacks.finishAiMsg(id); }
-  onStart(): void {
-    this.activeRuns += 1;
-    this.serviceRef.notifyBusyChange(true);
-    this.callbacks.setBusy(true);
-  }
-  onProgress(step: ConversationProgressStep): void {
-    this.callbacks.setStatusMeta(this.statusMachine.advance(step));
-  }
-  onFinish(): void {
-    if (this.activeRuns <= 0) {
-      return;
+private accepts(ref: ConversationRunRef, event: string): boolean {
+    const accepted: boolean = this.coordinator.isCurrent(ref);
+    if (!accepted) {
+      console.warn('[ConversationRun] code=STALE_RUN_EVENT; event=' + event
+        + '; sessionId=' + ref.sessionId + '; runId=' + ref.runId);
     }
-    this.activeRuns -= 1;
-    if (this.activeRuns > 0) {
-      return;
+    return accepted;
+  }
+  addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number {
+    return this.accepts(ref, 'add-ai-message')
+      ? this.callbacks.addAiMsg(ref, content, origin ?? 'chat', outcome ?? 'completed')
+      : -1;
+  }
+  addAiMsgEmpty(ref: ConversationRunRef, origin: ChatMessageOrigin): number {
+    return this.accepts(ref, 'add-ai-placeholder') ? this.callbacks.addAiMsgEmpty(ref, origin) : -1;
+  }
+  updateAiMsg(ref: ConversationRunRef, id: number, event: ConversationMessageEvent): void {
+    if (this.accepts(ref, 'update-ai-message')) { this.callbacks.updateAiMsg(ref, id, event); }
+  }
+  finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void {
+    if (this.accepts(ref, 'finish-ai-message')) { this.callbacks.finishAiMsg(ref, id, outcome ?? 'completed'); }
+  }
+  onStart(ref: ConversationRunRef): void {
+    if (this.accepts(ref, 'start')) { this.callbacks.setBusy(ref, true); }
+  }
+  onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void {
+    if (this.accepts(ref, 'progress')) { this.callbacks.setStatusMeta(ref, this.statusMachine.advance(step)); }
+  }
+  onFinish(ref: ConversationRunRef): void {
+    if (this.accepts(ref, 'finish')) {
+      this.callbacks.setStatusMeta(ref, null);
+      this.callbacks.setBusy(ref, false);
     }
-    this.serviceRef.notifyBusyChange(false);
-    this.callbacks.setStatusMeta(null);
-    this.callbacks.setBusy(false);
+  }
+  isCurrentRun(ref: ConversationRunRef): boolean { return this.coordinator.isCurrent(ref); }
+  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined { return this.coordinator.cancellationToken(ref); }
+  registerCancellationHook(ref: ConversationRunRef, hook: () => void): () => void {
+    return this.coordinator.registerCancellationHook(ref, hook);
   }
   getContext(): common.UIAbilityContext { return this.callbacks.getContext(); }
-  getConversationText(excludeLatestUser: boolean): string {
-    return this.callbacks.getConversationText(excludeLatestUser);
+  getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string {
+    return this.accepts(ref, 'read-conversation') ? this.callbacks.getConversationText(ref, excludeLatestUser) : '';
   }
-  getSessionId(): string { return this.callbacks.getSessionId(); }
-  onDraftReady(event: NoteDraftReadyEvent): void { this.callbacks.onDraftReady(event); }
-  onOcrBlank?(imageUri: string): void { return; }
+  getUserMessageId(ref: ConversationRunRef): number {
+    return this.accepts(ref, 'read-user-message-id') ? this.callbacks.getUserMessageId(ref) : -1;
+  }
+  async commitHistory(ref: ConversationRunRef): Promise<boolean> {
+    return this.accepts(ref, 'commit-history') ? await this.callbacks.commitHistory(ref) : false;
+  }
+  reportDiagnostic(ref: ConversationRunRef, diagnostic: string): void {
+    if (this.accepts(ref, 'report-diagnostic')) { this.callbacks.reportDiagnostic(ref, diagnostic); }
+  }
+  onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void { if (this.accepts(ref, 'draft-ready')) { this.callbacks.onDraftReady(ref, event); } }
+  onOcrBlank?(ref: ConversationRunRef, imageUri: string): void {
+    if (this.accepts(ref, 'ocr-blank') && this.callbacks.onOcrBlank !== undefined) {
+      this.callbacks.onOcrBlank(ref, imageUri);
+    }
+  }
 }
 
 export class AgentChatService {
   private readonly workflow: ConversationWorkflow;
-  private busyRunCount: number = 0;
+  private readonly callbacks: AgentChatCallbacks;
   private adapter: ConversationWorkflowAdapter | null = null;
+  private readonly coordinator: ConversationRunCoordinator = new ConversationRunCoordinator();
+  private readonly inFlight: Map<string, Promise<void>> = new Map<string, Promise<void>>();
 
   constructor(callbacks: AgentChatCallbacks) {
-    this.adapter = new ConversationWorkflowAdapter(callbacks, this);
+    this.callbacks = callbacks;
+    this.adapter = new ConversationWorkflowAdapter(callbacks, this.coordinator);
     this.workflow = new ConversationWorkflow(this.adapter);
   }
 
-  notifyBusyChange(busy: boolean): void {
-    if (busy) {
-      this.busyRunCount += 1;
-    } else {
-      this.busyRunCount = Math.max(0, this.busyRunCount - 1);
-    }
-  }
-
-  async captureReply(imageUri: string, userText: string, route: NoteGenerationRoute = 'standard'): Promise<void> {
-    if (this.busyRunCount > 0) {
-      return;
-    }
+async captureReply(sessionId: string, imageUri: string, userText: string, route: NoteGenerationRoute = 'standard'): Promise<ConversationRunStartResult> {
     const request: ImageConversationRequest = {
       kind: 'image',
       imageUri: imageUri,
       userContent: userText,
       route: route,
     };
-    await this.workflow.run(request);
+    const admission: ConversationRunStartResult = this.admit(sessionId, request.kind);
+    if (!admission.accepted || admission.ref === undefined) {
+      console.warn('[ConversationRun] ' + admission.diagnostic + '; entry=image');
+      return admission;
+    }
+    if (this.callbacks.addUserMsg(admission.ref, userText.length > 0 ? userText : '[图片]', 'image') <= 0) {
+      this.coordinator.finish(admission.ref, 'cancelled');
+      return { accepted: false, diagnostic: 'code=USER_MESSAGE_REJECTED' };
+    }
+    await this.executeAcceptedOperation<void>(
+      admission.ref,
+      'workflow',
+      (ref: ConversationRunRef): Promise<void> => this.workflow.run(request, ref),
+    );
+    return admission;
   }
 
-  async realReplyStream(userContent: string, route: NoteGenerationRoute = 'standard'): Promise<void> {
-    if (this.busyRunCount > 0) {
-      return;
-    }
+async realReplyStream(sessionId: string, userContent: string, route: NoteGenerationRoute = 'standard'): Promise<ConversationRunStartResult> {
     const request: ConversationRequest = {
       kind: 'text',
       userContent: userContent,
       responseMode: 'stream',
       route: route,
     };
-    await this.workflow.run(request);
+    const admission: ConversationRunStartResult = this.admit(sessionId, request.kind);
+    if (!admission.accepted || admission.ref === undefined) {
+      console.warn('[ConversationRun] ' + admission.diagnostic + '; entry=text');
+      return admission;
+    }
+    if (this.callbacks.addUserMsg(admission.ref, userContent, 'chat') <= 0) {
+      this.coordinator.finish(admission.ref, 'cancelled');
+      return { accepted: false, diagnostic: 'code=USER_MESSAGE_REJECTED' };
+    }
+    await this.executeAcceptedOperation<void>(
+      admission.ref,
+      'workflow',
+      (ref: ConversationRunRef): Promise<void> => this.workflow.run(request, ref),
+    );
+    return admission;
   }
 
-  async confirmDraft(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
-    return this.workflow.confirmDraft(event, candidate);
+  isCurrentRun(ref: ConversationRunRef): boolean {
+    return this.coordinator.isCurrent(ref);
   }
 
-  async restoreDraft(runId: string): Promise<NoteDraftReadyEvent> { return await this.workflow.restoreDraft(runId); }
-  async retryDraft(runId: string): Promise<NoteDraftReadyEvent> { return await this.workflow.retryDraft(runId); }
-  async cancelDraft(runId: string): Promise<void> { await this.workflow.cancelDraft(runId); }
-  async regenerateNote(noteId: string, instruction: string): Promise<void> { await this.workflow.regenerateNote(noteId, instruction); }
-  async requestRegeneration(noteReference: string, noteIds: string[], instruction: string): Promise<void> { await this.workflow.requestRegeneration(noteReference, noteIds, instruction); }
+  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined {
+    return this.coordinator.cancellationToken(ref);
+  }
+
+  async cancelSessionRun(sessionId: string): Promise<void> {
+    const ref: ConversationRunRef | undefined = this.coordinator.currentRef(sessionId);
+    const operation: Promise<void> | undefined = this.inFlight.get(sessionId);
+    if (ref !== undefined) {
+      this.callbacks.terminateAiRun(ref, 'cancelled');
+      if (this.adapter !== null) { this.adapter.onFinish(ref); }
+      this.coordinator.cancel(ref);
+    }
+    let cancellationError: Error | null = null;
+    if (ref !== undefined && this.callbacks.cancelDraftsByRun !== undefined) {
+      try {
+        await this.callbacks.cancelDraftsByRun(sessionId, ref.runId);
+      } catch (error) {
+        cancellationError = AgentChatService.normalizeError(error);
+      }
+    }
+    if (operation !== undefined) {
+      try { await operation; } catch (_error) {}
+    }
+    if (cancellationError !== null) {
+      throw cancellationError;
+    }
+  }
+
+  cancelAllRuns(): void {
+    const refs: ConversationRunRef[] = this.coordinator.activeRefs();
+    for (const ref of refs) {
+      this.callbacks.terminateAiRun(ref, 'cancelled');
+      if (this.adapter !== null) {
+        this.adapter.onFinish(ref);
+      }
+      this.coordinator.cancel(ref);
+    }
+  }
+
+  private admit(sessionId: string, kind: ConversationRunRequestKind): ConversationRunStartResult {
+    const request: ConversationRunRequest = { kind: kind };
+    return this.coordinator.start(sessionId, request);
+  }
+
+  private async executeOperation<T>(
+    sessionId: string,
+    kind: ConversationRunRequestKind,
+    lifecycleOwner: ConversationRunLifecycleOwner,
+    operation: ConversationRunOperation<T>,
+  ): Promise<T> {
+    const admission: ConversationRunStartResult = this.admit(sessionId, kind);
+    if (!admission.accepted || admission.ref === undefined) {
+      throw new Error(admission.diagnostic);
+    }
+    return await this.executeAcceptedOperation<T>(admission.ref, lifecycleOwner, operation);
+  }
+
+  private async executeAcceptedOperation<T>(
+    ref: ConversationRunRef,
+    lifecycleOwner: ConversationRunLifecycleOwner,
+    operation: ConversationRunOperation<T>,
+  ): Promise<T> {
+    if (lifecycleOwner === 'facade' && this.adapter !== null) {
+      this.adapter.onStart(ref);
+    }
+    let completion: Promise<void>;
+    const operationPromise: Promise<T> = (async (): Promise<T> => {
+      try {
+        const result: T = await operation(ref);
+        this.finishOperation(ref, 'completed', lifecycleOwner);
+        return result;
+      } catch (error) {
+        this.callbacks.terminateAiRun(ref, 'failed');
+        this.finishOperation(ref, 'failed', lifecycleOwner);
+        throw new Error(AgentChatService.normalizeError(error).message);
+      }
+    })();
+    completion = operationPromise.then((): void => {}, (): void => {});
+    this.inFlight.set(ref.sessionId, completion);
+    try {
+      return await operationPromise;
+    } finally {
+      if (this.inFlight.get(ref.sessionId) === completion) {
+        this.inFlight.delete(ref.sessionId);
+      }
+    }
+  }
+
+  private finishOperation(
+    ref: ConversationRunRef,
+    terminal: ConversationRunTerminal,
+    lifecycleOwner: ConversationRunLifecycleOwner,
+  ): void {
+    if (lifecycleOwner === 'facade' && this.adapter !== null) {
+      this.adapter.onFinish(ref);
+    }
+    this.coordinator.finish(ref, terminal);
+  }
+
+  async confirmDraft(sessionId: string, event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
+    return await this.executeOperation<KnowledgeUnit>(
+      sessionId,
+      'confirm-draft',
+      'facade',
+      (ref: ConversationRunRef): Promise<KnowledgeUnit> => this.workflow.confirmDraft(ref, event, candidate),
+    );
+  }
+
+  async restoreDraft(sessionId: string, runId: string): Promise<NoteDraftReadyEvent> {
+    return await this.executeOperation<NoteDraftReadyEvent>(
+      sessionId,
+      'restore-draft',
+      'facade',
+      (ref: ConversationRunRef): Promise<NoteDraftReadyEvent> => this.workflow.restoreDraft(ref, runId),
+    );
+  }
+
+  async retryDraft(sessionId: string, runId: string): Promise<NoteDraftReadyEvent> {
+    return await this.executeOperation<NoteDraftReadyEvent>(
+      sessionId,
+      'retry-draft',
+      'facade',
+      (ref: ConversationRunRef): Promise<NoteDraftReadyEvent> => this.workflow.retryDraft(ref, runId),
+    );
+  }
+
+  async cancelDraft(sessionId: string, runId: string): Promise<void> {
+    await this.executeOperation<void>(
+      sessionId,
+      'cancel-draft',
+      'facade',
+      (ref: ConversationRunRef): Promise<void> => this.workflow.cancelDraft(ref, runId),
+    );
+  }
+
+  async regenerateNote(sessionId: string, noteId: string, instruction: string): Promise<void> {
+    await this.executeOperation<void>(
+      sessionId,
+      'regenerate',
+      'workflow',
+      (ref: ConversationRunRef): Promise<void> => this.workflow.regenerateNote(ref, noteId, instruction),
+    );
+  }
+
+  async requestRegeneration(sessionId: string, noteReference: string, noteIds: string[], instruction: string): Promise<void> {
+    await this.executeOperation<void>(
+      sessionId,
+      'regenerate',
+      'workflow',
+      (ref: ConversationRunRef): Promise<void> => this.workflow.requestRegeneration(
+        ref,
+        noteReference,
+        noteIds,
+        instruction,
+      ),
+    );
+  }
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> { return await this.workflow.listRecoverableDrafts(); }
 
-  async checkAndRestoreDrafts(): Promise<NoteDraftReadyEvent | null> {
+  async checkAndRestoreDrafts(sessionId: string): Promise<NoteDraftReadyEvent | null> {
     const drafts: NoteGenerationRun[] = await this.workflow.listRecoverableDrafts();
-    if (drafts.length === 0) {
-      return null;
-    }
-    const latest: NoteGenerationRun = drafts[0];
-    if (latest.status === 'ready-preview' || latest.status === 'running') {
-      return await this.workflow.restoreDraft(latest.id);
+    for (const draft of drafts) {
+      if (draft.originSessionId === sessionId
+        && (draft.status === 'ready-preview' || draft.status === 'running')) {
+        return await this.restoreDraft(sessionId, draft.id);
+      }
     }
     return null;
+  }
+
+  private static normalizeError(error: Object): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+    if (typeof error === 'string' && error.length > 0) {
+      return new Error(error);
+    }
+    return new Error('UNKNOWN_CONVERSATION_OPERATION_ERROR');
   }
 }

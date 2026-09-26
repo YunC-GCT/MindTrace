@@ -13,7 +13,7 @@ function readRepoFile(path) {
 
 test('database schema creates kg_edge as an empty relation table', () => {
   const source = readRepoFile('common/src/main/ets/DatabaseHelper.ets');
-  assert.match(source, /const DB_SCHEMA_VERSION: number = 10;/);
+  assert.match(source, /const DB_SCHEMA_VERSION: number = 12;/);
   assert.match(source, /CREATE TABLE IF NOT EXISTS kg_edge/);
   assert.match(source, /from_unit_id TEXT NOT NULL/);
   assert.match(source, /to_unit_id TEXT NOT NULL/);

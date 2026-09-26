@@ -19,7 +19,12 @@ import {
   chatItemKey,
   chatMessageReasoning,
   chatMessageRunParts,
+  copyChatMsgForMemory,
+  copyChatMsgForPersistence,
   finishChatMsg,
+  normalizeDecodedChatMessage,
+  transitionChatMessageOutcome,
+  usableAsContext,
   replaceChatMsgContent,
 } from '../main/ets/overlays/AgentFloatWindow/chat/ChatModels';
 import {
@@ -70,6 +75,75 @@ function finishedMessage(content: string, reasoning: string): ChatMsg {
 }
 
 export default function agentChatStreamEventsTest(): void {
+  describe('ChatModels.issue151_message_metadata', () => {
+    it('should preserve origin outcome and run correlation in both copy contracts', 0, () => {
+      const source: ChatMsg = {
+        id: 9, role: 'ai', content: 'same body', ts: 10, streaming: false,
+        origin: 'image', outcome: 'completed', runId: 'run-9',
+      };
+      const memory: ChatMsg = copyChatMsgForMemory(source);
+      const persisted: ChatMsg = copyChatMsgForPersistence(source);
+      expect(memory.origin).assertEqual('image');
+      expect(memory.outcome).assertEqual('completed');
+      expect(memory.runId).assertEqual('run-9');
+      expect(persisted.origin).assertEqual('image');
+      expect(persisted.outcome).assertEqual('completed');
+      expect(persisted.runId).assertEqual('run-9');
+    });
+
+    it('should derive context eligibility from outcome instead of visible text', 0, () => {
+      const completed: ChatMsg = {
+        id: 10, role: 'ai', content: 'same body', ts: 10, streaming: false,
+        origin: 'chat', outcome: 'completed', runId: 'run-10',
+      };
+      const interrupted: ChatMsg = {
+        id: 11, role: 'ai', content: 'same body', ts: 10, streaming: false,
+        origin: 'chat', outcome: 'interrupted', runId: 'run-11',
+      };
+      expect(usableAsContext(completed)).assertTrue();
+      expect(usableAsContext(interrupted)).assertFalse();
+    });
+
+    it('should allow one terminal transition and reject every later transition', 0, () => {
+      const streaming: ChatMsg = {
+        id: 12, role: 'ai', content: 'partial', ts: 10, streaming: true,
+        origin: 'chat', runId: 'run-12',
+      };
+      const completed: ChatMsg = transitionChatMessageOutcome(streaming, 'completed');
+      expect(completed.streaming).assertFalse();
+      expect(completed.outcome).assertEqual('completed');
+      const duplicate: ChatMsg = transitionChatMessageOutcome(completed, 'completed');
+      expect(duplicate.outcome).assertEqual('completed');
+      let rejected: boolean = false;
+      try {
+        transitionChatMessageOutcome(completed, 'failed');
+      } catch (error) {
+        rejected = true;
+      }
+      expect(rejected).assertTrue();
+    });
+
+    it('should ignore deltas that arrive after a terminal outcome', 0, () => {
+      const cancelled: ChatMsg = {
+        id: 14, role: 'ai', content: 'partial', ts: 10, streaming: false,
+        origin: 'chat', outcome: 'cancelled', runId: 'r14',
+      };
+      const lateDelta: StreamEvent = { type: 'text', delta: 'late-finish' };
+      const unchanged: ChatMsg = applyStreamEventToChatMsg(cancelled, lateDelta);
+      expect(unchanged.content).assertEqual('partial');
+      expect(unchanged.outcome).assertEqual('cancelled');
+    });
+
+    it('should treat legacy unfinished messages as interrupted', 0, () => {
+      const legacy: ChatMsg = { id: 13, role: 'ai', content: 'partial', ts: 10, streaming: true };
+      const copied: ChatMsg = normalizeDecodedChatMessage(legacy);
+      expect(copied.streaming).assertFalse();
+      expect(copied.origin).assertEqual('legacy');
+      expect(copied.outcome).assertEqual('interrupted');
+      expect(usableAsContext(copied)).assertFalse();
+    });
+  });
+
   describe('AgentChatStreamEvents.issue111_test', () => {
     it('should accumulate thinking events into reasoning only', 0, () => {
       const event: StreamEvent = { type: 'thinking', delta: '推理' };

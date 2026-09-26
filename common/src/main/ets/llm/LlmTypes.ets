@@ -9,6 +9,8 @@
 //   - 无 C 风格 for 循环
 //   - 无 Record<string, T> 类型断言
 
+import type { CancellationToken } from './CancellationToken';
+
 // ==================== ChatMessage (单轮对话消息)====================
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';  // 'tool': 工具回喂消息 (spec 014)
@@ -170,6 +172,7 @@ export interface LlmCallOptions {
   responseFormat?: LlmResponseFormat;
   // 流式专用
   enableThinking?: boolean;    // 是否启用思考模式 (DeepSeek thinking: {type: "enabled"})
+  cancellationToken?: CancellationToken;
 }
 
 // ==================== OpenAI 兼容 tool-calling wire 类型 (spec 014 / ADR-0012)====================
@@ -212,6 +215,7 @@ export interface LlmCallRequest {
   enableThinking?: boolean;
   tools?: LlmToolDefinition[];    // 透传 (spec 014)
   tool_choice?: string;           // 透传, Phase 1 仅 'auto' | 'none'
+  cancellationToken?: CancellationToken;
 }
 
 // ==================== LlmCallResult (统一调用出参, spec 005 / ADR-0004)====================

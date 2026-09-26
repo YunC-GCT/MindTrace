@@ -10,6 +10,7 @@
 
 import { ChatMessage, JSON_ONLY_RULES, LATEX_GENERATION_RULES, LlmConfig, LlmGuard } from 'common';
 import type { LlmGuardValidationResult } from 'common';
+import type { CancellationToken } from 'common';
 
 export type TextIntent = 'note_generation' | 'chat';
 
@@ -30,6 +31,11 @@ export class IntentClassifier {
 
   // ===== 意图判定 (关键词前置 → 远程 LLM 兜底, 失败回退 chat) =====
   public async classify(userText: string): Promise<TextIntent> {
+    return await this.classifyWithCancellation(userText, undefined);
+  }
+
+  public async classifyWithCancellation(userText: string, cancellationToken?: CancellationToken): Promise<TextIntent> {
+    cancellationToken?.throwIfCancelled();
     const normalized: string = userText.trim();
     if (normalized.length === 0) { return 'chat'; }
     if (this.hasNoteGenerationDenyIntent(normalized)) { return 'chat'; }
@@ -46,9 +52,11 @@ export class IntentClassifier {
         timeoutMs: 30000,
         responseFormat: { type: 'json_object' },
         label: 'text intent classification',
+        cancellationToken: cancellationToken,
       }, (json: Record<string, Object>): LlmGuardValidationResult => this.validateTextIntentJson(json));
       return this.parseTextIntent(result.raw);
     } catch (e) {
+      cancellationToken?.throwIfCancelled();
       console.warn('[IntentClassifier] text intent classify failed: ' + IntentClassifier.errorMessage(e));
       return 'chat';
     }

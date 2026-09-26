@@ -15,7 +15,7 @@
  */
 
 import { ChatSession } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { sid } from '../overlays/AgentFloatWindow/chat/ChatSession';
+import { sessionIdPolicy } from './ConversationIdentity';
 
 /**
  * 会话创建器 (静态方法, 无状态)
@@ -29,7 +29,7 @@ export class SessionCreator {
   static newSession(existingCount: number): ChatSession {
     const nextIndex: number = existingCount + 1;
     return {
-      id: sid(),
+      id: sessionIdPolicy.create(),
       name: '会话 ' + nextIndex.toString(),
       messages: [],
     };

@@ -1,14 +1,30 @@
 export type ChatRole = 'system' | 'user' | 'assistant';
 
+export interface ChatMessageWriteRequest {
+  sessionId: string;
+  role: ChatRole;
+  content: string;
+  messageKey: string;
+  sequence: number;
+  runId?: string;
+  origin: string;
+  outcome?: string;
+}
+
 export type AgentMemoryType = 'pending_note' | 'summary' | 'ocr_result' | 'profile';
 
 export type LearnerLevel = 'beginner' | 'novice' | 'advanced';
 
 export interface ChatMessageRecord {
   id: string;
+  messageKey: string;
   sessionId: string;
   role: ChatRole;
   content: string;
+  runId?: string;
+  sequence: number;
+  origin: string;
+  outcome: string;
   createdAt: number;
 }
 

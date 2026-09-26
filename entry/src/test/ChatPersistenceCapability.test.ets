@@ -28,9 +28,10 @@ import {
   resetChatFilesDirSeamForTest,
   setChatFilesDirSeamStoreForTest,
 } from '../main/ets/services/ChatFilesDirSeam';
+import { CHAT_HISTORY_SCHEMA_VERSION } from '../main/ets/services/ChatHistorySchema';
 
 const SAMPLE_SNAPSHOT: SnapshotTaskInput = {
-  schemaVersion: 1,
+  schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
   sessionsJson: '[{"id":"s1","name":"数学","messages":[{"id":1,"role":"ai","content":"答案","ts":1,"streaming":false}]}]',
 };
 

@@ -20,6 +20,10 @@
 import { TextIntent } from '../../services/IntentClassifier';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { ClassificationResult, NoteGenerationRoute } from 'common';
+import { ConversationRunRef } from '../../services/ConversationIdentity';
+
+export type ChatMessageOrigin = 'chat' | 'image' | 'note-regeneration' | 'system' | 'legacy';
+export type ChatMessageOutcome = 'completed' | 'interrupted' | 'cancelled' | 'failed';
 
 export type ConversationStep =
   | 'START'
@@ -76,7 +80,7 @@ export type ConversationRequest = ImageConversationRequest | TextConversationReq
 
 export interface ConversationState {
   request: ConversationRequest;
-  sessionId: string;
+  runRef: ConversationRunRef;
   currentStep: ConversationStep;
   intent?: TextIntent;
   memoryContext?: string;

@@ -7,7 +7,9 @@ import { TypeClassifier } from '../../agents/TypeClassifier';
 export class ClassifyNodeFactory {
   static create(classifier: TypeClassifier): CaptureNode {
     return async (input: AgentState): Promise<CaptureNodeResult> => {
+      input.cancellationToken?.throwIfCancelled();
       const classification: ClassificationResult = await classifier.classifyText(input.captureText);
+      input.cancellationToken?.throwIfCancelled();
       const next: AgentState = copyAgentState(input);
       next.classification = classification;
       return { state: next };

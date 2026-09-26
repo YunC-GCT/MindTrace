@@ -59,6 +59,7 @@ export class LlmClient {
 
   // 唯一公共入口 (ADR-0004 / spec 005): request.stream 选择 JSON / SSE 流式适配路径
   public async call(request: LlmCallRequest): Promise<LlmCallResult> {
+    request.cancellationToken?.throwIfCancelled();
     if (request.stream === true) {
       if (request.onDelta === undefined) {
         throw new LlmError('call: stream=true requires onDelta callback', 'STREAM_FAILED');
@@ -130,6 +131,9 @@ export class LlmClient {
     console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' stream=false');
     const httpRequest = http.createHttp();
     let response: http.HttpResponse;
+    const removeCancellation: (() => void) | undefined = request.cancellationToken?.onCancel((): void => {
+      httpRequest.destroy();
+    });
     try {
       response = await httpRequest.request(endpointUrl, {
         method: http.RequestMethod.POST,
@@ -144,8 +148,12 @@ export class LlmClient {
       });
     } catch (e) {
       httpRequest.destroy();
+      removeCancellation?.();
+      request.cancellationToken?.throwIfCancelled();
       throw new LlmError(`LLM network error: ${(e as Error).message ?? String(e)}`, 'NETWORK_ERROR');
     }
+    removeCancellation?.();
+    request.cancellationToken?.throwIfCancelled();
     httpRequest.destroy();
 
     // 4. 状态码校验
@@ -291,6 +299,7 @@ export class LlmClient {
       let textEvents: number = 0;
       let textChars: number = 0;
       const trackedEventSink: LlmStreamCallback = (event: StreamEvent): void => {
+        request.cancellationToken?.throwIfCancelled();
         if (event.type === 'thinking') {
           thinkingEvents += 1;
           thinkingChars += event.delta.length;
@@ -302,9 +311,15 @@ export class LlmClient {
       };
 
       // 超时保护 (2 分钟总超时)
-      const timer: number = setTimeout((): void => {
+      let timer: number = 0;
+      let firstByteTimer: number = 0;
+      let removeCancellation: (() => void) | undefined = undefined;
+      timer = setTimeout((): void => {
         if (!streamEnded) {
           streamEnded = true;
+          clearTimeout(timer);
+          clearTimeout(firstByteTimer);
+          removeCancellation?.();
           httpRequest.destroy();
           console.warn('[LlmClient] stream timeout after ' + timeoutMs.toString() + 'ms');
           reject(new LlmError('LLM stream timed out after ' + timeoutMs.toString() + 'ms', 'TIMEOUT') as Error);
@@ -313,15 +328,27 @@ export class LlmClient {
 
       // 首字节超时: 30 秒内无数据则降级(2026-09-07 PR1j: deepseek-v4-pro 思考模式
       // thinking_content 阶段可能 10-20 秒才发出第一个 chunk,8 秒不够)
-      const firstByteTimer: number = setTimeout((): void => {
+      firstByteTimer = setTimeout((): void => {
         if (!streamEnded && !dataReceived) {
           streamEnded = true;
           clearTimeout(timer);
+          removeCancellation?.();
           httpRequest.destroy();
           console.warn('[LlmClient] no data received within 30s, triggering fallback');
           reject(new LlmError('LLM stream no data', 'STREAM_FAILED') as Error);
         }
       }, 30000);
+
+      removeCancellation = request.cancellationToken?.onCancel((): void => {
+        if (streamEnded) {
+          return;
+        }
+        streamEnded = true;
+        clearTimeout(timer);
+        clearTimeout(firstByteTimer);
+        httpRequest.destroy();
+        reject(new Error('CONVERSATION_CANCELLED'));
+      });
 
       // 订阅流式数据事件
       httpRequest.on('dataReceive', (chunk: ArrayBuffer): void => {
@@ -335,6 +362,16 @@ export class LlmClient {
           sseLineBuffer += text;
           sseLineBuffer = this.processSseBuffer(sseLineBuffer, trackedEventSink);
         } catch (e) {
+          if (request.cancellationToken?.isCancelled() === true) {
+            if (!streamEnded) {
+              streamEnded = true;
+              clearTimeout(timer);
+              clearTimeout(firstByteTimer);
+              httpRequest.destroy();
+              reject(new Error('CONVERSATION_CANCELLED'));
+            }
+            return;
+          }
           console.warn('[LlmClient] dataReceive error: ' + ((e as Error).message ?? String(e)));
         }
       });
@@ -347,8 +384,10 @@ export class LlmClient {
         streamEnded = true;
         clearTimeout(timer);
         clearTimeout(firstByteTimer);
+        removeCancellation?.();
         // 处理 buffer 中剩余数据
         if (sseLineBuffer.trim().length > 0) {
+          request.cancellationToken?.throwIfCancelled();
           this.processSseBufferFinal(sseLineBuffer, trackedEventSink);
         }
 
@@ -382,6 +421,7 @@ export class LlmClient {
             streamEnded = true;
             clearTimeout(timer);
             clearTimeout(firstByteTimer);
+            removeCancellation?.();
             httpRequest.destroy();
             reject(new LlmError(
               'LLM stream request failed: ' + err.message,
@@ -395,6 +435,8 @@ export class LlmClient {
           if (!streamEnded) {
             streamEnded = true;
             clearTimeout(timer);
+            clearTimeout(firstByteTimer);
+            removeCancellation?.();
             httpRequest.destroy();
             reject(new LlmError(
               'LLM stream API error ' + responseCode.toString(),

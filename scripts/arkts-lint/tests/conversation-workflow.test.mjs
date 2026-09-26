@@ -30,8 +30,14 @@ test('Conversation workflow has independent typed state and shared graph runtime
   assert.match(workflow, /replyService\.complete\(/);
   assert.match(workflow, /replyService\.stream\(/);
   assert.match(workflow, /generateNoteDraft\(/);
+  assert.match(state, /runRef: ConversationRunRef/);
+  assert.doesNotMatch(state, /\n\s*sessionId: string;/);
+  assert.doesNotMatch(state, /\n\s*runId: string;/);
+  assert.match(workflowTypes, /isCurrentRun\(ref: ConversationRunRef\): boolean/);
+  assert.match(workflow, /if \(!this\.cbs\.isCurrentRun\(ref\)\) \{ return; \}/);
+  assert.doesNotMatch(workflowTypes, /getSessionId/);
   assert.doesNotMatch(workflow, /new LlmClient|new LlmGuard|new ContentProtocol/);
-  assert.equal((workflow.match(/this\.cbs\.onFinish\(\)/g) || []).length, 1);
+  assert.equal((workflow.match(/this\.cbs\.onFinish\(runRef\)/g) || []).length, 1);
   assert.match(replyService, /class ReplyService/);
 });
 
@@ -45,9 +51,13 @@ test('AgentChatService exposes only the active image and streaming text run entr
   // Assert the ownership boundary directly instead of enforcing a line cap.
   assert.match(facade, /this\.workflow = new ConversationWorkflow\(this\.adapter\)/);
   assert.doesNotMatch(facade, /new LlmClient|new AiService|new AgentMemoryService/);
-  assert.match(facade, /private activeRuns: number = 0/);
-  assert.match(facade, /this\.activeRuns \+= 1/);
-  assert.match(facade, /this\.activeRuns -= 1/);
+  assert.match(facade, /private readonly coordinator: ConversationRunCoordinator/);
+  assert.match(facade, /private async executeAcceptedOperation<T>/);
+  assert.match(facade, /return this\.coordinator\.start\(sessionId, request\)/);
+  // Catch count is an implementation detail; keep the contract focused on
+  // typed error normalization and the absence of unsafe serialization.
+  assert.match(facade, /catch \(error\)/);
+  assert.doesNotMatch(facade, /JSON\.stringify\(error\)/);
 });
 
 test('Conversation note generation delegates to the canonical Capture entry', () => {
@@ -107,6 +117,18 @@ test('Conversation workflow hides DNS and timeout details behind a stable networ
 test('Conversation workflow finishes the streaming placeholder when the request fails', () => {
   assert.match(workflow, /let streamMsgId: number \| undefined = undefined/);
   assert.match(workflow, /streamMsgId = msgId/);
-  assert.match(workflow, /if \(streamMsgId !== undefined\) \{\s*await this\.appendAssistantReply\(sessionId, displayError, streamMsgId\)/);
-  assert.match(workflow, /\} else \{\s*await this\.addAiMessage\(sessionId, displayError\)/);
+  assert.match(workflow, /if \(streamMsgId !== undefined\) \{\s*await this\.appendAssistantReply\(ref, displayError, streamMsgId, this\.originFor\(ref\), 'failed'\)/);
+  assert.match(workflow, /\} else \{\s*await this\.addAiMessage\(ref, displayError, this\.originFor\(ref\), 'failed'\)/);
+});
+
+test('Conversation workflow normalizes streamed content through one message event sink', () => {
+  assert.match(workflowTypes, /export type ConversationMessageEvent/);
+  assert.match(
+    workflowTypes,
+    /updateAiMsg\(ref: ConversationRunRef, id: number, event: ConversationMessageEvent\): void/,
+  );
+  assert.doesNotMatch(workflowTypes, /replaceAiMsg/);
+  assert.doesNotMatch(workflowTypes, /appendAiMsg/);
+  assert.match(workflow, /kind: 'replace-content', content: displayAnswer/);
+  assert.doesNotMatch(workflow, /this\.cbs\.replaceAiMsg/);
 });

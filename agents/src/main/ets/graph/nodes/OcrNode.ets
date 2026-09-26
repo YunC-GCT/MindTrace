@@ -19,7 +19,9 @@ export class OcrNodeFactory {
         failed.error = error;
         return { state: failed };
       }
+      input.cancellationToken?.throwIfCancelled();
       const recognized: TypeClassifierTextResult = await classifier.recognizeText(input.payload);
+      input.cancellationToken?.throwIfCancelled();
       const next: AgentState = copyAgentState(input);
       next.captureText = recognized.text;
       return { state: next };
