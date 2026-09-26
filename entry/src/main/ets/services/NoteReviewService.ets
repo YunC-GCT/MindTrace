@@ -134,11 +134,11 @@ export class NoteReviewService {
       return NoteReviewService.nonePlan(userContent);
     }
     const topicSet: NoteReviewTopicSet = this.extractTopics(userContent, intent);
-    if (topicSet.topics.length === 0) {
-      return this.terminal(intent, userContent, 'insufficient', 'ambiguous-topic', [], '请补充要查询的笔记主题，例如“根据我的笔记解释极限”。');
-    }
     if (this.hasAmbiguousPronounOnly(userContent, topicSet.topics)) {
       return this.terminal(intent, userContent, 'insufficient', 'ambiguous-pronoun', [], '这里的指代不够明确，请补充具体笔记主题。');
+    }
+    if (topicSet.topics.length === 0) {
+      return this.terminal(intent, userContent, 'insufficient', 'ambiguous-topic', [], '请补充要查询的笔记主题，例如“根据我的笔记解释极限”。');
     }
     if (intent === 'compare') {
       return await this.planCompare(userContent, topicSet);
@@ -230,6 +230,10 @@ export class NoteReviewService {
   }
 
   private async planPrerequisite(userContent: string, topicSet: NoteReviewTopicSet): Promise<NoteReviewPlan> {
+    const normalizedTopic: string = topicSet.topics[0].replace(/前$/, '').trim();
+    if (normalizedTopic.length > 0) {
+      topicSet.topics[0] = normalizedTopic;
+    }
     const context: NoteEvidenceContext = await this.safeBuild(topicSet.topics[0], 4, 'prerequisite-incoming');
     if (context.degraded) {
       return this.unavailable('prerequisite', userContent, context.reason);

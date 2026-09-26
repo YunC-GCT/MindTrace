@@ -215,20 +215,6 @@ export class NoteEvidenceService {
     const dao: KnowledgeRelationDao = new KnowledgeRelationDao(store);
     const limits: GraphExpansionLimits = { maxDepth: maxDepth };
     const expansion: GraphExpansion = await dao.expandAcceptedNeighborhood(seeds, limits);
-    const relationSeen: string[] = [];
-    for (const edge of expansion.edges) {
-      if (relationSeen.indexOf(edge.id) >= 0) {
-        continue;
-      }
-      relationSeen.push(edge.id);
-      relations.push({
-        edgeId: edge.id,
-        fromNoteId: edge.fromUnitId,
-        toNoteId: edge.toUnitId,
-        relationType: edge.relationType === 'prerequisite' ? 'prerequisite' : 'related',
-        reason: edge.reason,
-      });
-    }
     const known: string[] = [];
     for (const citation of citations) {
       NoteEvidenceService.addUnique(known, citation.noteId);
@@ -239,22 +225,43 @@ export class NoteEvidenceService {
         NoteEvidenceService.addUnique(missing, node.unitId);
       }
     }
-    if (missing.length === 0) {
-      return;
+    if (missing.length > 0) {
+      const rows: NoteEvidenceRow[] = await this.queryLiveRows(store, missing);
+      for (const row of rows) {
+        citations.push({
+          noteId: row.noteId,
+          version: row.version,
+          title: row.title,
+          excerpt: NoteEvidenceService.buildExcerpt(row.content, row.summary),
+          role: 'related',
+          score: 0,
+          matchedFields: [],
+          subject: row.subject,
+          chapter: row.chapter,
+        });
+      }
     }
-    const rows: NoteEvidenceRow[] = await this.queryLiveRows(store, missing);
-    for (const row of rows) {
-      citations.push({
-        noteId: row.noteId,
-        version: row.version,
-        title: row.title,
-        excerpt: NoteEvidenceService.buildExcerpt(row.content, row.summary),
-        role: NoteEvidenceService.roleFor(row.noteId, relations),
-        score: 0,
-        matchedFields: [],
-        subject: row.subject,
-        chapter: row.chapter,
-      });
+    const relationSeen: string[] = [];
+    for (const edge of expansion.edges) {
+      if (relationSeen.indexOf(edge.id) >= 0) {
+        continue;
+      }
+      if (NoteEvidenceService.containsNoteId(citations, edge.fromUnitId)
+        && NoteEvidenceService.containsNoteId(citations, edge.toUnitId)) {
+        relationSeen.push(edge.id);
+        relations.push({
+          edgeId: edge.id,
+          fromNoteId: edge.fromUnitId,
+          toNoteId: edge.toUnitId,
+          relationType: edge.relationType === 'prerequisite' ? 'prerequisite' : 'related',
+          reason: edge.reason,
+        });
+      }
+    }
+    for (const citation of citations) {
+      if (citation.role !== 'hit') {
+        citation.role = NoteEvidenceService.roleFor(citation.noteId, relations);
+      }
     }
   }
 
@@ -514,6 +521,15 @@ export class NoteEvidenceService {
     if (value.length > 0 && target.indexOf(value) < 0) {
       target.push(value);
     }
+  }
+
+  private static containsNoteId(citations: NoteEvidenceCitation[], noteId: string): boolean {
+    for (const citation of citations) {
+      if (citation.noteId === noteId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static addUniqueRef(target: CitationVersionRef[], noteId: string, version: number): void {
