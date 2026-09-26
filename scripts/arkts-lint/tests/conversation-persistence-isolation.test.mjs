@@ -42,6 +42,22 @@ test('conversation note runs persist origin and deletion includes cancelled unco
   assert.doesNotMatch(generation, /run\.status !== 'committed' && run\.status !== 'cancelled'/);
 });
 
+test('completed note-generation runs retain conversation ownership metadata', () => {
+  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+  const start = dispatcher.indexOf('private completedRun(');
+  assert.notEqual(start, -1);
+  const completedRun = dispatcher.slice(start, start + 900);
+  assert.match(completedRun, /originSessionId: run\.originSessionId,/);
+  assert.match(completedRun, /parentConversationRunId: run\.parentConversationRunId,/);
+});
+
+test('confirming a legacy detached run keeps the already-validated in-memory owner', () => {
+  assert.match(
+    workflow,
+    /const persistedEvent: NoteDraftReadyEvent = await service\.restoreDraft\(event\.runId\);[\s\S]*?if \(persistedEvent\.originSessionId !== undefined\) \{\s*this\.requireDraftOwnership\(ref, persistedEvent\);\s*\}/,
+  );
+});
+
 test('conversation cancellation stays scoped to the parent run and recovery includes interrupted runs', () => {
   const service = read('entry/src/main/ets/services/AgentChatService.ets');
   const aiService = read('entry/src/main/ets/services/AiService.ets');
