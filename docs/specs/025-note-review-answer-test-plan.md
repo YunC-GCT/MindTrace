@@ -1,6 +1,6 @@
 # 笔记可追溯复习回答测试方案（2026-09-26）
 
-对应规格：[note-review-answer-2026-09-26.md](note-review-answer-2026-09-26.md)。此文件不维护进度；所有结果由唯一主计划登记。
+对应规格：[024-note-review-answer.md](024-note-review-answer.md)。此文件不维护进度；所有结果由唯一主计划登记。
 
 ## 执行矩阵
 
