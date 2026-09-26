@@ -652,32 +652,37 @@ export class NoteEvidenceStreamFilter {
   }
 
   static readCitationRef(raw: string): CitationVersionRef {
-    let noteEnd: number = raw.length;
-    for (let index = 0; index < raw.length; index += 1) {
-      const ch: string = raw.charAt(index);
-      if (ch === ' ' || ch === ',' || ch === '|' || ch === '"' || ch === '\'') {
-        noteEnd = index;
+    const normalized: string = raw.trim();
+    let separator: number = -1;
+    for (let index = 0; index < normalized.length; index += 1) {
+      const ch: string = normalized.charAt(index);
+      if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+        separator = index;
         break;
       }
     }
-    const noteId: string = raw.substring(0, noteEnd).trim();
-    let version: number = 0;
+    if (separator <= 0) {
+      return { noteId: '', version: 0 };
+    }
+    const noteId: string = normalized.substring(0, separator);
+    const versionPart: string = normalized.substring(separator).trim();
     const marker: string = 'version=';
-    const versionIndex: number = raw.indexOf(marker);
-    if (versionIndex >= 0) {
-      const start: number = versionIndex + marker.length;
-      let end: number = raw.length;
-      for (let index = start; index < raw.length; index += 1) {
-        const ch: string = raw.charAt(index);
-        if (ch < '0' || ch > '9') {
-          end = index;
-          break;
-        }
+    if (!versionPart.startsWith(marker)) {
+      return { noteId: noteId, version: 0 };
+    }
+    const digits: string = versionPart.substring(marker.length);
+    if (digits.length === 0) {
+      return { noteId: noteId, version: 0 };
+    }
+    for (let index = 0; index < digits.length; index += 1) {
+      const ch: string = digits.charAt(index);
+      if (ch < '0' || ch > '9') {
+        return { noteId: noteId, version: 0 };
       }
-      version = Number(raw.substring(start, end));
-      if (Number.isNaN(version)) {
-        version = 0;
-      }
+    }
+    const version: number = Number(digits);
+    if (Number.isNaN(version) || version <= 0) {
+      return { noteId: noteId, version: 0 };
     }
     return { noteId: noteId, version: version };
   }

@@ -105,4 +105,3 @@ export class NoteReviewSourceService implements NoteReviewSourceResolver {
     };
   }
 }
-

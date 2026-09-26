@@ -238,21 +238,21 @@ export class KnowledgeRelationDao {
         if (edgeSeen.has(edge.id)) {
           continue;
         }
-        if (liveCandidates.indexOf(edge.fromUnitId) < 0) {
-          continue;
-        }
-        if (!visited.has(edge.fromUnitId)) {
-          if (nodes.length >= nodeLimit) {
-            truncated = true;
-          } else {
-            nodes.push({ unitId: edge.fromUnitId, depth: depth });
-            visited.set(edge.fromUnitId, depth);
-            next.push(edge.fromUnitId);
-          }
-        }
         if (edges.length >= edgeLimit) {
           truncated = true;
           continue;
+        }
+        if (!visited.has(edge.fromUnitId)) {
+          if (liveCandidates.indexOf(edge.fromUnitId) < 0) {
+            continue;
+          }
+          if (nodes.length >= nodeLimit) {
+            truncated = true;
+            continue;
+          }
+          nodes.push({ unitId: edge.fromUnitId, depth: depth });
+          visited.set(edge.fromUnitId, depth);
+          next.push(edge.fromUnitId);
         }
         edgeSeen.set(edge.id, true);
         edges.push(edge);
