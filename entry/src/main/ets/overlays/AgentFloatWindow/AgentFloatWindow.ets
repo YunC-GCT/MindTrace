@@ -27,21 +27,37 @@ import {
   ChatSession,
   ChatStatusMeta,
   applyStreamEventToChatMsg,
+  applyNoteReviewToChatMsg,
   finishChatMsg,
   replaceChatMsgContent,
+  setChatMsgNoteReviewFeedback,
+  setChatMsgNoteReviewFeedbackValue,
 } from './chat/ChatModels';
+import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
+import {
+  NoteReviewAnswer,
+  NoteReviewFeedback,
+  NoteReviewSourceResult,
+  copyNoteEvidenceCitation,
+} from '../../models/NoteReviewModels';
+import { NoteReviewSourceService } from '../../services/NoteReviewSourceService';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputPanel } from './AgentInputPanel';
+import { NoteReviewSourceOverlay } from './NoteReviewSourceOverlay';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
 import { SessionsPanelController } from '../../services/SessionsPanelController';
 import { NoteDraftReadyEvent } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
 import type { StreamEvent } from 'common';
+import { ChatHistorySaveResult } from '../../services/ChatHistoryPersistence';
 
 function nowId(): number { return Date.now() * 1000 + Math.floor(Math.random() * 1000); }
+
+type ChatMessagesTransform = (messages: ChatMsg[]) => ChatMsg[];
+type ChatMessageTransform = (message: ChatMsg) => ChatMsg;
 
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
@@ -69,12 +85,20 @@ export struct AgentFloatWindow {
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
   @State panelVisible: boolean = false;
   @State generatedDraft: NoteDraftReadyEvent | null = null;
+  @State sourceOverlayVisible: boolean = false;
+  @State sourceOverlayLoading: boolean = false;
+  @State sourceOverlayCitation: NoteEvidenceCitation | null = null;
+  @State sourceOverlayResult: NoteReviewSourceResult | null = null;
   private motionSeq: number = 0;
+  private sourceRequestSeq: number = 0;
   private dragStartH: number = 48;
   private mainWindow: window.Window | null = null;
   private scroller: Scroller = new Scroller();
   private sm: ChatSessionManager = new ChatSessionManager();
   private service: AgentChatService | null = null;
+  private sourceResolver: NoteReviewSourceService = new NoteReviewSourceService();
+  private requestSessionId: string = '';
+  private messageSessionIds: Map<number, string> = new Map<number, string>();
   @State inputVm: AgentInputViewModel = new AgentInputViewModel();
 
   // ===== 生命周期 =====
@@ -133,59 +157,94 @@ export struct AgentFloatWindow {
     this.sm.recordFilesDir(seam !== null ? seam.filesDir : '');
     const inputVm: AgentInputViewModel = this.inputVm;
     const cbs: AgentChatCallbacks = {
-      addAiMsg: (c: string): void => { this.messages = [...this.messages, { id: nowId(), role: 'ai', content: c, ts: Date.now(), streaming: false, reasoning: '' }]; },
+      addAiMsg: (c: string): void => {
+        const id: number = nowId();
+        const sessionId: string = this.callbackSessionId();
+        this.addMessageToSession(sessionId, { id, role: 'ai', content: c, ts: Date.now(), streaming: false, reasoning: '' });
+      },
       addAiMsgEmpty: (): number => {
         const id: number = nowId();
-        this.messages = [...this.messages, { id, role: 'ai', content: '', ts: Date.now(), streaming: true, reasoning: '' }];
+        const sessionId: string = this.callbackSessionId();
+        this.addMessageToSession(sessionId, { id, role: 'ai', content: '', ts: Date.now(), streaming: true, reasoning: '' });
         return id;
       },
       appendAiMsg: (id: number, event: StreamEvent): void => {
-        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? applyStreamEventToChatMsg(m, event) : m);
+        this.updateMessageById(id, (m: ChatMsg): ChatMsg => applyStreamEventToChatMsg(m, event));
       },
       replaceAiMsg: (id: number, content: string): void => {
-        this.messages = this.messages.map((m: ChatMsg): ChatMsg =>
-          m.id === id ? replaceChatMsgContent(m, content) : m,
-        );
+        this.updateMessageById(id, (m: ChatMsg): ChatMsg => replaceChatMsgContent(m, content));
       },
       finishAiMsg: (id: number): void => {
-        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? this.finishMessage(m) : m);
+        this.updateMessageById(id, (m: ChatMsg): ChatMsg => this.finishMessage(m));
         this.sync();
         this.sm.flush(this.sessions).catch((): void => {});
       },
-      setBusy: (v: boolean): void => { inputVm.setBusy(v); },
+      setBusy: (v: boolean): void => {
+        if (v && this.requestSessionId.length === 0) {
+          this.requestSessionId = this.activeSid;
+        }
+        inputVm.setBusy(v);
+        if (!v) {
+          this.requestSessionId = '';
+        }
+      },
       setStatusMeta: (_meta: ChatStatusMeta | null): void => { /* 状态指示 UI 已移除 (多端设计 v3) */ },
       getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
-      getConversationText: (excludeLatestUser: boolean): string => this.buildConversationText(excludeLatestUser),
-      getSessionId: (): string => this.activeSid,
+      getConversationText: (excludeLatestUser: boolean): string =>
+        this.buildConversationTextForSession(this.callbackSessionId(), excludeLatestUser),
+      getSessionId: (): string => this.callbackSessionId(),
       onDraftReady: (event: NoteDraftReadyEvent): void => { this.generatedDraft = event; },
+      onNoteReviewReady: (messageId: number, review: NoteReviewAnswer): void => {
+        this.updateMessageById(messageId, (m: ChatMsg): ChatMsg => applyNoteReviewToChatMsg(m, review));
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      },
     };
     this.service = new AgentChatService(cbs);
     this.inputVm.bind(this.service, (content: string): void => {
+      this.requestSessionId = this.activeSid;
       if (this.finishCurrentStreamingMessage()) {
         this.sync();
         this.sm.flush(this.sessions).catch((): void => {});
       }
-      this.messages = [...this.messages, { id: nowId(), role: 'user', content, ts: Date.now(), streaming: false, reasoning: '' }];
+      const id: number = nowId();
+      this.addMessageToSession(this.activeSid, { id, role: 'user', content, ts: Date.now(), streaming: false, reasoning: '' });
     });
     const ss: ChatSession[] = await this.sm.init(getContext(this));
-    if (ss.length > 0) { this.sessions = ss; this.activeSid = ss[0].id; this.messages = ss[0].messages; return; }
+    if (ss.length > 0) {
+      this.sessions = ss;
+      this.activeSid = ss[0].id;
+      this.messages = ss[0].messages;
+      this.rebuildMessageSessionIndex();
+      return;
+    }
     this.messages = [{ id: 1, role: 'ai', content: '👋 你好，我是 MindTrace AI。可以帮你分析题目、讲解知识点、整理笔记。试试问我吧 👉', ts: Date.now(), streaming: false, reasoning: '' }];
+    this.sync();
+    this.rebuildMessageSessionIndex();
   }
 
   private sync(): void {
-    const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === this.activeSid);
-    if (s !== undefined) { s.messages = this.messages; }
+    const nextSessions: ChatSession[] = [];
+    for (const session of this.sessions) {
+      if (session.id === this.activeSid) {
+        nextSessions.push({ id: session.id, name: session.name, messages: this.messages.slice(0) });
+      } else {
+        nextSessions.push(session);
+      }
+    }
+    this.sessions = nextSessions;
   }
-  private buildConversationText(excludeLatestUser: boolean): string {
+  private buildConversationTextForSession(sessionId: string, excludeLatestUser: boolean): string {
+    const sourceMessages: ChatMsg[] = this.messagesForSession(sessionId);
     const parts: string[] = [];
     const end: number = excludeLatestUser
-      && this.messages.length > 0
-      && this.messages[this.messages.length - 1].role === 'user'
-      ? this.messages.length - 1
-      : this.messages.length;
+      && sourceMessages.length > 0
+      && sourceMessages[sourceMessages.length - 1].role === 'user'
+      ? sourceMessages.length - 1
+      : sourceMessages.length;
     let i: number = 0;
     while (i < end) {
-      const msg: ChatMsg = this.messages[i];
+      const msg: ChatMsg = sourceMessages[i];
       const role: string = msg.role === 'user' ? '用户' : 'AI';
       if (msg.content.trim().length > 0) {
         parts.push(role + ': ' + msg.content.trim());
@@ -246,6 +305,7 @@ export struct AgentFloatWindow {
     this.sync();
     const remaining: ChatSession[] = this.sessions.filter((s: ChatSession): boolean => s.id !== sid);
     this.sessions = remaining;
+    this.rebuildMessageSessionIndex();
     if (sid === this.activeSid) {
       this.activeSid = remaining[0].id;
       this.messages = remaining[0].messages;
@@ -275,6 +335,175 @@ export struct AgentFloatWindow {
     );
     return true;
   }
+
+  private callbackSessionId(): string {
+    return this.requestSessionId.length > 0 ? this.requestSessionId : this.activeSid;
+  }
+
+  private messagesForSession(sessionId: string): ChatMsg[] {
+    if (sessionId === this.activeSid) {
+      return this.messages;
+    }
+    const session: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sessionId);
+    return session === undefined ? [] : session.messages;
+  }
+
+  private addMessageToSession(sessionId: string, message: ChatMsg): void {
+    this.messageSessionIds.set(message.id, sessionId);
+    this.applyMessagesToSession(sessionId, (messages: ChatMsg[]): ChatMsg[] => {
+      const nextMessages: ChatMsg[] = messages.slice(0);
+      nextMessages.push(message);
+      return nextMessages;
+    });
+  }
+
+  private updateMessageById(messageId: number, transform: ChatMessageTransform): void {
+    const sessionId: string = this.findSessionIdForMessage(messageId);
+    if (sessionId.length === 0) {
+      return;
+    }
+    this.applyMessagesToSession(sessionId, (messages: ChatMsg[]): ChatMsg[] =>
+      messages.map((message: ChatMsg): ChatMsg => message.id === messageId ? transform(message) : message)
+    );
+  }
+
+  private applyMessagesToSession(sessionId: string, transform: ChatMessagesTransform): void {
+    const nextSessions: ChatSession[] = [];
+    let found: boolean = false;
+    for (const session of this.sessions) {
+      if (session.id === sessionId) {
+        found = true;
+        const sourceMessages: ChatMsg[] = session.id === this.activeSid ? this.messages : session.messages;
+        const nextMessages: ChatMsg[] = transform(sourceMessages);
+        nextSessions.push({ id: session.id, name: session.name, messages: nextMessages });
+        if (session.id === this.activeSid) {
+          this.messages = nextMessages;
+        }
+      } else {
+        nextSessions.push(session);
+      }
+    }
+    if (!found && sessionId === this.activeSid) {
+      this.messages = transform(this.messages);
+      nextSessions.push({ id: this.activeSid, name: this.activeSessionTitle(), messages: this.messages });
+    }
+    this.sessions = nextSessions;
+  }
+
+  private findSessionIdForMessage(messageId: number): string {
+    const mapped: string | undefined = this.messageSessionIds.get(messageId);
+    if (mapped !== undefined) {
+      return mapped;
+    }
+    for (const message of this.messages) {
+      if (message.id === messageId) {
+        this.messageSessionIds.set(messageId, this.activeSid);
+        return this.activeSid;
+      }
+    }
+    for (const session of this.sessions) {
+      for (const message of session.messages) {
+        if (message.id === messageId) {
+          this.messageSessionIds.set(messageId, session.id);
+          return session.id;
+        }
+      }
+    }
+    return '';
+  }
+
+  private rebuildMessageSessionIndex(): void {
+    this.messageSessionIds.clear();
+    for (const session of this.sessions) {
+      for (const message of session.messages) {
+        this.messageSessionIds.set(message.id, session.id);
+      }
+    }
+  }
+
+  private onNoteReviewFeedback = (messageId: number, feedback: NoteReviewFeedback): void => {
+    const previous: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      setChatMsgNoteReviewFeedback(message, feedback)
+    );
+    this.sync();
+    this.sm.flush(this.sessions)
+      .then((result: ChatHistorySaveResult): void => {
+        if (!result.success) {
+          this.rollbackFeedbackIfCurrent(messageId, feedback, previous);
+          this.showToast('反馈保存失败，请稍后重试');
+        }
+      })
+      .catch((): void => {
+        this.rollbackFeedbackIfCurrent(messageId, feedback, previous);
+        this.showToast('反馈保存失败，请稍后重试');
+      });
+  };
+
+  private feedbackForMessage(messageId: number): NoteReviewFeedback | undefined {
+    const sessionId: string = this.findSessionIdForMessage(messageId);
+    const messages: ChatMsg[] = this.messagesForSession(sessionId);
+    for (const message of messages) {
+      if (message.id === messageId && message.noteReview !== undefined) {
+        return message.noteReview.feedback;
+      }
+    }
+    return undefined;
+  }
+
+  private rollbackFeedbackIfCurrent(
+    messageId: number,
+    attempted: NoteReviewFeedback,
+    previous: NoteReviewFeedback | undefined,
+  ): void {
+    const current: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
+    if (current !== attempted) {
+      return;
+    }
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      setChatMsgNoteReviewFeedbackValue(message, previous)
+    );
+    this.sync();
+  }
+
+  private openNoteReviewSource = (citation: NoteEvidenceCitation): void => {
+    this.sourceRequestSeq += 1;
+    const seq: number = this.sourceRequestSeq;
+    const safeCitation: NoteEvidenceCitation = copyNoteEvidenceCitation(citation);
+    this.sourceOverlayCitation = safeCitation;
+    this.sourceOverlayResult = null;
+    this.sourceOverlayLoading = true;
+    this.sourceOverlayVisible = true;
+    this.sourceResolver.resolve(safeCitation)
+      .then((result: NoteReviewSourceResult): void => {
+        if (seq !== this.sourceRequestSeq || !this.sourceOverlayVisible) {
+          return;
+        }
+        this.sourceOverlayResult = result;
+        this.sourceOverlayLoading = false;
+      })
+      .catch((): void => {
+        if (seq !== this.sourceRequestSeq || !this.sourceOverlayVisible) {
+          return;
+        }
+        this.sourceOverlayResult = {
+          status: 'unavailable',
+          citation: safeCitation,
+          content: '',
+          currentVersion: safeCitation.version,
+          message: '来源读取失败，请稍后重试。',
+        };
+        this.sourceOverlayLoading = false;
+      });
+  };
+
+  private closeNoteReviewSource = (): void => {
+    this.sourceRequestSeq += 1;
+    this.sourceOverlayVisible = false;
+    this.sourceOverlayLoading = false;
+    this.sourceOverlayCitation = null;
+    this.sourceOverlayResult = null;
+  };
 
   // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
   private showToast(message: string): void {
@@ -418,7 +647,13 @@ export struct AgentFloatWindow {
               .zIndex(PANEL_Z_INDEX);
           }
 
-          AgentMessageList({ messages: this.messages, busy: this.inputVm.busy, scroller: this.scroller });
+          AgentMessageList({
+            messages: this.messages,
+            busy: this.inputVm.busy,
+            scroller: this.scroller,
+            onSourceTap: this.openNoteReviewSource,
+            onFeedback: this.onNoteReviewFeedback,
+          });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
           ImagePreviewBar({ imagePreview: this.inputVm.imagePreview, onClear: (): void => { this.inputVm.clearImagePreview(); } });
@@ -448,6 +683,14 @@ export struct AgentFloatWindow {
            },
           onDraftConfirm: this.confirmDraft,
           onSaved: (_unit: KnowledgeUnit): void => { this.generatedDraft = null },
+        })
+      }
+      if (this.sourceOverlayVisible) {
+        NoteReviewSourceOverlay({
+          loading: this.sourceOverlayLoading,
+          citation: this.sourceOverlayCitation,
+          result: this.sourceOverlayResult,
+          onClose: this.closeNoteReviewSource,
         })
       }
     }.width('100%').height('100%').hitTestBehavior(this.overlayVisible ? HitTestMode.Default : HitTestMode.None);
