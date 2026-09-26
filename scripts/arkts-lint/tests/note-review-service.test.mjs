@@ -144,7 +144,7 @@ test('NoteReviewService classifies five review intents and excludes note generat
   assert.equal(service.classifyIntent('我的极限笔记在哪'), 'locate');
   assert.equal(service.classifyIntent('根据极限笔记出 5 道复习题'), 'quiz');
   assert.equal(service.classifyIntent('把极限整理成笔记并保存'), undefined);
-  assert.equal(service.classifyIntent('这张怎么解释'), undefined);
+  assert.equal(service.classifyIntent('这张怎么解释'), 'explain');
   assert.equal(service.classifyIntent('你在哪里'), undefined);
 });
 
@@ -259,7 +259,7 @@ test('NoteReviewService converts provider exceptions into unavailable plans', as
 
   const result = await service.plan('根据我的笔记解释极限');
   assert.equal(result.answer.status, 'unavailable');
-  assert.equal(result.answer.reason, 'evidence-provider-failed');
+  assert.equal(result.answer.reason, 'search-failed');
 });
 
 test('NoteReviewService finalization requires an exact allowed citation and marks model failure unavailable', async () => {
