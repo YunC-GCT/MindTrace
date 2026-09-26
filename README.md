@@ -9,7 +9,7 @@ MindTrace 通过 **拍照 → OCR → AI 分类 → 知识结构化 → 持久�
 
 ---
 
-## 一、初赛阶段 (2026-07 ~ 09-01) · 谁做了什么
+## 一、初赛阶段 (2026-07 ~ 09-01) · 谁做了什么D:\HMgent\MindTrace-conversation-isolation-batch-2D:\HMgent\MindTrace-conversation-isolation-batch-2
 
 > 逐日完整日志已收敛至 `docs/legacy/` 与 git 历史; 本节按时间线保留分工与关键交付的技术要点。
 
