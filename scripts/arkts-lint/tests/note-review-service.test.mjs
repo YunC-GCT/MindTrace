@@ -43,6 +43,69 @@ function loadReviewService() {
   );
 }
 
+function loadConversationWorkflow() {
+  return loadNoteReviewEtsModule(
+    'entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets',
+    {
+      mocks: {
+        common: {
+          Logger: class Logger {
+            info() {}
+            warn() {}
+          },
+          LlmConfig: {
+            getInstance() {
+              return {
+                async isConfigured() {
+                  return true;
+                },
+              };
+            },
+          },
+          StateGraph: class StateGraph {},
+          LlmError: class LlmError extends Error {},
+          LlmErrorBodyFormatter: {
+            redactSensitiveText(value) {
+              return value;
+            },
+          },
+        },
+        'entry/src/main/ets/services/AiService.ets': {
+          AiService: class AiService {},
+        },
+        'entry/src/main/ets/services/AgentMemoryService.ets': {
+          AgentMemoryService: class AgentMemoryService {
+            constructor(_context) {}
+            async saveMessage() {}
+            async getContextForReply() { return ''; }
+            async getLearnerProfileContext() { return ''; }
+            async updateLearnerProfileIfNeeded() {}
+            async summarizeSessionIfNeeded() {}
+          },
+        },
+        'entry/src/main/ets/services/IntentClassifier.ets': {
+          IntentClassifier: class IntentClassifier {},
+        },
+        'entry/src/main/ets/services/ReplyService.ets': {
+          ReplyService: class ReplyService {
+            constructor(_classifier) {}
+            normalize(value) {
+              return value;
+            }
+          },
+        },
+        'entry/src/main/ets/services/NoteEvidenceService.ets': {
+          NoteEvidenceService: class NoteEvidenceService {},
+          NoteEvidenceStreamFilter: class NoteEvidenceStreamFilter {},
+        },
+        'entry/src/main/ets/services/NoteReviewService.ets': {
+          NoteReviewService: class NoteReviewService {},
+        },
+      },
+    },
+  );
+}
+
 function providerFor(responses) {
   const calls = [];
   const provider = {
@@ -225,4 +288,174 @@ test('NoteReviewService finalization requires an exact allowed citation and mark
   assert.equal(failed.answer.status, 'unavailable');
   assert.equal(failed.answer.reason, 'model-timeout');
   assert.equal(failed.answer.citations.length, 0);
+});
+
+test('ConversationWorkflow terminal note review finishes the real message and skips the model call', async () => {
+  const { ConversationWorkflow } = loadConversationWorkflow();
+  const events = [];
+  const callbacks = {
+    addAiMsgEmpty() {
+      events.push('add-empty');
+      return 77;
+    },
+    replaceAiMsg(id, content) {
+      events.push(`replace:${id}:${content}`);
+    },
+    finishAiMsg(id) {
+      events.push(`finish:${id}`);
+    },
+    onNoteReviewReady(id, review) {
+      events.push(`review:${id}:${review.reason}`);
+    },
+    onProgress(step) {
+      events.push(`progress:${step}`);
+    },
+    getSessionId() {
+      return 's1';
+    },
+    getContext() {
+      return {};
+    },
+  };
+  const workflow = new ConversationWorkflow(callbacks);
+  let completeCalls = 0;
+  workflow.replyService = {
+    normalize(value) {
+      return value;
+    },
+    async complete() {
+      completeCalls += 1;
+      return 'should not run';
+    },
+  };
+  const plan = {
+    kind: 'terminal',
+    answer: {
+      intent: 'locate',
+      query: '我的极限笔记在哪',
+      status: 'grounded',
+      reason: 'located',
+      citations: [],
+      createdAt: 1,
+    },
+    displayText: '参考来源：极限',
+    modelUserContent: '',
+    quizCount: 3,
+  };
+
+  await workflow.handleNoteReviewComplete('s1', '', '', plan);
+
+  assert.equal(completeCalls, 0);
+  assert.deepEqual(events.slice(0, 4), [
+    'add-empty',
+    'replace:77:参考来源：极限',
+    'review:77:located',
+    'finish:77',
+  ]);
+});
+
+test('ConversationWorkflow stream note review emits onNoteReviewReady before finish for the same message id', async () => {
+  const { ConversationWorkflow } = loadConversationWorkflow();
+  const events = [];
+  const callbacks = {
+    addAiMsgEmpty() {
+      events.push('add-empty');
+      return 88;
+    },
+    appendAiMsg(id, event) {
+      events.push(`append:${id}:${event.delta ?? ''}`);
+    },
+    replaceAiMsg(id, content) {
+      events.push(`replace:${id}:${content}`);
+    },
+    finishAiMsg(id) {
+      events.push(`finish:${id}`);
+    },
+    onNoteReviewReady(id, review) {
+      events.push(`review:${id}:${review.reason}`);
+    },
+    onProgress(step) {
+      events.push(`progress:${step}`);
+    },
+    getSessionId() {
+      return 's1';
+    },
+    getContext() {
+      return {};
+    },
+  };
+  const workflow = new ConversationWorkflow(callbacks);
+  workflow.replyService = {
+    normalize(value) {
+      return value;
+    },
+    async stream(_context, onEvent) {
+      onEvent({ type: 'text', delta: '回答 [noteId=note-limit' });
+      onEvent({ type: 'text', delta: ' version=3]' });
+      return {
+        content: '回答 [noteId=note-limit version=3]',
+        usedFallback: false,
+        interrupted: false,
+      };
+    },
+  };
+  workflow.reviewService = {
+    createStreamFilter() {
+      return {
+        push(delta) {
+          return delta;
+        },
+        flush() {
+          return '';
+        },
+      };
+    },
+    finalizeModelAnswer() {
+      return {
+        answer: {
+          intent: 'explain',
+          query: '极限',
+          status: 'grounded',
+          reason: 'grounded',
+          citations: [],
+          createdAt: 1,
+        },
+        displayText: '回答',
+      };
+    },
+    fallbackFailure() {
+      throw new Error('unexpected fallback');
+    },
+  };
+  const plan = {
+    kind: 'model',
+    answer: {
+      intent: 'explain',
+      query: '极限',
+      status: 'grounded',
+      reason: 'ready',
+      citations: [],
+      createdAt: 1,
+    },
+    displayText: '',
+    modelUserContent: '解释极限',
+    evidence: {
+      query: '极限',
+      topK: 1,
+      citations: [],
+      relations: [],
+      contextText: '证据',
+      degraded: false,
+      reason: '',
+    },
+    quizCount: 3,
+  };
+
+  await workflow.handleNoteReviewStream('s1', '', '', plan);
+
+  const reviewIndex = events.findIndex((event) => event.startsWith('review:88:'));
+  const finishIndex = events.findIndex((event) => event === 'finish:88');
+  assert.ok(reviewIndex >= 0);
+  assert.equal(finishIndex, reviewIndex + 1);
+  assert.equal(events.some((event) => event === 'add-empty'), true);
 });
