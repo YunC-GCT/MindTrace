@@ -124,7 +124,13 @@ export class ConversationWorkflow {
     }
     const service: AiService = new AiService(this.cbs.getContext());
     const persistedEvent: NoteDraftReadyEvent = await service.restoreDraft(event.runId);
-    this.requireDraftOwnership(ref, persistedEvent);
+    // Older runs created before conversation ownership was persisted restore as
+    // detached. The in-memory event has already passed the current-session
+    // check above, so keep using it for this confirmation. If the restored run
+    // does carry ownership metadata, still enforce the session match.
+    if (persistedEvent.originSessionId !== undefined) {
+      this.requireDraftOwnership(ref, persistedEvent);
+    }
     this.pendingConfirmRunId = event.runId;
     try {
       const committed: KnowledgeUnit = await service.confirmDraft(event, candidate);

@@ -1367,6 +1367,8 @@ export class Dispatcher {
   private completedRun(run: NoteGenerationRun, checkpointId: string | undefined, stopReason: string): NoteGenerationRun {
     return {
       id: run.id,
+      originSessionId: run.originSessionId,
+      parentConversationRunId: run.parentConversationRunId,
       route: run.route,
       status: run.status,
       instruction: run.instruction,
