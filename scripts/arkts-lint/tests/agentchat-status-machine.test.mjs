@@ -8,6 +8,7 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 const machine = read('entry/src/main/ets/services/ChatStatusMachine.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
+const workflowAdapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
 const chatModels = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets');
 const conversationState = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
@@ -22,6 +23,9 @@ const ALL_STEPS = [
   'image_message_save',
   'image_recognize',
   'image_material_save',
+  'image_ocr_blank',
+  'image_note_ocr',
+  'image_note_draft',
   'note_intent_check',
   'note_context_load',
   'note_source_prepare',
@@ -51,18 +55,19 @@ test('ChatStatusMachine.META_TABLE value type is a typed interface (no untyped o
 });
 
 test('AgentChatService adapter maps workflow progress through ChatStatusMachine', () => {
-  assert.match(chatService, /private readonly statusMachine: ChatStatusMachine = new ChatStatusMachine\(\);/);
-  assert.match(chatService, /this\.statusMachine\.advance\(step\)/);
-  assert.match(workflow, /this\.cbs\.onProgress\(step\)/);
+  assert.match(workflowAdapter, /private readonly statusMachine: ChatStatusMachine = new ChatStatusMachine\(\);/);
+  assert.match(workflowAdapter, /this\.statusMachine\.advance\(step\)/);
+  assert.match(workflow, /this\.cbs\.onProgress\(ref, step\)/);
   assert.doesNotMatch(workflow, /ChatStatusMachine|setStatusMeta|setBusy/);
 });
 
 test('busy lifecycle remains in AgentChatService adapter; workflow emits lifecycle events', () => {
-  assert.match(chatService, /onStart\(\): void/);
-  assert.match(chatService, /onFinish\(\): void/);
-  assert.match(chatService, /this\.callbacks\.setStatusMeta\(null\)/);
-  assert.match(workflow, /this\.cbs\.onStart\(\)/);
-  assert.match(workflow, /this\.cbs\.onFinish\(\)/);
+  assert.match(workflowAdapter, /onStart\(ref: ConversationRunRef\): void/);
+  assert.match(workflowAdapter, /onFinish\(ref: ConversationRunRef\): void/);
+  assert.match(workflowAdapter, /this\.callbacks\.updateRunEvent\(ref, event\)/);
+  assert.doesNotMatch(workflowAdapter, /setStatusMeta/);
+  assert.match(workflow, /this\.cbs\.onStart\(runRef\)/);
+  assert.match(workflow, /this\.cbs\.onFinish\(runRef\)/);
   assert.doesNotMatch(machine, /setBusy|cbs\.setStatusMeta/);
   assert.match(machine, /advance\(step: ChatStatusStep\): ChatStatusMeta \{[^}]*return \{ step/m);
 });

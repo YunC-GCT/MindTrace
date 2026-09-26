@@ -45,9 +45,11 @@ class FakeRepository implements NoteGenerationRepository {
   checkpointSaves: number = 0;
   checkpoints: NoteGenerationCheckpoint[] = [];
   commits: NoteGenerationCommitResult[] = [];
+  lastRun: NoteGenerationRun | undefined = undefined;
 
   async saveRun(_run: NoteGenerationRun, _bundle: SourceBundle): Promise<void> {
     this.runSaves += 1;
+    this.lastRun = _run;
   }
 
   async saveCheckpoint(_checkpoint: NoteGenerationCheckpoint): Promise<void> {
@@ -121,16 +123,18 @@ class StandardKnowledgeModel extends KnowledgeModel {
 
   async structureStandardDraft(_request: NoteGenerationRequest): Promise<NoteGenerationStandardResult> {
     this.calls += 1;
+    const definitionSectionId: string = stableSectionId(0, '定义');
+    const exampleSectionId: string = stableSectionId(1, '例子');
     const outline: NoteGenerationOutline = {
       schemaVersion: 'mindtrace.note-outline.v1',
       sections: [{
-        id: 'section-definition',
+        id: definitionSectionId,
         label: '定义',
         order: 0,
         mustInclude: ['定义'],
         sourceIds: ['source-a'],
       }, {
-        id: 'section-example',
+        id: exampleSectionId,
         label: '例子',
         order: 1,
         mustInclude: ['例子'],
@@ -142,14 +146,14 @@ class StandardKnowledgeModel extends KnowledgeModel {
       type: 'definition',
       claim: '函数在闭区间上连续。',
       sourceRefs: [{ sourceId: 'source-a', excerpt: '函数在闭区间上连续。', start: 0, end: 10 }],
-      targetSectionId: 'section-definition',
+      targetSectionId: definitionSectionId,
       verification: 'supported',
     }, {
       id: 'evidence-example',
       type: 'example',
       claim: '函数 f(x)=x 在 [0,1] 上连续。',
       sourceRefs: [{ sourceId: 'source-b', excerpt: '例：f(x)=x 在 [0,1] 上连续。', start: 0, end: 25 }],
-      targetSectionId: 'section-example',
+      targetSectionId: exampleSectionId,
       verification: 'supported',
     }];
     const draft: NoteDraftDocument = {
@@ -163,14 +167,14 @@ class StandardKnowledgeModel extends KnowledgeModel {
       tags: ['连续'],
       instruction: '完整保留定义和例子',
       sections: [{
-        id: 'section-definition',
+        id: definitionSectionId,
         label: '定义',
         content: '函数在闭区间上连续。',
         sourceIds: ['source-a'],
         state: 'generated',
         baseHash: 'hash-definition',
       }, {
-        id: 'section-example',
+        id: exampleSectionId,
         label: '例子',
         content: '例：f(x)=x 在 [0,1] 上连续。',
         sourceIds: ['source-b'],
@@ -330,10 +334,11 @@ class DiminishingKnowledgeModel extends ContradictoryKnowledgeModel {
     this.repairRound += 1;
     const issue: NoteGenerationIssue = {
       stage: 'evidence',
-      code: 'NO_IMPROVEMENT_' + this.repairRound.toString(),
+      code: 'EVIDENCE_CONTRADICTED',
       severity: 'hard',
-      message: 'candidate did not improve ' + 'x'.repeat(this.repairRound * 20),
+      message: 'candidate did not improve',
       repairable: true,
+      sourceId: 'r' + this.repairRound.toString(),
     };
     const verification: NoteGenerationVerification = {
       status: 'contradicted',
@@ -441,6 +446,8 @@ export default function dispatcherNoteGenerationTest(): void {
         payload: { kind: 'text', text: '函数在闭区间上连续。' },
         generation: {
           runId: 'light-98',
+          originSessionId: 's1',
+          parentConversationRunId: 'r101',
           instruction: '保留定义',
           mode: 'create',
           sources: {
@@ -471,6 +478,8 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(result.generation?.status).assertEqual('ready-preview');
       expect(dao.writes).assertEqual(0);
       expect(repository.checkpointSaves).assertEqual(1);
+      expect(repository.lastRun?.originSessionId).assertEqual('s1');
+      expect(repository.lastRun?.parentConversationRunId).assertEqual('r101');
 
       const generated: KnowledgeUnit = result.data ?? unitForTest;
       const prepared: PreparedCandidate = {
@@ -679,7 +688,7 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(model.calls).assertEqual(1);
     });
 
-    it('returns needs-input instead of silently dropping sources over the deep source budget', 0, async () => {
+    it('downgrades an oversized deep request to standard without silently dropping sources', 0, async () => {
       const hugeText: string = '证明步骤和公式。'.repeat(5000);
       const repository: FakeRepository = new FakeRepository();
       const request: DispatchRequest = {
@@ -692,11 +701,10 @@ export default function dispatcherNoteGenerationTest(): void {
       const result: DispatchResult = await new Dispatcher().dispatch(request, {
         persist: false, generationRepository: repository,
       });
-      expect(result.success).assertFalse();
-      expect(result.generation?.route).assertEqual('deep');
-      expect(result.generation?.status).assertEqual('needs-input');
-      expect(result.generation?.issues.some((issue): boolean => issue.code === 'SOURCE_BUDGET_EXCEEDED')).assertTrue();
-      expect(result.generation?.issues.some((issue): boolean => issue.message.includes('huge-source'))).assertTrue();
+      expect(result.generation?.route).assertEqual('standard');
+      expect(result.generation?.issues.some((issue): boolean => issue.code === 'SOURCE_BUDGET_EXCEEDED')).assertFalse();
+      const savedSourceIds: string[] = repository.lastRun?.sourceIds ?? [];
+      expect(savedSourceIds.includes('huge-source')).assertTrue();
     });
   });
 }

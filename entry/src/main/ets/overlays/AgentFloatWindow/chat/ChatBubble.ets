@@ -24,6 +24,7 @@ export struct ChatBubble {
       AiMessageBubble({
         parts: chatMessageRunParts(this.msg),
         streaming: this.msg.streaming,
+        outcome: this.msg.outcome ?? 'completed',
       })
     }
   }

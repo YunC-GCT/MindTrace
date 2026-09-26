@@ -28,8 +28,8 @@ const PANEL_W_RATIO: string = '30%';
 
 @Component
 export struct SessionsPanel {
-  sessions: ChatSession[] = [];
-  activeSid: string = '';
+  @Prop sessions: ChatSession[] = [];
+  @Prop activeSid: string = '';
   onSelect: (sid: string) => void = (): void => {};
   onRequestDelete: (sid: string) => void = (): void => {};
 

@@ -13,7 +13,14 @@ import dispatcherNoteGenerationTest from './DispatcherNoteGeneration.test';
 import rendererSchedulerTest from './RendererScheduler.test';
 import renderTickTest from './RenderTick.test';
 import streamingReplyDocumentTest from './StreamingReplyDocument.test';
+import conversationIdentityTest from './ConversationIdentity.test';
+import sessionUiStateTest from './SessionUiState.test';
+import chatContextProjectionTest from './ChatContextProjection.test';
+import sessionDeletionCoordinatorTest from './SessionDeletionCoordinator.test';
+import conversationTitleServiceTest from './ConversationTitleService.test';
 import intentClassifierNoteMaterialTest from './IntentClassifierNoteMaterial.test';
+import conversationDraftOwnershipTest from './ConversationDraftOwnership.test';
+import conversationWorkflowFailureTest from './ConversationWorkflowFailure.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -31,4 +38,12 @@ export default function testsuite() {
   rendererSchedulerTest();
   renderTickTest();
   streamingReplyDocumentTest();
+  conversationIdentityTest();
+  sessionUiStateTest();
+  chatContextProjectionTest();
+  sessionDeletionCoordinatorTest();
+  conversationTitleServiceTest();
   intentClassifierNoteMaterialTest();
+  conversationDraftOwnershipTest();
+  conversationWorkflowFailureTest();
+}

@@ -95,6 +95,207 @@ function parseDirect(jsonText: string): NoteGenerationStandardResult {
   return parseDirectStandardArtifacts(parsed, sources());
 }
 
+function lightBundle(): SourceBundle {
+  const fragment: SourceFragment = {
+    id: 'src-light',
+    kind: 'conversation',
+    originId: 'origin-light',
+    sequence: 0,
+    fingerprint: 'fp-light',
+    text: '单调性描述的是函数值随着自变量变化而变化的趋势。',
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function deepOutlineSection(): NoteGenerationOutlineSection {
+  return {
+    id: 'sec-1', label: '定义与记号', order: 0, mustInclude: [],
+    sourceIds: ['src-1', 'src-2'],
+  };
+}
+
+function deepRawDraft(content: string): NoteDraftDocument {
+  return {
+    schemaVersion: 'stale-version',
+    title: '正态分布',
+    summary: '连续型随机变量的典型分布',
+    subject: '',
+    category: '概率论与统计学',
+    chapter: '概率',
+    difficulty: 2,
+    tags: ['概率'],
+    sections: [{
+      id: '', label: '', content: content, sourceIds: [],
+      state: 'generated', baseHash: '',
+    }],
+  };
+}
+
+function emptyRequirement(): NoteGenerationRequirement {
+  return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
+}
+
+function multiSegmentBundle(count: number): SourceBundle {
+  const lines: string[] = [];
+  let index: number = 0;
+  while (index < count) {
+    lines.push('这是第' + (index + 1).toString() + '段原始材料文字');
+    lines.push('');
+    index += 1;
+  }
+  const fragment: SourceFragment = {
+    id: 'src-multi',
+    kind: 'conversation',
+    originId: 'origin-multi',
+    sequence: 0,
+    fingerprint: 'fp-multi',
+    text: lines.join('\n'),
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function stdBundle(): SourceBundle {
+  const fragment: SourceFragment = {
+    id: 'src-std',
+    kind: 'conversation',
+    originId: 'origin-std',
+    sequence: 0,
+    fingerprint: 'fp-std',
+    text: '若 X 服从正态分布, 则其概率密度函数关于均值对称。',
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function stdOutline(): NoteGenerationOutline {
+  return {
+    schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
+    sections: [{ id: 'sec-1', label: '定义', order: 0, mustInclude: [], sourceIds: ['src-std'] }],
+  };
+}
+
+function stdEvidence(
+  id: string,
+  claim: string,
+  sourceId: string,
+  excerpt: string,
+): NoteGenerationEvidenceItem {
+  return {
+    id: id,
+    type: 'definition',
+    claim: claim,
+    sourceRefs: [{ sourceId: sourceId, excerpt: excerpt, start: 0, end: excerpt.length }],
+    targetSectionId: 'sec-1',
+    verification: 'supported',
+  };
+}
+
+function stdDraft(): NoteDraftDocument {
+  return {
+    schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+    title: '正态分布',
+    summary: '概率密度关于均值对称',
+    subject: '高等数学',
+    category: '概念',
+    chapter: '概率论',
+    difficulty: 2,
+    tags: ['正态分布'],
+    sections: [{
+      id: 'sec-1', label: '定义', content: '概率密度函数关于均值对称。',
+      sourceIds: ['src-std'], state: 'generated', baseHash: '',
+    }],
+    instruction: '保存这条笔记',
+  };
+}
+
+function stdRequirement(): NoteGenerationRequirement {
+  return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
+}
+
+function sectionMap(): Map<string, string[]> {
+  const map: Map<string, string[]> = new Map<string, string[]>();
+  map.set('sec-1', ['src-std']);
+  return map;
+}
+
+function deepBundle(): SourceBundle {
+  const fragment: SourceFragment = {
+    id: 'src-deep',
+    kind: 'conversation',
+    originId: 'origin-deep',
+    sequence: 0,
+    fingerprint: 'fp-deep',
+    text: '定义与记号\n$$f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}$$\n其中 mu 为均值。',
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function deepOutline(): NoteGenerationOutline {
+  return {
+    schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
+    sections: [{ id: 'sec-f', label: '公式', order: 0, mustInclude: [], sourceIds: ['src-deep'] }],
+  };
+}
+
+function formulaEvidence(pipeline: boolean): NoteGenerationEvidenceItem {
+  const excerpt: string = '$$f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}$$';
+  const start: number = deepBundle().fragments[0].text.indexOf(excerpt);
+  const item: NoteGenerationEvidenceItem = {
+    id: 'ev-formula',
+    type: 'formula',
+    claim: excerpt,
+    sourceRefs: [{ sourceId: 'src-deep', excerpt: excerpt, start: start, end: start + excerpt.length }],
+    targetSectionId: 'sec-f',
+    verification: 'supported',
+  };
+  if (pipeline) {
+    item.origin = 'pipeline';
+  }
+  return item;
+}
+
+function deepDraft(): NoteDraftDocument {
+  return {
+    schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+    title: '正态分布',
+    summary: '密度函数关于均值对称',
+    subject: '高等数学',
+    category: '公式',
+    chapter: '概率论',
+    difficulty: 2,
+    tags: ['正态分布'],
+    sections: [{
+      id: 'sec-f', label: '公式',
+      content: '密度函数 $f(x)$ 关于 $x=\\mu$ 对称, 在均值处取得最大值。',
+      sourceIds: ['src-deep'], state: 'generated', baseHash: '',
+    }],
+    instruction: '保存这条笔记',
+  };
+}
+
+function deepRequirement(): NoteGenerationRequirement {
+  return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
+}
+
+function deepSectionMap(): Map<string, string[]> {
+  const map: Map<string, string[]> = new Map<string, string[]>();
+  map.set('sec-f', ['src-deep']);
+  return map;
+}
+
+function countCode(issues: NoteGenerationIssue[], code: string): number {
+  let count: number = 0;
+  for (const issue of issues) {
+    if (issue.code === code) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 export default function noteGenerationModelsTest(): void {
   describe('NoteGenerationModels.direct_draft_tags', () => {
     it('direct_draft_preserves_model_tags', 0, () => {
@@ -185,16 +386,7 @@ export default function noteGenerationModelsTest(): void {
           baseHash: '',
         }],
       };
-      const bundle: SourceBundle = {
-        fragments: [{
-          id: 'src-light',
-          kind: 'conversation',
-          originId: 'origin-light',
-          sequence: 0,
-          fingerprint: 'fp-light',
-          text: '单调性描述的是函数值随着自变量变化而变化的趋势。',
-        }],
-      };
+      const bundle: SourceBundle = lightBundle();
       const normalized: NoteDraftDocument = normalizeLightDraft(draft, bundle);
       expect(normalized.schemaVersion).assertEqual(NOTE_DRAFT_SCHEMA_VERSION);
       expect(normalized.subject).assertEqual('其它');
@@ -227,7 +419,7 @@ export default function noteGenerationModelsTest(): void {
           baseHash: '',
         }],
       };
-      const normalized: NoteDraftDocument = normalizeLightDraft(draft, bundle);
+      const normalized: NoteDraftDocument = normalizeLightDraft(draft, lightBundle());
       expect(normalized.sections[0].id).assertEqual('section-item-811c9dc5');
       expect(normalized.sections[0].label).assertEqual('核心内容');
     });
@@ -308,30 +500,6 @@ export default function noteGenerationModelsTest(): void {
   });
 
   describe('NoteGenerationModels.deep_section_normalization', () => {
-    function deepOutlineSection(): NoteGenerationOutlineSection {
-      return {
-        id: 'sec-1', label: '定义与记号', order: 0, mustInclude: [],
-        sourceIds: ['src-1', 'src-2'],
-      };
-    }
-
-    function deepRawDraft(content: string): NoteDraftDocument {
-      return {
-        schemaVersion: 'stale-version',
-        title: '正态分布',
-        summary: '连续型随机变量的典型分布',
-        subject: '',
-        category: '概率论与统计学',
-        chapter: '概率',
-        difficulty: 2,
-        tags: ['概率'],
-        sections: [{
-          id: '', label: '', content: content, sourceIds: [],
-          state: 'generated', baseHash: '',
-        }],
-      };
-    }
-
     it('deep_section_backfills_pipeline_fields_and_passes_validation', 0, () => {
       // 2026-09-19 P0-4: LLM 原始输出 (空 sourceIds / 学科 category / 空 subject /
       // 旧 schemaVersion) 直接校验 3 次重试全灭; 归一化后 validateDraftDocument 全过
@@ -353,14 +521,36 @@ export default function noteGenerationModelsTest(): void {
       expect(normalized.sections[0].content.includes('\\(')).assertFalse();
     });
 
-    it('deep_section_keeps_fallback_content_raw', 0, () => {
+    it('draft_validation_accepts_recoverable_mm_md_after_normalization', 0, () => {
+      const raw: NoteDraftDocument = deepRawDraft('密度函数 \\(f(x)\\) 如图');
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(raw, deepOutlineSection());
+      const issues: NoteGenerationIssue[] =
+        validateDraftDocument(normalized, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('draft_validation_reports_unrecoverable_mm_md_reason', 0, () => {
+      const raw: NoteDraftDocument = deepRawDraft('密度函数 $f(x) 如图');
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(raw, deepOutlineSection());
+      const issues: NoteGenerationIssue[] =
+        validateDraftDocument(normalized, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(1);
+      expect(issues[0].code).assertEqual('MM_MD_INVALID');
+      expect(issues[0].message).assertContain('unclosed_inline_delimiter');
+    });
+
+    it('deep_section_adopts_safe_html_autofix_content', 0, () => {
       const raw: string = '强调 <b>bold</b> 文本';
       const normalized: NoteDraftDocument = normalizeDeepSectionDraft(deepRawDraft(raw), deepOutlineSection());
-      expect(normalized.sections[0].content).assertEqual(raw);
+      expect(normalized.sections[0].content.indexOf('<b>')).assertEqual(-1);
+      expect(normalized.sections[0].content).assertContain('bold');
+      const issues: NoteGenerationIssue[] = validateDraftDocument(normalized, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(0);
     });
 
     it('deep_section_replaces_internal_section_label', 0, () => {
       const raw: NoteDraftDocument = deepRawDraft('密度函数定义。');
+      raw.sections[0].id = 'section-item-811c9dc5';
       raw.sections[0].label = 'section-item-811c9dc5';
       const normalized: NoteDraftDocument = normalizeDeepSectionDraft(raw, deepOutlineSection());
       expect(normalized.sections[0].id).assertEqual('section-item-811c9dc5');
@@ -394,28 +584,6 @@ export default function noteGenerationModelsTest(): void {
   });
 
   describe('NoteGenerationModels.deep_outline_cap', () => {
-    function emptyRequirement(): NoteGenerationRequirement {
-      return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
-    }
-
-    function multiSegmentBundle(count: number): SourceBundle {
-      const lines: string[] = [];
-      for (let index: number = 0; index < count; index += 1) {
-        lines.push('这是第' + (index + 1).toString() + '段原始材料文字');
-        lines.push('');
-      }
-      const fragment: SourceFragment = {
-        id: 'src-multi',
-        kind: 'conversation',
-        originId: 'origin-multi',
-        sequence: 0,
-        fingerprint: 'fp-multi',
-        text: lines.join('\n'),
-      };
-      const bundle: SourceBundle = { fragments: [fragment] };
-      return bundle;
-    }
-
     it('deep_outline_caps_sections_and_merges_tail_segments', 0, () => {
       // 2026-09-20 P0-5: 17k 字符对话实录被切成 347 节 = 347 次串行 LLM 调用
       // (冒烟实测 5 分钟烧 765 万 prompt tokens); 封顶 8 节, 尾部合并
@@ -442,70 +610,6 @@ export default function noteGenerationModelsTest(): void {
   // 2026-09-20 P0-6: standard 证据契约归一化 — round 0 空壳 / round 1 空 ref +
   // 重复 id 实测后, evidence 修复职责从"重试要求 LLM"转为"管线代算"
   describe('NoteGenerationModels.standard_evidence_normalization', () => {
-    function stdBundle(): SourceBundle {
-      const fragment: SourceFragment = {
-        id: 'src-std',
-        kind: 'conversation',
-        originId: 'origin-std',
-        sequence: 0,
-        fingerprint: 'fp-std',
-        text: '若 X 服从正态分布, 则其概率密度函数关于均值对称。',
-      };
-      const bundle: SourceBundle = { fragments: [fragment] };
-      return bundle;
-    }
-
-    function stdOutline(): NoteGenerationOutline {
-      return {
-        schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
-        sections: [{ id: 'sec-1', label: '定义', order: 0, mustInclude: [], sourceIds: ['src-std'] }],
-      };
-    }
-
-    function stdEvidence(
-      id: string,
-      claim: string,
-      sourceId: string,
-      excerpt: string,
-    ): NoteGenerationEvidenceItem {
-      return {
-        id: id,
-        type: 'definition',
-        claim: claim,
-        sourceRefs: [{ sourceId: sourceId, excerpt: excerpt, start: 0, end: excerpt.length }],
-        targetSectionId: 'sec-1',
-        verification: 'supported',
-      };
-    }
-
-    function stdDraft(): NoteDraftDocument {
-      return {
-        schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
-        title: '正态分布',
-        summary: '概率密度关于均值对称',
-        subject: '高等数学',
-        category: '概念',
-        chapter: '概率论',
-        difficulty: 2,
-        tags: ['正态分布'],
-        sections: [{
-          id: 'sec-1', label: '定义', content: '概率密度函数关于均值对称。',
-          sourceIds: ['src-std'], state: 'generated', baseHash: '',
-        }],
-        instruction: '保存这条笔记',
-      };
-    }
-
-    function stdRequirement(): NoteGenerationRequirement {
-      return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
-    }
-
-    function sectionMap(): Map<string, string[]> {
-      const map: Map<string, string[]> = new Map<string, string[]>();
-      map.set('sec-1', ['src-std']);
-      return map;
-    }
-
     it('normalize_evidence_drops_blank_stubs_and_dedupes_ids', 0, () => {
       const blankStub: NoteGenerationEvidenceItem = {
         id: '', type: 'claim', claim: '',
@@ -566,82 +670,6 @@ export default function noteGenerationModelsTest(): void {
   // 章节由该 segment 生成是结构性事实, 不适用「草稿逐字保留 excerpt」契约;
   // LLM 声明证据 (origin 缺省) 行为不变
   describe('NoteGenerationModels.pipeline_evidence_origin', () => {
-    function deepBundle(): SourceBundle {
-      const fragment: SourceFragment = {
-        id: 'src-deep',
-        kind: 'conversation',
-        originId: 'origin-deep',
-        sequence: 0,
-        fingerprint: 'fp-deep',
-        text: '定义与记号\n$$f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}$$\n其中 mu 为均值。',
-      };
-      const bundle: SourceBundle = { fragments: [fragment] };
-      return bundle;
-    }
-
-    function deepOutline(): NoteGenerationOutline {
-      return {
-        schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
-        sections: [{ id: 'sec-f', label: '公式', order: 0, mustInclude: [], sourceIds: ['src-deep'] }],
-      };
-    }
-
-    function formulaEvidence(pipeline: boolean): NoteGenerationEvidenceItem {
-      const excerpt: string = '$$f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}$$';
-      const start: number = deepBundle().fragments[0].text.indexOf(excerpt);
-      const item: NoteGenerationEvidenceItem = {
-        id: 'ev-formula',
-        type: 'formula',
-        claim: excerpt,
-        sourceRefs: [{ sourceId: 'src-deep', excerpt: excerpt, start: start, end: start + excerpt.length }],
-        targetSectionId: 'sec-f',
-        verification: 'supported',
-      };
-      if (pipeline) {
-        item.origin = 'pipeline';
-      }
-      return item;
-    }
-
-    function deepDraft(): NoteDraftDocument {
-      return {
-        schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
-        title: '正态分布',
-        summary: '密度函数关于均值对称',
-        subject: '高等数学',
-        category: '公式',
-        chapter: '概率论',
-        difficulty: 2,
-        tags: ['正态分布'],
-        sections: [{
-          id: 'sec-f', label: '公式',
-          content: '密度函数 $f(x)$ 关于 $x=\\mu$ 对称, 在均值处取得最大值。',
-          sourceIds: ['src-deep'], state: 'generated', baseHash: '',
-        }],
-        instruction: '保存这条笔记',
-      };
-    }
-
-    function deepRequirement(): NoteGenerationRequirement {
-      return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
-    }
-
-    function deepSectionMap(): Map<string, string[]> {
-      const map: Map<string, string[]> = new Map<string, string[]>();
-      map.set('sec-f', ['src-deep']);
-      return map;
-    }
-
-    function countCode(issues: NoteGenerationIssue[], code: string): number {
-      let count: number = 0;
-      for (const issue of issues) {
-        if (issue.code === code) {
-          count += 1;
-        }
-      }
-      return count;
-    }
-
     it('pipeline_formula_evidence_skips_verbatim_preservation_check', 0, () => {
       const issues: NoteGenerationIssue[] = validateStandardArtifacts(
         deepOutline(), [formulaEvidence(true)], deepDraft(), deepBundle(), deepRequirement());

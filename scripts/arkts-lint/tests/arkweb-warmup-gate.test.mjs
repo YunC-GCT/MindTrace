@@ -125,6 +125,6 @@ test('Issue 141 chat history persistence diagnostics and stream boundaries stay 
   assert.match(chatPersistenceWorker, /schemaVersion: number/);
   assert.match(chatPersistenceWorker, /diagnostic\('VERIFY', 'verified=true'\)/);
   assert.match(chatSession, /getLastSaveResult\(\)/);
-  assert.match(agentFloatWindow, /finishCurrentStreamingMessage\(\)/);
-  assert.match(agentFloatWindow, /inputVm\.bind\([\s\S]*finishCurrentStreamingMessage\(\)/);
+  assert.match(agentFloatWindow, /private stopStreaming = \(\): void => \{\s*this\.inputVm\.stop\(\)/);
+  assert.doesNotMatch(agentFloatWindow, /finishCurrentStreamingMessage\(\)/);
 });

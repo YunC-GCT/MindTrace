@@ -53,6 +53,20 @@ test('LlmClient API_ERROR path must use LlmErrorBodyFormatter', () => {
   );
 });
 
+test('LlmClient success JSON path must decode full body without preview truncation', () => {
+  const source = readLlmClient();
+  assert.match(
+    source,
+    /const\s+raw\s*:\s*string\s*=\s*LlmErrorBodyFormatter\.decodeFull\(response\.result\)/,
+    'LlmClient success JSON branch must decode the complete response body before JSON.parse.',
+  );
+  assert.doesNotMatch(
+    source,
+    /const\s+raw\s*:\s*string\s*=\s*LlmErrorBodyFormatter\.format\(response\.result\)/,
+    'LlmErrorBodyFormatter.format() previews long bodies and must only be used for user-visible error messages.',
+  );
+});
+
 test('LlmClient non-stream request declares string response expectation', () => {
   const source = readLlmClient();
   assert.match(

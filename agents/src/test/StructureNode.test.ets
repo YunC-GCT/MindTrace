@@ -25,6 +25,17 @@ import { GenerationJsonError } from '../main/ets/agents/GenerationJsonCaller';
 import { AgentState } from '../main/ets/graph/AgentState';
 import { KnowledgeUnit, LlmError, DifficultyLevel, ReviewStatus } from 'common';
 
+enum StubStructureFailure {
+  NONE = 'NONE',
+  GENERATION_RETRIABLE = 'GENERATION_RETRIABLE',
+  GENERATION_TERMINAL = 'GENERATION_TERMINAL',
+  LLM_NETWORK = 'LLM_NETWORK',
+  LLM_TIMEOUT = 'LLM_TIMEOUT',
+  LLM_STREAM = 'LLM_STREAM',
+  LLM_API = 'LLM_API',
+  GENERIC = 'GENERIC',
+}
+
 function unit(): KnowledgeUnit {
   const u: KnowledgeUnit = {
     id: 'unit-s1',
@@ -55,7 +66,7 @@ function unit(): KnowledgeUnit {
 
 class StubStructureModel extends KnowledgeModel {
   public unit: KnowledgeUnit = unit();
-  public errorToThrow: Error | undefined = undefined;
+  public failure: StubStructureFailure = StubStructureFailure.NONE;
   public calls: number = 0;
 
   async structure(
@@ -66,8 +77,30 @@ class StubStructureModel extends KnowledgeModel {
     source: string = 'camera_capture',
   ): Promise<KnowledgeUnit> {
     this.calls += 1;
-    if (this.errorToThrow !== undefined) {
-      throw this.errorToThrow;
+    if (this.failure === StubStructureFailure.GENERATION_RETRIABLE) {
+      throw new GenerationJsonError(
+        'LLM_TRANSPORT', 'light draft transport failed: [NETWORK_ERROR] refused', true,
+      );
+    }
+    if (this.failure === StubStructureFailure.GENERATION_TERMINAL) {
+      throw new GenerationJsonError(
+        'JSON_SCHEMA_ERROR', 'light draft failed after 3 attempts: title missing', false,
+      );
+    }
+    if (this.failure === StubStructureFailure.LLM_NETWORK) {
+      throw new LlmError('transport issue', 'NETWORK_ERROR');
+    }
+    if (this.failure === StubStructureFailure.LLM_TIMEOUT) {
+      throw new LlmError('transport issue', 'TIMEOUT');
+    }
+    if (this.failure === StubStructureFailure.LLM_STREAM) {
+      throw new LlmError('transport issue', 'STREAM_FAILED');
+    }
+    if (this.failure === StubStructureFailure.LLM_API) {
+      throw new LlmError('http 500', 'API_ERROR');
+    }
+    if (this.failure === StubStructureFailure.GENERIC) {
+      throw new Error('unexpected boom');
     }
     return this.unit;
   }
@@ -98,9 +131,7 @@ export default function structureNodeTest(): void {
 
     it('generation_json_error_retriable_true_propagates', 0, async () => {
       const model: StubStructureModel = new StubStructureModel();
-      model.errorToThrow = new GenerationJsonError(
-        'LLM_TRANSPORT', 'light draft transport failed: [NETWORK_ERROR] refused', true,
-      );
+      model.failure = StubStructureFailure.GENERATION_RETRIABLE;
       const node = StructureNodeFactory.create(model);
       const result = await node(state());
       expect(result.state.error !== undefined).assertTrue();
@@ -110,9 +141,7 @@ export default function structureNodeTest(): void {
 
     it('generation_json_error_terminal_maps_false', 0, async () => {
       const model: StubStructureModel = new StubStructureModel();
-      model.errorToThrow = new GenerationJsonError(
-        'JSON_SCHEMA_ERROR', 'light draft failed after 3 attempts: title missing', false,
-      );
+      model.failure = StubStructureFailure.GENERATION_TERMINAL;
       const node = StructureNodeFactory.create(model);
       const result = await node(state());
       expect(result.state.error !== undefined).assertTrue();
@@ -122,10 +151,14 @@ export default function structureNodeTest(): void {
     });
 
     it('llm_error_network_timeout_stream_map_retriable_true', 0, async () => {
-      const retriableKinds: string[] = ['NETWORK_ERROR', 'TIMEOUT', 'STREAM_FAILED'];
-      for (const kind of retriableKinds) {
+      const retriableFailures: StubStructureFailure[] = [
+        StubStructureFailure.LLM_NETWORK,
+        StubStructureFailure.LLM_TIMEOUT,
+        StubStructureFailure.LLM_STREAM,
+      ];
+      for (const failure of retriableFailures) {
         const model: StubStructureModel = new StubStructureModel();
-        model.errorToThrow = new LlmError('transport issue', kind);
+        model.failure = failure;
         const node = StructureNodeFactory.create(model);
         const result = await node(state());
         expect(result.state.error !== undefined).assertTrue();
@@ -136,13 +169,13 @@ export default function structureNodeTest(): void {
 
     it('llm_error_api_and_generic_error_map_false', 0, async () => {
       const apiModel: StubStructureModel = new StubStructureModel();
-      apiModel.errorToThrow = new LlmError('http 500', 'API_ERROR');
+      apiModel.failure = StubStructureFailure.LLM_API;
       const apiNode = StructureNodeFactory.create(apiModel);
       const apiResult = await apiNode(state());
       expect(apiResult.state.error?.retriable).assertFalse();
 
       const genericModel: StubStructureModel = new StubStructureModel();
-      genericModel.errorToThrow = new Error('unexpected boom');
+      genericModel.failure = StubStructureFailure.GENERIC;
       const genericNode = StructureNodeFactory.create(genericModel);
       const genericResult = await genericNode(state());
       expect(genericResult.state.error !== undefined).assertTrue();

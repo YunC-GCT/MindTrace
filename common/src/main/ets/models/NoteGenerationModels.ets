@@ -45,6 +45,8 @@ export interface NoteGenerationRequirement {
 
 export interface NoteGenerationRequest {
   runId: string;
+  originSessionId?: string;
+  parentConversationRunId?: string;
   instruction: string;
   mode: NoteGenerationMode;
   sources: SourceBundle;
@@ -199,6 +201,8 @@ export interface NoteGenerationProgress {
 
 export interface NoteGenerationRun {
   id: string;
+  originSessionId?: string;
+  parentConversationRunId?: string;
   route: NoteGenerationRoute;
   status: NoteGenerationStatus;
   instruction: string;
@@ -237,6 +241,8 @@ export interface NoteGenerationCheckpoint {
 
 export interface NoteDraftReadyEvent {
   runId: string;
+  originSessionId?: string;
+  parentConversationRunId?: string;
   checkpointId: string;
   candidateHash: string;
   candidate: KnowledgeUnit;
@@ -781,7 +787,7 @@ NOTE_STANDARD_SCHEMA_PROPERTIES['draft'] = '{"type":"object","required":["schema
 
 export const NOTE_STANDARD_JSON_SCHEMA: string = buildJsonSchema(
   'mindtrace.note-standard.v1',
-  ['outline', 'evidence', 'draft'],
+  ['outline', 'draft'],
   NOTE_STANDARD_SCHEMA_PROPERTIES,
 );
 
@@ -917,6 +923,7 @@ export function segmentSourceBundle(bundle: SourceBundle): NoteGenerationSegment
   for (const fragment of bundle.fragments) {
     const lines: string[] = fragment.text.split('\n');
     let current: string[] = [];
+    let inDisplayFormula: boolean = false;
     let currentBoundary: 'message' | 'ocr_page' | 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph' = fragment.kind === 'ocr' ? 'ocr_page' : 'message';
     const flush = (): void => {
       const text: string = current.join('\n').trim();
@@ -933,6 +940,14 @@ export function segmentSourceBundle(bundle: SourceBundle): NoteGenerationSegment
       current = [];
     };
     for (const line of lines) {
+      const trimmed: string = line.trim();
+      if (inDisplayFormula) {
+        current.push(line);
+        if (trimmed === '$$' || trimmed === '\\]') {
+          inDisplayFormula = false;
+        }
+        continue;
+      }
       const boundary: 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph' | undefined = segmentBoundary(line);
       if (boundary !== undefined && current.length > 0) {
         flush();
@@ -941,7 +956,9 @@ export function segmentSourceBundle(bundle: SourceBundle): NoteGenerationSegment
         currentBoundary = boundary;
       }
       current.push(line);
-      if (line.trim().length === 0 && current.length > 1) {
+      if (trimmed === '$$' || trimmed === '\\[') {
+        inDisplayFormula = true;
+      } else if (trimmed.length === 0 && current.length > 1) {
         flush();
         currentBoundary = fragment.kind === 'ocr' ? 'ocr_page' : 'message';
       }
@@ -1323,7 +1340,7 @@ export function validateStandardArtifacts(
       }
     }
     if (!mapped) {
-      issues.push({ stage: 'outline', code: 'MUST_INCLUDE_UNMAPPED', severity: 'hard', message: 'must-include item has no outline destination', repairable: true });
+      issues.push({ stage: 'outline', code: 'MUST_INCLUDE_UNMAPPED_OPTIONAL', severity: 'soft', message: 'must-include item has no outline destination; draft coverage remains authoritative', repairable: true });
     }
   }
   for (const sourceId of sourceIds) {
@@ -1343,7 +1360,7 @@ export function validateStandardArtifacts(
     }
   }
   if (evidence.length === 0 && outline.sections.length > 0) {
-    issues.push({ stage: 'evidence', code: 'EVIDENCE_REQUIRED', severity: 'hard', message: 'standard route requires an evidence ledger', repairable: true });
+    issues.push({ stage: 'evidence', code: 'EVIDENCE_OPTIONAL', severity: 'soft', message: 'standard route has no evidence ledger; draft can still be previewed', repairable: true });
   }
   for (const item of evidence) {
     if (!sectionIds.includes(item.targetSectionId)) {
@@ -1393,7 +1410,7 @@ export function validateStandardArtifacts(
       }
     }
     if (!formulaEvidence) {
-      issues.push({ stage: 'evidence', code: 'FORMULA_EVIDENCE_REQUIRED', severity: 'hard', message: 'requested formulas require formula evidence', repairable: true });
+      issues.push({ stage: 'evidence', code: 'FORMULA_EVIDENCE_OPTIONAL', severity: 'soft', message: 'requested formulas have no separate evidence ledger; draft content remains the source of truth', repairable: true });
     }
   }
   const draftIssues: NoteGenerationIssue[] = validateDraftDocument(draft, sourceIds);
@@ -1691,7 +1708,11 @@ export function normalizeDeepSectionDraft(
   };
 }
 
-export function validateDraftDocument(document: NoteDraftDocument, sourceIds: string[] = []): NoteGenerationIssue[] {
+export function validateDraftDocument(
+  document: NoteDraftDocument,
+  sourceIds: string[] = [],
+  allowRecoverableContentIssues: boolean = false,
+): NoteGenerationIssue[] {
   const issues: NoteGenerationIssue[] = [];
   const contentProtocol: ContentProtocol = new ContentProtocol();
   if (document.schemaVersion !== NOTE_DRAFT_SCHEMA_VERSION) {
@@ -1736,8 +1757,30 @@ export function validateDraftDocument(document: NoteDraftDocument, sourceIds: st
       }
     }
     const contentValidation = contentProtocol.validateNoteMarkdown(section.content);
-    if (!contentValidation.ok) {
-      issues.push({ stage: 'content', code: 'MM_MD_INVALID', severity: 'hard', message: 'section content violates MM-MD-v1', repairable: true, sectionId: section.id });
+    const normalizedValidation = contentValidation.fallbackRequired
+      ? contentValidation
+      : contentProtocol.validateNoteMarkdown(contentValidation.normalizedText);
+    const contentInvalid = allowRecoverableContentIssues
+      ? (!normalizedValidation.ok || normalizedValidation.fallbackRequired)
+      : !contentValidation.ok;
+    if (contentInvalid) {
+      const validationReasons: string[] = [];
+      for (const issue of contentValidation.issues.concat(normalizedValidation.issues)) {
+        if (!validationReasons.includes(issue)) {
+          validationReasons.push(issue);
+        }
+      }
+      const reasonText: string = validationReasons.length > 0
+        ? ': ' + validationReasons.join(', ')
+        : '';
+      issues.push({
+        stage: 'content',
+        code: 'MM_MD_INVALID',
+        severity: 'hard',
+        message: 'section content violates MM-MD-v1' + reasonText,
+        repairable: true,
+        sectionId: section.id,
+      });
     }
   }
   return issues;

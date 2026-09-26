@@ -16,13 +16,13 @@ const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiServ
 
 test('photo send enters captureReply instead of text-only streaming', () => {
   assert.match(inputViewModel, /if \(uri\.length > 0\)/);
-  assert.match(inputViewModel, /this\.service\.captureReply\(uri, msg\)/);
-  assert.match(inputViewModel, /else \{\s*this\.service\.realReplyStream\(msg\)/);
+  assert.match(inputViewModel, /this\.service\.captureReply\(sessionId, uri, msg\)/);
+  assert.match(inputViewModel, /else \{\s*this\.service\.realReplyStream\(sessionId, msg\)/);
 });
 
 test('photo conversation performs analysis only and stores OCR material', () => {
-  assert.match(conversation, /\.analyzeImage\(imageUri, userText\)/);
-  assert.match(conversation, /safeSaveOcrResult\(sessionId, imageUri, userText, result\)/);
+  assert.match(conversation, /this\.capturePort\.analyzeImage\([\s\S]*?imageUri,[\s\S]*?userText/);
+  assert.match(conversation, /safeSaveOcrResult\(ref, imageUri, userText, result\)/);
   assert.match(aiService, /analysisOnly: true/);
 });
 

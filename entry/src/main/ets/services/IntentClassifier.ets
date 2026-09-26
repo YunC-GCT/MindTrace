@@ -10,6 +10,7 @@
 
 import { ChatMessage, JSON_ONLY_RULES, LATEX_GENERATION_RULES, LlmConfig, LlmGuard } from 'common';
 import type { LlmGuardValidationResult } from 'common';
+import type { CancellationToken } from 'common';
 
 export type TextIntent = 'note_generation' | 'chat';
 
@@ -30,6 +31,11 @@ export class IntentClassifier {
 
   // ===== 意图判定 (关键词前置 → 远程 LLM 兜底, 失败回退 chat) =====
   public async classify(userText: string): Promise<TextIntent> {
+    return await this.classifyWithCancellation(userText, undefined);
+  }
+
+  public async classifyWithCancellation(userText: string, cancellationToken?: CancellationToken): Promise<TextIntent> {
+    cancellationToken?.throwIfCancelled();
     const normalized: string = userText.trim();
     if (normalized.length === 0) { return 'chat'; }
     if (this.hasNoteGenerationDenyIntent(normalized)) { return 'chat'; }
@@ -46,9 +52,11 @@ export class IntentClassifier {
         timeoutMs: 30000,
         responseFormat: { type: 'json_object' },
         label: 'text intent classification',
+        cancellationToken: cancellationToken,
       }, (json: Record<string, Object>): LlmGuardValidationResult => this.validateTextIntentJson(json));
       return this.parseTextIntent(result.raw);
     } catch (e) {
+      cancellationToken?.throwIfCancelled();
       console.warn('[IntentClassifier] text intent classify failed: ' + IntentClassifier.errorMessage(e));
       return 'chat';
     }
@@ -273,6 +281,7 @@ export class IntentClassifier {
       + '13. 重要公式、长公式和多行推导使用展示公式，起止 $$ 必须各占独立一行；不要写成 $$公式$$，不要在 $$ 内嵌套单个美元符，也不要用 Markdown 代码块包公式。\n'
       + '14. 多行公式只能在独立的 $$ 块内使用 \\begin{aligned}...\\end{aligned}；不要使用 align 或 align* 环境。\n'
       + '15. 列表项内只允许短行内公式；长公式和 $$ 定界符必须移到列表外，绝不能写成“1. $$”“2. 公式”“3. $$”。如需分步推导，用“第 1 步：”文字段落，再另起独立 $$ 块。\n\n'
+      + '16. 如果发现格式问题，请在内部修正后继续回答原问题；禁止输出“格式问题”“校验失败”“上一条回答存在问题”等格式诊断或元评论，只输出最终答案。\n'
       + LATEX_GENERATION_RULES;
     if (strictJson) {
       systemPrompt += '\n' + JSON_ONLY_RULES;

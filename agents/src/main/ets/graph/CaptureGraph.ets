@@ -28,7 +28,9 @@ export class CaptureGraph {
     const workflowNode: StateGraphNode<AgentState> = async (input: AgentState): Promise<AgentState> => {
       const nodeInput: AgentState = this.copyState(input, input.persist, step);
       try {
+        nodeInput.cancellationToken?.throwIfCancelled();
         const result: CaptureNodeResult = await node(nodeInput);
+        result.state.cancellationToken?.throwIfCancelled();
         return result.state;
       } catch (e) {
         const message: string = e instanceof Error ? e.message : String(e);

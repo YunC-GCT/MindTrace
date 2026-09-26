@@ -24,6 +24,7 @@ import type {
   LlmGuardJsonResult,
   LlmGuardValidationResult,
   StreamEvent,
+  CancellationToken,
 } from 'common';
 import { IntentClassifier, ReplyContext } from './IntentClassifier';
 
@@ -46,17 +47,19 @@ export class ReplyService {
     this.intentClassifier = intentClassifier;
   }
 
-  async complete(context: ReplyContext): Promise<string> {
-    return await this.guardedComplete(context, 'chat answer');
+  async complete(context: ReplyContext, cancellationToken?: CancellationToken): Promise<string> {
+    return await this.guardedComplete(context, 'chat answer', cancellationToken);
   }
 
-  private async guardedComplete(context: ReplyContext, label: string): Promise<string> {
+  private async guardedComplete(context: ReplyContext, label: string, cancellationToken?: CancellationToken): Promise<string> {
+    cancellationToken?.throwIfCancelled();
     const guarded: LlmGuardJsonResult = await new LlmGuard().callJsonWithRetry(
       this.intentClassifier.buildReplyMessages(context),
       {
         maxTokens: CHAT_REPLY_MAX_TOKENS,
         timeoutMs: 120000,
         label: label,
+        cancellationToken: cancellationToken,
       },
       (json: Record<string, Object>): LlmGuardValidationResult => this.validateChatAnswerJson(json),
     );
@@ -68,7 +71,9 @@ export class ReplyService {
   async stream(
     context: ReplyContext,
     sink: ReplyEventSink,
+    cancellationToken?: CancellationToken,
   ): Promise<StreamReplyResult> {
+    cancellationToken?.throwIfCancelled();
     const client: LlmClient = new LlmClient();
     let content: string = '';
     let receivedEvent: boolean = false;
@@ -84,6 +89,7 @@ export class ReplyService {
             messages: this.intentClassifier.buildStreamingReplyMessages(context),
             stream: true,
             onDelta: (event: StreamEvent): void => {
+              cancellationToken?.throwIfCancelled();
               receivedEvent = true;
               if (event.type === 'thinking') {
                 thinkingEvents += 1;
@@ -97,6 +103,7 @@ export class ReplyService {
             },
             maxTokens: CHAT_REPLY_MAX_TOKENS,
             timeoutMs: 120000,
+            cancellationToken: cancellationToken,
           });
           break;
         } catch (e) {
@@ -116,10 +123,11 @@ export class ReplyService {
       }
       if (this.shouldUseFallback(content)) {
         replyLog.warn('stream empty, using fallback');
-        return await this.fallback(context);
+        cancellationToken?.throwIfCancelled();
+        return await this.fallback(context, cancellationToken);
       }
       const success: StreamReplyResult = {
-        content: content,
+        content: this.normalize(content),
         interrupted: false,
         usedFallback: false,
       };
@@ -129,9 +137,10 @@ export class ReplyService {
         + ' textChars=' + textChars.toString());
       return success;
     } catch (e) {
+      cancellationToken?.throwIfCancelled();
       if (receivedEvent && !this.shouldUseFallback(content)) {
         const interrupted: StreamReplyResult = {
-          content: content,
+          content: this.normalize(content),
           interrupted: true,
           usedFallback: false,
         };
@@ -147,7 +156,8 @@ export class ReplyService {
         }
         throw new Error(JSON.stringify(e));
       }
-      return await this.fallback(context);
+      cancellationToken?.throwIfCancelled();
+      return await this.fallback(context, cancellationToken);
     }
   }
 
@@ -158,8 +168,11 @@ export class ReplyService {
 
   private async fallback(
     context: ReplyContext,
+    cancellationToken?: CancellationToken,
   ): Promise<StreamReplyResult> {
-    const content: string = await this.guardedComplete(context, 'chat answer fallback');
+    const content: string = cancellationToken === undefined
+      ? await this.guardedComplete(context, 'chat answer fallback')
+      : await this.guardedComplete(context, 'chat answer fallback', cancellationToken);
     const fallbackResult: StreamReplyResult = {
       content: content,
       interrupted: false,

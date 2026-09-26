@@ -242,6 +242,7 @@ export class LlmGuard {
       timeoutMs: options.timeoutMs,
       responseFormat: options.responseFormat ?? { type: 'json_object' },
       enableThinking: options.enableThinking,
+      cancellationToken: options.cancellationToken,
     };
     return request;
   }

@@ -9,7 +9,7 @@
  *   AgentFloatWindow ↔ ConversationWorkflow (callbacks) ↔ ConversationWorkflow.run (StateGraph)
  *
  * 设计要点:
- *   - P0: appendAiMsg 接 StreamEvent (structured, 4-value union; tool_* 保留位); addAiMsgEmpty + finishAiMsg 形成"创建空消息 → 累积流 → 完成"三阶段
+ *   - P0: updateAiMsg 以单一 event sink 承载 StreamEvent 增量与最终正文替换; addAiMsgEmpty + finishAiMsg 形成"创建空消息 → 累积流 → 完成"三阶段
  *   - onDraftReady 把草稿事件抛回 UI,UI 端走 NoteDraftPanel;draft 状态字段回写到 ConversationState 在 State.ets 定义
  *
  * ArkTS 1.1 strict 适配:
@@ -18,21 +18,56 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { ConversationProgressStep } from './ConversationState';
+import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
 import { NoteDraftReadyEvent } from 'common';
 import type { StreamEvent } from 'common';
+import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { CancellationToken } from 'common';
+export type ConversationRunEventStatus = 'pending' | 'running' | 'success' | 'failed';
+
+export interface ConversationStreamMessageEvent {
+  kind: 'stream';
+  event: StreamEvent;
+}
+
+export interface ConversationReplaceContentEvent {
+  kind: 'replace-content';
+  content: string;
+}
+
+export interface ConversationStatusMessageEvent {
+  kind: 'status';
+  content: string;
+  status: ConversationRunEventStatus;
+}
+
+export interface ConversationErrorMessageEvent {
+  kind: 'error';
+  content: string;
+}
+
+export type ConversationMessageEvent = ConversationStreamMessageEvent
+  | ConversationReplaceContentEvent
+  | ConversationStatusMessageEvent
+  | ConversationErrorMessageEvent;
 
 export interface ConversationWorkflowCallbacks {
-  addAiMsg(content: string): void;
-  addAiMsgEmpty(): number;
-  appendAiMsg(id: number, event: StreamEvent): void;
-  finishAiMsg(id: number): void;
-  onStart(): void;
-  onProgress(step: ConversationProgressStep): void;
-  onFinish(): void;
+  addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number;
+  addAiMsgEmpty(ref: ConversationRunRef, origin: ChatMessageOrigin): number;
+  updateAiMsg(ref: ConversationRunRef, id: number, event: ConversationMessageEvent): void;
+  finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void;
+  getUserMessageId(ref: ConversationRunRef): number;
+  commitHistory(ref: ConversationRunRef): Promise<boolean>;
+  reportDiagnostic(ref: ConversationRunRef, diagnostic: string): void;
+  onStart(ref: ConversationRunRef): void;
+  onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void;
+  onError(ref: ConversationRunRef, message: string): void;
+  onFinish(ref: ConversationRunRef): void;
+  isCurrentRun(ref: ConversationRunRef): boolean;
+  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined;
+  registerCancellationHook(ref: ConversationRunRef, hook: () => void): () => void;
   getContext(): common.UIAbilityContext;
-  getConversationText(excludeLatestUser: boolean): string;
-  getSessionId(): string;
-  onDraftReady(event: NoteDraftReadyEvent): void;
-  onOcrBlank?(imageUri: string): void;
+  getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string;
+  onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void;
+  onOcrBlank?(ref: ConversationRunRef, imageUri: string): void;
 }

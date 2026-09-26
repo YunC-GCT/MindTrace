@@ -89,6 +89,7 @@ import type {
   IncrementalPatch,
   IncrementalPatchResponse,
   SourceFragment,
+  CancellationToken,
 } from 'common';
 import { NOTE_DRAFT_JSON_SCHEMA, normalizeDeepSectionDraft, normalizeEvidenceItems, parseDirectStandardArtifacts, validateDraftDocument, validateDraftShape } from 'common';
 import { TypeClassifier } from './TypeClassifier';
@@ -113,10 +114,12 @@ export class KnowledgeModel {
   private promptBuilder: PromptBuilder = new PromptBuilder();
   private llm: LlmCaller;
   private jsonCaller: GenerationJsonCaller;
+  private readonly cancellationToken?: CancellationToken;
 
-  constructor(llm?: LlmCaller) {
+  constructor(llm?: LlmCaller, cancellationToken?: CancellationToken) {
     this.llm = llm ?? new LlmClient();
-    this.jsonCaller = new GenerationJsonCaller(this.llm);
+    this.cancellationToken = cancellationToken;
+    this.jsonCaller = new GenerationJsonCaller(this.llm, undefined, cancellationToken);
   }
 
   /**
@@ -132,6 +135,7 @@ export class KnowledgeModel {
     chapter: string = '',
     source: string = 'camera_capture',
   ): Promise<KnowledgeUnit> {
+    this.cancellationToken?.throwIfCancelled();
     const startTime: number = Date.now();
     const classificationHint: ClassificationResult = await this.resolveClassificationHint(
       ocrText,
@@ -202,7 +206,8 @@ export class KnowledgeModel {
     const systemMessage: ChatMessage = {
       role: 'system',
       content: 'Generate one schema-valid math note draft. Preserve the instruction exactly. '
-        + 'Every section must cite source IDs in sourceIds. Return JSON only.\n'
+        + 'If sourceIds are clear from the input, include them; otherwise leave them empty and let the pipeline map them from the original source fragments. '
+        + 'Do not invent source IDs. Evidence is assembled by the pipeline when the first model pass does not provide it. Return JSON only.\n'
         + 'Original source fragments are authoritative; summaries never replace conflicting raw text.\n'
         + request.instruction + '\n' + NOTE_DRAFT_JSON_SCHEMA,
     };
@@ -384,13 +389,40 @@ export class KnowledgeModel {
     issues: NoteGenerationIssue[],
   ): Promise<NoteGenerationDeepResult> {
     const targets: string[] = [];
+    let globalRepairRequired: boolean = false;
     for (const issue of issues) {
       if (issue.sectionId !== undefined && !targets.includes(issue.sectionId)) {
         targets.push(issue.sectionId);
       }
+      if (issue.sourceId !== undefined) {
+        for (const outlineSection of current.outline.sections) {
+          if (outlineSection.sourceIds.includes(issue.sourceId) && !targets.includes(outlineSection.id)) {
+            targets.push(outlineSection.id);
+          }
+        }
+      }
+      if (issue.code === 'DEEP_MUST_INCLUDE_MISSING') {
+        for (const outlineSection of current.outline.sections) {
+          for (const requiredItem of outlineSection.mustInclude) {
+            if (issue.message.includes(requiredItem) && !targets.includes(outlineSection.id)) {
+              targets.push(outlineSection.id);
+            }
+          }
+        }
+      }
+      if (issue.code === 'DEEP_CONTRADICTION' || issue.code === 'TRUTH_CHECK_ERROR') {
+        globalRepairRequired = true;
+      }
     }
-    if (targets.length === 0 && current.outline.sections.length > 0) {
-      targets.push(current.outline.sections[0].id);
+    if (globalRepairRequired) {
+      for (const outlineSection of current.outline.sections) {
+        if (!targets.includes(outlineSection.id)) {
+          targets.push(outlineSection.id);
+        }
+      }
+    }
+    if (targets.length === 0) {
+      throw new Error('deep repair target unresolved');
     }
     const segments: NoteGenerationSegment[] = current.segments ?? segmentSourceBundle(request.sources);
     const ledger: NoteGenerationLedger = {
@@ -493,22 +525,23 @@ export class KnowledgeModel {
         responseFormat: { type: 'json_object' },
       },
       (json: Record<string, Object>): LlmGuardValidationResult => {
-        const value: Object | undefined = json['patches'];
+        const value: Object | undefined = this.readRecordValue(json, 'patches');
         if (value === undefined || !Array.isArray(value)) {
           return { ok: false, issues: ['patches must be an array'] };
         }
         return { ok: true, issues: [] };
       },
       (json: Record<string, Object>): string[] => {
-        const value: Object | undefined = json['patches'];
+        const value: Object | undefined = this.readRecordValue(json, 'patches');
         if (value === undefined || !Array.isArray(value)) {
           return ['patches must be an array'];
         }
         const issues: string[] = [];
         for (const item of value as Object[]) {
           const record: Record<string, Object> = item as Record<string, Object>;
-          const sectionId: string = String(record['sectionId'] ?? '');
-          if (!plan.targetSectionIds.includes(sectionId) || record['operation'] !== 'replace') {
+          const sectionId: string = String(this.readRecordValue(record, 'sectionId') ?? '');
+          if (!plan.targetSectionIds.includes(sectionId)
+            || this.readRecordValue(record, 'operation') !== 'replace') {
             issues.push('incremental repair contains an unplanned patch: ' + sectionId);
           }
         }
@@ -516,15 +549,15 @@ export class KnowledgeModel {
       },
     );
     const patches: IncrementalPatch[] = [];
-    const patchValue: Object | undefined = parsed['patches'];
+    const patchValue: Object | undefined = this.readRecordValue(parsed, 'patches');
     if (patchValue !== undefined && Array.isArray(patchValue)) {
       for (const item of patchValue as Object[]) {
         const record: Record<string, Object> = item as Record<string, Object>;
         patches.push({
-          sectionId: String(record['sectionId'] ?? ''),
+          sectionId: String(this.readRecordValue(record, 'sectionId') ?? ''),
           operation: 'replace',
-          content: String(record['content'] ?? ''),
-          sourceIds: this.readStringArray(record['sourceIds']),
+          content: String(this.readRecordValue(record, 'content') ?? ''),
+          sourceIds: this.readStringArray(this.readRecordValue(record, 'sourceIds')),
         });
       }
     }
@@ -549,11 +582,12 @@ export class KnowledgeModel {
         + 'Use only the relevant original segments below and the shared ledger; never invent or read other sections. '
         + 'Preserve formulas, derivation steps and terminology exactly, and return one section with id '
         + outlineSection.id + '. '
-        + 'Contract: sections[].sourceIds must use the [source:X] ids from the relevant sources; '
+        + 'Contract: sections[].sourceIds may be empty when the model cannot safely determine the mapping; '
+        + 'when present, they must use the [source:X] ids from the relevant sources. The pipeline fills missing mappings from the outline and source bundle. '
         + 'category must be one of 概念/定理/公式/证明题/计算题; '
-        + 'math delimiters are $...$ and $$...$$ (never \\( or \\[); '
         + 'title must not contain math delimiters; summary may contain short inline math using $...$, '
         + 'but must be no longer than 60 characters and must not use display math. '
+        + LATEX_GENERATION_RULES + '\n'
         + 'User instruction=' + request.instruction + '\n'
         + 'section label=' + outlineSection.label + '\n'
         + 'must include=' + outlineSection.mustInclude.join(',') + '\n'
@@ -577,10 +611,11 @@ export class KnowledgeModel {
         // 学科级 category / \(...\) 定界符, 直接判 hard 导致 3 次重试全灭;
         // 归一化后校验器只拦截真值类失败 (空 content / 不可渲染 / 伪造引用)
         const document: NoteDraftDocument = normalizeDeepSectionDraft(this.parseDraftDocument(json), outlineSection);
-        const issues: NoteGenerationIssue[] = validateDraftDocument(document, outlineSection.sourceIds);
+        const issues: NoteGenerationIssue[] = validateDraftDocument(document, outlineSection.sourceIds, true);
         const codes: string[] = [];
         for (const issue of issues) {
-          codes.push(issue.code);
+          const detail: string = issue.message.trim().length > 0 ? ': ' + issue.message : '';
+          codes.push(issue.code + detail);
         }
         return codes;
       },
@@ -597,7 +632,7 @@ export class KnowledgeModel {
     const sourceIds: string[] = outlineSection.sourceIds.slice(0);
     // P0-5 (2026-09-20): ledger 是跨节共享上下文, 不是内容仓库 —
     // value 截断 (DEEP_LEDGER_VALUE_MAX_CHARS), 否则 N 节后 prompt 线性膨胀
-    if (content.indexOf('=') >= 0 || content.indexOf('\\(') >= 0) {
+    if (this.contentProtocol.hasFormulaSyntax(content)) {
       ledger.formulas.push({
         key: 'formula-' + outlineSection.id,
         value: content.length > DEEP_LEDGER_VALUE_MAX_CHARS ? content.substring(0, DEEP_LEDGER_VALUE_MAX_CHARS) : content,
@@ -772,14 +807,14 @@ export class KnowledgeModel {
         responseFormat: this.structuredResponseFormat(NOTE_EVIDENCE_JSON_SCHEMA, 'mindtrace_note_evidence_repair'),
       },
       (json: Record<string, Object>): LlmGuardValidationResult => {
-        const value: Object | undefined = json['evidence'];
+        const value: Object | undefined = this.readRecordValue(json, 'evidence');
         if (value === undefined || !Array.isArray(value)) {
           return { ok: false, issues: ['evidence must be an array'] };
         }
         return { ok: true, issues: [] };
       },
     );
-    const evidenceValue: Object | undefined = parsed['evidence'];
+    const evidenceValue: Object | undefined = this.readRecordValue(parsed, 'evidence');
     return this.parseEvidence(evidenceValue as Object);
   }
 
@@ -792,17 +827,19 @@ export class KnowledgeModel {
       role: 'system',
       content: 'Return JSON only for a math note standard route. ' + purpose + '\n'
         + 'Preserve the exact user instruction, formulas, steps, examples and source mapping. '
-        + 'Every evidence item must use a source excerpt and target section. '
-        + 'Use stable section labels and source IDs from the input.\n'
+        + 'When evidence is returned, each item should use a source excerpt and target section. '
+        + 'Evidence may be an empty array or be omitted on the first pass; the pipeline will build evidence from the original source fragments when needed. '
+        + 'Use stable section labels and source IDs from the input when they are unambiguous.\n'
         + 'category must be exactly one of: 概念, 定理, 公式, 证明题, 计算题.\n'
-        + 'Every outline section and every draft section must list its sourceIds using the source IDs from the input.\n'
+        + 'Outline and draft section sourceIds may be empty when the mapping is not yet known. Do not invent IDs; the pipeline will fill missing mappings from the real source bundle.\n'
         + 'Section content: use $...$ for inline math and $$ on their own lines for display math; '
         + 'never use \\( \\) or \\[ \\]; use markdown lists (- item / 1. item) instead of \\begin{itemize} or \\begin{enumerate}.\n'
         + 'Summary must be no longer than 60 characters; it may contain short inline math using $...$, '
         + 'but must not contain display math.\n'
         + 'Evidence excerpts must be copied verbatim (character-exact) from the sources.\n'
-        + 'Output schema: top-level object with exactly outline, evidence, and draft. '
-        + 'outline contains schemaVersion and sections; evidence is an array of evidence items; '
+        + LATEX_GENERATION_RULES + '\n'
+        + 'Output schema: top-level object with outline and draft; evidence is an optional array of evidence items. '
+        + 'outline contains schemaVersion and sections; '
         + 'draft contains schemaVersion, title, summary, subject, category, chapter, difficulty, tags, and sections.\n'
         + 'instruction=' + request.instruction + '\n'
         + 'mustInclude=' + requirement.mustInclude.join(',') + '\n'
@@ -824,7 +861,7 @@ export class KnowledgeModel {
         if (this.isStandardArtifactsCandidate(json)) {
           return { ok: true, issues: [] };
         }
-        return { ok: false, issues: ['standard artifacts require outline, evidence, and draft'] };
+        return { ok: false, issues: ['standard artifacts require draft'] };
       },
     );
     return this.parseStandardResult(parsed, request.sources);
@@ -855,9 +892,9 @@ export class KnowledgeModel {
   }
 
   private isStandardArtifactsCandidate(parsed: Record<string, Object>): boolean {
-    const outlineValue: Object | undefined = parsed['outline'];
-    const evidenceValue: Object | undefined = parsed['evidence'];
-    const draftValue: Object | undefined = parsed['draft'];
+    const outlineValue: Object | undefined = this.readRecordValue(parsed, 'outline');
+    const evidenceValue: Object | undefined = this.readRecordValue(parsed, 'evidence');
+    const draftValue: Object | undefined = this.readRecordValue(parsed, 'draft');
     if (outlineValue !== undefined && evidenceValue !== undefined && draftValue !== undefined) {
       return !Array.isArray(outlineValue) && typeof outlineValue === 'object'
         && Array.isArray(evidenceValue)
@@ -866,13 +903,82 @@ export class KnowledgeModel {
     if (draftValue !== undefined && !Array.isArray(draftValue) && typeof draftValue === 'object') {
       return this.isDraftArtifactsCandidate(draftValue as Record<string, Object>);
     }
-    return this.isDraftArtifactsCandidate(parsed);
+    if (this.isDraftArtifactsCandidate(parsed)) {
+      return true;
+    }
+    return this.findNestedStandardArtifacts(parsed) !== undefined;
   }
 
   private isDraftArtifactsCandidate(parsed: Record<string, Object>): boolean {
-    const titleValue: Object | undefined = parsed['title'];
-    const sectionsValue: Object | undefined = parsed['sections'];
+    const titleValue: Object | undefined = this.readRecordValue(parsed, 'title');
+    const sectionsValue: Object | undefined = this.readRecordValue(parsed, 'sections');
     return typeof titleValue === 'string' && titleValue.trim().length > 0 && Array.isArray(sectionsValue);
+  }
+
+  private findNestedStandardArtifacts(parsed: Record<string, Object>): Record<string, Object> | undefined {
+    const preferredKeys: string[] = ['result', 'data', 'note', 'document', 'draftDocument', 'answer', 'content', 'output'];
+    const entries: Array<[string, Object]> = Object.entries(parsed) as Array<[string, Object]>;
+    for (const key of preferredKeys) {
+      const nested: Record<string, Object> | undefined = this.readNestedStandardArtifacts(
+        this.readRecordValueFromEntries(entries, key),
+      );
+      if (nested !== undefined) {
+        return nested;
+      }
+    }
+    for (const entry of entries) {
+      const key: string = entry[0];
+      if (preferredKeys.includes(key)) {
+        continue;
+      }
+      const nested: Record<string, Object> | undefined = this.readNestedStandardArtifacts(entry[1]);
+      if (nested !== undefined) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  private readRecordValue(parsed: Record<string, Object>, key: string): Object | undefined {
+    return this.readRecordValueFromEntries(Object.entries(parsed) as Array<[string, Object]>, key);
+  }
+
+  private readOptionalString(parsed: Record<string, Object>, key: string): string | undefined {
+    const value: Object | undefined = this.readRecordValue(parsed, key);
+    return value === undefined ? undefined : String(value);
+  }
+
+  private readRecordValueFromEntries(entries: Array<[string, Object]>, key: string): Object | undefined {
+    for (const entry of entries) {
+      if (entry[0] === key) {
+        return entry[1];
+      }
+    }
+    return undefined;
+  }
+
+  private readNestedStandardArtifacts(value: Object | undefined): Record<string, Object> | undefined {
+    if (value === undefined || value === null || Array.isArray(value)) {
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      const jsonText: string = new LlmGuard().extractJsonObject(value);
+      if (jsonText.length === 0) {
+        return undefined;
+      }
+      try {
+        return JSON.parse(jsonText) as Record<string, Object>;
+      } catch (_e) {
+        return undefined;
+      }
+    }
+    if (typeof value === 'object') {
+      const record: Record<string, Object> = value as Record<string, Object>;
+      if (this.isStandardArtifactsCandidate(record) || this.isDraftArtifactsCandidate(record)) {
+        return record;
+      }
+    }
+    return undefined;
   }
 
   private async callIndependentVerifier(
@@ -907,11 +1013,11 @@ export class KnowledgeModel {
         },
         (json: Record<string, Object>): LlmGuardValidationResult => {
           const issues: string[] = [];
-          const decisionsValue: Object | undefined = json['decisions'];
+          const decisionsValue: Object | undefined = this.readRecordValue(json, 'decisions');
           if (decisionsValue !== undefined && !Array.isArray(decisionsValue)) {
             issues.push('decisions must be an array');
           }
-          const issuesValue: Object | undefined = json['issues'];
+          const issuesValue: Object | undefined = this.readRecordValue(json, 'issues');
           if (issuesValue !== undefined && !Array.isArray(issuesValue)) {
             issues.push('issues must be an array');
           }
@@ -926,6 +1032,9 @@ export class KnowledgeModel {
         stage: 'evidence', code: 'VERIFIER_UNAVAILABLE', severity: 'hard',
         message: 'independent verifier did not return a result', repairable: true,
       }], checkedEvidenceIds: [], decisions: [] };
+    }
+    if (result.evidence.length === 0) {
+      modelVerification = this.relaxEmptyEvidenceVerification(modelVerification);
     }
     const local: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
       result.outline,
@@ -957,6 +1066,27 @@ export class KnowledgeModel {
       decisions: modelVerification.decisions,
     };
     return this.combineVerification(completeModelVerification, local);
+  }
+
+  private relaxEmptyEvidenceVerification(verification: NoteGenerationVerification): NoteGenerationVerification {
+    const issues: NoteGenerationIssue[] = [];
+    for (const issue of verification.issues) {
+      issues.push({
+        stage: issue.stage,
+        code: issue.code,
+        severity: 'soft',
+        message: issue.message,
+        repairable: issue.repairable,
+        sourceId: issue.sourceId,
+        sectionId: issue.sectionId,
+      });
+    }
+    return {
+      status: verification.status === 'contradicted' ? 'ambiguous' : verification.status,
+      issues: issues,
+      checkedEvidenceIds: verification.checkedEvidenceIds.slice(0),
+      decisions: verification.decisions.slice(0),
+    };
   }
 
   private normalizeStandardResult(
@@ -1260,17 +1390,33 @@ export class KnowledgeModel {
   }
 
   private parseStandardResult(parsed: Record<string, Object>, sources: SourceBundle): NoteGenerationStandardResult {
-    const outlineValue: Object | undefined = parsed['outline'];
-    const evidenceValue: Object | undefined = parsed['evidence'];
-    const draftValue: Object | undefined = parsed['draft'];
+    const nested: Record<string, Object> | undefined = this.findNestedStandardArtifacts(parsed);
+    const parsedDraft: Object | undefined = this.readRecordValue(parsed, 'draft');
+    const parsedOutline: Object | undefined = this.readRecordValue(parsed, 'outline');
+    if (nested !== undefined && !this.isDraftArtifactsCandidate(parsed)
+      && parsedDraft === undefined && parsedOutline === undefined) {
+      return this.parseStandardResult(nested, sources);
+    }
+    const outlineValue: Object | undefined = parsedOutline;
+    const evidenceValue: Object | undefined = this.readRecordValue(parsed, 'evidence');
+    const draftValue: Object | undefined = parsedDraft;
+    if (outlineValue !== undefined && draftValue !== undefined && evidenceValue === undefined) {
+      return {
+        outline: this.parseOutline(outlineValue as Record<string, Object>),
+        evidence: [],
+        draft: this.parseDraftDocument(draftValue as Record<string, Object>),
+        verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] },
+      };
+    }
     if (outlineValue === undefined || evidenceValue === undefined || draftValue === undefined) {
       if (draftValue !== undefined) {
         return parseDirectStandardArtifacts(draftValue as Record<string, Object>, sources);
       }
-      if (parsed['title'] !== undefined && parsed['sections'] !== undefined) {
+      if (this.readRecordValue(parsed, 'title') !== undefined
+        && this.readRecordValue(parsed, 'sections') !== undefined) {
         return parseDirectStandardArtifacts(parsed, sources);
       }
-      throw new Error('standard artifacts require outline, evidence, and draft');
+      throw new Error('standard artifacts require draft; keys=' + Object.keys(parsed).join(','));
     }
     return {
       outline: this.parseOutline(outlineValue as Record<string, Object>),
@@ -1281,16 +1427,19 @@ export class KnowledgeModel {
   }
 
   private parseOutline(value: Record<string, Object>): NoteGenerationOutline {
-    const sectionValue: Object | undefined = value['sections'];
+    const sectionValue: Object | undefined = this.readRecordValue(value, 'sections');
     const sections: NoteGenerationOutlineSection[] = [];
     if (sectionValue !== undefined && Array.isArray(sectionValue)) {
       for (const item of sectionValue as Object[]) {
         const record: Record<string, Object> = item as Record<string, Object>;
-        const mustInclude: string[] = this.readStringArray(record['mustInclude']);
-        const sourceIds: string[] = this.readStringArray(record['sourceIds']);
+        const mustInclude: string[] = this.readStringArray(this.readRecordValue(record, 'mustInclude'));
+        const sourceIds: string[] = this.readStringArray(this.readRecordValue(record, 'sourceIds'));
         sections.push({
-          id: String(record['id'] ?? ''), label: String(record['label'] ?? ''),
-          order: Number(record['order'] ?? sections.length), mustInclude: mustInclude, sourceIds: sourceIds,
+          id: String(this.readRecordValue(record, 'id') ?? ''),
+          label: String(this.readRecordValue(record, 'label') ?? ''),
+          order: Number(this.readRecordValue(record, 'order') ?? sections.length),
+          mustInclude: mustInclude,
+          sourceIds: sourceIds,
         });
       }
     }
@@ -1305,57 +1454,77 @@ export class KnowledgeModel {
     for (const item of value as Object[]) {
       const record: Record<string, Object> = item as Record<string, Object>;
       const references: EvidenceSourceRef[] = [];
-      const referenceValue: Object | undefined = record['sourceRefs'];
+      const referenceValue: Object | undefined = this.readRecordValue(record, 'sourceRefs');
       if (referenceValue !== undefined && Array.isArray(referenceValue)) {
         for (const reference of referenceValue as Object[]) {
           const ref: Record<string, Object> = reference as Record<string, Object>;
-          references.push({ sourceId: String(ref['sourceId'] ?? ''), excerpt: String(ref['excerpt'] ?? ''), start: Number(ref['start'] ?? 0), end: Number(ref['end'] ?? 0) });
+          references.push({
+            sourceId: String(this.readRecordValue(ref, 'sourceId') ?? ''),
+            excerpt: String(this.readRecordValue(ref, 'excerpt') ?? ''),
+            start: Number(this.readRecordValue(ref, 'start') ?? 0),
+            end: Number(this.readRecordValue(ref, 'end') ?? 0),
+          });
         }
       }
-      const typeValue: string = String(record['type'] ?? 'claim');
+      const typeValue: string = String(this.readRecordValue(record, 'type') ?? 'claim');
       const evidenceType: EvidenceItemType = typeValue === 'definition' || typeValue === 'formula'
         || typeValue === 'step' || typeValue === 'example' || typeValue === 'conclusion' ? typeValue : 'claim';
-      const statusValue: string = String(record['verification'] ?? 'supported');
+      const statusValue: string = String(this.readRecordValue(record, 'verification') ?? 'supported');
       const verification: EvidenceVerificationStatus = statusValue === 'contradicted' || statusValue === 'ambiguous' ? statusValue : 'supported';
-      evidence.push({ id: String(record['id'] ?? ''), type: evidenceType, claim: String(record['claim'] ?? ''), sourceRefs: references, targetSectionId: String(record['targetSectionId'] ?? ''), verification: verification });
+      evidence.push({
+        id: String(this.readRecordValue(record, 'id') ?? ''),
+        type: evidenceType,
+        claim: String(this.readRecordValue(record, 'claim') ?? ''),
+        sourceRefs: references,
+        targetSectionId: String(this.readRecordValue(record, 'targetSectionId') ?? ''),
+        verification: verification,
+      });
     }
     return evidence;
   }
 
   // 入参由 seam 预解析并保证顶层对象, 空文分支不再存在 (2026-09-19 统一 JSON 生命周期)
   private parseVerification(parsed: Record<string, Object>): NoteGenerationVerification {
-    const statusValue: string = String(parsed['status'] ?? 'ambiguous');
+    const statusValue: string = String(this.readRecordValue(parsed, 'status') ?? 'ambiguous');
     const status: EvidenceVerificationStatus = statusValue === 'supported' ? 'supported' : statusValue === 'contradicted' ? 'contradicted' : 'ambiguous';
     const decisions: NoteGenerationEvidenceDecision[] = [];
-    const decisionValue: Object | undefined = parsed['decisions'];
+    const decisionValue: Object | undefined = this.readRecordValue(parsed, 'decisions');
     if (decisionValue !== undefined && Array.isArray(decisionValue)) {
       for (const item of decisionValue as Object[]) {
         const record: Record<string, Object> = item as Record<string, Object>;
-        const itemStatus: string = String(record['status'] ?? 'ambiguous');
+        const itemStatus: string = String(this.readRecordValue(record, 'status') ?? 'ambiguous');
         const decisionStatus: EvidenceVerificationStatus = itemStatus === 'supported'
           ? 'supported' : itemStatus === 'contradicted' ? 'contradicted' : 'ambiguous';
-        decisions.push({ evidenceId: String(record['evidenceId'] ?? ''), status: decisionStatus });
-      }
-    }
-    const issues: NoteGenerationIssue[] = [];
-    const issueValue: Object | undefined = parsed['issues'];
-    if (issueValue !== undefined && Array.isArray(issueValue)) {
-      for (const item of issueValue as Object[]) {
-        const record: Record<string, Object> = item as Record<string, Object>;
-        const severityValue: string = String(record['severity'] ?? 'hard');
-        const severity: 'hard' | 'soft' = severityValue === 'soft' ? 'soft' : 'hard';
-        issues.push({
-          stage: String(record['stage'] ?? 'evidence'),
-          code: String(record['code'] ?? 'VERIFIER_PROCESS_ISSUE'),
-          severity: severity,
-          message: String(record['message'] ?? 'verifier reported a process issue'),
-          repairable: true,
-          sourceId: record['sourceId'] === undefined ? undefined : String(record['sourceId']),
-          sectionId: record['sectionId'] === undefined ? undefined : String(record['sectionId']),
+        decisions.push({
+          evidenceId: String(this.readRecordValue(record, 'evidenceId') ?? ''),
+          status: decisionStatus,
         });
       }
     }
-    return { status: status, issues: issues, checkedEvidenceIds: this.readStringArray(parsed['checkedEvidenceIds']), decisions: decisions };
+    const issues: NoteGenerationIssue[] = [];
+    const issueValue: Object | undefined = this.readRecordValue(parsed, 'issues');
+    if (issueValue !== undefined && Array.isArray(issueValue)) {
+      for (const item of issueValue as Object[]) {
+        const record: Record<string, Object> = item as Record<string, Object>;
+        const severityValue: string = String(this.readRecordValue(record, 'severity') ?? 'hard');
+        const severity: 'hard' | 'soft' = severityValue === 'soft' ? 'soft' : 'hard';
+        issues.push({
+          stage: String(this.readRecordValue(record, 'stage') ?? 'evidence'),
+          code: String(this.readRecordValue(record, 'code') ?? 'VERIFIER_PROCESS_ISSUE'),
+          severity: severity,
+          message: String(this.readRecordValue(record, 'message') ?? 'verifier reported a process issue'),
+          repairable: true,
+          sourceId: this.readOptionalString(record, 'sourceId'),
+          sectionId: this.readOptionalString(record, 'sectionId'),
+        });
+      }
+    }
+    return {
+      status: status,
+      issues: issues,
+      checkedEvidenceIds: this.readStringArray(this.readRecordValue(parsed, 'checkedEvidenceIds')),
+      decisions: decisions,
+    };
   }
 
   private validateIndependentVerifierJson(
@@ -1363,7 +1532,7 @@ export class KnowledgeModel {
     evidence: NoteGenerationEvidenceItem[],
   ): string[] {
     const issues: string[] = [];
-    const decisionValue: Object | undefined = json['decisions'];
+    const decisionValue: Object | undefined = this.readRecordValue(json, 'decisions');
     if (decisionValue === undefined || !Array.isArray(decisionValue)) {
       return ['decisions must be an array'];
     }
@@ -1375,7 +1544,7 @@ export class KnowledgeModel {
         continue;
       }
       const record: Record<string, Object> = item as Record<string, Object>;
-      const evidenceIdValue: Object | undefined = record['evidenceId'];
+      const evidenceIdValue: Object | undefined = this.readRecordValue(record, 'evidenceId');
       if (typeof evidenceIdValue !== 'string' || evidenceIdValue.trim().length === 0) {
         issues.push('each decision must include a non-empty evidenceId');
       } else if (!expectedIds.includes(evidenceIdValue)) {
@@ -1385,7 +1554,7 @@ export class KnowledgeModel {
       } else {
         seenIds.push(evidenceIdValue);
       }
-      const statusValue: Object | undefined = record['status'];
+      const statusValue: Object | undefined = this.readRecordValue(record, 'status');
       if (statusValue !== 'supported' && statusValue !== 'contradicted' && statusValue !== 'ambiguous') {
         issues.push('decision status must be supported, contradicted, or ambiguous');
       }
@@ -1460,7 +1629,7 @@ export class KnowledgeModel {
   }
 
   private parseDraftDocument(parsed: Record<string, Object>): NoteDraftDocument {
-    const sectionsValue: Object | undefined = parsed['sections'];
+    const sectionsValue: Object | undefined = this.readRecordValue(parsed, 'sections');
     if (sectionsValue === undefined || !Array.isArray(sectionsValue)) {
       throw new Error('light draft sections missing');
     }
@@ -1468,25 +1637,25 @@ export class KnowledgeModel {
     const rawSections: Object[] = sectionsValue as Object[];
     for (const rawSection of rawSections) {
       const record: Record<string, Object> = rawSection as Record<string, Object>;
-      const sourceIds: string[] = this.readStringArray(record['sourceIds']);
+      const sourceIds: string[] = this.readStringArray(this.readRecordValue(record, 'sourceIds'));
       sections.push({
-        id: String(record['id'] ?? ''),
-        label: String(record['label'] ?? ''),
-        content: String(record['content'] ?? ''),
+        id: String(this.readRecordValue(record, 'id') ?? ''),
+        label: String(this.readRecordValue(record, 'label') ?? ''),
+        content: String(this.readRecordValue(record, 'content') ?? ''),
         sourceIds: sourceIds,
-        state: record['state'] === 'locked' ? 'locked' : 'generated',
-        baseHash: String(record['baseHash'] ?? ''),
+        state: this.readRecordValue(record, 'state') === 'locked' ? 'locked' : 'generated',
+        baseHash: String(this.readRecordValue(record, 'baseHash') ?? ''),
       });
     }
     return {
-      schemaVersion: String(parsed['schemaVersion'] ?? ''),
-      title: String(parsed['title'] ?? ''),
-      summary: String(parsed['summary'] ?? ''),
-      subject: String(parsed['subject'] ?? ''),
-      category: String(parsed['category'] ?? ''),
-      chapter: String(parsed['chapter'] ?? ''),
-      difficulty: Number(parsed['difficulty'] ?? 0),
-      tags: this.readStringArray(parsed['tags']),
+      schemaVersion: String(this.readRecordValue(parsed, 'schemaVersion') ?? ''),
+      title: String(this.readRecordValue(parsed, 'title') ?? ''),
+      summary: String(this.readRecordValue(parsed, 'summary') ?? ''),
+      subject: String(this.readRecordValue(parsed, 'subject') ?? ''),
+      category: String(this.readRecordValue(parsed, 'category') ?? ''),
+      chapter: String(this.readRecordValue(parsed, 'chapter') ?? ''),
+      difficulty: Number(this.readRecordValue(parsed, 'difficulty') ?? 0),
+      tags: this.readStringArray(this.readRecordValue(parsed, 'tags')),
       sections: sections,
     };
   }
@@ -1596,6 +1765,7 @@ export class KnowledgeModel {
         maxTokens: KNOWLEDGE_MAX_TOKENS,
         timeoutMs: KNOWLEDGE_TIMEOUT_MS,
         label: 'KnowledgeModel structure',
+        cancellationToken: this.cancellationToken,
       }, (json: Record<string, Object>): LlmGuardValidationResult => this.validateAiJson(json));
       console.info('[KnowledgeModel] callAi response received, len=' + guarded.raw.length.toString()
         + ', attempts=' + guarded.attempts.toString());
@@ -1604,7 +1774,7 @@ export class KnowledgeModel {
       // §13.5: LlmError 原样上抛 (保留 kind 供 StructureNode 映射 retriable),
       // 仅包装非 LlmError 的意外异常
       if (llmErr instanceof LlmError) {
-        throw llmErr;
+        throw new LlmError(llmErr.message, llmErr.kind);
       }
       throw new Error('LLM 调用失败: ' + (llmErr as Error).message);
     }
@@ -1617,14 +1787,14 @@ export class KnowledgeModel {
     const parsed: Record<string, Object> = guarded.json;
 
     const aiRaw: AiRawResponse = {
-      category: this.normalizeCategory(String(parsed['category'] ?? ''), typeHint),
-      subject: this.normalizeSubject(String(parsed['subject'] ?? ''), subjectHint),
-      chapter: this.normalizeChapter(String(parsed['chapter'] ?? '')),
-      title: this.normalizeTitle(String(parsed['title'] ?? ''), userText),
-      tags: this.normalizeStringArray(parsed['tags']),
-      difficulty: normalizeDraftDifficulty(Number(parsed['difficulty'] ?? 3)),
-      importance: this.normalizeScore(Number(parsed['importance'] ?? 3)),
-      fields: this.normalizeFields(parsed['fields']),
+      category: this.normalizeCategory(String(this.readRecordValue(parsed, 'category') ?? ''), typeHint),
+      subject: this.normalizeSubject(String(this.readRecordValue(parsed, 'subject') ?? ''), subjectHint),
+      chapter: this.normalizeChapter(String(this.readRecordValue(parsed, 'chapter') ?? '')),
+      title: this.normalizeTitle(String(this.readRecordValue(parsed, 'title') ?? ''), userText),
+      tags: this.normalizeStringArray(this.readRecordValue(parsed, 'tags')),
+      difficulty: normalizeDraftDifficulty(Number(this.readRecordValue(parsed, 'difficulty') ?? 3)),
+      importance: this.normalizeScore(Number(this.readRecordValue(parsed, 'importance') ?? 3)),
+      fields: this.normalizeFields(this.readRecordValue(parsed, 'fields')),
     };
 
     return aiRaw;
@@ -1632,21 +1802,21 @@ export class KnowledgeModel {
 
   private validateAiJson(parsed: Record<string, Object>): LlmGuardValidationResult {
     const issues: string[] = [];
-    const categoryValue: Object | undefined = parsed['category'];
+    const categoryValue: Object | undefined = this.readRecordValue(parsed, 'category');
     const categoryText: string = typeof categoryValue === 'string' ? categoryValue : '';
     if (categoryText.length === 0 || !isKnownNoteType(normalizeNoteType(categoryText))) {
       issues.push('category must be one of: ' + NOTE_TYPE_KEYS.join('/'));
     }
-    if (typeof parsed['subject'] !== 'string') {
+    if (typeof this.readRecordValue(parsed, 'subject') !== 'string') {
       issues.push('subject must be a string');
     }
-    const titleValue: Object | undefined = parsed['title'];
+    const titleValue: Object | undefined = this.readRecordValue(parsed, 'title');
     if (typeof titleValue !== 'string' || titleValue.trim().length === 0) {
       issues.push('title must be a non-empty string');
     } else if (this.contentProtocol.hasFormulaSyntax(titleValue)) {
       issues.push('title must not contain a formula');
     }
-    const tagsValue: Object | undefined = parsed['tags'];
+    const tagsValue: Object | undefined = this.readRecordValue(parsed, 'tags');
     if (!Array.isArray(tagsValue)) {
       issues.push('tags must be an array');
     } else {
@@ -1662,13 +1832,13 @@ export class KnowledgeModel {
         }
       }
     }
-    if (!this.isScoreValue(parsed['difficulty'], 4)) {
+    if (!this.isScoreValue(this.readRecordValue(parsed, 'difficulty'), 4)) {
       issues.push('difficulty must be a number from 1 to 4');
     }
-    if (!this.isScoreValue(parsed['importance'], 5)) {
+    if (!this.isScoreValue(this.readRecordValue(parsed, 'importance'), 5)) {
       issues.push('importance must be a number from 1 to 5');
     }
-    const fieldsValue: Object | undefined = parsed['fields'];
+    const fieldsValue: Object | undefined = this.readRecordValue(parsed, 'fields');
     if (!Array.isArray(fieldsValue)) {
       issues.push('fields must be an array');
     } else {
@@ -1678,24 +1848,27 @@ export class KnowledgeModel {
       }
       for (const field of fields) {
         const record: Record<string, Object> = field as Record<string, Object>;
-        if (typeof record['key'] !== 'string' || String(record['key']).trim().length === 0) {
+        const keyValue: Object | undefined = this.readRecordValue(record, 'key');
+        const labelValue: Object | undefined = this.readRecordValue(record, 'label');
+        const fieldValue: Object | undefined = this.readRecordValue(record, 'value');
+        if (typeof keyValue !== 'string' || keyValue.trim().length === 0) {
           issues.push('each field.key must be a non-empty string');
           break;
         }
-        if (typeof record['label'] !== 'string' || String(record['label']).trim().length === 0) {
+        if (typeof labelValue !== 'string' || labelValue.trim().length === 0) {
           issues.push('each field.label must be a non-empty string');
           break;
         }
-        if (this.contentProtocol.hasFormulaSyntax(String(record['key']))
-          || this.contentProtocol.hasFormulaSyntax(String(record['label']))) {
+        if (this.contentProtocol.hasFormulaSyntax(keyValue)
+          || this.contentProtocol.hasFormulaSyntax(labelValue)) {
           issues.push('field.key and field.label must not contain formulas');
           break;
         }
-        if (typeof record['value'] !== 'string' || String(record['value']).trim().length === 0) {
+        if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
           issues.push('each field.value must be a non-empty string');
           break;
         }
-        const contentResult: ContentValidationResult = this.contentProtocol.validateNoteMarkdown(String(record['value']));
+        const contentResult: ContentValidationResult = this.contentProtocol.validateNoteMarkdown(fieldValue);
         if (!contentResult.ok) {
           issues.push('field.value violates MM-MD-v1: ' + contentResult.issues.join(', '));
           break;
@@ -1848,9 +2021,9 @@ export class KnowledgeModel {
     const items: Object[] = value as Object[];
     for (const item of items) {
       const record: Record<string, Object> = item as Record<string, Object>;
-      const key: string = String(record['key'] ?? '').trim();
-      const label: string = String(record['label'] ?? '').trim();
-      const fieldValue: string = String(record['value'] ?? '').trim();
+      const key: string = String(this.readRecordValue(record, 'key') ?? '').trim();
+      const label: string = String(this.readRecordValue(record, 'label') ?? '').trim();
+      const fieldValue: string = String(this.readRecordValue(record, 'value') ?? '').trim();
       if ((key.length > 0 || label.length > 0) && fieldValue.length > 0) {
         result.push({
           key: key.length > 0 ? key : label,

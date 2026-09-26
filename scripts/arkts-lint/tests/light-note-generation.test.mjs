@@ -38,11 +38,13 @@ test('Issue 98 repository persists recoverable artifacts without a second note D
 
 test('Issue 98 keeps provider adaptation in the single LlmClient transport', () => {
   const knowledgeModel = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+  const jsonCaller = read('agents/src/main/ets/agents/GenerationJsonCaller.ets')
   const llmClient = read('common/src/main/ets/llm/LlmClient.ets')
   const providers = read('common/src/main/ets/llm/providers.ets')
 
   assert.match(knowledgeModel, /structureLightDraft/)
-  assert.match(knowledgeModel, /\.call\(/)
+  assert.match(knowledgeModel, /this\.jsonCaller\.callJson\(/)
+  assert.match(jsonCaller, /this\.client\.call\(request\)/)
   assert.match(llmClient, /responseFormat/)
   assert.match(providers, /strictStructuredOutput/)
   assert.match(providers, /strictStructuredOutput\?: boolean/)
