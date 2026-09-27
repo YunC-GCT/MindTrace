@@ -448,6 +448,7 @@ export struct AgentFloatWindow {
       .then((result: ChatHistorySaveResult): void => {
         if (!result.success) {
           this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestToken);
+          this.clearFeedbackRequestToken(messageId, requestToken);
           this.showToast('反馈保存失败，请稍后重试');
           return;
         }
@@ -455,6 +456,7 @@ export struct AgentFloatWindow {
       })
       .catch((): void => {
         this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestToken);
+        this.clearFeedbackRequestToken(messageId, requestToken);
         this.showToast('反馈保存失败，请稍后重试');
       });
   };
