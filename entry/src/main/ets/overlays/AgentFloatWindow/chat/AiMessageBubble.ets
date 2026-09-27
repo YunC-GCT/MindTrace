@@ -3,7 +3,7 @@
  *
  * 路径: overlays/AgentFloatWindow/chat/AiMessageBubble.ets
  * 职责: 渲染 AI 标识并把有序运行步骤交给独立步骤路由
- * 依赖: common UI tokens, AgentRunModels, AgentRunPanel, NoteReviewModels
+ * 依赖: common UI tokens, AgentRunModels, AgentRunPanel
  *
  * 数据流:
  *   ChatBubble props -> AiMessageBubble -> AgentRunPanel
@@ -17,6 +17,7 @@ import {
   S_1,
   S_2,
   S_3,
+  TEXT,
   TEXT_2,
   TEXT_3,
   TEXT_4,
@@ -27,12 +28,14 @@ import { NoteEvidenceCitation } from '../../../models/NoteEvidenceModels'
 import { NoteReviewAnswer, NoteReviewFeedback } from '../../../models/NoteReviewModels'
 import { AgentRunPart } from './AgentRunModels'
 import { AgentRunPanel } from './AgentRunPanel'
+import { ChatMessageOutcome } from './ChatModels'
 import { NoteReviewSourceCard } from './NoteReviewSourceCard'
 
 @Component
 export struct AiMessageBubble {
   @Prop parts: AgentRunPart[] = []
   @Prop streaming: boolean = false
+  @Prop outcome: ChatMessageOutcome = 'completed'
   @Prop noteReview: NoteReviewAnswer | null = null
   onSourceTap: (citation: NoteEvidenceCitation) => void = (_citation: NoteEvidenceCitation): void => {}
   onFeedback: (feedback: NoteReviewFeedback) => void = (_feedback: NoteReviewFeedback): void => {}
@@ -50,6 +53,11 @@ export struct AiMessageBubble {
               .fontSize(9)
               .fontColor(TEXT_4)
               .margin({ left: S_1 })
+          } else if (this.outcome !== 'completed') {
+            Text(this.outcomeLabel())
+              .fontSize(9)
+              .fontColor(TEXT_4)
+              .margin({ left: S_1 })
           }
         }
         .margin({ bottom: S_1, left: S_1 })
@@ -60,7 +68,7 @@ export struct AiMessageBubble {
         })
 
         if (this.noteReview !== null) {
-          this.NoteReviewMeta(this.noteReview)
+          this.NoteReviewBlock(this.noteReview)
         }
       }
       .alignItems(HorizontalAlign.Start)
@@ -70,48 +78,40 @@ export struct AiMessageBubble {
     .margin({ top: S_2 })
   }
 
-  @Builder
-  NoteReviewMeta(review: NoteReviewAnswer) {
-    Column() {
-      if (review.citations.length > 0) {
-        Text('来源')
-          .fontSize(11)
-          .fontColor(TEXT_3)
-          .fontWeight(W_SEMIBOLD)
-          .margin({ left: S_1, bottom: S_1 })
+  private outcomeLabel = (): string => {
+    if (this.outcome === 'cancelled') { return '已取消' }
+    if (this.outcome === 'interrupted') { return '已中断' }
+    if (this.outcome === 'failed') { return '失败' }
+    return ''
+  }
 
-        ForEach(review.citations,
-          (citation: NoteEvidenceCitation, index: number): void => {
-            NoteReviewSourceCard({
-              citation: citation,
-              index: index,
-              onOpen: this.onSourceTap,
-            })
-            .margin({ bottom: S_2 })
-          },
-          (citation: NoteEvidenceCitation, index: number): string =>
-            citation.noteId + ':' + citation.version.toString() + ':' + index.toString()
-        )
-      } else {
-        Column() {
-          Text(this.reviewStatusText(review))
-            .fontSize(11)
-            .fontColor(MINT)
-            .fontWeight(W_SEMIBOLD)
-            .width('100%')
-          Text(this.reviewReasonText(review))
-            .fontSize(11)
-            .fontColor(TEXT_2)
-            .fontWeight(W_MEDIUM)
-            .lineHeight(16)
-            .width('100%')
-            .margin({ top: S_1 })
-        }
-        .width('100%')
-        .padding({ left: S_3, right: S_3, top: S_2, bottom: S_2 })
-        .borderRadius(R_MD)
-        .backgroundColor(GLASS_10)
-        .border({ width: 0.5, color: BORDER })
+  @Builder
+  NoteReviewBlock(review: NoteReviewAnswer) {
+    Column() {
+      Row() {
+        Text(this.reviewStatusText(review))
+          .fontSize(11)
+          .fontColor(MINT)
+          .fontWeight(W_SEMIBOLD)
+        Blank()
+        Text(this.reviewReasonText(review))
+          .fontSize(10)
+          .fontColor(TEXT_3)
+          .fontWeight(W_MEDIUM)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .width('100%')
+
+      if (review.citations.length > 0) {
+        ForEach(review.citations, (citation: NoteEvidenceCitation, index: number): void => {
+          NoteReviewSourceCard({
+            citation: citation,
+            index: index,
+            onOpen: this.onSourceTap,
+          })
+            .margin({ top: S_2 })
+        }, (citation: NoteEvidenceCitation, index: number): string => citation.noteId + ':' + citation.version.toString() + ':' + index.toString())
       }
 
       if (!this.streaming) {
@@ -127,6 +127,10 @@ export struct AiMessageBubble {
       }
     }
     .width('94%')
+    .padding({ left: S_3, right: S_3, top: S_2, bottom: S_2 })
+    .borderRadius(R_MD)
+    .backgroundColor(GLASS_10)
+    .border({ width: 0.5, color: BORDER })
     .margin({ top: S_2, left: S_3 })
   }
 
@@ -155,32 +159,32 @@ export struct AiMessageBubble {
 
   private reviewReasonText = (review: NoteReviewAnswer): string => {
     if (review.reason === 'ambiguous-topic') {
-      return '请补充要查询的笔记主题，例如“根据我的笔记解释极限”。'
+      return '请补充具体笔记主题'
     }
     if (review.reason === 'ambiguous-pronoun') {
-      return '这里的指代还不够明确，请补充具体笔记主题。'
+      return '指代不够明确'
     }
     if (review.reason === 'no-match') {
-      return '没有在个人笔记中找到足够依据。可以换一个更具体的主题，或先保存相关笔记。'
+      return '没有找到足够依据'
     }
     if (review.reason === 'compare-needs-two-topics') {
-      return '比较至少需要两个明确主题。'
+      return '比较需要两个主题'
     }
     if (review.reason === 'compare-topic-missing') {
-      return '比较证据不足，请补充缺少的主题或先保存相关笔记。'
+      return '比较证据不足'
     }
     if (review.reason === 'no-accepted-prerequisite') {
-      return '没有找到已确认的前置关系。可以先补充相关笔记或关系后再试。'
+      return '没有已确认前置关系'
     }
     if (review.reason === 'missing-evidence') {
-      return '回答证据丢失，请重试。'
+      return '回答证据丢失'
     }
     if (review.reason === 'model-missing-valid-citation') {
-      return '这次回答没有生成可验证来源。请换一个更具体的主题或重试。'
+      return '缺少可验证引用'
     }
     if (review.status === 'unavailable') {
-      return '个人笔记检索暂不可用，请稍后重试。'
+      return '检索暂不可用'
     }
-    return '暂时没有足够的已保存笔记依据。可以换一个更具体的主题，或先保存相关笔记。'
+    return '请换一个更具体的主题'
   }
 }

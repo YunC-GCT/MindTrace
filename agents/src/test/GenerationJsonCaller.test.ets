@@ -27,6 +27,7 @@ import type {
   LlmCallRequest,
   LlmCallResult,
   LlmCaller,
+  LlmErrorKind,
   LlmGuardJsonExtractionResult,
   LlmGuardValidationResult,
 } from 'common';
@@ -51,15 +52,17 @@ class FakeCaller implements LlmCaller {
 
 class ThrowingCaller implements LlmCaller {
   public calls: number = 0;
-  public error: LlmError;
+  private readonly message: string;
+  private readonly kind: LlmErrorKind;
 
   constructor(error: LlmError) {
-    this.error = error;
+    this.message = error.message;
+    this.kind = error.kind;
   }
 
   async call(request: LlmCallRequest): Promise<LlmCallResult> {
     this.calls += 1;
-    throw this.error;
+    throw new LlmError(this.message, this.kind);
   }
 }
 

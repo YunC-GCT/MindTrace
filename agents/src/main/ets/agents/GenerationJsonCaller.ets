@@ -46,6 +46,7 @@ import type {
   LlmGuardValidationResult,
   LlmJsonValidator,
   LlmResponseFormat,
+  CancellationToken,
 } from 'common';
 
 /** 生成路径统一错误类别 (spec §13.5 / §13.12) */
@@ -87,6 +88,7 @@ export interface GenerationJsonCallOptions {
   maxTokens: number;
   timeoutMs: number;
   responseFormat?: LlmResponseFormat;
+  cancellationToken?: CancellationToken;
   maxRetries?: number;
   candidateSelector?: JsonCandidateSelector;
 }
@@ -95,10 +97,13 @@ export class GenerationJsonCaller {
   private client: LlmCaller;
   private guard: LlmGuard;
 
-  constructor(client?: LlmCaller, guard?: LlmGuard) {
+  constructor(client?: LlmCaller, guard?: LlmGuard, cancellationToken?: CancellationToken) {
     this.client = client ?? new LlmClient();
     this.guard = guard ?? new LlmGuard(this.client);
+    this.cancellationToken = cancellationToken;
   }
+
+  private readonly cancellationToken?: CancellationToken;
 
   /**
    * 统一 JSON 调用: LLM 请求 → 截断识别 → JSON 提取/选择 → schema 校验
@@ -123,6 +128,7 @@ export class GenerationJsonCaller {
     let attempt: number = 0;
 
     while (attempt <= maxRetries) {
+      this.cancellationToken?.throwIfCancelled();
       const callResult: LlmCallResult = await this.invokeClient(guardedMessages, options, label);
       const raw: string = callResult.text ?? '';
       if (raw.trim().endsWith(TRUNCATION_MARKER)) {
@@ -188,6 +194,7 @@ export class GenerationJsonCaller {
       timeoutMs: options.timeoutMs,
       responseFormat: options.responseFormat,
       enableThinking: false,
+      cancellationToken: options.cancellationToken ?? this.cancellationToken,
     };
     try {
       return await this.client.call(request);

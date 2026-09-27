@@ -12,6 +12,7 @@ import {
   NoteGenerationStandardResult,
 } from 'common';
 import { NoteCommitResult } from '../models/NoteDaoInterface';
+import type { CancellationToken } from 'common';
 
 export type CaptureStep =
   | 'START'
@@ -48,6 +49,7 @@ export interface AgentState {
   standardResult?: NoteGenerationStandardResult;
   preparedCandidate?: PreparedCandidate;
   commitResult?: NoteCommitResult;
+  cancellationToken?: CancellationToken;
 }
 
 export interface CaptureNodeResult {
@@ -93,6 +95,9 @@ export function copyAgentState(input: AgentState): AgentState {
   }
   if (input.commitResult !== undefined) {
     copied.commitResult = input.commitResult;
+  }
+  if (input.cancellationToken !== undefined) {
+    copied.cancellationToken = input.cancellationToken;
   }
   return copied;
 }

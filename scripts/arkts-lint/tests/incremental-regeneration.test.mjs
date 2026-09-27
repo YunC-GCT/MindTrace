@@ -21,7 +21,8 @@ test('Issue 104 keeps incremental regeneration behind the four agreed seams', ()
   assert.match(dispatcher, /mergeIncrementalPatches/)
   assert.match(workflow, /regenerateNote/)
   assert.match(workflow, /请先选择要修改的明确笔记/)
-  assert.match(facade, /requestRegeneration/)
+  assert.doesNotMatch(facade, /requestRegeneration/)
+  assert.match(workflow, /requestRegeneration/)
   assert.match(repository, /getRegenerationBase/)
   assert.match(repository, /queryLatestGeneratedRevision/)
   assert.match(writer, /updateWithCommitKey/)
@@ -36,4 +37,17 @@ test('Issue 104 does not add a second persistence owner', () => {
   const adapter = read('entry/src/main/ets/adapters/NoteDaoAdapter.ets')
   assert.doesNotMatch(repository, /knowledge_unit/)
   assert.match(adapter, /service\.updateWithCommitKey/)
+})
+
+test('incremental regeneration uses the same coarse progress contract', () => {
+  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const incremental = dispatcher.slice(
+    dispatcher.indexOf('private async dispatchIncrementalGeneration'),
+    dispatcher.indexOf('private incrementalResult'),
+  )
+
+  assert.match(incremental, /activity: 'collect_sources'/)
+  assert.match(incremental, /activity: 'repair_draft'/)
+  assert.match(incremental, /activity: 'check_accuracy'/)
+  assert.match(incremental, /state: 'success'/)
 })

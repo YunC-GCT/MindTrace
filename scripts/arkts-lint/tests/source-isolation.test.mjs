@@ -14,6 +14,7 @@ const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const repoImpl = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
 const convWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
 const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 
 // === Legacy source isolation tests ===
@@ -102,16 +103,16 @@ test('ConversationWorkflow image_note_reply node must exist for image-to-note so
 // AC-SRC-02: source identity is returned by the memory boundary and written
 // into ConversationState for current-source-only draft generation.
 test('ConversationWorkflow returns saveOcrResult source id (AC-SRC-02)', () => {
-  assert.match(convWorkflow, /return await this\.getMemory\(\)\.saveOcrResult\(/);
+  assert.match(convWorkflow, /return await this\.memoryProjection\.saveOcr\(/);
+  assert.match(memoryProjection, /return await this\.service\(\)\.saveOcrResult\(ref\.sessionId/);
   assert.match(memService, /async saveOcrResult\([\s\S]*?\): Promise<string>/);
 });
 
 // AC-SRC-03: current source must not read all pending materials
 test('ConversationWorkflow only reads pending for the current session source scope (AC-SRC-03)', () => {
-  const usesSessionPending = convWorkflow.match(/getPendingNoteMaterials\(sessionId\)/) ||
-    convWorkflow.match(/getPendingNoteMaterials/);
+  const usesSessionPending = memoryProjection.match(/getPendingNoteMaterials\(ref\.sessionId\)/);
   assert.ok(usesSessionPending !== null, 'uses session-scoped pending read');
-  const noFullScan = convWorkflow.match(/queryAll|loadAll.*pending|getAll.*pending/);
+  const noFullScan = memoryProjection.match(/queryAll|loadAll.*pending|getAll.*pending/);
   assert.ok(noFullScan === null, 'must not read all pending indiscriminately');
 });
 

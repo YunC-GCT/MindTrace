@@ -16,6 +16,7 @@
 import { MessageEvents, ThreadWorkerGlobalScope, worker } from '@kit.ArkTS';
 import fileIo from '@ohos.file.fs';
 import { ChatSession, copyChatSessionsForPersistence } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import { CHAT_HISTORY_SCHEMA_VERSION } from '../services/ChatHistorySchema';
 
 const WORKER_SUCCESS_REQUEST: string = 'worker-capability-success';
 const WORKER_SUCCESS_RESPONSE: string = 'worker-capability-ok';
@@ -47,13 +48,33 @@ interface ChatWorkerSnapshot {
 }
 
 const workerPort: ThreadWorkerGlobalScope = worker.workerPort;
-const CHAT_HISTORY_SCHEMA_VERSION: number = 1;
-
 function diagnostic(stage: AtomicWriteStage, token: string): string {
   return 'stage=' + stage
     + '; ' + token
     + '; schemaVersion=' + CHAT_HISTORY_SCHEMA_VERSION.toString()
     + '; ts=' + Date.now().toString();
+}
+
+interface DiagnosticErrorShape {
+  name?: string;
+  code?: number;
+  message?: string;
+}
+
+function sanitizeDiagnosticValue(value: string): string {
+  const normalized: string = value.replace(/[\r\n;]/g, '_');
+  return normalized.length > 160 ? normalized.substring(0, 160) : normalized;
+}
+
+function errorToken(error: Object): string {
+  if (!(error instanceof Error)) {
+    return 'errorType=unknown';
+  }
+  const detail: DiagnosticErrorShape = error as DiagnosticErrorShape;
+  const name: string = sanitizeDiagnosticValue(detail.name ?? 'Error');
+  const code: string = typeof detail.code === 'number' ? detail.code.toString() : 'none';
+  const message: string = sanitizeDiagnosticValue(detail.message ?? '');
+  return 'errorType=' + name + '; errorCode=' + code + '; errorMessage=' + message;
 }
 
 workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
@@ -97,14 +118,22 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
       success: false,
       stage: 'PREPARE',
       schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
-      diagnostic: diagnostic('PREPARE', 'error=serialization-failed'),
+      diagnostic: diagnostic('PREPARE', 'error=serialization-failed; ' + errorToken(error)),
     };
     workerPort.postMessage(result);
     return;
   }
   try {
     const directory: string = request.path.substring(0, request.path.lastIndexOf('/'));
-    fileIo.mkdirSync(directory, true);
+    if (!fileIo.accessSync(directory)) {
+      try {
+        fileIo.mkdirSync(directory, true);
+      } catch (error) {
+        if (!fileIo.accessSync(directory)) {
+          throw new Error('directory-create-failed; ' + errorToken(error));
+        }
+      }
+    }
     tmpPath = request.path + '.tmp';
   } catch (error) {
     const result: ChatWorkerResponse = {
@@ -112,7 +141,7 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
       success: false,
       stage: 'PREPARE',
       schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
-      diagnostic: diagnostic('PREPARE', 'error=worker-prepare-failed'),
+      diagnostic: diagnostic('PREPARE', 'error=worker-prepare-failed; ' + errorToken(error)),
     };
     workerPort.postMessage(result);
     return;
@@ -134,7 +163,7 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
       success: false,
       stage: 'WRITE',
       schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
-      diagnostic: diagnostic('WRITE', 'error=worker-write-failed'),
+      diagnostic: diagnostic('WRITE', 'error=worker-write-failed; ' + errorToken(error)),
     };
     workerPort.postMessage(result);
     return;
@@ -151,7 +180,7 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
       success: false,
       stage: 'COMMIT',
       schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
-      diagnostic: diagnostic('COMMIT', 'error=worker-commit-failed'),
+      diagnostic: diagnostic('COMMIT', 'error=worker-commit-failed; ' + errorToken(error)),
     };
     workerPort.postMessage(result);
     return;
@@ -172,7 +201,7 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
       success: false,
       stage: 'VERIFY',
       schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
-      diagnostic: diagnostic('VERIFY', 'error=worker-verify-failed'),
+      diagnostic: diagnostic('VERIFY', 'error=worker-verify-failed; ' + errorToken(error)),
     };
     workerPort.postMessage(result);
   }

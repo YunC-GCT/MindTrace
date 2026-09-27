@@ -12,6 +12,7 @@ import type {
   LlmGuardJsonResult,
   LlmGuardValidationResult,
   NoteCategory,
+  CancellationToken,
 } from 'common';
 import { OcrTool } from '../mcp/tools/OcrTool';
 
@@ -82,8 +83,16 @@ export interface TypeClassifierTextResult {
  *   - classify(): LLM 优先识别五类 + 学科；失败时规则兜底，不阻断 Dispatcher。
  */
 export class TypeClassifier {
+  private readonly cancellationToken?: CancellationToken;
+
+  constructor(cancellationToken?: CancellationToken) {
+    this.cancellationToken = cancellationToken;
+  }
+
   async recognizeText(payload: DispatchPayload, context?: Context): Promise<TypeClassifierTextResult> {
+    this.cancellationToken?.throwIfCancelled();
     const rawText: string = await this.extractText(payload, context);
+    this.cancellationToken?.throwIfCancelled();
     return {
       rawText: rawText,
       text: this.preprocessText(rawText),
@@ -97,6 +106,7 @@ export class TypeClassifier {
   }
 
   async classifyText(text: string, timeoutMs: number = CLASSIFY_TIMEOUT_MS): Promise<ClassificationResult> {
+    this.cancellationToken?.throwIfCancelled();
     return await this.classifyPreparedText(this.preprocessText(text), timeoutMs);
   }
 
@@ -121,6 +131,7 @@ export class TypeClassifier {
         ocrText: text,
       };
     } catch (e) {
+      this.cancellationToken?.throwIfCancelled();
       console.warn('[TypeClassifier] LLM classify failed, using fallback: ' + ((e as Error).message ?? String(e)));
       const fallback: ParsedClassification = this.ruleFallback(text);
       return {
@@ -226,6 +237,7 @@ export class TypeClassifier {
       timeoutMs: timeoutMs,
       temperature: 0.1,
       label: 'TypeClassifier classification',
+      cancellationToken: this.cancellationToken,
     }, (json: Record<string, Object>): LlmGuardValidationResult => this.validateClassificationJson(json));
     return this.classificationFromJson(guarded.json);
   }

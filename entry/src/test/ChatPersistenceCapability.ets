@@ -319,7 +319,9 @@ export class ChatPersistenceCapability {
   }
 
   private static workerFailure(reason: string): SnapshotTaskResult {
-    const blockerSuffix: string = reason === 'snapshot-worker-timeout' || reason === 'snapshot-worker-create-failed'
+    const blockerSuffix: string = reason === 'snapshot-worker-timeout'
+      || reason === 'snapshot-worker-create-failed'
+      || reason.indexOf('probe-rejected') >= 0
       ? '; blocker=local-unit-runner-worker-unavailable'
       : '';
     const result: SnapshotTaskResult = {

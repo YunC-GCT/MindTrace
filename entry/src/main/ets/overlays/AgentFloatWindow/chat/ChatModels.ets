@@ -12,7 +12,11 @@
  *   - 旧会话缺失 reasoning 时统一通过 chatMessageReasoning 提供空字符串
  */
 
-import { ConversationProgressStep } from '../../../workflows/conversation/ConversationState'
+import {
+  ChatMessageOrigin,
+  ChatMessageOutcome,
+  ConversationProgressStep,
+} from '../../../workflows/conversation/ConversationState'
 import {
   NoteReviewAnswer,
   NoteReviewFeedback,
@@ -25,15 +29,21 @@ import { NoteEvidenceCitation, NoteEvidenceRole } from '../../../models/NoteEvid
 import type { StreamEvent } from 'common'
 import {
   AgentRunPart,
+  AgentRunPartStatus,
   agentRunRevision,
   applyStreamEventToAgentRun,
+  appendAgentRunError,
+  appendAgentRunStatus,
   copyAgentRunParts,
   finishAgentRun,
   projectLegacyAgentRun,
 } from './AgentRunModels'
+import { ChatMessageIdPolicy, SessionIdPolicy } from '../../../services/ConversationIdentity'
+
+export { ChatMessageOrigin, ChatMessageOutcome } from '../../../workflows/conversation/ConversationState'
 
 export interface ChatMsg {
-  // 消息唯一 id(用 Date.now * 1000 + random)
+  // 消息唯一 id (由 ChatMessageIdPolicy 生成并校验)
   id: number
 
   // 角色: "user" | "ai"
@@ -56,6 +66,13 @@ export interface ChatMsg {
 
   // AI 单次运行的有序步骤;旧会话缺失时由 reasoning/content 即时投影
   runParts?: AgentRunPart[]
+
+  // Orthogonal provenance and terminal state. Missing values are legacy-only.
+  origin?: ChatMessageOrigin
+  outcome?: ChatMessageOutcome
+  runId?: string
+  sequence?: number
+  messageKey?: string
 
   // 笔记可追溯复习回答元数据;旧会话缺失或损坏时按可选字段丢弃
   noteReview?: NoteReviewAnswer
@@ -81,6 +98,7 @@ export function chatMessageReasoning(message: ChatMsg): string {
  * copy and therefore retains UI interaction state such as reasoningExpanded.
  */
 export function copyChatMsgForMemory(message: ChatMsg): ChatMsg {
+  ChatMessageIdPolicy.requireValid(message.id)
   const next: ChatMsg = {
     id: message.id,
     role: message.role,
@@ -99,6 +117,7 @@ export function copyChatMsgForMemory(message: ChatMsg): ChatMsg {
   if (noteReview !== undefined) {
     next.noteReview = noteReview
   }
+  copyMessageMetadata(message, next)
   return next
 }
 
@@ -114,6 +133,7 @@ export function chatMessageRunParts(message: ChatMsg): AgentRunPart[] {
  * deliberately excludes reasoningExpanded, which is UI-only state.
  */
 export function copyChatMsgForPersistence(message: ChatMsg): ChatMsg {
+  ChatMessageIdPolicy.requireValid(message.id)
   const next: ChatMsg = {
     id: message.id,
     role: message.role,
@@ -128,6 +148,64 @@ export function copyChatMsgForPersistence(message: ChatMsg): ChatMsg {
   if (noteReview !== undefined) {
     next.noteReview = noteReview
   }
+  copyMessageMetadata(message, next)
+  return next
+}
+
+function copyMessageMetadata(source: ChatMsg, target: ChatMsg): void {
+  if (source.origin !== undefined) {
+    target.origin = source.origin
+  }
+  if (source.outcome !== undefined) {
+    target.outcome = source.outcome
+  }
+  if (source.runId !== undefined) {
+    target.runId = source.runId
+  }
+  if (source.sequence !== undefined) {
+    target.sequence = source.sequence
+  }
+  if (source.messageKey !== undefined) {
+    target.messageKey = source.messageKey
+  }
+}
+
+export function normalizeDecodedChatMessage(message: ChatMsg): ChatMsg {
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  if (next.origin === undefined) {
+    next.origin = 'legacy'
+  }
+  if (next.outcome === undefined) {
+    next.outcome = next.streaming ? 'interrupted' : 'completed'
+  }
+  if (next.streaming && next.outcome === 'interrupted') {
+    next.streaming = false
+  }
+  return next
+}
+
+export function usableAsContext(message: ChatMsg): boolean {
+  if (message.streaming) {
+    return false
+  }
+  return (message.outcome ?? 'completed') === 'completed'
+}
+
+export function transitionChatMessageOutcome(message: ChatMsg, outcome: ChatMessageOutcome): ChatMsg {
+  if (message.outcome !== undefined) {
+    if (message.outcome === outcome) {
+      return copyChatMsgForMemory(message)
+    }
+    throw new Error('CHAT_MESSAGE_TERMINAL_TRANSITION_REJECTED')
+  }
+  if (message.role === 'ai' && message.origin !== undefined && message.origin !== 'legacy'
+    && (message.runId === undefined || message.runId.length === 0)) {
+    throw new Error('AI_MESSAGE_RUN_ID_REQUIRED')
+  }
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.streaming = false
+  next.outcome = outcome
+  next.runParts = finishAgentRun(chatMessageRunParts(message))
   return next
 }
 
@@ -136,6 +214,9 @@ export function copyChatMsg(message: ChatMsg): ChatMsg {
 }
 
 export function applyStreamEventToChatMsg(message: ChatMsg, event: StreamEvent): ChatMsg {
+  if (message.outcome !== undefined) {
+    return copyChatMsgForMemory(message)
+  }
   const next: ChatMsg = copyChatMsgForMemory(message)
   next.runParts = applyStreamEventToAgentRun(chatMessageRunParts(message), event, message.id)
   if (event.type === 'thinking') {
@@ -186,11 +267,25 @@ export function replaceChatMsgContent(message: ChatMsg, content: string): ChatMs
   return next
 }
 
-export function finishChatMsg(message: ChatMsg): ChatMsg {
-  const next: ChatMsg = copyChatMsg(message)
-  next.streaming = false
-  next.runParts = finishAgentRun(chatMessageRunParts(message))
+export function appendChatMsgStatus(
+  message: ChatMsg,
+  content: string,
+  status: AgentRunPartStatus,
+  progressKey?: string,
+): ChatMsg {
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.runParts = appendAgentRunStatus(chatMessageRunParts(message), message.id, content, status, progressKey)
   return next
+}
+
+export function appendChatMsgError(message: ChatMsg, content: string): ChatMsg {
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.runParts = appendAgentRunError(chatMessageRunParts(message), message.id, content)
+  return next
+}
+
+export function finishChatMsg(message: ChatMsg): ChatMsg {
+  return transitionChatMessageOutcome(message, 'completed')
 }
 
 export function applyNoteReviewToChatMsg(message: ChatMsg, review: NoteReviewAnswer): ChatMsg {
@@ -349,7 +444,7 @@ export interface ChatStatusMeta {
 }
 
 export interface ChatSession {
-  // 会话唯一 id(36 进制时间戳)
+  // 会话唯一 id (由 SessionIdPolicy 生成并校验)
   id: string
 
   // 会话名称
@@ -359,7 +454,20 @@ export interface ChatSession {
   messages: ChatMsg[]
 }
 
+export function requireUniqueChatMessageIds(messages: ChatMsg[]): void {
+  const ids: Set<number> = new Set<number>()
+  for (const message of messages) {
+    ChatMessageIdPolicy.requireValid(message.id)
+    if (ids.has(message.id)) {
+      throw new Error('DUPLICATE_CHAT_MESSAGE_ID')
+    }
+    ids.add(message.id)
+  }
+}
+
 export function copyChatSessionForMemory(session: ChatSession): ChatSession {
+  SessionIdPolicy.requireValid(session.id)
+  requireUniqueChatMessageIds(session.messages)
   const messages: ChatMsg[] = []
   for (const message of session.messages) {
     messages.push(copyChatMsgForMemory(message))
@@ -372,6 +480,8 @@ export function copyChatSessionForMemory(session: ChatSession): ChatSession {
 }
 
 export function copyChatSessionForPersistence(session: ChatSession): ChatSession {
+  SessionIdPolicy.requireValid(session.id)
+  requireUniqueChatMessageIds(session.messages)
   const messages: ChatMsg[] = []
   for (const message of session.messages) {
     messages.push(copyChatMsgForPersistence(message))

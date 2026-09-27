@@ -6,7 +6,9 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const facade = read('entry/src/main/ets/services/AgentChatService.ets');
+const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
 const state = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
 const workflowTypes = read('entry/src/main/ets/workflows/conversation/ConversationTypes.ets');
 const replyService = read('entry/src/main/ets/services/ReplyService.ets');
@@ -30,8 +32,14 @@ test('Conversation workflow has independent typed state and shared graph runtime
   assert.match(workflow, /replyService\.complete\(/);
   assert.match(workflow, /replyService\.stream\(/);
   assert.match(workflow, /generateNoteDraft\(/);
+  assert.match(state, /runRef: ConversationRunRef/);
+  assert.doesNotMatch(state, /\n\s*sessionId: string;/);
+  assert.doesNotMatch(state, /\n\s*runId: string;/);
+  assert.match(workflowTypes, /isCurrentRun\(ref: ConversationRunRef\): boolean/);
+  assert.match(memoryProjection, /if \(!this\.host\.acceptsMemoryRun\(ref\)\) \{ return; \}/);
+  assert.doesNotMatch(workflowTypes, /getSessionId/);
   assert.doesNotMatch(workflow, /new LlmClient|new LlmGuard|new ContentProtocol/);
-  assert.equal((workflow.match(/this\.cbs\.onFinish\(\)/g) || []).length, 1);
+  assert.equal((workflow.match(/this\.cbs\.onFinish\(runRef\)/g) || []).length, 1);
   assert.match(replyService, /class ReplyService/);
 });
 
@@ -40,14 +48,18 @@ test('AgentChatService exposes only the active image and streaming text run entr
   assert.match(facade, /async captureReply/);
   assert.match(facade, /async realReplyStream/);
   assert.doesNotMatch(facade, /async realReply\(/);
-  // LOC is not a stable contract: callback adapters and public draft
-  // lifecycle methods may grow without moving orchestration into the facade.
-  // Assert the ownership boundary directly instead of enforcing a line cap.
-  assert.match(facade, /this\.workflow = new ConversationWorkflow\(this\.adapter\)/);
-  assert.doesNotMatch(facade, /new LlmClient|new AiService|new AgentMemoryService/);
-  assert.match(facade, /private activeRuns: number = 0/);
-  assert.match(facade, /this\.activeRuns \+= 1/);
-  assert.match(facade, /this\.activeRuns -= 1/);
+  assert.match(facade, /private readonly runtime: ConversationRuntime/);
+  assert.match(facade, /return await this\.runtime\.captureReply/);
+  assert.match(facade, /return await this\.runtime\.realReplyStream/);
+  assert.doesNotMatch(
+    facade,
+    /new ConversationWorkflow|new ConversationDraftCoordinator|private readonly coordinator|private readonly inFlight/,
+  );
+  assert.match(runtime, /this\.workflow = new ConversationWorkflow\(this\.adapter, ports\)/);
+  assert.match(runtime, /private readonly coordinator: ConversationRunCoordinator/);
+  assert.match(runtime, /private async executeAcceptedOperation<T>/);
+  assert.match(runtime, /return this\.coordinator\.start\(sessionId, request\)/);
+  assert.doesNotMatch(runtime, /JSON\.stringify\(error\)/);
 });
 
 test('Conversation note generation delegates to the canonical Capture entry', () => {
@@ -100,13 +112,26 @@ test('Conversation workflow hides DNS and timeout details behind a stable networ
   assert.match(workflow, /'failed to resolve'/);
   assert.match(workflow, /'couldn\\'t connect to server'/);
   assert.match(workflow, /'connection timed out'/);
-  assert.match(workflow, /ConversationWorkflow\.isNetworkError\(e\)/);
+  assert.match(workflow, /private static failureOutcome\(error: Object\): ChatMessageOutcome/);
+  assert.match(workflow, /ConversationWorkflow\.isNetworkError\(error\) \? 'interrupted' : 'failed'/);
   assert.doesNotMatch(workflow, /errMsg\.indexOf\('NETWORK_ERROR'\)/);
 });
 
-test('Conversation workflow finishes the streaming placeholder when the request fails', () => {
-  assert.match(workflow, /let streamMsgId: number \| undefined = undefined/);
-  assert.match(workflow, /streamMsgId = msgId/);
-  assert.match(workflow, /if \(streamMsgId !== undefined\) \{\s*await this\.appendAssistantReply\(sessionId, displayError, streamMsgId\)/);
-  assert.match(workflow, /\} else \{\s*await this\.addAiMessage\(sessionId, displayError\)/);
+test('Conversation workflow records failures as one typed terminal run part', () => {
+  assert.match(workflow, /private finishRunFailure\(/);
+  assert.match(workflow, /this\.reportRunError\(ref, error\)/);
+  assert.match(workflow, /this\.cbs\.finishAiMsg\(ref, messageId, outcome \?\? ConversationWorkflow\.failureOutcome\(error\)\)/);
+  assert.doesNotMatch(workflow, /appendAssistantReply\(ref, displayError/);
+});
+
+test('Conversation workflow normalizes streamed content through one message event sink', () => {
+  assert.match(workflowTypes, /export type ConversationMessageEvent/);
+  assert.match(
+    workflowTypes,
+    /updateAiMsg\(ref: ConversationRunRef, id: number, event: ConversationMessageEvent\): void/,
+  );
+  assert.doesNotMatch(workflowTypes, /replaceAiMsg/);
+  assert.doesNotMatch(workflowTypes, /appendAiMsg/);
+  assert.match(workflow, /kind: 'replace-content', content: displayAnswer/);
+  assert.doesNotMatch(workflow, /this\.cbs\.replaceAiMsg/);
 });

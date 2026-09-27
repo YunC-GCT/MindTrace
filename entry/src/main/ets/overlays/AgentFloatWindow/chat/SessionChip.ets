@@ -21,8 +21,8 @@ import { TEXT, TEXT_2, BG_DARK, BG_CARD, BORDER, S_2, S_3, R_MD, F_XS, W_NORMAL,
 
 @Component
 export struct SessionChip {
-  name: string = '';
-  active: boolean = false;
+  @Prop name: string = '';
+  @Prop active: boolean = false;
   onTap?: () => void = (): void => {};
   onLongPress?: () => void = (): void => {};
 

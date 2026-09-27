@@ -14,6 +14,7 @@
  */
 import { KnowledgeUnit, StudyPlanItem } from 'common';
 import { AgentMemoryRecord, ChatMessageRecord } from '../models/AgentMemoryModels';
+import { ProfileScopePolicy, SessionIdPolicy } from './ConversationIdentity';
 
 export class WritePathValidator {
   static validateKnowledgeUnit(unit: KnowledgeUnit): void {
@@ -34,13 +35,28 @@ export class WritePathValidator {
 
   static validateChatMessage(record: ChatMessageRecord): void {
     WritePathValidator.requireText(record.id, 'ChatMessageRecord.id');
-    WritePathValidator.requireText(record.sessionId, 'ChatMessageRecord.sessionId');
+    WritePathValidator.requireText(record.messageKey, 'ChatMessageRecord.messageKey');
+    SessionIdPolicy.requireValid(record.sessionId);
     WritePathValidator.requireText(record.content, 'ChatMessageRecord.content');
+    if (!Number.isSafeInteger(record.sequence) || record.sequence <= 0) {
+      throw new Error('ChatMessageRecord.sequence must be a positive safe integer');
+    }
+    if (record.origin !== 'chat' && record.origin !== 'image' && record.origin !== 'note-regeneration'
+      && record.origin !== 'system' && record.origin !== 'legacy') {
+      throw new Error('ChatMessageRecord.origin is invalid');
+    }
+    if (record.outcome !== 'completed') {
+      throw new Error('Only completed chat messages may enter context projection');
+    }
   }
 
   static validateAgentMemory(record: AgentMemoryRecord): void {
     WritePathValidator.requireText(record.id, 'AgentMemoryRecord.id');
-    WritePathValidator.requireText(record.sessionId, 'AgentMemoryRecord.sessionId');
+    if (record.type === 'profile') {
+      ProfileScopePolicy.requireValid(record.sessionId);
+    } else {
+      SessionIdPolicy.requireValid(record.sessionId);
+    }
     WritePathValidator.requireText(record.content, 'AgentMemoryRecord.content');
   }
 

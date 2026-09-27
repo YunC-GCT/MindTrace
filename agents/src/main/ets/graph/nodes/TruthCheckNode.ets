@@ -7,6 +7,7 @@ import { TruthCheckService } from '../../agents/TruthCheckService';
 export class TruthCheckNodeFactory {
   static create(service: TruthCheckService): CaptureNode {
     return async (input: AgentState): Promise<CaptureNodeResult> => {
+       input.cancellationToken?.throwIfCancelled();
        const truthInput: string = input.knowledgeUnit !== undefined
          ? input.captureText + '\n' + input.knowledgeUnit.content
          : input.captureText;
@@ -23,6 +24,7 @@ export class TruthCheckNodeFactory {
         message: messages.join('; '),
       };
       const next: AgentState = copyAgentState(input);
+      next.cancellationToken?.throwIfCancelled();
       next.truthCheck = truthCheck;
       if (!result.truthFlag) {
         const error: CaptureGraphError = {

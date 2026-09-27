@@ -105,7 +105,7 @@ export default function llmGuardTest(): void {
       expect(fake.calls[1][fake.calls[1].length - 1].content)
         .assertContain('Continue answering the original user request');
       expect(fake.calls[1][fake.calls[1].length - 1].content)
-        .assertContain('Do not output a format diagnosis');
+        .assertContain('do not output a format diagnosis');
     });
   });
 }

@@ -62,6 +62,12 @@ class FakeNoteGenerationRepository implements NoteGenerationRepository {
     if (existing === undefined) {
       this.commits.push(_result);
     }
+    for (const run of this.runs) {
+      if (run.id === _result.runId) {
+        run.status = 'committed';
+        run.stopReason = 'committed';
+      }
+    }
   }
 
   async getCommitResult(_commitKey: string): Promise<NoteGenerationCommitResult | undefined> {
@@ -75,7 +81,16 @@ class FakeNoteGenerationRepository implements NoteGenerationRepository {
   }
 
   async listRecoverableRuns(): Promise<NoteGenerationRun[]> {
-    return this.runs;
+    const recoverable: NoteGenerationRun[] = [];
+    for (const run of this.runs) {
+      const committed: NoteGenerationCommitResult | undefined = this.commits.find(
+        (item: NoteGenerationCommitResult): boolean => item.runId === run.id,
+      );
+      if (run.status !== 'committed' && committed === undefined) {
+        recoverable.push(run);
+      }
+    }
+    return recoverable;
   }
 
 }
@@ -145,6 +160,30 @@ export default function noteGenerationRepositoryTest(): void {
       const second: NoteGenerationCommitResult | undefined = await repository.getCommitResult(result.commitKey);
       expect(first?.noteId).assertEqual('note-1');
       expect(second?.version).assertEqual(1);
+    });
+
+    it('does not recover a run after its note commit is durable', 0, async () => {
+      const repository: NoteGenerationRepository = new FakeNoteGenerationRepository();
+      const run: NoteGenerationRun = {
+        id: 'run-committed-recovery', route: 'light', status: 'ready-preview',
+        instruction: 'create note', sourceCount: 1, tokenBudget: 1200,
+      };
+      const result: NoteGenerationCommitResult = {
+        commitKey: 'run-committed-recovery:checkpoint-1:hash-1',
+        runId: run.id,
+        checkpointId: 'checkpoint-1',
+        noteId: 'note-committed-recovery',
+        version: 1,
+        sourceIds: ['source-1'],
+      };
+
+      await repository.saveRun(run, { fragments: [] });
+      await repository.saveCommitResult(result);
+
+      const recoverable: NoteGenerationRun[] = await repository.listRecoverableRuns();
+      expect(recoverable.length).assertEqual(0);
+      const restored: NoteGenerationRecovery | undefined = await repository.restore(run.id);
+      expect(restored?.run.status).assertEqual('committed');
     });
 
     it('keeps a checkpoint immutable when the same id is saved again', 0, async () => {

@@ -7,6 +7,7 @@ import { NoteGenerationCommitResult } from 'common';
 export class PersistNodeFactory {
   static create(dao: NoteDaoInterface): CaptureNode {
     return async (input: AgentState): Promise<CaptureNodeResult> => {
+      input.cancellationToken?.throwIfCancelled();
       if (!input.persist) {
         return { state: input };
       }
@@ -36,6 +37,7 @@ export class PersistNodeFactory {
             ? '' : JSON.stringify(input.preparedCandidate.incrementalManifest),
         };
         const commitResult = await dao.updateWithCommitKey(input.knowledgeUnit, input.preparedCandidate.expectedVersion, commit);
+        input.cancellationToken?.throwIfCancelled();
         const next: AgentState = copyAgentState(input);
         if (commitResult.success === false) {
           next.error = {
@@ -73,6 +75,7 @@ export class PersistNodeFactory {
             ? '' : JSON.stringify(input.preparedCandidate.incrementalManifest),
         };
         const commitResult = await dao.insertWithCommitKey(input.knowledgeUnit, commit);
+        input.cancellationToken?.throwIfCancelled();
         const next: AgentState = copyAgentState(input);
         if (commitResult.success === false) {
           next.error = {
@@ -87,6 +90,7 @@ export class PersistNodeFactory {
         return { state: next };
       } else {
         await dao.insert(input.knowledgeUnit);
+        input.cancellationToken?.throwIfCancelled();
       }
       return { state: input };
     };

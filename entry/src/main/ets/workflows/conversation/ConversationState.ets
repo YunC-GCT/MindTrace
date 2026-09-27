@@ -20,7 +20,11 @@
 import { TextIntent } from '../../services/IntentClassifier';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { NoteReviewPlan } from '../../services/NoteReviewService';
-import { ClassificationResult, NoteGenerationRoute } from 'common';
+import { ClassificationResult } from 'common';
+import { ConversationRunRef } from '../../services/ConversationIdentity';
+
+export type ChatMessageOrigin = 'chat' | 'image' | 'note-regeneration' | 'system' | 'legacy';
+export type ChatMessageOutcome = 'completed' | 'interrupted' | 'cancelled' | 'failed';
 
 export type ConversationStep =
   | 'START'
@@ -57,14 +61,12 @@ export interface ImageConversationRequest {
   kind: 'image';
   imageUri: string;
   userContent: string;
-  route?: NoteGenerationRoute;
 }
 
 export interface TextConversationRequest {
   kind: 'text';
   userContent: string;
   responseMode: 'complete' | 'stream';
-  route?: NoteGenerationRoute;
 }
 
 export interface RegenerateConversationRequest {
@@ -77,7 +79,7 @@ export type ConversationRequest = ImageConversationRequest | TextConversationReq
 
 export interface ConversationState {
   request: ConversationRequest;
-  sessionId: string;
+  runRef: ConversationRunRef;
   currentStep: ConversationStep;
   intent?: TextIntent;
   memoryContext?: string;

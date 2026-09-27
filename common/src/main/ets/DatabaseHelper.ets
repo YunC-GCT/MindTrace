@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 10;
+const DB_SCHEMA_VERSION: number = 12;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -82,9 +82,14 @@ CREATE TABLE IF NOT EXISTS note_revision (
 const SQL_CREATE_CHAT_MESSAGE: string = `
 CREATE TABLE IF NOT EXISTS chat_message (
   id TEXT PRIMARY KEY,
+  message_key TEXT NOT NULL,
   session_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL DEFAULT "",
+  run_id TEXT NOT NULL DEFAULT "",
+  sequence INTEGER NOT NULL DEFAULT 0,
+  origin TEXT NOT NULL DEFAULT "legacy",
+  outcome TEXT NOT NULL DEFAULT "completed",
   created_at INTEGER NOT NULL
 )`;
 
@@ -111,6 +116,8 @@ CREATE TABLE IF NOT EXISTS note_generation_run (
   best_checkpoint_id TEXT NOT NULL DEFAULT '',
   stop_reason TEXT NOT NULL DEFAULT '',
   issue_count INTEGER NOT NULL DEFAULT 0,
+  origin_session_id TEXT NOT NULL DEFAULT '',
+  parent_conversation_run_id TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 )`;
@@ -224,6 +231,10 @@ const SQL_INDEX_STUDY_PLAN_DONE: string =
   "CREATE INDEX IF NOT EXISTS idx_study_plan_is_done ON study_plan(is_done)";
 const SQL_INDEX_CHAT_MESSAGE_SESSION_CREATED: string =
   "CREATE INDEX IF NOT EXISTS idx_chat_message_session_created ON chat_message(session_id, created_at)";
+const SQL_INDEX_CHAT_MESSAGE_STABLE_ORDER: string =
+  "CREATE INDEX IF NOT EXISTS idx_chat_message_stable_order ON chat_message(session_id, sequence, created_at, id)";
+const SQL_INDEX_CHAT_MESSAGE_KEY: string =
+  "CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_message_session_key ON chat_message(session_id, message_key)";
 const SQL_INDEX_AGENT_MEMORY_PENDING: string =
   "CREATE INDEX IF NOT EXISTS idx_agent_memory_pending ON agent_memory(session_id, type, used, created_at)";
 const SQL_INDEX_AGENT_MEMORY_SUMMARY: string =
@@ -281,6 +292,24 @@ const SQL_MIGRATE_GENERATION_LOG_STOP_REASON: string =
   "ALTER TABLE note_generation_log ADD COLUMN stop_reason TEXT NOT NULL DEFAULT ''";
 const SQL_MIGRATE_GENERATION_LOG_ROLLBACK: string =
   "ALTER TABLE note_generation_log ADD COLUMN rollback INTEGER NOT NULL DEFAULT 0";
+const SQL_MIGRATE_CHAT_MESSAGE_KEY: string =
+  "ALTER TABLE chat_message ADD COLUMN message_key TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_CHAT_RUN_ID: string =
+  "ALTER TABLE chat_message ADD COLUMN run_id TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_CHAT_SEQUENCE: string =
+  "ALTER TABLE chat_message ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0";
+const SQL_MIGRATE_CHAT_ORIGIN: string =
+  "ALTER TABLE chat_message ADD COLUMN origin TEXT NOT NULL DEFAULT 'legacy'";
+const SQL_MIGRATE_CHAT_OUTCOME: string =
+  "ALTER TABLE chat_message ADD COLUMN outcome TEXT NOT NULL DEFAULT 'completed'";
+const SQL_MIGRATE_GENERATION_ORIGIN_SESSION: string =
+  "ALTER TABLE note_generation_run ADD COLUMN origin_session_id TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_GENERATION_PARENT_RUN: string =
+  "ALTER TABLE note_generation_run ADD COLUMN parent_conversation_run_id TEXT NOT NULL DEFAULT ''";
+const SQL_BACKFILL_CHAT_MESSAGE_KEY: string =
+  "UPDATE chat_message SET message_key = id WHERE message_key = ''";
+const SQL_BACKFILL_CHAT_SEQUENCE: string =
+  "UPDATE chat_message SET sequence = created_at WHERE sequence = 0";
 const SQL_BACKFILL_NOTE_REVISION: string = `
 INSERT OR IGNORE INTO note_revision (
   note_id, version, title, content, summary, tags, subject, category, chapter,
@@ -430,6 +459,25 @@ export class DatabaseHelper {
     if (!hasLogRollback) {
       await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_LOG_ROLLBACK);
     }
+    const hasMessageKey: boolean = await DatabaseHelper.hasColumn(store, "chat_message", "message_key");
+    if (!hasMessageKey) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHAT_MESSAGE_KEY); }
+    const hasChatRunId: boolean = await DatabaseHelper.hasColumn(store, "chat_message", "run_id");
+    if (!hasChatRunId) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHAT_RUN_ID); }
+    const hasChatSequence: boolean = await DatabaseHelper.hasColumn(store, "chat_message", "sequence");
+    if (!hasChatSequence) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHAT_SEQUENCE); }
+    const hasChatOrigin: boolean = await DatabaseHelper.hasColumn(store, "chat_message", "origin");
+    if (!hasChatOrigin) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHAT_ORIGIN); }
+    const hasChatOutcome: boolean = await DatabaseHelper.hasColumn(store, "chat_message", "outcome");
+    if (!hasChatOutcome) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHAT_OUTCOME); }
+    const hasGenerationOriginSession: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "origin_session_id");
+    if (!hasGenerationOriginSession) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_ORIGIN_SESSION); }
+    const hasGenerationParentRun: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "parent_conversation_run_id");
+    if (!hasGenerationParentRun) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_PARENT_RUN); }
+
+    await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_MESSAGE_KEY);
+    await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_SEQUENCE);
+    await DatabaseHelper.executeSql(store, SQL_INDEX_CHAT_MESSAGE_STABLE_ORDER);
+    await DatabaseHelper.executeSql(store, SQL_INDEX_CHAT_MESSAGE_KEY);
 
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_NOTE_REVISION);
 
