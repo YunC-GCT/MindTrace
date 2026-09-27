@@ -48,3 +48,16 @@ UI 拥有 AgentFloatWindow、AgentMessageList、chat/ChatModels、chat/ChatBubbl
 ## 验证边界
 
 字符预算不是 token 精确计数；有限关键词检索有同义词/表达差异漏召回的局限。引用 ID/版本正确不等于数学结论得到严格语义证明。原图片定位本期以引用笔记原版本为准，不承诺 OCR 原图坐标。学习效果和真实服务性能需后续评估。
+
+## 2026-09-27 验收契约澄清
+
+以下为原验收条件的边界细化，不另建进度表：
+
+- AC-REVIEW-01：文本分类复用原有本地否定、生成、增量编辑规则；明确复习请求不依赖远程分类结果。图片与显式 regenerate 仍走原路径。
+- AC-REVIEW-02/03：预算必须同时约束传入模型的上下文和最终允许引用集。裁剪后无来源时返回 insufficient；比较超过 6 个主题或任一主题在裁剪后失去直接证据时应澄清，不能只查部分主题却回答全部主题。
+- AC-REVIEW-04：两种图谱扩展的最终关系均只保留两端存在于最终来源集的边。前置知识根据有效有向关系判定，不能仅凭 citation.role；两端同时为关键词命中仍可存在前置关系。
+- AC-REVIEW-05：版本必须为完整正整数，`3abc`、`3.5`、重复 version 字段均不等于版本 3。引用校验仅验证来源身份与版本，不证明回答中的每条陈述均被摘录支持。
+- AC-REVIEW-07：来源服务为实例方法，使用 `new NoteReviewSourceService().resolve(citation)` 或注入 `NoteReviewSourceResolver`。
+- AC-REVIEW-08：每次反馈写入使用不复用的请求 token；旧请求失败不得回滚新选择。UI 文件所有权补充 `AgentInputViewModel.ets`：消息接收 callback 返回 boolean，拒绝时保留输入/图片并停止后续 service 调用。停止按钮在真实请求结束前仍禁止重入；网络取消能力仍沿用现有边界。
+
+测试预期更正必须保留失败日志和原因：模糊指代分类为 explain，但计划必须 terminal/insufficient/ambiguous-pronoun；证据 provider 抛错统一为 unavailable/search-failed。前置测试数据必须包含关系端点及方向，单独设置 role 不足以构成前置证据。
