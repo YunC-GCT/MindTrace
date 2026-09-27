@@ -31,10 +31,8 @@ export class IntentClassifier {
   // ===== 意图判定 (关键词前置 → 远程 LLM 兜底, 失败回退 chat) =====
   public async classify(userText: string): Promise<TextIntent> {
     const normalized: string = userText.trim();
-    if (normalized.length === 0) { return 'chat'; }
-    if (this.hasNoteGenerationDenyIntent(normalized)) { return 'chat'; }
-    if (this.hasExplicitRegenerationIntent(normalized)) { return 'note_generation'; }
-    if (this.hasExplicitNoteGenerationIntent(normalized)) { return 'note_generation'; }
+    const localIntent: TextIntent | undefined = this.classifyLocalIntent(normalized);
+    if (localIntent !== undefined) { return localIntent; }
     if (!this.shouldUseRemoteIntentClassifier(normalized)) { return 'chat'; }
 
     try {
@@ -52,6 +50,15 @@ export class IntentClassifier {
       console.warn('[IntentClassifier] text intent classify failed: ' + IntentClassifier.errorMessage(e));
       return 'chat';
     }
+  }
+
+  public classifyLocalIntent(userText: string): TextIntent | undefined {
+    const normalized: string = userText.trim();
+    if (normalized.length === 0) { return 'chat'; }
+    if (this.hasNoteGenerationDenyIntent(normalized)) { return 'chat'; }
+    if (this.hasExplicitRegenerationIntent(normalized)) { return 'note_generation'; }
+    if (this.hasExplicitNoteGenerationIntent(normalized)) { return 'note_generation'; }
+    return undefined;
   }
 
   private buildIntentMessages(userContent: string): ChatMessage[] {
