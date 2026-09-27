@@ -25,6 +25,7 @@ export interface AgentRunPart {
   toolCallId?: string
   toolName?: string
   detail?: string
+  progressKey?: string
 }
 
 function copyAgentRunPart(part: AgentRunPart): AgentRunPart {
@@ -43,6 +44,9 @@ function copyAgentRunPart(part: AgentRunPart): AgentRunPart {
   }
   if (part.detail !== undefined) {
     next.detail = part.detail
+  }
+  if (part.progressKey !== undefined) {
+    next.progressKey = part.progressKey
   }
   return next
 }
@@ -113,10 +117,32 @@ export function appendAgentRunStatus(
   messageId: number,
   content: string,
   status: AgentRunPartStatus,
+  progressKey?: string,
 ): AgentRunPart[] {
   const next: AgentRunPart[] = copyAgentRunParts(current)
+  if (progressKey !== undefined) {
+    const existing: AgentRunPart | undefined = next.find(
+      (part: AgentRunPart): boolean => part.progressKey === progressKey,
+    )
+    if (existing !== undefined) {
+      if (status === 'running') {
+        for (const part of next) {
+          if (part.id !== existing.id && part.status === 'running' && part.kind !== 'tool') {
+            part.status = 'success'
+          }
+        }
+      }
+      existing.content = content
+      existing.status = status
+      return next
+    }
+  }
   closeRunningParts(next)
-  next.push(createPart(messageId, next.length, 'status', status, content))
+  const part: AgentRunPart = createPart(messageId, next.length, 'status', status, content)
+  if (progressKey !== undefined) {
+    part.progressKey = progressKey
+  }
+  next.push(part)
   return next
 }
 
@@ -134,6 +160,7 @@ export function appendAgentRunError(
 export function agentRunPartKey(part: AgentRunPart): string {
   return part.id + '_' + part.status + '_' + part.content.length.toString()
     + '_' + (part.detail === undefined ? '0' : part.detail.length.toString())
+    + '_' + (part.progressKey ?? '')
 }
 
 export function agentRunRevision(parts: AgentRunPart[]): string {

@@ -38,3 +38,16 @@ test('Issue 104 does not add a second persistence owner', () => {
   assert.doesNotMatch(repository, /knowledge_unit/)
   assert.match(adapter, /service\.updateWithCommitKey/)
 })
+
+test('incremental regeneration uses the same coarse progress contract', () => {
+  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const incremental = dispatcher.slice(
+    dispatcher.indexOf('private async dispatchIncrementalGeneration'),
+    dispatcher.indexOf('private incrementalResult'),
+  )
+
+  assert.match(incremental, /activity: 'collect_sources'/)
+  assert.match(incremental, /activity: 'repair_draft'/)
+  assert.match(incremental, /activity: 'check_accuracy'/)
+  assert.match(incremental, /state: 'success'/)
+})

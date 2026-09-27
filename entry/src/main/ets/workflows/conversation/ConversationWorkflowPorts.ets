@@ -15,6 +15,7 @@ import {
   LlmConfig,
   NoteDraftReadyEvent,
   NoteGenerationRoute,
+  NoteGenerationProgressSink,
   SourceFragment,
 } from 'common';
 import { AiService } from '../../services/AiService';
@@ -46,6 +47,7 @@ export interface IConversationCapturePort {
     originSessionId?: string,
     parentConversationRunId?: string,
     route?: NoteGenerationRoute,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent>;
   regenerateNoteDraft(
     runId: string,
@@ -55,6 +57,7 @@ export interface IConversationCapturePort {
     token?: CancellationToken,
     originSessionId?: string,
     parentConversationRunId?: string,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent>;
 }
 
@@ -124,6 +127,7 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
     originSessionId?: string,
     parentConversationRunId?: string,
     route?: NoteGenerationRoute,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     return await this.ai.generateNoteDraftWithSources(
       runId,
@@ -134,6 +138,7 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
       originSessionId,
       parentConversationRunId,
       route,
+      progressSink,
     );
   }
 
@@ -145,6 +150,7 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
     token?: CancellationToken,
     originSessionId?: string,
     parentConversationRunId?: string,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     return await this.ai.regenerateNoteDraft(
       runId,
@@ -154,6 +160,7 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
       token,
       originSessionId,
       parentConversationRunId,
+      progressSink,
     );
   }
 }

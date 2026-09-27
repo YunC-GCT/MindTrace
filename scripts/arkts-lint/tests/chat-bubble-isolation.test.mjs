@@ -24,7 +24,7 @@ test('ChatBubble remains the role router for isolated message renderers', () => 
   assert.doesNotMatch(router, /MarkdownRenderer|FormulaSplitRenderer|ContentProtocol|processOpen/);
 });
 
-test('AgentRunPanel frames process parts without owning a global disclosure', () => {
+test('AgentRunPanel routes independent step cards without owning a global disclosure', () => {
   assert.match(aiBubble, /AgentRunPanel/);
   assert.doesNotMatch(aiBubble, /MarkdownRenderer|FormulaSplitRenderer|ContentProtocol/);
   assert.match(runPanel, /ForEach\(this\.parts/);
@@ -38,9 +38,21 @@ test('AgentRunPanel frames process parts without owning a global disclosure', ()
   assert.match(statusStep, /export struct AgentStatusStep/);
   assert.match(runPanel, /this\.hasProcessParts\(\)/);
   assert.match(runPanel, /part\.kind !== 'answer'/);
-  assert.match(runPanel, /border\(\{ width: 0\.5, color: BORDER \}\)/);
+  assert.doesNotMatch(runPanel, /\.borderRadius\(|\.backgroundColor\(|\.border\(/);
   assert.doesNotMatch(runPanel, /processOpen|执行过程|completedSummary|latestAgentRunActivity|onToggle/);
   assert.doesNotMatch(router + aiBubble, /processExpanded|onToggleProcess/);
+});
+
+test('each event owns its card and process steps do not draw timeline dots', () => {
+  for (const step of [thinkingStep, toolStep, statusStep]) {
+    assert.match(step, /\.borderRadius\(R_MD \+ 4\)/);
+    assert.match(step, /\.backgroundColor\('rgba\(255,255,255,0\.025\)'\)/);
+    assert.match(step, /\.border\(\{ width: 0\.5, color: BORDER \}\)/);
+  }
+  assert.match(answerStep, /\.borderRadius\(R_MD \+ 4\)/);
+  assert.match(answerStep, /\.backgroundColor\('rgba\(255,255,255,0\.045\)'\)/);
+  assert.doesNotMatch(toolStep + statusStep, /Circle\(\{/);
+  assert.doesNotMatch(toolStep, /rgba\(255,255,255,0\.10\)/);
 });
 
 test('run reducer reserves ordered thinking tool result and answer handling', () => {
@@ -61,8 +73,6 @@ test('thinking module independently owns collapsed streaming and completed summa
   assert.doesNotMatch(thinkingStep, /Circle\(\{/);
   assert.doesNotMatch(thinkingStep, /this\.detailOpen \? '⌃' : '⌄'/);
   assert.match(thinkingStep, /\.height\(20\)/);
-  assert.doesNotMatch(thinkingStep, /\.borderRadius\(/);
-  assert.doesNotMatch(thinkingStep, /\.backgroundColor\(/);
   assert.match(thinkingStep, /this\.status === 'running'/);
   assert.match(thinkingStep, /Marquee\(\{/);
   assert.match(thinkingStep, /src: this\.runningLine\(\)/);
@@ -74,6 +84,15 @@ test('thinking module independently owns collapsed streaming and completed summa
   assert.match(thinkingStep, /if \(!this\.detailOpen\) \{/);
   assert.match(thinkingStep, /if \(this\.detailOpen\) \{/);
   assert.doesNotMatch(toolStep, /detailOpen.*thinking|processOpen/);
+});
+
+test('running status cards provide live activity feedback without timeline chrome', () => {
+  assert.match(statusStep, /if \(this\.status === 'running'\)/);
+  assert.match(statusStep, /LoadingProgress\(\)/);
+  assert.match(statusStep, /Marquee\(\{/);
+  assert.match(statusStep, /src: this\.content/);
+  assert.match(statusStep, /MarqueeUpdateStrategy\.PRESERVE_POSITION/);
+  assert.doesNotMatch(statusStep, /Circle\(\{/);
 });
 
 test('isolated presentation modules do not depend on business layers', () => {

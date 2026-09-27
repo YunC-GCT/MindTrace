@@ -61,6 +61,12 @@ test('AgentChatService adapter maps workflow progress through ChatStatusMachine'
   assert.doesNotMatch(workflow, /ChatStatusMachine|setStatusMeta|setBusy/);
 });
 
+test('reply generation progress stays internal instead of creating a duplicate frontend event', () => {
+  assert.match(workflowAdapter, /step === 'reply_model_call'/);
+  assert.match(workflowAdapter, /step === 'completed'/);
+  assert.match(workflow, /this\.setStep\(ref, 'reply_model_call'\)/);
+});
+
 test('busy lifecycle remains in AgentChatService adapter; workflow emits lifecycle events', () => {
   assert.match(workflowAdapter, /onStart\(ref: ConversationRunRef\): void/);
   assert.match(workflowAdapter, /onFinish\(ref: ConversationRunRef\): void/);

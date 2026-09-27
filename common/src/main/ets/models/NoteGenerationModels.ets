@@ -20,7 +20,21 @@ export type NoteGenerationMode = 'create' | 'regenerate';
 export type SourceKind = 'conversation' | 'ocr' | 'summary' | 'existing_note';
 export type NoteGenerationRoute = 'light' | 'standard' | 'deep';
 export type NoteGenerationStatus = 'running' | 'incomplete' | 'ready-preview' | 'needs-input' | 'failed' | 'cancelled' | 'committed';
+export type NoteGenerationProgressPhase = 'prepare' | 'compose' | 'verify';
+export type NoteGenerationProgressState = 'running' | 'success' | 'failed';
+export type NoteGenerationActivity = 'collect_sources' | 'plan_structure' | 'write_draft'
+  | 'write_section' | 'repair_draft' | 'check_accuracy';
 export type DraftSectionState = 'generated' | 'locked';
+
+export interface NoteGenerationProgressEvent {
+  phase: NoteGenerationProgressPhase;
+  state: NoteGenerationProgressState;
+  activity: NoteGenerationActivity;
+  current?: number;
+  total?: number;
+}
+
+export type NoteGenerationProgressSink = (event: NoteGenerationProgressEvent) => void;
 
 export interface SourceFragment {
   id: string;
