@@ -88,6 +88,7 @@ class FixedIntentPort implements IConversationIntentPort {
   async classifyWithCancellation(_userText: string, _token?: CancellationToken): Promise<TextIntent> {
     return this.intent;
   }
+  classifyLocalIntent(_userText: string): TextIntent | undefined { return undefined; }
   inlineNoteMaterial(_userText: string): string { return 'test material'; }
 }
 

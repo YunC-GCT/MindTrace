@@ -23,6 +23,7 @@ import { NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
 import type { StreamEvent } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { CancellationToken } from 'common';
+import { NoteReviewAnswer } from '../../models/NoteReviewModels';
 export type ConversationRunEventStatus = 'pending' | 'running' | 'success' | 'failed';
 
 export interface ConversationStreamMessageEvent {
@@ -72,5 +73,6 @@ export interface ConversationWorkflowCallbacks {
   getContext(): common.UIAbilityContext;
   getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string;
   onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void;
+  onNoteReviewReady?(ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void;
   onOcrBlank?(ref: ConversationRunRef, imageUri: string): void;
 }

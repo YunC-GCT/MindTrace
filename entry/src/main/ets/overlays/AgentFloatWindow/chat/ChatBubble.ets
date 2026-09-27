@@ -12,10 +12,15 @@
 import { ChatMsg, chatMessageRunParts } from './ChatModels'
 import { UserMessageBubble } from './UserMessageBubble'
 import { AiMessageBubble } from './AiMessageBubble'
+import { NoteEvidenceCitation } from '../../../models/NoteEvidenceModels'
+import { NoteReviewFeedback } from '../../../models/NoteReviewModels'
 
 @Component
 export struct ChatBubble {
   @Prop msg: ChatMsg = { id: 0, role: 'ai', content: '', ts: 0, streaming: false, reasoning: '' }
+  onSourceTap: (citation: NoteEvidenceCitation) => void = (_citation: NoteEvidenceCitation): void => {}
+  onFeedback: (messageId: number, feedback: NoteReviewFeedback) => void =
+    (_messageId: number, _feedback: NoteReviewFeedback): void => {}
 
   build() {
     if (this.msg.role === 'user') {
@@ -25,6 +30,9 @@ export struct ChatBubble {
         parts: chatMessageRunParts(this.msg),
         streaming: this.msg.streaming,
         outcome: this.msg.outcome ?? 'completed',
+        noteReview: this.msg.noteReview === undefined ? null : this.msg.noteReview,
+        onSourceTap: this.onSourceTap,
+        onFeedback: (feedback: NoteReviewFeedback): void => { this.onFeedback(this.msg.id, feedback) },
       })
     }
   }

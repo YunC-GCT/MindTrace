@@ -28,12 +28,24 @@ import {
   ChatMessageOutcome,
   ChatMsg,
   ChatSession,
+  applyNoteReviewToChatMsg,
+  setChatMsgNoteReviewFeedback,
+  setChatMsgNoteReviewFeedbackValue,
   transitionChatMessageOutcome,
 } from './chat/ChatModels';
+import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
+import {
+  NoteReviewAnswer,
+  NoteReviewFeedback,
+  NoteReviewSourceResult,
+  copyNoteEvidenceCitation,
+} from '../../models/NoteReviewModels';
+import { NoteReviewSourceService } from '../../services/NoteReviewSourceService';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputPanel } from './AgentInputPanel';
+import { NoteReviewSourceOverlay } from './NoteReviewSourceOverlay';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
 import { SessionsPanelController } from '../../services/SessionsPanelController';
 import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
@@ -57,6 +69,7 @@ import {
 } from '../../services/ConversationSessionReducer';
 import { ConversationSessionSnapshot } from '../../models/ConversationSnapshotModels';
 import { IConversationNoteRoutePort } from '../../workflows/conversation/ConversationWorkflowPorts';
+import { ChatHistorySaveResult } from '../../services/ChatHistoryPersistence';
 
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
@@ -93,15 +106,23 @@ export struct AgentFloatWindow {
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
   @State panelVisible: boolean = false;
   @State generatedDraft: NoteDraftReadyEvent | null = null;
+  @State sourceOverlayVisible: boolean = false;
+  @State sourceOverlayLoading: boolean = false;
+  @State sourceOverlayCitation: NoteEvidenceCitation | null = null;
+  @State sourceOverlayResult: NoteReviewSourceResult | null = null;
   private generatedDraftSessionId: string = '';
   private motionSeq: number = 0;
+  private sourceRequestSeq: number = 0;
   private dragStartH: number = 48;
   private mainWindow: window.Window | null = null;
   private scroller: Scroller = new Scroller();
   private sm: ChatSessionManager = new ChatSessionManager();
   private service: AgentChatService | null = null;
+  private sourceResolver: NoteReviewSourceService = new NoteReviewSourceService();
   private deletionCoordinator: SessionDeletionCoordinator | null = null;
   private draftRecovery: DraftRecoveryService | null = null;
+  private feedbackRequestCounter: number = 0;
+  private feedbackRequestTokenByMessage: Map<number, number> = new Map<number, number>();
   @State inputVm: AgentInputViewModel = new AgentInputViewModel();
 
   // ===== 生命周期 =====
@@ -307,6 +328,15 @@ export struct AgentFloatWindow {
           console.warn('[ConversationRun] code=DRAFT_TARGET_REJECTED; sessionId=' + ref.sessionId + '; runId=' + ref.runId);
         }
       },
+      onNoteReviewReady: (ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void => {
+        this.updateSessionMessages(ref, 'update-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map(
+          (message: ChatMsg): ChatMsg => message.id === messageId
+            ? applyNoteReviewToChatMsg(message, review)
+            : message,
+        ));
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      },
     };
     const noteRoute: IConversationNoteRoutePort = new AgentInputNoteRouteAdapter(inputVm);
     const service: AgentChatService = new AgentChatService(cbs, noteRoute);
@@ -437,6 +467,153 @@ export struct AgentFloatWindow {
     }
     return true;
   }
+
+  private updateMessageById(messageId: number, update: (message: ChatMsg) => ChatMsg): boolean {
+    let accepted: boolean = false;
+    const nextSessions: ChatSession[] = [];
+    for (const session of this.sessions) {
+      const nextMessages: ChatMsg[] = [];
+      for (const message of session.messages) {
+        if (message.id === messageId) {
+          nextMessages.push(update(message));
+          accepted = true;
+        } else {
+          nextMessages.push(message);
+        }
+      }
+      nextSessions.push({ id: session.id, name: session.name, messages: nextMessages });
+    }
+    if (!accepted) { return false; }
+    this.sessions = nextSessions;
+    const active: ChatSession | undefined = this.sessions.find((session: ChatSession): boolean => session.id === this.activeSid);
+    if (active !== undefined) { this.messages = active.messages; }
+    return true;
+  }
+
+  private findSessionIdForMessage(messageId: number): string {
+    for (const session of this.sessions) {
+      for (const message of session.messages) {
+        if (message.id === messageId) { return session.id; }
+      }
+    }
+    return '';
+  }
+
+  private messagesForSession(sessionId: string): ChatMsg[] {
+    const session: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sessionId);
+    return session === undefined ? [] : session.messages;
+  }
+
+  private onNoteReviewFeedback = (messageId: number, feedback: NoteReviewFeedback): void => {
+    const previous: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
+    const requestToken: number = this.nextFeedbackRequestToken(messageId);
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      setChatMsgNoteReviewFeedback(message, feedback)
+    );
+    this.sync();
+    this.sm.flush(this.sessions)
+      .then((result: ChatHistorySaveResult): void => {
+        if (!result.success) {
+          this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestToken);
+          this.clearFeedbackRequestToken(messageId, requestToken);
+          this.showToast('反馈保存失败，请稍后重试');
+          return;
+        }
+        this.clearFeedbackRequestToken(messageId, requestToken);
+      })
+      .catch((): void => {
+        this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestToken);
+        this.clearFeedbackRequestToken(messageId, requestToken);
+        this.showToast('反馈保存失败，请稍后重试');
+      });
+  };
+
+  private nextFeedbackRequestToken(messageId: number): number {
+    this.feedbackRequestCounter += 1;
+    this.feedbackRequestTokenByMessage.set(messageId, this.feedbackRequestCounter);
+    return this.feedbackRequestCounter;
+  }
+
+  private clearFeedbackRequestToken(messageId: number, requestToken: number): void {
+    const current: number | undefined = this.feedbackRequestTokenByMessage.get(messageId);
+    if (current === requestToken) {
+      this.feedbackRequestTokenByMessage.delete(messageId);
+    }
+  }
+
+  private isCurrentFeedbackRequest(messageId: number, requestToken: number): boolean {
+    const current: number | undefined = this.feedbackRequestTokenByMessage.get(messageId);
+    return current === requestToken;
+  }
+
+  private feedbackForMessage(messageId: number): NoteReviewFeedback | undefined {
+    const sessionId: string = this.findSessionIdForMessage(messageId);
+    const messages: ChatMsg[] = this.messagesForSession(sessionId);
+    for (const message of messages) {
+      if (message.id === messageId && message.noteReview !== undefined) {
+        return message.noteReview.feedback;
+      }
+    }
+    return undefined;
+  }
+
+  private rollbackFeedbackIfCurrent(
+    messageId: number,
+    attempted: NoteReviewFeedback,
+    previous: NoteReviewFeedback | undefined,
+    requestToken: number,
+  ): void {
+    if (!this.isCurrentFeedbackRequest(messageId, requestToken)) {
+      return;
+    }
+    const current: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
+    if (current !== attempted) {
+      return;
+    }
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      setChatMsgNoteReviewFeedbackValue(message, previous)
+    );
+    this.sync();
+  }
+
+  private openNoteReviewSource = (citation: NoteEvidenceCitation): void => {
+    this.sourceRequestSeq += 1;
+    const seq: number = this.sourceRequestSeq;
+    const safeCitation: NoteEvidenceCitation = copyNoteEvidenceCitation(citation);
+    this.sourceOverlayCitation = safeCitation;
+    this.sourceOverlayResult = null;
+    this.sourceOverlayLoading = true;
+    this.sourceOverlayVisible = true;
+    this.sourceResolver.resolve(safeCitation)
+      .then((result: NoteReviewSourceResult): void => {
+        if (seq !== this.sourceRequestSeq || !this.sourceOverlayVisible) {
+          return;
+        }
+        this.sourceOverlayResult = result;
+        this.sourceOverlayLoading = false;
+      })
+      .catch((): void => {
+        if (seq !== this.sourceRequestSeq || !this.sourceOverlayVisible) {
+          return;
+        }
+        this.sourceOverlayResult = {
+          status: 'unavailable',
+          citation: safeCitation,
+          content: '',
+          currentVersion: safeCitation.version,
+          message: '来源读取失败，请稍后重试。',
+        };
+        this.sourceOverlayLoading = false;
+      });
+  };
+
+  private closeNoteReviewSource = (): void => {
+    this.sourceRequestSeq += 1;
+    this.sourceOverlayVisible = false;
+    this.sourceOverlayLoading = false;
+    this.sourceOverlayCitation = null;
+    this.sourceOverlayResult = null;
+  };
 
   private updateSessionTitle(sessionId: string, title: string): void {
     const next: ChatSession[] = [];
@@ -729,7 +906,13 @@ export struct AgentFloatWindow {
               .zIndex(PANEL_Z_INDEX);
           }
 
-          AgentMessageList({ messages: this.messages, busy: this.inputVm.busy, scroller: this.scroller });
+          AgentMessageList({
+            messages: this.messages,
+            busy: this.inputVm.busy,
+            scroller: this.scroller,
+            onSourceTap: this.openNoteReviewSource,
+            onFeedback: this.onNoteReviewFeedback,
+          });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
           ImagePreviewBar({ imagePreview: this.inputVm.imagePreview, onClear: (): void => { this.inputVm.clearImagePreview(); } });
@@ -774,6 +957,14 @@ export struct AgentFloatWindow {
             this.generatedDraft = null;
             this.generatedDraftSessionId = '';
           },
+        })
+      }
+      if (this.sourceOverlayVisible) {
+        NoteReviewSourceOverlay({
+          loading: this.sourceOverlayLoading,
+          citation: this.sourceOverlayCitation,
+          result: this.sourceOverlayResult,
+          onClose: this.closeNoteReviewSource,
         })
       }
     }.width('100%').height('100%').hitTestBehavior(this.overlayVisible ? HitTestMode.Default : HitTestMode.None);

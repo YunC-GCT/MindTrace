@@ -36,6 +36,7 @@ export interface NoteEvidenceOptions {
   subject?: string;
   chapter?: string;
   tag?: string;
+  graphMode?: 'neighborhood' | 'prerequisite-incoming' | 'none';
 }
 
 // 内部行: 图谱邻居的存活笔记元数据
@@ -52,6 +53,11 @@ interface NoteEvidenceRow {
 interface TextSplit {
   text: string;
   carry: string;
+}
+
+export interface CitationVersionRef {
+  noteId: string;
+  version: number;
 }
 
 export class NoteEvidenceService {
@@ -79,12 +85,23 @@ export class NoteEvidenceService {
     const relations: NoteEvidenceRelation[] = [];
     let degraded: boolean = false;
     let reason: string = '';
-    try {
-      await this.expandGraph(store, citations, relations, maxDepth);
-    } catch (e) {
-      degraded = true;
-      reason = 'graph-failed';
+    const graphMode: 'neighborhood' | 'prerequisite-incoming' | 'none' =
+      options?.graphMode === undefined ? 'neighborhood' : options.graphMode;
+    if (graphMode !== 'none') {
+      try {
+        if (graphMode === 'prerequisite-incoming') {
+          await this.expandPrerequisites(store, citations, relations, maxDepth);
+        } else {
+          await this.expandGraph(store, citations, relations, maxDepth);
+        }
+      } catch (e) {
+        degraded = true;
+        reason = 'graph-failed';
+      }
     }
+    citations = NoteEvidenceService.capCitations(citations);
+    NoteEvidenceService.filterRelationsForCitations(relations, citations);
+    NoteEvidenceService.refreshCitationRoles(citations, relations);
     const context: NoteEvidenceContext = {
       query: normalizedQuery,
       topK: topK,
@@ -125,15 +142,36 @@ export class NoteEvidenceService {
     return filter.push(answer) + filter.flush();
   }
 
+  sanitizeAnswerStrict(citations: NoteEvidenceCitation[], answer: string): string {
+    const filter: NoteEvidenceStreamFilter = this.createStrictStreamFilter(citations);
+    return filter.push(answer) + filter.flush();
+  }
+
   // 流式增量清洗器: 未启用时原样透传
   createStreamFilter(context: NoteEvidenceContext | undefined): NoteEvidenceStreamFilter {
-    const allowed: string[] = [];
+    const allowed: CitationVersionRef[] = [];
     if (context !== undefined) {
       for (const citation of context.citations) {
-        NoteEvidenceService.addUnique(allowed, citation.noteId);
+        NoteEvidenceService.addUniqueRef(allowed, citation.noteId, citation.version);
       }
     }
-    return new NoteEvidenceStreamFilter(allowed);
+    return new NoteEvidenceStreamFilter(allowed, false);
+  }
+
+  createStrictStreamFilter(citations: NoteEvidenceCitation[]): NoteEvidenceStreamFilter {
+    const allowed: CitationVersionRef[] = [];
+    for (const citation of citations) {
+      NoteEvidenceService.addUniqueRef(allowed, citation.noteId, citation.version);
+    }
+    return new NoteEvidenceStreamFilter(allowed, true);
+  }
+
+  hasVerifiedCitation(citations: NoteEvidenceCitation[], answer: string): boolean {
+    const allowed: CitationVersionRef[] = [];
+    for (const citation of citations) {
+      NoteEvidenceService.addUniqueRef(allowed, citation.noteId, citation.version);
+    }
+    return NoteEvidenceService.hasAllowedCitation(allowed, answer);
   }
 
   private async queryHits(
@@ -179,6 +217,65 @@ export class NoteEvidenceService {
     const dao: KnowledgeRelationDao = new KnowledgeRelationDao(store);
     const limits: GraphExpansionLimits = { maxDepth: maxDepth };
     const expansion: GraphExpansion = await dao.expandAcceptedNeighborhood(seeds, limits);
+    const known: string[] = [];
+    for (const citation of citations) {
+      NoteEvidenceService.addUnique(known, citation.noteId);
+    }
+    const missing: string[] = [];
+    for (const node of expansion.nodes) {
+      if (known.indexOf(node.unitId) < 0) {
+        NoteEvidenceService.addUnique(missing, node.unitId);
+      }
+    }
+    if (missing.length > 0) {
+      const rows: NoteEvidenceRow[] = await this.queryLiveRows(store, missing);
+      for (const row of rows) {
+        citations.push({
+          noteId: row.noteId,
+          version: row.version,
+          title: row.title,
+          excerpt: NoteEvidenceService.buildExcerpt(row.content, row.summary),
+          role: 'related',
+          score: 0,
+          matchedFields: [],
+          subject: row.subject,
+          chapter: row.chapter,
+        });
+      }
+    }
+    const relationSeen: string[] = [];
+    for (const edge of expansion.edges) {
+      if (relationSeen.indexOf(edge.id) >= 0) {
+        continue;
+      }
+      if (NoteEvidenceService.containsNoteId(citations, edge.fromUnitId)
+        && NoteEvidenceService.containsNoteId(citations, edge.toUnitId)) {
+        relationSeen.push(edge.id);
+        relations.push({
+          edgeId: edge.id,
+          fromNoteId: edge.fromUnitId,
+          toNoteId: edge.toUnitId,
+          relationType: edge.relationType === 'prerequisite' ? 'prerequisite' : 'related',
+          reason: edge.reason,
+        });
+      }
+    }
+    NoteEvidenceService.refreshCitationRoles(citations, relations);
+  }
+
+  private async expandPrerequisites(
+    store: relationalStore.RdbStore,
+    citations: NoteEvidenceCitation[],
+    relations: NoteEvidenceRelation[],
+    maxDepth: number,
+  ): Promise<void> {
+    const seeds: string[] = [];
+    for (const citation of citations) {
+      NoteEvidenceService.addUnique(seeds, citation.noteId);
+    }
+    const dao: KnowledgeRelationDao = new KnowledgeRelationDao(store);
+    const limits: GraphExpansionLimits = { maxDepth: maxDepth };
+    const expansion: GraphExpansion = await dao.expandAcceptedPrerequisites(seeds, limits);
     const relationSeen: string[] = [];
     for (const edge of expansion.edges) {
       if (relationSeen.indexOf(edge.id) >= 0) {
@@ -189,7 +286,7 @@ export class NoteEvidenceService {
         edgeId: edge.id,
         fromNoteId: edge.fromUnitId,
         toNoteId: edge.toUnitId,
-        relationType: edge.relationType === 'prerequisite' ? 'prerequisite' : 'related',
+        relationType: 'prerequisite',
         reason: edge.reason,
       });
     }
@@ -203,9 +300,6 @@ export class NoteEvidenceService {
         NoteEvidenceService.addUnique(missing, node.unitId);
       }
     }
-    if (missing.length === 0) {
-      return;
-    }
     const rows: NoteEvidenceRow[] = await this.queryLiveRows(store, missing);
     for (const row of rows) {
       citations.push({
@@ -213,7 +307,7 @@ export class NoteEvidenceService {
         version: row.version,
         title: row.title,
         excerpt: NoteEvidenceService.buildExcerpt(row.content, row.summary),
-        role: NoteEvidenceService.roleFor(row.noteId, relations),
+        role: 'prerequisite',
         score: 0,
         matchedFields: [],
         subject: row.subject,
@@ -427,6 +521,82 @@ export class NoteEvidenceService {
     }
   }
 
+  private static containsNoteId(citations: NoteEvidenceCitation[], noteId: string): boolean {
+    for (const citation of citations) {
+      if (citation.noteId === noteId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static filterRelationsForCitations(relations: NoteEvidenceRelation[], citations: NoteEvidenceCitation[]): void {
+    const kept: NoteEvidenceRelation[] = [];
+    for (const relation of relations) {
+      if (NoteEvidenceService.containsNoteId(citations, relation.fromNoteId)
+        && NoteEvidenceService.containsNoteId(citations, relation.toNoteId)) {
+        kept.push(relation);
+      }
+    }
+    relations.splice(0, relations.length);
+    for (const relation of kept) {
+      relations.push(relation);
+    }
+  }
+
+  private static refreshCitationRoles(citations: NoteEvidenceCitation[], relations: NoteEvidenceRelation[]): void {
+    for (const citation of citations) {
+      if (citation.role !== 'hit') {
+        citation.role = NoteEvidenceService.roleFor(citation.noteId, relations);
+      }
+    }
+  }
+
+  private static addUniqueRef(target: CitationVersionRef[], noteId: string, version: number): void {
+    if (noteId.length === 0 || version <= 0) {
+      return;
+    }
+    for (const item of target) {
+      if (item.noteId === noteId && item.version === version) {
+        return;
+      }
+    }
+    target.push({ noteId: noteId, version: version });
+  }
+
+  private static hasAllowedCitation(allowed: CitationVersionRef[], text: string): boolean {
+    let cursor: number = 0;
+    while (cursor < text.length) {
+      const start: number = text.indexOf(CITATION_MARKER, cursor);
+      if (start < 0) {
+        return false;
+      }
+      const end: number = text.indexOf(']', start + CITATION_MARKER.length);
+      if (end < 0) {
+        return false;
+      }
+      const raw: string = text.substring(start + CITATION_MARKER.length, end);
+      const citation: CitationVersionRef = NoteEvidenceStreamFilter.readCitationRef(raw);
+      if (NoteEvidenceService.refAllowed(allowed, citation)) {
+        return true;
+      }
+      cursor = end + 1;
+    }
+    return false;
+  }
+
+  static refAllowed(allowed: CitationVersionRef[], citation: CitationVersionRef): boolean {
+    if (citation.noteId.length === 0 || citation.version <= 0) {
+      return false;
+    }
+    for (const item of allowed) {
+      if (item.noteId === citation.noteId && item.version === citation.version) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private static readStringArray(value: Object | undefined): string[] {
     const values: string[] = [];
     if (value === undefined || value === null || !Array.isArray(value)) {
@@ -458,13 +628,13 @@ export class NoteEvidenceService {
 
 // 流式引用清洗: 缓冲可能被拆分的 [noteId=...] 片段, 允许集外替换为未验证标记
 export class NoteEvidenceStreamFilter {
-  private readonly allowed: string[];
+  private readonly allowed: CitationVersionRef[];
   private readonly enabled: boolean;
   private carry: string = '';
 
-  constructor(allowedNoteIds: string[]) {
-    this.allowed = allowedNoteIds;
-    this.enabled = allowedNoteIds.length > 0;
+  constructor(allowedCitations: CitationVersionRef[], strictEmptySet: boolean = false) {
+    this.allowed = allowedCitations;
+    this.enabled = allowedCitations.length > 0 || strictEmptySet;
   }
 
   push(delta: string): string {
@@ -508,25 +678,49 @@ export class NoteEvidenceStreamFilter {
         const open: TextSplit = { text: output, carry: buffer.substring(start) };
         return open;
       }
-      const rawId: string = buffer.substring(start + CITATION_MARKER.length, end);
-      const noteId: string = NoteEvidenceStreamFilter.readNoteId(rawId);
-      output += this.allowed.indexOf(noteId) >= 0 ? buffer.substring(start, end + 1) : CITATION_UNVERIFIED;
+      const raw: string = buffer.substring(start + CITATION_MARKER.length, end);
+      const citation: CitationVersionRef = NoteEvidenceStreamFilter.readCitationRef(raw);
+      output += NoteEvidenceService.refAllowed(this.allowed, citation) ? buffer.substring(start, end + 1) : CITATION_UNVERIFIED;
       cursor = end + 1;
     }
     const done: TextSplit = { text: output, carry: '' };
     return done;
   }
 
-  private static readNoteId(raw: string): string {
-    let end: number = raw.length;
-    for (let index = 0; index < raw.length; index += 1) {
-      const ch: string = raw.charAt(index);
-      if (ch === ' ' || ch === ',' || ch === '|' || ch === '"' || ch === '\'') {
-        end = index;
+  static readCitationRef(raw: string): CitationVersionRef {
+    const normalized: string = raw.trim();
+    let separator: number = -1;
+    for (let index = 0; index < normalized.length; index += 1) {
+      const ch: string = normalized.charAt(index);
+      if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+        separator = index;
         break;
       }
     }
-    return raw.substring(0, end).trim();
+    if (separator <= 0) {
+      return { noteId: '', version: 0 };
+    }
+    const noteId: string = normalized.substring(0, separator);
+    const versionPart: string = normalized.substring(separator).trim();
+    const marker: string = 'version=';
+    if (!versionPart.startsWith(marker)) {
+      return { noteId: noteId, version: 0 };
+    }
+    const digits: string = versionPart.substring(marker.length);
+    if (digits.length === 0) {
+      return { noteId: noteId, version: 0 };
+    }
+    for (let index = 0; index < digits.length; index += 1) {
+      const ch: string = digits.charAt(index);
+      if (ch < '0' || ch > '9') {
+        return { noteId: noteId, version: 0 };
+      }
+    }
+    const version: number = Number(digits);
+    if (Number.isNaN(version) || version <= 0) {
+      return { noteId: noteId, version: 0 };
+    }
+    return { noteId: noteId, version: version };
   }
 
   private static tailHoldStart(buffer: string): number {

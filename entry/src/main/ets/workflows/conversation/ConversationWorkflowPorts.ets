@@ -26,6 +26,7 @@ import { ConversationRunRef } from '../../services/ConversationIdentity';
 export interface IConversationIntentPort {
   classify(userText: string): Promise<TextIntent>;
   classifyWithCancellation(userText: string, token?: CancellationToken): Promise<TextIntent>;
+  classifyLocalIntent(userText: string): TextIntent | undefined;
   inlineNoteMaterial(userText: string): string;
 }
 
@@ -78,6 +79,10 @@ class ConversationIntentAdapter implements IConversationIntentPort {
 
   async classifyWithCancellation(userText: string, token?: CancellationToken): Promise<TextIntent> {
     return await this.classifier.classifyWithCancellation(userText, token);
+  }
+
+  classifyLocalIntent(userText: string): TextIntent | undefined {
+    return this.classifier.classifyLocalIntent(userText);
   }
 
   inlineNoteMaterial(userText: string): string { return this.classifier.inlineNoteMaterial(userText); }

@@ -19,6 +19,7 @@
 
 import { TextIntent } from '../../services/IntentClassifier';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
+import { NoteReviewPlan } from '../../services/NoteReviewService';
 import { ClassificationResult } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 
@@ -85,6 +86,7 @@ export interface ConversationState {
   learnerProfileContext?: string;
   // DEV-006: load_reply_context 构造的可追溯检索/图谱证据, 供 complete/stream 引用
   evidence?: NoteEvidenceContext;
+  noteReviewPlan?: NoteReviewPlan;
   draftRunId?: string;
   draftCheckpointId?: string;
   draftCandidateHash?: string;

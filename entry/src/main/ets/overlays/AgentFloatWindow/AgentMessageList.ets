@@ -7,6 +7,8 @@
  */
 
 import { S_2, S_4 } from 'common';
+import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
+import { NoteReviewFeedback } from '../../models/NoteReviewModels';
 import { ChatBubble } from './chat/ChatBubble';
 import { EmptyStateHint } from './chat/EmptyStateHint';
 import { ChatMsg, chatItemKey } from './chat/ChatModels';
@@ -55,6 +57,9 @@ class ChatMessageDataSource implements IDataSource {
 export struct AgentMessageList {
   @Prop @Watch('onMessagesChanged') messages: ChatMsg[] = [];
   @Prop busy: boolean = false;
+  onSourceTap: (citation: NoteEvidenceCitation) => void = (_citation: NoteEvidenceCitation): void => {};
+  onFeedback: (messageId: number, feedback: NoteReviewFeedback) => void =
+    (_messageId: number, _feedback: NoteReviewFeedback): void => {};
   scroller: Scroller = new Scroller();
   private dataSource: ChatMessageDataSource = new ChatMessageDataSource();
   private lastStreamProgressKey: string = '';
@@ -84,7 +89,11 @@ export struct AgentMessageList {
       LazyForEach(this.dataSource,
         (msg: ChatMsg, index: number | undefined): void => {
           ListItem() {
-            ChatBubble({ msg: msg });
+            ChatBubble({
+              msg: msg,
+              onSourceTap: this.onSourceTap,
+              onFeedback: this.onFeedback,
+            });
           }
           .width('100%')
           .padding({ left: S_4, right: S_4, top: safeIndex(index) === 0 ? S_2 : 0 });
