@@ -7,7 +7,10 @@
 //  依赖: StudyPlanViewModel · UiDataCacheService · KnowledgeGalaxy3DHost ·
 //        ReviewPlanView · ReviewTabSwitch · shared/atoms/AppIcon
 // ============================================================================
-import { BG_DARK, BORDER, GLASS_8, MINT, S_2, S_3, S_5, R_LG, F_BASE, StudyPlanItem } from "common"
+import {
+  BG_DARK, BORDER, DANGER_BRIGHT, GLASS_8, MINT, TEXT_3,
+  S_2, S_3, S_5, R_LG, F_BASE, StudyPlanItem,
+} from "common"
 import { promptAction } from "@kit.ArkUI"
 import { StudyPlanViewModel } from "../../viewmodels/StudyPlanViewModel"
 import { KnowledgeGalaxy3DHost } from "./KnowledgeGalaxy3DHost"
@@ -235,6 +238,23 @@ export struct ReviewPage {
     })
   }
 
+  private confirmDeletePlan = (item: StudyPlanItem): void => {
+    promptAction.showDialog({
+      title: "删除复习计划？",
+      message: "删除后无法恢复，请确认是否继续。",
+      buttons: [
+        { text: "取消", color: TEXT_3 },
+        { text: "删除", color: DANGER_BRIGHT },
+      ],
+    }).then((result): void => {
+      if (result.index === 1) {
+        this.deletePlan(item)
+      }
+    }).catch((): void => {
+      try { promptAction.showToast({ message: "无法打开删除确认", duration: 1200 }) } catch (_e) {}
+    })
+  }
+
   build() {
     Column() {
       Row()
@@ -278,7 +298,7 @@ export struct ReviewPage {
           onCrossToReview: this.crossToReview,
           onMoveLive: this.moveLivePlan,
           onMoveReview: this.moveReviewPlan,
-          onRemovePlan: this.deletePlan,
+          onRemovePlan: this.confirmDeletePlan,
           onAddTitleChange: this.changeAddTitle,
           onSubmitAdd: this.submitAddPlan,
           onCancelAdd: this.cancelAddPlan,

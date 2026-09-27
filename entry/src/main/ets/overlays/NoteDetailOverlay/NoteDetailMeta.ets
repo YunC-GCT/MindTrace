@@ -30,6 +30,7 @@ export struct NoteDetailMeta {
   @Prop note: NoteItem = new NoteItem(0, '', '', '', '', 0, '', [], '')
   @Prop unit: KnowledgeUnit | null = null
   @Prop units: KnowledgeUnit[] = []
+  @Prop topInset: number = 0
 
   build() {
     Column() {
@@ -114,7 +115,7 @@ export struct NoteDetailMeta {
       .margin({ top: S_4 })
     }
     .width('100%')
-    .padding({ left: S_5, right: S_5, top: S_4, bottom: S_5 })
+    .padding({ left: S_5, right: S_5, top: this.topInset + S_4, bottom: S_5 })
     .backgroundColor(BG_CARD)
     .linearGradient({
       angle: 145,

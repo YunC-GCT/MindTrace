@@ -6,6 +6,7 @@ import {
   W_BOLD, W_SEMIBOLD,
 } from "common"
 import { AppIcon } from "../../shared/atoms/AppIcon"
+import { DeleteButton } from "../../shared/atoms/DeleteButton"
 
 @Component
 export struct ReviewPlanRow {
@@ -15,8 +16,6 @@ export struct ReviewPlanRow {
   @Prop tone: number = 0
   @Prop actionIcon: string = ""
   @Prop actionColor: ResourceColor = TEXT_2
-  @Prop deleteIcon: string = ""
-  @Prop deleteColor: ResourceColor = TEXT_3
   @State dragOffset: number = 0
   @State dragMode: number = 0
   private dragStartY: number = 0
@@ -185,16 +184,11 @@ export struct ReviewPlanRow {
             .onClick((): void => this.onAction())
           }
 
-          if (this.deleteIcon.length > 0) {
-            Button() {
-              AppIcon({ name: this.deleteIcon, iconSize: F_XS + 6, color: this.deleteColor, strokeWidth: 1.8 })
-            }
-            .width(28)
-            .height(28)
-            .borderRadius(R_FULL)
-            .backgroundColor(GLASS_8)
-            .onClick((): void => this.onRemovePlan())
-          }
+          DeleteButton({
+            boxSize: 28,
+            iconSize: F_XS + 6,
+            onTap: (): void => this.onRemovePlan(),
+          })
         }
         .flexShrink(0)
         .alignItems(VerticalAlign.Center)

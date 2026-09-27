@@ -20,10 +20,7 @@ import { MarkdownBlock } from '../../utils/MarkdownParser'
 import { MarkdownInlineSegment } from '../../utils/MarkdownInlineParser'
 import { cachedParseMarkdown, cachedParseMarkdownInline } from '../../utils/MarkdownParseCache'
 import { MathTextRenderer } from '../atoms/MathTextRenderer'
-import { AppIcon } from '../atoms/AppIcon'
 
-const MARKDOWN_INITIAL_BLOCK_LIMIT: number = 3
-const MARKDOWN_BLOCK_BATCH_SIZE: number = 3
 const MARKDOWN_PARSE_DEFER_MS: number = 16
 const MARKDOWN_IMMEDIATE_PARSE_LIMIT: number = 280
 const MARKDOWN_PREVIEW_LIMIT: number = 420
@@ -33,7 +30,6 @@ export struct MarkdownRenderer {
   @Prop @Watch('onTextChanged') text: string = ''
   @Prop progressive: boolean = true
   @Prop profile: 'note' | 'chat' = 'note'
-  @State visibleBlockCount: number = MARKDOWN_INITIAL_BLOCK_LIMIT
   @State parseReady: boolean = false
   @State parsedBlocks: MarkdownBlock[] = []
   private renderSeq: number = 0
@@ -41,7 +37,7 @@ export struct MarkdownRenderer {
   private contentProtocol: ContentProtocol = new ContentProtocol()
 
   aboutToAppear(): void {
-    this.resetVisibleBlocks()
+    this.resetRender()
   }
 
   aboutToDisappear(): void {
@@ -49,13 +45,13 @@ export struct MarkdownRenderer {
   }
 
   onTextChanged(): void {
-    this.resetVisibleBlocks()
+    this.resetRender()
   }
 
   build() {
     Column() {
       if (this.parseReady) {
-        ForEach(this.visibleBlocks(),
+        ForEach(this.parsedBlocks,
           (block: MarkdownBlock, index: number): void => {
             if (block.kind === 'heading') {
               this.Heading(block)
@@ -77,10 +73,6 @@ export struct MarkdownRenderer {
         )
       } else {
         this.PreviewText(this.previewText())
-      }
-
-      if (this.hasDeferredBlocks()) {
-        this.ContinueReading()
       }
     }
     .width('100%')
@@ -263,24 +255,6 @@ export struct MarkdownRenderer {
     return F_SM
   }
 
-  @Builder
-  ContinueReading() {
-    Row() {
-      Text('继续阅读')
-        .fontSize(F_SM)
-        .fontWeight(W_SEMIBOLD)
-        .fontColor(MINT)
-
-      Blank().width(S_1)
-      AppIcon({ name: 'chevron-down', iconSize: F_SM, color: MINT, strokeWidth: 1.8 })
-    }
-    .width('100%')
-    .height(40)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .onClick((): void => this.showNextBlockBatch())
-  }
-
   private headingLineHeight = (level: number): number => {
     if (this.profile === 'chat') {
       if (level === 1) { return 24 }
@@ -323,7 +297,7 @@ export struct MarkdownRenderer {
     return this.contentProtocol.hasFormulaSyntax(text)
   }
 
-  private resetVisibleBlocks = (): void => {
+  private resetRender = (): void => {
     this.renderSeq += 1
     const seq: number = this.renderSeq
     const key: string = this.textSignature()
@@ -333,7 +307,6 @@ export struct MarkdownRenderer {
     this.parsedKey = key
     this.parsedBlocks = []
     this.parseReady = false
-    this.visibleBlockCount = 0
     if (!this.progressive || this.text.trim().length <= MARKDOWN_IMMEDIATE_PARSE_LIMIT) {
       this.applyParsedBlocks(cachedParseMarkdown(this.text), seq)
       return
@@ -356,39 +329,6 @@ export struct MarkdownRenderer {
     }
     this.parsedBlocks = blocks
     this.parseReady = true
-    if (!this.progressive) {
-      this.visibleBlockCount = blocks.length
-      return
-    }
-    if (blocks.length <= MARKDOWN_INITIAL_BLOCK_LIMIT) {
-      this.visibleBlockCount = blocks.length
-      return
-    }
-    this.visibleBlockCount = MARKDOWN_INITIAL_BLOCK_LIMIT
-  }
-
-  private showNextBlockBatch = (): void => {
-    if (!this.parseReady) {
-      return
-    }
-    this.visibleBlockCount = this.parsedBlocks.length
-  }
-
-  private visibleBlocks = (): MarkdownBlock[] => {
-    if (!this.progressive) {
-      return this.parsedBlocks
-    }
-    if (this.parsedBlocks.length <= this.visibleBlockCount) {
-      return this.parsedBlocks
-    }
-    return this.parsedBlocks.slice(0, this.visibleBlockCount)
-  }
-
-  private hasDeferredBlocks = (): boolean => {
-    if (!this.progressive || !this.parseReady) {
-      return false
-    }
-    return this.parsedBlocks.length > this.visibleBlockCount
   }
 
   private previewText = (): string => {

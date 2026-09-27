@@ -14,35 +14,22 @@
  */
 
 import {
-  MINT, TEXT_2, BORDER,
+  MINT, BORDER,
   S_2, S_3,
   R_FULL,
   F_SM,
   W_BOLD,
 } from 'common'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
-import { AppIcon } from '../../../shared/atoms/AppIcon'
-
-const DETAIL_STEP_INITIAL_COUNT: number = 3
-const DETAIL_STEP_BATCH_SIZE: number = 3
 
 @Component
 export struct DetailStepList {
-  @Prop @Watch('onItemsChanged') items: string[] = []
+  @Prop items: string[] = []
   @Prop accentColor: ResourceColor = MINT
-  @State visibleItemCount: number = DETAIL_STEP_INITIAL_COUNT
-
-  aboutToAppear(): void {
-    this.resetVisibleItems()
-  }
-
-  onItemsChanged(): void {
-    this.resetVisibleItems()
-  }
 
   build() {
     Column() {
-      ForEach(this.visibleItems(),
+      ForEach(this.items,
         (item: string, index: number): void => {
           Row() {
             Text((index + 1).toString())
@@ -68,44 +55,8 @@ export struct DetailStepList {
         },
         (item: string, index: number): string => index.toString() + '_' + item
       )
-
-      if (this.items.length > this.visibleItemCount) {
-        Row() {
-          Text('继续阅读')
-            .fontSize(F_SM)
-            .fontWeight(W_BOLD)
-            .fontColor(this.accentColor)
-
-          Blank().width(S_2)
-          AppIcon({ name: 'chevron-down', iconSize: F_SM, color: this.accentColor, strokeWidth: 1.8 })
-        }
-        .width('100%')
-        .height(40)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .onClick((): void => this.showNextItemBatch())
-      }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-  }
-
-  private resetVisibleItems = (): void => {
-    if (this.items.length <= DETAIL_STEP_INITIAL_COUNT) {
-      this.visibleItemCount = this.items.length
-      return
-    }
-    this.visibleItemCount = DETAIL_STEP_INITIAL_COUNT
-  }
-
-  private showNextItemBatch = (): void => {
-    this.visibleItemCount = this.items.length
-  }
-
-  private visibleItems = (): string[] => {
-    if (this.items.length <= this.visibleItemCount) {
-      return this.items
-    }
-    return this.items.slice(0, this.visibleItemCount)
   }
 }

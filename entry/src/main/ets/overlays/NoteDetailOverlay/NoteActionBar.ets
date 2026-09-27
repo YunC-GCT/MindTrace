@@ -3,16 +3,20 @@
 // ============================================================================
 
 import { BG_DARK, BORDER, TEXT_2, S_2, S_4, S_6 } from 'common'
+import { DeleteButton } from '../../shared/atoms/DeleteButton'
 import { NoteIconButton } from './NoteIconButton'
 
 @Component
 export struct NoteActionBar {
+  onDelete: () => void = (): void => {}
   onEdit: () => void = (): void => {}
   onShare: () => void = (): void => {}
 
   build() {
     Row() {
       Blank()
+      DeleteButton({ onTap: (): void => this.onDelete() })
+      Blank().width(S_2)
       NoteIconButton({ name: 'edit', color: TEXT_2, onTap: (): void => this.onEdit() })
       Blank().width(S_2)
       NoteIconButton({ name: 'share', color: TEXT_2, onTap: (): void => this.onShare() })
