@@ -73,4 +73,3 @@ export function copyNoteEvidenceCitation(citation: NoteEvidenceCitation): NoteEv
     chapter: citation.chapter,
   };
 }
-

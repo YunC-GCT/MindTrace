@@ -100,6 +100,8 @@ export class NoteEvidenceService {
       }
     }
     citations = NoteEvidenceService.capCitations(citations);
+    NoteEvidenceService.filterRelationsForCitations(relations, citations);
+    NoteEvidenceService.refreshCitationRoles(citations, relations);
     const context: NoteEvidenceContext = {
       query: normalizedQuery,
       topK: topK,
@@ -258,11 +260,7 @@ export class NoteEvidenceService {
         });
       }
     }
-    for (const citation of citations) {
-      if (citation.role !== 'hit') {
-        citation.role = NoteEvidenceService.roleFor(citation.noteId, relations);
-      }
-    }
+    NoteEvidenceService.refreshCitationRoles(citations, relations);
   }
 
   private async expandPrerequisites(
@@ -530,6 +528,28 @@ export class NoteEvidenceService {
       }
     }
     return false;
+  }
+
+  private static filterRelationsForCitations(relations: NoteEvidenceRelation[], citations: NoteEvidenceCitation[]): void {
+    const kept: NoteEvidenceRelation[] = [];
+    for (const relation of relations) {
+      if (NoteEvidenceService.containsNoteId(citations, relation.fromNoteId)
+        && NoteEvidenceService.containsNoteId(citations, relation.toNoteId)) {
+        kept.push(relation);
+      }
+    }
+    relations.splice(0, relations.length);
+    for (const relation of kept) {
+      relations.push(relation);
+    }
+  }
+
+  private static refreshCitationRoles(citations: NoteEvidenceCitation[], relations: NoteEvidenceRelation[]): void {
+    for (const citation of citations) {
+      if (citation.role !== 'hit') {
+        citation.role = NoteEvidenceService.roleFor(citation.noteId, relations);
+      }
+    }
   }
 
   private static addUniqueRef(target: CitationVersionRef[], noteId: string, version: number): void {
