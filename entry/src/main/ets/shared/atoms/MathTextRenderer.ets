@@ -216,6 +216,9 @@ export struct MathTextRenderer {
   @State private webFailed: boolean = false
   @State private webHeight: number = 42
   private renderSeq: number = 0
+  private heightApplied: boolean = false
+  private visibleInViewport: boolean = false
+  private formulaVisibleReported: boolean = false
 
   aboutToAppear(): void {
     this.renderSeq += 1
@@ -250,6 +253,8 @@ export struct MathTextRenderer {
 
   onTextChanged(): void {
     this.renderSeq += 1
+    this.heightApplied = false
+    this.formulaVisibleReported = false
     const seq: number = this.renderSeq
     this.webFailed = false
     const renderInput: MathRenderInput = this.normalizeForRender(this.text)
@@ -459,12 +464,28 @@ export struct MathTextRenderer {
       NoteDetailRenderMetrics.recordHeightUpdate()
     }
     this.webHeight = height
+    this.heightApplied = applied
     if (applied) {
       ChatRenderBenchmarkStats.recordHeightApplied()
       if (this.metricSurface === 'noteDetail') {
         NoteDetailRenderMetrics.recordHeightApplied()
+        this.reportFormulaVisibleIfReady()
       }
     }
+  }
+
+  private onVisibleAreaChanged = (isVisible: boolean, currentRatio: number): void => {
+    this.visibleInViewport = isVisible && currentRatio > 0
+    this.reportFormulaVisibleIfReady()
+  }
+
+  private reportFormulaVisibleIfReady = (): void => {
+    if (this.metricSurface !== 'noteDetail' || !this.forceDisplay || this.formulaVisibleReported
+      || !this.heightApplied || !this.visibleInViewport) {
+      return
+    }
+    this.formulaVisibleReported = true
+    NoteDetailRenderMetrics.recordFormulaVisible()
   }
 
   private recordNoteDetailWebCreate = (): void => {
@@ -595,6 +616,9 @@ export struct MathTextRenderer {
         .backgroundColor('rgba(0,0,0,0)')
         .width('100%')
         .height(this.webHeight)
+        .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, currentRatio: number): void => {
+          this.onVisibleAreaChanged(isVisible, currentRatio)
+        })
         .onAppear((): void => this.recordNoteDetailWebCreate())
         .onPageEnd((): void => {
           this.pageReady = true

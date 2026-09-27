@@ -15,7 +15,7 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
   NOTE_DETAIL_FIXTURES,
-  NOTE_DETAIL_NOTE_TYPES,
+  NOTE_DETAIL_RENDERER_FAMILIES,
   NOTE_DETAIL_SHORT_CODE_UNITS,
   NOTE_DETAIL_LONG_CODE_UNITS,
   NoteDetailBenchmarkFixture,
@@ -29,6 +29,11 @@ import {
   NoteDetailRenderMetrics,
   NoteDetailRenderMetricsSnapshot,
 } from '../main/ets/services/NoteDetailRenderMetrics'
+import {
+  recordNoteDetailBenchmarkFrame,
+  recordNoteDetailBenchmarkMemory,
+  snapshotNoteDetailBenchmark,
+} from '../main/ets/benchmark/NoteDetailRenderBenchmarkHarness'
 
 const expectedFormulaCount = (id: NoteDetailFixtureId): number => {
   if (id === 'A') { return 0 }
@@ -45,6 +50,8 @@ export default function noteDetailRenderBaselineTest(): void {
           definition.id, '概念', 'long')
         expect(fixture.formulaCount).assertEqual(expectedFormulaCount(definition.id))
         expect(countNoteDetailFormulaPairs(fixture.bodyText)).assertEqual(expectedFormulaCount(definition.id))
+        expect(countNoteDetailFormulaPairs(fixture.bodyText + fixture.unit.summary))
+          .assertEqual(expectedFormulaCount(definition.id))
         expect(fixture.bodyText.length).assertEqual(NOTE_DETAIL_LONG_CODE_UNITS)
       }
     })
@@ -68,10 +75,11 @@ export default function noteDetailRenderBaselineTest(): void {
     })
 
     it('factory_covers_all_six_renderer_inputs', 0, () => {
-      expect(NOTE_DETAIL_NOTE_TYPES.length).assertEqual(6)
-      for (const noteType of NOTE_DETAIL_NOTE_TYPES) {
-        const fixture: NoteDetailBenchmarkFixture = createNoteDetailBenchmarkFixture('A', noteType, 'short')
-        expect(fixture.noteType).assertEqual(noteType)
+      expect(NOTE_DETAIL_RENDERER_FAMILIES.length).assertEqual(6)
+      for (const rendererFamily of NOTE_DETAIL_RENDERER_FAMILIES) {
+        const fixture: NoteDetailBenchmarkFixture = createNoteDetailBenchmarkFixture(
+          'A', rendererFamily, 'short')
+        expect(fixture.rendererFamily).assertEqual(rendererFamily)
         expect(fixture.note.rawId).assertEqual(fixture.unit.id)
         expect(fixture.units.length).assertEqual(1)
       }
@@ -84,7 +92,7 @@ export default function noteDetailRenderBaselineTest(): void {
         fixtureId: 'C_P',
         runIndex: 0,
         coldWarmTag: 'cold',
-        noteType: '证明题',
+        rendererFamily: '证明题',
         lengthProfile: 'long',
         aiHelperVisible: true,
         cacheTag: 'cold',
@@ -97,10 +105,11 @@ export default function noteDetailRenderBaselineTest(): void {
       NoteDetailRenderMetrics.recordWebWorkStart(1160)
       NoteDetailRenderMetrics.recordHeightUpdate(1180)
       NoteDetailRenderMetrics.recordHeightApplied(1210)
-      NoteDetailRenderMetrics.recordFrameDuration(33, 1300)
-      NoteDetailRenderMetrics.recordFrameDuration(40, 1350)
+      NoteDetailRenderMetrics.recordFormulaVisible(1210)
+      recordNoteDetailBenchmarkFrame(33, 1300)
+      recordNoteDetailBenchmarkFrame(40, 1350)
       NoteDetailRenderMetrics.recordRenderExit(7)
-      NoteDetailRenderMetrics.recordMemory(4096, 8192)
+      recordNoteDetailBenchmarkMemory(4096, 8192)
       NoteDetailRenderMetrics.recordHeaderMount()
       NoteDetailRenderMetrics.recordBodyMount()
       NoteDetailRenderMetrics.recordBodyInputChange()
@@ -110,7 +119,7 @@ export default function noteDetailRenderBaselineTest(): void {
       expect(NoteDetailRenderMetrics.markStable(1600)).assertFalse()
       expect(NoteDetailRenderMetrics.markStable(1710)).assertTrue()
 
-      const snapshot: NoteDetailRenderMetricsSnapshot = NoteDetailRenderMetrics.snapshot()
+      const snapshot: NoteDetailRenderMetricsSnapshot = snapshotNoteDetailBenchmark()
       expect(snapshot.surface).assertEqual('noteDetail')
       expect(snapshot.openToFirstVisibleMs).assertEqual(100)
       expect(snapshot.formulaVisibleMs).assertEqual(210)
@@ -142,7 +151,7 @@ export default function noteDetailRenderBaselineTest(): void {
         fixtureId: 'A',
         runIndex: 1,
         coldWarmTag: 'warm',
-        noteType: '概念',
+        rendererFamily: '概念',
         lengthProfile: 'short',
         aiHelperVisible: false,
         cacheTag: 'hit',

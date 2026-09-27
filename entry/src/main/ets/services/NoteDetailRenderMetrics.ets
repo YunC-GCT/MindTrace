@@ -4,7 +4,7 @@
  * 路径: entry/src/main/ets/services/NoteDetailRenderMetrics.ets
  * 职责: 门控采集打开到首屏/公式/稳定时间、Web 工作、高度变化、长帧、render-exit、
  *       稳态内存与只读子树生命周期；默认关闭，不参与渲染决策。
- * 依赖: @kit.PerformanceAnalysisKit(hilog)
+ * 依赖: @kit.PerformanceAnalysisKit(hilog), NoteDetailRenderFixtures benchmark 标签类型
  *
  * 数据流:
  *   NoteDetailOverlay/MathTextRenderer/harness → recordXxx() → snapshot()/dumpSnapshotHilog()
@@ -20,6 +20,11 @@
  */
 
 import { hilog } from '@kit.PerformanceAnalysisKit'
+import {
+  NoteDetailFixtureId,
+  NoteDetailLengthProfile,
+  NoteDetailRendererFamily,
+} from './NoteDetailRenderFixtures'
 
 export type NoteDetailMetricSurface = 'none' | 'noteDetail'
 export type NoteDetailColdWarmTag = 'cold' | 'warm'
@@ -33,22 +38,22 @@ const DOMAIN: number = 0x0000
 const LOG_TAG: string = 'NoteDetailBench'
 
 export interface NoteDetailBenchmarkRunConfig {
-  fixtureId: string
+  fixtureId: NoteDetailFixtureId
   runIndex: number
   coldWarmTag: NoteDetailColdWarmTag
-  noteType: string
-  lengthProfile: string
+  rendererFamily: NoteDetailRendererFamily
+  lengthProfile: NoteDetailLengthProfile
   aiHelperVisible: boolean
   cacheTag: NoteDetailCacheTag
 }
 
 export interface NoteDetailRenderMetricsSnapshot {
   surface: string
-  fixtureId: string
+  fixtureId: NoteDetailFixtureId
   runIndex: number
   coldWarmTag: NoteDetailColdWarmTag
-  noteType: string
-  lengthProfile: string
+  rendererFamily: NoteDetailRendererFamily
+  lengthProfile: NoteDetailLengthProfile
   aiHelperVisible: boolean
   cacheTag: NoteDetailCacheTag
   openStartedAt: number
@@ -86,6 +91,7 @@ export interface NoteDetailRenderMetricsSnapshot {
   draftStateCount: number
   discardConfirmCount: number
   lastViewportHeight: number
+  lastContentHeight: number
   lastHeightChangeTs: number
 }
 
@@ -98,6 +104,7 @@ let stableTs: number = -1
 let lastScheduledWorkTs: number = -1
 let lastHeightChangeTs: number = -1
 let lastViewportHeight: number = -1
+let lastContentHeight: number = -1
 let webCreateCount: number = 0
 let pendingWebCreateTs: number[] = []
 let webCreatesPerFrame: number[] = []
@@ -132,11 +139,11 @@ let frozenSnapshot: NoteDetailRenderMetricsSnapshot | null = null
 
 function emptyConfig(): NoteDetailBenchmarkRunConfig {
   return {
-    fixtureId: '',
+    fixtureId: 'A',
     runIndex: -1,
     coldWarmTag: 'cold',
-    noteType: '',
-    lengthProfile: '',
+    rendererFamily: '概念',
+    lengthProfile: 'long',
     aiHelperVisible: false,
     cacheTag: 'cold',
   }
@@ -150,6 +157,7 @@ function resetRunValues(startedAt: number): void {
   lastScheduledWorkTs = startedAt
   lastHeightChangeTs = startedAt
   lastViewportHeight = -1
+  lastContentHeight = -1
   webCreateCount = 0
   pendingWebCreateTs = []
   webCreatesPerFrame = []
@@ -193,7 +201,7 @@ function copySnapshot(snapshot: NoteDetailRenderMetricsSnapshot): NoteDetailRend
     fixtureId: snapshot.fixtureId,
     runIndex: snapshot.runIndex,
     coldWarmTag: snapshot.coldWarmTag,
-    noteType: snapshot.noteType,
+    rendererFamily: snapshot.rendererFamily,
     lengthProfile: snapshot.lengthProfile,
     aiHelperVisible: snapshot.aiHelperVisible,
     cacheTag: snapshot.cacheTag,
@@ -232,6 +240,7 @@ function copySnapshot(snapshot: NoteDetailRenderMetricsSnapshot): NoteDetailRend
     draftStateCount: snapshot.draftStateCount,
     discardConfirmCount: snapshot.discardConfirmCount,
     lastViewportHeight: snapshot.lastViewportHeight,
+    lastContentHeight: snapshot.lastContentHeight,
     lastHeightChangeTs: snapshot.lastHeightChangeTs,
   }
 }
@@ -282,14 +291,16 @@ export class NoteDetailRenderMetrics {
     lastScheduledWorkTs = timestamp
     lastHeightChangeTs = timestamp
     stableTs = -1
-    if (firstFormulaVisibleTs < 0) {
-      firstFormulaVisibleTs = timestamp
-    }
     if (pendingWebWorkStartTs.length > 0) {
       const fallbackStart: number = timestamp
       const startedAt: number = pendingWebWorkStartTs.shift() ?? fallbackStart
       webWorkDurationSamplesMs.push(Math.max(0, timestamp - startedAt))
     }
+  }
+
+  public static recordFormulaVisible(timestamp: number = Date.now()): void {
+    if (!enabled || firstFormulaVisibleTs >= 0) { return }
+    firstFormulaVisibleTs = timestamp
   }
 
   public static recordCacheHit(): void {
@@ -311,6 +322,16 @@ export class NoteDetailRenderMetrics {
     }
     if (lastViewportHeight < 0 || Math.abs(lastViewportHeight - height) > 0.1) {
       lastViewportHeight = height
+      lastHeightChangeTs = timestamp
+      lastScheduledWorkTs = timestamp
+      stableTs = -1
+    }
+  }
+
+  public static recordContentHeight(height: number, timestamp: number = Date.now()): void {
+    if (!enabled || height <= 0) { return }
+    if (lastContentHeight < 0 || Math.abs(lastContentHeight - height) > 0.1) {
+      lastContentHeight = height
       lastHeightChangeTs = timestamp
       lastScheduledWorkTs = timestamp
       stableTs = -1
@@ -475,7 +496,7 @@ export class NoteDetailRenderMetrics {
       fixtureId: config.fixtureId,
       runIndex: config.runIndex,
       coldWarmTag: config.coldWarmTag,
-      noteType: config.noteType,
+      rendererFamily: config.rendererFamily,
       lengthProfile: config.lengthProfile,
       aiHelperVisible: config.aiHelperVisible,
       cacheTag: config.cacheTag,
@@ -514,6 +535,7 @@ export class NoteDetailRenderMetrics {
       draftStateCount: draftStateCount,
       discardConfirmCount: discardConfirmCount,
       lastViewportHeight: lastViewportHeight,
+      lastContentHeight: lastContentHeight,
       lastHeightChangeTs: lastHeightChangeTs,
     }
   }
@@ -538,7 +560,7 @@ export class NoteDetailRenderMetrics {
       + ' fixture=' + snapshot.fixtureId
       + ' run=' + snapshot.runIndex.toString()
       + ' coldWarm=' + snapshot.coldWarmTag
-      + ' noteType=' + snapshot.noteType
+      + ' rendererFamily=' + snapshot.rendererFamily
       + ' length=' + snapshot.lengthProfile
       + ' ai=' + (snapshot.aiHelperVisible ? '1' : '0')
       + ' cache=' + snapshot.cacheTag

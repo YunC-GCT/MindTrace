@@ -1,5 +1,7 @@
 # 024 - NoteDetail 渲染性能与调度收敛
 
+> 本规格定义 NoteDetail 渲染性能改造的证据口径、调度边界与真机验收标准。
+
 > **Status**: proposed (2026-09-27; GitHub issue [#182](https://github.com/YunC-GCT/MindTrace/issues/182))
 > **Related**: [ADR-0017](../adr/0017-renderer-scheduler-budget-baseline.md) · [spec 021](./021-chat-streaming-incremental-rendering.md) · [NoteDetailOverlay 调研](../research/note-detail-overlay-state-2026-09-23.md) · [ArkWeb 渲染稳定性调研](../research/arkweb-render-pipeline-stability-2026-09-11.md)
 
@@ -151,4 +153,3 @@ GitHub sub-issues and native blocked-by relationships are the authoritative live
 - The existing `MATH_RENDER_CACHE` is a content cache, not a Web instance cache. Benchmark reports must keep these concepts separate.
 - A later slot-pooling or single-Web design must be triggered by measured failure of the P1 targets, not by architectural completeness. It requires separate decisions for height synchronization, scroll behavior, render-exit recovery, and accessibility.
 - The first implementation should preserve the current visual order of NoteType-specific sections. Performance work is successful only if users can still read the same structured content with the same edit/delete/draft semantics.
-

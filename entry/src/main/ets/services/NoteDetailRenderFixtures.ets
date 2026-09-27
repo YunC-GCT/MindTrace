@@ -28,7 +28,8 @@ import {
 export type NoteDetailFixtureId = 'A' | 'B' | 'C' | 'C_P'
 export type NoteDetailFixtureLayout = 'none' | 'sparse' | 'dense' | 'consecutive_pairs'
 export type NoteDetailLengthProfile = 'short' | 'long'
-export type NoteDetailFixtureNoteType = '概念' | '定理' | '公式' | '证明题' | '计算题' | '其他'
+export type NoteDetailFixtureNoteType = '概念' | '定理' | '公式' | '证明题' | '计算题'
+export type NoteDetailRendererFamily = NoteDetailFixtureNoteType | '兜底'
 
 export interface NoteDetailFixtureDefinition {
   id: NoteDetailFixtureId
@@ -38,7 +39,7 @@ export interface NoteDetailFixtureDefinition {
 
 export class NoteDetailBenchmarkFixture {
   id: NoteDetailFixtureId = 'A'
-  noteType: NoteDetailFixtureNoteType = '概念'
+  rendererFamily: NoteDetailRendererFamily = '概念'
   lengthProfile: NoteDetailLengthProfile = 'long'
   formulaCount: number = 0
   bodyText: string = ''
@@ -46,11 +47,11 @@ export class NoteDetailBenchmarkFixture {
   unit: KnowledgeUnit
   units: KnowledgeUnit[] = []
 
-  constructor(id: NoteDetailFixtureId, noteType: NoteDetailFixtureNoteType,
+  constructor(id: NoteDetailFixtureId, rendererFamily: NoteDetailRendererFamily,
     lengthProfile: NoteDetailLengthProfile, formulaCount: number, bodyText: string,
     note: NoteItem, unit: KnowledgeUnit, units: KnowledgeUnit[]) {
     this.id = id
-    this.noteType = noteType
+    this.rendererFamily = rendererFamily
     this.lengthProfile = lengthProfile
     this.formulaCount = formulaCount
     this.bodyText = bodyText
@@ -63,13 +64,13 @@ export class NoteDetailBenchmarkFixture {
 export const NOTE_DETAIL_SHORT_CODE_UNITS: number = 800
 export const NOTE_DETAIL_LONG_CODE_UNITS: number = 2000
 
-export const NOTE_DETAIL_NOTE_TYPES: NoteDetailFixtureNoteType[] = [
+export const NOTE_DETAIL_RENDERER_FAMILIES: NoteDetailRendererFamily[] = [
   '概念',
   '定理',
   '公式',
   '证明题',
   '计算题',
-  '其他',
+  '兜底',
 ]
 
 export const NOTE_DETAIL_FIXTURE_A: NoteDetailFixtureDefinition = {
@@ -170,8 +171,8 @@ function definitionById(id: NoteDetailFixtureId): NoteDetailFixtureDefinition {
   return NOTE_DETAIL_FIXTURE_C_P
 }
 
-function noteTypeIndex(noteType: NoteDetailFixtureNoteType): number {
-  const index: number = NOTE_DETAIL_NOTE_TYPES.indexOf(noteType)
+function rendererFamilyIndex(rendererFamily: NoteDetailRendererFamily): number {
+  const index: number = NOTE_DETAIL_RENDERER_FAMILIES.indexOf(rendererFamily)
   return index < 0 ? 0 : index
 }
 
@@ -182,22 +183,22 @@ function fixtureIndex(id: NoteDetailFixtureId): number {
   return 4
 }
 
-function persistedCategory(noteType: NoteDetailFixtureNoteType): string {
-  return noteType === '其他' ? '未知类型' : noteType
+function fixtureCategoryForRenderer(rendererFamily: NoteDetailRendererFamily): string {
+  return rendererFamily === '兜底' ? '未知类型' : rendererFamily
 }
 
-function buildUnit(id: NoteDetailFixtureId, noteType: NoteDetailFixtureNoteType,
+function buildUnit(id: NoteDetailFixtureId, rendererFamily: NoteDetailRendererFamily,
   profile: NoteDetailLengthProfile, bodyText: string): KnowledgeUnit {
-  const rawId: string = 'note-detail-bench-' + id + '-' + noteTypeIndex(noteType).toString()
+  const rawId: string = 'note-detail-bench-' + id + '-' + rendererFamilyIndex(rendererFamily).toString()
     + '-' + profile
   const unit: KnowledgeUnit = {
     id: rawId,
-    title: 'NoteDetail ' + id + ' · ' + noteType + ' · ' + profile,
+    title: 'NoteDetail ' + id + ' · ' + rendererFamily + ' · ' + profile,
     content: bodyText,
-    summary: id === 'A' ? '无公式基准' : '公式渲染基准 $$a+b=c$$',
+    summary: id === 'A' ? '无公式基准' : '公式渲染基准',
     tags: ['benchmark', id, profile],
     subject: '数学分析',
-    category: persistedCategory(noteType),
+    category: fixtureCategoryForRenderer(rendererFamily),
     chapter: 'NoteDetail 性能基线',
     difficulty: DifficultyLevel.MEDIUM,
     source: 'manual',
@@ -258,15 +259,15 @@ export function noteDetailFormulaGaps(text: string): number[] {
 }
 
 export function createNoteDetailBenchmarkFixture(id: NoteDetailFixtureId,
-  noteType: NoteDetailFixtureNoteType, profile: NoteDetailLengthProfile): NoteDetailBenchmarkFixture {
+  rendererFamily: NoteDetailRendererFamily, profile: NoteDetailLengthProfile): NoteDetailBenchmarkFixture {
   const definition: NoteDetailFixtureDefinition = definitionById(id)
   const bodyText: string = buildFixtureBody(definition, profile)
-  const unit: KnowledgeUnit = buildUnit(id, noteType, profile, bodyText)
-  const noteId: number = fixtureIndex(id) * 100 + noteTypeIndex(noteType) * 10
+  const unit: KnowledgeUnit = buildUnit(id, rendererFamily, profile, bodyText)
+  const noteId: number = fixtureIndex(id) * 100 + rendererFamilyIndex(rendererFamily) * 10
     + (profile === 'short' ? 1 : 2)
   const note: NoteItem = new NoteItem(noteId, unit.title, unit.category, unit.subject, unit.chapter,
     0.9, bodyText, unit.tags.slice(), '2026-09-27', unit.id)
   const units: KnowledgeUnit[] = [unit]
-  return new NoteDetailBenchmarkFixture(id, noteType, profile, definition.formulaCount,
+  return new NoteDetailBenchmarkFixture(id, rendererFamily, profile, definition.formulaCount,
     bodyText, note, unit, units)
 }

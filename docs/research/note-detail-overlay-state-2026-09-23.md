@@ -1,5 +1,7 @@
 # NoteDetailOverlay 现状调研
 
+> 本调研冻结 NoteDetailOverlay 的挂载、状态与渲染链路，为后续性能改造提供事实基线。
+
 > **调研日期** 2026-09-23
 > **调研范围** `entry/src/main/ets/overlays/NoteDetailOverlay/` 完整 22 文件;6 处挂载点;数据链路;设计 token / 组件 / 动效;已知问题
 > **调研方式** Lead 深度阅读 + 5 个并行子代理(A 核心实现 / B 调用链 / C 数据层 / D 文档 / E 设计 token)

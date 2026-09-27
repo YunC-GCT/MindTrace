@@ -1,12 +1,11 @@
 /**
  * NoteDetailRenderBenchmarkHarness.ets — #185 NoteDetail target-device measurement seam
  *
- * Path: entry/src/main/ets/benchmark/NoteDetailRenderBenchmarkHarness.ets
- * Responsibility: Mount the real read-only NoteDetailOverlay with deterministic fixtures and
- *                 collect externally supplied frame/memory samples for one benchmark run.
- * Dependencies: NoteDetailOverlay, NoteDetailRenderFixtures, NoteDetailRenderMetrics.
+ * 路径: entry/src/main/ets/benchmark/NoteDetailRenderBenchmarkHarness.ets
+ * 职责: 以确定性 fixture 挂载真实只读 NoteDetailOverlay，并采集单次运行数据。
+ * 依赖: NoteDetailOverlay, AgentFloatWindow, NoteDetailRenderFixtures, NoteDetailRenderMetrics.
  *
- * Data flow:
+ * 数据流:
  *   run props -> deterministic fixture -> real NoteDetailOverlay -> metrics snapshot/hilog
  *   device profiler -> exported frame/memory functions -> metrics snapshot
  *
@@ -21,10 +20,12 @@
  */
 
 import { NoteDetailOverlay } from '../overlays/NoteDetailOverlay/NoteDetailOverlay'
+import { AgentFloatWindow } from '../overlays/AgentFloatWindow/AgentFloatWindow'
+import { ChatMsg } from '../overlays/AgentFloatWindow/chat/ChatModels'
 import {
   NoteDetailBenchmarkFixture,
   NoteDetailFixtureId,
-  NoteDetailFixtureNoteType,
+  NoteDetailRendererFamily,
   NoteDetailLengthProfile,
   createNoteDetailBenchmarkFixture,
 } from '../services/NoteDetailRenderFixtures'
@@ -35,6 +36,20 @@ import {
   NoteDetailRenderMetrics,
   NoteDetailRenderMetricsSnapshot,
 } from '../services/NoteDetailRenderMetrics'
+
+const BENCHMARK_AI_HELPER_MESSAGES: ChatMsg[] = [{
+  id: 185001,
+  role: 'ai',
+  content: '离线 AI 助手竞争负载\n\n$$\\int_0^1 x^2\\,dx=\\frac{1}{3}$$',
+  ts: 1789956000000,
+  streaming: false,
+  reasoning: '',
+  origin: 'chat',
+  outcome: 'completed',
+  runId: 'note-detail-benchmark-ai-helper',
+  sequence: 1,
+  messageKey: 'note-detail-benchmark-ai-helper:assistant',
+}]
 
 export function recordNoteDetailBenchmarkFrame(durationMs: number,
   observedAt: number = Date.now()): void {
@@ -52,7 +67,7 @@ export function snapshotNoteDetailBenchmark(): NoteDetailRenderMetricsSnapshot {
 @Component
 export struct NoteDetailRenderBenchmarkHarness {
   @Prop fixtureId: NoteDetailFixtureId = 'A'
-  @Prop noteType: NoteDetailFixtureNoteType = '概念'
+  @Prop rendererFamily: NoteDetailRendererFamily = '概念'
   @Prop lengthProfile: NoteDetailLengthProfile = 'long'
   @Prop runIndex: number = 0
   @Prop coldWarmTag: NoteDetailColdWarmTag = 'cold'
@@ -61,12 +76,12 @@ export struct NoteDetailRenderBenchmarkHarness {
   private fixture: NoteDetailBenchmarkFixture = createNoteDetailBenchmarkFixture('A', '概念', 'long')
 
   aboutToAppear(): void {
-    this.fixture = createNoteDetailBenchmarkFixture(this.fixtureId, this.noteType, this.lengthProfile)
+    this.fixture = createNoteDetailBenchmarkFixture(this.fixtureId, this.rendererFamily, this.lengthProfile)
     const config: NoteDetailBenchmarkRunConfig = {
       fixtureId: this.fixtureId,
       runIndex: this.runIndex,
       coldWarmTag: this.coldWarmTag,
-      noteType: this.noteType,
+      rendererFamily: this.rendererFamily,
       lengthProfile: this.lengthProfile,
       aiHelperVisible: this.aiHelperVisible,
       cacheTag: this.cacheTag,
@@ -81,12 +96,23 @@ export struct NoteDetailRenderBenchmarkHarness {
   }
 
   build() {
-    NoteDetailOverlay({
-      note: this.fixture.note,
-      unit: this.fixture.unit,
-      units: this.fixture.units,
-      isCreating: false,
-      generatedDraft: null,
-    })
+    Stack() {
+      NoteDetailOverlay({
+        note: this.fixture.note,
+        unit: this.fixture.unit,
+        units: this.fixture.units,
+        isCreating: false,
+        generatedDraft: null,
+      })
+      if (this.aiHelperVisible) {
+        AgentFloatWindow({
+          show: true,
+          benchmarkFixtureMode: true,
+          benchmarkFixtureMessages: BENCHMARK_AI_HELPER_MESSAGES,
+        })
+      }
+    }
+    .width('100%')
+    .height('100%')
   }
 }

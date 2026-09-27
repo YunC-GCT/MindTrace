@@ -30,9 +30,10 @@ test('NoteDetail baseline owns deterministic A/B/C/C-prime fixture inputs', () =
   assert.match(fixtures, /formulaCount:\s*2/);
   assert.match(fixtures, /formulaCount:\s*6/);
   assert.match(fixtures, /'short' \| 'long'/);
-  for (const noteType of ['概念', '定理', '公式', '证明题', '计算题', '其他']) {
-    assert.match(fixtures, new RegExp("'" + noteType + "'"));
+  for (const rendererFamily of ['概念', '定理', '公式', '证明题', '计算题', '兜底']) {
+    assert.match(fixtures, new RegExp("'" + rendererFamily + "'"));
   }
+  assert.doesNotMatch(fixtures, /summary:\s*[^\n]*\$\$/);
   assert.match(fixtures, /createNoteDetailBenchmarkFixture/);
   assert.doesNotMatch(fixtures, /Math\.random|fetch\(|http\.|request\(/);
 });
@@ -54,6 +55,7 @@ test('NoteDetail metrics expose a surface-isolated run snapshot', () => {
     assert.match(metrics, new RegExp(field));
   }
   assert.match(metrics, /enableForRun/);
+  assert.match(metrics, /recordFormulaVisible/);
   assert.match(metrics, /snapshot\(\)/);
   assert.doesNotMatch(metrics, /ChatMsg|StreamingReplyDocument|ChatHistory|ChatRenderBenchmarkStats/);
 });
@@ -69,6 +71,8 @@ test('NoteDetail production surface emits lifecycle metrics without changing sch
   assert.match(math, /NoteDetailRenderMetrics\.recordWebCreate/);
   assert.match(math, /NoteDetailRenderMetrics\.recordHeightUpdate/);
   assert.match(math, /NoteDetailRenderMetrics\.recordHeightApplied/);
+  assert.match(math, /onVisibleAreaChange/);
+  assert.match(math, /NoteDetailRenderMetrics\.recordFormulaVisible/);
   assert.match(math, /NoteDetailRenderMetrics\.recordRenderExit/);
   assert.match(markdown, /metricSurface:\s*this\.profile === 'note' \? 'noteDetail' : 'none'/);
   assert.match(meta, /NoteDetailRenderMetrics\.recordHeaderMount/);
@@ -90,6 +94,11 @@ test('device harness drives the real NoteDetailOverlay seam and stays off produc
   const listTest = read('entry/src/test/List.test.ets');
 
   assert.match(harness, /NoteDetailOverlay\(/);
+  assert.match(harness, /AgentFloatWindow\(\{/);
+  assert.match(harness, /if \(this\.aiHelperVisible\)/);
+  assert.match(harness, /benchmarkFixtureMode:\s*true/);
+  assert.match(harness, /BENCHMARK_AI_HELPER_MESSAGES/);
+  assert.ok(harness.indexOf('NoteDetailOverlay({') < harness.indexOf('AgentFloatWindow({'));
   assert.match(harness, /createNoteDetailBenchmarkFixture/);
   assert.match(harness, /NoteDetailRenderMetrics\.enableForRun/);
   assert.match(harness, /NoteDetailRenderMetrics\.recordFrameDuration/);

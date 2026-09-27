@@ -141,7 +141,7 @@ export struct NoteDetailOverlay {
               }
               .width('100%')
               .onAreaChange((_oldValue: Area, newValue: Area): void => {
-                this.observeReadOnlyArea(Number(newValue.height))
+                this.observeReadOnlyContent(Number(newValue.height))
               })
             }
           }
@@ -151,6 +151,9 @@ export struct NoteDetailOverlay {
         .width('100%')
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
+        .onAreaChange((_oldValue: Area, newValue: Area): void => {
+          this.observeReadOnlyViewport(Number(newValue.height))
+        })
 
         if (this.isEditing) {
           Row() {
@@ -657,11 +660,18 @@ export struct NoteDetailOverlay {
     })
   }
 
-  private observeReadOnlyArea = (height: number): void => {
+  private observeReadOnlyViewport = (height: number): void => {
     if (!NoteDetailRenderMetrics.isEnabled()) {
       return
     }
     NoteDetailRenderMetrics.recordViewportHeight(height)
+  }
+
+  private observeReadOnlyContent = (height: number): void => {
+    if (!NoteDetailRenderMetrics.isEnabled()) {
+      return
+    }
+    NoteDetailRenderMetrics.recordContentHeight(height)
     this.stableObservationSeq += 1
     this.scheduleStabilityProbe(this.stableObservationSeq)
   }
