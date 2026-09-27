@@ -14,6 +14,7 @@ import { TabBar } from "./MainTabs/TabBar"
 import { AgentFloatWindow } from "../overlays/AgentFloatWindow/AgentFloatWindow"
 import { KeyboardAvoidMode } from "@kit.ArkUI"
 import { OverlayService } from "../services/OverlayService"
+import { WebKeepAlive } from "../shared/atoms/WebKeepAlive"
 
 const overlays = new OverlayService();
 
@@ -24,6 +25,7 @@ struct Index {
   @State pendingImageUri: string = ""
   @State lastContentIndex: number = 0
   @StorageLink('activeOverlay') activeOverlay: string = '';
+  @StorageLink('webKeepAliveExperimentEnabled') webKeepAliveExperimentEnabled: boolean = false;
   private tc: TabsController = new TabsController()
 
   aboutToAppear(): void {
@@ -32,6 +34,9 @@ struct Index {
 
   build() {
     Stack() {
+      if (this.webKeepAliveExperimentEnabled) {
+        WebKeepAlive()
+      }
       Column() {
         Tabs({ index: this.cur, controller: this.tc }) {
           TabContent() {

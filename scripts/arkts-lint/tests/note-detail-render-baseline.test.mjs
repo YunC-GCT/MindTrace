@@ -51,6 +51,7 @@ test('NoteDetail metrics expose a surface-isolated run snapshot', () => {
     'consecutiveLongFramePairCount', 'renderExitCount', 'renderExitReasons',
     'heapUsedKb', 'totalHeapKb', 'headerMountCount', 'bodyMountCount',
     'bodyInputChangeCount', 'editStateCount', 'deleteConfirmCount', 'draftStateCount',
+    'webKeepAliveEnabled',
   ]) {
     assert.match(metrics, new RegExp(field));
   }
@@ -106,4 +107,18 @@ test('device harness drives the real NoteDetailOverlay seam and stays off produc
   assert.doesNotMatch(pages, /NoteDetailRenderBenchmarkHarness/);
   assert.doesNotMatch(entryAbility, /NoteDetailRenderBenchmarkHarness/);
   assert.match(listTest, /noteDetailRenderBaselineTest/);
+});
+
+test('WebKeepAlive experiment is default-off, root-scoped, and recovery-bounded', () => {
+  const index = read('entry/src/main/ets/pages/Index.ets');
+  const keepAlive = read('entry/src/main/ets/shared/atoms/WebKeepAlive.ets');
+  const experiment = read('entry/src/main/ets/services/WebKeepAliveExperiment.ets');
+  assert.match(index, /@StorageLink\('webKeepAliveExperimentEnabled'\)/);
+  assert.match(index, /if \(this\.webKeepAliveExperimentEnabled\) \{\s*WebKeepAlive\(\)/s);
+  assert.doesNotMatch(index, /webKeepAliveExperimentEnabled:\s*boolean\s*=\s*true/);
+  assert.match(experiment, /configure\(enabled: boolean\)/);
+  assert.match(experiment, /\?\? false/);
+  assert.match(keepAlive, /KEEP_ALIVE_MAX_RECOVERY:\s*number\s*=\s*3/);
+  assert.match(keepAlive, /claimRecovery\(\)/);
+  assert.match(keepAlive, /this\.recoveryBudget\.claimRecovery\(\)/);
 });

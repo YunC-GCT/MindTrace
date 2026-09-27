@@ -34,6 +34,10 @@ import {
   recordNoteDetailBenchmarkMemory,
   snapshotNoteDetailBenchmark,
 } from '../main/ets/benchmark/NoteDetailRenderBenchmarkHarness'
+import {
+  KEEP_ALIVE_MAX_RECOVERY,
+  WebKeepAliveRecoveryBudget,
+} from '../main/ets/shared/atoms/WebKeepAlive'
 
 const expectedFormulaCount = (id: NoteDetailFixtureId): number => {
   if (id === 'A') { return 0 }
@@ -95,6 +99,7 @@ export default function noteDetailRenderBaselineTest(): void {
         rendererFamily: '证明题',
         lengthProfile: 'long',
         aiHelperVisible: true,
+        webKeepAliveEnabled: false,
         cacheTag: 'cold',
       }
       NoteDetailRenderMetrics.resetForTest()
@@ -154,6 +159,7 @@ export default function noteDetailRenderBaselineTest(): void {
         rendererFamily: '概念',
         lengthProfile: 'short',
         aiHelperVisible: false,
+        webKeepAliveEnabled: true,
         cacheTag: 'hit',
       }
       NoteDetailRenderMetrics.resetForTest()
@@ -166,6 +172,18 @@ export default function noteDetailRenderBaselineTest(): void {
       expect(snapshot.coldWarmTag).assertEqual('warm')
       expect(snapshot.cacheTag).assertEqual('hit')
       NoteDetailRenderMetrics.resetForTest()
+    })
+
+    it('WebKeepAlive_recovery_is_bounded', 0, () => {
+      const budget: WebKeepAliveRecoveryBudget = new WebKeepAliveRecoveryBudget()
+      let accepted: number = 0
+      let index: number = 0
+      while (index < KEEP_ALIVE_MAX_RECOVERY + 2) {
+        if (budget.claimRecovery()) { accepted += 1 }
+        index += 1
+      }
+      expect(accepted).assertEqual(KEEP_ALIVE_MAX_RECOVERY)
+      expect(budget.count()).assertEqual(KEEP_ALIVE_MAX_RECOVERY)
     })
   })
 }

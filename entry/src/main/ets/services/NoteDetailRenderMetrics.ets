@@ -44,6 +44,7 @@ export interface NoteDetailBenchmarkRunConfig {
   rendererFamily: NoteDetailRendererFamily
   lengthProfile: NoteDetailLengthProfile
   aiHelperVisible: boolean
+  webKeepAliveEnabled: boolean
   cacheTag: NoteDetailCacheTag
 }
 
@@ -55,6 +56,7 @@ export interface NoteDetailRenderMetricsSnapshot {
   rendererFamily: NoteDetailRendererFamily
   lengthProfile: NoteDetailLengthProfile
   aiHelperVisible: boolean
+  webKeepAliveEnabled: boolean
   cacheTag: NoteDetailCacheTag
   openStartedAt: number
   firstVisibleTs: number
@@ -145,6 +147,7 @@ function emptyConfig(): NoteDetailBenchmarkRunConfig {
     rendererFamily: '概念',
     lengthProfile: 'long',
     aiHelperVisible: false,
+    webKeepAliveEnabled: false,
     cacheTag: 'cold',
   }
 }
@@ -204,6 +207,7 @@ function copySnapshot(snapshot: NoteDetailRenderMetricsSnapshot): NoteDetailRend
     rendererFamily: snapshot.rendererFamily,
     lengthProfile: snapshot.lengthProfile,
     aiHelperVisible: snapshot.aiHelperVisible,
+    webKeepAliveEnabled: snapshot.webKeepAliveEnabled,
     cacheTag: snapshot.cacheTag,
     openStartedAt: snapshot.openStartedAt,
     firstVisibleTs: snapshot.firstVisibleTs,
@@ -499,6 +503,7 @@ export class NoteDetailRenderMetrics {
       rendererFamily: config.rendererFamily,
       lengthProfile: config.lengthProfile,
       aiHelperVisible: config.aiHelperVisible,
+      webKeepAliveEnabled: config.webKeepAliveEnabled,
       cacheTag: config.cacheTag,
       openStartedAt: openStartedAt,
       firstVisibleTs: firstVisibleTs,
@@ -563,6 +568,7 @@ export class NoteDetailRenderMetrics {
       + ' rendererFamily=' + snapshot.rendererFamily
       + ' length=' + snapshot.lengthProfile
       + ' ai=' + (snapshot.aiHelperVisible ? '1' : '0')
+      + ' keepAlive=' + (snapshot.webKeepAliveEnabled ? '1' : '0')
       + ' cache=' + snapshot.cacheTag
   }
 }

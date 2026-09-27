@@ -22,6 +22,7 @@
 import { NoteDetailOverlay } from '../overlays/NoteDetailOverlay/NoteDetailOverlay'
 import { AgentFloatWindow } from '../overlays/AgentFloatWindow/AgentFloatWindow'
 import { ChatMsg } from '../overlays/AgentFloatWindow/chat/ChatModels'
+import { WebKeepAlive } from '../shared/atoms/WebKeepAlive'
 import {
   NoteDetailBenchmarkFixture,
   NoteDetailFixtureId,
@@ -72,6 +73,7 @@ export struct NoteDetailRenderBenchmarkHarness {
   @Prop runIndex: number = 0
   @Prop coldWarmTag: NoteDetailColdWarmTag = 'cold'
   @Prop aiHelperVisible: boolean = false
+  @Prop webKeepAliveEnabled: boolean = false
   @Prop cacheTag: NoteDetailCacheTag = 'cold'
   private fixture: NoteDetailBenchmarkFixture = createNoteDetailBenchmarkFixture('A', '概念', 'long')
 
@@ -84,6 +86,7 @@ export struct NoteDetailRenderBenchmarkHarness {
       rendererFamily: this.rendererFamily,
       lengthProfile: this.lengthProfile,
       aiHelperVisible: this.aiHelperVisible,
+      webKeepAliveEnabled: this.webKeepAliveEnabled,
       cacheTag: this.cacheTag,
     }
     NoteDetailRenderMetrics.enableForRun(config)
@@ -97,6 +100,9 @@ export struct NoteDetailRenderBenchmarkHarness {
 
   build() {
     Stack() {
+      if (this.webKeepAliveEnabled) {
+        WebKeepAlive()
+      }
       NoteDetailOverlay({
         note: this.fixture.note,
         unit: this.fixture.unit,
