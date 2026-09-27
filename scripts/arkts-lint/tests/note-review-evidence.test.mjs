@@ -101,6 +101,7 @@ test('NoteEvidenceService filters same-note wrong-version citations', () => {
     '[noteId=note-limit version=3abc]',
     '[noteId=note-limit version=3.5]',
     '[noteId=note-limit version=4 version=3]',
+    '[noteId=note-limit version=3 version=3]',
   ]) {
     assert.equal(
       service.sanitizeAnswerStrict([citation({ noteId: 'note-limit', version: 3 })], malformed),
@@ -123,6 +124,24 @@ test('NoteEvidenceService keeps exact noteId and version citations across split 
   assert.equal(first, '依据 ');
   assert.equal(second, '[noteId=note-limit version=3] 的定义。');
   assert.equal(final, '');
+});
+
+
+
+test('NoteEvidenceService keeps exact citations when stream arrives one character at a time', () => {
+  const { NoteEvidenceService } = loadEvidenceService();
+  const service = new NoteEvidenceService();
+  const filter = service.createStreamFilter(
+    context([citation({ noteId: 'note-limit', version: 3 })]),
+  );
+
+  let streamed = '';
+  for (const char of '依据 [noteId=note-limit version=3]。') {
+    streamed += filter.push(char);
+  }
+  streamed += filter.flush();
+
+  assert.equal(streamed, '依据 [noteId=note-limit version=3]。');
 });
 
 test('NoteEvidenceService replaces incomplete and arbitrary citations safely', () => {

@@ -29,6 +29,16 @@ function evidence(citations, overrides = {}) {
   };
 }
 
+function relation(overrides = {}) {
+  return {
+    edgeId: overrides.edgeId ?? 'edge-limit-derivative',
+    fromNoteId: overrides.fromNoteId ?? 'note-limit',
+    toNoteId: overrides.toNoteId ?? 'note-derivative',
+    relationType: overrides.relationType ?? 'prerequisite',
+    reason: overrides.reason ?? '极限是导数的前置知识',
+  };
+}
+
 function loadReviewService() {
   return loadNoteReviewEtsModule(
     'entry/src/main/ets/services/NoteReviewService.ets',
@@ -43,7 +53,7 @@ function loadReviewService() {
   );
 }
 
-function loadConversationWorkflow() {
+function loadConversationWorkflow(overrides = {}) {
   return loadNoteReviewEtsModule(
     'entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets',
     {
@@ -62,7 +72,7 @@ function loadConversationWorkflow() {
               };
             },
           },
-          StateGraph: class StateGraph {},
+          StateGraph: overrides.StateGraph ?? class StateGraph {},
           LlmError: class LlmError extends Error {},
           LlmErrorBodyFormatter: {
             redactSensitiveText(value) {
@@ -84,7 +94,7 @@ function loadConversationWorkflow() {
           },
         },
         'entry/src/main/ets/services/IntentClassifier.ets': {
-          IntentClassifier: class IntentClassifier {},
+          IntentClassifier: overrides.IntentClassifier ?? class IntentClassifier {},
         },
         'entry/src/main/ets/services/ReplyService.ets': {
           ReplyService: class ReplyService {
@@ -191,11 +201,11 @@ test('NoteReviewService follows prerequisite role and extracts the target topic 
     导数: evidence([
       citation({ noteId: 'note-derivative', role: 'hit' }),
       citation({ noteId: 'note-limit', role: 'prerequisite' }),
-    ]),
+    ], { relations: [relation()] }),
     导数前: evidence([
       citation({ noteId: 'note-derivative', role: 'hit' }),
       citation({ noteId: 'note-limit', role: 'prerequisite' }),
-    ]),
+    ], { relations: [relation()] }),
     default: evidence([]),
   });
   const { NoteReviewService } = loadReviewService();
@@ -260,6 +270,127 @@ test('NoteReviewService converts provider exceptions into unavailable plans', as
   const result = await service.plan('根据我的笔记解释极限');
   assert.equal(result.answer.status, 'unavailable');
   assert.equal(result.answer.reason, 'search-failed');
+});
+
+
+test('NoteReviewService keeps evidence context within budget and mirrors final citations in the prompt', async () => {
+  const citations = Array.from({ length: 12 }, (_, index) => citation({
+    noteId: `note-${index}`,
+    version: index + 1,
+    title: `主题 ${index}`,
+    excerpt: `摘录 ${index} ` + 'x'.repeat(180),
+  }));
+  const provider = providerFor({ 极限: evidence(citations) });
+  const { NoteReviewService } = loadReviewService();
+  const service = new NoteReviewService(provider);
+
+  const plan = await service.plan('根据我的笔记解释极限');
+
+  assert.equal(plan.kind, 'model');
+  assert.ok(plan.evidence.contextText.length <= 6000);
+  assert.equal(plan.answer.citations.length, plan.evidence.citations.length);
+  for (const item of plan.answer.citations) {
+    assert.match(plan.evidence.contextText, new RegExp(`\\[noteId=${item.noteId} version=${item.version}\\]`));
+  }
+});
+
+test('NoteReviewService rejects explain quiz and locate when evidence is trimmed to zero citations', async () => {
+  const hugeCitation = citation({ excerpt: 'x'.repeat(6200) });
+  const provider = providerFor({ 极限: evidence([hugeCitation]), default: evidence([hugeCitation]) });
+  const { NoteReviewService } = loadReviewService();
+  const service = new NoteReviewService(provider);
+
+  for (const [query, intent] of [
+    ['根据我的笔记解释极限', 'explain'],
+    ['根据极限笔记出1道复习题', 'quiz'],
+    ['我的极限笔记在哪里', 'locate'],
+  ]) {
+    const plan = await service.plan(query);
+    assert.equal(plan.kind, 'terminal');
+    assert.equal(plan.answer.intent, intent);
+    assert.equal(plan.answer.status, 'insufficient');
+    assert.equal(plan.answer.reason, 'evidence-budget-empty');
+    assert.equal(plan.answer.citations.length, 0);
+  }
+});
+
+test('NoteReviewService reports insufficient when compare budget drops one topic group', async () => {
+  const provider = providerFor({
+    极限: evidence([citation({ noteId: 'note-limit', title: '极限', excerpt: 'x'.repeat(5880) })]),
+    连续: evidence([citation({ noteId: 'note-continuity', title: '连续', excerpt: '连续摘录' })]),
+  });
+  const { NoteReviewService } = loadReviewService();
+  const service = new NoteReviewService(provider);
+
+  const plan = await service.plan('比较笔记中的极限和连续');
+
+  assert.equal(plan.kind, 'terminal');
+  assert.equal(plan.answer.status, 'insufficient');
+  assert.equal(plan.answer.reason, 'compare-topic-budget-missing');
+  assert.match(plan.displayText, /连续/);
+});
+
+test('NoteReviewService rejects more than six compare topics before retrieval', async () => {
+  const provider = providerFor({ default: evidence([citation()]) });
+  const { NoteReviewService } = loadReviewService();
+  const service = new NoteReviewService(provider);
+
+  const plan = await service.plan('比较笔记中的A和B和C和D和E和F和G');
+
+  assert.equal(plan.kind, 'terminal');
+  assert.equal(plan.answer.status, 'insufficient');
+  assert.equal(plan.answer.reason, 'compare-too-many-topics');
+  assert.equal(provider.calls.length, 0);
+});
+
+test('NoteReviewService keeps only relation endpoints present in final prerequisite citations', async () => {
+  const provider = providerFor({
+    导数: evidence([
+      citation({ noteId: 'note-derivative', title: '导数', role: 'hit' }),
+      citation({ noteId: 'note-limit', title: '极限', role: 'hit' }),
+    ], {
+      relations: [
+        relation({ edgeId: 'edge-limit-derivative', fromNoteId: 'note-limit', toNoteId: 'note-derivative' }),
+        relation({ edgeId: 'edge-orphan', fromNoteId: 'note-missing', toNoteId: 'note-derivative' }),
+      ],
+    }),
+  });
+  const { NoteReviewService } = loadReviewService();
+  const service = new NoteReviewService(provider);
+
+  const plan = await service.plan('学习导数前需要哪些前置知识');
+
+  assert.equal(plan.kind, 'model');
+  assert.deepEqual(JSON.parse(JSON.stringify(plan.evidence.relations.map((item) => item.edgeId))), ['edge-limit-derivative']);
+  assert.match(plan.evidence.contextText, /note-limit -> note-derivative/);
+  assert.doesNotMatch(plan.evidence.contextText, /note-missing/);
+});
+
+test('NoteReviewService recognizes A and B hits with an accepted A-to-B prerequisite relation', async () => {
+  const provider = providerFor({
+    导数: evidence([
+      citation({ noteId: 'note-derivative', title: '导数', role: 'hit' }),
+      citation({ noteId: 'note-limit', title: '极限', role: 'hit' }),
+    ], { relations: [relation({ fromNoteId: 'note-limit', toNoteId: 'note-derivative' })] }),
+  });
+  const { NoteReviewService } = loadReviewService();
+  const service = new NoteReviewService(provider);
+
+  const plan = await service.plan('学习导数前需要哪些前置知识');
+
+  assert.equal(plan.kind, 'model');
+  assert.equal(plan.answer.status, 'grounded');
+  assert.equal(plan.evidence.relations[0].relationType, 'prerequisite');
+});
+
+test('NoteReviewService bounds quiz request counts at 1 through 5', () => {
+  const { NoteReviewService } = loadReviewService();
+  const service = new NoteReviewService(providerFor({ default: evidence([]) }));
+
+  assert.equal(service.extractTopics('根据极限笔记出0道复习题', 'quiz').quizCount, 1);
+  assert.equal(service.extractTopics('根据极限笔记出1道复习题', 'quiz').quizCount, 1);
+  assert.equal(service.extractTopics('根据极限笔记出5道复习题', 'quiz').quizCount, 5);
+  assert.equal(service.extractTopics('根据极限笔记出99道复习题', 'quiz').quizCount, 5);
 });
 
 test('NoteReviewService finalization requires an exact allowed citation and marks model failure unavailable', async () => {
@@ -458,4 +589,107 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
   assert.ok(reviewIndex >= 0);
   assert.equal(finishIndex, reviewIndex + 1);
   assert.equal(events.some((event) => event === 'add-empty'), true);
+});
+
+
+test('ConversationWorkflow classify_intent node keeps explicit review on chat without remote classifier', async () => {
+  const { ConversationWorkflow } = loadConversationWorkflow({
+    StateGraph: class StateGraph {
+      constructor() { this.nodes = {}; }
+      addNode(name, handler) { this.nodes[name] = handler; }
+      addConditionalEdge() {}
+      addEdge() {}
+    },
+    IntentClassifier: class IntentClassifier {
+      constructor() { this.remoteCalls = 0; }
+      classifyLocalIntent() { return undefined; }
+      async classify() {
+        this.remoteCalls += 1;
+        return 'note_generation';
+      }
+    },
+  });
+  const workflow = new ConversationWorkflow({
+    onProgress() {},
+    getSessionId() { return 's1'; },
+    getContext() { return {}; },
+  });
+  let reviewCalls = 0;
+  workflow.reviewService = {
+    classifyIntent(text) {
+      reviewCalls += 1;
+      return text.includes('笔记') && text.includes('解释') ? 'explain' : undefined;
+    },
+  };
+
+  const graph = workflow.buildGraph();
+  const next = await graph.nodes.classify_intent({
+    request: { kind: 'text', userContent: '根据我的笔记解释极限', responseMode: 'complete' },
+    sessionId: 's1',
+    currentStep: 'START',
+  });
+
+  assert.equal(next.intent, 'chat');
+  assert.equal(reviewCalls, 1);
+  assert.equal(workflow.intentClassifier.remoteCalls, 0);
+});
+
+test('ConversationWorkflow classify_intent node keeps local note generation before review and remote fallback', async () => {
+  const { IntentClassifier } = loadNoteReviewEtsModule('entry/src/main/ets/services/IntentClassifier.ets', {
+    mocks: {
+      common: {
+        JSON_ONLY_RULES: '',
+        LATEX_GENERATION_RULES: '',
+        LlmConfig: { getInstance() { return { async isConfigured() { return false; } }; } },
+        LlmGuard: class LlmGuard {
+          extractJsonObject(value) { return value; }
+        },
+      },
+    },
+  });
+  const realLocalClassifier = new IntentClassifier({ extractJsonObject(value) { return value; } });
+  const { ConversationWorkflow } = loadConversationWorkflow({
+    StateGraph: class StateGraph {
+      constructor() { this.nodes = {}; }
+      addNode(name, handler) { this.nodes[name] = handler; }
+      addConditionalEdge() {}
+      addEdge() {}
+    },
+    IntentClassifier: class IntentClassifierProbe {
+      constructor() { this.remoteCalls = 0; }
+      classifyLocalIntent(text) { return realLocalClassifier.classifyLocalIntent(text); }
+      async classify() {
+        this.remoteCalls += 1;
+        return 'note_generation';
+      }
+    },
+  });
+  const workflow = new ConversationWorkflow({
+    onProgress() {},
+    getSessionId() { return 's1'; },
+    getContext() { return {}; },
+  });
+  let reviewCalls = 0;
+  workflow.reviewService = {
+    classifyIntent() {
+      reviewCalls += 1;
+      return 'explain';
+    },
+  };
+  const graph = workflow.buildGraph();
+
+  for (const userContent of [
+    '把极限整理为笔记并解释一下',
+    '创建笔记：极限定义',
+    'noteId=note-limit 增量补充极限例子',
+  ]) {
+    const next = await graph.nodes.classify_intent({
+      request: { kind: 'text', userContent, responseMode: 'complete' },
+      sessionId: 's1',
+      currentStep: 'START',
+    });
+    assert.equal(next.intent, 'note_generation');
+  }
+  assert.equal(reviewCalls, 0);
+  assert.equal(workflow.intentClassifier.remoteCalls, 0);
 });

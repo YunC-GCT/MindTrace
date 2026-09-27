@@ -68,6 +68,7 @@ export function loadNoteReviewEtsModule(relativePath, options = {}) {
     setTimeout,
     clearTimeout,
     URL,
+    ...(options.globals ?? {}),
     __dirname: dirname(absolutePath),
     __filename: absolutePath,
   };
