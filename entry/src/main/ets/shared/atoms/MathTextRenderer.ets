@@ -12,6 +12,10 @@ import type { ContentValidationResult, LatexRiskResult } from 'common'
 import webview from '@ohos.web.webview'
 import { uiCacheLog } from '../../utils/UiCacheDebug'
 import { ChatRenderBenchmarkStats } from '../../services/ChatRenderBenchmarkStats'
+import {
+  NoteDetailMetricSurface,
+  NoteDetailRenderMetrics,
+} from '../../services/NoteDetailRenderMetrics'
 
 class MathRenderCacheEntry {
   key: string = ''
@@ -68,7 +72,7 @@ function nextNoteMathRenderDelay(): number {
   return NOTE_MATH_RENDER_DEFER_BASE_MS + slot * NOTE_MATH_RENDER_DEFER_STEP_MS
 }
 
-function cacheGet(key: string): MathRenderCacheEntry | null {
+function cacheGet(key: string, metricSurface: NoteDetailMetricSurface): MathRenderCacheEntry | null {
   const now: number = Date.now()
   trimCacheIfNeeded(now)
   for (const entry of MATH_RENDER_CACHE) {
@@ -77,11 +81,17 @@ function cacheGet(key: string): MathRenderCacheEntry | null {
       entry.touchedAt = now
       uiCacheLog('[UiDataCache] math hit key=' + key)
       ChatRenderBenchmarkStats.recordCacheHit()
+      if (metricSurface === 'noteDetail') {
+        NoteDetailRenderMetrics.recordCacheHit()
+      }
       return entry
     }
   }
   uiCacheLog('[UiDataCache] math miss key=' + key)
   ChatRenderBenchmarkStats.recordCacheMiss()
+  if (metricSurface === 'noteDetail') {
+    NoteDetailRenderMetrics.recordCacheMiss()
+  }
   return null
 }
 
@@ -193,6 +203,7 @@ export struct MathTextRenderer {
   @Prop formulaFontSize: number = F_BASE
   @Prop formulaLineHeight: number = 24
   @Prop profile: 'chat' | 'chatUser' | 'note' | 'preview' = 'chat'
+  @Prop metricSurface: NoteDetailMetricSurface = 'none'
   @Prop forceDisplay: boolean = false
   @Prop minHeight: number = 42
 
@@ -217,7 +228,7 @@ export struct MathTextRenderer {
       return
     }
     const markdown: string = this.prepareMarkdownFromResult(renderInput)
-    const cached: MathRenderCacheEntry | null = cacheGet(this.cacheKey(markdown))
+    const cached: MathRenderCacheEntry | null = cacheGet(this.cacheKey(markdown), this.metricSurface)
     if (cached !== null) {
       this.renderReady = true
       this.setWebHeight(this.clampHeight(cached.height), true)
@@ -250,7 +261,7 @@ export struct MathTextRenderer {
     }
     const markdown: string = this.prepareMarkdownFromResult(renderInput)
     const cacheKey: string = this.cacheKey(markdown)
-    const cached: MathRenderCacheEntry | null = cacheGet(cacheKey)
+    const cached: MathRenderCacheEntry | null = cacheGet(cacheKey, this.metricSurface)
     if (cached !== null) {
       this.renderReady = true
       this.setWebHeight(this.clampHeight(cached.height), true)
@@ -282,7 +293,7 @@ export struct MathTextRenderer {
     if (cacheKey === this.lastAppliedKey) {
       return
     }
-    const cached: MathRenderCacheEntry | null = cacheGet(cacheKey)
+    const cached: MathRenderCacheEntry | null = cacheGet(cacheKey, this.metricSurface)
     if (cached !== null) {
       this.setWebHeight(this.clampHeight(cached.height), true)
       this.applyCachedRender(cacheKey, cached)
@@ -293,6 +304,7 @@ export struct MathTextRenderer {
     this.setWebHeight(this.estimateHeight(markdown), false)
     ChatRenderBenchmarkStats.recordWebCreate()
     ChatRenderBenchmarkStats.recordWebWorkStart()
+    this.recordNoteDetailWebWorkStart()
     this.controller.runJavaScript(script)
       .then((heightText: string): void => {
         if (cacheKey !== this.currentCacheKey()) {
@@ -316,9 +328,11 @@ export struct MathTextRenderer {
           return
         }
         ChatRenderBenchmarkStats.recordDegradation()
+        this.recordNoteDetailDegradation()
         const fallbackFn: string = this.forceDisplay ? 'renderFormula' : 'render'
         const fallbackScript: string = fallbackFn + '(' + JSON.stringify(markdown) + ',' + JSON.stringify(this.profile) + ')'
         ChatRenderBenchmarkStats.recordWebWorkStart()
+        this.recordNoteDetailWebWorkStart()
         this.controller.runJavaScript(fallbackScript)
           .then((heightText: string): void => {
             if (cacheKey !== this.currentCacheKey()) {
@@ -334,6 +348,7 @@ export struct MathTextRenderer {
           .catch((): void => {
             if (cacheKey === this.currentCacheKey()) {
               ChatRenderBenchmarkStats.recordDegradation()
+              this.recordNoteDetailDegradation()
               this.webFailed = true
               this.lastAppliedKey = ''
             }
@@ -343,6 +358,7 @@ export struct MathTextRenderer {
 
   private applyCachedRender = (cacheKey: string, cached: MathRenderCacheEntry): void => {
     const script: string = 'applyCached(' + JSON.stringify(cached.encodedHtml) + ',' + JSON.stringify(this.profile) + ')'
+    this.recordNoteDetailWebWorkStart()
     this.controller.runJavaScript(script)
       .then((heightText: string): void => {
         if (cacheKey !== this.currentCacheKey()) { return }
@@ -361,6 +377,8 @@ export struct MathTextRenderer {
         const retryScript: string = 'renderForCache(' + JSON.stringify(this.text) + ',' + JSON.stringify(this.profile) + ')'
         ChatRenderBenchmarkStats.recordDegradation()
         ChatRenderBenchmarkStats.recordWebWorkStart()
+        this.recordNoteDetailDegradation()
+        this.recordNoteDetailWebWorkStart()
         this.controller.runJavaScript(retryScript)
           .then((heightText: string): void => {
             if (cacheKey !== this.currentCacheKey()) { return }
@@ -374,6 +392,7 @@ export struct MathTextRenderer {
           .catch((): void => {
             if (cacheKey === this.currentCacheKey()) {
               ChatRenderBenchmarkStats.recordDegradation()
+              this.recordNoteDetailDegradation()
               this.webFailed = true
               this.lastAppliedKey = ''
             }
@@ -436,9 +455,39 @@ export struct MathTextRenderer {
 
   private setWebHeight = (height: number, applied: boolean): void => {
     ChatRenderBenchmarkStats.recordHeightUpdate()
+    if (this.metricSurface === 'noteDetail') {
+      NoteDetailRenderMetrics.recordHeightUpdate()
+    }
     this.webHeight = height
     if (applied) {
       ChatRenderBenchmarkStats.recordHeightApplied()
+      if (this.metricSurface === 'noteDetail') {
+        NoteDetailRenderMetrics.recordHeightApplied()
+      }
+    }
+  }
+
+  private recordNoteDetailWebCreate = (): void => {
+    if (this.metricSurface === 'noteDetail') {
+      NoteDetailRenderMetrics.recordWebCreate()
+    }
+  }
+
+  private recordNoteDetailWebWorkStart = (): void => {
+    if (this.metricSurface === 'noteDetail') {
+      NoteDetailRenderMetrics.recordWebWorkStart()
+    }
+  }
+
+  private recordNoteDetailDegradation = (): void => {
+    if (this.metricSurface === 'noteDetail') {
+      NoteDetailRenderMetrics.recordDegradation()
+    }
+  }
+
+  private recordNoteDetailRenderExit = (event: OnRenderExitedEvent): void => {
+    if (this.metricSurface === 'noteDetail') {
+      NoteDetailRenderMetrics.recordRenderExit(event ? event.renderExitReason : -1)
     }
   }
 
@@ -546,10 +595,12 @@ export struct MathTextRenderer {
         .backgroundColor('rgba(0,0,0,0)')
         .width('100%')
         .height(this.webHeight)
+        .onAppear((): void => this.recordNoteDetailWebCreate())
         .onPageEnd((): void => {
           this.pageReady = true
           this.renderContent()
         })
+        .onRenderExited((event: OnRenderExitedEvent): void => this.recordNoteDetailRenderExit(event))
     }
   }
 }

@@ -21,6 +21,7 @@ import {
   glassSurfaceColor,
 } from 'common'
 import { MathTextRenderer } from '../../shared/atoms/MathTextRenderer'
+import { NoteDetailRenderMetrics } from '../../services/NoteDetailRenderMetrics'
 
 const SUMMARY_BUILDER: ContentExcerptBuilder = new ContentExcerptBuilder()
 const CONTENT_PROTOCOL: ContentProtocol = new ContentProtocol()
@@ -31,6 +32,14 @@ export struct NoteDetailMeta {
   @Prop unit: KnowledgeUnit | null = null
   @Prop units: KnowledgeUnit[] = []
   @Prop topInset: number = 0
+
+  aboutToAppear(): void {
+    NoteDetailRenderMetrics.recordHeaderMount()
+  }
+
+  aboutToDisappear(): void {
+    NoteDetailRenderMetrics.recordHeaderUnmount()
+  }
 
   build() {
     Column() {
@@ -82,6 +91,7 @@ export struct NoteDetailMeta {
           MathTextRenderer({
             text: this.subtitleText(),
             profile: 'preview',
+            metricSurface: 'noteDetail',
             textColor: TEXT_3,
             formulaColor: TEXT_3,
             fontSize: F_SM,

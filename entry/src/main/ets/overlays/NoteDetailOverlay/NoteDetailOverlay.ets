@@ -34,6 +34,10 @@ import {
   KnowledgeUnitWriteResult,
 } from '../../models/KnowledgeUnitWriteModels'
 import { NoteDraftReadyEvent, IncrementalDiffItem } from 'common'
+import {
+  NOTE_DETAIL_STABILITY_QUIET_MS,
+  NoteDetailRenderMetrics,
+} from '../../services/NoteDetailRenderMetrics'
 
 @Component
 export struct NoteDetailOverlay {
@@ -60,6 +64,7 @@ export struct NoteDetailOverlay {
   @State saving: boolean = false
   @State showDiscardConfirm: boolean = false
   private summaryBuilder: ContentExcerptBuilder = new ContentExcerptBuilder()
+  private stableObservationSeq: number = 0
   onClose: () => void = (): void => {}
   onEdit: (id: number) => void = (_id: number): void => {}
   onDelete: (id: string) => void = (_id: string): void => {}
@@ -67,14 +72,21 @@ export struct NoteDetailOverlay {
 
   aboutToAppear(): void {
     if (this.generatedDraft !== null) {
+      NoteDetailRenderMetrics.recordDraftState()
+      NoteDetailRenderMetrics.recordEditState()
       this.isEditing = true
       this.loadForm(this.generatedDraft.candidate)
       return
     }
     if (this.isCreating) {
+      NoteDetailRenderMetrics.recordEditState()
       this.isEditing = true
       this.loadForm(null)
     }
+  }
+
+  aboutToDisappear(): void {
+    this.stableObservationSeq += 1
   }
 
   build() {
@@ -128,6 +140,9 @@ export struct NoteDetailOverlay {
                 NoteDetailBody({ note: this.note, unit: this.effectiveUnit(), units: this.units })
               }
               .width('100%')
+              .onAreaChange((_oldValue: Area, newValue: Area): void => {
+                this.observeReadOnlyArea(Number(newValue.height))
+              })
             }
           }
           .width('100%')
@@ -259,7 +274,7 @@ export struct NoteDetailOverlay {
             .textAlign(TextAlign.Center)
             .borderRadius(R_MD)
             .backgroundColor(MINT)
-            .onClick((): void => this.discardEdit())
+            .onClick((): void => this.confirmDiscardEdit())
         }
         .width('100%')
       }
@@ -291,6 +306,7 @@ export struct NoteDetailOverlay {
   }
 
   onDetailInputChanged(): void {
+    this.stableObservationSeq += 1
     if (this.localUnit !== null && this.localUnit.id !== this.currentNoteRawId()) {
       this.localUnit = null
     }
@@ -317,6 +333,7 @@ export struct NoteDetailOverlay {
     }
     this.loadForm(current)
     this.isEditing = true
+    NoteDetailRenderMetrics.recordEditState()
     this.onEdit(this.note.id)
   }
 
@@ -359,6 +376,11 @@ export struct NoteDetailOverlay {
     }
     this.isEditing = false
     this.loadForm(this.effectiveUnit())
+  }
+
+  private confirmDiscardEdit = (): void => {
+    NoteDetailRenderMetrics.recordDiscardConfirm()
+    this.discardEdit()
   }
 
   private closeOrCancel = (): void => {
@@ -627,10 +649,31 @@ export struct NoteDetailOverlay {
       ],
     }).then((result): void => {
       if (result.index === 1) {
+        NoteDetailRenderMetrics.recordDeleteConfirm()
         this.onDelete(noteId)
       }
     }).catch((): void => {
       promptAction.showToast({ message: '无法打开删除确认', duration: 1200 })
     })
+  }
+
+  private observeReadOnlyArea = (height: number): void => {
+    if (!NoteDetailRenderMetrics.isEnabled()) {
+      return
+    }
+    NoteDetailRenderMetrics.recordViewportHeight(height)
+    this.stableObservationSeq += 1
+    this.scheduleStabilityProbe(this.stableObservationSeq)
+  }
+
+  private scheduleStabilityProbe = (seq: number): void => {
+    setTimeout((): void => {
+      if (seq !== this.stableObservationSeq || !NoteDetailRenderMetrics.isEnabled()) {
+        return
+      }
+      if (!NoteDetailRenderMetrics.markStable()) {
+        this.scheduleStabilityProbe(seq)
+      }
+    }, NOTE_DETAIL_STABILITY_QUIET_MS)
   }
 }

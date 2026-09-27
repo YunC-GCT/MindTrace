@@ -109,6 +109,7 @@ export struct MarkdownRenderer {
       MathTextRenderer({
         text: text,
         profile: this.mathProfile(),
+        metricSurface: this.profile === 'note' ? 'noteDetail' : 'none',
         textColor: TEXT_2,
         formulaColor: TEXT_2,
         formulaBackground: 'rgba(255,255,255,0.04)',
@@ -223,6 +224,7 @@ export struct MarkdownRenderer {
     MathTextRenderer({
       text: block.text,
       profile: this.mathProfile(),
+      metricSurface: this.profile === 'note' ? 'noteDetail' : 'none',
       forceDisplay: true,
       textColor: TEXT_2,
       formulaColor: TEXT_2,

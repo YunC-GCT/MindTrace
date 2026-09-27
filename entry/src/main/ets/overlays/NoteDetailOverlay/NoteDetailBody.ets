@@ -23,6 +23,7 @@ import {
 } from './model/DetailRenderModel'
 import { getDetailRenderModel } from './model/DetailRenderCache'
 import { resetDetailRenderQueue } from './components/DetailRenderQueue'
+import { NoteDetailRenderMetrics } from '../../services/NoteDetailRenderMetrics'
 import { ConceptDetailView } from './renderers/ConceptDetailView'
 import { TheoremDetailView } from './renderers/TheoremDetailView'
 import { FormulaDetailView } from './renderers/FormulaDetailView'
@@ -38,10 +39,16 @@ export struct NoteDetailBody {
   private renderResetKey: string = ''
 
   aboutToAppear(): void {
+    NoteDetailRenderMetrics.recordBodyMount()
     this.resetRenderQueueIfNeeded()
   }
 
+  aboutToDisappear(): void {
+    NoteDetailRenderMetrics.recordBodyUnmount()
+  }
+
   onRenderInputChanged(): void {
+    NoteDetailRenderMetrics.recordBodyInputChange()
     this.resetRenderQueueIfNeeded()
   }
 

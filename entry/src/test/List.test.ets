@@ -21,6 +21,7 @@ import conversationTitleServiceTest from './ConversationTitleService.test';
 import intentClassifierNoteMaterialTest from './IntentClassifierNoteMaterial.test';
 import conversationDraftOwnershipTest from './ConversationDraftOwnership.test';
 import conversationWorkflowFailureTest from './ConversationWorkflowFailure.test';
+import noteDetailRenderBaselineTest from './NoteDetailRenderBaseline.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -46,4 +47,5 @@ export default function testsuite() {
   intentClassifierNoteMaterialTest();
   conversationDraftOwnershipTest();
   conversationWorkflowFailureTest();
+  noteDetailRenderBaselineTest();
 }
