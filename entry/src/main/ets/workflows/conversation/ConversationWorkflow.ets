@@ -188,7 +188,10 @@ export class ConversationWorkflow {
       new StateGraph<ConversationState, ConversationStep>('START', 'END');
     graph.addNode('classify_intent', async (input: ConversationState): Promise<ConversationState> => {
       this.setStep('intent_check');
-      const intent: TextIntent = await this.intentClassifier.classify(input.request.userContent);
+      const reviewIntent = this.getReviewService().classifyIntent(input.request.userContent);
+      const intent: TextIntent = reviewIntent === undefined
+        ? await this.intentClassifier.classify(input.request.userContent)
+        : 'chat';
       const next: ConversationState = this.copyState(input, 'classify_intent');
       next.intent = intent;
       return next;

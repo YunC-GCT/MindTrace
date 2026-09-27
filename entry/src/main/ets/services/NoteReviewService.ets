@@ -154,6 +154,9 @@ export class NoteReviewService {
       return this.terminal(intent, userContent, 'insufficient', 'no-match', [], '没有在个人笔记中找到足够依据。可以换一个主题或先保存相关笔记。');
     }
     const reviewContext: NoteEvidenceContext = this.contextFrom(context.query, context.citations, [], false, '');
+    if (reviewContext.citations.length === 0) {
+      return this.terminal(intent, userContent, 'insufficient', 'evidence-budget-empty', [], '找到的笔记证据超过本次回答预算，请缩小主题或缩短相关笔记后重试。');
+    }
     if (intent === 'locate') {
       const locateText: string = '找到这些相关笔记：\n\n' + this.evidenceProvider.formatSources(reviewContext);
       return this.terminal(intent, userContent, 'grounded', 'located', reviewContext.citations, locateText);
