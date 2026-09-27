@@ -19,7 +19,7 @@
 
 import { common } from '@kit.AbilityKit';
 import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
-import { NoteDraftReadyEvent } from 'common';
+import { NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
 import type { StreamEvent } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { CancellationToken } from 'common';
@@ -39,6 +39,7 @@ export interface ConversationStatusMessageEvent {
   kind: 'status';
   content: string;
   status: ConversationRunEventStatus;
+  progressKey?: string;
 }
 
 export interface ConversationErrorMessageEvent {
@@ -61,6 +62,8 @@ export interface ConversationWorkflowCallbacks {
   reportDiagnostic(ref: ConversationRunRef, diagnostic: string): void;
   onStart(ref: ConversationRunRef): void;
   onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void;
+  onNoteGenerationProgress(ref: ConversationRunRef, event: NoteGenerationProgressEvent): void;
+  completeProgress(ref: ConversationRunRef): void;
   onError(ref: ConversationRunRef, message: string): void;
   onFinish(ref: ConversationRunRef): void;
   isCurrentRun(ref: ConversationRunRef): boolean;

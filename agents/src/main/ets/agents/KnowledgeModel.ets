@@ -82,6 +82,8 @@ import type {
   NoteGenerationLedger,
   NoteGenerationLedgerEntry,
   NoteGenerationVerification,
+  NoteGenerationProgressEvent,
+  NoteGenerationProgressSink,
   SourceBundle,
   NoteGenerationRequirement,
   IncrementalPlan,
@@ -243,7 +245,10 @@ export class KnowledgeModel {
     return normalizeLightDraft(this.parseDraftDocument(parsed), request.sources);
   }
 
-  async structureStandardDraft(request: NoteGenerationRequest): Promise<NoteGenerationStandardResult> {
+  async structureStandardDraft(
+    request: NoteGenerationRequest,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteGenerationStandardResult> {
     const sourceIssues: NoteGenerationIssue[] = validateSourceBundle(request.sources);
     if (sourceIssues.length > 0) {
       throw new Error('standard source gate failed: ' + sourceIssues[0].code);
@@ -257,6 +262,11 @@ export class KnowledgeModel {
     };
     const extracted: NoteGenerationStandardResult = await this.callStandardArtifacts(request, requirement, '建立 Outline、Evidence 和 Draft');
     const normalized: NoteGenerationStandardResult = this.normalizeStandardResult(extracted, request.sources, request.instruction);
+    this.emitProgress(progressSink, {
+      phase: 'verify',
+      state: 'running',
+      activity: 'check_accuracy',
+    });
     const verification: NoteGenerationVerification = await this.callIndependentVerifier(
       normalized,
       request.sources,
@@ -272,6 +282,7 @@ export class KnowledgeModel {
     request: NoteGenerationRequest,
     current: NoteGenerationStandardResult,
     issues: NoteGenerationIssue[],
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteGenerationStandardResult> {
     const requirement: NoteGenerationRequirement = request.requirement ?? {
       detailLevel: 'normal',
@@ -288,6 +299,11 @@ export class KnowledgeModel {
       verification: { status: 'supported', issues: issues, checkedEvidenceIds: [], decisions: [] },
     };
     const normalized: NoteGenerationStandardResult = this.normalizeStandardResult(repaired, request.sources, request.instruction);
+    this.emitProgress(progressSink, {
+      phase: 'verify',
+      state: 'running',
+      activity: 'check_accuracy',
+    });
     const verification: NoteGenerationVerification = await this.callIndependentVerifier(
       normalized,
       request.sources,
@@ -297,7 +313,10 @@ export class KnowledgeModel {
     return this.mergeVerifiedEvidence(current, this.applyVerification(normalized, verification), request.sources, requirement);
   }
 
-  async structureDeepDraft(request: NoteGenerationRequest): Promise<NoteGenerationDeepResult> {
+  async structureDeepDraft(
+    request: NoteGenerationRequest,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteGenerationDeepResult> {
     const sourceIssues: NoteGenerationIssue[] = validateSourceBundle(request.sources);
     if (sourceIssues.length > 0) {
       throw new Error('deep source gate failed: ' + sourceIssues[0].code);
@@ -323,7 +342,16 @@ export class KnowledgeModel {
     let chapter: string = '';
     let difficulty: number = 2;
     let tags: string[] = [];
+    let sectionIndex: number = 0;
     for (const outlineSection of outline.sections) {
+      sectionIndex += 1;
+      this.emitProgress(progressSink, {
+        phase: 'compose',
+        state: 'running',
+        activity: 'write_section',
+        current: sectionIndex,
+        total: outline.sections.length,
+      });
       const sectionDraft: NoteDraftDocument = await this.callDeepSectionDraft(
         request,
         outlineSection,
@@ -366,6 +394,11 @@ export class KnowledgeModel {
       instruction: request.instruction,
     };
     const evidence: NoteGenerationEvidenceItem[] = this.buildDeepEvidence(outline, sections, segments, request.sources);
+    this.emitProgress(progressSink, {
+      phase: 'verify',
+      state: 'running',
+      activity: 'check_accuracy',
+    });
     const verification: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
       outline,
       evidence,
@@ -387,6 +420,7 @@ export class KnowledgeModel {
     request: NoteGenerationRequest,
     current: NoteGenerationDeepResult,
     issues: NoteGenerationIssue[],
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteGenerationDeepResult> {
     const targets: string[] = [];
     let globalRepairRequired: boolean = false;
@@ -431,11 +465,20 @@ export class KnowledgeModel {
       conclusions: current.ledger.conclusions.slice(0),
     };
     const sections: NoteDraftSection[] = [];
+    let repairIndex: number = 0;
     for (const outlineSection of current.outline.sections) {
       let next: NoteDraftSection | undefined = current.draft.sections.find(
         (item: NoteDraftSection): boolean => item.id === outlineSection.id,
       );
       if (targets.includes(outlineSection.id)) {
+        repairIndex += 1;
+        this.emitProgress(progressSink, {
+          phase: 'compose',
+          state: 'running',
+          activity: 'repair_draft',
+          current: repairIndex,
+          total: targets.length,
+        });
         const repairedDocument: NoteDraftDocument = await this.callDeepSectionDraft(
           request,
           outlineSection,
@@ -471,6 +514,11 @@ export class KnowledgeModel {
       instruction: request.instruction,
     };
     const evidence: NoteGenerationEvidenceItem[] = this.buildDeepEvidence(current.outline, sections, segments, request.sources);
+    this.emitProgress(progressSink, {
+      phase: 'verify',
+      state: 'running',
+      activity: 'check_accuracy',
+    });
     const verification: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
       current.outline,
       evidence,
@@ -486,6 +534,12 @@ export class KnowledgeModel {
       ledger: ledger,
       segments: segments,
     };
+  }
+
+  private emitProgress(progressSink: NoteGenerationProgressSink | undefined, event: NoteGenerationProgressEvent): void {
+    if (progressSink !== undefined) {
+      progressSink(event);
+    }
   }
 
   async repairIncrementalSections(

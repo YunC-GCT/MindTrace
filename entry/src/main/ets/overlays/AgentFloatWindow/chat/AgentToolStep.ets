@@ -1,15 +1,15 @@
 /**
- * AgentToolStep.ets - Agent 运行时间线中的工具步骤
+ * AgentToolStep.ets - Agent 运行过程中的工具步骤卡片
  *
  * 路径: overlays/AgentFloatWindow/chat/AgentToolStep.ets
- * 职责: 合并展示一次工具调用及其结果,原始详情按需展开
+ * 职责: 用独立轻量卡片合并展示一次工具调用及其结果,原始详情按需展开
  * 依赖: common UI tokens, AgentRunModels
  *
  * 数据流:
  *   AgentRunPart(tool) -> AgentToolStep -> status/detail row
  */
 
-import { DANGER, F_XS, MINT, R_MD, S_1, S_2, TEXT_2, TEXT_3, TEXT_4, W_SEMIBOLD } from 'common'
+import { BORDER, DANGER, F_XS, MINT, R_MD, S_1, S_2, S_3, TEXT_2, TEXT_3, TEXT_4, W_SEMIBOLD } from 'common'
 import { AgentRunPartStatus } from './AgentRunModels'
 
 @Component
@@ -22,18 +22,6 @@ export struct AgentToolStep {
 
   build() {
     Row() {
-      Column() {
-        Circle({ width: 6, height: 6 })
-          .fill(this.statusColor())
-        Row()
-          .width(1)
-          .layoutWeight(1)
-          .backgroundColor('rgba(255,255,255,0.10)')
-      }
-      .width(S_2)
-      .alignItems(HorizontalAlign.Center)
-      .margin({ right: S_2 })
-
       Column() {
         Row() {
           Text(this.displayName())
@@ -84,7 +72,10 @@ export struct AgentToolStep {
     }
     .width('100%')
     .alignItems(VerticalAlign.Top)
-    .padding({ left: S_1, right: S_2, top: S_1, bottom: S_2 })
+    .padding({ left: S_3, right: S_3, top: S_2, bottom: S_2 })
+    .borderRadius(R_MD + 4)
+    .backgroundColor('rgba(255,255,255,0.025)')
+    .border({ width: 0.5, color: BORDER })
   }
 
   private displayName = (): string => {

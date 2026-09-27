@@ -295,6 +295,26 @@ export default function agentChatStreamEventsTest(): void {
       expect(errorParts[1].kind).assertEqual('error');
       expect(errorParts[1].status).assertEqual('failed');
     });
+
+    it('should update note activity in place for the same progress phase', 0, () => {
+      const preparing: AgentRunPart[] = appendAgentRunStatus(
+        [], 11, '整理笔记素材 · 正在汇总可用内容', 'running', 'note-generation:prepare',
+      );
+      const prepared: AgentRunPart[] = appendAgentRunStatus(
+        preparing, 11, '整理笔记素材 · 素材已就绪', 'success', 'note-generation:prepare',
+      );
+      const composing: AgentRunPart[] = appendAgentRunStatus(
+        prepared, 11, '生成笔记草稿 · 正在规划结构', 'running', 'note-generation:compose',
+      );
+      const writing: AgentRunPart[] = appendAgentRunStatus(
+        composing, 11, '生成笔记草稿 · 正在撰写第 1/3 节', 'running', 'note-generation:compose',
+      );
+
+      expect(writing.length).assertEqual(2);
+      expect(writing[0].status).assertEqual('success');
+      expect(writing[1].content).assertEqual('生成笔记草稿 · 正在撰写第 1/3 节');
+      expect(writing[1].progressKey).assertEqual('note-generation:compose');
+    });
   });
 
   describe('AgentChatStreamEvents.issue112_key_test', () => {

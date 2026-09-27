@@ -2,14 +2,14 @@
  * AgentThinkingStep.ets - 独立的 Agent 思考展示模块
  *
  * 路径: overlays/AgentFloatWindow/chat/AgentThinkingStep.ets
- * 职责: 默认折叠思考;进行中滚动最新小字,结束后显示开头摘要,并仅展开自身详情
+ * 职责: 用独立轻量卡片展示思考;默认折叠,进行中滚动最新小字,结束后显示开头摘要
  * 依赖: common UI tokens, AgentRunModels
  *
  * 数据流:
  *   AgentRunPart(thinking) -> AgentThinkingStep -> collapsed summary/full detail
  */
 
-import { DUR_FAST, F_XS, MINT, S_1, TEXT_3, TEXT_4, W_SEMIBOLD } from 'common'
+import { BORDER, DUR_FAST, F_XS, MINT, R_MD, S_1, S_2, S_3, TEXT_3, TEXT_4, W_SEMIBOLD } from 'common'
 import { AgentRunPartStatus } from './AgentRunModels'
 
 const THINKING_SUMMARY_LIMIT: number = 42
@@ -55,7 +55,6 @@ export struct AgentThinkingStep {
       }
       .width('100%')
       .height(20)
-      .padding({ left: S_1, right: S_1 })
       .onClick((): void => { this.toggleDetail() })
 
       if (this.detailOpen) {
@@ -71,7 +70,10 @@ export struct AgentThinkingStep {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding({ left: S_1, right: S_1, bottom: S_1 })
+    .padding({ left: S_3, right: S_3, top: S_2, bottom: S_2 })
+    .borderRadius(R_MD + 4)
+    .backgroundColor('rgba(255,255,255,0.025)')
+    .border({ width: 0.5, color: BORDER })
   }
 
   private toggleDetail = (): void => {

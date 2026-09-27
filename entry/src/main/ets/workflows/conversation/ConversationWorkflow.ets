@@ -41,7 +41,14 @@ import {
 } from './ConversationState';
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
 import { StreamReplyResult } from '../../services/ReplyService';
-import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun, SourceFragment } from 'common';
+import {
+  NoteDraftReadyEvent,
+  NoteGenerationProgressEvent,
+  NoteGenerationProgressSink,
+  NoteGenerationRoute,
+  NoteGenerationRun,
+  SourceFragment,
+} from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
@@ -325,7 +332,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         input.request.userContent,
         this.noteRoute.select(input.runRef),
       );
-      this.setStep(input.runRef, 'completed');
       const next: ConversationState = this.copyState(input, 'note_reply');
       if (event !== undefined) {
         next.draftRunId = event.runId;
@@ -340,7 +346,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       if (request.kind !== 'regenerate') {
         return this.copyState(input, 'regenerate_reply');
       }
-      this.setStep(input.runRef, 'note_context_load');
       await this.safeSaveUserMessage(input.runRef, request.userContent);
       try {
         const event: NoteDraftReadyEvent = await this.capturePort.regenerateNoteDraft(
@@ -351,9 +356,10 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
           this.cancellationToken(input.runRef),
           input.runRef.sessionId,
           input.runRef.runId,
+          this.noteGenerationProgressSink(input.runRef),
         );
         this.cbs.onDraftReady(input.runRef, event);
-        await this.addAiMessage(input.runRef, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
+        this.cbs.completeProgress(input.runRef);
       } catch (e) {
         const errorMessage: string = ConversationWorkflow.errorMessage(e);
         this.finishRunFailure(input.runRef, e);
@@ -562,18 +568,15 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         this.cancellationToken(ref),
         route,
       );
-      this.setStep(ref, 'note_finalize');
-
       if (materialPersistFailed) {
         await this.addAiMessage(
           ref,
           '⚠️ 笔记草稿已准备，但素材暂存失败，草稿无法在重启后恢复。请尽快确认保存。',
         );
       } else {
-        await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
+        this.cbs.completeProgress(ref);
       }
       this.cbs.onDraftReady(ref, event);
-      this.setStep(ref, 'completed');
       return {
         event: event,
         ocrResult: classificationResult,
@@ -701,8 +704,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     userInstruction: string,
     route?: NoteGenerationRoute,
   ): Promise<NoteDraftReadyEvent | undefined> {
-    this.setStep(ref, 'note_intent_check');
-    this.setStep(ref, 'note_context_load');
     const explicitRegeneration = this.parseRegenerationRequest(userInstruction);
     if (explicitRegeneration !== undefined) {
       await this.safeSaveUserMessage(ref, userInstruction);
@@ -715,9 +716,10 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
           this.cancellationToken(ref),
           ref.sessionId,
           ref.runId,
+          this.noteGenerationProgressSink(ref),
         );
         this.cbs.onDraftReady(ref, event);
-        await this.addAiMessage(ref, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
+        this.cbs.completeProgress(ref);
         return event;
       } catch (e) {
         const errorMessage: string = ConversationWorkflow.errorMessage(e);
@@ -730,7 +732,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       return undefined;
     }
     const memoryContext: string = await this.safeGetContextForNoteGeneration(ref);
-    this.setStep(ref, 'note_source_prepare');
     await this.safeSaveUserMessage(ref, userInstruction);
     try {
       const configured: boolean = await this.replyService.isConfigured();
@@ -750,7 +751,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         return undefined;
       }
 
-      this.setStep(ref, 'note_structure_save');
       const noteGenerationRunId: string = 'conversation-' + Date.now().toString();
       if (!this.cbs.isCurrentRun(ref)) { return undefined; }
       const pendingSources: SourceFragment[] = await this.memoryProjection.pendingSources(ref);
@@ -763,9 +763,8 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         this.cancellationToken(ref),
         route,
       );
-      this.setStep(ref, 'note_finalize');
       this.cbs.onDraftReady(ref, event);
-      await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
+      this.cbs.completeProgress(ref);
       return event;
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
@@ -805,7 +804,14 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       ref.sessionId,
       ref.runId,
       route,
+      this.noteGenerationProgressSink(ref),
     );
+  }
+
+  private noteGenerationProgressSink(ref: ConversationRunRef): NoteGenerationProgressSink {
+    return (event: NoteGenerationProgressEvent): void => {
+      this.cbs.onNoteGenerationProgress(ref, event);
+    };
   }
 
 

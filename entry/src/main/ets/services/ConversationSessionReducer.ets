@@ -45,7 +45,7 @@ export class ConversationSessionReducer {
       return applyStreamEventToChatMsg(message, event.event);
     }
     if (event.kind === 'status') {
-      return appendChatMsgStatus(message, event.content, event.status);
+      return appendChatMsgStatus(message, event.content, event.status, event.progressKey);
     }
     return appendChatMsgError(message, event.content);
   }

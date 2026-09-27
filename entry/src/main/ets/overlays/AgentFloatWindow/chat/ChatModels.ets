@@ -250,9 +250,10 @@ export function appendChatMsgStatus(
   message: ChatMsg,
   content: string,
   status: AgentRunPartStatus,
+  progressKey?: string,
 ): ChatMsg {
   const next: ChatMsg = copyChatMsgForMemory(message)
-  next.runParts = appendAgentRunStatus(chatMessageRunParts(message), message.id, content, status)
+  next.runParts = appendAgentRunStatus(chatMessageRunParts(message), message.id, content, status, progressKey)
   return next
 }
 
