@@ -41,9 +41,9 @@ export class AgentInputViewModel {
   route: NoteGenerationRoute = 'standard';
 
   private service: AgentChatService | null = null;
-  private addUserMessage: ((content: string) => void) | null = null;
+  private addUserMessage: ((content: string) => boolean) | null = null;
 
-  bind(service: AgentChatService, addUserMessage: (content: string) => void): void {
+  bind(service: AgentChatService, addUserMessage: (content: string) => boolean): void {
     this.service = service;
     this.addUserMessage = addUserMessage;
   }
@@ -83,7 +83,9 @@ export class AgentInputViewModel {
     const uri: string = this.imagePreview;
     const route: NoteGenerationRoute = this.route;
     const display: string = msg.length > 0 ? msg : '[图片]';
-    this.addUserMessage(display);
+    if (!this.addUserMessage(display)) {
+      return;
+    }
     this.inputText = '';
     this.imagePreview = '';
     if (uri.length > 0) {

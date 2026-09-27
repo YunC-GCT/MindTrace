@@ -100,7 +100,8 @@ export struct AgentFloatWindow {
   private requestSessionId: string = '';
   private serviceRunActive: boolean = false;
   private messageSessionIds: Map<number, string> = new Map<number, string>();
-  private feedbackRequestSeqByMessage: Map<number, number> = new Map<number, number>();
+  private feedbackRequestCounter: number = 0;
+  private feedbackRequestTokenByMessage: Map<number, number> = new Map<number, number>();
   @State inputVm: AgentInputViewModel = new AgentInputViewModel();
 
   // ===== 生命周期 =====
@@ -207,10 +208,10 @@ export struct AgentFloatWindow {
       },
     };
     this.service = new AgentChatService(cbs);
-    this.inputVm.bind(this.service, (content: string): void => {
+    this.inputVm.bind(this.service, (content: string): boolean => {
       if (this.serviceRunActive) {
         this.showToast('当前回答仍在处理，请稍后再试');
-        return;
+        return false;
       }
       this.serviceRunActive = true;
       this.requestSessionId = this.activeSid;
@@ -220,6 +221,7 @@ export struct AgentFloatWindow {
       }
       const id: number = nowId();
       this.addMessageToSession(this.activeSid, { id, role: 'user', content, ts: Date.now(), streaming: false, reasoning: '' });
+      return true;
     });
     const ss: ChatSession[] = await this.sm.init(getContext(this));
     if (ss.length > 0) {
@@ -332,6 +334,9 @@ export struct AgentFloatWindow {
 
   private stopStreaming = (): void => {
     this.inputVm.stop();
+    if (this.serviceRunActive) {
+      this.inputVm.setBusy(true);
+    }
     this.finishCurrentStreamingMessage();
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
@@ -434,7 +439,7 @@ export struct AgentFloatWindow {
 
   private onNoteReviewFeedback = (messageId: number, feedback: NoteReviewFeedback): void => {
     const previous: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
-    const requestSeq: number = this.nextFeedbackRequestSeq(messageId);
+    const requestToken: number = this.nextFeedbackRequestToken(messageId);
     this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
       setChatMsgNoteReviewFeedback(message, feedback)
     );
@@ -442,35 +447,34 @@ export struct AgentFloatWindow {
     this.sm.flush(this.sessions)
       .then((result: ChatHistorySaveResult): void => {
         if (!result.success) {
-          this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestSeq);
+          this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestToken);
           this.showToast('反馈保存失败，请稍后重试');
           return;
         }
-        this.clearFeedbackRequestSeq(messageId, requestSeq);
+        this.clearFeedbackRequestToken(messageId, requestToken);
       })
       .catch((): void => {
-        this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestSeq);
+        this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestToken);
         this.showToast('反馈保存失败，请稍后重试');
       });
   };
 
-  private nextFeedbackRequestSeq(messageId: number): number {
-    const current: number | undefined = this.feedbackRequestSeqByMessage.get(messageId);
-    const next: number = current === undefined ? 1 : current + 1;
-    this.feedbackRequestSeqByMessage.set(messageId, next);
-    return next;
+  private nextFeedbackRequestToken(messageId: number): number {
+    this.feedbackRequestCounter += 1;
+    this.feedbackRequestTokenByMessage.set(messageId, this.feedbackRequestCounter);
+    return this.feedbackRequestCounter;
   }
 
-  private clearFeedbackRequestSeq(messageId: number, requestSeq: number): void {
-    const current: number | undefined = this.feedbackRequestSeqByMessage.get(messageId);
-    if (current === requestSeq) {
-      this.feedbackRequestSeqByMessage.delete(messageId);
+  private clearFeedbackRequestToken(messageId: number, requestToken: number): void {
+    const current: number | undefined = this.feedbackRequestTokenByMessage.get(messageId);
+    if (current === requestToken) {
+      this.feedbackRequestTokenByMessage.delete(messageId);
     }
   }
 
-  private isCurrentFeedbackRequest(messageId: number, requestSeq: number): boolean {
-    const current: number | undefined = this.feedbackRequestSeqByMessage.get(messageId);
-    return current === requestSeq;
+  private isCurrentFeedbackRequest(messageId: number, requestToken: number): boolean {
+    const current: number | undefined = this.feedbackRequestTokenByMessage.get(messageId);
+    return current === requestToken;
   }
 
   private feedbackForMessage(messageId: number): NoteReviewFeedback | undefined {
@@ -488,9 +492,9 @@ export struct AgentFloatWindow {
     messageId: number,
     attempted: NoteReviewFeedback,
     previous: NoteReviewFeedback | undefined,
-    requestSeq: number,
+    requestToken: number,
   ): void {
-    if (!this.isCurrentFeedbackRequest(messageId, requestSeq)) {
+    if (!this.isCurrentFeedbackRequest(messageId, requestToken)) {
       return;
     }
     const current: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
