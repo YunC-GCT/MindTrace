@@ -53,28 +53,32 @@ function splitLongReadableText(text: string): string[] {
   let inDollarFormula: boolean = false
   let inParenFormula: boolean = false
   let inBracketFormula: boolean = false
+  let inInlineCode: boolean = false
   while (index < text.length) {
     const ch: string = text.charAt(index)
     const next: string = index + 1 < text.length ? text.charAt(index + 1) : ''
-    if (ch === '$' && next === '$' && !isEscaped(text, index)) {
+    if (ch === '`' && !isEscaped(text, index)) {
+      inInlineCode = !inInlineCode
+    } else if (!inInlineCode && ch === '$' && next === '$' && !isEscaped(text, index)) {
       inDollarFormula = !inDollarFormula
       index += 1
-    } else if (ch === '$' && !isEscaped(text, index)) {
+    } else if (!inInlineCode && ch === '$' && !isEscaped(text, index)) {
       inDollarFormula = !inDollarFormula
-    } else if (ch === '\\' && next === '(' && !isEscaped(text, index)) {
+    } else if (!inInlineCode && ch === '\\' && next === '(' && !isEscaped(text, index)) {
       inParenFormula = true
       index += 1
-    } else if (ch === '\\' && next === ')' && !isEscaped(text, index)) {
+    } else if (!inInlineCode && ch === '\\' && next === ')' && !isEscaped(text, index)) {
       inParenFormula = false
       index += 1
-    } else if (ch === '\\' && next === '[' && !isEscaped(text, index)) {
+    } else if (!inInlineCode && ch === '\\' && next === '[' && !isEscaped(text, index)) {
       inBracketFormula = true
       index += 1
-    } else if (ch === '\\' && next === ']' && !isEscaped(text, index)) {
+    } else if (!inInlineCode && ch === '\\' && next === ']' && !isEscaped(text, index)) {
       inBracketFormula = false
       index += 1
     }
-    const outsideFormula: boolean = !inDollarFormula && !inParenFormula && !inBracketFormula
+    const outsideFormula: boolean = !inInlineCode
+      && !inDollarFormula && !inParenFormula && !inBracketFormula
     if (outsideFormula && isReadableBreak(ch)) {
       safeBreak = index + 1
     }

@@ -16,6 +16,7 @@ import {
   NoteDetailMetricSurface,
   NoteDetailRenderMetrics,
 } from '../../services/NoteDetailRenderMetrics'
+import { MathRenderFailureState } from '../../utils/MathRenderFailureState'
 
 class MathRenderCacheEntry {
   key: string = ''
@@ -219,11 +220,12 @@ export struct MathTextRenderer {
   private heightApplied: boolean = false
   private visibleInViewport: boolean = false
   private formulaVisibleReported: boolean = false
+  private failureState: MathRenderFailureState = new MathRenderFailureState()
 
   aboutToAppear(): void {
     this.renderSeq += 1
     const seq: number = this.renderSeq
-    this.webFailed = false
+    this.resetWebFailure()
     const renderInput: MathRenderInput = this.normalizeForRender(this.text)
     if (renderInput.renderMode === 'plainFallback') {
       this.renderReady = true
@@ -256,7 +258,7 @@ export struct MathTextRenderer {
     this.heightApplied = false
     this.formulaVisibleReported = false
     const seq: number = this.renderSeq
-    this.webFailed = false
+    this.resetWebFailure()
     const renderInput: MathRenderInput = this.normalizeForRender(this.text)
     if (renderInput.renderMode === 'plainFallback') {
       this.lastAppliedKey = ''
@@ -312,12 +314,11 @@ export struct MathTextRenderer {
     this.recordNoteDetailWebWorkStart()
     this.controller.runJavaScript(script)
       .then((heightText: string): void => {
-        if (cacheKey !== this.currentCacheKey()) {
+        if (!this.isCurrentWebWork(cacheKey)) {
           return
         }
-        this.webFailed = false
         const payload: MathRenderPayload = this.parseRenderPayload(heightText)
-        if (payload.height > 0) {
+        if (this.acceptRenderedHeight(payload.height)) {
           const height: number = this.clampHeight(payload.height + 2)
           this.setWebHeight(height, true)
           this.lastAppliedKey = cacheKey
@@ -329,7 +330,7 @@ export struct MathTextRenderer {
       .catch((): void => {
         // renderForCache 因 bridge 返回值超限被 reject (公式多时 encodeURIComponent(innerHTML) 过大)
         // → 降级为 render() 只返高度数字, 自适应设备实际 bridge 上限, 无需硬编码阈值
-        if (cacheKey !== this.currentCacheKey()) {
+        if (!this.isCurrentWebWork(cacheKey)) {
           return
         }
         ChatRenderBenchmarkStats.recordDegradation()
@@ -340,22 +341,21 @@ export struct MathTextRenderer {
         this.recordNoteDetailWebWorkStart()
         this.controller.runJavaScript(fallbackScript)
           .then((heightText: string): void => {
-            if (cacheKey !== this.currentCacheKey()) {
+            if (!this.isCurrentWebWork(cacheKey)) {
               return
             }
-            this.webFailed = false
-            const height: number = this.clampHeight(this.parseRenderedHeight(heightText) + 2)
-            if (!Number.isNaN(height) && height > 0) {
+            const parsedHeight: number = this.parseRenderedHeight(heightText)
+            if (this.acceptRenderedHeight(parsedHeight)) {
+              const height: number = this.clampHeight(parsedHeight + 2)
               this.setWebHeight(height, true)
               this.lastAppliedKey = cacheKey
             }
           })
           .catch((): void => {
-            if (cacheKey === this.currentCacheKey()) {
+            if (this.isCurrentWebWork(cacheKey)) {
               ChatRenderBenchmarkStats.recordDegradation()
               this.recordNoteDetailDegradation()
-              this.webFailed = true
-              this.lastAppliedKey = ''
+              this.activateBridgeFallback()
             }
           })
       })
@@ -366,40 +366,43 @@ export struct MathTextRenderer {
     this.recordNoteDetailWebWorkStart()
     this.controller.runJavaScript(script)
       .then((heightText: string): void => {
-        if (cacheKey !== this.currentCacheKey()) { return }
-        this.webFailed = false
+        if (!this.isCurrentWebWork(cacheKey)) { return }
         const parsed: number = this.parseRenderedHeight(heightText)
-        if (!Number.isNaN(parsed) && parsed > 0) {
+        if (this.acceptRenderedHeight(parsed)) {
           const height: number = this.clampHeight(parsed + 2)
           this.setWebHeight(height, true)
           cached.height = height
+          this.lastAppliedKey = cacheKey
         }
-        this.lastAppliedKey = cacheKey
       })
       .catch((): void => {
         // 缓存 HTML 作为 bridge 输入也可能超限 → 降级为 renderForCache 重新渲染
-        if (cacheKey !== this.currentCacheKey()) { return }
-        const retryScript: string = 'renderForCache(' + JSON.stringify(this.text) + ',' + JSON.stringify(this.profile) + ')'
+        if (!this.isCurrentWebWork(cacheKey)) { return }
+        // Retry with the same normalized MM-MD-v1 input used to build the cache key. Sending
+        // raw text here can reintroduce compatibility delimiters, unsafe HTML, or a bare formula
+        // that the first normalization pass deliberately repaired.
+        const retryInput: MathRenderInput = this.normalizeForRender(this.text)
+        const retryMarkdown: string = this.prepareMarkdownFromResult(retryInput)
+        const retryFn: string = this.forceDisplay ? 'renderFormulaForCache' : 'renderForCache'
+        const retryScript: string = retryFn + '(' + JSON.stringify(retryMarkdown) + ',' + JSON.stringify(this.profile) + ')'
         ChatRenderBenchmarkStats.recordDegradation()
         ChatRenderBenchmarkStats.recordWebWorkStart()
         this.recordNoteDetailDegradation()
         this.recordNoteDetailWebWorkStart()
         this.controller.runJavaScript(retryScript)
           .then((heightText: string): void => {
-            if (cacheKey !== this.currentCacheKey()) { return }
-            this.webFailed = false
+            if (!this.isCurrentWebWork(cacheKey)) { return }
             const payload: MathRenderPayload = this.parseRenderPayload(heightText)
-            if (payload.height > 0) {
+            if (this.acceptRenderedHeight(payload.height)) {
               this.setWebHeight(this.clampHeight(payload.height + 2), true)
               this.lastAppliedKey = cacheKey
             }
           })
           .catch((): void => {
-            if (cacheKey === this.currentCacheKey()) {
+            if (this.isCurrentWebWork(cacheKey)) {
               ChatRenderBenchmarkStats.recordDegradation()
               this.recordNoteDetailDegradation()
-              this.webFailed = true
-              this.lastAppliedKey = ''
+              this.activateBridgeFallback()
             }
           })
       })
@@ -447,6 +450,10 @@ export struct MathTextRenderer {
       return ''
     }
     return this.cacheKey(this.prepareMarkdownFromResult(renderInput))
+  }
+
+  private isCurrentWebWork = (cacheKey: string): boolean => {
+    return !this.failureState.shouldUsePlainFallback() && cacheKey === this.currentCacheKey()
   }
 
   private clampHeight = (height: number): number => {
@@ -510,6 +517,30 @@ export struct MathTextRenderer {
     if (this.metricSurface === 'noteDetail') {
       NoteDetailRenderMetrics.recordRenderExit(event ? event.renderExitReason : -1)
     }
+    this.failureState.recordFailure()
+    this.webFailed = this.failureState.shouldUsePlainFallback()
+    this.lastAppliedKey = ''
+    this.pageReady = false
+  }
+
+  private resetWebFailure = (): void => {
+    this.failureState.reset()
+    this.webFailed = false
+  }
+
+  private acceptRenderedHeight = (height: number): boolean => {
+    const accepted: boolean = this.failureState.acceptHeight(height)
+    this.webFailed = this.failureState.shouldUsePlainFallback()
+    if (!accepted) {
+      this.lastAppliedKey = ''
+    }
+    return accepted
+  }
+
+  private activateBridgeFallback = (): void => {
+    this.failureState.recordFailure()
+    this.webFailed = this.failureState.shouldUsePlainFallback()
+    this.lastAppliedKey = ''
   }
 
   private normalizeForRender = (raw: string): MathRenderInput => {

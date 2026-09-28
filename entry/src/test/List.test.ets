@@ -22,6 +22,7 @@ import intentClassifierNoteMaterialTest from './IntentClassifierNoteMaterial.tes
 import conversationDraftOwnershipTest from './ConversationDraftOwnership.test';
 import conversationWorkflowFailureTest from './ConversationWorkflowFailure.test';
 import noteDetailRenderBaselineTest from './NoteDetailRenderBaseline.test';
+import mathRenderFailureStateTest from './MathRenderFailureState.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -48,4 +49,5 @@ export default function testsuite() {
   conversationDraftOwnershipTest();
   conversationWorkflowFailureTest();
   noteDetailRenderBaselineTest();
+  mathRenderFailureStateTest();
 }
