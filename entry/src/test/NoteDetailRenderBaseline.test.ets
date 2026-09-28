@@ -125,6 +125,7 @@ export default function noteDetailRenderBaselineTest(): void {
       NoteDetailRenderMetrics.recordDraftState()
       expect(NoteDetailRenderMetrics.markStable(1600)).assertFalse()
       expect(NoteDetailRenderMetrics.markStable(1710)).assertTrue()
+      expect(NoteDetailRenderMetrics.markStable(1810)).assertTrue()
 
       const snapshot: NoteDetailRenderMetricsSnapshot = snapshotNoteDetailBenchmark()
       expect(snapshot.surface).assertEqual('noteDetail')

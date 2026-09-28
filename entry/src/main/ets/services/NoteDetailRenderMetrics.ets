@@ -344,6 +344,7 @@ export class NoteDetailRenderMetrics {
 
   public static markStable(timestamp: number = Date.now()): boolean {
     if (!enabled) { return false }
+    if (stableTs >= 0) { return true }
     const lastActivity: number = Math.max(lastScheduledWorkTs, lastHeightChangeTs)
     if (lastActivity < 0 || timestamp - lastActivity < NOTE_DETAIL_STABILITY_QUIET_MS) {
       return false
