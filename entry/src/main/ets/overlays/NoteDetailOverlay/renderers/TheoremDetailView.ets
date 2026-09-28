@@ -29,6 +29,7 @@ import {
 } from '../model/DetailRenderModel'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailRenderSession, DETAIL_RENDER_PRIORITY_NORMAL } from '../components/DetailRenderSession'
 
 const TITLE_STATEMENT: string = '\u5148\u8bfb\uff1a\u5b9a\u7406\u9648\u8ff0'
 const TITLE_CONDITION: string = '\u5148\u6838\u5bf9\uff1a\u6761\u4ef6'
@@ -72,6 +73,7 @@ function theoremModelKey(model: DetailRenderModel): string {
 @Component
 export struct TheoremDetailView {
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @State visibleStage: number = 0
   private renderKey: string = ''
   private renderSeq: number = 0
@@ -112,7 +114,7 @@ export struct TheoremDetailView {
       }
 
       if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
+        DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
         Blank().height(80)
       }
     }
@@ -262,19 +264,20 @@ export struct TheoremDetailView {
     this.renderSeq += 1
     const seq: number = this.renderSeq
     this.visibleStage = 0
-    this.scheduleTheoremStage(seq, 1, 60)
-    this.scheduleTheoremStage(seq, 2, 140)
-    this.scheduleTheoremStage(seq, 3, 240)
+    this.scheduleTheoremStage(seq, 1)
+    this.scheduleTheoremStage(seq, 2)
+    this.scheduleTheoremStage(seq, 3)
   }
 
-  private scheduleTheoremStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
+  private scheduleTheoremStage = (seq: number, stage: number): void => {
+    const taskKey: string = 'theorem|' + this.renderKey + '|stage|' + stage.toString()
+    this.renderSession.enqueue(taskKey, DETAIL_RENDER_PRIORITY_NORMAL + stage, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
       if (this.visibleStage < stage) {
         this.visibleStage = stage
       }
-    }, delay)
+    })
   }
 }

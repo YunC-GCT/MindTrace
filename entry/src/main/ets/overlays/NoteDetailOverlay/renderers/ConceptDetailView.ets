@@ -31,6 +31,7 @@ import {
 } from '../model/DetailRenderModel'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailRenderSession, DETAIL_RENDER_PRIORITY_NORMAL } from '../components/DetailRenderSession'
 
 const TITLE_DEFINITION: string = '\u5148\u8bfb\uff1a\u5b9a\u4e49\u8fb9\u754c'
 const TITLE_PROPERTIES: string = '\u518d\u770b\uff1a\u5224\u65ad\u6027\u8d28'
@@ -70,6 +71,7 @@ function conceptModelKey(model: DetailRenderModel): string {
 @Component
 export struct ConceptDetailView {
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @State visibleStage: number = 0
   private renderKey: string = ''
   private renderSeq: number = 0
@@ -109,7 +111,7 @@ export struct ConceptDetailView {
       }
 
       if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
+        DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
         Blank().height(80)
       }
     }
@@ -239,19 +241,20 @@ export struct ConceptDetailView {
     this.renderSeq += 1
     const seq: number = this.renderSeq
     this.visibleStage = 0
-    this.scheduleConceptStage(seq, 1, 48)
-    this.scheduleConceptStage(seq, 2, 120)
-    this.scheduleConceptStage(seq, 3, 220)
+    this.scheduleConceptStage(seq, 1)
+    this.scheduleConceptStage(seq, 2)
+    this.scheduleConceptStage(seq, 3)
   }
 
-  private scheduleConceptStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
+  private scheduleConceptStage = (seq: number, stage: number): void => {
+    const taskKey: string = 'concept|' + this.renderKey + '|stage|' + stage.toString()
+    this.renderSession.enqueue(taskKey, DETAIL_RENDER_PRIORITY_NORMAL + stage, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
       if (this.visibleStage < stage) {
         this.visibleStage = stage
       }
-    }, delay)
+    })
   }
 }

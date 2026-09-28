@@ -25,6 +25,7 @@ import {
 } from '../model/DetailRenderModel'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailRenderSession, DETAIL_RENDER_PRIORITY_NORMAL } from '../components/DetailRenderSession'
 
 const TITLE_SUMMARY: string = '\u6458\u8981'
 const TITLE_BODY: string = '\u6b63\u6587'
@@ -48,6 +49,7 @@ function fallbackModelKey(model: DetailRenderModel): string {
 @Component
 export struct FallbackDetailView {
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @State visibleStage: number = 0
   private renderKey: string = ''
   private renderSeq: number = 0
@@ -80,7 +82,7 @@ export struct FallbackDetailView {
       }
 
       if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
+        DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
         Blank().height(80)
       }
     }
@@ -162,19 +164,20 @@ export struct FallbackDetailView {
     this.renderSeq += 1
     const seq: number = this.renderSeq
     this.visibleStage = 0
-    this.scheduleFallbackStage(seq, 1, 60)
-    this.scheduleFallbackStage(seq, 2, 140)
-    this.scheduleFallbackStage(seq, 3, 240)
+    this.scheduleFallbackStage(seq, 1)
+    this.scheduleFallbackStage(seq, 2)
+    this.scheduleFallbackStage(seq, 3)
   }
 
-  private scheduleFallbackStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
+  private scheduleFallbackStage = (seq: number, stage: number): void => {
+    const taskKey: string = 'fallback|' + this.renderKey + '|stage|' + stage.toString()
+    this.renderSession.enqueue(taskKey, DETAIL_RENDER_PRIORITY_NORMAL + stage, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
       if (this.visibleStage < stage) {
         this.visibleStage = stage
       }
-    }, delay)
+    })
   }
 }

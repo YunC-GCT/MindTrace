@@ -21,12 +21,13 @@ import {
 import { DetailStepList } from './DetailStepList'
 import { detailLinesSignature } from './DetailSection'
 import {
+  DetailRenderSession,
   DETAIL_RENDER_PRIORITY_NORMAL,
-  enqueueDetailRender,
-} from './DetailRenderQueue'
+} from './DetailRenderSession'
 
 @Component
 export struct DetailStepsSection {
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @Prop @Watch('onItemsChanged') title: string = ''
   @Prop @Watch('onItemsChanged') items: string[] = []
   @Prop accentColor: ResourceColor = MINT
@@ -97,7 +98,7 @@ export struct DetailStepsSection {
       return
     }
     this.contentReady = false
-    enqueueDetailRender(key, DETAIL_RENDER_PRIORITY_NORMAL, (): void => {
+    this.renderSession.enqueue('steps|' + key, DETAIL_RENDER_PRIORITY_NORMAL, (): void => {
       if (seq !== this.renderSeq) {
         return
       }

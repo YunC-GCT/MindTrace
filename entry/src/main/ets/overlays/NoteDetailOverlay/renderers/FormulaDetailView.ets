@@ -29,6 +29,7 @@ import {
 } from '../model/DetailRenderModel'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailRenderSession, DETAIL_RENDER_PRIORITY_NORMAL } from '../components/DetailRenderSession'
 
 const TITLE_EXPRESSION: string = '\u5148\u8bb0\u4f4f\uff1a\u6838\u5fc3\u516c\u5f0f'
 const TITLE_PARAMETERS: string = '\u518d\u786e\u8ba4\uff1a\u53c2\u6570'
@@ -72,6 +73,7 @@ function formulaModelKey(model: DetailRenderModel): string {
 @Component
 export struct FormulaDetailView {
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @State visibleStage: number = 0
   private renderKey: string = ''
   private renderSeq: number = 0
@@ -112,7 +114,7 @@ export struct FormulaDetailView {
       }
 
       if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
+        DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
         Blank().height(80)
       }
     }
@@ -262,19 +264,20 @@ export struct FormulaDetailView {
     this.renderSeq += 1
     const seq: number = this.renderSeq
     this.visibleStage = 0
-    this.scheduleFormulaStage(seq, 1, 60)
-    this.scheduleFormulaStage(seq, 2, 150)
-    this.scheduleFormulaStage(seq, 3, 260)
+    this.scheduleFormulaStage(seq, 1)
+    this.scheduleFormulaStage(seq, 2)
+    this.scheduleFormulaStage(seq, 3)
   }
 
-  private scheduleFormulaStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
+  private scheduleFormulaStage = (seq: number, stage: number): void => {
+    const taskKey: string = 'formula|' + this.renderKey + '|stage|' + stage.toString()
+    this.renderSession.enqueue(taskKey, DETAIL_RENDER_PRIORITY_NORMAL + stage, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
       if (this.visibleStage < stage) {
         this.visibleStage = stage
       }
-    }, delay)
+    })
   }
 }

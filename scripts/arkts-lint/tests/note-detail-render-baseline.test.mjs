@@ -62,7 +62,7 @@ test('NoteDetail metrics expose a surface-isolated run snapshot', () => {
   assert.doesNotMatch(metrics, /ChatMsg|StreamingReplyDocument|ChatHistory|ChatRenderBenchmarkStats/);
 });
 
-test('NoteDetail production surface emits lifecycle metrics without changing scheduler ownership', () => {
+test('NoteDetail production surface preserves lifecycle metrics across instance-session migration', () => {
   const math = read('entry/src/main/ets/shared/atoms/MathTextRenderer.ets');
   const markdown = read('entry/src/main/ets/shared/molecules/MarkdownRenderer.ets');
   const meta = read('entry/src/main/ets/overlays/NoteDetailOverlay/NoteDetailMeta.ets');
@@ -84,7 +84,7 @@ test('NoteDetail production surface emits lifecycle metrics without changing sch
   assert.match(overlay, /NoteDetailRenderMetrics\.recordDeleteConfirm/);
   assert.match(overlay, /NoteDetailRenderMetrics\.recordViewportHeight/);
 
-  assert.doesNotMatch(body, /NoteDetailRenderSession/);
+  assert.match(body, /DetailRenderSession/);
   assert.doesNotMatch(overlay, /maxWebCreatesPerFrame|maxWebWorkMsPerFrame/);
 });
 

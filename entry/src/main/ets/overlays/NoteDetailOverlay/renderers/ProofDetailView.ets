@@ -31,6 +31,7 @@ import {
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailStepList } from '../components/DetailStepList'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailRenderSession, DETAIL_RENDER_PRIORITY_NORMAL } from '../components/DetailRenderSession'
 
 const TITLE_PROPOSITION: string = '\u5148\u8bfb\uff1a\u547d\u9898'
 const TITLE_INSIGHT: string = '\u6293\u4f4f\uff1a\u5173\u952e\u601d\u8def'
@@ -74,6 +75,7 @@ function proofModelKey(model: DetailRenderModel): string {
 @Component
 export struct ProofDetailView {
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @State visibleStage: number = 0
   private renderKey: string = ''
   private renderSeq: number = 0
@@ -111,7 +113,7 @@ export struct ProofDetailView {
       }
 
       if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
+        DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
         Blank().height(80)
       }
     }
@@ -261,19 +263,20 @@ export struct ProofDetailView {
     this.renderSeq += 1
     const seq: number = this.renderSeq
     this.visibleStage = 0
-    this.scheduleProofStage(seq, 1, 90)
-    this.scheduleProofStage(seq, 2, 190)
-    this.scheduleProofStage(seq, 3, 290)
+    this.scheduleProofStage(seq, 1)
+    this.scheduleProofStage(seq, 2)
+    this.scheduleProofStage(seq, 3)
   }
 
-  private scheduleProofStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
+  private scheduleProofStage = (seq: number, stage: number): void => {
+    const taskKey: string = 'proof|' + this.renderKey + '|stage|' + stage.toString()
+    this.renderSession.enqueue(taskKey, DETAIL_RENDER_PRIORITY_NORMAL + stage, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
       if (this.visibleStage < stage) {
         this.visibleStage = stage
       }
-    }, delay)
+    })
   }
 }

@@ -22,7 +22,7 @@ import {
   emptyDetailRenderModel,
 } from './model/DetailRenderModel'
 import { getDetailRenderModel } from './model/DetailRenderCache'
-import { resetDetailRenderQueue } from './components/DetailRenderQueue'
+import { DetailRenderSession } from './components/DetailRenderSession'
 import { NoteDetailRenderMetrics } from '../../services/NoteDetailRenderMetrics'
 import { ConceptDetailView } from './renderers/ConceptDetailView'
 import { TheoremDetailView } from './renderers/TheoremDetailView'
@@ -36,11 +36,10 @@ export struct NoteDetailBody {
   @Prop @Watch('onRenderInputChanged') note: NoteItem = new NoteItem(0, '', '', '', '', 0, '', [], '')
   @Prop @Watch('onRenderInputChanged') unit: KnowledgeUnit | null = null
   @Prop units: KnowledgeUnit[] = []
-  private renderResetKey: string = ''
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
 
   aboutToAppear(): void {
     NoteDetailRenderMetrics.recordBodyMount()
-    this.resetRenderQueueIfNeeded()
   }
 
   aboutToDisappear(): void {
@@ -49,7 +48,6 @@ export struct NoteDetailBody {
 
   onRenderInputChanged(): void {
     NoteDetailRenderMetrics.recordBodyInputChange()
-    this.resetRenderQueueIfNeeded()
   }
 
   build() {
@@ -62,17 +60,17 @@ export struct NoteDetailBody {
   @Builder
   RenderByModel(model: DetailRenderModel) {
     if (model.category === '概念') {
-      ConceptDetailView({ model: model })
+      ConceptDetailView({ model: model, renderSession: this.renderSession })
     } else if (model.category === '定理') {
-      TheoremDetailView({ model: model })
+      TheoremDetailView({ model: model, renderSession: this.renderSession })
     } else if (model.category === '公式') {
-      FormulaDetailView({ model: model })
+      FormulaDetailView({ model: model, renderSession: this.renderSession })
     } else if (model.category === '证明题') {
-      ProofDetailView({ model: model })
+      ProofDetailView({ model: model, renderSession: this.renderSession })
     } else if (model.category === '计算题') {
-      ComputationDetailView({ model: model })
+      ComputationDetailView({ model: model, renderSession: this.renderSession })
     } else {
-      FallbackDetailView({ model: model })
+      FallbackDetailView({ model: model, renderSession: this.renderSession })
     }
   }
 
@@ -81,21 +79,5 @@ export struct NoteDetailBody {
       return emptyDetailRenderModel()
     }
     return getDetailRenderModel(this.note, this.unit, this.units)
-  }
-
-  private resetRenderQueueIfNeeded = (): void => {
-    const key: string = this.currentRenderKey()
-    if (key === this.renderResetKey) {
-      return
-    }
-    this.renderResetKey = key
-    resetDetailRenderQueue()
-  }
-
-  private currentRenderKey = (): string => {
-    if (this.unit !== null) {
-      return this.unit.id + '|' + this.unit.updatedAt.toString() + '|' + this.unit.version.toString()
-    }
-    return this.note.rawId + '|' + this.note.id.toString() + '|' + this.note.date
   }
 }

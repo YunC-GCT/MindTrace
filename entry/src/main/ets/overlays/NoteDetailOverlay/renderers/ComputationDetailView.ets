@@ -31,6 +31,7 @@ import {
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailStepList } from '../components/DetailStepList'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailRenderSession, DETAIL_RENDER_PRIORITY_NORMAL } from '../components/DetailRenderSession'
 
 const COMPUTE_ACCENT: string = '#FF64B7C8'
 const TITLE_PROBLEM: string = '\u5148\u770b\uff1a\u95ee\u9898'
@@ -75,6 +76,7 @@ function computationModelKey(model: DetailRenderModel): string {
 @Component
 export struct ComputationDetailView {
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @State visibleStage: number = 0
   private renderKey: string = ''
   private renderSeq: number = 0
@@ -115,7 +117,7 @@ export struct ComputationDetailView {
       }
 
       if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
+        DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
         Blank().height(80)
       }
     }
@@ -265,19 +267,20 @@ export struct ComputationDetailView {
     this.renderSeq += 1
     const seq: number = this.renderSeq
     this.visibleStage = 0
-    this.scheduleComputationStage(seq, 1, 90)
-    this.scheduleComputationStage(seq, 2, 180)
-    this.scheduleComputationStage(seq, 3, 280)
+    this.scheduleComputationStage(seq, 1)
+    this.scheduleComputationStage(seq, 2)
+    this.scheduleComputationStage(seq, 3)
   }
 
-  private scheduleComputationStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
+  private scheduleComputationStage = (seq: number, stage: number): void => {
+    const taskKey: string = 'computation|' + this.renderKey + '|stage|' + stage.toString()
+    this.renderSession.enqueue(taskKey, DETAIL_RENDER_PRIORITY_NORMAL + stage, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
       if (this.visibleStage < stage) {
         this.visibleStage = stage
       }
-    }, delay)
+    })
   }
 }

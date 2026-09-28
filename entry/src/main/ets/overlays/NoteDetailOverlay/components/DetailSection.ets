@@ -21,9 +21,9 @@ import {
 } from 'common'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import {
+  DetailRenderSession,
   DETAIL_RENDER_PRIORITY_NORMAL,
-  enqueueDetailRender,
-} from './DetailRenderQueue'
+} from './DetailRenderSession'
 
 export function detailTextSignature(text: string): string {
   let hash: number = 5381
@@ -54,6 +54,7 @@ export function detailLinesSignature(items: string[]): string {
 
 @Component
 export struct DetailSection {
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @Prop @Watch('onContentChanged') title: string = ''
   @Prop @Watch('onContentChanged') content: string = ''
   @Prop accentColor: ResourceColor = MINT
@@ -127,7 +128,7 @@ export struct DetailSection {
       return
     }
     this.contentReady = false
-    enqueueDetailRender(key, DETAIL_RENDER_PRIORITY_NORMAL, (): void => {
+    this.renderSession.enqueue('section|' + key, DETAIL_RENDER_PRIORITY_NORMAL, (): void => {
       if (seq !== this.renderSeq) {
         return
       }

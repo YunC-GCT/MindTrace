@@ -27,12 +27,13 @@ import {
   originalSectionText,
 } from '../model/DetailRenderModel'
 import { detailLinesSignature, detailTextSignature } from './DetailSection'
-import { DETAIL_RENDER_PRIORITY_META, enqueueDetailRender } from './DetailRenderQueue'
+import { DetailRenderSession, DETAIL_RENDER_PRIORITY_META } from './DetailRenderSession'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { AppIcon } from '../../../shared/atoms/AppIcon'
 
 @Component
 export struct DetailMetaFooter {
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
   @State contentReady: boolean = false
   @State originalExpanded: boolean = false
@@ -189,7 +190,7 @@ export struct DetailMetaFooter {
       return
     }
     this.contentReady = false
-    enqueueDetailRender(key, DETAIL_RENDER_PRIORITY_META, (): void => {
+    this.renderSession.enqueue('meta|' + key, DETAIL_RENDER_PRIORITY_META, (): void => {
       if (seq !== this.renderSeq) {
         return
       }

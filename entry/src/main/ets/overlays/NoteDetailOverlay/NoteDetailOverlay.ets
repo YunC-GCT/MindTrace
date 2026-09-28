@@ -38,6 +38,10 @@ import {
   NOTE_DETAIL_STABILITY_QUIET_MS,
   NoteDetailRenderMetrics,
 } from '../../services/NoteDetailRenderMetrics'
+import {
+  DetailRenderSession,
+  buildDetailRenderSessionKey,
+} from './components/DetailRenderSession'
 
 @Component
 export struct NoteDetailOverlay {
@@ -65,12 +69,14 @@ export struct NoteDetailOverlay {
   @State showDiscardConfirm: boolean = false
   private summaryBuilder: ContentExcerptBuilder = new ContentExcerptBuilder()
   private stableObservationSeq: number = 0
+  private renderSession: DetailRenderSession = new DetailRenderSession('noteDetail')
   onClose: () => void = (): void => {}
   onEdit: (id: number) => void = (_id: number): void => {}
   onDelete: (id: string) => void = (_id: string): void => {}
   onSaved: (unit: KnowledgeUnit) => void = (_unit: KnowledgeUnit): void => {}
 
   aboutToAppear(): void {
+    this.syncRenderSession()
     if (this.generatedDraft !== null) {
       NoteDetailRenderMetrics.recordDraftState()
       NoteDetailRenderMetrics.recordEditState()
@@ -87,6 +93,7 @@ export struct NoteDetailOverlay {
 
   aboutToDisappear(): void {
     this.stableObservationSeq += 1
+    this.renderSession.cancel()
   }
 
   build() {
@@ -137,7 +144,12 @@ export struct NoteDetailOverlay {
                   units: this.units,
                   topInset: this.sbh,
                 })
-                NoteDetailBody({ note: this.note, unit: this.effectiveUnit(), units: this.units })
+                NoteDetailBody({
+                  note: this.note,
+                  unit: this.effectiveUnit(),
+                  units: this.units,
+                  renderSession: this.renderSession,
+                })
               }
               .width('100%')
               .onAreaChange((_oldValue: Area, newValue: Area): void => {
@@ -313,6 +325,7 @@ export struct NoteDetailOverlay {
     if (this.localUnit !== null && this.localUnit.id !== this.currentNoteRawId()) {
       this.localUnit = null
     }
+    this.syncRenderSession()
   }
 
   private diffLabel = (item: IncrementalDiffItem): string => {
@@ -439,6 +452,7 @@ export struct NoteDetailOverlay {
       const committed: KnowledgeUnit = result.unit
       this.invalidateSavedRenderCaches(committed)
       this.localUnit = committed
+      this.syncRenderSession()
       this.isEditing = false
       this.showDiscardConfirm = false
       this.loadForm(committed)
@@ -635,6 +649,10 @@ export struct NoteDetailOverlay {
 
   private currentNoteRawId = (): string => {
     return this.note.rawId.length > 0 ? this.note.rawId : this.note.id.toString()
+  }
+
+  private syncRenderSession = (): void => {
+    this.renderSession.activate(buildDetailRenderSessionKey(this.note, this.effectiveUnit()))
   }
 
   private mockShare = (): void => {
