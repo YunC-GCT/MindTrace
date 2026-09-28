@@ -21,6 +21,9 @@ import conversationTitleServiceTest from './ConversationTitleService.test';
 import intentClassifierNoteMaterialTest from './IntentClassifierNoteMaterial.test';
 import conversationDraftOwnershipTest from './ConversationDraftOwnership.test';
 import conversationWorkflowFailureTest from './ConversationWorkflowFailure.test';
+import noteDetailRenderBaselineTest from './NoteDetailRenderBaseline.test';
+import mathRenderFailureStateTest from './MathRenderFailureState.test';
+import detailRenderSessionTest from './DetailRenderSession.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -46,4 +49,7 @@ export default function testsuite() {
   intentClassifierNoteMaterialTest();
   conversationDraftOwnershipTest();
   conversationWorkflowFailureTest();
+  noteDetailRenderBaselineTest();
+  mathRenderFailureStateTest();
+  detailRenderSessionTest();
 }

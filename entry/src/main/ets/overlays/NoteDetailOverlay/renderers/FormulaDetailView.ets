@@ -29,6 +29,15 @@ import {
 } from '../model/DetailRenderModel'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailReleaseGate } from '../DetailReleaseGate'
+import {
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+} from '../components/DetailRenderSession'
 
 const TITLE_EXPRESSION: string = '\u5148\u8bb0\u4f4f\uff1a\u6838\u5fc3\u516c\u5f0f'
 const TITLE_PARAMETERS: string = '\u518d\u786e\u8ba4\uff1a\u53c2\u6570'
@@ -71,50 +80,92 @@ function formulaModelKey(model: DetailRenderModel): string {
 
 @Component
 export struct FormulaDetailView {
-  @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
-  @State visibleStage: number = 0
-  private renderKey: string = ''
-  private renderSeq: number = 0
-
-  aboutToAppear(): void {
-    this.resetFormulaFlow()
-  }
-
-  aboutToDisappear(): void {
-    this.renderSeq += 1
-  }
-
-  onModelChanged(): void {
-    this.resetFormulaFlow()
-  }
+  @Prop model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
 
   build() {
     Column() {
-      this.ExpressionBlock(sectionTextByKeys(this.model, FORMULA_EXPRESSION_KEYS))
-      this.ParameterBlock(sectionTextByKeys(this.model, FORMULA_PARAMETER_KEYS))
-
-      if (this.visibleStage >= 1) {
-        this.RangeBlock(sectionTextByKeys(this.model, FORMULA_RANGE_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('formula|' + formulaModelKey(this.model) + '|expression'),
+        releaseContent: sectionTextByKeys(this.model, FORMULA_EXPRESSION_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.ExpressionBlock(sectionTextByKeys(this.model, FORMULA_EXPRESSION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
-      if (this.visibleStage >= 2) {
-        this.DerivationBlock(sectionTextByKeys(this.model, FORMULA_DERIVATION_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('formula|' + formulaModelKey(this.model) + '|parameters'),
+        releaseContent: sectionTextByKeys(this.model, FORMULA_PARAMETER_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.ParameterBlock(sectionTextByKeys(this.model, FORMULA_PARAMETER_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
-      if (this.visibleStage >= 3) {
-        this.NotesBlock(sectionTextByKeys(this.model, FORMULA_NOTES_KEYS))
-        this.SupplementBlock(unmatchedSectionText(this.model, FORMULA_TEMPLATE_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('formula|' + formulaModelKey(this.model) + '|range'),
+        releaseContent: sectionTextByKeys(this.model, FORMULA_RANGE_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+      }) {
+        this.RangeBlock(sectionTextByKeys(this.model, FORMULA_RANGE_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('formula|' + formulaModelKey(this.model) + '|derivation'),
+        releaseContent: sectionTextByKeys(this.model, FORMULA_DERIVATION_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.DerivationBlock(sectionTextByKeys(this.model, FORMULA_DERIVATION_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('formula|' + formulaModelKey(this.model) + '|notes'),
+        releaseContent: sectionTextByKeys(this.model, FORMULA_NOTES_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.NotesBlock(sectionTextByKeys(this.model, FORMULA_NOTES_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('formula|' + formulaModelKey(this.model) + '|supplement'),
+        releaseContent: unmatchedSectionText(this.model, FORMULA_TEMPLATE_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.SupplementBlock(unmatchedSectionText(this.model, FORMULA_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, FORMULA_TEMPLATE_KEYS)
         && unmatchedSectionText(this.model, FORMULA_TEMPLATE_KEYS).length === 0) {
-        this.ExpressionBlock(fallbackMainText(this.model))
+        DetailReleaseGate({
+          renderSession: this.renderSession,
+          releaseKey: this.renderSession.scopeKey('formula|' + formulaModelKey(this.model) + '|fallback'),
+          releaseContent: fallbackMainText(this.model),
+          releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+          formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        }) {
+          this.ExpressionBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+        }
       }
 
-      if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
-        Blank().height(80)
-      }
+      DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
+      Blank().height(80)
     }
     .width('100%')
     .padding({ left: 20, right: 20, top: S_2, bottom: S_2 })
@@ -135,7 +186,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  ExpressionBlock(content: string) {
+  ExpressionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_FORMULA, PINK)
@@ -145,7 +196,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -155,7 +212,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  ParameterBlock(content: string) {
+  ParameterBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_SYMBOL, PINK)
@@ -165,7 +222,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -175,7 +238,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  RangeBlock(content: string) {
+  RangeBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_RANGE, PINK)
@@ -185,7 +248,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -195,7 +264,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  DerivationBlock(content: string) {
+  DerivationBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_DERIVE, TEXT_3)
@@ -205,7 +274,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -215,7 +290,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  NotesBlock(content: string) {
+  NotesBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_WARN, TEXT_3)
@@ -225,7 +300,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -235,7 +316,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -244,7 +325,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -253,28 +340,4 @@ export struct FormulaDetailView {
     }
   }
 
-  private resetFormulaFlow = (): void => {
-    const key: string = formulaModelKey(this.model)
-    if (key === this.renderKey) {
-      return
-    }
-    this.renderKey = key
-    this.renderSeq += 1
-    const seq: number = this.renderSeq
-    this.visibleStage = 0
-    this.scheduleFormulaStage(seq, 1, 60)
-    this.scheduleFormulaStage(seq, 2, 150)
-    this.scheduleFormulaStage(seq, 3, 260)
-  }
-
-  private scheduleFormulaStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
-      if (seq !== this.renderSeq) {
-        return
-      }
-      if (this.visibleStage < stage) {
-        this.visibleStage = stage
-      }
-    }, delay)
-  }
 }

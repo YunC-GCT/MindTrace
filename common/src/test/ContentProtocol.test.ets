@@ -24,6 +24,49 @@ export default function contentProtocolTest(): void {
       expect(result.normalizedText).assertEqual('当 $a>0$ 时开口向上。');
     });
 
+    it('protects_inline_code_from_formula_and_html_normalization', 0, () => {
+      const source: string = '示例 `price=$5` 与 `\\(x^2\\)`，正文 $y^2$。';
+      const result: ContentValidationResult = new ContentProtocol().normalizeNoteMarkdown(source);
+      expect(result.fallbackRequired).assertFalse();
+      expect(result.normalizedText).assertEqual(source);
+      expect(result.issues.indexOf('compat_inline_delimiter')).assertEqual(-1);
+    });
+
+    it('keeps_consecutive_closed_display_formulas_distinct', 0, () => {
+      const source: string = '连续公式：$$a=b$$$$c=d$$。';
+      const result: ContentValidationResult = new ContentProtocol().normalizeNoteMarkdown(source);
+      expect(result.fallbackRequired).assertFalse();
+      expect(result.normalizedText).assertContain('$$\na=b\n$$');
+      expect(result.normalizedText).assertContain('$$\nc=d\n$$');
+      expect(result.normalizedText.indexOf('a=b')).assertTrue();
+      expect(result.normalizedText.indexOf('c=d')).assertTrue();
+    });
+
+    it('keeps_complex_display_formula_fixture_renderable', 0, () => {
+      const source: string = '$$\n'
+        + '\\frac{1}{2}+\\sqrt{x}+\\sum_{i=1}^{n}i+\\int_0^1 x^2 dx\n'
+        + '\\begin{matrix}a&b\\\\c&d\\end{matrix}\n'
+        + '\\begin{cases}x,&x>0\\\\-x,&x\\le 0\\end{cases}\n'
+        + '\\begin{aligned}f(x)&=x^2\\\\g(x)&=2x\\end{aligned}\n'
+        + '$$';
+      const result: ContentValidationResult = new ContentProtocol().normalizeNoteMarkdown(source);
+      expect(result.fallbackRequired).assertFalse();
+      expect(result.normalizedText).assertContain('\\frac{1}{2}');
+      expect(result.normalizedText).assertContain('\\begin{matrix}');
+      expect(result.normalizedText).assertContain('\\begin{cases}');
+      expect(result.normalizedText).assertContain('\\begin{aligned}');
+    });
+
+    it('falls_back_on_unbalanced_left_right_without_dropping_plain_text_contract', 0, () => {
+      const source: string = '前文 $\\left( x+1$ 后文，后续公式 $y^2$。';
+      const result: ContentValidationResult = new ContentProtocol().normalizeNoteMarkdown(source);
+      expect(result.fallbackRequired).assertTrue();
+      expect(result.normalizedText).assertContain('前文');
+      expect(result.normalizedText).assertContain('后文');
+      expect(result.normalizedText).assertContain('后续公式 $y^2$');
+      expect(result.issues.indexOf('unbalanced_left_right') >= 0).assertTrue();
+    });
+
     it('normalizes_mixed_formula_delimiters_to_mm_md', 0, () => {
       const source: string = '行内 \\(x^2\\)，展示：\n'
         + '\\[\n\\frac{1}{2}\n\\]\n'

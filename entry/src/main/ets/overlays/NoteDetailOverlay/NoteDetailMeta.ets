@@ -21,15 +21,30 @@ import {
   glassSurfaceColor,
 } from 'common'
 import { MathTextRenderer } from '../../shared/atoms/MathTextRenderer'
+import { NoteDetailRenderMetrics } from '../../services/NoteDetailRenderMetrics'
+import {
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+} from './components/DetailRenderSession'
 
 const SUMMARY_BUILDER: ContentExcerptBuilder = new ContentExcerptBuilder()
 const CONTENT_PROTOCOL: ContentProtocol = new ContentProtocol()
 
 @Component
 export struct NoteDetailMeta {
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @Prop note: NoteItem = new NoteItem(0, '', '', '', '', 0, '', [], '')
   @Prop unit: KnowledgeUnit | null = null
   @Prop units: KnowledgeUnit[] = []
+  @Prop topInset: number = 0
+
+  aboutToAppear(): void {
+    NoteDetailRenderMetrics.recordHeaderMount()
+  }
+
+  aboutToDisappear(): void {
+    NoteDetailRenderMetrics.recordHeaderUnmount()
+  }
 
   build() {
     Column() {
@@ -81,6 +96,9 @@ export struct NoteDetailMeta {
           MathTextRenderer({
             text: this.subtitleText(),
             profile: 'preview',
+            metricSurface: 'noteDetail',
+            renderBudget: this.renderSession,
+            renderPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
             textColor: TEXT_3,
             formulaColor: TEXT_3,
             fontSize: F_SM,
@@ -114,7 +132,7 @@ export struct NoteDetailMeta {
       .margin({ top: S_4 })
     }
     .width('100%')
-    .padding({ left: S_5, right: S_5, top: S_4, bottom: S_5 })
+    .padding({ left: S_5, right: S_5, top: this.topInset + S_4, bottom: S_5 })
     .backgroundColor(BG_CARD)
     .linearGradient({
       angle: 145,

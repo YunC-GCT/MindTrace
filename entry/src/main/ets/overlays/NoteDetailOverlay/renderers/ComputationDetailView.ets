@@ -31,6 +31,15 @@ import {
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailStepList } from '../components/DetailStepList'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailReleaseGate } from '../DetailReleaseGate'
+import {
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+} from '../components/DetailRenderSession'
 
 const COMPUTE_ACCENT: string = '#FF64B7C8'
 const TITLE_PROBLEM: string = '\u5148\u770b\uff1a\u95ee\u9898'
@@ -74,50 +83,92 @@ function computationModelKey(model: DetailRenderModel): string {
 
 @Component
 export struct ComputationDetailView {
-  @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
-  @State visibleStage: number = 0
-  private renderKey: string = ''
-  private renderSeq: number = 0
-
-  aboutToAppear(): void {
-    this.resetComputationFlow()
-  }
-
-  aboutToDisappear(): void {
-    this.renderSeq += 1
-  }
-
-  onModelChanged(): void {
-    this.resetComputationFlow()
-  }
+  @Prop model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
 
   build() {
     Column() {
-      this.ProblemBlock(sectionTextByKeys(this.model, COMPUTE_PROBLEM_KEYS))
-      this.StepsBlock(splitReadableLines(sectionTextByKeys(this.model, COMPUTE_STEPS_KEYS)))
-      this.AnswerBlock(sectionTextByKeys(this.model, COMPUTE_ANSWER_KEYS))
-
-      if (this.visibleStage >= 1) {
-        this.MethodBlock(sectionTextByKeys(this.model, COMPUTE_METHOD_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('computation|' + computationModelKey(this.model) + '|problem'),
+        releaseContent: sectionTextByKeys(this.model, COMPUTE_PROBLEM_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.ProblemBlock(sectionTextByKeys(this.model, COMPUTE_PROBLEM_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
-      if (this.visibleStage >= 2) {
-        this.NotesBlock(sectionTextByKeys(this.model, COMPUTE_NOTES_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('computation|' + computationModelKey(this.model) + '|steps'),
+        releaseContent: sectionTextByKeys(this.model, COMPUTE_STEPS_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.StepsBlock(splitReadableLines(sectionTextByKeys(this.model, COMPUTE_STEPS_KEYS)),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
-      if (this.visibleStage >= 3) {
-        this.SupplementBlock(unmatchedSectionText(this.model, COMPUTE_TEMPLATE_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('computation|' + computationModelKey(this.model) + '|answer'),
+        releaseContent: sectionTextByKeys(this.model, COMPUTE_ANSWER_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.AnswerBlock(sectionTextByKeys(this.model, COMPUTE_ANSWER_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('computation|' + computationModelKey(this.model) + '|method'),
+        releaseContent: sectionTextByKeys(this.model, COMPUTE_METHOD_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+      }) {
+        this.MethodBlock(sectionTextByKeys(this.model, COMPUTE_METHOD_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('computation|' + computationModelKey(this.model) + '|notes'),
+        releaseContent: sectionTextByKeys(this.model, COMPUTE_NOTES_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.NotesBlock(sectionTextByKeys(this.model, COMPUTE_NOTES_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('computation|' + computationModelKey(this.model) + '|supplement'),
+        releaseContent: unmatchedSectionText(this.model, COMPUTE_TEMPLATE_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.SupplementBlock(unmatchedSectionText(this.model, COMPUTE_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, COMPUTE_TEMPLATE_KEYS)
         && unmatchedSectionText(this.model, COMPUTE_TEMPLATE_KEYS).length === 0) {
-        this.ProblemBlock(fallbackMainText(this.model))
+        DetailReleaseGate({
+          renderSession: this.renderSession,
+          releaseKey: this.renderSession.scopeKey('computation|' + computationModelKey(this.model) + '|fallback'),
+          releaseContent: fallbackMainText(this.model),
+          releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+          formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        }) {
+          this.ProblemBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+        }
       }
 
-      if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
-        Blank().height(80)
-      }
+      DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
+      Blank().height(80)
     }
     .width('100%')
     .padding({ left: 20, right: 20, top: S_2, bottom: S_2 })
@@ -138,7 +189,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  ProblemBlock(content: string) {
+  ProblemBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ComputeTag(LABEL_PROBLEM, COMPUTE_ACCENT)
@@ -148,7 +199,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -158,7 +215,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  StepsBlock(items: string[]) {
+  StepsBlock(items: string[], renderPriority: number) {
     if (items.length > 0) {
       Column() {
         this.ComputeTag(LABEL_STEPS, COMPUTE_ACCENT)
@@ -168,7 +225,12 @@ export struct ComputationDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        DetailStepList({ items: items, accentColor: COMPUTE_ACCENT })
+        DetailStepList({
+          renderSession: this.renderSession,
+          renderPriority: renderPriority,
+          items: items,
+          accentColor: COMPUTE_ACCENT,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -178,7 +240,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  AnswerBlock(content: string) {
+  AnswerBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ComputeTag(LABEL_ANSWER, COMPUTE_ACCENT)
@@ -188,7 +250,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -198,7 +266,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  MethodBlock(content: string) {
+  MethodBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ComputeTag(LABEL_METHOD, TEXT_3)
@@ -208,7 +276,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -218,7 +292,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  NotesBlock(content: string) {
+  NotesBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ComputeTag(LABEL_MISTAKE, TEXT_3)
@@ -228,7 +302,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -238,7 +318,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -247,7 +327,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -256,28 +342,4 @@ export struct ComputationDetailView {
     }
   }
 
-  private resetComputationFlow = (): void => {
-    const key: string = computationModelKey(this.model)
-    if (key === this.renderKey) {
-      return
-    }
-    this.renderKey = key
-    this.renderSeq += 1
-    const seq: number = this.renderSeq
-    this.visibleStage = 0
-    this.scheduleComputationStage(seq, 1, 90)
-    this.scheduleComputationStage(seq, 2, 180)
-    this.scheduleComputationStage(seq, 3, 280)
-  }
-
-  private scheduleComputationStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
-      if (seq !== this.renderSeq) {
-        return
-      }
-      if (this.visibleStage < stage) {
-        this.visibleStage = stage
-      }
-    }, delay)
-  }
 }

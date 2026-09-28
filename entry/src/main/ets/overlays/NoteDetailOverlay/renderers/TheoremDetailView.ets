@@ -29,6 +29,15 @@ import {
 } from '../model/DetailRenderModel'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailReleaseGate } from '../DetailReleaseGate'
+import {
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+} from '../components/DetailRenderSession'
 
 const TITLE_STATEMENT: string = '\u5148\u8bfb\uff1a\u5b9a\u7406\u9648\u8ff0'
 const TITLE_CONDITION: string = '\u5148\u6838\u5bf9\uff1a\u6761\u4ef6'
@@ -71,50 +80,92 @@ function theoremModelKey(model: DetailRenderModel): string {
 
 @Component
 export struct TheoremDetailView {
-  @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
-  @State visibleStage: number = 0
-  private renderKey: string = ''
-  private renderSeq: number = 0
-
-  aboutToAppear(): void {
-    this.resetTheoremFlow()
-  }
-
-  aboutToDisappear(): void {
-    this.renderSeq += 1
-  }
-
-  onModelChanged(): void {
-    this.resetTheoremFlow()
-  }
+  @Prop model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
 
   build() {
     Column() {
-      this.StatementBlock(sectionTextByKeys(this.model, THEOREM_STATEMENT_KEYS))
-      this.ConclusionBlock(sectionTextByKeys(this.model, THEOREM_CONCLUSION_KEYS))
-
-      if (this.visibleStage >= 1) {
-        this.ConditionBlock(sectionTextByKeys(this.model, THEOREM_CONDITION_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('theorem|' + theoremModelKey(this.model) + '|statement'),
+        releaseContent: sectionTextByKeys(this.model, THEOREM_STATEMENT_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.StatementBlock(sectionTextByKeys(this.model, THEOREM_STATEMENT_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
-      if (this.visibleStage >= 2) {
-        this.InsightBlock(sectionTextByKeys(this.model, THEOREM_INSIGHT_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('theorem|' + theoremModelKey(this.model) + '|conclusion'),
+        releaseContent: sectionTextByKeys(this.model, THEOREM_CONCLUSION_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.ConclusionBlock(sectionTextByKeys(this.model, THEOREM_CONCLUSION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
-      if (this.visibleStage >= 3) {
-        this.ApplicationBlock(sectionTextByKeys(this.model, THEOREM_APPLICATION_KEYS))
-        this.SupplementBlock(unmatchedSectionText(this.model, THEOREM_TEMPLATE_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('theorem|' + theoremModelKey(this.model) + '|condition'),
+        releaseContent: sectionTextByKeys(this.model, THEOREM_CONDITION_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+      }) {
+        this.ConditionBlock(sectionTextByKeys(this.model, THEOREM_CONDITION_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('theorem|' + theoremModelKey(this.model) + '|insight'),
+        releaseContent: sectionTextByKeys(this.model, THEOREM_INSIGHT_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.InsightBlock(sectionTextByKeys(this.model, THEOREM_INSIGHT_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('theorem|' + theoremModelKey(this.model) + '|application'),
+        releaseContent: sectionTextByKeys(this.model, THEOREM_APPLICATION_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.ApplicationBlock(sectionTextByKeys(this.model, THEOREM_APPLICATION_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('theorem|' + theoremModelKey(this.model) + '|supplement'),
+        releaseContent: unmatchedSectionText(this.model, THEOREM_TEMPLATE_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.SupplementBlock(unmatchedSectionText(this.model, THEOREM_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, THEOREM_TEMPLATE_KEYS)
         && unmatchedSectionText(this.model, THEOREM_TEMPLATE_KEYS).length === 0) {
-        this.StatementBlock(fallbackMainText(this.model))
+        DetailReleaseGate({
+          renderSession: this.renderSession,
+          releaseKey: this.renderSession.scopeKey('theorem|' + theoremModelKey(this.model) + '|fallback'),
+          releaseContent: fallbackMainText(this.model),
+          releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+          formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        }) {
+          this.StatementBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+        }
       }
 
-      if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
-        Blank().height(80)
-      }
+      DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
+      Blank().height(80)
     }
     .width('100%')
     .padding({ left: 20, right: 20, top: S_2, bottom: S_2 })
@@ -135,7 +186,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  StatementBlock(content: string) {
+  StatementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_STATEMENT, PURPLE)
@@ -145,7 +196,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -155,7 +212,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  ConclusionBlock(content: string) {
+  ConclusionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_CONCLUSION, PURPLE)
@@ -165,7 +222,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -175,7 +238,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  ConditionBlock(content: string) {
+  ConditionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_CONDITION, PURPLE)
@@ -185,7 +248,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -195,7 +264,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  InsightBlock(content: string) {
+  InsightBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_REASON, TEXT_3)
@@ -205,7 +274,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -215,7 +290,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  ApplicationBlock(content: string) {
+  ApplicationBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_APPLY, TEXT_3)
@@ -225,7 +300,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -235,7 +316,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -244,7 +325,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -253,28 +340,4 @@ export struct TheoremDetailView {
     }
   }
 
-  private resetTheoremFlow = (): void => {
-    const key: string = theoremModelKey(this.model)
-    if (key === this.renderKey) {
-      return
-    }
-    this.renderKey = key
-    this.renderSeq += 1
-    const seq: number = this.renderSeq
-    this.visibleStage = 0
-    this.scheduleTheoremStage(seq, 1, 60)
-    this.scheduleTheoremStage(seq, 2, 140)
-    this.scheduleTheoremStage(seq, 3, 240)
-  }
-
-  private scheduleTheoremStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
-      if (seq !== this.renderSeq) {
-        return
-      }
-      if (this.visibleStage < stage) {
-        this.visibleStage = stage
-      }
-    }, delay)
-  }
 }

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import {
-  BG_DARK, BG_CARD, TEXT, DANGER, MINT, TEXT_2, TEXT_3, BORDER,
+  BG_DARK, BG_CARD, TEXT, DANGER_BRIGHT, MINT, TEXT_2, TEXT_3, BORDER,
   F_SM, F_MD,
   W_SEMIBOLD, W_BOLD,
   R_MD,
@@ -22,7 +22,6 @@ import {
 import { promptAction } from '@kit.ArkUI'
 import { common } from '@kit.AbilityKit'
 import { NoteEditService } from '../../services/NoteEditService'
-import { NoteCloseButton } from './NoteCloseButton'
 import { NoteDetailMeta } from './NoteDetailMeta'
 import { NoteDetailBody } from './NoteDetailBody'
 import { NoteActionBar } from './NoteActionBar'
@@ -35,6 +34,14 @@ import {
   KnowledgeUnitWriteResult,
 } from '../../models/KnowledgeUnitWriteModels'
 import { NoteDraftReadyEvent, IncrementalDiffItem } from 'common'
+import {
+  NOTE_DETAIL_STABILITY_QUIET_MS,
+  NoteDetailRenderMetrics,
+} from '../../services/NoteDetailRenderMetrics'
+import {
+  DetailRenderSession,
+  buildDetailRenderSessionKey,
+} from './components/DetailRenderSession'
 
 @Component
 export struct NoteDetailOverlay {
@@ -61,21 +68,32 @@ export struct NoteDetailOverlay {
   @State saving: boolean = false
   @State showDiscardConfirm: boolean = false
   private summaryBuilder: ContentExcerptBuilder = new ContentExcerptBuilder()
+  private stableObservationSeq: number = 0
+  private renderSession: DetailRenderSession = new DetailRenderSession('noteDetail')
   onClose: () => void = (): void => {}
   onEdit: (id: number) => void = (_id: number): void => {}
   onDelete: (id: string) => void = (_id: string): void => {}
   onSaved: (unit: KnowledgeUnit) => void = (_unit: KnowledgeUnit): void => {}
 
   aboutToAppear(): void {
+    this.syncRenderSession()
     if (this.generatedDraft !== null) {
+      NoteDetailRenderMetrics.recordDraftState()
+      NoteDetailRenderMetrics.recordEditState()
       this.isEditing = true
       this.loadForm(this.generatedDraft.candidate)
       return
     }
     if (this.isCreating) {
+      NoteDetailRenderMetrics.recordEditState()
       this.isEditing = true
       this.loadForm(null)
     }
+  }
+
+  aboutToDisappear(): void {
+    this.stableObservationSeq += 1
+    this.renderSession.cancel()
   }
 
   build() {
@@ -84,41 +102,10 @@ export struct NoteDetailOverlay {
         .onClick((): void => this.closeOrCancel())
 
       Column() {
-        Row().width('100%').height(this.sbh).backgroundColor(BG_DARK)
-
-        Row() {
-          NoteCloseButton({ onClose: (): void => this.closeOrCancel() })
-
-          Column() {
-            Text(this.modeTitle())
-              .fontSize(F_MD)
-              .fontWeight(W_SEMIBOLD)
-              .fontColor(TEXT)
-              .lineHeight(20)
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .width('100%')
-          }
-          .layoutWeight(1)
-          .margin({ left: 12, right: 12 })
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Start)
-
-          if (!this.isCreating && !this.isEditing && this.effectiveUnit() !== null) {
-            NoteIconButton({
-              name: 'trash',
-              color: DANGER,
-              onTap: (): void => this.confirmDelete(),
-            })
-          }
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .alignItems(VerticalAlign.Center)
-
         Scroll() {
           Column() {
             if (this.isEditing) {
+              Row().width('100%').height(this.sbh).backgroundColor(BG_DARK)
               NoteEditForm({
                 titleText: this.titleText,
                 summaryText: this.summaryText,
@@ -147,13 +134,28 @@ export struct NoteDetailOverlay {
                 }
               }
             } else if (!this.canRenderReadOnlyDetail()) {
+              Row().width('100%').height(this.sbh).backgroundColor(BG_DARK)
               this.LoadingState()
             } else {
               Column() {
-                NoteDetailMeta({ note: this.note, unit: this.effectiveUnit(), units: this.units })
-                NoteDetailBody({ note: this.note, unit: this.effectiveUnit(), units: this.units })
+                NoteDetailMeta({
+                  note: this.note,
+                  unit: this.effectiveUnit(),
+                  units: this.units,
+                  topInset: this.sbh,
+                  renderSession: this.renderSession,
+                })
+                NoteDetailBody({
+                  note: this.note,
+                  unit: this.effectiveUnit(),
+                  units: this.units,
+                  renderSession: this.renderSession,
+                })
               }
               .width('100%')
+              .onAreaChange((_oldValue: Area, newValue: Area): void => {
+                this.observeReadOnlyContent(Number(newValue.height))
+              })
             }
           }
           .width('100%')
@@ -162,6 +164,9 @@ export struct NoteDetailOverlay {
         .width('100%')
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
+        .onAreaChange((_oldValue: Area, newValue: Area): void => {
+          this.observeReadOnlyViewport(Number(newValue.height))
+        })
 
         if (this.isEditing) {
           Row() {
@@ -196,6 +201,7 @@ export struct NoteDetailOverlay {
           .backgroundColor(BG_DARK)
         } else if (this.effectiveUnit() !== null) {
           NoteActionBar({
+            onDelete: (): void => this.confirmDelete(),
             onEdit: (): void => this.startEdit(),
             onShare: (): void => this.mockShare(),
           })
@@ -284,7 +290,7 @@ export struct NoteDetailOverlay {
             .textAlign(TextAlign.Center)
             .borderRadius(R_MD)
             .backgroundColor(MINT)
-            .onClick((): void => this.discardEdit())
+            .onClick((): void => this.confirmDiscardEdit())
         }
         .width('100%')
       }
@@ -316,22 +322,11 @@ export struct NoteDetailOverlay {
   }
 
   onDetailInputChanged(): void {
+    this.stableObservationSeq += 1
     if (this.localUnit !== null && this.localUnit.id !== this.currentNoteRawId()) {
       this.localUnit = null
     }
-  }
-
-  private modeTitle = (): string => {
-    if (this.generatedDraft !== null) {
-      return '预览 AI 笔记草稿'
-    }
-    if (this.isCreating) {
-      return '新建笔记'
-    }
-    if (this.isEditing) {
-      return '编辑笔记'
-    }
-    return '笔记详情'
+    this.syncRenderSession()
   }
 
   private diffLabel = (item: IncrementalDiffItem): string => {
@@ -355,6 +350,7 @@ export struct NoteDetailOverlay {
     }
     this.loadForm(current)
     this.isEditing = true
+    NoteDetailRenderMetrics.recordEditState()
     this.onEdit(this.note.id)
   }
 
@@ -397,6 +393,11 @@ export struct NoteDetailOverlay {
     }
     this.isEditing = false
     this.loadForm(this.effectiveUnit())
+  }
+
+  private confirmDiscardEdit = (): void => {
+    NoteDetailRenderMetrics.recordDiscardConfirm()
+    this.discardEdit()
   }
 
   private closeOrCancel = (): void => {
@@ -452,6 +453,7 @@ export struct NoteDetailOverlay {
       const committed: KnowledgeUnit = result.unit
       this.invalidateSavedRenderCaches(committed)
       this.localUnit = committed
+      this.syncRenderSession()
       this.isEditing = false
       this.showDiscardConfirm = false
       this.loadForm(committed)
@@ -650,11 +652,57 @@ export struct NoteDetailOverlay {
     return this.note.rawId.length > 0 ? this.note.rawId : this.note.id.toString()
   }
 
+  private syncRenderSession = (): void => {
+    this.renderSession.activate(buildDetailRenderSessionKey(this.note, this.effectiveUnit()))
+  }
+
   private mockShare = (): void => {
     promptAction.showToast({ message: '分享功能暂未开放', duration: 1500 })
   }
 
   private confirmDelete = (): void => {
-    this.onDelete(this.note.rawId.length > 0 ? this.note.rawId : this.note.id.toString())
+    const noteId: string = this.note.rawId.length > 0 ? this.note.rawId : this.note.id.toString()
+    promptAction.showDialog({
+      title: '删除笔记？',
+      message: '删除后无法恢复，请确认是否继续。',
+      buttons: [
+        { text: '取消', color: TEXT_3 },
+        { text: '删除', color: DANGER_BRIGHT },
+      ],
+    }).then((result): void => {
+      if (result.index === 1) {
+        NoteDetailRenderMetrics.recordDeleteConfirm()
+        this.onDelete(noteId)
+      }
+    }).catch((): void => {
+      promptAction.showToast({ message: '无法打开删除确认', duration: 1200 })
+    })
+  }
+
+  private observeReadOnlyViewport = (height: number): void => {
+    if (!NoteDetailRenderMetrics.isEnabled()) {
+      return
+    }
+    NoteDetailRenderMetrics.recordViewportHeight(height)
+  }
+
+  private observeReadOnlyContent = (height: number): void => {
+    if (!NoteDetailRenderMetrics.isEnabled()) {
+      return
+    }
+    NoteDetailRenderMetrics.recordContentHeight(height)
+    this.stableObservationSeq += 1
+    this.scheduleStabilityProbe(this.stableObservationSeq)
+  }
+
+  private scheduleStabilityProbe = (seq: number): void => {
+    setTimeout((): void => {
+      if (seq !== this.stableObservationSeq || !NoteDetailRenderMetrics.isEnabled()) {
+        return
+      }
+      if (!NoteDetailRenderMetrics.markStable()) {
+        this.scheduleStabilityProbe(seq)
+      }
+    }, NOTE_DETAIL_STABILITY_QUIET_MS)
   }
 }

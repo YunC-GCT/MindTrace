@@ -31,6 +31,15 @@ import {
 } from '../model/DetailRenderModel'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailReleaseGate } from '../DetailReleaseGate'
+import {
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+} from '../components/DetailRenderSession'
 
 const TITLE_DEFINITION: string = '\u5148\u8bfb\uff1a\u5b9a\u4e49\u8fb9\u754c'
 const TITLE_PROPERTIES: string = '\u518d\u770b\uff1a\u5224\u65ad\u6027\u8d28'
@@ -69,49 +78,81 @@ function conceptModelKey(model: DetailRenderModel): string {
 
 @Component
 export struct ConceptDetailView {
-  @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
-  @State visibleStage: number = 0
-  private renderKey: string = ''
-  private renderSeq: number = 0
-
-  aboutToAppear(): void {
-    this.resetConceptFlow()
-  }
-
-  aboutToDisappear(): void {
-    this.renderSeq += 1
-  }
-
-  onModelChanged(): void {
-    this.resetConceptFlow()
-  }
+  @Prop model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
 
   build() {
     Column() {
-      this.DefinitionBlock(sectionTextByKeys(this.model, CONCEPT_DEFINITION_KEYS))
-
-      if (this.visibleStage >= 1) {
-        this.PropertiesBlock(sectionTextByKeys(this.model, CONCEPT_PROPERTIES_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('concept|' + conceptModelKey(this.model) + '|definition'),
+        releaseContent: sectionTextByKeys(this.model, CONCEPT_DEFINITION_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.DefinitionBlock(sectionTextByKeys(this.model, CONCEPT_DEFINITION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
-      if (this.visibleStage >= 2) {
-        this.ExamplesBlock(sectionTextByKeys(this.model, CONCEPT_EXAMPLES_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('concept|' + conceptModelKey(this.model) + '|properties'),
+        releaseContent: sectionTextByKeys(this.model, CONCEPT_PROPERTIES_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+      }) {
+        this.PropertiesBlock(sectionTextByKeys(this.model, CONCEPT_PROPERTIES_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
       }
 
-      if (this.visibleStage >= 3) {
-        this.RelatedBlock(sectionTextByKeys(this.model, CONCEPT_RELATED_KEYS))
-        this.SupplementBlock(unmatchedSectionText(this.model, CONCEPT_TEMPLATE_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('concept|' + conceptModelKey(this.model) + '|examples'),
+        releaseContent: sectionTextByKeys(this.model, CONCEPT_EXAMPLES_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.ExamplesBlock(sectionTextByKeys(this.model, CONCEPT_EXAMPLES_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('concept|' + conceptModelKey(this.model) + '|related'),
+        releaseContent: sectionTextByKeys(this.model, CONCEPT_RELATED_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.RelatedBlock(sectionTextByKeys(this.model, CONCEPT_RELATED_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('concept|' + conceptModelKey(this.model) + '|supplement'),
+        releaseContent: unmatchedSectionText(this.model, CONCEPT_TEMPLATE_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.SupplementBlock(unmatchedSectionText(this.model, CONCEPT_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, CONCEPT_TEMPLATE_KEYS)
         && unmatchedSectionText(this.model, CONCEPT_TEMPLATE_KEYS).length === 0) {
-        this.DefinitionBlock(fallbackMainText(this.model))
+        DetailReleaseGate({
+          renderSession: this.renderSession,
+          releaseKey: this.renderSession.scopeKey('concept|' + conceptModelKey(this.model) + '|fallback'),
+          releaseContent: fallbackMainText(this.model),
+          releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+          formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        }) {
+          this.DefinitionBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+        }
       }
 
-      if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
-        Blank().height(80)
-      }
+      DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
+      Blank().height(80)
     }
     .width('100%')
     .padding({ left: 20, right: 20, top: S_2, bottom: S_2 })
@@ -132,7 +173,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  DefinitionBlock(content: string) {
+  DefinitionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ConceptLabel(LABEL_DEFINITION, MINT)
@@ -142,7 +183,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -152,7 +199,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  PropertiesBlock(content: string) {
+  PropertiesBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ConceptLabel(LABEL_CHECK, MINT)
@@ -162,7 +209,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -172,7 +225,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  ExamplesBlock(content: string) {
+  ExamplesBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ConceptLabel(LABEL_EXAMPLE, MINT)
@@ -182,7 +235,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -192,7 +251,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  RelatedBlock(content: string) {
+  RelatedBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ConceptLabel(LABEL_LINK, TEXT_3)
@@ -202,7 +261,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -212,7 +277,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -221,7 +286,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -230,28 +301,4 @@ export struct ConceptDetailView {
     }
   }
 
-  private resetConceptFlow = (): void => {
-    const key: string = conceptModelKey(this.model)
-    if (key === this.renderKey) {
-      return
-    }
-    this.renderKey = key
-    this.renderSeq += 1
-    const seq: number = this.renderSeq
-    this.visibleStage = 0
-    this.scheduleConceptStage(seq, 1, 48)
-    this.scheduleConceptStage(seq, 2, 120)
-    this.scheduleConceptStage(seq, 3, 220)
-  }
-
-  private scheduleConceptStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
-      if (seq !== this.renderSeq) {
-        return
-      }
-      if (this.visibleStage < stage) {
-        this.visibleStage = stage
-      }
-    }, delay)
-  }
 }

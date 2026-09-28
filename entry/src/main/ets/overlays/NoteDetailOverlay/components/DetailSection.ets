@@ -21,9 +21,10 @@ import {
 } from 'common'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import {
-  DETAIL_RENDER_PRIORITY_NORMAL,
-  enqueueDetailRender,
-} from './DetailRenderQueue'
+  DetailContentRenderGuard,
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+} from './DetailRenderSession'
 
 export function detailTextSignature(text: string): string {
   let hash: number = 5381
@@ -54,13 +55,15 @@ export function detailLinesSignature(items: string[]): string {
 
 @Component
 export struct DetailSection {
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
+  @Prop renderPriority: number = DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT
   @Prop @Watch('onContentChanged') title: string = ''
   @Prop @Watch('onContentChanged') content: string = ''
   @Prop accentColor: ResourceColor = MINT
   @Prop @Watch('onContentChanged') emphasized: boolean = false
   @State contentReady: boolean = false
   private renderSeq: number = 0
-  private contentRenderKey: string = ''
+  private renderGuard: DetailContentRenderGuard = new DetailContentRenderGuard()
 
   aboutToAppear(): void {
     this.resetContentRender()
@@ -68,6 +71,7 @@ export struct DetailSection {
 
   aboutToDisappear(): void {
     this.renderSeq += 1
+    this.renderGuard.interrupt()
   }
 
   onContentChanged(): void {
@@ -100,7 +104,13 @@ export struct DetailSection {
           .margin({ bottom: S_2 })
         }
 
-        MarkdownRenderer({ text: this.content, progressive: true })
+        MarkdownRenderer({
+          text: this.content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: this.renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -112,25 +122,27 @@ export struct DetailSection {
   private resetContentRender = (): void => {
     const content: string = this.content.trim()
     const key: string = this.title + '|' + detailTextSignature(content) + '|' + (this.emphasized ? '1' : '0')
-    if (key === this.contentRenderKey) {
+    if (!this.renderGuard.shouldEnqueue(key, this.contentReady)) {
       return
     }
-    this.contentRenderKey = key
     this.renderSeq += 1
     const seq: number = this.renderSeq
     if (content.length === 0) {
+      this.renderGuard.settle()
       this.contentReady = false
       return
     }
     if (this.emphasized) {
+      this.renderGuard.settle()
       this.contentReady = true
       return
     }
     this.contentReady = false
-    enqueueDetailRender(key, DETAIL_RENDER_PRIORITY_NORMAL, (): void => {
+    this.renderSession.enqueue('section|' + key, DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
+      this.renderGuard.settle()
       this.contentReady = true
     })
   }

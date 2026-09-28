@@ -93,6 +93,8 @@ export struct AgentFloatWindow {
   @Prop @Watch('onShowChange') show: boolean = false;
   onClose: () => void = (): void => {};
   @Prop @Watch('onPendingImageChange') pendingImageUri: string = '';
+  @Prop benchmarkFixtureMode: boolean = false;
+  @Prop benchmarkFixtureMessages: ChatMsg[] = [];
 
   @State @Watch('onMessagesChange') messages: ChatMsg[] = [];
   @State keyboardHeight: number = 0;
@@ -128,8 +130,13 @@ export struct AgentFloatWindow {
   // ===== 生命周期 =====
 
   aboutToAppear(): void {
-    this.loadHistory();
-    this.initKeyboard();
+    if (this.benchmarkFixtureMode) {
+      this.messages = this.benchmarkFixtureMessages.slice();
+      this.activeSessionTitle = 'NoteDetail 离线性能基线';
+    } else {
+      this.loadHistory();
+      this.initKeyboard();
+    }
     if (this.show) {
       this.overlayVisible = true;
       this.maskOpacity = 1;
@@ -142,8 +149,10 @@ export struct AgentFloatWindow {
     if (this.mainWindow) {
       this.mainWindow.off('keyboardHeightChange');
     }
-    this.sync();
-    this.sm.flush(this.sessions).catch((): void => {});
+    if (!this.benchmarkFixtureMode) {
+      this.sync();
+      this.sm.flush(this.sessions).catch((): void => {});
+    }
   }
   onShowChange(): void {
     if (this.show) {
