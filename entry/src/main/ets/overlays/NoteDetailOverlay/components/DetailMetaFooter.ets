@@ -149,7 +149,13 @@ export struct DetailMetaFooter {
         .width('100%')
         .height(44)
 
-      MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+      MarkdownRenderer({
+        text: content,
+        progressive: false,
+        profile: 'note',
+        renderBudget: this.renderSession,
+        renderPriority: DETAIL_RENDER_PRIORITY_META,
+      })
     }
     .width('100%')
     .border({ width: { top: 0.5 }, color: BORDER })

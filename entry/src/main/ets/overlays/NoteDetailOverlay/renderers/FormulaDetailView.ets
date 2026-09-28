@@ -92,7 +92,8 @@ export struct FormulaDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.ExpressionBlock(sectionTextByKeys(this.model, FORMULA_EXPRESSION_KEYS))
+        this.ExpressionBlock(sectionTextByKeys(this.model, FORMULA_EXPRESSION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -102,7 +103,8 @@ export struct FormulaDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.ParameterBlock(sectionTextByKeys(this.model, FORMULA_PARAMETER_KEYS))
+        this.ParameterBlock(sectionTextByKeys(this.model, FORMULA_PARAMETER_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -112,7 +114,8 @@ export struct FormulaDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
         formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
       }) {
-        this.RangeBlock(sectionTextByKeys(this.model, FORMULA_RANGE_KEYS))
+        this.RangeBlock(sectionTextByKeys(this.model, FORMULA_RANGE_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
       }
 
       DetailReleaseGate({
@@ -122,7 +125,8 @@ export struct FormulaDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.DerivationBlock(sectionTextByKeys(this.model, FORMULA_DERIVATION_KEYS))
+        this.DerivationBlock(sectionTextByKeys(this.model, FORMULA_DERIVATION_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       DetailReleaseGate({
@@ -132,7 +136,8 @@ export struct FormulaDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.NotesBlock(sectionTextByKeys(this.model, FORMULA_NOTES_KEYS))
+        this.NotesBlock(sectionTextByKeys(this.model, FORMULA_NOTES_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       DetailReleaseGate({
@@ -142,7 +147,8 @@ export struct FormulaDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.SupplementBlock(unmatchedSectionText(this.model, FORMULA_TEMPLATE_KEYS))
+        this.SupplementBlock(unmatchedSectionText(this.model, FORMULA_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, FORMULA_TEMPLATE_KEYS)
@@ -154,7 +160,7 @@ export struct FormulaDetailView {
           releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
           formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
         }) {
-          this.ExpressionBlock(fallbackMainText(this.model))
+          this.ExpressionBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
         }
       }
 
@@ -180,7 +186,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  ExpressionBlock(content: string) {
+  ExpressionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_FORMULA, PINK)
@@ -190,7 +196,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -200,7 +212,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  ParameterBlock(content: string) {
+  ParameterBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_SYMBOL, PINK)
@@ -210,7 +222,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -220,7 +238,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  RangeBlock(content: string) {
+  RangeBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_RANGE, PINK)
@@ -230,7 +248,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -240,7 +264,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  DerivationBlock(content: string) {
+  DerivationBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_DERIVE, TEXT_3)
@@ -250,7 +274,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -260,7 +290,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  NotesBlock(content: string) {
+  NotesBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.FormulaTag(LABEL_WARN, TEXT_3)
@@ -270,7 +300,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -280,7 +316,7 @@ export struct FormulaDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -289,7 +325,13 @@ export struct FormulaDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })

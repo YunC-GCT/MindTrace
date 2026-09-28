@@ -28,6 +28,7 @@ import {
 @Component
 export struct DetailStepsSection {
   @Prop renderSession: DetailRenderSession = new DetailRenderSession()
+  @Prop renderPriority: number = DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT
   @Prop @Watch('onItemsChanged') title: string = ''
   @Prop @Watch('onItemsChanged') items: string[] = []
   @Prop accentColor: ResourceColor = MINT
@@ -72,7 +73,12 @@ export struct DetailStepsSection {
         .alignItems(VerticalAlign.Center)
         .margin({ bottom: S_2 })
 
-        DetailStepList({ items: this.items, accentColor: this.accentColor })
+        DetailStepList({
+          renderSession: this.renderSession,
+          renderPriority: this.renderPriority,
+          items: this.items,
+          accentColor: this.accentColor,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })

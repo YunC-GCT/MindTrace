@@ -143,6 +143,7 @@ export struct NoteDetailOverlay {
                   unit: this.effectiveUnit(),
                   units: this.units,
                   topInset: this.sbh,
+                  renderSession: this.renderSession,
                 })
                 NoteDetailBody({
                   note: this.note,

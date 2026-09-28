@@ -55,6 +55,7 @@ export function detailLinesSignature(items: string[]): string {
 @Component
 export struct DetailSection {
   @Prop renderSession: DetailRenderSession = new DetailRenderSession()
+  @Prop renderPriority: number = DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT
   @Prop @Watch('onContentChanged') title: string = ''
   @Prop @Watch('onContentChanged') content: string = ''
   @Prop accentColor: ResourceColor = MINT
@@ -101,7 +102,13 @@ export struct DetailSection {
           .margin({ bottom: S_2 })
         }
 
-        MarkdownRenderer({ text: this.content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: this.content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: this.renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })

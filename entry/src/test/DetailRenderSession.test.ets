@@ -1,5 +1,5 @@
 /**
- * DetailRenderSession.test.ets — #186 实例级详情渲染会话测试
+ * DetailRenderSession.test.ets — #186/#187 实例会话与公式预算测试
  *
  * 路径: entry/src/test/DetailRenderSession.test.ets
  * 职责: 验证 session 身份、generation、优先级、取消和实例隔离。
@@ -25,6 +25,13 @@ import {
   buildDetailRenderSessionKey,
 } from '../main/ets/overlays/NoteDetailOverlay/components/DetailRenderSession'
 import { NoteItem, KnowledgeUnit, DifficultyLevel, ReviewStatus } from 'common'
+import {
+  MathRenderPreparationMemo,
+  PreparedMathRender,
+  buildMathRenderPreparationKey,
+  buildNormalizedMathRenderScript,
+} from '../main/ets/services/MathRenderBudget'
+import type { MathRenderWorkComplete } from '../main/ets/services/MathRenderBudget'
 
 class FakeDetailRenderTimer implements DetailRenderTimer {
   callbacks: Array<() => void> = []
@@ -206,6 +213,150 @@ export default function detailRenderSessionTest(): void {
       expect(runs).assertEqual(2)
       expect(timer.pendingCount()).assertEqual(0)
       expect(session.metricSurface()).assertEqual('noteDetail')
+    })
+
+    it('admits_at_most_one_web_create_per_frame', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      const order: string[] = []
+      session.activate('note-a|web-create-budget')
+      session.enqueueWebCreate('first', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (): void => { order.push('first') })
+      session.enqueueWebCreate('second', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (): void => { order.push('second') })
+      session.enqueueWebCreate('third', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (): void => { order.push('third') })
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('first')
+      expect(session.pendingWebCount()).assertEqual(2)
+      expect(timer.delays[0]).assertEqual(16)
+      expect(timer.delays[1]).assertEqual(16)
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('first|second')
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('first|second|third')
+    })
+
+    it('measures_formula_work_and_waits_for_async_completion', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      let workRuns: number = 0
+      let firstComplete: MathRenderWorkComplete | null = null
+      session.activate('note-a|web-work-budget')
+      session.enqueueWebWork('first', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderWorkComplete): void => {
+          workRuns += 1
+          firstComplete = complete
+        })
+      session.enqueueWebWork('second', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderWorkComplete): void => {
+          workRuns += 1
+          complete(16)
+        })
+      timer.flushOne()
+      expect(workRuns).assertEqual(1)
+      expect(session.pendingWebCount()).assertEqual(1)
+      expect(timer.pendingCount()).assertEqual(0)
+      if (firstComplete !== null) {
+        firstComplete(16)
+      }
+      expect(workRuns).assertEqual(1)
+      expect(timer.pendingCount()).assertEqual(1)
+      timer.flushOne()
+      expect(workRuns).assertEqual(2)
+    })
+
+    it('uses_remaining_measured_budget_before_waiting_for_next_frame', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      const order: string[] = []
+      session.activate('note-a|measured-work-budget')
+      session.enqueueWebWork('first', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderWorkComplete): void => {
+          order.push('first')
+          complete(5)
+        })
+      session.enqueueWebWork('second', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderWorkComplete): void => {
+          order.push('second')
+          complete(11)
+        })
+      session.enqueueWebWork('third', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderWorkComplete): void => {
+          order.push('third')
+          complete(1)
+        })
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('first|second')
+      expect(session.pendingWebCount()).assertEqual(1)
+      expect(timer.pendingCount()).assertEqual(1)
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('first|second|third')
+    })
+
+    it('does_not_deduplicate_identical_formula_instance_keys', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      let creates: number = 0
+      session.activate('note-a|identical-formulas')
+      session.enqueueWebCreate('same-cache-key|1', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (): void => { creates += 1 })
+      session.enqueueWebCreate('same-cache-key|1', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (): void => { creates += 1 })
+      timer.flushOne()
+      timer.flushOne()
+      expect(creates).assertEqual(2)
+    })
+
+    it('prioritizes_visible_formula_admission_and_cancels_stale_web_work', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      const order: string[] = []
+      session.activate('note-a|web-priority')
+      session.enqueueWebCreate('offscreen', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (): void => { order.push('offscreen') })
+      session.enqueueWebCreate('visible', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (): void => { order.push('visible') })
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('visible')
+      session.activate('note-b|web-priority')
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('visible')
+      expect(session.pendingWebCount()).assertEqual(0)
+    })
+
+    it('memoizes_unchanged_preparation_and_invalidates_each_contract_dimension', 0, () => {
+      const memo: MathRenderPreparationMemo = new MathRenderPreparationMemo()
+      let factoryRuns: number = 0
+      const resolvePrepared = (key: string): PreparedMathRender => memo.resolve(key, (): PreparedMathRender => {
+        factoryRuns += 1
+        const prepared: PreparedMathRender = new PreparedMathRender()
+        prepared.markdown = key
+        return prepared
+      })
+      const baseKey: string = buildMathRenderPreparationKey('  $x$  ', 'note', false, 'MM-MD-v1', 'v2')
+      const first: PreparedMathRender = resolvePrepared(baseKey)
+      const unchanged: PreparedMathRender = resolvePrepared(baseKey)
+      expect(first === unchanged).assertTrue()
+      expect(factoryRuns).assertEqual(1)
+
+      resolvePrepared(buildMathRenderPreparationKey('$y$', 'note', false, 'MM-MD-v1', 'v2'))
+      resolvePrepared(buildMathRenderPreparationKey('$y$', 'preview', false, 'MM-MD-v1', 'v2'))
+      resolvePrepared(buildMathRenderPreparationKey('$y$', 'preview', true, 'MM-MD-v1', 'v2'))
+      resolvePrepared(buildMathRenderPreparationKey('$y$', 'preview', true, 'MM-MD-v2', 'v2'))
+      resolvePrepared(buildMathRenderPreparationKey('$y$', 'preview', true, 'MM-MD-v2', 'v3'))
+      expect(factoryRuns).assertEqual(6)
+    })
+
+    it('cold_and_retry_scripts_share_the_normalized_prepared_value', 0, () => {
+      const prepared: PreparedMathRender = new PreparedMathRender()
+      prepared.markdown = '$normalized$'
+      const coldScript: string = buildNormalizedMathRenderScript(prepared, 'note', false)
+      const retryScript: string = buildNormalizedMathRenderScript(prepared, 'note', false)
+      const displayScript: string = buildNormalizedMathRenderScript(prepared, 'note', true)
+      expect(coldScript).assertEqual('renderForCache("$normalized$","note")')
+      expect(retryScript).assertEqual(coldScript)
+      expect(displayScript).assertEqual('renderFormulaForCache("$normalized$","note")')
     })
 
     it('session_key_changes_with_identity_revision_and_content', 0, () => {

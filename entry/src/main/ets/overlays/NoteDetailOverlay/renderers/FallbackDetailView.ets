@@ -73,11 +73,10 @@ export struct FallbackDetailView {
                 releasePriority: index === 0
                   ? DETAIL_RENDER_PRIORITY_VISIBLE_TEXT
                   : (index === 1 ? DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT : DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT),
-                formulaPriority: index === 0
-                  ? DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA
-                  : (index === 1 ? DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT : DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA),
+                formulaPriority: this.formulaPriorityForIndex(index),
               }) {
-                this.SourceSection(section.title, section.content, index)
+                this.SourceSection(section.title, section.content, index,
+                  this.formulaPriorityForIndex(index))
               }
             }
           },
@@ -91,7 +90,8 @@ export struct FallbackDetailView {
           releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
           formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
         }) {
-          this.SourceSection(this.model.summary.length > 0 ? TITLE_SUMMARY : TITLE_BODY, fallbackMainText(this.model), 0)
+          this.SourceSection(this.model.summary.length > 0 ? TITLE_SUMMARY : TITLE_BODY,
+            fallbackMainText(this.model), 0, DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
         }
       }
 
@@ -126,7 +126,7 @@ export struct FallbackDetailView {
   }
 
   @Builder
-  SourceSection(title: string, content: string, index: number) {
+  SourceSection(title: string, content: string, index: number, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.SourceLabel(index)
@@ -136,7 +136,13 @@ export struct FallbackDetailView {
           .fontColor(index === 0 ? TEXT : TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: index === 0 ? S_3 : S_4, bottom: index === 0 ? S_4 : S_3 })
@@ -154,4 +160,10 @@ export struct FallbackDetailView {
     return false
   }
 
+  private formulaPriorityForIndex = (index: number): number => {
+    if (index === 0) {
+      return DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA
+    }
+    return index === 1 ? DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT : DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA
+  }
 }

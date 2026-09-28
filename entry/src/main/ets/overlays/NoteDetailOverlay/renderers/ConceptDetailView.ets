@@ -90,7 +90,8 @@ export struct ConceptDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.DefinitionBlock(sectionTextByKeys(this.model, CONCEPT_DEFINITION_KEYS))
+        this.DefinitionBlock(sectionTextByKeys(this.model, CONCEPT_DEFINITION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -100,7 +101,8 @@ export struct ConceptDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
         formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
       }) {
-        this.PropertiesBlock(sectionTextByKeys(this.model, CONCEPT_PROPERTIES_KEYS))
+        this.PropertiesBlock(sectionTextByKeys(this.model, CONCEPT_PROPERTIES_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
       }
 
       DetailReleaseGate({
@@ -110,7 +112,8 @@ export struct ConceptDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.ExamplesBlock(sectionTextByKeys(this.model, CONCEPT_EXAMPLES_KEYS))
+        this.ExamplesBlock(sectionTextByKeys(this.model, CONCEPT_EXAMPLES_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       DetailReleaseGate({
@@ -120,7 +123,8 @@ export struct ConceptDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.RelatedBlock(sectionTextByKeys(this.model, CONCEPT_RELATED_KEYS))
+        this.RelatedBlock(sectionTextByKeys(this.model, CONCEPT_RELATED_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       DetailReleaseGate({
@@ -130,7 +134,8 @@ export struct ConceptDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.SupplementBlock(unmatchedSectionText(this.model, CONCEPT_TEMPLATE_KEYS))
+        this.SupplementBlock(unmatchedSectionText(this.model, CONCEPT_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, CONCEPT_TEMPLATE_KEYS)
@@ -142,7 +147,7 @@ export struct ConceptDetailView {
           releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
           formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
         }) {
-          this.DefinitionBlock(fallbackMainText(this.model))
+          this.DefinitionBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
         }
       }
 
@@ -168,7 +173,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  DefinitionBlock(content: string) {
+  DefinitionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ConceptLabel(LABEL_DEFINITION, MINT)
@@ -178,7 +183,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -188,7 +199,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  PropertiesBlock(content: string) {
+  PropertiesBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ConceptLabel(LABEL_CHECK, MINT)
@@ -198,7 +209,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -208,7 +225,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  ExamplesBlock(content: string) {
+  ExamplesBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ConceptLabel(LABEL_EXAMPLE, MINT)
@@ -218,7 +235,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -228,7 +251,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  RelatedBlock(content: string) {
+  RelatedBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ConceptLabel(LABEL_LINK, TEXT_3)
@@ -238,7 +261,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -248,7 +277,7 @@ export struct ConceptDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -257,7 +286,13 @@ export struct ConceptDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })

@@ -21,9 +21,13 @@ import {
   W_BOLD,
 } from 'common'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
+import { DEFAULT_MATH_RENDER_PRIORITY } from '../../../services/MathRenderBudget'
+import { DetailRenderSession } from './DetailRenderSession'
 
 @Component
 export struct DetailStepList {
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
+  @Prop renderPriority: number = DEFAULT_MATH_RENDER_PRIORITY
   @Prop items: string[] = []
   @Prop accentColor: ResourceColor = MINT
 
@@ -45,7 +49,13 @@ export struct DetailStepList {
               .margin({ right: S_2 })
 
             Column() {
-              MarkdownRenderer({ text: item, progressive: false, profile: 'note' })
+              MarkdownRenderer({
+                text: item,
+                progressive: false,
+                profile: 'note',
+                renderBudget: this.renderSession,
+                renderPriority: this.renderPriority,
+              })
             }
             .layoutWeight(1)
           }

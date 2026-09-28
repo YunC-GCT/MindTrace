@@ -20,6 +20,8 @@ import { MarkdownBlock } from '../../utils/MarkdownParser'
 import { MarkdownInlineSegment } from '../../utils/MarkdownInlineParser'
 import { cachedParseMarkdown, cachedParseMarkdownInline } from '../../utils/MarkdownParseCache'
 import { MathTextRenderer } from '../atoms/MathTextRenderer'
+import { DEFAULT_MATH_RENDER_PRIORITY } from '../../services/MathRenderBudget'
+import type { MathRenderBudget } from '../../services/MathRenderBudget'
 
 const MARKDOWN_PARSE_DEFER_MS: number = 16
 const MARKDOWN_IMMEDIATE_PARSE_LIMIT: number = 280
@@ -30,6 +32,8 @@ export struct MarkdownRenderer {
   @Prop @Watch('onTextChanged') text: string = ''
   @Prop progressive: boolean = true
   @Prop profile: 'note' | 'chat' = 'note'
+  @Prop renderBudget: MathRenderBudget | null = null
+  @Prop renderPriority: number = DEFAULT_MATH_RENDER_PRIORITY
   @State parseReady: boolean = false
   @State parsedBlocks: MarkdownBlock[] = []
   private renderSeq: number = 0
@@ -110,6 +114,8 @@ export struct MarkdownRenderer {
         text: text,
         profile: this.mathProfile(),
         metricSurface: this.profile === 'note' ? 'noteDetail' : 'none',
+        renderBudget: this.renderBudget,
+        renderPriority: this.renderPriority,
         textColor: TEXT_2,
         formulaColor: TEXT_2,
         formulaBackground: 'rgba(255,255,255,0.04)',
@@ -225,6 +231,8 @@ export struct MarkdownRenderer {
       text: block.text,
       profile: this.mathProfile(),
       metricSurface: this.profile === 'note' ? 'noteDetail' : 'none',
+      renderBudget: this.renderBudget,
+      renderPriority: this.renderPriority,
       forceDisplay: true,
       textColor: TEXT_2,
       formulaColor: TEXT_2,

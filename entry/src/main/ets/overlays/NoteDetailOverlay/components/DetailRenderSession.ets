@@ -15,6 +15,11 @@
 
 import { NoteItem, KnowledgeUnit } from 'common'
 import type { NoteDetailMetricSurface } from '../../../services/NoteDetailRenderMetrics'
+import type {
+  MathRenderBudget,
+  MathRenderWork,
+  MathRenderWorkComplete,
+} from '../../../services/MathRenderBudget'
 
 export const DETAIL_RENDER_PRIORITY_VISIBLE_TEXT: number = 0
 export const DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA: number = 5
@@ -22,6 +27,8 @@ export const DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT: number = 10
 export const DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT: number = 20
 export const DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA: number = 25
 export const DETAIL_RENDER_PRIORITY_META: number = 30
+export const DETAIL_RENDER_MAX_WEB_CREATES_PER_FRAME: number = 1
+export const DETAIL_RENDER_MAX_WEB_WORK_MS_PER_FRAME: number = 16
 
 const DETAIL_RENDER_FRAME_DELAY_MS: number = 16
 const DETAIL_RENDER_FAST_DELAY_MS: number = 0
@@ -54,6 +61,25 @@ class DetailRenderJob {
   }
 }
 
+class DetailWebRenderJob {
+  key: string = ''
+  kind: 'create' | 'work' = 'create'
+  priority: number = DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT
+  sequence: number = 0
+  generation: number = 0
+  run: MathRenderWork = (_complete: MathRenderWorkComplete): void => {}
+
+  constructor(key: string, kind: 'create' | 'work', priority: number,
+    sequence: number, generation: number, run: MathRenderWork) {
+    this.key = key
+    this.kind = kind
+    this.priority = priority
+    this.sequence = sequence
+    this.generation = generation
+    this.run = run
+  }
+}
+
 function textSignature(text: string): string {
   let hash: number = 5381
   let index: number = 0
@@ -77,13 +103,17 @@ export function buildDetailRenderSessionKey(note: NoteItem, unit: KnowledgeUnit 
   return identity + '|' + note.date + '|' + textSignature(content)
 }
 
-export class DetailRenderSession {
+export class DetailRenderSession implements MathRenderBudget {
   private jobs: DetailRenderJob[] = []
+  private webJobs: DetailWebRenderJob[] = []
   private completedKeys: string[] = []
   private sequence: number = 0
   private sessionGeneration: number = 0
   private activeKey: string = ''
   private timerActive: boolean = false
+  private webTimerActive: boolean = false
+  private webWorkInFlight: boolean = false
+  private webWorkToken: number = 0
   private cancelled: boolean = false
   private surface: NoteDetailMetricSurface
   private timer: DetailRenderTimer
@@ -137,6 +167,16 @@ export class DetailRenderSession {
     this.scheduleNext()
   }
 
+  enqueueWebCreate(key: string, priority: number, run: () => void): void {
+    this.enqueueWeb(key, 'create', priority, (_complete: MathRenderWorkComplete): void => {
+      run()
+    })
+  }
+
+  enqueueWebWork(key: string, priority: number, run: MathRenderWork): void {
+    this.enqueueWeb(key, 'work', priority, run)
+  }
+
   isCurrent(sessionKey: string, generation: number): boolean {
     return !this.cancelled && this.activeKey === sessionKey
       && this.sessionGeneration === generation
@@ -162,11 +202,127 @@ export class DetailRenderSession {
     return this.jobs.length
   }
 
+  pendingWebCount(): number {
+    return this.webJobs.length
+  }
+
   private invalidatePending(): void {
     this.sessionGeneration += 1
     this.jobs.splice(0, this.jobs.length)
+    this.webJobs.splice(0, this.webJobs.length)
     this.completedKeys.splice(0, this.completedKeys.length)
     this.timerActive = false
+    this.webTimerActive = false
+    this.webWorkInFlight = false
+    this.webWorkToken += 1
+  }
+
+  private enqueueWeb = (key: string, kind: 'create' | 'work', priority: number, run: MathRenderWork): void => {
+    if (this.cancelled) {
+      return
+    }
+    if (this.activeKey.length === 0) {
+      run((_workDurationMs: number): void => {})
+      return
+    }
+    this.sequence += 1
+    this.webJobs.push(new DetailWebRenderJob(
+      kind + '|' + key, kind, priority, this.sequence, this.sessionGeneration, run))
+    this.scheduleWebNext()
+  }
+
+  private scheduleWebNext = (): void => {
+    if (this.webTimerActive || this.webWorkInFlight || this.webJobs.length === 0 || this.cancelled) {
+      return
+    }
+    const generation: number = this.sessionGeneration
+    this.webTimerActive = true
+    this.timer.schedule((): void => {
+      if (generation !== this.sessionGeneration || this.cancelled) {
+        return
+      }
+      this.webTimerActive = false
+      this.flushWebJobs(generation, 0, 0)
+    }, DETAIL_RENDER_FRAME_DELAY_MS)
+  }
+
+  private flushWebJobs = (generation: number, initialCreateCount: number, initialWorkMs: number): void => {
+    let createCount: number = initialCreateCount
+    const workMs: number = initialWorkMs
+    let job: DetailWebRenderJob | null = this.takeNextAdmissibleWebJob(createCount, workMs)
+    while (job !== null) {
+      if (job.generation === generation && generation === this.sessionGeneration) {
+        if (job.kind === 'create') {
+          job.run((_durationMs: number): void => {})
+          createCount += 1
+        } else {
+          this.runWebWork(job, generation, createCount, workMs)
+          return
+        }
+      }
+      job = this.takeNextAdmissibleWebJob(createCount, workMs)
+    }
+    this.scheduleWebNext()
+  }
+
+  private runWebWork = (job: DetailWebRenderJob, generation: number,
+    createCount: number, workMs: number): void => {
+    this.webWorkInFlight = true
+    this.webWorkToken += 1
+    const token: number = this.webWorkToken
+    let completionHandled: boolean = false
+    const complete: MathRenderWorkComplete = (workDurationMs: number): void => {
+      if (completionHandled) {
+        return
+      }
+      completionHandled = true
+      if (token !== this.webWorkToken || generation !== this.sessionGeneration || this.cancelled) {
+        return
+      }
+      this.webWorkInFlight = false
+      const safeDurationMs: number = workDurationMs > 0 ? workDurationMs : 0
+      const accumulatedWorkMs: number = workMs + safeDurationMs
+      if (accumulatedWorkMs >= DETAIL_RENDER_MAX_WEB_WORK_MS_PER_FRAME) {
+        this.scheduleWebNext()
+        return
+      }
+      this.flushWebJobs(generation, createCount, accumulatedWorkMs)
+    }
+    try {
+      job.run(complete)
+    } catch (_error) {
+      complete(DETAIL_RENDER_MAX_WEB_WORK_MS_PER_FRAME)
+    }
+  }
+
+  private takeNextAdmissibleWebJob = (createCount: number, workMs: number): DetailWebRenderJob | null => {
+    let bestIndex: number = -1
+    let index: number = 0
+    while (index < this.webJobs.length) {
+      const current: DetailWebRenderJob = this.webJobs[index]
+      const createAllowed: boolean = current.kind !== 'create'
+        || createCount < DETAIL_RENDER_MAX_WEB_CREATES_PER_FRAME
+      const workAllowed: boolean = current.kind !== 'work'
+        || workMs < DETAIL_RENDER_MAX_WEB_WORK_MS_PER_FRAME
+      if (createAllowed && workAllowed) {
+        if (bestIndex < 0) {
+          bestIndex = index
+        } else {
+          const best: DetailWebRenderJob = this.webJobs[bestIndex]
+          if (current.priority < best.priority
+            || (current.priority === best.priority && current.sequence < best.sequence)) {
+            bestIndex = index
+          }
+        }
+      }
+      index += 1
+    }
+    if (bestIndex < 0) {
+      return null
+    }
+    const job: DetailWebRenderJob = this.webJobs[bestIndex]
+    this.webJobs.splice(bestIndex, 1)
+    return job
   }
 
   private trimPendingJobs(): void {

@@ -94,7 +94,8 @@ export struct ProofDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.PropositionBlock(sectionTextByKeys(this.model, PROOF_PROPOSITION_KEYS))
+        this.PropositionBlock(sectionTextByKeys(this.model, PROOF_PROPOSITION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -104,7 +105,8 @@ export struct ProofDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.InsightBlock(sectionTextByKeys(this.model, PROOF_INSIGHT_KEYS))
+        this.InsightBlock(sectionTextByKeys(this.model, PROOF_INSIGHT_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -114,7 +116,8 @@ export struct ProofDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.ProcessBlock(splitReadableLines(sectionTextByKeys(this.model, PROOF_PROCESS_KEYS)))
+        this.ProcessBlock(splitReadableLines(sectionTextByKeys(this.model, PROOF_PROCESS_KEYS)),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -124,7 +127,8 @@ export struct ProofDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.ConclusionBlock(sectionTextByKeys(this.model, PROOF_CONCLUSION_KEYS))
+        this.ConclusionBlock(sectionTextByKeys(this.model, PROOF_CONCLUSION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -134,7 +138,8 @@ export struct ProofDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
         formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
       }) {
-        this.GivenBlock(sectionTextByKeys(this.model, PROOF_GIVEN_KEYS))
+        this.GivenBlock(sectionTextByKeys(this.model, PROOF_GIVEN_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
       }
 
       DetailReleaseGate({
@@ -144,7 +149,8 @@ export struct ProofDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.SupplementBlock(unmatchedSectionText(this.model, PROOF_TEMPLATE_KEYS))
+        this.SupplementBlock(unmatchedSectionText(this.model, PROOF_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, PROOF_TEMPLATE_KEYS)
@@ -156,7 +162,7 @@ export struct ProofDetailView {
           releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
           formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
         }) {
-          this.PropositionBlock(fallbackMainText(this.model))
+          this.PropositionBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
         }
       }
 
@@ -182,7 +188,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  PropositionBlock(content: string) {
+  PropositionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ProofTag(LABEL_PROPOSITION, AMBER)
@@ -192,7 +198,13 @@ export struct ProofDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -202,7 +214,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  InsightBlock(content: string) {
+  InsightBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ProofTag(LABEL_INSIGHT, AMBER)
@@ -212,7 +224,13 @@ export struct ProofDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -222,7 +240,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  ProcessBlock(items: string[]) {
+  ProcessBlock(items: string[], renderPriority: number) {
     if (items.length > 0) {
       Column() {
         this.ProofTag(LABEL_PROCESS, AMBER)
@@ -232,7 +250,12 @@ export struct ProofDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        DetailStepList({ items: items, accentColor: AMBER })
+        DetailStepList({
+          renderSession: this.renderSession,
+          renderPriority: renderPriority,
+          items: items,
+          accentColor: AMBER,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -242,7 +265,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  ConclusionBlock(content: string) {
+  ConclusionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ProofTag(LABEL_CONCLUSION, AMBER)
@@ -252,7 +275,13 @@ export struct ProofDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -262,7 +291,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  GivenBlock(content: string) {
+  GivenBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ProofTag(LABEL_GIVEN, TEXT_3)
@@ -272,7 +301,13 @@ export struct ProofDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -282,7 +317,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -291,7 +326,13 @@ export struct ProofDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })

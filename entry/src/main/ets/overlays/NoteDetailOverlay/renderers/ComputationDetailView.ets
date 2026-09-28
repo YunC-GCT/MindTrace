@@ -95,7 +95,8 @@ export struct ComputationDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.ProblemBlock(sectionTextByKeys(this.model, COMPUTE_PROBLEM_KEYS))
+        this.ProblemBlock(sectionTextByKeys(this.model, COMPUTE_PROBLEM_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -105,7 +106,8 @@ export struct ComputationDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.StepsBlock(splitReadableLines(sectionTextByKeys(this.model, COMPUTE_STEPS_KEYS)))
+        this.StepsBlock(splitReadableLines(sectionTextByKeys(this.model, COMPUTE_STEPS_KEYS)),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -115,7 +117,8 @@ export struct ComputationDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.AnswerBlock(sectionTextByKeys(this.model, COMPUTE_ANSWER_KEYS))
+        this.AnswerBlock(sectionTextByKeys(this.model, COMPUTE_ANSWER_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -125,7 +128,8 @@ export struct ComputationDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
         formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
       }) {
-        this.MethodBlock(sectionTextByKeys(this.model, COMPUTE_METHOD_KEYS))
+        this.MethodBlock(sectionTextByKeys(this.model, COMPUTE_METHOD_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
       }
 
       DetailReleaseGate({
@@ -135,7 +139,8 @@ export struct ComputationDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.NotesBlock(sectionTextByKeys(this.model, COMPUTE_NOTES_KEYS))
+        this.NotesBlock(sectionTextByKeys(this.model, COMPUTE_NOTES_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       DetailReleaseGate({
@@ -145,7 +150,8 @@ export struct ComputationDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.SupplementBlock(unmatchedSectionText(this.model, COMPUTE_TEMPLATE_KEYS))
+        this.SupplementBlock(unmatchedSectionText(this.model, COMPUTE_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, COMPUTE_TEMPLATE_KEYS)
@@ -157,7 +163,7 @@ export struct ComputationDetailView {
           releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
           formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
         }) {
-          this.ProblemBlock(fallbackMainText(this.model))
+          this.ProblemBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
         }
       }
 
@@ -183,7 +189,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  ProblemBlock(content: string) {
+  ProblemBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ComputeTag(LABEL_PROBLEM, COMPUTE_ACCENT)
@@ -193,7 +199,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -203,7 +215,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  StepsBlock(items: string[]) {
+  StepsBlock(items: string[], renderPriority: number) {
     if (items.length > 0) {
       Column() {
         this.ComputeTag(LABEL_STEPS, COMPUTE_ACCENT)
@@ -213,7 +225,12 @@ export struct ComputationDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        DetailStepList({ items: items, accentColor: COMPUTE_ACCENT })
+        DetailStepList({
+          renderSession: this.renderSession,
+          renderPriority: renderPriority,
+          items: items,
+          accentColor: COMPUTE_ACCENT,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -223,7 +240,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  AnswerBlock(content: string) {
+  AnswerBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ComputeTag(LABEL_ANSWER, COMPUTE_ACCENT)
@@ -233,7 +250,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -243,7 +266,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  MethodBlock(content: string) {
+  MethodBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ComputeTag(LABEL_METHOD, TEXT_3)
@@ -253,7 +276,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -263,7 +292,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  NotesBlock(content: string) {
+  NotesBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ComputeTag(LABEL_MISTAKE, TEXT_3)
@@ -273,7 +302,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -283,7 +318,7 @@ export struct ComputationDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -292,7 +327,13 @@ export struct ComputationDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })

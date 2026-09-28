@@ -17,6 +17,19 @@ import {
   NoteDetailRenderMetrics,
 } from '../../services/NoteDetailRenderMetrics'
 import { MathRenderFailureState } from '../../utils/MathRenderFailureState'
+import {
+  DEFAULT_MATH_RENDER_PRIORITY,
+  MathRenderInput,
+  MathRenderPreparationMemo,
+  PreparedMathRender,
+  buildMathRenderPreparationKey,
+  buildNormalizedMathRenderScript,
+} from '../../services/MathRenderBudget'
+import type {
+  MathRenderBudget,
+  MathRenderWork,
+  MathRenderWorkComplete,
+} from '../../services/MathRenderBudget'
 
 class MathRenderCacheEntry {
   key: string = ''
@@ -41,36 +54,21 @@ class MathRenderPayload {
   encodedHtml: string = ''
 }
 
-class MathRenderInput {
-  normalizedText: string = ''
-  fallbackText: string = ''
-  renderMode: 'native' | 'katex' | 'plainFallback' = 'native'
-}
-
 const MATH_RENDER_CACHE: MathRenderCacheEntry[] = []
 const MATH_RENDER_CACHE_LIMIT: number = 64
 const MATH_RENDER_CACHE_MAX_CHARS: number = 600000
 const MATH_RENDER_CACHE_KEY_VERSION: string = 'v2'
+const MATH_RENDER_PROTOCOL_VERSION: string = 'MM-MD-v1'
 const MATH_RENDER_CACHE_TTL_MS: number = 10 * 60 * 1000
 const MATH_RENDER_CACHE_PASSIVE_TRIM_TICKS: number = 12
-const NOTE_MATH_RENDER_DEFER_BASE_MS: number = 24
-const NOTE_MATH_RENDER_DEFER_STEP_MS: number = 22
-const NOTE_MATH_RENDER_DEFER_SLOTS: number = 8
 const TEXT_HEIGHT_BUFFER_RATIO: number = 1.2
 const DISPLAY_FORMULA_HEIGHT_CHAT: number = 58
 const DISPLAY_FORMULA_HEIGHT_NOTE: number = 66
 let mathRenderCacheClock: number = 0
-let noteMathRenderDeferClock: number = 0
 
 function nextCacheTick(): number {
   mathRenderCacheClock += 1
   return mathRenderCacheClock
-}
-
-function nextNoteMathRenderDelay(): number {
-  const slot: number = noteMathRenderDeferClock % NOTE_MATH_RENDER_DEFER_SLOTS
-  noteMathRenderDeferClock += 1
-  return NOTE_MATH_RENDER_DEFER_BASE_MS + slot * NOTE_MATH_RENDER_DEFER_STEP_MS
 }
 
 function cacheGet(key: string, metricSurface: NoteDetailMetricSurface): MathRenderCacheEntry | null {
@@ -205,6 +203,8 @@ export struct MathTextRenderer {
   @Prop formulaLineHeight: number = 24
   @Prop profile: 'chat' | 'chatUser' | 'note' | 'preview' = 'chat'
   @Prop metricSurface: NoteDetailMetricSurface = 'none'
+  @Prop renderBudget: MathRenderBudget | null = null
+  @Prop renderPriority: number = DEFAULT_MATH_RENDER_PRIORITY
   @Prop forceDisplay: boolean = false
   @Prop minHeight: number = 42
 
@@ -221,32 +221,25 @@ export struct MathTextRenderer {
   private visibleInViewport: boolean = false
   private formulaVisibleReported: boolean = false
   private failureState: MathRenderFailureState = new MathRenderFailureState()
+  private preparationMemo: MathRenderPreparationMemo = new MathRenderPreparationMemo()
 
   aboutToAppear(): void {
     this.renderSeq += 1
     const seq: number = this.renderSeq
     this.resetWebFailure()
-    const renderInput: MathRenderInput = this.normalizeForRender(this.text)
-    if (renderInput.renderMode === 'plainFallback') {
+    const prepared: PreparedMathRender = this.preparedRender()
+    if (prepared.input.renderMode === 'plainFallback') {
       this.renderReady = true
-      this.setWebHeight(this.clampHeight(this.estimateHeight(renderInput.normalizedText)), false)
+      this.setWebHeight(this.clampHeight(this.estimateHeight(prepared.input.normalizedText)), false)
       return
     }
-    const markdown: string = this.prepareMarkdownFromResult(renderInput)
-    const cached: MathRenderCacheEntry | null = cacheGet(this.cacheKey(markdown), this.metricSurface)
+    const cached: MathRenderCacheEntry | null = cacheGet(prepared.cacheKey, this.metricSurface)
     if (cached !== null) {
-      this.renderReady = true
       this.setWebHeight(this.clampHeight(cached.height), true)
-      return
-    }
-    if (this.shouldDeferWebRender()) {
-      this.renderReady = false
-      this.pageReady = false
-      this.scheduleDeferredWebRender(seq)
     } else {
-      this.renderReady = true
+      this.setWebHeight(this.estimateHeight(prepared.markdown), false)
     }
-    this.setWebHeight(this.estimateHeight(markdown), false)
+    this.admitWebCreate(seq, prepared.cacheKey)
   }
 
   aboutToDisappear(): void {
@@ -259,152 +252,177 @@ export struct MathTextRenderer {
     this.formulaVisibleReported = false
     const seq: number = this.renderSeq
     this.resetWebFailure()
-    const renderInput: MathRenderInput = this.normalizeForRender(this.text)
-    if (renderInput.renderMode === 'plainFallback') {
+    const prepared: PreparedMathRender = this.preparedRender()
+    if (prepared.input.renderMode === 'plainFallback') {
       this.lastAppliedKey = ''
       this.renderReady = true
-      this.setWebHeight(this.clampHeight(this.estimateHeight(renderInput.normalizedText)), false)
+      this.setWebHeight(this.clampHeight(this.estimateHeight(prepared.input.normalizedText)), false)
       return
     }
-    const markdown: string = this.prepareMarkdownFromResult(renderInput)
-    const cacheKey: string = this.cacheKey(markdown)
-    const cached: MathRenderCacheEntry | null = cacheGet(cacheKey, this.metricSurface)
+    const cached: MathRenderCacheEntry | null = cacheGet(prepared.cacheKey, this.metricSurface)
     if (cached !== null) {
-      this.renderReady = true
       this.setWebHeight(this.clampHeight(cached.height), true)
       if (this.pageReady) {
-        this.applyCachedRender(cacheKey, cached)
+        this.renderReady = true
+        this.applyCachedRender(prepared, cached)
+      } else {
+        this.admitWebCreate(seq, prepared.cacheKey)
       }
       return
     }
-    this.setWebHeight(this.estimateHeight(markdown), false)
-    if (this.shouldDeferWebRender()) {
-      this.renderReady = false
-      this.pageReady = false
-      this.scheduleDeferredWebRender(seq)
-      return
-    }
-    this.renderReady = true
+    this.setWebHeight(this.estimateHeight(prepared.markdown), false)
     if (this.pageReady) {
+      this.renderReady = true
       this.renderContent()
+    } else {
+      this.admitWebCreate(seq, prepared.cacheKey)
     }
   }
 
   private renderContent = (): void => {
-    const renderInput: MathRenderInput = this.normalizeForRender(this.text)
-    if (renderInput.renderMode === 'plainFallback') {
+    const prepared: PreparedMathRender = this.preparedRender()
+    if (prepared.input.renderMode === 'plainFallback') {
       return
     }
-    const markdown: string = this.prepareMarkdownFromResult(renderInput)
-    const cacheKey: string = this.cacheKey(markdown)
-    if (cacheKey === this.lastAppliedKey) {
+    if (prepared.cacheKey === this.lastAppliedKey) {
       return
     }
-    const cached: MathRenderCacheEntry | null = cacheGet(cacheKey, this.metricSurface)
+    const cached: MathRenderCacheEntry | null = cacheGet(prepared.cacheKey, this.metricSurface)
     if (cached !== null) {
       this.setWebHeight(this.clampHeight(cached.height), true)
-      this.applyCachedRender(cacheKey, cached)
+      this.applyCachedRender(prepared, cached)
       return
     }
-    const renderFn: string = this.forceDisplay ? 'renderFormulaForCache' : 'renderForCache'
-    const script: string = renderFn + '(' + JSON.stringify(markdown) + ',' + JSON.stringify(this.profile) + ')'
+    this.enqueueWebWork('cold|' + prepared.cacheKey,
+      (complete: MathRenderWorkComplete): void => this.runPreparedRender(prepared, complete))
+  }
+
+  private runPreparedRender = (prepared: PreparedMathRender, complete: MathRenderWorkComplete): void => {
+    const markdown: string = prepared.markdown
+    const cacheKey: string = prepared.cacheKey
+    const script: string = buildNormalizedMathRenderScript(prepared, this.profile, this.forceDisplay)
     this.setWebHeight(this.estimateHeight(markdown), false)
     ChatRenderBenchmarkStats.recordWebCreate()
     ChatRenderBenchmarkStats.recordWebWorkStart()
     this.recordNoteDetailWebWorkStart()
+    const startedAt: number = Date.now()
     this.controller.runJavaScript(script)
       .then((heightText: string): void => {
-        if (!this.isCurrentWebWork(cacheKey)) {
-          return
-        }
-        const payload: MathRenderPayload = this.parseRenderPayload(heightText)
-        if (this.acceptRenderedHeight(payload.height)) {
-          const height: number = this.clampHeight(payload.height + 2)
-          this.setWebHeight(height, true)
-          this.lastAppliedKey = cacheKey
-          if (payload.encodedHtml.length > 0) {
-            cacheSet(cacheKey, payload.encodedHtml, height)
+        if (this.isCurrentWebWork(cacheKey)) {
+          const payload: MathRenderPayload = this.parseRenderPayload(heightText)
+          if (this.acceptRenderedHeight(payload.height)) {
+            const height: number = this.clampHeight(payload.height + 2)
+            this.setWebHeight(height, true)
+            this.lastAppliedKey = cacheKey
+            if (payload.encodedHtml.length > 0) {
+              cacheSet(cacheKey, payload.encodedHtml, height)
+            }
           }
         }
+        complete(Date.now() - startedAt)
       })
       .catch((): void => {
         // renderForCache 因 bridge 返回值超限被 reject (公式多时 encodeURIComponent(innerHTML) 过大)
         // → 降级为 render() 只返高度数字, 自适应设备实际 bridge 上限, 无需硬编码阈值
-        if (!this.isCurrentWebWork(cacheKey)) {
-          return
+        if (this.isCurrentWebWork(cacheKey)) {
+          ChatRenderBenchmarkStats.recordDegradation()
+          this.recordNoteDetailDegradation()
+          this.enqueueWebWork('height-fallback|' + cacheKey,
+            (fallbackComplete: MathRenderWorkComplete): void => this.runHeightFallback(prepared, fallbackComplete))
         }
-        ChatRenderBenchmarkStats.recordDegradation()
-        this.recordNoteDetailDegradation()
-        const fallbackFn: string = this.forceDisplay ? 'renderFormula' : 'render'
-        const fallbackScript: string = fallbackFn + '(' + JSON.stringify(markdown) + ',' + JSON.stringify(this.profile) + ')'
-        ChatRenderBenchmarkStats.recordWebWorkStart()
-        this.recordNoteDetailWebWorkStart()
-        this.controller.runJavaScript(fallbackScript)
-          .then((heightText: string): void => {
-            if (!this.isCurrentWebWork(cacheKey)) {
-              return
-            }
-            const parsedHeight: number = this.parseRenderedHeight(heightText)
-            if (this.acceptRenderedHeight(parsedHeight)) {
-              const height: number = this.clampHeight(parsedHeight + 2)
-              this.setWebHeight(height, true)
-              this.lastAppliedKey = cacheKey
-            }
-          })
-          .catch((): void => {
-            if (this.isCurrentWebWork(cacheKey)) {
-              ChatRenderBenchmarkStats.recordDegradation()
-              this.recordNoteDetailDegradation()
-              this.activateBridgeFallback()
-            }
-          })
+        complete(Date.now() - startedAt)
       })
   }
 
-  private applyCachedRender = (cacheKey: string, cached: MathRenderCacheEntry): void => {
+  private runHeightFallback = (prepared: PreparedMathRender, complete: MathRenderWorkComplete): void => {
+    const fallbackFn: string = this.forceDisplay ? 'renderFormula' : 'render'
+    const fallbackScript: string = fallbackFn + '(' + JSON.stringify(prepared.markdown)
+      + ',' + JSON.stringify(this.profile) + ')'
+    ChatRenderBenchmarkStats.recordWebWorkStart()
+    this.recordNoteDetailWebWorkStart()
+    const startedAt: number = Date.now()
+    this.controller.runJavaScript(fallbackScript)
+      .then((heightText: string): void => {
+        if (this.isCurrentWebWork(prepared.cacheKey)) {
+          const parsedHeight: number = this.parseRenderedHeight(heightText)
+          if (this.acceptRenderedHeight(parsedHeight)) {
+            const height: number = this.clampHeight(parsedHeight + 2)
+            this.setWebHeight(height, true)
+            this.lastAppliedKey = prepared.cacheKey
+          }
+        }
+        complete(Date.now() - startedAt)
+      })
+      .catch((): void => {
+        if (this.isCurrentWebWork(prepared.cacheKey)) {
+          ChatRenderBenchmarkStats.recordDegradation()
+          this.recordNoteDetailDegradation()
+          this.activateBridgeFallback()
+        }
+        complete(Date.now() - startedAt)
+      })
+  }
+
+  private applyCachedRender = (prepared: PreparedMathRender, cached: MathRenderCacheEntry): void => {
+    this.enqueueWebWork('cache|' + prepared.cacheKey,
+      (complete: MathRenderWorkComplete): void => this.runCachedRender(prepared, cached, complete))
+  }
+
+  private runCachedRender = (prepared: PreparedMathRender, cached: MathRenderCacheEntry,
+    complete: MathRenderWorkComplete): void => {
+    const cacheKey: string = prepared.cacheKey
     const script: string = 'applyCached(' + JSON.stringify(cached.encodedHtml) + ',' + JSON.stringify(this.profile) + ')'
     this.recordNoteDetailWebWorkStart()
+    const startedAt: number = Date.now()
     this.controller.runJavaScript(script)
       .then((heightText: string): void => {
-        if (!this.isCurrentWebWork(cacheKey)) { return }
-        const parsed: number = this.parseRenderedHeight(heightText)
-        if (this.acceptRenderedHeight(parsed)) {
-          const height: number = this.clampHeight(parsed + 2)
-          this.setWebHeight(height, true)
-          cached.height = height
-          this.lastAppliedKey = cacheKey
+        if (this.isCurrentWebWork(cacheKey)) {
+          const parsed: number = this.parseRenderedHeight(heightText)
+          if (this.acceptRenderedHeight(parsed)) {
+            const height: number = this.clampHeight(parsed + 2)
+            this.setWebHeight(height, true)
+            cached.height = height
+            this.lastAppliedKey = cacheKey
+          }
         }
+        complete(Date.now() - startedAt)
       })
       .catch((): void => {
         // 缓存 HTML 作为 bridge 输入也可能超限 → 降级为 renderForCache 重新渲染
-        if (!this.isCurrentWebWork(cacheKey)) { return }
-        // Retry with the same normalized MM-MD-v1 input used to build the cache key. Sending
-        // raw text here can reintroduce compatibility delimiters, unsafe HTML, or a bare formula
-        // that the first normalization pass deliberately repaired.
-        const retryInput: MathRenderInput = this.normalizeForRender(this.text)
-        const retryMarkdown: string = this.prepareMarkdownFromResult(retryInput)
-        const retryFn: string = this.forceDisplay ? 'renderFormulaForCache' : 'renderForCache'
-        const retryScript: string = retryFn + '(' + JSON.stringify(retryMarkdown) + ',' + JSON.stringify(this.profile) + ')'
-        ChatRenderBenchmarkStats.recordDegradation()
-        ChatRenderBenchmarkStats.recordWebWorkStart()
-        this.recordNoteDetailDegradation()
-        this.recordNoteDetailWebWorkStart()
-        this.controller.runJavaScript(retryScript)
-          .then((heightText: string): void => {
-            if (!this.isCurrentWebWork(cacheKey)) { return }
-            const payload: MathRenderPayload = this.parseRenderPayload(heightText)
-            if (this.acceptRenderedHeight(payload.height)) {
-              this.setWebHeight(this.clampHeight(payload.height + 2), true)
-              this.lastAppliedKey = cacheKey
-            }
-          })
-          .catch((): void => {
-            if (this.isCurrentWebWork(cacheKey)) {
-              ChatRenderBenchmarkStats.recordDegradation()
-              this.recordNoteDetailDegradation()
-              this.activateBridgeFallback()
-            }
-          })
+        if (this.isCurrentWebWork(cacheKey)) {
+          ChatRenderBenchmarkStats.recordDegradation()
+          this.recordNoteDetailDegradation()
+          this.enqueueWebWork('cache-retry|' + cacheKey,
+            (retryComplete: MathRenderWorkComplete): void => this.runCacheRetry(prepared, retryComplete))
+        }
+        complete(Date.now() - startedAt)
+      })
+  }
+
+  private runCacheRetry = (prepared: PreparedMathRender, complete: MathRenderWorkComplete): void => {
+    // Retry exactly the normalized MM-MD-v1 input that produced the cache key.
+    const retryScript: string = buildNormalizedMathRenderScript(prepared, this.profile, this.forceDisplay)
+    ChatRenderBenchmarkStats.recordWebWorkStart()
+    this.recordNoteDetailWebWorkStart()
+    const startedAt: number = Date.now()
+    this.controller.runJavaScript(retryScript)
+      .then((heightText: string): void => {
+        if (this.isCurrentWebWork(prepared.cacheKey)) {
+          const payload: MathRenderPayload = this.parseRenderPayload(heightText)
+          if (this.acceptRenderedHeight(payload.height)) {
+            this.setWebHeight(this.clampHeight(payload.height + 2), true)
+            this.lastAppliedKey = prepared.cacheKey
+          }
+        }
+        complete(Date.now() - startedAt)
+      })
+      .catch((): void => {
+        if (this.isCurrentWebWork(prepared.cacheKey)) {
+          ChatRenderBenchmarkStats.recordDegradation()
+          this.recordNoteDetailDegradation()
+          this.activateBridgeFallback()
+        }
+        complete(Date.now() - startedAt)
       })
   }
 
@@ -441,15 +459,16 @@ export struct MathTextRenderer {
   }
 
   private cacheKey = (markdown: string): string => {
-    return this.profile + '|' + MATH_RENDER_CACHE_KEY_VERSION + '|' + (this.forceDisplay ? '1' : '0') + '|' + contentHash(markdown)
+    return this.profile + '|' + MATH_RENDER_PROTOCOL_VERSION + '|' + MATH_RENDER_CACHE_KEY_VERSION
+      + '|' + (this.forceDisplay ? '1' : '0') + '|' + contentHash(markdown)
   }
 
   private currentCacheKey = (): string => {
-    const renderInput: MathRenderInput = this.normalizeForRender(this.text)
-    if (renderInput.renderMode === 'plainFallback') {
+    const prepared: PreparedMathRender = this.preparedRender()
+    if (prepared.input.renderMode === 'plainFallback') {
       return ''
     }
-    return this.cacheKey(this.prepareMarkdownFromResult(renderInput))
+    return prepared.cacheKey
   }
 
   private isCurrentWebWork = (cacheKey: string): boolean => {
@@ -577,26 +596,55 @@ export struct MathTextRenderer {
   }
 
   private plainFallbackText = (): string => {
-    const renderInput: MathRenderInput = this.normalizeForRender(this.text)
-    const fallback: string = renderInput.fallbackText.trim()
+    const prepared: PreparedMathRender = this.preparedRender()
+    const fallback: string = prepared.input.fallbackText.trim()
     return fallback.length > 0 ? fallback : this.text.trim()
   }
 
-  private shouldDeferWebRender = (): boolean => {
-    return this.profile === 'note'
+  private preparedRender = (): PreparedMathRender => {
+    const key: string = buildMathRenderPreparationKey(this.text, this.profile, this.forceDisplay,
+      MATH_RENDER_PROTOCOL_VERSION, MATH_RENDER_CACHE_KEY_VERSION)
+    return this.preparationMemo.resolve(key, (): PreparedMathRender => {
+      const input: MathRenderInput = this.normalizeForRender(this.text)
+      const prepared: PreparedMathRender = new PreparedMathRender()
+      prepared.input = input
+      prepared.markdown = this.prepareMarkdownFromResult(input)
+      if (input.renderMode !== 'plainFallback') {
+        prepared.cacheKey = this.cacheKey(prepared.markdown)
+      }
+      return prepared
+    })
   }
 
-  private scheduleDeferredWebRender = (seq: number): void => {
-    const delay: number = nextNoteMathRenderDelay()
-    setTimeout((): void => {
+  private admitWebCreate = (seq: number, cacheKey: string): void => {
+    if (this.renderBudget === null) {
+      this.renderReady = true
+      return
+    }
+    this.renderReady = false
+    this.pageReady = false
+    this.renderBudget.enqueueWebCreate('web|' + cacheKey + '|' + seq.toString(), this.renderPriority, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
       this.renderReady = true
-      if (this.pageReady) {
-        this.renderContent()
-      }
-    }, delay)
+    })
+  }
+
+  private enqueueWebWork = (key: string, run: MathRenderWork): void => {
+    if (this.renderBudget === null) {
+      run((_workDurationMs: number): void => {})
+      return
+    }
+    const seq: number = this.renderSeq
+    this.renderBudget.enqueueWebWork(key + '|' + seq.toString(), this.renderPriority,
+      (complete: MathRenderWorkComplete): void => {
+        if (seq === this.renderSeq) {
+          run(complete)
+        } else {
+          complete(0)
+        }
+      })
   }
 
   private estimateHeight = (preparedMarkdown: string): number => {
@@ -623,7 +671,7 @@ export struct MathTextRenderer {
   }
 
   build() {
-    if (this.normalizeForRender(this.text).renderMode === 'plainFallback' || this.webFailed) {
+    if (this.preparedRender().input.renderMode === 'plainFallback' || this.webFailed) {
       Text(this.plainFallbackText())
         .fontSize(this.fontSize)
         .fontColor(this.textColor)

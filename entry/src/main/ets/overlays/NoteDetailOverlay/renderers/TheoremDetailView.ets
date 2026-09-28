@@ -92,7 +92,8 @@ export struct TheoremDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.StatementBlock(sectionTextByKeys(this.model, THEOREM_STATEMENT_KEYS))
+        this.StatementBlock(sectionTextByKeys(this.model, THEOREM_STATEMENT_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -102,7 +103,8 @@ export struct TheoremDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
       }) {
-        this.ConclusionBlock(sectionTextByKeys(this.model, THEOREM_CONCLUSION_KEYS))
+        this.ConclusionBlock(sectionTextByKeys(this.model, THEOREM_CONCLUSION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
       DetailReleaseGate({
@@ -112,7 +114,8 @@ export struct TheoremDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
         formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
       }) {
-        this.ConditionBlock(sectionTextByKeys(this.model, THEOREM_CONDITION_KEYS))
+        this.ConditionBlock(sectionTextByKeys(this.model, THEOREM_CONDITION_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
       }
 
       DetailReleaseGate({
@@ -122,7 +125,8 @@ export struct TheoremDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.InsightBlock(sectionTextByKeys(this.model, THEOREM_INSIGHT_KEYS))
+        this.InsightBlock(sectionTextByKeys(this.model, THEOREM_INSIGHT_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       DetailReleaseGate({
@@ -132,7 +136,8 @@ export struct TheoremDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.ApplicationBlock(sectionTextByKeys(this.model, THEOREM_APPLICATION_KEYS))
+        this.ApplicationBlock(sectionTextByKeys(this.model, THEOREM_APPLICATION_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       DetailReleaseGate({
@@ -142,7 +147,8 @@ export struct TheoremDetailView {
         releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
         formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
       }) {
-        this.SupplementBlock(unmatchedSectionText(this.model, THEOREM_TEMPLATE_KEYS))
+        this.SupplementBlock(unmatchedSectionText(this.model, THEOREM_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, THEOREM_TEMPLATE_KEYS)
@@ -154,7 +160,7 @@ export struct TheoremDetailView {
           releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
           formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
         }) {
-          this.StatementBlock(fallbackMainText(this.model))
+          this.StatementBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
         }
       }
 
@@ -180,7 +186,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  StatementBlock(content: string) {
+  StatementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_STATEMENT, PURPLE)
@@ -190,7 +196,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -200,7 +212,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  ConclusionBlock(content: string) {
+  ConclusionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_CONCLUSION, PURPLE)
@@ -210,7 +222,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -220,7 +238,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  ConditionBlock(content: string) {
+  ConditionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_CONDITION, PURPLE)
@@ -230,7 +248,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -240,7 +264,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  InsightBlock(content: string) {
+  InsightBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_REASON, TEXT_3)
@@ -250,7 +274,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -260,7 +290,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  ApplicationBlock(content: string) {
+  ApplicationBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.Tag(LABEL_APPLY, TEXT_3)
@@ -270,7 +300,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -280,7 +316,7 @@ export struct TheoremDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -289,7 +325,13 @@ export struct TheoremDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })

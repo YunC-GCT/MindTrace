@@ -54,12 +54,12 @@ test('formula failure fixture preserves surrounding text and later formula reach
 });
 
 test('MathTextRenderer retries bridge failures with normalized formula input', () => {
+  const budget = read('entry/src/main/ets/services/MathRenderBudget.ets');
   const renderer = read('entry/src/main/ets/shared/atoms/MathTextRenderer.ets');
-  assert.match(renderer, /const retryInput: MathRenderInput = this\.normalizeForRender\(this\.text\)/);
-  assert.match(renderer, /const retryMarkdown: string = this\.prepareMarkdownFromResult\(retryInput\)/);
-  assert.match(renderer, /const retryFn: string = this\.forceDisplay \? 'renderFormulaForCache' : 'renderForCache'/);
-  assert.match(renderer, /JSON\.stringify\(retryMarkdown\)/);
-  assert.doesNotMatch(renderer, /const retryScript: string = 'renderForCache\(' \+ JSON\.stringify\(this\.text\)/);
+  const hypium = read('entry/src/test/DetailRenderSession.test.ets');
+  assert.match(budget, /export function buildNormalizedMathRenderScript/);
+  assert.match(renderer, /buildNormalizedMathRenderScript/);
+  assert.match(hypium, /cold_and_retry_scripts_share_the_normalized_prepared_value/);
 });
 
 test('render.html keeps KaTeX safety and display overflow protections', () => {
