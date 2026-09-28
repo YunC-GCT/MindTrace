@@ -16,7 +16,11 @@
 import { NoteItem, KnowledgeUnit } from 'common'
 import type { NoteDetailMetricSurface } from '../../../services/NoteDetailRenderMetrics'
 
-export const DETAIL_RENDER_PRIORITY_NORMAL: number = 10
+export const DETAIL_RENDER_PRIORITY_VISIBLE_TEXT: number = 0
+export const DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA: number = 5
+export const DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT: number = 10
+export const DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT: number = 20
+export const DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA: number = 25
 export const DETAIL_RENDER_PRIORITY_META: number = 30
 
 const DETAIL_RENDER_FRAME_DELAY_MS: number = 16
@@ -36,7 +40,7 @@ class SystemDetailRenderTimer implements DetailRenderTimer {
 
 class DetailRenderJob {
   key: string = ''
-  priority: number = DETAIL_RENDER_PRIORITY_NORMAL
+  priority: number = DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT
   sequence: number = 0
   generation: number = 0
   run: () => void = (): void => {}
@@ -146,6 +150,10 @@ export class DetailRenderSession {
     return this.activeKey
   }
 
+  scopeKey(localKey: string): string {
+    return this.activeKey + '|' + this.sessionGeneration.toString() + '|' + localKey
+  }
+
   metricSurface(): NoteDetailMetricSurface {
     return this.surface
   }
@@ -227,9 +235,21 @@ export class DetailRenderSession {
   }
 
   private nextDelay(): number {
+    if (this.hasVisibleJob()) {
+      return DETAIL_RENDER_FAST_DELAY_MS
+    }
     return this.jobs.length >= DETAIL_RENDER_PRESSURE_COUNT
       ? DETAIL_RENDER_FAST_DELAY_MS
       : DETAIL_RENDER_FRAME_DELAY_MS
+  }
+
+  private hasVisibleJob(): boolean {
+    for (const job of this.jobs) {
+      if (job.priority <= DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA) {
+        return true
+      }
+    }
+    return false
   }
 
   private takeNextJob(): DetailRenderJob | null {

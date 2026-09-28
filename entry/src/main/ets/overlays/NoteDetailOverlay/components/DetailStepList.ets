@@ -45,7 +45,7 @@ export struct DetailStepList {
               .margin({ right: S_2 })
 
             Column() {
-              MarkdownRenderer({ text: item, progressive: true })
+              MarkdownRenderer({ text: item, progressive: false, profile: 'note' })
             }
             .layoutWeight(1)
           }

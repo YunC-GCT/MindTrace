@@ -22,7 +22,7 @@ import { DetailStepList } from './DetailStepList'
 import { detailLinesSignature } from './DetailSection'
 import {
   DetailRenderSession,
-  DETAIL_RENDER_PRIORITY_NORMAL,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
 } from './DetailRenderSession'
 
 @Component
@@ -98,7 +98,7 @@ export struct DetailStepsSection {
       return
     }
     this.contentReady = false
-    this.renderSession.enqueue('steps|' + key, DETAIL_RENDER_PRIORITY_NORMAL, (): void => {
+    this.renderSession.enqueue('steps|' + key, DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT, (): void => {
       if (seq !== this.renderSeq) {
         return
       }

@@ -16,15 +16,23 @@ import { describe, it, expect } from '@ohos/hypium'
 import {
   DetailRenderSession,
   DetailRenderTimer,
+  DETAIL_RENDER_PRIORITY_META,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+  DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
   buildDetailRenderSessionKey,
 } from '../main/ets/overlays/NoteDetailOverlay/components/DetailRenderSession'
 import { NoteItem, KnowledgeUnit, DifficultyLevel, ReviewStatus } from 'common'
 
 class FakeDetailRenderTimer implements DetailRenderTimer {
   callbacks: Array<() => void> = []
+  delays: number[] = []
 
   schedule(run: () => void, _delayMs: number): void {
     this.callbacks.push(run)
+    this.delays.push(_delayMs)
   }
 
   flushOne(): void {
@@ -38,6 +46,10 @@ class FakeDetailRenderTimer implements DetailRenderTimer {
 
   pendingCount(): number {
     return this.callbacks.length
+  }
+
+  firstDelay(): number {
+    return this.delays.length > 0 ? this.delays[0] : -1
   }
 }
 
@@ -114,6 +126,58 @@ export default function detailRenderSessionTest(): void {
       timer.flushOne()
       expect(order[0]).assertEqual('body')
       expect(order[1]).assertEqual('meta')
+    })
+
+    it('releases_named_visible_first_priorities_in_contract_order', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      const order: string[] = []
+      session.activate('note-a|priority-order')
+      session.enqueue('meta', DETAIL_RENDER_PRIORITY_META, (): void => { order.push('meta') })
+      session.enqueue('offscreen-formula', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (): void => { order.push('offscreen-formula') })
+      session.enqueue('offscreen-text', DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        (): void => { order.push('offscreen-text') })
+      session.enqueue('near', DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT, (): void => { order.push('near') })
+      session.enqueue('visible-formula', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (): void => { order.push('visible-formula') })
+      session.enqueue('visible-text', DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        (): void => { order.push('visible-text') })
+      timer.flushOne()
+      timer.flushOne()
+      timer.flushOne()
+      timer.flushOne()
+      timer.flushOne()
+      timer.flushOne()
+      expect(order.join('|')).assertEqual(
+        'visible-text|visible-formula|near|offscreen-text|offscreen-formula|meta')
+    })
+
+    it('visible_work_avoids_an_artificial_frame_delay', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      session.activate('note-a|visible-delay')
+      session.enqueue('visible-text', DETAIL_RENDER_PRIORITY_VISIBLE_TEXT, (): void => {})
+      expect(timer.firstDelay()).assertEqual(0)
+    })
+
+    it('same_content_block_key_changes_with_session_identity', 0, () => {
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', new FakeDetailRenderTimer())
+      session.activate('note-a|same-content')
+      const firstKey: string = session.scopeKey('concept|same-content|supplement')
+      session.activate('note-b|same-content')
+      const secondKey: string = session.scopeKey('concept|same-content|supplement')
+      expect(firstKey === secondKey).assertFalse()
+    })
+
+    it('same_identity_block_key_changes_after_session_reactivation', 0, () => {
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', new FakeDetailRenderTimer())
+      session.activate('note-a|same-content')
+      const firstKey: string = session.scopeKey('concept|same-content|supplement')
+      session.cancel()
+      session.activate('note-a|same-content')
+      const reopenedKey: string = session.scopeKey('concept|same-content|supplement')
+      expect(firstKey === reopenedKey).assertFalse()
     })
 
     it('same_completed_task_is_released_without_scheduling_another_timer', 0, () => {

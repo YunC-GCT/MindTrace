@@ -22,7 +22,7 @@ import {
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import {
   DetailRenderSession,
-  DETAIL_RENDER_PRIORITY_NORMAL,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
 } from './DetailRenderSession'
 
 export function detailTextSignature(text: string): string {
@@ -101,7 +101,7 @@ export struct DetailSection {
           .margin({ bottom: S_2 })
         }
 
-        MarkdownRenderer({ text: this.content, progressive: true })
+        MarkdownRenderer({ text: this.content, progressive: false, profile: 'note' })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -128,7 +128,7 @@ export struct DetailSection {
       return
     }
     this.contentReady = false
-    this.renderSession.enqueue('section|' + key, DETAIL_RENDER_PRIORITY_NORMAL, (): void => {
+    this.renderSession.enqueue('section|' + key, DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT, (): void => {
       if (seq !== this.renderSeq) {
         return
       }

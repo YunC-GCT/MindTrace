@@ -29,14 +29,12 @@ import {
 import { detailLinesSignature, detailTextSignature } from './DetailSection'
 import { DetailRenderSession, DETAIL_RENDER_PRIORITY_META } from './DetailRenderSession'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
-import { AppIcon } from '../../../shared/atoms/AppIcon'
 
 @Component
 export struct DetailMetaFooter {
   @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
   @State contentReady: boolean = false
-  @State originalExpanded: boolean = false
   @State originalText: string = ''
   private contentRenderKey: string = ''
   private renderSeq: number = 0
@@ -144,30 +142,14 @@ export struct DetailMetaFooter {
   @Builder
   OriginalMaterial(content: string) {
     Column() {
-      Row() {
-        Text('原始材料')
-          .fontSize(F_SM)
-          .fontWeight(W_BOLD)
-          .fontColor(TEXT_2)
-          .layoutWeight(1)
+      Text('原始材料')
+        .fontSize(F_SM)
+        .fontWeight(W_BOLD)
+        .fontColor(TEXT_2)
+        .width('100%')
+        .height(44)
 
-        AppIcon({
-          name: this.originalExpanded ? 'chevron-up' : 'chevron-down',
-          iconSize: F_SM,
-          color: TEXT_3,
-          strokeWidth: 1.8,
-        })
-      }
-      .width('100%')
-      .height(44)
-      .alignItems(VerticalAlign.Center)
-      .onClick((): void => {
-        this.originalExpanded = !this.originalExpanded
-      })
-
-      if (this.originalExpanded) {
-        MarkdownRenderer({ text: content, progressive: true })
-      }
+      MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
     }
     .width('100%')
     .border({ width: { top: 0.5 }, color: BORDER })
@@ -181,7 +163,6 @@ export struct DetailMetaFooter {
       return
     }
     this.contentRenderKey = key
-    this.originalExpanded = false
     this.originalText = originalText
     this.renderSeq += 1
     const seq: number = this.renderSeq

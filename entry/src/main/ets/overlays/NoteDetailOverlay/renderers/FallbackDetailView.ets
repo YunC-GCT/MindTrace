@@ -25,7 +25,15 @@ import {
 } from '../model/DetailRenderModel'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
-import { DetailRenderSession, DETAIL_RENDER_PRIORITY_NORMAL } from '../components/DetailRenderSession'
+import { DetailReleaseGate } from '../DetailReleaseGate'
+import {
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+} from '../components/DetailRenderSession'
 
 const TITLE_SUMMARY: string = '\u6458\u8981'
 const TITLE_BODY: string = '\u6b63\u6587'
@@ -48,43 +56,47 @@ function fallbackModelKey(model: DetailRenderModel): string {
 
 @Component
 export struct FallbackDetailView {
-  @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop model: DetailRenderModel = emptyDetailRenderModel()
   @Prop renderSession: DetailRenderSession = new DetailRenderSession()
-  @State visibleStage: number = 0
-  private renderKey: string = ''
-  private renderSeq: number = 0
-
-  aboutToAppear(): void {
-    this.resetFallbackFlow()
-  }
-
-  aboutToDisappear(): void {
-    this.renderSeq += 1
-  }
-
-  onModelChanged(): void {
-    this.resetFallbackFlow()
-  }
 
   build() {
     Column() {
       if (this.hasReadableSections()) {
         ForEach(this.model.sections,
           (section: DetailSectionData, index: number): void => {
-            if (section.normalizedTitle !== 'original' && this.shouldShowSection(index)) {
-              this.SourceSection(section.title, section.content, index)
+            if (section.normalizedTitle !== 'original') {
+              DetailReleaseGate({
+                renderSession: this.renderSession,
+                releaseKey: this.renderSession.scopeKey(
+                  'fallback|' + fallbackModelKey(this.model) + '|' + section.key),
+                releaseContent: section.content,
+                releasePriority: index === 0
+                  ? DETAIL_RENDER_PRIORITY_VISIBLE_TEXT
+                  : (index === 1 ? DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT : DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT),
+                formulaPriority: index === 0
+                  ? DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA
+                  : (index === 1 ? DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT : DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA),
+              }) {
+                this.SourceSection(section.title, section.content, index)
+              }
             }
           },
           (section: DetailSectionData): string => section.key
         )
       } else {
-        this.SourceSection(this.model.summary.length > 0 ? TITLE_SUMMARY : TITLE_BODY, fallbackMainText(this.model), 0)
+        DetailReleaseGate({
+          renderSession: this.renderSession,
+          releaseKey: this.renderSession.scopeKey('fallback|' + fallbackModelKey(this.model) + '|body'),
+          releaseContent: fallbackMainText(this.model),
+          releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+          formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        }) {
+          this.SourceSection(this.model.summary.length > 0 ? TITLE_SUMMARY : TITLE_BODY, fallbackMainText(this.model), 0)
+        }
       }
 
-      if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
-        Blank().height(80)
-      }
+      DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
+      Blank().height(80)
     }
     .width('100%')
     .padding({ left: 20, right: 20, top: S_2, bottom: S_2 })
@@ -124,26 +136,13 @@ export struct FallbackDetailView {
           .fontColor(index === 0 ? TEXT : TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({ text: content, progressive: false, profile: 'note' })
       }
       .width('100%')
       .padding({ top: index === 0 ? S_3 : S_4, bottom: index === 0 ? S_4 : S_3 })
       .border({ width: { bottom: 0.5 }, color: BORDER })
       .alignItems(HorizontalAlign.Start)
     }
-  }
-
-  private shouldShowSection = (index: number): boolean => {
-    if (index === 0) {
-      return true
-    }
-    if (index === 1) {
-      return this.visibleStage >= 1
-    }
-    if (index === 2) {
-      return this.visibleStage >= 2
-    }
-    return this.visibleStage >= 3
   }
 
   private hasReadableSections = (): boolean => {
@@ -155,29 +154,4 @@ export struct FallbackDetailView {
     return false
   }
 
-  private resetFallbackFlow = (): void => {
-    const key: string = fallbackModelKey(this.model)
-    if (key === this.renderKey) {
-      return
-    }
-    this.renderKey = key
-    this.renderSeq += 1
-    const seq: number = this.renderSeq
-    this.visibleStage = 0
-    this.scheduleFallbackStage(seq, 1)
-    this.scheduleFallbackStage(seq, 2)
-    this.scheduleFallbackStage(seq, 3)
-  }
-
-  private scheduleFallbackStage = (seq: number, stage: number): void => {
-    const taskKey: string = 'fallback|' + this.renderKey + '|stage|' + stage.toString()
-    this.renderSession.enqueue(taskKey, DETAIL_RENDER_PRIORITY_NORMAL + stage, (): void => {
-      if (seq !== this.renderSeq) {
-        return
-      }
-      if (this.visibleStage < stage) {
-        this.visibleStage = stage
-      }
-    })
-  }
 }
