@@ -4,7 +4,7 @@
 
 ## 结论
 
-- **WebKeepAlive 保持默认关闭。** 同一次模拟器启动内、同一 fixture 的开/关 A/B 结果是混合的：开启后 C/C′ 冷开均更慢，warm run 只有部分指标小幅改善，且没有足够重复样本或可接受的驻留内存结论支持默认启用。较早的 AI 助手 smoke 中，KeepAlive 开启组的 warm run 还曾在 4 秒窗口内没有公式可见事件。
+- **WebKeepAlive 保持默认关闭。** 同一次模拟器启动内、同一 fixture 的开/关 A/B 结果是混合的：AI 关闭时开启 KeepAlive 会拖慢 C/C′ 冷开首屏；AI 开启时 C 冷开首屏近似持平但稳定更慢，C′ 冷开首屏和公式可见更慢。warm run 只有部分稳定时间改善，且没有足够重复样本或可接受的驻留内存结论支持默认启用。
 - **#188 未通过，且仍受 #187 阻塞。** C 公式密集场景多次未在 4 秒窗口内达到公式可见或 500ms 稳定；C′ 连续公式场景出现裸 `$$...$$` 文本。该结果与 #187 尚未完成公式 Web 预算和缓存迁移一致。
 - 普通无公式 NoteDetail 的 warm reopen 首屏较快，但不能外推到公式路径或真机。
 
@@ -26,7 +26,7 @@ fixture、AI 助手和 KeepAlive 标签由启动 URI 固定。KeepAlive 只在 `
 
 ## WebKeepAlive A/B
 
-以下是稳定时间“首次成功即锁定”修复后的最终代表性运行；同一应用进程内 cold/warm 各一次，四组均来自同一次模拟器启动。`—` 表示运行窗口内未观察到该事件。模拟器抖动明显，样本只用于决定不默认启用，数量不足以计算 p50/p95。PSS 来自相同矩阵中较早的独立 2 秒 active / 两轮关闭后采样，不与本表时序强绑定。
+以下是稳定时间“首次成功即锁定”修复后的最终代表性运行；同一应用进程内 cold/warm 各一次，八组均来自同一次模拟器启动。`—` 表示运行窗口内未观察到该事件。模拟器抖动明显，每格都只是单次代表性样本，只用于决定不默认启用，不能作为 p50/p95 或真机达标证据。PSS 只在 AI 关闭矩阵中采集，来自较早的独立 2 秒 active / 两轮关闭后采样，不与本表时序强绑定。
 
 | Fixture | AI | KeepAlive | Cold first / formula / stable (ms) | Warm first / formula / stable (ms) | Active PSS (kB) | Closed PSS (kB) |
 |---|---:|---:|---:|---:|---:|---:|
@@ -34,8 +34,14 @@ fixture、AI 助手和 KeepAlive 标签由启动 URI 固定。KeepAlive 只在 `
 | C long | off | on | 86 / 3127 / 3769 | 8 / 350 / 1950 | 191190 | 212560 |
 | C′ long | off | off | 72 / 2399 / 2921 | 43 / 300 / 1375 | 194525 | 219245 |
 | C′ long | off | on | 221 / 3908 / — | 17 / 257 / 1022 | 191183 | 205636 |
+| C long | on | off | 315 / — / 4092 | 841 / — / — | — | — |
+| C long | on | on | 314 / — / 4470 | 664 / — / — | — | — |
+| C′ long | on | off | 212 / — / — | 120 / 1662 / 3268 | — | — |
+| C′ long | on | on | 262 / 3740 / — | 260 / 1696 / 2521 | — | — |
 
 每次 NoteDetail 打开仍创建相同数量的业务 Web：C 为 6，C′ 的证明题 surface 为 1。关闭后进程列表中，KeepAlive off 观察到 1 个 `com.example.mathmind:render`，KeepAlive on 观察到 2 个；PSS 波动没有形成可重复的可接受成本结论。由于收益不明确，实验不进入默认产品路径。
+
+AI 开启矩阵同样没有给出一致收益：C 的 cold/warm 均未观察到公式可见，开启 KeepAlive 后 cold stable 从 4092ms 变为 4470ms；C′ 开启组的 cold 首屏和公式可见更慢，warm stable 虽从 3268ms 改善到 2521ms，但首屏同时从 120ms 变为 260ms。个别 stable 超过名义 4 秒窗口，是模拟器 JavaScript timer 延迟后的首次成功探针，按原始日志记录，不代表通过 4 秒门禁。
 
 ## 公式密集与 renderer smoke
 
