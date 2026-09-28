@@ -11,7 +11,8 @@
       ".prettierrc",
       ".eslintrc",
       "agent-framework-comparison-2026-09-02.html",
-      "langgraph-migration-2026-09-02.html"
+      "langgraph-migration-2026-09-02.html",
+      "frontend-palette-comparison-2026-09-06.html"
     ],
     "patterns": [
       "^mock-",

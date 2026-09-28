@@ -54,6 +54,7 @@ export interface NoteGenerationRequirement {
   mustInclude: string[];
   mustAvoid: string[];
   targetSectionIds: string[];
+  requestedSections?: string[];
   preserveUserEdits: boolean;
 }
 
@@ -211,6 +212,10 @@ export interface NoteGenerationProgress {
   round: number;
   stopReason?: string;
   rollback: boolean;
+  issueCount?: number;
+  issueFingerprint?: string;
+  tokenBudget?: number;
+  estimatedTokenCost?: number;
 }
 
 export interface NoteGenerationRun {
@@ -339,6 +344,7 @@ export interface NoteGenerationResult {
   ledger?: NoteGenerationLedger;
   segments?: NoteGenerationSegment[];
   progress?: NoteGenerationProgress;
+  diagnostics?: string;
   incrementalPlan?: IncrementalPlan;
   incrementalManifest?: IncrementalManifest;
   incrementalDiff?: IncrementalDiffItem[];
@@ -834,11 +840,18 @@ export function defaultRequirement(instruction: string): NoteGenerationRequireme
       mustInclude.push(keyword);
     }
   }
+  const requestedSections: string[] = explicitRequestedSectionLabels(instruction);
+  for (const section of requestedSections) {
+    if (!mustInclude.includes(section)) {
+      mustInclude.push(section);
+    }
+  }
   const result: NoteGenerationRequirement = {
     detailLevel: detailed ? 'detailed' : 'normal',
     mustInclude: mustInclude,
     mustAvoid: [],
     targetSectionIds: [],
+    requestedSections: requestedSections,
     preserveUserEdits: true,
   };
   return result;
@@ -911,7 +924,7 @@ export function deepBudget(): NoteGenerationBudget {
 
 function segmentBoundary(line: string): 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph' | undefined {
   const trimmed: string = line.trim();
-  if (trimmed.startsWith('#')) {
+  if (trimmed.startsWith('#') || explicitDeepSectionLabel(trimmed) !== undefined) {
     return 'heading';
   }
   if (trimmed.indexOf('\\[') >= 0 || trimmed.indexOf('$$') >= 0 || trimmed.indexOf('\\]') >= 0) {
@@ -990,17 +1003,18 @@ export function segmentSourceBundle(bundle: SourceBundle): NoteGenerationSegment
  * 调用数上界 = 8 节 × ≤3 守门重试 = ≤24 次。
  */
 const MAX_DEEP_OUTLINE_SECTIONS: number = 8;
+const MAX_EXPLICIT_DEEP_OUTLINE_SECTIONS: number = 12;
 
-function capDeepOutlineSections(sections: NoteGenerationOutlineSection[]): NoteGenerationOutlineSection[] {
-  if (sections.length <= MAX_DEEP_OUTLINE_SECTIONS) {
+function capDeepOutlineSections(sections: NoteGenerationOutlineSection[], maxSections: number): NoteGenerationOutlineSection[] {
+  if (sections.length <= maxSections) {
     return sections;
   }
-  const capped: NoteGenerationOutlineSection[] = sections.slice(0, MAX_DEEP_OUTLINE_SECTIONS - 1);
-  const last: NoteGenerationOutlineSection = sections[MAX_DEEP_OUTLINE_SECTIONS - 1];
+  const capped: NoteGenerationOutlineSection[] = sections.slice(0, maxSections - 1);
+  const last: NoteGenerationOutlineSection = sections[maxSections - 1];
   const mergedSegmentIds: string[] = [];
   const mergedSourceIds: string[] = [];
   const mergedMustInclude: string[] = [];
-  for (let index: number = MAX_DEEP_OUTLINE_SECTIONS - 1; index < sections.length; index += 1) {
+  for (let index: number = maxSections - 1; index < sections.length; index += 1) {
     const section: NoteGenerationOutlineSection = sections[index];
     for (const segmentId of section.segmentIds ?? []) {
       if (!mergedSegmentIds.includes(segmentId)) {
@@ -1031,13 +1045,195 @@ function capDeepOutlineSections(sections: NoteGenerationOutlineSection[]): NoteG
   return capped;
 }
 
+function explicitDeepSectionLabel(text: string): string | undefined {
+  const firstLine: string = text.split('\n')[0].trim();
+  const markerEnd: number = firstLine.indexOf('：') >= 0 ? firstLine.indexOf('：') : firstLine.indexOf(':');
+  if (markerEnd <= 0) {
+    return undefined;
+  }
+  const marker: string = firstLine.substring(0, markerEnd).trim();
+  if (!/^第[0-9一二三四五六七八九十百]+(部分|节|章)$/.test(marker)) {
+    return undefined;
+  }
+  const label: string = firstLine.substring(markerEnd + 1).trim();
+  return label.length > 0 ? label : marker;
+}
+
+function explicitRequestedSectionLabels(instruction: string): string[] {
+  const hasSectionRequest: boolean = instruction.indexOf('section') >= 0
+    || instruction.indexOf('Section') >= 0
+    || instruction.indexOf('章节') >= 0
+    || instruction.indexOf('小节') >= 0
+    || instruction.indexOf('板块') >= 0
+    || instruction.indexOf('部分') >= 0;
+  if (!hasSectionRequest) {
+    return [];
+  }
+  const labels: string[] = [];
+  const lines: string[] = instruction.split('\n');
+  for (const line of lines) {
+    const label: string | undefined = numberedListSectionLabel(line);
+    if (label !== undefined && !labels.includes(label)) {
+      labels.push(label);
+    }
+  }
+  return labels;
+}
+
+function numberedListSectionLabel(line: string): string | undefined {
+  const trimmed: string = line.trim();
+  if (trimmed.length < 4) {
+    return undefined;
+  }
+  let markerEnd: number = -1;
+  const markers: string[] = ['.', '．', '、', ')', '）'];
+  for (const marker of markers) {
+    const index: number = trimmed.indexOf(marker);
+    if (index > 0 && (markerEnd < 0 || index < markerEnd)) {
+      markerEnd = index;
+    }
+  }
+  if (markerEnd <= 0 || markerEnd > 2) {
+    return undefined;
+  }
+  const marker: string = trimmed.substring(0, markerEnd).trim();
+  for (let index: number = 0; index < marker.length; index += 1) {
+    const code: number = marker.charCodeAt(index);
+    if (code < 48 || code > 57) {
+      return undefined;
+    }
+  }
+  const label: string = trimmed.substring(markerEnd + 1).trim();
+  if (label.length === 0 || label.length > 80) {
+    return undefined;
+  }
+  return label;
+}
+
+function uniqueSourceIds(segments: NoteGenerationSegment[], start: number, end: number): string[] {
+  const sourceIds: string[] = [];
+  for (let index: number = start; index < end; index += 1) {
+    const sourceId: string = segments[index].sourceId;
+    if (!sourceIds.includes(sourceId)) {
+      sourceIds.push(sourceId);
+    }
+  }
+  return sourceIds;
+}
+
+function groupedSegmentIds(segments: NoteGenerationSegment[], start: number, end: number): string[] {
+  const segmentIds: string[] = [];
+  for (let index: number = start; index < end; index += 1) {
+    segmentIds.push(segments[index].id);
+  }
+  return segmentIds;
+}
+
+function groupedSegmentText(segments: NoteGenerationSegment[], start: number, end: number): string {
+  const parts: string[] = [];
+  for (let index: number = start; index < end; index += 1) {
+    parts.push(segments[index].text);
+  }
+  return parts.join('\n');
+}
+
+function requiredItemsForSection(requirement: NoteGenerationRequirement, label: string, text: string): string[] {
+  const mustInclude: string[] = [];
+  for (const item of requirement.mustInclude) {
+    if (text.includes(item) || label.includes(item)) {
+      mustInclude.push(item);
+    }
+  }
+  return mustInclude;
+}
+
+function requiredItemsForRequestedSection(requirement: NoteGenerationRequirement, label: string): string[] {
+  const requestedSections: string[] = requirement.requestedSections ?? [];
+  const mustInclude: string[] = [];
+  for (const item of requirement.mustInclude) {
+    const isRequestedSection: boolean = requestedSections.includes(item);
+    if (!isRequestedSection || item === label) {
+      mustInclude.push(item);
+    }
+  }
+  if (!mustInclude.includes(label)) {
+    mustInclude.push(label);
+  }
+  return mustInclude;
+}
+
+function pushDeepOutlineSection(
+  sections: NoteGenerationOutlineSection[],
+  order: number,
+  label: string,
+  sourceIds: string[],
+  segmentIds: string[],
+  mustInclude: string[],
+  depth: number,
+): void {
+  const parentId: string | undefined = sections.length === 0 ? undefined : sections[sections.length - 1].id;
+  sections.push({
+    id: stableSectionId(order, label) + '-' + order.toString(),
+    label: label,
+    order: order,
+    mustInclude: mustInclude,
+    sourceIds: sourceIds,
+    depth: depth,
+    parentId: parentId,
+    segmentIds: segmentIds,
+  });
+}
+
 export function buildDeepOutline(
   segments: NoteGenerationSegment[],
   requirement: NoteGenerationRequirement,
 ): NoteGenerationOutline {
   const sections: NoteGenerationOutlineSection[] = [];
+  const requestedSections: string[] = requirement.requestedSections ?? [];
+  if (requestedSections.length > 0) {
+    const allSourceIds: string[] = uniqueSourceIds(segments, 0, segments.length);
+    const allSegmentIds: string[] = groupedSegmentIds(segments, 0, segments.length);
+    const maxSections: number = Math.min(requestedSections.length, MAX_EXPLICIT_DEEP_OUTLINE_SECTIONS);
+    for (let sectionIndex: number = 0; sectionIndex < maxSections; sectionIndex += 1) {
+      const label: string = requestedSections[sectionIndex];
+      pushDeepOutlineSection(
+        sections,
+        sectionIndex,
+        label,
+        allSourceIds,
+        allSegmentIds,
+        requiredItemsForRequestedSection(requirement, label),
+        0,
+      );
+    }
+    return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: sections };
+  }
   let order: number = 0;
-  for (const segment of segments) {
+  let hasExplicitSections: boolean = false;
+  let index: number = 0;
+  while (index < segments.length) {
+    const segment: NoteGenerationSegment = segments[index];
+    const explicitLabel: string | undefined = explicitDeepSectionLabel(segment.text);
+    if (explicitLabel !== undefined) {
+      hasExplicitSections = true;
+      let end: number = index + 1;
+      while (end < segments.length && explicitDeepSectionLabel(segments[end].text) === undefined) {
+        end += 1;
+      }
+      const text: string = groupedSegmentText(segments, index, end);
+      pushDeepOutlineSection(
+        sections,
+        order,
+        explicitLabel,
+        uniqueSourceIds(segments, index, end),
+        groupedSegmentIds(segments, index, end),
+        requiredItemsForSection(requirement, explicitLabel, text),
+        0,
+      );
+      order += 1;
+      index = end;
+      continue;
+    }
     let label: string = '材料 ' + (order + 1).toString();
     if (segment.boundary === 'heading') {
       const firstLine: string = segment.text.split('\n')[0].trim();
@@ -1053,26 +1249,20 @@ export function buildDeepOutline(
     } else if (segment.boundary === 'derivation') {
       label = '证明与推导';
     }
-    const mustInclude: string[] = [];
-    for (const item of requirement.mustInclude) {
-      if (segment.text.includes(item) || label.includes(item)) {
-        mustInclude.push(item);
-      }
-    }
-    const parentId: string | undefined = sections.length === 0 ? undefined : sections[sections.length - 1].id;
-    sections.push({
-      id: stableSectionId(order, label) + '-' + segment.sequence.toString(),
-      label: label,
-      order: order,
-      mustInclude: mustInclude,
-      sourceIds: [segment.sourceId],
-      depth: segment.boundary === 'derivation' ? 0 : 1,
-      parentId: parentId,
-      segmentIds: [segment.id],
-    });
+    pushDeepOutlineSection(
+      sections,
+      order,
+      label,
+      [segment.sourceId],
+      [segment.id],
+      requiredItemsForSection(requirement, label, segment.text),
+      segment.boundary === 'derivation' ? 0 : 1,
+    );
     order += 1;
+    index += 1;
   }
-  return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: capDeepOutlineSections(sections) };
+  const maxSections: number = hasExplicitSections ? MAX_EXPLICIT_DEEP_OUTLINE_SECTIONS : MAX_DEEP_OUTLINE_SECTIONS;
+  return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: capDeepOutlineSections(sections, maxSections) };
 }
 
 export function validateDeepOutline(

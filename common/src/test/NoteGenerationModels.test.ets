@@ -34,6 +34,7 @@ import {
   normalizeOutline,
   validateDraftDocument,
   buildDeepOutline,
+  defaultRequirement,
   segmentSourceBundle,
   validateDeepOutline,
   NOTE_DRAFT_SCHEMA_VERSION,
@@ -604,6 +605,80 @@ export default function noteGenerationModelsTest(): void {
       const outline: NoteGenerationOutline = buildDeepOutline(segments, emptyRequirement());
       expect(outline.sections.length).assertEqual(3);
       expect((outline.sections[0].segmentIds ?? []).length).assertEqual(1);
+    });
+
+    it('deep_outline_preserves_explicit_numbered_parts_before_capping_tail', 0, () => {
+      const lines: string[] = [];
+      const labels: string[] = [
+        '基础定义',
+        '拉格朗日余项',
+        '为什么泰勒多项式能近似函数',
+        '以 e^x 在 x0=0 处展开为例',
+        '常见错误一',
+        '常见错误二',
+        '常见错误三',
+        '与麦克劳林公式的关系',
+        '用泰勒公式求极限的例子',
+        '用泰勒公式估计误差的例子',
+      ];
+      for (let index: number = 0; index < labels.length; index += 1) {
+        lines.push('第' + (index + 1).toString() + '部分：' + labels[index]);
+        lines.push('这一部分说明 ' + labels[index] + ' 的核心内容。');
+        lines.push('');
+        lines.push('公式 ' + (index + 1).toString() + ': P_n(x)=f(x_0)+R_n(x)');
+        lines.push('');
+      }
+      const bundle: SourceBundle = {
+        fragments: [{
+          id: 'src-taylor',
+          kind: 'conversation',
+          originId: 'origin-taylor',
+          sequence: 0,
+          fingerprint: 'fp-taylor',
+          text: lines.join('\n'),
+        }],
+      };
+      const segments: NoteGenerationSegment[] = segmentSourceBundle(bundle);
+      const outline: NoteGenerationOutline = buildDeepOutline(segments, emptyRequirement());
+      expect(outline.sections.length).assertEqual(10);
+      expect(outline.sections[0].label).assertEqual('基础定义');
+      expect(outline.sections[1].label).assertEqual('拉格朗日余项');
+      expect(outline.sections[9].label).assertEqual('用泰勒公式估计误差的例子');
+      expect((outline.sections[0].segmentIds ?? []).length > 1).assertTrue();
+      const issues: NoteGenerationIssue[] = validateDeepOutline(outline, segments, bundle, emptyRequirement());
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('deep_outline_preserves_requested_numbered_section_titles', 0, () => {
+      const instruction: string = '请整理“连续函数、可导性与中值定理”的复习笔记。\n'
+        + '要求生成结构化笔记，包含 4 个 section：\n'
+        + '1. 连续函数的定义与判断方法\n'
+        + '2. 可导与连续的关系\n'
+        + '3. 拉格朗日中值定理\n'
+        + '4. 常见错误与自测题\n'
+        + '每个 section 包含：核心定义、直观解释、关键公式、一个例子、一个常见误区。';
+      const bundle: SourceBundle = {
+        fragments: [{
+          id: 'src-lagrange',
+          kind: 'conversation',
+          originId: 'origin-lagrange',
+          sequence: 0,
+          fingerprint: 'fp-lagrange',
+          text: instruction,
+        }],
+      };
+      const requirement: NoteGenerationRequirement = defaultRequirement(instruction);
+      const segments: NoteGenerationSegment[] = segmentSourceBundle(bundle);
+      const outline: NoteGenerationOutline = buildDeepOutline(segments, requirement);
+      expect(outline.sections.length).assertEqual(4);
+      expect(outline.sections[0].label).assertEqual('连续函数的定义与判断方法');
+      expect(outline.sections[1].label).assertEqual('可导与连续的关系');
+      expect(outline.sections[2].label).assertEqual('拉格朗日中值定理');
+      expect(outline.sections[3].label).assertEqual('常见错误与自测题');
+      expect(outline.sections[2].mustInclude.includes('拉格朗日中值定理')).assertTrue();
+      expect(outline.sections[0].mustInclude.includes('拉格朗日中值定理')).assertFalse();
+      const issues: NoteGenerationIssue[] = validateDeepOutline(outline, segments, bundle, requirement);
+      expect(issues.length).assertEqual(0);
     });
   });
 

@@ -17,6 +17,7 @@ import {
   NoteDraftSection,
   NoteGenerationEvidenceItem,
   NoteGenerationOutline,
+  NoteGenerationOutlineSection,
   NoteGenerationStandardResult,
   NoteGenerationVerification,
   NoteGenerationEvidenceDecision,
@@ -213,12 +214,132 @@ class DeepKnowledgeModel extends KnowledgeModel {
     const draft: NoteDraftDocument = {
       schemaVersion: 'mindtrace.note-draft.v1', title: '长证明', summary: '完整推导', subject: '数学分析',
       category: '证明题', chapter: '极限', difficulty: 3, tags: ['证明'], instruction: request.instruction,
-      sections: [{ id: 'section-proof', label: '证明', content: '推导：保留全部步骤。', sourceIds: [firstSource], state: 'generated', baseHash: 'proof' }, {
-        id: 'section-example', label: '例子', content: '例子：保留尾部材料。', sourceIds: [lastSource], state: 'generated', baseHash: 'example',
+      sections: [{ id: 'section-proof', label: '证明', content: '推导：保留全部步骤。\nx = 1', sourceIds: [firstSource], state: 'generated', baseHash: 'proof' }, {
+        id: 'section-example', label: '例子', content: '例子：保留尾部材料。\nx = 2', sourceIds: [lastSource], state: 'generated', baseHash: 'example',
       }],
     };
     const ledger: NoteGenerationLedger = { formulas: [], terminology: [], conclusions: [] };
     return { outline: outline, evidence: [], draft: draft, verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] }, ledger: ledger };
+  }
+}
+
+class RequestedSectionsDeepKnowledgeModel extends KnowledgeModel {
+  receivedSections: string[] = [];
+
+  async structureDeepDraft(request: NoteGenerationRequest): Promise<NoteGenerationDeepResult> {
+    this.receivedSections = request.requirement?.requestedSections ?? [];
+    const sourceId: string = request.sources.fragments[0].id;
+    const outlineSections: NoteGenerationOutlineSection[] = [];
+    const draftSections: NoteDraftSection[] = [];
+    for (let index: number = 0; index < this.receivedSections.length; index += 1) {
+      const label: string = this.receivedSections[index];
+      const sectionId: string = stableSectionId(index, label);
+      outlineSections.push({
+        id: sectionId,
+        label: label,
+        order: index,
+        mustInclude: [label],
+        sourceIds: [sourceId],
+        depth: 0,
+        parentId: index === 0 ? undefined : stableSectionId(index - 1, this.receivedSections[index - 1]),
+        segmentIds: [],
+      });
+      draftSections.push({
+        id: sectionId,
+        label: label,
+        content: label + '：本节覆盖用户指定章节。',
+        sourceIds: [sourceId],
+        state: 'generated',
+        baseHash: 'hash-' + index.toString(),
+      });
+    }
+    const outline: NoteGenerationOutline = {
+      schemaVersion: 'mindtrace.note-outline.v1',
+      sections: outlineSections,
+    };
+    const draft: NoteDraftDocument = {
+      schemaVersion: 'mindtrace.note-draft.v1',
+      title: '连续函数与中值定理',
+      summary: '四个指定章节',
+      subject: '数学分析',
+      category: '定理',
+      chapter: '微分学',
+      difficulty: 3,
+      tags: ['中值定理'],
+      instruction: request.instruction,
+      sections: draftSections,
+    };
+    const ledger: NoteGenerationLedger = { formulas: [], terminology: [], conclusions: [] };
+    return { outline: outline, evidence: [], draft: draft, verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] }, ledger: ledger };
+  }
+}
+
+class DeepDiagnosticsKnowledgeModel extends DeepKnowledgeModel {
+  async structureDeepDraft(request: NoteGenerationRequest): Promise<NoteGenerationDeepResult> {
+    const result: NoteGenerationDeepResult = await super.structureDeepDraft(request);
+    result.draft.sections[0].content = '推导：保留全部步骤。\n$$\nx = 1\n$$';
+    result.draft.sections[1].content = '例子：保留尾部材料。\n$$\nx = 2\n$$';
+    const issues: NoteGenerationIssue[] = [{
+      stage: 'merge',
+      code: 'DEEP_SECTION_DUPLICATE_CONTENT',
+      severity: 'hard',
+      message: 'deep sections duplicate the same content',
+      repairable: true,
+      sectionId: 'section-example',
+      sourceId: 'source-b',
+    }, {
+      stage: 'merge',
+      code: 'DEEP_SYMBOL_DRIFT',
+      severity: 'hard',
+      message: 'deep sections use inconsistent formula symbols',
+      repairable: true,
+      sectionId: 'section-example',
+    }, {
+      stage: 'merge',
+      code: 'DEEP_REFERENCE_INVALID',
+      severity: 'hard',
+      message: 'deep section contains an unresolved cross-section reference',
+      repairable: true,
+      sectionId: 'section-example',
+    }, {
+      stage: 'outline',
+      code: 'DEEP_SOURCE_INVALID',
+      severity: 'hard',
+      message: 'deep outline references an unknown source',
+      repairable: false,
+      sectionId: 'section-proof',
+      sourceId: 'source-missing',
+    }, {
+      stage: 'merge',
+      code: 'DEEP_MUST_INCLUDE_MISSING',
+      severity: 'hard',
+      message: 'deep draft does not cover must-include: 公式',
+      repairable: true,
+    }];
+    result.verification = {
+      status: 'ambiguous',
+      issues: issues,
+      checkedEvidenceIds: result.verification.checkedEvidenceIds,
+      decisions: result.verification.decisions,
+    };
+    return result;
+  }
+
+  async repairDeepDraft(
+    _request: NoteGenerationRequest,
+    current: NoteGenerationDeepResult,
+    _issues: NoteGenerationIssue[],
+  ): Promise<NoteGenerationDeepResult> {
+    return current;
+  }
+}
+
+class SoftSymbolDriftKnowledgeModel extends DeepKnowledgeModel {
+  async structureDeepDraft(request: NoteGenerationRequest): Promise<NoteGenerationDeepResult> {
+    const result: NoteGenerationDeepResult = await super.structureDeepDraft(request);
+    result.draft.sections[0].content = '推导：保留全部步骤。\n$$\nx = 1\n$$';
+    result.draft.sections[1].content = '例子：保留尾部材料。\n$$\nx = 0\n$$';
+    return result;
   }
 }
 
@@ -693,6 +814,163 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(result.generation?.outline?.sections[1].sourceIds[0]).assertEqual('ocr-page-2');
       expect(repository.checkpoints.length > 0).assertTrue();
       expect(model.calls).assertEqual(1);
+    });
+
+    it('passes requested section titles from instruction into deep generation', 0, async () => {
+      const instruction: string = '请整理“连续函数、可导性与中值定理”的复习笔记。\n'
+        + '要求生成结构化笔记，包含 4 个 section：\n'
+        + '1. 连续函数的定义与判断方法\n'
+        + '2. 可导与连续的关系\n'
+        + '3. 拉格朗日中值定理\n'
+        + '4. 常见错误与自测题\n'
+        + '每个 section 包含：核心定义、直观解释、关键公式、一个例子、一个常见误区。';
+      const model: RequestedSectionsDeepKnowledgeModel = new RequestedSectionsDeepKnowledgeModel();
+      const repository: FakeRepository = new FakeRepository();
+      const request: DispatchRequest = {
+        source: 'app',
+        payload: { kind: 'text', text: instruction },
+        generation: {
+          runId: 'deep-requested-sections-107',
+          instruction: instruction,
+          mode: 'create',
+          route: 'deep',
+          sources: { fragments: [{
+            id: 'source-lagrange',
+            kind: 'conversation',
+            originId: 'message-lagrange',
+            sequence: 0,
+            fingerprint: 'lagrange',
+            text: instruction,
+          }] },
+        },
+      };
+
+      const result: DispatchResult = await new Dispatcher().dispatch(request, {
+        persist: false,
+        generationRepository: repository,
+        knowledgeModel: model,
+      });
+
+      expect(result.success).assertTrue();
+      expect(model.receivedSections.length).assertEqual(4);
+      expect(model.receivedSections[0]).assertEqual('连续函数的定义与判断方法');
+      expect(model.receivedSections[1]).assertEqual('可导与连续的关系');
+      expect(model.receivedSections[2]).assertEqual('拉格朗日中值定理');
+      expect(model.receivedSections[3]).assertEqual('常见错误与自测题');
+      expect(result.generation?.outline?.sections[2].label).assertEqual('拉格朗日中值定理');
+    });
+
+    it('does not treat prose assignments as cross-section formula drift', 0, async () => {
+      const repository: FakeRepository = new FakeRepository();
+      const model: DeepKnowledgeModel = new DeepKnowledgeModel();
+      const request: DispatchRequest = {
+        source: 'app',
+        payload: { kind: 'text', text: '请给出完整详细证明和推导' },
+        generation: {
+          runId: 'deep-local-equation-105',
+          instruction: '请给出完整详细证明和推导，保留例子',
+          mode: 'create',
+          route: 'deep',
+          sources: { fragments: [{
+            id: 'source-a', kind: 'conversation', originId: 'message-a', sequence: 0,
+            fingerprint: 'a', text: '推导材料。',
+          }, {
+            id: 'source-b', kind: 'conversation', originId: 'message-b', sequence: 1,
+            fingerprint: 'b', text: '例子材料。',
+          }] },
+        },
+      };
+
+      const result: DispatchResult = await new Dispatcher().dispatch(request, {
+        persist: false, generationRepository: repository, knowledgeModel: model,
+      });
+
+      expect(result.success).assertTrue();
+      expect(result.generation?.issues.some((issue): boolean => issue.code === 'DEEP_SYMBOL_DRIFT')).assertFalse();
+    });
+
+    it('keeps explicit deep formula drift visible without blocking preview', 0, async () => {
+      const repository: FakeRepository = new FakeRepository();
+      const model: SoftSymbolDriftKnowledgeModel = new SoftSymbolDriftKnowledgeModel();
+      const request: DispatchRequest = {
+        source: 'app',
+        payload: { kind: 'text', text: '请给出完整详细证明和推导' },
+        generation: {
+          runId: 'deep-soft-drift-106',
+          instruction: '请给出完整详细证明和推导，保留例子',
+          mode: 'create',
+          route: 'deep',
+          sources: { fragments: [{
+            id: 'source-a', kind: 'conversation', originId: 'message-a', sequence: 0,
+            fingerprint: 'a', text: '推导材料。公式 x = 1。',
+          }, {
+            id: 'source-b', kind: 'conversation', originId: 'message-b', sequence: 1,
+            fingerprint: 'b', text: '例子材料。公式 x = 0。',
+          }] },
+        },
+      };
+
+      const result: DispatchResult = await new Dispatcher().dispatch(request, {
+        persist: false, generationRepository: repository, knowledgeModel: model,
+      });
+
+      let driftIssue: NoteGenerationIssue | undefined = undefined;
+      for (const issue of result.generation?.issues ?? []) {
+        if (issue.code === 'DEEP_SYMBOL_DRIFT') {
+          driftIssue = issue;
+          break;
+        }
+      }
+      expect(result.success).assertTrue();
+      expect(result.generation?.status).assertEqual('ready-preview');
+      expect(result.generation?.stopReason).assertEqual('deep_complete');
+      expect(driftIssue !== undefined).assertTrue();
+      expect(driftIssue?.severity).assertEqual('soft');
+    });
+
+    it('exposes complete deep diagnostics without truncating issue details', 0, async () => {
+      const repository: FakeRepository = new FakeRepository();
+      const model: DeepDiagnosticsKnowledgeModel = new DeepDiagnosticsKnowledgeModel();
+      const request: DispatchRequest = {
+        source: 'app',
+        payload: { kind: 'text', text: '请给出完整详细证明和推导' },
+        generation: {
+          runId: 'deep-diagnostics-106',
+          instruction: '请给出完整详细证明和推导',
+          mode: 'create',
+          route: 'deep',
+          sources: { fragments: [{
+            id: 'source-a', kind: 'conversation', originId: 'message-a', sequence: 0,
+            fingerprint: 'a', text: '定义与推导。',
+          }, {
+            id: 'source-b', kind: 'ocr', originId: 'ocr-b', sequence: 1,
+            fingerprint: 'b', text: '例子与公式。',
+          }] },
+        },
+      };
+
+      const result: DispatchResult = await new Dispatcher().dispatch(request, {
+        persist: false, generationRepository: repository, knowledgeModel: model,
+      });
+
+      const diagnostics: string = result.generation?.diagnostics ?? '';
+      expect(result.success).assertFalse();
+      expect(result.generation?.stopReason).assertEqual('repeated_issue_fingerprint');
+      expect(diagnostics.includes('DEEP_SECTION_DUPLICATE_CONTENT')).assertTrue();
+      expect(diagnostics.includes('DEEP_SYMBOL_DRIFT')).assertTrue();
+      expect(diagnostics.includes('DEEP_REFERENCE_INVALID')).assertTrue();
+      expect(diagnostics.includes('DEEP_SOURCE_INVALID')).assertTrue();
+      expect(diagnostics.includes('DEEP_MUST_INCLUDE_MISSING')).assertTrue();
+      expect(diagnostics.includes('"sectionId":"section-example"')).assertTrue();
+      expect(diagnostics.includes('"sourceId":"source-missing"')).assertTrue();
+      expect(diagnostics.includes('"issueCount":6')).assertTrue();
+      expect(diagnostics.includes('"tokenBudget":14000')).assertTrue();
+      expect(diagnostics.includes('"estimatedTokenCost":')).assertTrue();
+      expect(diagnostics.includes('"issues":[{')).assertTrue();
+      expect(diagnostics.includes('previousFormula=x = 1')).assertTrue();
+      expect(diagnostics.includes('currentFormula=x = 2')).assertTrue();
+      expect(diagnostics.includes('previousSection=section-proof')).assertTrue();
+      expect(diagnostics.includes('currentSection=section-example')).assertTrue();
     });
 
     it('downgrades an oversized deep request to standard without silently dropping sources', 0, async () => {
