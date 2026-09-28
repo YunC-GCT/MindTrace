@@ -12,6 +12,8 @@ import {
   ClassificationResult,
   NoteDraftReadyEvent,
   NoteGenerationRoute,
+  NoteGenerationProgressEvent,
+  NoteGenerationProgressSink,
   SourceFragment,
 } from 'common';
 import { ConversationWorkflow } from '../main/ets/workflows/conversation/ConversationWorkflow';
@@ -63,6 +65,8 @@ class RecordingWorkflowCallbacks implements ConversationWorkflowCallbacks {
   reportDiagnostic(_ref: ConversationRunRef, _diagnostic: string): void {}
   onStart(_ref: ConversationRunRef): void {}
   onProgress(_ref: ConversationRunRef, _step: ConversationProgressStep): void {}
+  onNoteGenerationProgress(_ref: ConversationRunRef, _event: NoteGenerationProgressEvent): void {}
+  completeProgress(_ref: ConversationRunRef): void {}
   onError(_ref: ConversationRunRef, message: string): void { this.errors.push(message); }
   onFinish(_ref: ConversationRunRef): void {}
   isCurrentRun(_ref: ConversationRunRef): boolean { return true; }
@@ -84,6 +88,7 @@ class FixedIntentPort implements IConversationIntentPort {
   async classifyWithCancellation(_userText: string, _token?: CancellationToken): Promise<TextIntent> {
     return this.intent;
   }
+  classifyLocalIntent(_userText: string): TextIntent | undefined { return undefined; }
   inlineNoteMaterial(_userText: string): string { return 'test material'; }
 }
 
@@ -132,6 +137,7 @@ class FailingCapturePort implements IConversationCapturePort {
     _originSessionId?: string,
     _parentConversationRunId?: string,
     _route?: NoteGenerationRoute,
+    _progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     throw new Error(this.route === 'note' ? 'NOTE_FAILED' : 'UNEXPECTED_NOTE_CALL');
   }
@@ -143,6 +149,7 @@ class FailingCapturePort implements IConversationCapturePort {
     _token?: CancellationToken,
     _originSessionId?: string,
     _parentConversationRunId?: string,
+    _progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     throw new Error('REGENERATE_FAILED');
   }

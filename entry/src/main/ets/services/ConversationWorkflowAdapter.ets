@@ -2,14 +2,14 @@
  * ConversationWorkflowAdapter.ets - Session-scoped workflow-to-UI adapter.
  *
  * Path: entry/src/main/ets/services/ConversationWorkflowAdapter.ets
- * Responsibility: Reject stale events and translate workflow lifecycle events into the run sink.
+ * Responsibility: Reject stale events, hide duplicate reply-generation progress, and translate lifecycle events into the run sink.
  * Dependencies: AgentChatContracts; ConversationRunCoordinator; ChatStatusMachine.
  *
  * Data flow:
  *   Workflow callback -> current-run guard -> typed UI event sink.
  */
 import { common } from '@kit.AbilityKit';
-import { CancellationToken, NoteDraftReadyEvent } from 'common';
+import { CancellationToken, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
 import {
   ConversationMessageEvent,
   ConversationWorkflowCallbacks,
@@ -20,6 +20,7 @@ import {
   ConversationProgressStep,
 } from '../workflows/conversation/ConversationState';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import { NoteReviewAnswer } from '../models/NoteReviewModels';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { ConversationRunCoordinator } from './ConversationRunCoordinator';
@@ -68,13 +69,33 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
 
   onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void {
     if (!this.accepts(ref, 'progress')) { return; }
+    if (step === 'intent_check' || step === 'reply_model_call' || step === 'completed'
+      || step === 'note_intent_check' || step === 'note_context_load' || step === 'note_source_prepare'
+      || step === 'note_structure_save' || step === 'note_finalize') { return; }
     const meta: ChatStatusMeta = this.statusMachine.advance(step);
     const event: ConversationMessageEvent = {
       kind: 'status',
       content: meta.title + ' · ' + meta.detail,
-      status: step === 'completed' ? 'success' : 'running',
+      status: 'running',
     };
     this.callbacks.updateRunEvent(ref, event);
+  }
+
+  onNoteGenerationProgress(ref: ConversationRunRef, progress: NoteGenerationProgressEvent): void {
+    if (!this.accepts(ref, 'note-generation-progress')) { return; }
+    const event: ConversationMessageEvent = {
+      kind: 'status',
+      content: this.noteProgressContent(progress),
+      status: progress.state,
+      progressKey: 'note-generation:' + progress.phase,
+    };
+    this.callbacks.updateRunEvent(ref, event);
+  }
+
+  completeProgress(ref: ConversationRunRef): void {
+    if (this.accepts(ref, 'complete-progress')) {
+      this.callbacks.terminateAiRun(ref, 'completed');
+    }
   }
 
   onError(ref: ConversationRunRef, message: string): void {
@@ -119,9 +140,34 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
     if (this.accepts(ref, 'draft-ready')) { this.callbacks.onDraftReady(ref, event); }
   }
 
+  onNoteReviewReady?(ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void {
+    if (this.accepts(ref, 'note-review-ready') && this.callbacks.onNoteReviewReady !== undefined) {
+      this.callbacks.onNoteReviewReady(ref, messageId, review);
+    }
+  }
+
   onOcrBlank?(ref: ConversationRunRef, imageUri: string): void {
     if (this.accepts(ref, 'ocr-blank') && this.callbacks.onOcrBlank !== undefined) {
       this.callbacks.onOcrBlank(ref, imageUri);
     }
+  }
+
+  private noteProgressContent(progress: NoteGenerationProgressEvent): string {
+    const title: string = progress.phase === 'prepare' ? '整理笔记素材'
+      : progress.phase === 'compose' ? '生成笔记草稿' : '检查内容准确性';
+    if (progress.state === 'failed') { return title + ' · 处理失败'; }
+    if (progress.state === 'success') {
+      const completed: string = progress.phase === 'prepare' ? '素材已就绪'
+        : progress.phase === 'compose' ? '草稿已完成' : '检查已完成';
+      return title + ' · ' + completed;
+    }
+    if (progress.activity === 'plan_structure') { return title + ' · 正在规划结构'; }
+    if (progress.activity === 'write_section' && progress.current !== undefined && progress.total !== undefined) {
+      return title + ' · 正在撰写第 ' + progress.current.toString() + '/' + progress.total.toString() + ' 节';
+    }
+    if (progress.activity === 'repair_draft') { return title + ' · 正在修订内容'; }
+    if (progress.activity === 'check_accuracy') { return title + ' · 正在核对来源与结论'; }
+    if (progress.activity === 'write_draft') { return title + ' · 正在撰写内容'; }
+    return title + ' · 正在汇总可用内容';
   }
 }

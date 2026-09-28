@@ -29,6 +29,7 @@ import {
   NoteDraftReadyEvent,
   NoteGenerationRequest,
   NoteGenerationRoute,
+  NoteGenerationProgressSink,
   PreparedCandidate,
   NoteGenerationCheckpoint,
   NoteGenerationResult,
@@ -135,6 +136,7 @@ export class AiService {
     originSessionId?: string,
     parentConversationRunId?: string,
     route: NoteGenerationRoute = 'standard',
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     cancellationToken?.throwIfCancelled();
     AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
@@ -166,7 +168,12 @@ export class AiService {
       source: 'app',
       payload: { kind: 'text', text: sourceText },
       generation: request,
-    }, { persist: false, generationRepository: repository, cancellationToken: cancellationToken });
+    }, {
+      persist: false,
+      generationRepository: repository,
+      cancellationToken: cancellationToken,
+      progressSink: progressSink,
+    });
     if (!result.success || result.generation === undefined || result.data === undefined || result.generation.bestCheckpointId === undefined) {
       throw new Error(result.errorMessage ?? '草稿生成失败');
     }
@@ -221,6 +228,7 @@ export class AiService {
     cancellationToken?: CancellationToken,
     originSessionId?: string,
     parentConversationRunId?: string,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     cancellationToken?.throwIfCancelled();
     AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
@@ -256,7 +264,12 @@ export class AiService {
       source: 'app',
       payload: { kind: 'text', text: sourceText },
       generation: request,
-    }, { persist: false, generationRepository: repository, cancellationToken: cancellationToken });
+    }, {
+      persist: false,
+      generationRepository: repository,
+      cancellationToken: cancellationToken,
+      progressSink: progressSink,
+    });
     if (!result.success || result.data === undefined || result.generation === undefined
       || result.generation.bestCheckpointId === undefined) {
       throw new Error(result.errorMessage ?? '增量重生成失败');

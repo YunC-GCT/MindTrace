@@ -34,6 +34,7 @@ import {
   PreparedCandidate,
   NoteGenerationDeepResult,
   NoteGenerationLedger,
+  NoteGenerationProgressEvent,
   deepBudget,
   segmentSourceBundle,
   selectGenerationRoute,
@@ -584,12 +585,14 @@ export default function dispatcherNoteGenerationTest(): void {
         },
       };
       const model: FakeKnowledgeModel = new FakeKnowledgeModel();
+      const progressEvents: NoteGenerationProgressEvent[] = [];
       const testDao: NoteDaoInterface = new CountingNoteDao(dao, 1);
       const options: DispatchOptions = {
         persist: false,
         dao: testDao,
         generationRepository: repository,
         knowledgeModel: model,
+        progressSink: (event: NoteGenerationProgressEvent): void => { progressEvents.push(event); },
       };
       const result: DispatchResult = await new Dispatcher().dispatch(request, options);
 
@@ -601,6 +604,10 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(repository.checkpointSaves).assertEqual(1);
       expect(repository.lastRun?.originSessionId).assertEqual('s1');
       expect(repository.lastRun?.parentConversationRunId).assertEqual('r101');
+      expect(progressEvents[0].phase).assertEqual('prepare');
+      expect(progressEvents[0].state).assertEqual('running');
+      expect(progressEvents[progressEvents.length - 1].phase).assertEqual('compose');
+      expect(progressEvents[progressEvents.length - 1].state).assertEqual('success');
 
       const generated: KnowledgeUnit = result.data ?? unitForTest;
       const prepared: PreparedCandidate = {

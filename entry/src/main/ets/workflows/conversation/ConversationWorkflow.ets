@@ -41,10 +41,23 @@ import {
 } from './ConversationState';
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
 import { StreamReplyResult } from '../../services/ReplyService';
-import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun, SourceFragment } from 'common';
+import {
+  NoteDraftReadyEvent,
+  NoteGenerationProgressEvent,
+  NoteGenerationProgressSink,
+  NoteGenerationRoute,
+  NoteGenerationRun,
+  SourceFragment,
+} from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
+import { NoteReviewAnswer } from '../../models/NoteReviewModels';
+import {
+  NoteReviewFinalization,
+  NoteReviewPlan,
+  NoteReviewService,
+} from '../../services/NoteReviewService';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { requireConversationRunRef } from '../../services/ConversationIdentity';
 import { CancellationToken } from 'common';
@@ -80,6 +93,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   private readonly capturePort: IConversationCapturePort;
   private readonly noteRoute: IConversationNoteRoutePort;
   private evidenceService: NoteEvidenceService | null = null;
+  private reviewService: NoteReviewService | null = null;
   private readonly cancellationTokens: Map<string, CancellationToken> = new Map<string, CancellationToken>();
   private readonly runOrigins: Map<string, ChatMessageOrigin> = new Map<string, ChatMessageOrigin>();
   private readonly reportedErrorRuns: Set<string> = new Set<string>();
@@ -228,9 +242,15 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       this.setStep(input.runRef, 'intent_check');
       this.ensureNotCancelled(input.runRef);
       const token: CancellationToken | undefined = this.cancellationToken(input.runRef);
-      const intent: TextIntent = token === undefined
-        ? await this.intentClassifier.classify(input.request.userContent)
-        : await this.intentClassifier.classifyWithCancellation(input.request.userContent, token);
+      let intent: TextIntent | undefined = this.intentClassifier.classifyLocalIntent(input.request.userContent);
+      if (intent === undefined && this.getReviewService().classifyIntent(input.request.userContent) !== undefined) {
+        intent = 'chat';
+      }
+      if (intent === undefined) {
+        intent = token === undefined
+          ? await this.intentClassifier.classify(input.request.userContent)
+          : await this.intentClassifier.classifyWithCancellation(input.request.userContent, token);
+      }
       const next: ConversationState = this.copyState(input, 'classify_intent');
       next.intent = intent;
       return next;
@@ -291,7 +311,15 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       next.memoryContext = await this.safeGetContextForReply(input.runRef);
       next.learnerProfileContext = await this.safeGetLearnerProfileContext(input.runRef);
       if (input.request.kind === 'text') {
-        next.evidence = await this.safeBuildEvidence(input.request.userContent);
+        const reviewPlan: NoteReviewPlan = await this.getReviewService().plan(input.request.userContent);
+        if (reviewPlan.kind !== 'none') {
+          next.noteReviewPlan = reviewPlan;
+          if (reviewPlan.evidence !== undefined) {
+            next.evidence = reviewPlan.evidence;
+          }
+        } else {
+          next.evidence = await this.safeBuildEvidence(input.request.userContent);
+        }
       }
       return next;
     });
@@ -306,6 +334,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         input.learnerProfileContext ?? '',
         input.request.userContent,
         input.evidence,
+        input.noteReviewPlan,
       );
       return this.copyState(input, 'complete_reply');
     });
@@ -316,6 +345,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         input.learnerProfileContext ?? '',
         input.request.userContent,
         input.evidence,
+        input.noteReviewPlan,
       );
       return this.copyState(input, 'stream_reply');
     });
@@ -325,7 +355,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         input.request.userContent,
         this.noteRoute.select(input.runRef),
       );
-      this.setStep(input.runRef, 'completed');
       const next: ConversationState = this.copyState(input, 'note_reply');
       if (event !== undefined) {
         next.draftRunId = event.runId;
@@ -340,7 +369,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       if (request.kind !== 'regenerate') {
         return this.copyState(input, 'regenerate_reply');
       }
-      this.setStep(input.runRef, 'note_context_load');
       await this.safeSaveUserMessage(input.runRef, request.userContent);
       try {
         const event: NoteDraftReadyEvent = await this.capturePort.regenerateNoteDraft(
@@ -351,9 +379,10 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
           this.cancellationToken(input.runRef),
           input.runRef.sessionId,
           input.runRef.runId,
+          this.noteGenerationProgressSink(input.runRef),
         );
         this.cbs.onDraftReady(input.runRef, event);
-        await this.addAiMessage(input.runRef, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
+        this.cbs.completeProgress(input.runRef);
       } catch (e) {
         const errorMessage: string = ConversationWorkflow.errorMessage(e);
         this.finishRunFailure(input.runRef, e);
@@ -415,6 +444,9 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     }
     if (input.evidence !== undefined) {
       next.evidence = input.evidence;
+    }
+    if (input.noteReviewPlan !== undefined) {
+      next.noteReviewPlan = input.noteReviewPlan;
     }
     if (input.draftRunId !== undefined) {
       next.draftRunId = input.draftRunId;
@@ -562,18 +594,15 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         this.cancellationToken(ref),
         route,
       );
-      this.setStep(ref, 'note_finalize');
-
       if (materialPersistFailed) {
         await this.addAiMessage(
           ref,
           '⚠️ 笔记草稿已准备，但素材暂存失败，草稿无法在重启后恢复。请尽快确认保存。',
         );
       } else {
-        await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
+        this.cbs.completeProgress(ref);
       }
       this.cbs.onDraftReady(ref, event);
-      this.setStep(ref, 'completed');
       return {
         event: event,
         ocrResult: classificationResult,
@@ -593,7 +622,12 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     learnerProfileContext: string,
     userContent: string,
     evidence: NoteEvidenceContext | undefined,
+    reviewPlan: NoteReviewPlan | undefined,
   ): Promise<void> {
+    if (reviewPlan !== undefined && reviewPlan.kind !== 'none') {
+      await this.handleNoteReviewComplete(ref, memoryContext, learnerProfileContext, reviewPlan);
+      return;
+    }
     try {
       const configured: boolean = await this.replyService.isConfigured();
       if (!configured) {
@@ -622,7 +656,12 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     learnerProfileContext: string,
     userContent: string,
     evidence: NoteEvidenceContext | undefined,
+    reviewPlan: NoteReviewPlan | undefined,
   ): Promise<void> {
+    if (reviewPlan !== undefined && reviewPlan.kind !== 'none') {
+      await this.handleNoteReviewStream(ref, memoryContext, learnerProfileContext, reviewPlan);
+      return;
+    }
     try {
       const configured: boolean = await this.replyService.isConfigured();
       if (!configured) {
@@ -696,13 +735,148 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     }
   }
 
+  private async handleNoteReviewComplete(
+    ref: ConversationRunRef,
+    memoryContext: string,
+    learnerProfileContext: string,
+    plan: NoteReviewPlan,
+  ): Promise<void> {
+    const msgId: number = this.cbs.addAiMsgEmpty(ref, this.originFor(ref));
+    if (msgId <= 0) { return; }
+    if (plan.kind === 'terminal') {
+      await this.finishNoteReviewMessage(ref, msgId, plan.displayText, plan.answer);
+      this.setStep(ref, 'completed');
+      return;
+    }
+    try {
+      const configured: boolean = await this.replyService.isConfigured();
+      if (!configured) {
+        const noKey: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'llm-not-configured');
+        await this.finishNoteReviewMessage(ref, msgId, noKey.displayText, noKey.answer);
+        this.setStep(ref, 'completed');
+        return;
+      }
+      this.setStep(ref, 'reply_model_call');
+      const replyContext: ReplyContext = this.createReplyContext(
+        memoryContext,
+        learnerProfileContext,
+        plan.modelUserContent,
+        plan.evidence,
+      );
+      const reply: string = await this.replyService.complete(replyContext, this.cancellationToken(ref));
+      const finalization: NoteReviewFinalization = this.getReviewService().finalizeModelAnswer(plan, reply);
+      await this.finishNoteReviewMessage(ref, msgId, finalization.displayText, finalization.answer);
+      this.setStep(ref, 'completed');
+      if (finalization.answer.status === 'grounded') {
+        await this.safeUpdateLearnerProfileIfNeeded(ref);
+        await this.safeSummarizeIfNeeded(ref);
+      }
+    } catch (e) {
+      const failed: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'model-failed');
+      await this.finishNoteReviewMessage(ref, msgId, failed.displayText, failed.answer);
+      this.setStep(ref, 'completed');
+    }
+  }
+
+  private async handleNoteReviewStream(
+    ref: ConversationRunRef,
+    memoryContext: string,
+    learnerProfileContext: string,
+    plan: NoteReviewPlan,
+  ): Promise<void> {
+    const msgId: number = this.cbs.addAiMsgEmpty(ref, this.originFor(ref));
+    if (msgId <= 0) { return; }
+    if (plan.kind === 'terminal') {
+      await this.finishNoteReviewMessage(ref, msgId, plan.displayText, plan.answer);
+      this.setStep(ref, 'completed');
+      return;
+    }
+    try {
+      const configured: boolean = await this.replyService.isConfigured();
+      if (!configured) {
+        const noKey: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'llm-not-configured');
+        await this.finishNoteReviewMessage(ref, msgId, noKey.displayText, noKey.answer);
+        this.setStep(ref, 'completed');
+        return;
+      }
+      this.setStep(ref, 'reply_model_call');
+      const replyContext: ReplyContext = this.createReplyContext(
+        memoryContext,
+        learnerProfileContext,
+        plan.modelUserContent,
+        plan.evidence,
+      );
+      const citationFilter: NoteEvidenceStreamFilter = this.getReviewService().createStreamFilter(plan);
+      const streamResult: StreamReplyResult = await this.replyService.stream(
+        replyContext,
+        (event: StreamEvent): void => {
+          if (event.type !== 'text') {
+            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: event };
+            this.cbs.updateAiMsg(ref, msgId, messageEvent);
+            return;
+          }
+          const safeText: string = citationFilter.push(event.delta);
+          if (safeText.length > 0) {
+            const safeEvent: StreamEvent = { type: 'text', delta: safeText };
+            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: safeEvent };
+            this.cbs.updateAiMsg(ref, msgId, messageEvent);
+          }
+        },
+        this.cancellationToken(ref),
+      );
+      const citationTail: string = citationFilter.flush();
+      if (citationTail.length > 0) {
+        const tailEvent: StreamEvent = { type: 'text', delta: citationTail };
+        const messageEvent: ConversationMessageEvent = { kind: 'stream', event: tailEvent };
+        this.cbs.updateAiMsg(ref, msgId, messageEvent);
+      }
+      if (streamResult.usedFallback) {
+        const fallback: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'stream-fallback');
+        await this.finishNoteReviewMessage(ref, msgId, fallback.displayText, fallback.answer);
+        this.setStep(ref, 'completed');
+        return;
+      }
+      if (streamResult.interrupted) {
+        const interrupted: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'stream-interrupted');
+        await this.finishNoteReviewMessage(ref, msgId, interrupted.displayText, interrupted.answer);
+        this.setStep(ref, 'completed');
+        return;
+      }
+      const finalization: NoteReviewFinalization = this.getReviewService().finalizeModelAnswer(plan, streamResult.content);
+      await this.finishNoteReviewMessage(ref, msgId, finalization.displayText, finalization.answer);
+      this.setStep(ref, 'completed');
+      if (finalization.answer.status === 'grounded') {
+        await this.safeUpdateLearnerProfileIfNeeded(ref);
+        await this.safeSummarizeIfNeeded(ref);
+      }
+    } catch (e) {
+      const failed: NoteReviewFinalization = this.getReviewService().fallbackFailure(plan, 'model-failed');
+      await this.finishNoteReviewMessage(ref, msgId, failed.displayText, failed.answer);
+      this.setStep(ref, 'completed');
+    }
+  }
+
+  private async finishNoteReviewMessage(
+    ref: ConversationRunRef,
+    messageId: number,
+    content: string,
+    review: NoteReviewAnswer,
+  ): Promise<void> {
+    const displayContent: string = this.replyService.normalize(content);
+    const replaceEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayContent };
+    this.cbs.updateAiMsg(ref, messageId, replaceEvent);
+    if (this.cbs.onNoteReviewReady !== undefined) {
+      this.cbs.onNoteReviewReady(ref, messageId, review);
+    }
+    this.cbs.finishAiMsg(ref, messageId, 'completed');
+    await this.safeSaveAssistantMessage(ref, displayContent, messageId);
+  }
+
   private async generateNoteFromConversation(
     ref: ConversationRunRef,
     userInstruction: string,
     route?: NoteGenerationRoute,
   ): Promise<NoteDraftReadyEvent | undefined> {
-    this.setStep(ref, 'note_intent_check');
-    this.setStep(ref, 'note_context_load');
     const explicitRegeneration = this.parseRegenerationRequest(userInstruction);
     if (explicitRegeneration !== undefined) {
       await this.safeSaveUserMessage(ref, userInstruction);
@@ -715,9 +889,10 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
           this.cancellationToken(ref),
           ref.sessionId,
           ref.runId,
+          this.noteGenerationProgressSink(ref),
         );
         this.cbs.onDraftReady(ref, event);
-        await this.addAiMessage(ref, '增量预览已准备，请检查新增、修改、保留和锁定章节。');
+        this.cbs.completeProgress(ref);
         return event;
       } catch (e) {
         const errorMessage: string = ConversationWorkflow.errorMessage(e);
@@ -730,7 +905,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       return undefined;
     }
     const memoryContext: string = await this.safeGetContextForNoteGeneration(ref);
-    this.setStep(ref, 'note_source_prepare');
     await this.safeSaveUserMessage(ref, userInstruction);
     try {
       const configured: boolean = await this.replyService.isConfigured();
@@ -750,7 +924,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         return undefined;
       }
 
-      this.setStep(ref, 'note_structure_save');
       const noteGenerationRunId: string = 'conversation-' + Date.now().toString();
       if (!this.cbs.isCurrentRun(ref)) { return undefined; }
       const pendingSources: SourceFragment[] = await this.memoryProjection.pendingSources(ref);
@@ -763,9 +936,8 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         this.cancellationToken(ref),
         route,
       );
-      this.setStep(ref, 'note_finalize');
       this.cbs.onDraftReady(ref, event);
-      await this.addAiMessage(ref, '笔记草稿已准备，请预览并确认保存。');
+      this.cbs.completeProgress(ref);
       return event;
     } catch (e) {
       const errMsg: string = LlmErrorBodyFormatter.redactSensitiveText(ConversationWorkflow.errorMessage(e));
@@ -805,7 +977,14 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       ref.sessionId,
       ref.runId,
       route,
+      this.noteGenerationProgressSink(ref),
     );
+  }
+
+  private noteGenerationProgressSink(ref: ConversationRunRef): NoteGenerationProgressSink {
+    return (event: NoteGenerationProgressEvent): void => {
+      this.cbs.onNoteGenerationProgress(ref, event);
+    };
   }
 
 
@@ -916,6 +1095,13 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       this.evidenceService = new NoteEvidenceService();
     }
     return this.evidenceService;
+  }
+
+  private getReviewService(): NoteReviewService {
+    if (this.reviewService === null) {
+      this.reviewService = new NoteReviewService();
+    }
+    return this.reviewService;
   }
 
   private async safeBuildEvidence(query: string): Promise<NoteEvidenceContext | undefined> {

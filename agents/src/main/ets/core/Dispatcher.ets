@@ -33,6 +33,8 @@ import {
   NoteGenerationDeepResult,
   NoteGenerationRoute,
   NoteGenerationProgress,
+  NoteGenerationProgressEvent,
+  NoteGenerationProgressSink,
   IncrementalBase,
   IncrementalRequirement,
   IncrementalSection,
@@ -73,6 +75,7 @@ export interface DispatchOptions {
   generationRepository?: NoteGenerationRepository;
   knowledgeModel?: KnowledgeModel;
   cancellationToken?: CancellationToken;
+  progressSink?: NoteGenerationProgressSink;
 }
 
 interface GenerationCandidateEvaluation {
@@ -216,8 +219,18 @@ export class Dispatcher {
     if (options.generationRepository === undefined || options.generationRepository.getRegenerationBase === undefined) {
       return { success: false, route: 'D1', errorCode: 'REGENERATION_REPOSITORY_REQUIRED', errorMessage: '增量重生成基础资料不可用', durationMs: Date.now() - startedAt };
     }
+    this.emitGenerationProgress(options, {
+      phase: 'prepare',
+      state: 'running',
+      activity: 'collect_sources',
+    });
     const base: IncrementalBase | undefined = await options.generationRepository.getRegenerationBase(request.targetNoteId);
     if (base === undefined) {
+      this.emitGenerationProgress(options, {
+        phase: 'prepare',
+        state: 'failed',
+        activity: 'collect_sources',
+      });
       return { success: false, route: 'D1', errorCode: 'NOTE_NOT_FOUND', errorMessage: '找不到指定 KnowledgeUnit', durationMs: Date.now() - startedAt };
     }
     if (base.baseVersion !== request.baseVersion) {
@@ -240,6 +253,11 @@ export class Dispatcher {
     };
     const plan: IncrementalPlan = planIncrementalChange(requirement, locked, planningManifest, request.sources.fragments);
     if (plan.targetSectionIds.length === 0) {
+      this.emitGenerationProgress(options, {
+        phase: 'prepare',
+        state: 'failed',
+        activity: 'collect_sources',
+      });
       const result: NoteGenerationResult = this.incrementalResult(request, base.manifest, plan, [], 'needs-input');
       result.issues.push({ stage: 'plan', code: 'NO_UNLOCKED_TARGET', severity: 'hard', message: '没有可安全重生成的未锁定目标章节', repairable: false });
       return { success: false, route: 'D1', generation: result, errorCode: 'NO_UNLOCKED_TARGET', errorMessage: '没有可安全重生成的未锁定目标章节', durationMs: Date.now() - startedAt };
@@ -262,12 +280,32 @@ export class Dispatcher {
       updatedAt: Date.now(),
     };
     await options.generationRepository.saveRun(run, sourceBundle);
+    this.emitGenerationProgress(options, {
+      phase: 'prepare',
+      state: 'success',
+      activity: 'collect_sources',
+    });
+    this.emitGenerationProgress(options, {
+      phase: 'compose',
+      state: 'running',
+      activity: 'repair_draft',
+    });
     const patchResponse: IncrementalPatchResponse = await model.repairIncrementalSections(
       request,
       plan,
       locked,
       sourceBundle.fragments,
     );
+    this.emitGenerationProgress(options, {
+      phase: 'compose',
+      state: 'success',
+      activity: 'repair_draft',
+    });
+    this.emitGenerationProgress(options, {
+      phase: 'verify',
+      state: 'running',
+      activity: 'check_accuracy',
+    });
     const merged: IncrementalMergeResult = mergeIncrementalPatches(locked, plan, patchResponse.patches);
     const manifest: IncrementalManifest = buildIncrementalManifest(
       base.unit.id,
@@ -276,6 +314,11 @@ export class Dispatcher {
       base.manifest.sourceIds.concat(plan.newSourceIds),
     );
     if (!merged.ok) {
+      this.emitGenerationProgress(options, {
+        phase: 'verify',
+        state: 'failed',
+        activity: 'check_accuracy',
+      });
       const result: NoteGenerationResult = this.incrementalResult(request, manifest, plan, merged.diff, 'needs-input');
       for (const issue of merged.issues) {
         result.issues.push({ stage: 'merge', code: issue, severity: 'hard', message: issue, repairable: false });
@@ -316,6 +359,11 @@ export class Dispatcher {
       createdAt: run.createdAt,
       updatedAt: Date.now(),
     }, sourceBundle);
+    this.emitGenerationProgress(options, {
+      phase: 'verify',
+      state: 'success',
+      activity: 'check_accuracy',
+    });
     return { success: true, route: 'D1', data: candidate, generation: generation, durationMs: Date.now() - startedAt };
   }
 
@@ -352,6 +400,11 @@ export class Dispatcher {
     startedAt: number,
   ): Promise<DispatchResult> {
     const bundle: SourceBundle = this.normalizeBundle(request);
+    this.emitGenerationProgress(options, {
+      phase: 'prepare',
+      state: 'running',
+      activity: 'collect_sources',
+    });
     let route = request.route ?? selectGenerationRoute(bundle, request.instruction);
     // 2026-09-20 P0-7: deep 源预算超限时自动降级 standard — 原先 preflight 直接
     // needs-input 终止 (dbpull5 实测 3 连 missing_facts, 用户反复重试均 25ms 拒绝);
@@ -431,6 +484,11 @@ export class Dispatcher {
       }
     }
     if (missing.length > 0) {
+      this.emitGenerationProgress(options, {
+        phase: 'prepare',
+        state: 'failed',
+        activity: 'collect_sources',
+      });
       const questions: string[] = [];
       if (!processBlocked) {
         for (const issue of missing) {
@@ -478,7 +536,17 @@ export class Dispatcher {
       source: req.source,
       payload: { kind: 'text', text: this.bundleText(bundle) },
     };
+    this.emitGenerationProgress(options, {
+      phase: 'prepare',
+      state: 'success',
+      activity: 'collect_sources',
+    });
     if (route === 'standard') {
+      this.emitGenerationProgress(options, {
+        phase: 'compose',
+        state: 'running',
+        activity: 'write_draft',
+      });
       return await this.dispatchStandardGeneration(
         request,
         generationPayload,
@@ -491,6 +559,11 @@ export class Dispatcher {
       );
     }
     if (route === 'deep') {
+      this.emitGenerationProgress(options, {
+        phase: 'compose',
+        state: 'running',
+        activity: 'plan_structure',
+      });
       return await this.dispatchDeepGeneration(
         request,
         bundle,
@@ -521,8 +594,18 @@ export class Dispatcher {
       analysisOnly: false,
       cancellationToken: options.cancellationToken,
     };
+    this.emitGenerationProgress(options, {
+      phase: 'compose',
+      state: 'running',
+      activity: 'write_draft',
+    });
     const graph: CaptureGraph = this.buildGenerationGraph(options.knowledgeModel, options.cancellationToken);
     const finalState: AgentState = await graph.run(initial);
+    this.emitGenerationProgress(options, {
+      phase: 'compose',
+      state: finalState.error === undefined ? 'success' : 'failed',
+      activity: 'write_draft',
+    });
     const errors: NoteGenerationIssue[] = [];
     if (finalState.error !== undefined) {
       errors.push({ stage: finalState.error.step, code: finalState.error.kind, severity: 'hard', message: finalState.error.message, repairable: false });
@@ -612,6 +695,12 @@ export class Dispatcher {
     };
   }
 
+  private emitGenerationProgress(options: DispatchOptions, event: NoteGenerationProgressEvent): void {
+    if (options.progressSink !== undefined) {
+      options.progressSink(event);
+    }
+  }
+
   private async dispatchStandardGeneration(
     request: NoteGenerationRequest,
     req: DispatchRequest,
@@ -626,7 +715,7 @@ export class Dispatcher {
     const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens, requirement);
     let current: NoteGenerationStandardResult;
     try {
-      current = await model.structureStandardDraft(budgetedRequest);
+      current = await model.structureStandardDraft(budgetedRequest, options.progressSink);
     } catch (e) {
       return await this.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
         round: 0,
@@ -706,6 +795,11 @@ export class Dispatcher {
         + ' stop=running rollback=' + rollback.toString() + ' issues=' + evaluation.issues.length.toString());
 
       if (best !== undefined && best.hardIssueCount === 0) {
+        this.emitGenerationProgress(options, {
+          phase: 'verify',
+          state: 'success',
+          activity: 'check_accuracy',
+        });
         stopReason = round === 0 ? 'standard_complete' : 'repair_complete';
         break;
       }
@@ -748,8 +842,13 @@ export class Dispatcher {
       parentId = checkpointId;
       round += 1;
       nodeRuns += 2;
+      this.emitGenerationProgress(options, {
+        phase: 'compose',
+        state: 'running',
+        activity: 'repair_draft',
+      });
       try {
-        current = await model.repairStandardDraft(budgetedRequest, current, evaluation.issues);
+        current = await model.repairStandardDraft(budgetedRequest, current, evaluation.issues, options.progressSink);
       } catch (e) {
         stopReason = 'repair_failed';
         rollback = best !== evaluation;
@@ -809,7 +908,7 @@ export class Dispatcher {
     const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens, requirement);
     let current: NoteGenerationDeepResult;
     try {
-      current = await model.structureDeepDraft(budgetedRequest);
+      current = await model.structureDeepDraft(budgetedRequest, options.progressSink);
     } catch (e) {
       return await this.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
         round: 0,
@@ -887,6 +986,11 @@ export class Dispatcher {
         break;
       }
       if (best !== undefined && best.hardIssueCount === 0) {
+        this.emitGenerationProgress(options, {
+          phase: 'verify',
+          state: 'success',
+          activity: 'check_accuracy',
+        });
         stopReason = round === 0 ? 'deep_complete' : 'deep_repair_complete';
         break;
       }
@@ -929,8 +1033,13 @@ export class Dispatcher {
       parentId = checkpointId;
       round += 1;
       nodeRuns += 2;
+      this.emitGenerationProgress(options, {
+        phase: 'compose',
+        state: 'running',
+        activity: 'repair_draft',
+      });
       try {
-        current = await model.repairDeepDraft(budgetedRequest, current, evaluation.issues);
+        current = await model.repairDeepDraft(budgetedRequest, current, evaluation.issues, options.progressSink);
       } catch (e) {
         stopReason = 'repair_failed';
         rollback = best !== evaluation;

@@ -34,3 +34,17 @@ test('Issue 103 deep source selection is semantic, not arbitrary truncation', ()
   assert.match(knowledgeModel, /outlineSection\.segmentIds\.includes\(segment\.id\)/)
   assert.doesNotMatch(knowledgeModel, /outlineSection\.sourceIds\.includes\(segment\.sourceId\)/)
 })
+
+test('deep generation reports real section and verification activity', () => {
+  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const model = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+
+  assert.match(model, /progressSink\?: NoteGenerationProgressSink/)
+  assert.match(model, /activity: 'write_section'/)
+  assert.match(model, /current: sectionIndex/)
+  assert.match(model, /total: outline\.sections\.length/)
+  assert.match(model, /activity: 'check_accuracy'/)
+  assert.match(dispatcher, /activity: 'repair_draft'/)
+  assert.match(dispatcher, /structureDeepDraft\(budgetedRequest, options\.progressSink\)/)
+  assert.match(dispatcher, /repairDeepDraft\(budgetedRequest, current, evaluation\.issues, options\.progressSink\)/)
+})

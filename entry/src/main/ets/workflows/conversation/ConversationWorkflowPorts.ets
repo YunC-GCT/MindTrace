@@ -15,6 +15,7 @@ import {
   LlmConfig,
   NoteDraftReadyEvent,
   NoteGenerationRoute,
+  NoteGenerationProgressSink,
   SourceFragment,
 } from 'common';
 import { AiService } from '../../services/AiService';
@@ -25,6 +26,7 @@ import { ConversationRunRef } from '../../services/ConversationIdentity';
 export interface IConversationIntentPort {
   classify(userText: string): Promise<TextIntent>;
   classifyWithCancellation(userText: string, token?: CancellationToken): Promise<TextIntent>;
+  classifyLocalIntent(userText: string): TextIntent | undefined;
   inlineNoteMaterial(userText: string): string;
 }
 
@@ -46,6 +48,7 @@ export interface IConversationCapturePort {
     originSessionId?: string,
     parentConversationRunId?: string,
     route?: NoteGenerationRoute,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent>;
   regenerateNoteDraft(
     runId: string,
@@ -55,6 +58,7 @@ export interface IConversationCapturePort {
     token?: CancellationToken,
     originSessionId?: string,
     parentConversationRunId?: string,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent>;
 }
 
@@ -75,6 +79,10 @@ class ConversationIntentAdapter implements IConversationIntentPort {
 
   async classifyWithCancellation(userText: string, token?: CancellationToken): Promise<TextIntent> {
     return await this.classifier.classifyWithCancellation(userText, token);
+  }
+
+  classifyLocalIntent(userText: string): TextIntent | undefined {
+    return this.classifier.classifyLocalIntent(userText);
   }
 
   inlineNoteMaterial(userText: string): string { return this.classifier.inlineNoteMaterial(userText); }
@@ -124,6 +132,7 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
     originSessionId?: string,
     parentConversationRunId?: string,
     route?: NoteGenerationRoute,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     return await this.ai.generateNoteDraftWithSources(
       runId,
@@ -134,6 +143,7 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
       originSessionId,
       parentConversationRunId,
       route,
+      progressSink,
     );
   }
 
@@ -145,6 +155,7 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
     token?: CancellationToken,
     originSessionId?: string,
     parentConversationRunId?: string,
+    progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     return await this.ai.regenerateNoteDraft(
       runId,
@@ -154,6 +165,7 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
       token,
       originSessionId,
       parentConversationRunId,
+      progressSink,
     );
   }
 }
