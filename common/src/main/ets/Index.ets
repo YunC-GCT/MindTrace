@@ -101,7 +101,12 @@ export type {
   NoteGenerationOutline,
   EvidenceItemType,
   EvidenceVerificationStatus,
+  EvidenceProvenanceStatus,
+  EvidenceAssertion,
+  EvidenceCandidateSourceRef,
+  NoteGenerationEvidenceCandidate,
   EvidenceSourceRef,
+  EvidenceReferenceResolution,
   NoteGenerationEvidenceItem,
   NoteGenerationVerification,
   NoteGenerationEvidenceDecision,
@@ -147,6 +152,7 @@ export {
   NOTE_EVIDENCE_JSON_SCHEMA,
   NOTE_VERIFICATION_JSON_SCHEMA,
   NOTE_STANDARD_JSON_SCHEMA,
+  buildNoteVerificationJsonSchema,
   defaultRequirement,
   selectLightRoute,
   selectGenerationRoute,
@@ -169,6 +175,7 @@ export {
   normalizeDeepSectionDraft,
   buildPipelineEvidence,
   normalizeEvidenceItems,
+  resolveEvidenceSourceRef,
   validateDraftDocument,
   validateDraftShape,
   parseIncrementalSections,
@@ -180,7 +187,7 @@ export {
   buildJsonSchema,
   parseDirectStandardArtifacts,
   } from './models/NoteGenerationModels';
-export { NoteGenerationEvidenceVerifier } from './models/NoteGenerationModels';
+export { NoteGenerationArtifactValidator } from './models/NoteGenerationModels';
 
 // ========== 统一日志 ==========
 export {

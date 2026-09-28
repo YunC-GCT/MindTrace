@@ -23,7 +23,6 @@ import {
   NoteGenerationOutlineSection,
   NoteGenerationStandardResult,
   NoteGenerationVerification,
-  NoteGenerationEvidenceDecision,
   NoteGenerationIssue,
   NoteGenerationRequest,
   NoteGenerationRepository,
@@ -97,19 +96,19 @@ class FakeRepository implements NoteGenerationRepository {
 }
 
 class VerifierContractFailureLlm implements LlmCaller {
+  verifierCalls: number = 0;
+
   async call(request: LlmCallRequest): Promise<LlmCallResult> {
     const system: string = request.messages.length > 0 ? request.messages[0].content : '';
     if (system.includes('math note standard route')) {
       return { text: VerifierContractFailureLlm.standardArtifacts(), streamed: false };
     }
-    if (system.includes('Act as an independent verifier')) {
+    if (system.includes('read-only independent note verifier')) {
+      this.verifierCalls += 1;
       return {
-        text: '{"status":"supported","issues":[],"checkedEvidenceIds":[],"decisions":[]}',
+        text: '{"status":"supported","issues":[],"evidenceStatuses":[]}',
         streamed: false,
       };
-    }
-    if (system.includes('Return JSON only with an evidence array')) {
-      return { text: '{"evidence":[]}', streamed: false };
     }
     throw new Error('unexpected LLM request in verifier failure fixture');
   }
@@ -124,11 +123,11 @@ class VerifierContractFailureLlm implements LlmCaller {
       + ',' + VerifierContractFailureLlm.outlineSection('section-five', '定义五', 4)
       + ']},'
       + '"evidence":['
-      + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-1', 'section-one', '第一条定义。')
-      + ',' + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-2', 'section-two', '第二条定义。')
-      + ',' + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-3', 'section-three', '第三条定义。')
-      + ',' + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-4', 'section-four', '第四条定义。')
-      + ',' + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-5', 'section-five', '第五条定义。')
+      + VerifierContractFailureLlm.evidenceItem('section-one', '第一条定义。')
+      + ',' + VerifierContractFailureLlm.evidenceItem('section-two', '第二条定义。')
+      + ',' + VerifierContractFailureLlm.evidenceItem('section-three', '第三条定义。')
+      + ',' + VerifierContractFailureLlm.evidenceItem('section-four', '第四条定义。')
+      + ',' + VerifierContractFailureLlm.evidenceItem('section-five', '第五条定义。')
       + '],'
       + '"draft":{"schemaVersion":"mindtrace.note-draft.v1","title":"五条定义",'
       + '"summary":"五条定义的整理","subject":"数学分析","category":"概念",'
@@ -146,10 +145,10 @@ class VerifierContractFailureLlm implements LlmCaller {
       + ',"mustInclude":[],"sourceIds":["source-a"]}';
   }
 
-  private static evidenceItem(id: string, sectionId: string, claim: string): string {
-    return '{"id":"' + id + '","type":"definition","claim":"' + claim
+  private static evidenceItem(sectionId: string, claim: string): string {
+    return '{"type":"definition","claim":"' + claim
       + '","sourceRefs":[{"sourceId":"source-a","excerpt":"' + claim
-      + '","start":0,"end":0}],"targetSectionId":"' + sectionId + '","verification":"supported"}';
+      + '"}],"targetSectionId":"' + sectionId + '"}';
   }
 
   private static draftSection(id: string, label: string, content: string): string {
@@ -160,9 +159,11 @@ class VerifierContractFailureLlm implements LlmCaller {
 
 class FakeKnowledgeModel extends KnowledgeModel {
   calls: number = 0;
+  sourceFingerprintReceived: string = '';
 
-  async structureLightDraft(_request: NoteGenerationRequest): Promise<NoteDraftDocument> {
+  async structureLightDraft(request: NoteGenerationRequest): Promise<NoteDraftDocument> {
     this.calls += 1;
+    this.sourceFingerprintReceived = request.sources.fragments[0].fingerprint;
     const section: NoteDraftSection = {
       id: 'definition',
       label: '定义',
@@ -187,9 +188,15 @@ class FakeKnowledgeModel extends KnowledgeModel {
 
 class StandardKnowledgeModel extends KnowledgeModel {
   calls: number = 0;
+  sourceFingerprintReceived: string = '';
+  originSessionIdReceived: string = '';
+  parentConversationRunIdReceived: string = '';
 
-  async structureStandardDraft(_request: NoteGenerationRequest): Promise<NoteGenerationStandardResult> {
+  async structureStandardDraft(request: NoteGenerationRequest): Promise<NoteGenerationStandardResult> {
     this.calls += 1;
+    this.sourceFingerprintReceived = request.sources.fragments[0].fingerprint;
+    this.originSessionIdReceived = request.originSessionId ?? '';
+    this.parentConversationRunIdReceived = request.parentConversationRunId ?? '';
     const definitionSectionId: string = stableSectionId(0, '定义');
     const exampleSectionId: string = stableSectionId(1, '例子');
     const outline: NoteGenerationOutline = {
@@ -210,18 +217,20 @@ class StandardKnowledgeModel extends KnowledgeModel {
     };
     const evidence: NoteGenerationEvidenceItem[] = [{
       id: 'evidence-definition',
-      type: 'definition',
-      claim: '函数在闭区间上连续。',
-      sourceRefs: [{ sourceId: 'source-a', excerpt: '函数在闭区间上连续。', start: 0, end: 10 }],
-      targetSectionId: definitionSectionId,
-      verification: 'supported',
+      assertion: { type: 'definition', text: '函数在闭区间上连续。', targetSectionId: definitionSectionId },
+      sourceRefs: [{
+        id: 'evidence-definition:ref-1', sourceId: 'source-a', sourceFingerprint: 'a',
+        excerpt: '函数在闭区间上连续。', start: 0, end: '函数在闭区间上连续。'.length,
+      }],
+      origin: 'pipeline',
     }, {
       id: 'evidence-example',
-      type: 'example',
-      claim: '函数 f(x)=x 在 [0,1] 上连续。',
-      sourceRefs: [{ sourceId: 'source-b', excerpt: '例：f(x)=x 在 [0,1] 上连续。', start: 0, end: 25 }],
-      targetSectionId: exampleSectionId,
-      verification: 'supported',
+      assertion: { type: 'example', text: '函数 f(x)=x 在 [0,1] 上连续。', targetSectionId: exampleSectionId },
+      sourceRefs: [{
+        id: 'evidence-example:ref-1', sourceId: 'source-b', sourceFingerprint: 'b',
+        excerpt: '例：f(x)=x 在 [0,1] 上连续。', start: 0, end: '例：f(x)=x 在 [0,1] 上连续。'.length,
+      }],
+      origin: 'pipeline',
     }];
     const draft: NoteDraftDocument = {
       schemaVersion: 'mindtrace.note-draft.v1',
@@ -409,7 +418,7 @@ class SoftSymbolDriftKnowledgeModel extends DeepKnowledgeModel {
 }
 
 class ContradictoryKnowledgeModel extends StandardKnowledgeModel {
-  async structureStandardDraft(_request: NoteGenerationRequest): Promise<NoteGenerationStandardResult> {
+  async structureStandardDraft(request: NoteGenerationRequest): Promise<NoteGenerationStandardResult> {
     this.calls += 1;
     const outline: NoteGenerationOutline = {
       schemaVersion: 'mindtrace.note-outline.v1',
@@ -417,14 +426,26 @@ class ContradictoryKnowledgeModel extends StandardKnowledgeModel {
         id: 'section-example', label: '例子', order: 1, mustInclude: ['例子'], sourceIds: ['source-b'],
       }],
     };
-    const resultEvidence: NoteGenerationEvidenceItem[] = [{
-      id: 'evidence-definition', type: 'definition', claim: '函数在闭区间上连续。',
-      sourceRefs: [{ sourceId: 'source-a', excerpt: '定义与例子存在冲突。', start: 0, end: 10 }],
-      targetSectionId: 'section-definition', verification: 'contradicted',
+    const definitionSource = request.sources.fragments[0];
+    const exampleSource = request.sources.fragments[request.sources.fragments.length - 1];
+    const evidence: NoteGenerationEvidenceItem[] = [{
+      id: 'evidence-definition',
+      assertion: { type: 'definition', text: '函数在闭区间上连续。', targetSectionId: 'section-definition' },
+      sourceRefs: [{
+        id: 'evidence-definition:ref-1', sourceId: definitionSource.id,
+        sourceFingerprint: definitionSource.fingerprint, excerpt: definitionSource.text,
+        start: 0, end: definitionSource.text.length,
+      }],
+      origin: 'pipeline',
     }, {
-      id: 'evidence-example', type: 'example', claim: '例：f(x)=x。',
-      sourceRefs: [{ sourceId: 'source-b', excerpt: '例：f(x)=x。', start: 0, end: 10 }],
-      targetSectionId: 'section-example', verification: 'contradicted',
+      id: 'evidence-example',
+      assertion: { type: 'example', text: '例：f(x)=x。', targetSectionId: 'section-example' },
+      sourceRefs: [{
+        id: 'evidence-example:ref-1', sourceId: exampleSource.id,
+        sourceFingerprint: exampleSource.fingerprint, excerpt: exampleSource.text,
+        start: 0, end: exampleSource.text.length,
+      }],
+      origin: 'pipeline',
     }];
     const draft: NoteDraftDocument = {
       schemaVersion: 'mindtrace.note-draft.v1', title: '冲突材料', summary: '冲突', subject: '数学分析',
@@ -433,35 +454,17 @@ class ContradictoryKnowledgeModel extends StandardKnowledgeModel {
         id: 'section-example', label: '例子', content: '例：f(x)=x。', sourceIds: ['source-b'], state: 'generated', baseHash: 'b',
       }],
     };
-    const evidence: NoteGenerationEvidenceItem[] = [];
-    for (const item of resultEvidence) {
-      evidence.push({
-        id: item.id,
-        type: item.type,
-        claim: item.claim,
-        sourceRefs: item.sourceRefs,
-        targetSectionId: item.targetSectionId,
-        verification: 'contradicted',
-      });
-    }
     const issue: NoteGenerationIssue = {
-      stage: 'evidence', code: 'EVIDENCE_CONTRADICTED', severity: 'hard',
-      message: 'verifier found contradicted evidence', repairable: true,
+      stage: 'verifier', code: 'EVIDENCE_CONTRADICTED', severity: 'hard',
+      message: 'verifier found contradicted evidence', repairable: false,
     };
     const verification: NoteGenerationVerification = {
       status: 'contradicted', issues: [issue], checkedEvidenceIds: ['evidence-definition', 'evidence-example'],
       decisions: [{ evidenceId: 'evidence-definition', status: 'contradicted' }, { evidenceId: 'evidence-example', status: 'contradicted' }],
     };
-    return { outline: outline, evidence: evidence, draft: draft, verification: verification, reextractionCount: 1 };
+    return { outline: outline, evidence: evidence, draft: draft, verification: verification };
   }
 
-  async repairStandardDraft(
-    _request: NoteGenerationRequest,
-    current: NoteGenerationStandardResult,
-    _issues: NoteGenerationIssue[],
-  ): Promise<NoteGenerationStandardResult> {
-    return current;
-  }
 }
 
 class RepairingKnowledgeModel extends StandardKnowledgeModel {
@@ -475,72 +478,9 @@ class RepairingKnowledgeModel extends StandardKnowledgeModel {
     return await super.structureStandardDraft(_request);
   }
 
-  async repairStandardDraft(
-    request: NoteGenerationRequest,
-    current: NoteGenerationStandardResult,
-    _issues: NoteGenerationIssue[],
-  ): Promise<NoteGenerationStandardResult> {
-    const evidence: NoteGenerationEvidenceItem[] = [];
-    for (const item of current.evidence) {
-      evidence.push({
-        id: item.id,
-        type: item.type,
-        claim: item.claim,
-        sourceRefs: item.sourceRefs,
-        targetSectionId: item.targetSectionId,
-        verification: 'supported',
-      });
-    }
-    const verification: NoteGenerationVerification = {
-      status: 'supported',
-      issues: [],
-      checkedEvidenceIds: evidence.map((item: NoteGenerationEvidenceItem): string => item.id),
-      decisions: evidence.map((item: NoteGenerationEvidenceItem): NoteGenerationEvidenceDecision => ({
-        evidenceId: item.id,
-        status: 'supported',
-      })),
-    };
-    return {
-      outline: current.outline,
-      evidence: evidence,
-      draft: current.draft,
-      verification: verification,
-      reextractionCount: 1,
-    };
-  }
 }
 
 class DiminishingKnowledgeModel extends ContradictoryKnowledgeModel {
-  private repairRound: number = 0;
-
-  async repairStandardDraft(
-    _request: NoteGenerationRequest,
-    current: NoteGenerationStandardResult,
-    _issues: NoteGenerationIssue[],
-  ): Promise<NoteGenerationStandardResult> {
-    this.repairRound += 1;
-    const issue: NoteGenerationIssue = {
-      stage: 'evidence',
-      code: 'EVIDENCE_CONTRADICTED',
-      severity: 'hard',
-      message: 'candidate did not improve',
-      repairable: true,
-      sourceId: 'r' + this.repairRound.toString(),
-    };
-    const verification: NoteGenerationVerification = {
-      status: 'contradicted',
-      issues: [issue],
-      checkedEvidenceIds: current.verification.checkedEvidenceIds,
-      decisions: current.verification.decisions,
-    };
-    return {
-      outline: current.outline,
-      evidence: current.evidence,
-      draft: current.draft,
-      verification: verification,
-      reextractionCount: this.repairRound,
-    };
-  }
 }
 
 class CountingDao {
@@ -669,6 +609,7 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(repository.checkpointSaves).assertEqual(1);
       expect(repository.lastRun?.originSessionId).assertEqual('s1');
       expect(repository.lastRun?.parentConversationRunId).assertEqual('r101');
+      expect(model.sourceFingerprintReceived).assertEqual(sourceFingerprint('函数在闭区间上连续。'));
       expect(progressEvents[0].phase).assertEqual('prepare');
       expect(progressEvents[0].state).assertEqual('running');
       expect(progressEvents[progressEvents.length - 1].phase).assertEqual('compose');
@@ -721,6 +662,8 @@ export default function dispatcherNoteGenerationTest(): void {
         payload: { kind: 'text', text: '函数在闭区间上连续。例：f(x)=x 在 [0,1] 上连续。' },
         generation: {
           runId: 'standard-101',
+          originSessionId: 'standard-session-101',
+          parentConversationRunId: 'conversation-run-101',
           instruction: '完整保留定义和例子',
           mode: 'create',
           sources: { fragments: [{
@@ -743,6 +686,9 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(result.generation?.verification?.status).assertEqual('supported');
       expect(repository.checkpointSaves).assertEqual(1);
       expect(model.calls).assertEqual(1);
+      expect(model.sourceFingerprintReceived).assertEqual(sourceFingerprint('函数在闭区间上连续。'));
+      expect(model.originSessionIdReceived).assertEqual('standard-session-101');
+      expect(model.parentConversationRunIdReceived).assertEqual('conversation-run-101');
       const candidate: KnowledgeUnit = result.data ?? unitForTest;
       const checkpoint: NoteGenerationCheckpoint = repository.checkpoints[0];
       expect(checkpoint.candidateHash).assertEqual(sourceFingerprint(JSON.stringify(candidate)));
@@ -753,6 +699,7 @@ export default function dispatcherNoteGenerationTest(): void {
     it('stops before content repair when the independent verifier is unavailable', 0, async () => {
       const repository: FakeRepository = new FakeRepository();
       const progressEvents: NoteGenerationProgressEvent[] = [];
+      const verifierCaller: VerifierContractFailureLlm = new VerifierContractFailureLlm();
       const sourceText: string = '第一条定义。\n第二条定义。\n第三条定义。\n第四条定义。\n第五条定义。';
       const request: DispatchRequest = {
         source: 'app',
@@ -775,13 +722,14 @@ export default function dispatcherNoteGenerationTest(): void {
       const result: DispatchResult = await new Dispatcher().dispatch(request, {
         persist: false,
         generationRepository: repository,
-        knowledgeModel: new KnowledgeModel(new VerifierContractFailureLlm()),
+        knowledgeModel: new KnowledgeModel(verifierCaller),
         progressSink: (event: NoteGenerationProgressEvent): void => { progressEvents.push(event); },
       });
 
       expect(result.success).assertFalse();
       expect(result.generation?.stopReason).assertEqual('verifier_unavailable');
       expect(repository.checkpointSaves).assertEqual(1);
+      expect(verifierCaller.verifierCalls).assertEqual(3);
       expect(progressEvents.some((event: NoteGenerationProgressEvent): boolean =>
         event.activity === 'repair_draft')).assertFalse();
     });
@@ -833,9 +781,10 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(model.calls).assertEqual(1);
     });
 
-    it('repairs only the failed standard candidate and keeps checkpoint lineage metadata', 0, async () => {
+    it('keeps directly sourced evidence and stops without automatic content repair', 0, async () => {
       const repository: FakeRepository = new FakeRepository();
       const model: RepairingKnowledgeModel = new RepairingKnowledgeModel();
+      const progressEvents: NoteGenerationProgressEvent[] = [];
       const request: DispatchRequest = {
         source: 'app', payload: { kind: 'text', text: '定义与例子存在冲突。' }, generation: {
           runId: 'repair-102', instruction: '完整保留定义和例子', mode: 'create',
@@ -847,20 +796,25 @@ export default function dispatcherNoteGenerationTest(): void {
 
       const result: DispatchResult = await new Dispatcher().dispatch(request, {
         persist: false, generationRepository: repository, knowledgeModel: model,
+        progressSink: (event: NoteGenerationProgressEvent): void => { progressEvents.push(event); },
       });
 
-      expect(result.success).assertTrue();
-      expect(result.generation?.status).assertEqual('ready-preview');
-      expect(result.generation?.stopReason).assertEqual('repair_complete');
-      expect(repository.checkpoints.length).assertEqual(2);
-      expect(repository.checkpoints[1].parentId).assertEqual(repository.checkpoints[0].id);
-      expect(repository.checkpoints[1].iteration).assertEqual(1);
+      expect(result.success).assertFalse();
+      expect(result.generation?.status).assertEqual('needs-input');
+      expect(result.generation?.stopReason).assertEqual('content_verification_failed');
+      expect(repository.checkpoints.length).assertEqual(1);
+      expect(repository.checkpoints[0].accepted).assertFalse();
       expect(repository.checkpoints[0].coverage).not().assertNull();
-      expect(repository.checkpoints[1].tokenCost).not().assertNull();
-      expect(repository.checkpoints[1].decision).assertEqual('best');
+      expect(repository.checkpoints[0].tokenCost).not().assertNull();
+      expect(repository.checkpoints[0].decision).assertEqual('initial');
+      expect(result.generation?.evidence?.[0].assertion.text).assertEqual('函数在闭区间上连续。');
+      expect(result.generation?.evidence?.[0].sourceRefs[0].excerpt).assertEqual('函数在闭区间上连续。');
+      expect(result.generation?.evidence?.[1].sourceRefs[0].excerpt).assertEqual('例：f(x)=x 在 [0,1] 上连续。');
+      expect(progressEvents.some((event: NoteGenerationProgressEvent): boolean =>
+        event.activity === 'repair_draft')).assertFalse();
     });
 
-    it('diminishing_returns rolls back to the best checkpoint after two rounds without improvement', 0, async () => {
+    it('does not enter diminishing-return repair loops for verifier content findings', 0, async () => {
       const repository: FakeRepository = new FakeRepository();
       const model: DiminishingKnowledgeModel = new DiminishingKnowledgeModel();
       const request: DispatchRequest = {
@@ -877,12 +831,11 @@ export default function dispatcherNoteGenerationTest(): void {
       });
 
       expect(result.success).assertFalse();
-      expect(result.generation?.stopReason).assertEqual('diminishing_returns');
-      expect(result.generation?.progress?.rollback).assertTrue();
+      expect(result.generation?.stopReason).assertEqual('content_verification_failed');
+      expect(result.generation?.progress?.rollback).assertFalse();
       expect(result.generation?.bestCheckpointId).assertEqual('diminishing-102:0');
-      expect(repository.checkpoints.length).assertEqual(3);
+      expect(repository.checkpoints.length).assertEqual(1);
       expect(repository.checkpoints[0].decision).assertEqual('initial');
-      expect(repository.checkpoints[2].decision).assertEqual('rejected');
     });
 
     it('selects deep deterministically and preserves semantic segments and the tail mapping', 0, async () => {
@@ -897,7 +850,7 @@ export default function dispatcherNoteGenerationTest(): void {
       const segments = segmentSourceBundle(sources);
       expect(segments.length > 2).assertTrue();
       expect(segments.some((segment): boolean => segment.text.includes('尾部材料'))).assertTrue();
-      expect(deepBudget().maxRepairRounds > 0).assertTrue();
+      expect((deepBudget().maxSourceChars ?? 0) > 0).assertTrue();
 
       const repository: FakeRepository = new FakeRepository();
       const model: DeepKnowledgeModel = new DeepKnowledgeModel();

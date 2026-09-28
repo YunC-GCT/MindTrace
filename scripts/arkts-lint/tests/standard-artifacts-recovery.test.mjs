@@ -37,8 +37,10 @@ test('standard generation degrades missing outline and evidence when draft is pr
 });
 
 test('standard generation keeps draft previewable when optional evidence or sourceIds are absent', () => {
-  assert.match(knowledgeModel, /if \(result\.evidence\.length === 0\) \{\s*modelVerification = this\.relaxEmptyEvidenceVerification\(modelVerification\);\s*\}/);
-  assert.match(knowledgeModel, /private relaxEmptyEvidenceVerification/);
+  assert.match(knowledgeModel, /evidence is empty, evidenceStatuses must be empty/);
+  assert.match(knowledgeModel, /buildNoteVerificationJsonSchema\(evidence\.length\)/);
+  assert.match(models, /minItems.*evidenceCount/);
+  assert.doesNotMatch(knowledgeModel, /relaxEmptyEvidenceVerification/);
   assert.match(knowledgeModel, /const outline: NoteGenerationOutline = normalizeOutline\(result\.outline, sourceIds\)/);
   assert.match(knowledgeModel, /if \(mappedSourceIds\.length === 0\)/);
   assert.match(models, /MUST_INCLUDE_UNMAPPED_OPTIONAL/);
@@ -50,4 +52,14 @@ test('standard schema describes nested outline, evidence, and draft fields', () 
   assert.match(models, /NOTE_STANDARD_JSON_SCHEMA: string = buildJsonSchema/);
   assert.match(models, /\['outline', 'draft'\]/);
   assert.doesNotMatch(models, /\['outline', 'evidence', 'draft'\]/);
+});
+
+test('strict verifier issue schema contains no runtime source or section identifiers', () => {
+  const start = models.indexOf('const NOTE_VERIFIER_ISSUE_JSON_SCHEMA');
+  const end = models.indexOf('export function buildNoteVerificationJsonSchema');
+  const issueSchema = models.substring(start, end);
+
+  assert.ok(start >= 0 && end > start);
+  assert.match(issueSchema, /required.*code.*severity.*message/);
+  assert.doesNotMatch(issueSchema, /evidenceId|sourceId|sectionId/);
 });

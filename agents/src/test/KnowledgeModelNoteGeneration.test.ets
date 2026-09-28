@@ -18,17 +18,19 @@ import type {
   LlmCallResult,
   LlmCaller,
   NoteGenerationDeepResult,
-  NoteGenerationIssue,
   NoteGenerationRequest,
 } from 'common';
 
 class StandardGenerationCaller implements LlmCaller {
   private callCount: number = 0;
-  private verifierResponseMode: 'complete' | 'incomplete_then_complete' | 'wrong_field_then_complete' = 'complete';
+  private verifierResponseMode: 'complete' | 'incomplete_then_complete' | 'wrong_field_then_complete'
+    | 'ambiguous_complete' = 'complete';
   private attributionMode: 'complete' | 'missing' = 'complete';
   private omitEvidence: boolean = false;
+  verifierPrompt: string = '';
 
-  setVerifierResponseMode(mode: 'complete' | 'incomplete_then_complete' | 'wrong_field_then_complete'): void {
+  setVerifierResponseMode(mode: 'complete' | 'incomplete_then_complete' | 'wrong_field_then_complete'
+    | 'ambiguous_complete'): void {
     this.verifierResponseMode = mode;
   }
 
@@ -40,7 +42,7 @@ class StandardGenerationCaller implements LlmCaller {
     this.omitEvidence = value;
   }
 
-  async call(_request: LlmCallRequest): Promise<LlmCallResult> {
+  async call(request: LlmCallRequest): Promise<LlmCallResult> {
     this.callCount += 1;
     if (this.callCount === 1) {
       const outlineSourceIds: string = this.attributionMode === 'missing'
@@ -64,23 +66,29 @@ class StandardGenerationCaller implements LlmCaller {
         + ',"state":"generated","baseHash":""}]}}';
       return { text: standardJson, streamed: false };
     }
+    this.verifierPrompt = request.messages.length > 0 ? request.messages[0].content : '';
     if (this.verifierResponseMode === 'incomplete_then_complete' && this.callCount === 2) {
       const incompleteVerificationJson: string = '{'
         + '"status":"supported",'
-        + '"decisions":[],"issues":[],"checkedEvidenceIds":[]}';
+        + '"issues":[],"evidenceStatuses":[]}';
       return { text: incompleteVerificationJson, streamed: false };
     }
     if (this.verifierResponseMode === 'wrong_field_then_complete' && this.callCount === 2) {
       const wrongFieldVerificationJson: string = '{'
         + '"status":"supported",'
         + '"decisions":[{"id":"pipeline-evidence-1","status":"supported"}],'
-        + '"issues":[],"checkedEvidenceIds":[]}';
+        + '"issues":[]}';
       return { text: wrongFieldVerificationJson, streamed: false };
+    }
+    if (this.verifierResponseMode === 'ambiguous_complete') {
+      return {
+        text: '{"status":"ambiguous","issues":[],"evidenceStatuses":["supported"]}',
+        streamed: false,
+      };
     }
     const verificationJson: string = '{'
       + '"status":"supported",'
-      + '"decisions":[{"evidenceId":"pipeline-evidence-1","status":"supported"}],'
-      + '"issues":[],"checkedEvidenceIds":["pipeline-evidence-1"]}';
+      + '"issues":[],"evidenceStatuses":["supported"]}';
     return { text: verificationJson, streamed: false };
   }
 }
@@ -104,6 +112,12 @@ class DeepGenerationCaller implements LlmCaller {
   async call(request: LlmCallRequest): Promise<LlmCallResult> {
     const system: string = request.messages.length > 0 ? request.messages[0].content : '';
     this.prompts.push(system);
+    if (system.includes('read-only independent note verifier')) {
+      return {
+        text: '{"status":"supported","issues":[],"evidenceStatuses":["supported","supported"]}',
+        streamed: false,
+      };
+    }
     const marker: string = 'section label=';
     const markerIndex: number = system.indexOf(marker);
     let label: string = '材料';
@@ -205,13 +219,31 @@ export default function knowledgeModelNoteGenerationTest(): void {
       expect(result.verification.decisions[0].evidenceId).assertEqual('pipeline-evidence-1');
     });
 
-    it('retries_when_verifier_uses_the_wrong_evidence_id_field', 0, async () => {
+    it('retries_when_verifier_uses_the_legacy_dynamic_id_shape', 0, async () => {
       const caller: StandardGenerationCaller = new StandardGenerationCaller();
       caller.setVerifierResponseMode('wrong_field_then_complete');
       const model: KnowledgeModel = new KnowledgeModel(caller);
       const result = await model.structureStandardDraft(request());
       expect(result.verification.issues.length).assertEqual(0);
       expect(result.verification.decisions[0].evidenceId).assertEqual('pipeline-evidence-1');
+      expect(result.verification.checkedEvidenceIds[0]).assertEqual('pipeline-evidence-1');
+    });
+
+    it('maps_positions_to_internal_ids_without_showing_them_to_the_verifier', 0, async () => {
+      const caller: StandardGenerationCaller = new StandardGenerationCaller();
+      const result = await new KnowledgeModel(caller).structureStandardDraft(request());
+      expect(caller.verifierPrompt).assertContain('evidenceByPosition=[0]');
+      expect(caller.verifierPrompt.indexOf('pipeline-evidence-1')).assertEqual(-1);
+      expect(result.verification.decisions[0].evidenceId).assertEqual('pipeline-evidence-1');
+    });
+
+    it('turns_an_unexplained_ambiguous_overall_status_into_a_hard_issue', 0, async () => {
+      const caller: StandardGenerationCaller = new StandardGenerationCaller();
+      caller.setVerifierResponseMode('ambiguous_complete');
+      const result = await new KnowledgeModel(caller).structureStandardDraft(request());
+      expect(result.verification.status).assertEqual('ambiguous');
+      expect(result.verification.issues[0].code).assertEqual('NOTE_AMBIGUOUS');
+      expect(result.verification.issues[0].severity).assertEqual('hard');
     });
   });
 
@@ -238,25 +270,18 @@ export default function knowledgeModelNoteGenerationTest(): void {
       expect(result.evidence[0].origin).assertEqual('pipeline');
       expect(result.evidence[1].origin).assertEqual('pipeline');
       expect(result.verification.issues.length).assertEqual(0);
+      expect(result.verification.decisions.length).assertEqual(2);
       expect(result.ledger.formulas.length).assertEqual(2);
       expect(caller.prompts[0].indexOf('MM-MD-v1 公式输出规则') >= 0).assertTrue();
     });
 
-    it('repairs_the_section_selected_by_issue_source_id', 0, async () => {
+    it('runs_the_read_only_verifier_after_all_deep_sections', 0, async () => {
       const caller: DeepGenerationCaller = new DeepGenerationCaller();
       const model: KnowledgeModel = new KnowledgeModel(caller);
-      const initial: NoteGenerationDeepResult = await model.structureDeepDraft(deepRequest());
-      const expectedLabel: string = initial.outline.sections[1].label;
-      const issue: NoteGenerationIssue = {
-        stage: 'merge',
-        code: 'DEEP_REFERENCE_INVALID',
-        severity: 'hard',
-        message: 'deep section reference needs repair',
-        repairable: true,
-        sourceId: 'deep-source-b',
-      };
-      await model.repairDeepDraft(deepRequest(), initial, [issue]);
-      expect(caller.requestedLabels[caller.requestedLabels.length - 1]).assertEqual(expectedLabel);
+      const result: NoteGenerationDeepResult = await model.structureDeepDraft(deepRequest());
+      expect(result.verification.decisions.length).assertEqual(2);
+      expect(caller.prompts.some((prompt: string): boolean =>
+        prompt.includes('read-only independent note verifier'))).assertTrue();
     });
   });
 }

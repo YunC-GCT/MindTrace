@@ -31,6 +31,8 @@ import {
   normalizeDraftDifficulty,
   buildPipelineEvidence,
   normalizeEvidenceItems,
+  resolveEvidenceSourceRef,
+  buildNoteVerificationJsonSchema,
   normalizeOutline,
   validateDraftDocument,
   buildDeepOutline,
@@ -50,6 +52,7 @@ import type {
   NoteGenerationOutlineSection,
   NoteGenerationRequirement,
   NoteGenerationEvidenceItem,
+  NoteGenerationEvidenceCandidate,
   NoteGenerationIssue,
   NoteDraftDocument,
 } from '../main/ets/Index';
@@ -185,11 +188,25 @@ function stdEvidence(
 ): NoteGenerationEvidenceItem {
   return {
     id: id,
+    assertion: { type: 'definition', text: claim, targetSectionId: 'sec-1' },
+    sourceRefs: [{
+      id: id + ':ref-1', sourceId: sourceId, sourceFingerprint: 'fp-std',
+      excerpt: excerpt, start: 0, end: excerpt.length,
+    }],
+    origin: 'model',
+  };
+}
+
+function stdCandidate(
+  claim: string,
+  sourceId: string,
+  excerpt: string,
+): NoteGenerationEvidenceCandidate {
+  return {
     type: 'definition',
     claim: claim,
-    sourceRefs: [{ sourceId: sourceId, excerpt: excerpt, start: 0, end: excerpt.length }],
+    sourceRefs: [{ sourceId: sourceId, excerpt: excerpt }],
     targetSectionId: 'sec-1',
-    verification: 'supported',
   };
 }
 
@@ -246,15 +263,13 @@ function formulaEvidence(pipeline: boolean): NoteGenerationEvidenceItem {
   const start: number = deepBundle().fragments[0].text.indexOf(excerpt);
   const item: NoteGenerationEvidenceItem = {
     id: 'ev-formula',
-    type: 'formula',
-    claim: excerpt,
-    sourceRefs: [{ sourceId: 'src-deep', excerpt: excerpt, start: start, end: start + excerpt.length }],
-    targetSectionId: 'sec-f',
-    verification: 'supported',
+    assertion: { type: 'formula', text: excerpt, targetSectionId: 'sec-f' },
+    sourceRefs: [{
+      id: 'ev-formula:ref-1', sourceId: 'src-deep', sourceFingerprint: 'fp-deep',
+      excerpt: excerpt, start: start, end: start + excerpt.length,
+    }],
+    origin: pipeline ? 'pipeline' : 'model',
   };
-  if (pipeline) {
-    item.origin = 'pipeline';
-  }
   return item;
 }
 
@@ -279,12 +294,6 @@ function deepDraft(): NoteDraftDocument {
 
 function deepRequirement(): NoteGenerationRequirement {
   return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
-}
-
-function deepSectionMap(): Map<string, string[]> {
-  const map: Map<string, string[]> = new Map<string, string[]>();
-  map.set('sec-f', ['src-deep']);
-  return map;
 }
 
 function countCode(issues: NoteGenerationIssue[], code: string): number {
@@ -449,7 +458,7 @@ export default function noteGenerationModelsTest(): void {
       const evidence: NoteGenerationEvidenceItem[] = buildPipelineEvidence(outline, bundle);
       expect(evidence.length).assertEqual(1);
       expect(evidence[0].origin).assertEqual('pipeline');
-      expect(evidence[0].targetSectionId).assertEqual('sec-definition');
+      expect(evidence[0].assertion.targetSectionId).assertEqual('sec-definition');
       expect(evidence[0].sourceRefs[0].sourceId).assertEqual('src-evidence');
       expect(evidence[0].sourceRefs[0].excerpt).assertContain('连续函数');
     });
@@ -682,62 +691,81 @@ export default function noteGenerationModelsTest(): void {
     });
   });
 
-  // 2026-09-20 P0-6: standard 证据契约归一化 — round 0 空壳 / round 1 空 ref +
-  // 重复 id 实测后, evidence 修复职责从"重试要求 LLM"转为"管线代算"
+  // Issue #190: drafting output is an untrusted assertion candidate. Source IDs,
+  // fingerprints and spans are owned by the pipeline, never by the model.
   describe('NoteGenerationModels.standard_evidence_normalization', () => {
-    it('normalize_evidence_drops_blank_stubs_and_dedupes_ids', 0, () => {
-      const blankStub: NoteGenerationEvidenceItem = {
-        id: '', type: 'claim', claim: '',
-        sourceRefs: [{ sourceId: '', excerpt: '', start: 0, end: 0 }],
-        targetSectionId: 'sec-1', verification: 'supported',
+    it('normalization_drops_blank_candidates_and_assigns_pipeline_ids', 0, () => {
+      const blankStub: NoteGenerationEvidenceCandidate = {
+        type: 'claim', claim: '', sourceRefs: [{ sourceId: '', excerpt: '' }], targetSectionId: 'sec-1',
       };
-      const backfilled: NoteGenerationEvidenceItem = stdEvidence('', '密度函数对称', 'src-std', '');
-      const duplicate: NoteGenerationEvidenceItem = stdEvidence('evidence-1', '均值为 μ', 'conversation:run-1', '');
+      const first: NoteGenerationEvidenceCandidate =
+        stdCandidate('概率密度函数关于均值对称', 'src-std', '概率密度函数关于均值对称');
+      const duplicate: NoteGenerationEvidenceCandidate =
+        stdCandidate('正态分布', 'conversation:run-1', '正态分布');
       const normalized: NoteGenerationEvidenceItem[] =
-        normalizeEvidenceItems([blankStub, backfilled, duplicate], ['src-std'], sectionMap());
+        normalizeEvidenceItems([blankStub, first, duplicate], stdBundle(), sectionMap());
       expect(normalized.length).assertEqual(2);
       expect(normalized[0].id).assertEqual('evidence-1');
-      expect(normalized[1].id).assertEqual('evidence-1-2');
+      expect(normalized[1].id).assertEqual('evidence-2');
       expect(normalized[1].sourceRefs[0].sourceId).assertEqual('src-std');
+      expect(normalized[1].sourceRefs[0].sourceFingerprint).assertEqual('fp-std');
     });
 
-    it('normalize_evidence_repairs_invalid_ref_to_section_source', 0, () => {
-      const invalidRef: NoteGenerationEvidenceItem = {
-        id: 'ev-keep', type: 'claim', claim: '正态分布是连续分布',
-        sourceRefs: [{ sourceId: 'conversation:run-9', excerpt: '', start: 0, end: 0 }],
-        targetSectionId: 'sec-1', verification: 'supported',
-      };
+    it('normalization_locates_exact_excerpt_even_when_model_source_id_is_wrong', 0, () => {
+      const invalidRef: NoteGenerationEvidenceCandidate =
+        stdCandidate('正态分布', 'conversation:run-9', '概率密度函数关于均值对称');
       const normalized: NoteGenerationEvidenceItem[] =
-        normalizeEvidenceItems([invalidRef], ['src-std'], sectionMap());
+        normalizeEvidenceItems([invalidRef], stdBundle(), sectionMap());
       expect(normalized.length).assertEqual(1);
       expect(normalized[0].sourceRefs.length).assertEqual(1);
       expect(normalized[0].sourceRefs[0].sourceId).assertEqual('src-std');
-      expect(normalized[0].sourceRefs[0].excerpt).assertEqual('');
+      expect(normalized[0].sourceRefs[0].excerpt).assertEqual('概率密度函数关于均值对称');
     });
 
-    it('validate_allows_empty_excerpt_but_keeps_fake_excerpt_hard', 0, () => {
-      const emptyExcerpt: NoteGenerationEvidenceItem = stdEvidence('ev-empty', '密度函数对称', 'src-std', '');
-      const issuesEmpty: NoteGenerationIssue[] = validateStandardArtifacts(
-        stdOutline(), [emptyExcerpt], stdDraft(), stdBundle(), stdRequirement());
-      let emptyLocatableCount: number = 0;
-      for (const issue of issuesEmpty) {
-        if (issue.code === 'EVIDENCE_EXCERPT_NOT_LOCATABLE') {
-          emptyLocatableCount += 1;
-        }
-      }
-      expect(emptyLocatableCount).assertEqual(0);
-
-      const fakeExcerpt: NoteGenerationEvidenceItem =
-        stdEvidence('ev-fake', '密度函数对称', 'src-std', '源材料里不存在的引文');
+    it('unlocatable_candidate_keeps_assertion_but_has_no_fabricated_reference', 0, () => {
+      const fakeCandidate: NoteGenerationEvidenceCandidate =
+        stdCandidate('模型解释', 'src-std', '源材料里不存在的引文');
+      const normalized: NoteGenerationEvidenceItem[] =
+        normalizeEvidenceItems([fakeCandidate], stdBundle(), sectionMap());
+      expect(normalized.length).assertEqual(1);
+      expect(normalized[0].sourceRefs.length).assertEqual(0);
       const issuesFake: NoteGenerationIssue[] = validateStandardArtifacts(
-        stdOutline(), [fakeExcerpt], stdDraft(), stdBundle(), stdRequirement());
-      let fakeLocatableCount: number = 0;
-      for (const issue of issuesFake) {
-        if (issue.code === 'EVIDENCE_EXCERPT_NOT_LOCATABLE') {
-          fakeLocatableCount += 1;
-        }
-      }
-      expect(fakeLocatableCount).assertEqual(1);
+        stdOutline(), normalized, stdDraft(), stdBundle(), stdRequirement());
+      expect(countCode(issuesFake, 'EVIDENCE_SOURCE_REQUIRED')).assertEqual(1);
+    });
+
+    it('source_fingerprint_marks_a_reference_stale_without_rewriting_the_quote', 0, () => {
+      const evidence: NoteGenerationEvidenceItem =
+        stdEvidence('ev-stale', '原始资料说 2+2=5', 'src-std', '若 X');
+      evidence.sourceRefs[0].sourceFingerprint = 'old-fingerprint';
+      expect(resolveEvidenceSourceRef(evidence.sourceRefs[0], stdBundle()).status).assertEqual('stale');
+      expect(evidence.sourceRefs[0].excerpt).assertEqual('若 X');
+    });
+
+    it('keeps_an_implausible_statement_when_it_is_a_verbatim_source_quote', 0, () => {
+      const bundle: SourceBundle = { fragments: [{
+        id: 'src-absurd', kind: 'conversation', originId: 'message-absurd', sequence: 0,
+        fingerprint: 'fp-absurd', text: '原始资料写道：2+2=5。',
+      }] };
+      const sourceMap: Map<string, string[]> = new Map<string, string[]>();
+      sourceMap.set('sec-1', ['src-absurd']);
+      const candidate: NoteGenerationEvidenceCandidate =
+        stdCandidate('2+2=5', 'src-absurd', '2+2=5');
+      const normalized: NoteGenerationEvidenceItem[] = normalizeEvidenceItems([candidate], bundle, sourceMap);
+      expect(normalized.length).assertEqual(1);
+      expect(normalized[0].assertion.text).assertEqual('2+2=5');
+      expect(normalized[0].sourceRefs[0].excerpt).assertEqual('2+2=5');
+      expect(resolveEvidenceSourceRef(normalized[0].sourceRefs[0], bundle).status).assertEqual('located');
+    });
+
+    it('verifier_schema_requires_one_positional_status_per_evidence_item', 0, () => {
+      const schema: string = buildNoteVerificationJsonSchema(2);
+      expect(schema).assertContain('"minItems":2');
+      expect(schema).assertContain('"maxItems":2');
+      expect(schema).assertContain('"required":["code","severity","message"]');
+      expect(schema.indexOf('evidenceId')).assertEqual(-1);
+      expect(schema.indexOf('sourceId')).assertEqual(-1);
+      expect(schema.indexOf('sectionId')).assertEqual(-1);
     });
   });
 
@@ -758,11 +786,5 @@ export default function noteGenerationModelsTest(): void {
       expect(countCode(issues, 'FORMULA_NOT_PRESERVED')).assertEqual(1);
     });
 
-    it('normalize_evidence_preserves_pipeline_origin', 0, () => {
-      const normalized: NoteGenerationEvidenceItem[] =
-        normalizeEvidenceItems([formulaEvidence(true)], ['src-deep'], deepSectionMap());
-      expect(normalized.length).assertEqual(1);
-      expect(normalized[0].origin).assertEqual('pipeline');
-    });
   });
 }

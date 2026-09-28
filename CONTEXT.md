@@ -139,6 +139,18 @@ _Avoid_: storing it; rendering it; calling it "the reply".
 The canonical chat reply content: MM-MD-v1 Markdown with formulas in `$$` blocks. The only legal value of a chat message's `content` field and of persisted reply history. On the stream transport the model emits it directly; on the complete transport it is extracted from the Reply Envelope. Invariant: chat content is always a Reply Body, never a Reply Envelope (ADR-0016).
 _Avoid_: raw model output; envelope payload (those are wire values, not bodies).
 
+**Evidence Assertion**:
+A claim used while generating a note. Model output is only an untrusted candidate; the pipeline assigns its persistent identity and resolves any citation against captured source text. An assertion is not a quotation and is not a verifier decision.
+_Avoid_: treating a model-provided ID, source ID, offset, or fingerprint as trusted provenance.
+
+**Evidence Source Ref**:
+An immutable citation handle containing an internal reference ID, source ID, source-text fingerprint, exact excerpt, and `[start, end)` span. Resolution reports `located`, `stale`, or `missing` without changing the captured quote. A verbatim quote remains provenance even when the quoted statement is factually wrong.
+_Avoid_: silently correcting a quote; using a database/OCR record ID as the source-text fingerprint.
+
+**Note Verification**:
+The read-only check of the complete generated note: outline, draft, source grounding, requirements, and optional evidence assertions. The model returns statuses aligned by evidence array position; the pipeline maps those positions to internal evidence IDs. Empty evidence does not skip verification.
+_Avoid_: asking the verifier to echo runtime IDs; letting verification rewrite evidence or trigger automatic content regeneration.
+
 ## Ambiguous terms
 
 The word **agent** is overloaded in this codebase. Use the precise form:

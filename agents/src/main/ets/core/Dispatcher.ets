@@ -15,7 +15,6 @@ import {
   NoteGenerationIssue,
   NoteGenerationRequirement,
   NoteGenerationCheckpoint,
-  NoteGenerationCheckpointDecision,
   NoteGenerationCoverage,
   NoteGenerationBudget,
   PreparedCandidate,
@@ -712,7 +711,12 @@ export class Dispatcher {
     requirement: NoteGenerationRequirement,
   ): Promise<DispatchResult> {
     const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
-    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens, requirement);
+    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(
+      request,
+      budget.maxTokens,
+      bundle,
+      requirement,
+    );
     let current: NoteGenerationStandardResult;
     try {
       current = await model.structureStandardDraft(budgetedRequest, options.progressSink);
@@ -726,137 +730,46 @@ export class Dispatcher {
       }, 'initial generation failed: ' + (e as Error).message);
     }
 
-    let best: GenerationCandidateEvaluation | undefined = undefined;
-    let bestCheckpointId: string | undefined = undefined;
-    let parentId: string | undefined = undefined;
-    let usedTokens: number = 0;
-    let nodeRuns: number = 1;
-    let round: number = 0;
-    let noImprovementRounds: number = 0;
-    let previous: GenerationCandidateEvaluation | undefined = undefined;
-    let stopReason: string = 'repair_complete';
-    let rollback: boolean = false;
-    const seenFingerprints: string[] = [];
-
-    while (true) {
-      const evaluation: GenerationCandidateEvaluation = await this.evaluateStandardCandidate(
-        current,
-        bundle,
-        requirement,
-        previous,
-        model,
-      );
-      usedTokens += evaluation.tokenCost;
-      const fingerprintRepeated: boolean = seenFingerprints.includes(evaluation.issueFingerprint);
-      seenFingerprints.push(evaluation.issueFingerprint);
-      const isBetter: boolean = best === undefined || this.isBetterCandidate(evaluation, best);
-      const checkpointId: string = request.runId + ':' + round.toString();
-      const decision: NoteGenerationCheckpointDecision = isBetter
-        ? (round === 0 ? 'initial' : 'best')
-        : 'rejected';
-      if (isBetter) {
-        best = evaluation;
-        bestCheckpointId = checkpointId;
-      }
-      const checkpoint: NoteGenerationCheckpoint = {
-        id: checkpointId,
-        runId: request.runId,
-        iteration: round,
-        stage: 'truth_check',
-        parentId: parentId,
-        candidateHash: sourceFingerprint(JSON.stringify(evaluation.candidate)),
-        documentJson: JSON.stringify(evaluation.candidate),
-        accepted: isBetter,
-        issueCodes: evaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
-        outlineJson: JSON.stringify(evaluation.result.outline),
-        evidenceJson: JSON.stringify(evaluation.result.evidence),
-        verificationJson: JSON.stringify(evaluation.result.verification),
-        issueFingerprint: evaluation.issueFingerprint,
-        coverage: evaluation.coverage,
-        tokenCost: evaluation.tokenCost,
-        changeScope: evaluation.changeScope,
-        decision: decision,
-        createdAt: Date.now(),
-      };
-      if (options.generationRepository !== undefined) {
-        await options.generationRepository.saveCheckpoint(checkpoint);
-        await options.generationRepository.appendLifecycleLog({
-          runId: request.runId,
-          event: 'retried',
-          checkpointId: checkpointId,
-          issueCount: evaluation.issues.length,
-          sourceCount: bundle.fragments.length,
-          round: round,
-          stopReason: undefined,
-          rollback: rollback,
-        });
-      }
-      log.info('generation progress run=' + request.runId + ' round=' + round.toString()
-        + ' stop=running rollback=' + rollback.toString() + ' issues=' + evaluation.issues.length.toString());
-
-      if (best !== undefined && best.hardIssueCount === 0) {
-        this.emitGenerationProgress(options, {
-          phase: 'verify',
-          state: 'success',
-          activity: 'check_accuracy',
-        });
-        stopReason = round === 0 ? 'standard_complete' : 'repair_complete';
-        break;
-      }
-      if (fingerprintRepeated) {
-        stopReason = 'repeated_issue_fingerprint';
-        rollback = best !== evaluation;
-        break;
-      }
-      if (previous !== undefined) {
-        const hardReduced: boolean = evaluation.hardIssueCount < previous.hardIssueCount;
-        const mustImprovement: number = evaluation.coverage.mustInclude - previous.coverage.mustInclude;
-        const evidenceImprovement: number = evaluation.coverage.evidence - previous.coverage.evidence;
-        if (!hardReduced && mustImprovement < 0.02 && evidenceImprovement < 0.02) {
-          noImprovementRounds += 1;
-        } else {
-          noImprovementRounds = 0;
-        }
-        if (noImprovementRounds >= 2) {
-          stopReason = 'diminishing_returns';
-          rollback = best !== evaluation;
-          break;
-        }
-      }
-      if (round >= budget.maxRepairRounds) {
-        stopReason = 'repair_budget_exhausted';
-        rollback = best !== evaluation;
-        break;
-      }
-      if (usedTokens >= budget.maxTokens) {
-        stopReason = 'token_budget_exhausted';
-        rollback = best !== evaluation;
-        break;
-      }
-      if (nodeRuns + 2 > budget.maxNodeRuns) {
-        stopReason = 'node_budget_exhausted';
-        rollback = best !== evaluation;
-        break;
-      }
-      previous = evaluation;
-      parentId = checkpointId;
-      round += 1;
-      nodeRuns += 2;
-      this.emitGenerationProgress(options, {
-        phase: 'compose',
-        state: 'running',
-        activity: 'repair_draft',
-      });
-      try {
-        current = await model.repairStandardDraft(budgetedRequest, current, evaluation.issues, options.progressSink);
-      } catch (e) {
-        stopReason = 'repair_failed';
-        rollback = best !== evaluation;
-        break;
-      }
+    const finalEvaluation: GenerationCandidateEvaluation = await this.evaluateStandardCandidate(
+      current,
+      bundle,
+      requirement,
+      model,
+    );
+    const checkpointId: string = request.runId + ':0';
+    const bestCheckpointId: string = checkpointId;
+    const checkpoint: NoteGenerationCheckpoint = {
+      id: checkpointId,
+      runId: request.runId,
+      iteration: 0,
+      stage: 'truth_check',
+      candidateHash: sourceFingerprint(JSON.stringify(finalEvaluation.candidate)),
+      documentJson: JSON.stringify(finalEvaluation.candidate),
+      accepted: finalEvaluation.hardIssueCount === 0,
+      issueCodes: finalEvaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
+      outlineJson: JSON.stringify(finalEvaluation.result.outline),
+      evidenceJson: JSON.stringify(finalEvaluation.result.evidence),
+      verificationJson: JSON.stringify(finalEvaluation.result.verification),
+      issueFingerprint: finalEvaluation.issueFingerprint,
+      coverage: finalEvaluation.coverage,
+      tokenCost: finalEvaluation.tokenCost,
+      changeScope: finalEvaluation.changeScope,
+      decision: 'initial',
+      createdAt: Date.now(),
+    };
+    if (options.generationRepository !== undefined) {
+      await options.generationRepository.saveCheckpoint(checkpoint);
     }
-
-    const finalEvaluation: GenerationCandidateEvaluation | undefined = best;
+    let stopReason: string = 'standard_complete';
+    if (finalEvaluation.hardIssueCount === 0) {
+      this.emitGenerationProgress(options, {
+        phase: 'verify', state: 'success', activity: 'check_accuracy',
+      });
+    } else {
+      stopReason = this.readOnlyVerificationStopReason(finalEvaluation.issues);
+    }
+    const round: number = 0;
+    const rollback: boolean = false;
     const progress: NoteGenerationProgress = {
       round: round,
       stopReason: stopReason,
@@ -864,20 +777,20 @@ export class Dispatcher {
       issueCount: finalEvaluation?.issues.length ?? 0,
       issueFingerprint: finalEvaluation?.issueFingerprint,
       tokenBudget: budget.maxTokens,
-      estimatedTokenCost: usedTokens,
+      estimatedTokenCost: finalEvaluation.tokenCost,
     };
-    if (finalEvaluation === undefined || finalEvaluation.hardIssueCount > 0) {
+    if (finalEvaluation.hardIssueCount > 0) {
       return await this.finishStandardGeneration(
         request,
         this.completedRun(run, bestCheckpointId, stopReason),
         bundle,
         options,
         startedAt,
-        finalEvaluation === undefined ? [] : finalEvaluation.issues,
+        finalEvaluation.issues,
         undefined,
         progress,
-        this.generationFailureMessage('standard', finalEvaluation?.issues ?? [], progress),
-        finalEvaluation?.result,
+        this.generationFailureMessage('standard', finalEvaluation.issues, progress),
+        finalEvaluation.result,
       );
     }
     const finalCandidate: KnowledgeUnit = finalEvaluation.candidate;
@@ -905,7 +818,12 @@ export class Dispatcher {
     requirement: NoteGenerationRequirement,
   ): Promise<DispatchResult> {
     const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
-    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens, requirement);
+    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(
+      request,
+      budget.maxTokens,
+      bundle,
+      requirement,
+    );
     let current: NoteGenerationDeepResult;
     try {
       current = await model.structureDeepDraft(budgetedRequest, options.progressSink);
@@ -918,156 +836,67 @@ export class Dispatcher {
         estimatedTokenCost: 0,
       }, 'initial deep generation failed: ' + (e as Error).message, undefined, 'deep');
     }
-    let best: GenerationCandidateEvaluation | undefined = undefined;
-    let bestCheckpointId: string | undefined = undefined;
-    let parentId: string | undefined = undefined;
-    let usedTokens: number = 0;
-    let nodeRuns: number = 1;
-    let round: number = 0;
-    let noImprovementRounds: number = 0;
-    let previous: GenerationCandidateEvaluation | undefined = undefined;
-    let stopReason: string = 'deep_complete';
-    let rollback: boolean = false;
-    const seenFingerprints: string[] = [];
-    while (true) {
-      const evaluation: GenerationCandidateEvaluation = await this.evaluateDeepCandidate(
-        current,
-        bundle,
-        requirement,
-        previous,
-        model,
-      );
-      usedTokens += evaluation.tokenCost;
-      const repeated: boolean = seenFingerprints.includes(evaluation.issueFingerprint);
-      seenFingerprints.push(evaluation.issueFingerprint);
-      const better: boolean = best === undefined || this.isBetterCandidate(evaluation, best);
-      const checkpointId: string = request.runId + ':' + round.toString();
-      const decision: NoteGenerationCheckpointDecision = better
-        ? (round === 0 ? 'initial' : 'best') : 'rejected';
-      if (better) {
-        best = evaluation;
-        bestCheckpointId = checkpointId;
-      }
-      const checkpoint: NoteGenerationCheckpoint = {
-        id: checkpointId,
-        runId: request.runId,
-        iteration: round,
-        stage: 'truth_check',
-        parentId: parentId,
-        candidateHash: sourceFingerprint(JSON.stringify(evaluation.candidate)),
-        documentJson: JSON.stringify(evaluation.candidate),
-        accepted: better,
-        issueCodes: evaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
-        outlineJson: JSON.stringify(evaluation.result.outline),
-        evidenceJson: JSON.stringify(evaluation.result.evidence),
-        verificationJson: JSON.stringify(evaluation.result.verification),
-        issueFingerprint: evaluation.issueFingerprint,
-        coverage: evaluation.coverage,
-        tokenCost: evaluation.tokenCost,
-        changeScope: evaluation.changeScope,
-        decision: decision,
-        createdAt: Date.now(),
-      };
-      if (options.generationRepository !== undefined) {
-        await options.generationRepository.saveCheckpoint(checkpoint);
-        await options.generationRepository.appendLifecycleLog({
-          runId: request.runId,
-          event: 'retried',
-          checkpointId: checkpointId,
-          issueCount: evaluation.issues.length,
-          sourceCount: bundle.fragments.length,
-          round: round,
-          rollback: rollback,
-        });
-      }
-      if (usedTokens > budget.maxTokens) {
-        stopReason = 'token_budget_exhausted';
-        rollback = best !== evaluation;
-        break;
-      }
-      if (best !== undefined && best.hardIssueCount === 0) {
-        this.emitGenerationProgress(options, {
-          phase: 'verify',
-          state: 'success',
-          activity: 'check_accuracy',
-        });
-        stopReason = round === 0 ? 'deep_complete' : 'deep_repair_complete';
-        break;
-      }
-      if (repeated) {
-        stopReason = 'repeated_issue_fingerprint';
-        rollback = best !== evaluation;
-        break;
-      }
-      if (previous !== undefined) {
-        const hardReduced: boolean = evaluation.hardIssueCount < previous.hardIssueCount;
-        const mustImprovement: number = evaluation.coverage.mustInclude - previous.coverage.mustInclude;
-        const evidenceImprovement: number = evaluation.coverage.evidence - previous.coverage.evidence;
-        if (!hardReduced && mustImprovement < 0.02 && evidenceImprovement < 0.02) {
-          noImprovementRounds += 1;
-        } else {
-          noImprovementRounds = 0;
-        }
-        if (noImprovementRounds >= 2) {
-          stopReason = 'diminishing_returns';
-          rollback = best !== evaluation;
-          break;
-        }
-      }
-      if (round >= budget.maxRepairRounds) {
-        stopReason = 'repair_budget_exhausted';
-        rollback = best !== evaluation;
-        break;
-      }
-      if (usedTokens >= budget.maxTokens) {
-        stopReason = 'token_budget_exhausted';
-        rollback = best !== evaluation;
-        break;
-      }
-      if (nodeRuns + 2 > budget.maxNodeRuns) {
-        stopReason = 'node_budget_exhausted';
-        rollback = best !== evaluation;
-        break;
-      }
-      previous = evaluation;
-      parentId = checkpointId;
-      round += 1;
-      nodeRuns += 2;
-      this.emitGenerationProgress(options, {
-        phase: 'compose',
-        state: 'running',
-        activity: 'repair_draft',
-      });
-      try {
-        current = await model.repairDeepDraft(budgetedRequest, current, evaluation.issues, options.progressSink);
-      } catch (e) {
-        stopReason = 'repair_failed';
-        rollback = best !== evaluation;
-        break;
-      }
+    const finalEvaluation: GenerationCandidateEvaluation = await this.evaluateDeepCandidate(
+      current,
+      bundle,
+      requirement,
+      model,
+    );
+    const checkpointId: string = request.runId + ':0';
+    const bestCheckpointId: string = checkpointId;
+    const checkpoint: NoteGenerationCheckpoint = {
+      id: checkpointId,
+      runId: request.runId,
+      iteration: 0,
+      stage: 'truth_check',
+      candidateHash: sourceFingerprint(JSON.stringify(finalEvaluation.candidate)),
+      documentJson: JSON.stringify(finalEvaluation.candidate),
+      accepted: finalEvaluation.hardIssueCount === 0,
+      issueCodes: finalEvaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
+      outlineJson: JSON.stringify(finalEvaluation.result.outline),
+      evidenceJson: JSON.stringify(finalEvaluation.result.evidence),
+      verificationJson: JSON.stringify(finalEvaluation.result.verification),
+      issueFingerprint: finalEvaluation.issueFingerprint,
+      coverage: finalEvaluation.coverage,
+      tokenCost: finalEvaluation.tokenCost,
+      changeScope: finalEvaluation.changeScope,
+      decision: 'initial',
+      createdAt: Date.now(),
+    };
+    if (options.generationRepository !== undefined) {
+      await options.generationRepository.saveCheckpoint(checkpoint);
     }
-    const finalEvaluation: GenerationCandidateEvaluation | undefined = best;
+    let stopReason: string = 'deep_complete';
+    if (finalEvaluation.hardIssueCount === 0) {
+      this.emitGenerationProgress(options, {
+        phase: 'verify', state: 'success', activity: 'check_accuracy',
+      });
+    } else {
+      stopReason = this.readOnlyVerificationStopReason(finalEvaluation.issues);
+    }
+    const round: number = 0;
+    const rollback: boolean = false;
     const progress: NoteGenerationProgress = {
       round: round,
       stopReason: stopReason,
       rollback: rollback,
-      issueCount: finalEvaluation?.issues.length ?? 0,
-      issueFingerprint: finalEvaluation?.issueFingerprint,
+      issueCount: finalEvaluation.issues.length,
+      issueFingerprint: finalEvaluation.issueFingerprint,
       tokenBudget: budget.maxTokens,
-      estimatedTokenCost: usedTokens,
+      estimatedTokenCost: finalEvaluation.tokenCost,
     };
-    const deepResult: NoteGenerationDeepResult | undefined = finalEvaluation?.deepResult;
-    if (finalEvaluation === undefined || finalEvaluation.hardIssueCount > 0 || stopReason === 'token_budget_exhausted') {
+    const deepResult: NoteGenerationDeepResult | undefined = finalEvaluation.deepResult;
+    if (finalEvaluation.hardIssueCount > 0) {
       return await this.finishStandardGeneration(
         request,
         this.completedRun(run, bestCheckpointId, stopReason),
         bundle,
         options,
         startedAt,
-        finalEvaluation?.issues ?? [],
+        finalEvaluation.issues,
         undefined,
         progress,
-        this.generationFailureMessage('deep', finalEvaluation?.issues ?? [], progress),
+        this.generationFailureMessage('deep', finalEvaluation.issues, progress),
         deepResult,
         'deep',
       );
@@ -1091,7 +920,6 @@ export class Dispatcher {
     result: NoteGenerationStandardResult,
     bundle: SourceBundle,
     requirement: NoteGenerationRequirement,
-    previous: GenerationCandidateEvaluation | undefined,
     model: KnowledgeModel,
   ): Promise<GenerationCandidateEvaluation> {
     const candidate: KnowledgeUnit = model.draftToKnowledgeUnit(result.draft, 'note_generation');
@@ -1156,8 +984,8 @@ export class Dispatcher {
     const mustCoverage: number = requirement.mustInclude.length === 0
       ? 1 : mustMatched / requirement.mustInclude.length;
     let supportedCount: number = 0;
-    for (const item of result.evidence) {
-      if (item.verification === 'supported') {
+    for (const decision of result.verification.decisions) {
+      if (decision.status === 'supported') {
         supportedCount += 1;
       }
     }
@@ -1165,12 +993,8 @@ export class Dispatcher {
     const coverage: NoteGenerationCoverage = {
       mustInclude: mustCoverage,
       evidence: evidenceCoverage,
-      lockedPreservation: this.lockedPreservation(result, previous),
+      lockedPreservation: 1,
     };
-    let changeScope: number = 0;
-    if (previous !== undefined) {
-      changeScope = this.changeScope(previous.result.draft, result.draft);
-    }
     const tokenCost: number = Math.ceil(JSON.stringify(result).length / 4);
     return {
       result: result,
@@ -1180,7 +1004,7 @@ export class Dispatcher {
       contradictionCount: contradictionCount,
       coverage: coverage,
       tokenCost: tokenCost,
-      changeScope: changeScope,
+      changeScope: 0,
       issueFingerprint: issueCodes.join('|'),
     };
   }
@@ -1189,14 +1013,12 @@ export class Dispatcher {
     result: NoteGenerationDeepResult,
     bundle: SourceBundle,
     requirement: NoteGenerationRequirement,
-    previous: GenerationCandidateEvaluation | undefined,
     model: KnowledgeModel,
   ): Promise<GenerationCandidateEvaluation> {
     const evaluation: GenerationCandidateEvaluation = await this.evaluateStandardCandidate(
       result,
       bundle,
       requirement,
-      previous,
       model,
     );
     const mergeIssues: NoteGenerationIssue[] = this.deepMergeIssues(result, bundle, requirement);
@@ -1364,63 +1186,6 @@ export class Dispatcher {
     }
     return { symbol: symbol, formula: formula.trim() };
   }
-
-  private isBetterCandidate(next: GenerationCandidateEvaluation, best: GenerationCandidateEvaluation): boolean {
-    if (next.hardIssueCount !== best.hardIssueCount) {
-      return next.hardIssueCount < best.hardIssueCount;
-    }
-    if (next.contradictionCount !== best.contradictionCount) {
-      return next.contradictionCount < best.contradictionCount;
-    }
-    if (next.coverage.mustInclude !== best.coverage.mustInclude) {
-      return next.coverage.mustInclude > best.coverage.mustInclude;
-    }
-    if (next.coverage.evidence !== best.coverage.evidence) {
-      return next.coverage.evidence > best.coverage.evidence;
-    }
-    if (next.coverage.lockedPreservation !== best.coverage.lockedPreservation) {
-      return next.coverage.lockedPreservation > best.coverage.lockedPreservation;
-    }
-    if (next.tokenCost !== best.tokenCost) {
-      return next.tokenCost < best.tokenCost;
-    }
-    return next.changeScope < best.changeScope;
-  }
-
-  private lockedPreservation(
-    current: NoteGenerationStandardResult,
-    previous: GenerationCandidateEvaluation | undefined,
-  ): number {
-    if (previous === undefined) {
-      return 1;
-    }
-    let locked: number = 0;
-    let preserved: number = 0;
-    for (const oldSection of previous.result.draft.sections) {
-      if (oldSection.state === 'locked') {
-        locked += 1;
-        const nextSection = current.draft.sections.find((item: NoteDraftSection): boolean => item.id === oldSection.id);
-        if (nextSection !== undefined && nextSection.content === oldSection.content) {
-          preserved += 1;
-        }
-      }
-    }
-    return locked === 0 ? 1 : preserved / locked;
-  }
-
-  private changeScope(before: NoteDraftDocument, after: NoteDraftDocument): number {
-    let changed: number = 0;
-    const total: number = Math.max(before.sections.length, after.sections.length);
-    for (let index: number = 0; index < total; index += 1) {
-      const oldSection: NoteDraftSection | undefined = before.sections[index];
-      const newSection: NoteDraftSection | undefined = after.sections[index];
-      if (oldSection === undefined || newSection === undefined || oldSection.content !== newSection.content) {
-        changed += 1;
-      }
-    }
-    return total === 0 ? 0 : changed / total;
-  }
-
   private generationFailureMessage(
     route: NoteGenerationRoute,
     issues: NoteGenerationIssue[],
@@ -1434,6 +1199,21 @@ export class Dispatcher {
       return routeLabel + ': stop=' + stopText + '; no issue details';
     }
     return routeLabel + ': stop=' + stopText + '; ' + summary;
+  }
+
+  private readOnlyVerificationStopReason(issues: NoteGenerationIssue[]): string {
+    for (const issue of issues) {
+      if (issue.code === 'VERIFIER_UNAVAILABLE') {
+        return 'verifier_unavailable';
+      }
+    }
+    for (const issue of issues) {
+      if (issue.stage === 'verifier' || issue.code === 'EVIDENCE_CONTRADICTED'
+        || issue.code === 'EVIDENCE_AMBIGUOUS') {
+        return 'content_verification_failed';
+      }
+    }
+    return 'artifact_validation_failed';
   }
 
   private issueSummary(issues: NoteGenerationIssue[]): string {
@@ -1557,7 +1337,7 @@ export class Dispatcher {
       await options.generationRepository.saveRun(completedRun, bundle);
       await options.generationRepository.appendLifecycleLog({
         runId: request.runId,
-        event: 'retried',
+        event: 'finished',
         checkpointId: run.bestCheckpointId,
         issueCount: issues.length,
         sourceCount: bundle.fragments.length,
@@ -1636,19 +1416,24 @@ export class Dispatcher {
   private withTokenBudget(
     request: NoteGenerationRequest,
     tokenBudget: number,
-    requirement?: NoteGenerationRequirement,
+    bundle: SourceBundle,
+    requirement: NoteGenerationRequirement,
   ): NoteGenerationRequest {
     return {
       runId: request.runId,
+      originSessionId: request.originSessionId,
+      parentConversationRunId: request.parentConversationRunId,
       instruction: request.instruction,
       mode: request.mode,
-      sources: request.sources,
-      requirement: requirement ?? request.requirement,
+      sources: bundle,
+      requirement: requirement,
       targetNoteId: request.targetNoteId,
       baseVersion: request.baseVersion,
       pendingSourceIds: request.pendingSourceIds,
       route: request.route,
       tokenBudget: tokenBudget,
+      incrementalPlan: request.incrementalPlan,
+      incrementalSections: request.incrementalSections,
     };
   }
 
@@ -1796,7 +1581,9 @@ export class Dispatcher {
         kind: fragment.kind,
         originId: fragment.originId,
         sequence: sequence,
-        fingerprint: fragment.fingerprint.length > 0 ? fragment.fingerprint : sourceFingerprint(fragment.text),
+        // Source text is the authority at the Dispatcher boundary. Never trust a
+        // caller-supplied fingerprint that may actually be a record or OCR ID.
+        fingerprint: sourceFingerprint(fragment.text),
         text: fragment.text,
       });
       sequence += 1;
