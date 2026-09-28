@@ -88,6 +88,16 @@ interface GenerationCandidateEvaluation {
   deepResult?: NoteGenerationDeepResult;
 }
 
+interface DeepFormulaDefinition {
+  formula: string;
+  sectionId: string;
+}
+
+interface DeepFormulaCandidate {
+  symbol: string;
+  formula: string;
+}
+
 export class Dispatcher {
   private static sourceFromPayload(payload: DispatchPayload): string {
     if (payload.kind === 'image') { return 'camera_capture'; }
@@ -613,7 +623,7 @@ export class Dispatcher {
     requirement: NoteGenerationRequirement,
   ): Promise<DispatchResult> {
     const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
-    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens);
+    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens, requirement);
     let current: NoteGenerationStandardResult;
     try {
       current = await model.structureStandardDraft(budgetedRequest);
@@ -622,6 +632,8 @@ export class Dispatcher {
         round: 0,
         stopReason: 'initial_generation_failed',
         rollback: false,
+        tokenBudget: budget.maxTokens,
+        estimatedTokenCost: 0,
       }, 'initial generation failed: ' + (e as Error).message);
     }
 
@@ -750,6 +762,10 @@ export class Dispatcher {
       round: round,
       stopReason: stopReason,
       rollback: rollback,
+      issueCount: finalEvaluation?.issues.length ?? 0,
+      issueFingerprint: finalEvaluation?.issueFingerprint,
+      tokenBudget: budget.maxTokens,
+      estimatedTokenCost: usedTokens,
     };
     if (finalEvaluation === undefined || finalEvaluation.hardIssueCount > 0) {
       return await this.finishStandardGeneration(
@@ -790,7 +806,7 @@ export class Dispatcher {
     requirement: NoteGenerationRequirement,
   ): Promise<DispatchResult> {
     const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
-    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens);
+    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(request, budget.maxTokens, requirement);
     let current: NoteGenerationDeepResult;
     try {
       current = await model.structureDeepDraft(budgetedRequest);
@@ -799,6 +815,8 @@ export class Dispatcher {
         round: 0,
         stopReason: 'initial_deep_generation_failed',
         rollback: false,
+        tokenBudget: budget.maxTokens,
+        estimatedTokenCost: 0,
       }, 'initial deep generation failed: ' + (e as Error).message, undefined, 'deep');
     }
     let best: GenerationCandidateEvaluation | undefined = undefined;
@@ -920,7 +938,15 @@ export class Dispatcher {
       }
     }
     const finalEvaluation: GenerationCandidateEvaluation | undefined = best;
-    const progress: NoteGenerationProgress = { round: round, stopReason: stopReason, rollback: rollback };
+    const progress: NoteGenerationProgress = {
+      round: round,
+      stopReason: stopReason,
+      rollback: rollback,
+      issueCount: finalEvaluation?.issues.length ?? 0,
+      issueFingerprint: finalEvaluation?.issueFingerprint,
+      tokenBudget: budget.maxTokens,
+      estimatedTokenCost: usedTokens,
+    };
     const deepResult: NoteGenerationDeepResult | undefined = finalEvaluation?.deepResult;
     if (finalEvaluation === undefined || finalEvaluation.hardIssueCount > 0 || stopReason === 'token_budget_exhausted') {
       return await this.finishStandardGeneration(
@@ -1133,21 +1159,22 @@ export class Dispatcher {
         }
       }
     }
-    const formulaBySymbol: Map<string, string> = new Map<string, string>();
+    const formulaBySymbol: Map<string, DeepFormulaDefinition> = new Map<string, DeepFormulaDefinition>();
     for (const section of result.draft.sections) {
-      const lines: string[] = section.content.split('\n');
-      for (const line of lines) {
-        const equalsIndex: number = line.indexOf('=');
-        if (equalsIndex <= 0) {
-          continue;
-        }
-        const symbol: string = line.substring(0, equalsIndex).trim();
-        const formula: string = line.trim();
-        const previousFormula: string | undefined = formulaBySymbol.get(symbol);
-        if (previousFormula !== undefined && previousFormula !== formula) {
-          issues.push({ stage: 'merge', code: 'DEEP_SYMBOL_DRIFT', severity: 'hard', message: 'deep sections use inconsistent formula symbols', repairable: true, sectionId: section.id });
+      const formulas: DeepFormulaCandidate[] = this.deepFormulaCandidates(section.content);
+      for (const candidate of formulas) {
+        const symbol: string = candidate.symbol;
+        const formula: string = candidate.formula;
+        const previous: DeepFormulaDefinition | undefined = formulaBySymbol.get(symbol);
+        if (previous !== undefined && previous.formula !== formula) {
+          const message: string = 'deep sections use inconsistent formula symbols: symbol=' + symbol
+            + '; previousFormula=' + previous.formula
+            + '; currentFormula=' + formula
+            + '; previousSection=' + previous.sectionId
+            + '; currentSection=' + section.id;
+          issues.push({ stage: 'merge', code: 'DEEP_SYMBOL_DRIFT', severity: 'soft', message: message, repairable: true, sectionId: section.id });
         } else {
-          formulaBySymbol.set(symbol, formula);
+          formulaBySymbol.set(symbol, { formula: formula, sectionId: section.id });
         }
       }
       if (section.content.includes('参见') || section.content.includes('见第')) {
@@ -1174,6 +1201,59 @@ export class Dispatcher {
       }
     }
     return issues;
+  }
+
+  private deepFormulaCandidates(content: string): DeepFormulaCandidate[] {
+    const candidates: DeepFormulaCandidate[] = [];
+    const lines: string[] = content.split('\n');
+    let inDisplayFormula: boolean = false;
+    for (const rawLine of lines) {
+      const trimmed: string = rawLine.trim();
+      if (trimmed === '$$') {
+        inDisplayFormula = !inDisplayFormula;
+        continue;
+      }
+      if (inDisplayFormula) {
+        const candidate: DeepFormulaCandidate | undefined = this.parseDeepFormulaCandidate(trimmed);
+        if (candidate !== undefined) {
+          candidates.push(candidate);
+        }
+        continue;
+      }
+      let cursor: number = 0;
+      while (cursor < rawLine.length) {
+        const openIndex: number = rawLine.indexOf('$', cursor);
+        if (openIndex < 0 || rawLine.charAt(openIndex + 1) === '$') {
+          break;
+        }
+        const closeIndex: number = rawLine.indexOf('$', openIndex + 1);
+        if (closeIndex < 0) {
+          break;
+        }
+        const candidateText: string = rawLine.substring(openIndex + 1, closeIndex).trim();
+        const candidate: DeepFormulaCandidate | undefined = this.parseDeepFormulaCandidate(candidateText);
+        if (candidate !== undefined) {
+          candidates.push(candidate);
+        }
+        cursor = closeIndex + 1;
+      }
+    }
+    return candidates;
+  }
+
+  private parseDeepFormulaCandidate(formula: string): DeepFormulaCandidate | undefined {
+    const equalsIndex: number = formula.indexOf('=');
+    if (equalsIndex <= 0) {
+      return undefined;
+    }
+    const symbol: string = formula.substring(0, equalsIndex).replace(/&/g, '').trim();
+    if (symbol.length === 0 || symbol.indexOf(' ') >= 0 || symbol.indexOf('：') >= 0 || symbol.indexOf(':') >= 0) {
+      return undefined;
+    }
+    if (!/^[A-Za-z\\][A-Za-z0-9_]*(\([^=]*\))?$/.test(symbol)) {
+      return undefined;
+    }
+    return { symbol: symbol, formula: formula.trim() };
   }
 
   private isBetterCandidate(next: GenerationCandidateEvaluation, best: GenerationCandidateEvaluation): boolean {
@@ -1285,6 +1365,28 @@ export class Dispatcher {
     return normalized.substring(0, limit) + '...';
   }
 
+  private generationDiagnostics(
+    route: NoteGenerationRoute,
+    runId: string,
+    issues: NoteGenerationIssue[],
+    progress: NoteGenerationProgress,
+    errorMessage: string,
+  ): string {
+    return JSON.stringify({
+      route: route,
+      runId: runId,
+      stopReason: progress.stopReason ?? 'unknown',
+      round: progress.round,
+      issueCount: issues.length,
+      issueFingerprint: progress.issueFingerprint ?? '',
+      rollback: progress.rollback,
+      tokenBudget: progress.tokenBudget ?? 0,
+      estimatedTokenCost: progress.estimatedTokenCost ?? 0,
+      errorMessage: errorMessage,
+      issues: issues,
+    });
+  }
+
   private async finishStandardGeneration(
     request: NoteGenerationRequest,
     run: NoteGenerationRun,
@@ -1301,6 +1403,8 @@ export class Dispatcher {
     const status = candidate === undefined ? 'needs-input' : 'ready-preview';
     const deepResult: NoteGenerationDeepResult | undefined = route === 'deep' && standardResult !== undefined
       ? standardResult as NoteGenerationDeepResult : undefined;
+    const diagnostics: string | undefined = route === 'deep' && errorMessage !== undefined
+      ? this.generationDiagnostics(route, request.runId, issues, progress, errorMessage) : undefined;
     const result: NoteGenerationResult = {
       runId: request.runId,
        route: route,
@@ -1318,8 +1422,9 @@ export class Dispatcher {
       evidence: standardResult?.evidence,
        verification: standardResult?.verification,
        ledger: deepResult?.ledger,
-       segments: deepResult?.segments,
+      segments: deepResult?.segments,
       progress: progress,
+      diagnostics: diagnostics,
     };
     if (options.generationRepository !== undefined) {
       const completedRun: NoteGenerationRun = {
@@ -1354,6 +1459,18 @@ export class Dispatcher {
       log.info('generation progress run=' + request.runId + ' round=' + progress.round.toString()
         + ' stop=' + progress.stopReason + ' rollback=' + progress.rollback.toString());
     }
+    if (diagnostics !== undefined) {
+      log.warn('generation diagnostics summary run=' + request.runId
+        + ' route=' + route
+        + ' stopReason=' + (progress.stopReason ?? 'unknown')
+        + ' round=' + progress.round.toString()
+        + ' issueCount=' + issues.length.toString()
+        + ' issueFingerprint=' + (progress.issueFingerprint ?? '')
+        + ' rollback=' + progress.rollback.toString()
+        + ' tokenBudget=' + (progress.tokenBudget ?? 0).toString()
+        + ' estimatedTokenCost=' + (progress.estimatedTokenCost ?? 0).toString());
+      this.logDiagnosticIssues(request.runId, issues);
+    }
     return {
       success: candidate !== undefined,
       route: 'D1',
@@ -1362,6 +1479,28 @@ export class Dispatcher {
       errorMessage: errorMessage,
       durationMs: Date.now() - startedAt,
     };
+  }
+
+  private logDiagnosticIssues(runId: string, issues: NoteGenerationIssue[]): void {
+    const issueKeys: string[] = [];
+    const issueCounts: number[] = [];
+    const uniqueIssues: NoteGenerationIssue[] = [];
+    for (const issue of issues) {
+      const key: string = JSON.stringify(issue);
+      const existingIndex: number = issueKeys.indexOf(key);
+      if (existingIndex >= 0) {
+        issueCounts[existingIndex] += 1;
+      } else {
+        issueKeys.push(key);
+        issueCounts.push(1);
+        uniqueIssues.push(issue);
+      }
+    }
+    for (let index: number = 0; index < uniqueIssues.length; index += 1) {
+      log.warn('generation diagnostics issue run=' + runId
+        + ' occurrence=' + issueCounts[index].toString()
+        + ' ' + JSON.stringify(uniqueIssues[index]));
+    }
   }
 
   private completedRun(run: NoteGenerationRun, checkpointId: string | undefined, stopReason: string): NoteGenerationRun {
@@ -1385,13 +1524,17 @@ export class Dispatcher {
     };
   }
 
-  private withTokenBudget(request: NoteGenerationRequest, tokenBudget: number): NoteGenerationRequest {
+  private withTokenBudget(
+    request: NoteGenerationRequest,
+    tokenBudget: number,
+    requirement?: NoteGenerationRequirement,
+  ): NoteGenerationRequest {
     return {
       runId: request.runId,
       instruction: request.instruction,
       mode: request.mode,
       sources: request.sources,
-      requirement: request.requirement,
+      requirement: requirement ?? request.requirement,
       targetNoteId: request.targetNoteId,
       baseVersion: request.baseVersion,
       pendingSourceIds: request.pendingSourceIds,
