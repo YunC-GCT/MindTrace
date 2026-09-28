@@ -10,6 +10,7 @@
  */
 import { common } from '@kit.AbilityKit';
 import { NoteDraftReadyEvent } from 'common';
+import { NoteReviewAnswer } from '../models/NoteReviewModels';
 import { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
 import { ChatMessageOrigin, ChatMessageOutcome } from '../workflows/conversation/ConversationState';
 import { ConversationRunRef } from './ConversationIdentity';
@@ -35,5 +36,6 @@ export interface AgentChatCallbacks {
   getContext: () => common.UIAbilityContext;
   getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean) => string;
   onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent) => void;
+  onNoteReviewReady?: (ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer) => void;
   onOcrBlank?: (ref: ConversationRunRef, imageUri: string) => void;
 }

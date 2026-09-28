@@ -190,6 +190,79 @@ export class KnowledgeRelationDao {
     return expansion;
   }
 
+  // 从 seed 笔记向 incoming prerequisite 上溯: A -> B 表示 A 是 B 的前置,
+  // 查询 B 的前置时只沿 to_unit_id=B 找 from_unit_id=A, 不走 related/derived 或反向后继。
+  async expandAcceptedPrerequisites(
+    seedUnitIds: string[],
+    limits?: GraphExpansionLimits,
+  ): Promise<GraphExpansion> {
+    const depthLimit: number = KnowledgeRelationDao.clampLimit(limits?.maxDepth, EXPANSION_DEFAULT_DEPTH, 1, EXPANSION_MAX_DEPTH);
+    const nodeLimit: number = KnowledgeRelationDao.clampLimit(limits?.maxNodes, EXPANSION_MAX_NODES, 1, EXPANSION_MAX_NODES);
+    const edgeLimit: number = KnowledgeRelationDao.clampLimit(limits?.maxEdges, EXPANSION_MAX_EDGES, 1, EXPANSION_MAX_EDGES);
+    const seeds: string[] = KnowledgeRelationDao.normalizeUnitIds(seedUnitIds);
+    if (seeds.length === 0) {
+      return { nodes: [], edges: [], truncated: false };
+    }
+    const nodes: GraphExpansionNode[] = [];
+    const edges: KnowledgeRelation[] = [];
+    const edgeSeen: Map<string, boolean> = new Map<string, boolean>();
+    const visited: Map<string, number> = new Map<string, number>();
+    let truncated: boolean = false;
+    const liveSeeds: string[] = await this.queryLiveUnitIds(seeds);
+    if (liveSeeds.length < seeds.length) {
+      truncated = true;
+    }
+    const frontier: string[] = [];
+    for (const seedId of liveSeeds) {
+      if (nodes.length >= nodeLimit) {
+        truncated = true;
+        break;
+      }
+      nodes.push({ unitId: seedId, depth: 0 });
+      visited.set(seedId, 0);
+      frontier.push(seedId);
+    }
+    let depth: number = 1;
+    let current: string[] = frontier;
+    while (depth <= depthLimit && current.length > 0) {
+      const levelEdges: KnowledgeRelation[] = await this.queryAcceptedPrerequisiteEdgesToUnits(current);
+      const candidates: string[] = [];
+      for (const edge of levelEdges) {
+        if (!visited.has(edge.fromUnitId)) {
+          KnowledgeRelationDao.addUnique(candidates, edge.fromUnitId);
+        }
+      }
+      const liveCandidates: string[] = await this.queryLiveUnitIds(candidates);
+      const next: string[] = [];
+      for (const edge of levelEdges) {
+        if (edgeSeen.has(edge.id)) {
+          continue;
+        }
+        if (edges.length >= edgeLimit) {
+          truncated = true;
+          continue;
+        }
+        if (!visited.has(edge.fromUnitId)) {
+          if (liveCandidates.indexOf(edge.fromUnitId) < 0) {
+            continue;
+          }
+          if (nodes.length >= nodeLimit) {
+            truncated = true;
+            continue;
+          }
+          nodes.push({ unitId: edge.fromUnitId, depth: depth });
+          visited.set(edge.fromUnitId, depth);
+          next.push(edge.fromUnitId);
+        }
+        edgeSeen.set(edge.id, true);
+        edges.push(edge);
+      }
+      current = next;
+      depth += 1;
+    }
+    return { nodes: nodes, edges: edges, truncated: truncated };
+  }
+
   async acceptRelation(id: string): Promise<boolean> {
     return await this.updateStatus(id, 'accepted');
   }
@@ -293,6 +366,14 @@ export class KnowledgeRelationDao {
       bindArgs.push(unitId);
     }
     return await this.querySql(sql, bindArgs);
+  }
+
+  private async queryAcceptedPrerequisiteEdgesToUnits(unitIds: string[]): Promise<KnowledgeRelation[]> {
+    const placeholders: string = KnowledgeRelationDao.placeholders(unitIds.length);
+    const sql: string = "SELECT * FROM kg_edge WHERE status = 'accepted' AND relation_type = 'prerequisite'"
+      + ' AND to_unit_id IN (' + placeholders + ')'
+      + ' ORDER BY from_unit_id ASC, to_unit_id ASC, id ASC';
+    return await this.querySql(sql, unitIds);
   }
 
   // 存活校验: knowledge_unit 中不存在的笔记视为已删除, 其关系边不进入证据

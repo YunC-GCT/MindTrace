@@ -20,6 +20,7 @@ import {
   ConversationProgressStep,
 } from '../workflows/conversation/ConversationState';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import { NoteReviewAnswer } from '../models/NoteReviewModels';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { ConversationRunCoordinator } from './ConversationRunCoordinator';
@@ -137,6 +138,12 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
 
   onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void {
     if (this.accepts(ref, 'draft-ready')) { this.callbacks.onDraftReady(ref, event); }
+  }
+
+  onNoteReviewReady?(ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void {
+    if (this.accepts(ref, 'note-review-ready') && this.callbacks.onNoteReviewReady !== undefined) {
+      this.callbacks.onNoteReviewReady(ref, messageId, review);
+    }
   }
 
   onOcrBlank?(ref: ConversationRunRef, imageUri: string): void {

@@ -652,7 +652,7 @@ export class KnowledgeModel {
       [systemMessage, { role: 'user', content: 'Draft only this section in document JSON.' }],
       {
         label: 'deep section draft',
-        maxTokens: this.budgetedRequestTokens(request, 2400),
+        maxTokens: this.budgetedRequestTokens(request, 4800),
         timeoutMs: KNOWLEDGE_TIMEOUT_MS,
         responseFormat: this.structuredResponseFormat(),
       },
