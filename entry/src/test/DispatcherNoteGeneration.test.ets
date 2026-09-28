@@ -13,6 +13,9 @@ import {
   DispatchRequest,
   DispatchResult,
   KnowledgeUnit,
+  LlmCallRequest,
+  LlmCallResult,
+  LlmCaller,
   NoteDraftDocument,
   NoteDraftSection,
   NoteGenerationEvidenceItem,
@@ -90,6 +93,68 @@ class FakeRepository implements NoteGenerationRepository {
 
   async listRecoverableRuns(): Promise<NoteGenerationRun[]> {
     return [];
+  }
+}
+
+class VerifierContractFailureLlm implements LlmCaller {
+  async call(request: LlmCallRequest): Promise<LlmCallResult> {
+    const system: string = request.messages.length > 0 ? request.messages[0].content : '';
+    if (system.includes('math note standard route')) {
+      return { text: VerifierContractFailureLlm.standardArtifacts(), streamed: false };
+    }
+    if (system.includes('Act as an independent verifier')) {
+      return {
+        text: '{"status":"supported","issues":[],"checkedEvidenceIds":[],"decisions":[]}',
+        streamed: false,
+      };
+    }
+    if (system.includes('Return JSON only with an evidence array')) {
+      return { text: '{"evidence":[]}', streamed: false };
+    }
+    throw new Error('unexpected LLM request in verifier failure fixture');
+  }
+
+  private static standardArtifacts(): string {
+    return '{'
+      + '"outline":{"schemaVersion":"mindtrace.note-outline.v1","sections":['
+      + VerifierContractFailureLlm.outlineSection('section-one', '定义一', 0)
+      + ',' + VerifierContractFailureLlm.outlineSection('section-two', '定义二', 1)
+      + ',' + VerifierContractFailureLlm.outlineSection('section-three', '定义三', 2)
+      + ',' + VerifierContractFailureLlm.outlineSection('section-four', '定义四', 3)
+      + ',' + VerifierContractFailureLlm.outlineSection('section-five', '定义五', 4)
+      + ']},'
+      + '"evidence":['
+      + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-1', 'section-one', '第一条定义。')
+      + ',' + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-2', 'section-two', '第二条定义。')
+      + ',' + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-3', 'section-three', '第三条定义。')
+      + ',' + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-4', 'section-four', '第四条定义。')
+      + ',' + VerifierContractFailureLlm.evidenceItem('pipeline-evidence-5', 'section-five', '第五条定义。')
+      + '],'
+      + '"draft":{"schemaVersion":"mindtrace.note-draft.v1","title":"五条定义",'
+      + '"summary":"五条定义的整理","subject":"数学分析","category":"概念",'
+      + '"chapter":"基础概念","difficulty":1,"tags":["定义"],"sections":['
+      + VerifierContractFailureLlm.draftSection('section-one', '定义一', '第一条定义。')
+      + ',' + VerifierContractFailureLlm.draftSection('section-two', '定义二', '第二条定义。')
+      + ',' + VerifierContractFailureLlm.draftSection('section-three', '定义三', '第三条定义。')
+      + ',' + VerifierContractFailureLlm.draftSection('section-four', '定义四', '第四条定义。')
+      + ',' + VerifierContractFailureLlm.draftSection('section-five', '定义五', '第五条定义。')
+      + ']}}';
+  }
+
+  private static outlineSection(id: string, label: string, order: number): string {
+    return '{"id":"' + id + '","label":"' + label + '","order":' + order.toString()
+      + ',"mustInclude":[],"sourceIds":["source-a"]}';
+  }
+
+  private static evidenceItem(id: string, sectionId: string, claim: string): string {
+    return '{"id":"' + id + '","type":"definition","claim":"' + claim
+      + '","sourceRefs":[{"sourceId":"source-a","excerpt":"' + claim
+      + '","start":0,"end":0}],"targetSectionId":"' + sectionId + '","verification":"supported"}';
+  }
+
+  private static draftSection(id: string, label: string, content: string): string {
+    return '{"id":"' + id + '","label":"' + label + '","content":"' + content
+      + '","sourceIds":["source-a"],"state":"generated","baseHash":"' + id + '-hash"}';
   }
 }
 
@@ -683,6 +748,42 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(checkpoint.candidateHash).assertEqual(sourceFingerprint(JSON.stringify(candidate)));
       const restoredCandidate: KnowledgeUnit = JSON.parse(checkpoint.documentJson) as KnowledgeUnit;
       expect(restoredCandidate.title).assertEqual(candidate.title);
+    });
+
+    it('stops before content repair when the independent verifier is unavailable', 0, async () => {
+      const repository: FakeRepository = new FakeRepository();
+      const progressEvents: NoteGenerationProgressEvent[] = [];
+      const sourceText: string = '第一条定义。\n第二条定义。\n第三条定义。\n第四条定义。\n第五条定义。';
+      const request: DispatchRequest = {
+        source: 'app',
+        payload: { kind: 'text', text: sourceText },
+        generation: {
+          runId: 'verifier-unavailable-101',
+          instruction: '整理笔记',
+          mode: 'create',
+          route: 'standard',
+          sources: { fragments: [{
+            id: 'source-a',
+            kind: 'conversation',
+            originId: 'message-a',
+            sequence: 0,
+            fingerprint: 'source-a-fingerprint',
+            text: sourceText,
+          }] },
+        },
+      };
+      const result: DispatchResult = await new Dispatcher().dispatch(request, {
+        persist: false,
+        generationRepository: repository,
+        knowledgeModel: new KnowledgeModel(new VerifierContractFailureLlm()),
+        progressSink: (event: NoteGenerationProgressEvent): void => { progressEvents.push(event); },
+      });
+
+      expect(result.success).assertFalse();
+      expect(result.generation?.stopReason).assertEqual('verifier_unavailable');
+      expect(repository.checkpointSaves).assertEqual(1);
+      expect(progressEvents.some((event: NoteGenerationProgressEvent): boolean =>
+        event.activity === 'repair_draft')).assertFalse();
     });
 
     it('returns needs-input for facts that only the user can supply', 0, async () => {
