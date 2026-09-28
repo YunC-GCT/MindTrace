@@ -3,7 +3,7 @@
  *
  * 路径: entry/src/main/ets/overlays/NoteDetailOverlay/components/DetailRenderSession.ets
  * 职责: 按详情实例隔离任务队列、优先级、帧预算、generation、取消与已释放任务。
- * 依赖: common NoteItem/KnowledgeUnit, NoteDetailRenderMetrics surface type, ArkTS setTimeout
+ * 依赖: common NoteItem/KnowledgeUnit, NoteDetailRenderMetrics, MathRenderBudget, ArkTS setTimeout
  *
  * 数据流:
  *   overlay identity/revision → activate → enqueue → budgeted callback release
@@ -17,6 +17,7 @@ import { NoteItem, KnowledgeUnit } from 'common'
 import type { NoteDetailMetricSurface } from '../../../services/NoteDetailRenderMetrics'
 import type {
   MathRenderBudget,
+  MathRenderCreateWork,
   MathRenderWork,
   MathRenderWorkComplete,
 } from '../../../services/MathRenderBudget'
@@ -27,18 +28,40 @@ export const DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT: number = 10
 export const DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT: number = 20
 export const DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA: number = 25
 export const DETAIL_RENDER_PRIORITY_META: number = 30
-export const DETAIL_RENDER_MAX_WEB_CREATES_PER_FRAME: number = 1
+export const DETAIL_RENDER_MAX_WEB_CREATES_IN_FLIGHT: number = 5
+export const DETAIL_RENDER_MAX_WEB_CREATES_PER_ADMISSION: number = 3
+export const DETAIL_RENDER_WEB_CREATE_ADMISSION_MS: number = 16
 export const DETAIL_RENDER_MAX_WEB_WORK_MS_PER_FRAME: number = 16
 
 const DETAIL_RENDER_FRAME_DELAY_MS: number = 16
-const DETAIL_RENDER_FAST_DELAY_MS: number = 0
-const DETAIL_RENDER_FRAME_BUDGET_MS: number = 8
-const DETAIL_RENDER_PRESSURE_COUNT: number = 6
 const DETAIL_RENDER_MAX_PENDING: number = 80
 
 export interface DetailRenderTimer {
   schedule(run: () => void, delayMs: number): void
 }
+
+export class DetailContentRenderGuard {
+  private renderKey: string = ''
+  private pending: boolean = false
+
+  shouldEnqueue(key: string, contentReady: boolean): boolean {
+    if (key === this.renderKey && (contentReady || this.pending)) {
+      return false
+    }
+    this.renderKey = key
+    this.pending = true
+    return true
+  }
+
+  settle(): void {
+    this.pending = false
+  }
+
+  interrupt(): void {
+    this.pending = false
+  }
+}
+
 class SystemDetailRenderTimer implements DetailRenderTimer {
   schedule(run: () => void, delayMs: number): void {
     setTimeout(run, delayMs)
@@ -112,7 +135,9 @@ export class DetailRenderSession implements MathRenderBudget {
   private activeKey: string = ''
   private timerActive: boolean = false
   private webTimerActive: boolean = false
+  private webFlushActive: boolean = false
   private webWorkInFlight: boolean = false
+  private webCreatesInFlight: number = 0
   private webWorkToken: number = 0
   private cancelled: boolean = false
   private surface: NoteDetailMetricSurface
@@ -167,14 +192,18 @@ export class DetailRenderSession implements MathRenderBudget {
     this.scheduleNext()
   }
 
-  enqueueWebCreate(key: string, priority: number, run: () => void): void {
-    this.enqueueWeb(key, 'create', priority, (_complete: MathRenderWorkComplete): void => {
-      run()
+  enqueueWebCreate(key: string, priority: number, run: MathRenderCreateWork): void {
+    this.enqueueWeb(key, 'create', priority, (complete: MathRenderWorkComplete): void => {
+      run((): void => complete(0))
     })
   }
 
   enqueueWebWork(key: string, priority: number, run: MathRenderWork): void {
     this.enqueueWeb(key, 'work', priority, run)
+  }
+
+  enqueueContent(key: string, priority: number, run: () => void): void {
+    this.enqueue('content|' + key, priority, run)
   }
 
   isCurrent(sessionKey: string, generation: number): boolean {
@@ -198,14 +227,6 @@ export class DetailRenderSession implements MathRenderBudget {
     return this.surface
   }
 
-  pendingCount(): number {
-    return this.jobs.length
-  }
-
-  pendingWebCount(): number {
-    return this.webJobs.length
-  }
-
   private invalidatePending(): void {
     this.sessionGeneration += 1
     this.jobs.splice(0, this.jobs.length)
@@ -213,7 +234,9 @@ export class DetailRenderSession implements MathRenderBudget {
     this.completedKeys.splice(0, this.completedKeys.length)
     this.timerActive = false
     this.webTimerActive = false
+    this.webFlushActive = false
     this.webWorkInFlight = false
+    this.webCreatesInFlight = 0
     this.webWorkToken += 1
   }
 
@@ -231,8 +254,9 @@ export class DetailRenderSession implements MathRenderBudget {
     this.scheduleWebNext()
   }
 
-  private scheduleWebNext = (): void => {
-    if (this.webTimerActive || this.webWorkInFlight || this.webJobs.length === 0 || this.cancelled) {
+  private scheduleWebNext = (delayMs: number = DETAIL_RENDER_WEB_CREATE_ADMISSION_MS): void => {
+    if (this.webTimerActive || this.webFlushActive || this.webWorkInFlight
+      || this.cancelled || !this.hasAdmissibleWebJob()) {
       return
     }
     const generation: number = this.sessionGeneration
@@ -243,26 +267,56 @@ export class DetailRenderSession implements MathRenderBudget {
       }
       this.webTimerActive = false
       this.flushWebJobs(generation, 0, 0)
-    }, DETAIL_RENDER_FRAME_DELAY_MS)
+    }, delayMs)
   }
 
   private flushWebJobs = (generation: number, initialCreateCount: number, initialWorkMs: number): void => {
     let createCount: number = initialCreateCount
-    const workMs: number = initialWorkMs
-    let job: DetailWebRenderJob | null = this.takeNextAdmissibleWebJob(createCount, workMs)
+    this.webFlushActive = true
+    let job: DetailWebRenderJob | null = this.takeNextAdmissibleWebJob(initialWorkMs)
     while (job !== null) {
       if (job.generation === generation && generation === this.sessionGeneration) {
         if (job.kind === 'create') {
-          job.run((_durationMs: number): void => {})
+          this.runWebCreate(job, generation)
           createCount += 1
+          if (createCount >= DETAIL_RENDER_MAX_WEB_CREATES_PER_ADMISSION) {
+            this.webFlushActive = false
+            this.scheduleWebNext()
+            return
+          }
         } else {
-          this.runWebWork(job, generation, createCount, workMs)
+          this.webFlushActive = false
+          this.runWebWork(job, generation, createCount, initialWorkMs)
           return
         }
       }
-      job = this.takeNextAdmissibleWebJob(createCount, workMs)
+      job = this.takeNextAdmissibleWebJob(initialWorkMs)
     }
+    this.webFlushActive = false
     this.scheduleWebNext()
+  }
+
+  private runWebCreate = (job: DetailWebRenderJob, generation: number): void => {
+    this.webCreatesInFlight += 1
+    let completionHandled: boolean = false
+    const complete: MathRenderWorkComplete = (_workDurationMs: number): void => {
+      if (completionHandled) {
+        return
+      }
+      completionHandled = true
+      if (generation !== this.sessionGeneration || this.cancelled) {
+        return
+      }
+      if (this.webCreatesInFlight > 0) {
+        this.webCreatesInFlight -= 1
+      }
+      this.scheduleWebNext(DETAIL_RENDER_WEB_CREATE_ADMISSION_MS)
+    }
+    try {
+      job.run(complete)
+    } catch (_error) {
+      complete(0)
+    }
   }
 
   private runWebWork = (job: DetailWebRenderJob, generation: number,
@@ -295,13 +349,13 @@ export class DetailRenderSession implements MathRenderBudget {
     }
   }
 
-  private takeNextAdmissibleWebJob = (createCount: number, workMs: number): DetailWebRenderJob | null => {
+  private takeNextAdmissibleWebJob = (workMs: number): DetailWebRenderJob | null => {
     let bestIndex: number = -1
     let index: number = 0
     while (index < this.webJobs.length) {
       const current: DetailWebRenderJob = this.webJobs[index]
       const createAllowed: boolean = current.kind !== 'create'
-        || createCount < DETAIL_RENDER_MAX_WEB_CREATES_PER_FRAME
+        || this.webCreatesInFlight < DETAIL_RENDER_MAX_WEB_CREATES_IN_FLIGHT
       const workAllowed: boolean = current.kind !== 'work'
         || workMs < DETAIL_RENDER_MAX_WEB_WORK_MS_PER_FRAME
       if (createAllowed && workAllowed) {
@@ -309,8 +363,12 @@ export class DetailRenderSession implements MathRenderBudget {
           bestIndex = index
         } else {
           const best: DetailWebRenderJob = this.webJobs[bestIndex]
+          const readyWorkBeforeCreate: boolean = current.priority === best.priority
+            && current.kind === 'work' && best.kind === 'create'
+          const sameKindEarlier: boolean = current.priority === best.priority
+            && current.kind === best.kind && current.sequence < best.sequence
           if (current.priority < best.priority
-            || (current.priority === best.priority && current.sequence < best.sequence)) {
+            || readyWorkBeforeCreate || sameKindEarlier) {
             bestIndex = index
           }
         }
@@ -323,6 +381,18 @@ export class DetailRenderSession implements MathRenderBudget {
     const job: DetailWebRenderJob = this.webJobs[bestIndex]
     this.webJobs.splice(bestIndex, 1)
     return job
+  }
+
+  private hasAdmissibleWebJob(): boolean {
+    let index: number = 0
+    while (index < this.webJobs.length) {
+      const job: DetailWebRenderJob = this.webJobs[index]
+      if (job.kind === 'work' || this.webCreatesInFlight < DETAIL_RENDER_MAX_WEB_CREATES_IN_FLIGHT) {
+        return true
+      }
+      index += 1
+    }
+    return false
   }
 
   private trimPendingJobs(): void {
@@ -362,50 +432,17 @@ export class DetailRenderSession implements MathRenderBudget {
       this.timerActive = false
       this.flushJobs(generation)
       this.scheduleNext()
-    }, this.nextDelay())
+    }, DETAIL_RENDER_FRAME_DELAY_MS)
   }
 
   private flushJobs(generation: number): void {
-    const startedAt: number = Date.now()
-    let renderedCount: number = 0
-    while (this.jobs.length > 0 && this.shouldContinueFlush(startedAt, renderedCount)) {
-      const job: DetailRenderJob | null = this.takeNextJob()
-      if (job !== null && job.generation === generation && generation === this.sessionGeneration) {
-        job.run()
-        if (generation === this.sessionGeneration && this.completedKeys.indexOf(job.key) < 0) {
-          this.completedKeys.push(job.key)
-        }
-        renderedCount += 1
+    const job: DetailRenderJob | null = this.takeNextJob()
+    if (job !== null && job.generation === generation && generation === this.sessionGeneration) {
+      job.run()
+      if (generation === this.sessionGeneration && this.completedKeys.indexOf(job.key) < 0) {
+        this.completedKeys.push(job.key)
       }
     }
-  }
-
-  private shouldContinueFlush(startedAt: number, renderedCount: number): boolean {
-    if (renderedCount === 0) {
-      return true
-    }
-    if (this.jobs.length >= DETAIL_RENDER_PRESSURE_COUNT) {
-      return Date.now() - startedAt < DETAIL_RENDER_FRAME_BUDGET_MS
-    }
-    return false
-  }
-
-  private nextDelay(): number {
-    if (this.hasVisibleJob()) {
-      return DETAIL_RENDER_FAST_DELAY_MS
-    }
-    return this.jobs.length >= DETAIL_RENDER_PRESSURE_COUNT
-      ? DETAIL_RENDER_FAST_DELAY_MS
-      : DETAIL_RENDER_FRAME_DELAY_MS
-  }
-
-  private hasVisibleJob(): boolean {
-    for (const job of this.jobs) {
-      if (job.priority <= DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA) {
-        return true
-      }
-    }
-    return false
   }
 
   private takeNextJob(): DetailRenderJob | null {

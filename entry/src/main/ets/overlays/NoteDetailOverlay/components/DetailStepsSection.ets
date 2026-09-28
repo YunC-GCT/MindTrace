@@ -21,6 +21,7 @@ import {
 import { DetailStepList } from './DetailStepList'
 import { detailLinesSignature } from './DetailSection'
 import {
+  DetailContentRenderGuard,
   DetailRenderSession,
   DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
 } from './DetailRenderSession'
@@ -35,7 +36,7 @@ export struct DetailStepsSection {
   @Prop @Watch('onItemsChanged') emphasized: boolean = false
   @State contentReady: boolean = false
   private renderSeq: number = 0
-  private contentRenderKey: string = ''
+  private renderGuard: DetailContentRenderGuard = new DetailContentRenderGuard()
 
   aboutToAppear(): void {
     this.resetContentRender()
@@ -43,6 +44,7 @@ export struct DetailStepsSection {
 
   aboutToDisappear(): void {
     this.renderSeq += 1
+    this.renderGuard.interrupt()
   }
 
   onItemsChanged(): void {
@@ -89,17 +91,18 @@ export struct DetailStepsSection {
 
   private resetContentRender = (): void => {
     const key: string = this.title + '|' + detailLinesSignature(this.items) + '|' + (this.emphasized ? '1' : '0')
-    if (key === this.contentRenderKey) {
+    if (!this.renderGuard.shouldEnqueue(key, this.contentReady)) {
       return
     }
-    this.contentRenderKey = key
     this.renderSeq += 1
     const seq: number = this.renderSeq
     if (this.items.length === 0) {
+      this.renderGuard.settle()
       this.contentReady = false
       return
     }
     if (this.emphasized) {
+      this.renderGuard.settle()
       this.contentReady = true
       return
     }
@@ -108,6 +111,7 @@ export struct DetailStepsSection {
       if (seq !== this.renderSeq) {
         return
       }
+      this.renderGuard.settle()
       this.contentReady = true
     })
   }

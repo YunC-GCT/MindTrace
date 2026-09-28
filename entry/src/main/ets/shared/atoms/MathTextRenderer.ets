@@ -27,6 +27,7 @@ import {
 } from '../../services/MathRenderBudget'
 import type {
   MathRenderBudget,
+  MathRenderCreateComplete,
   MathRenderWork,
   MathRenderWorkComplete,
 } from '../../services/MathRenderBudget'
@@ -57,6 +58,8 @@ class MathRenderPayload {
 const MATH_RENDER_CACHE: MathRenderCacheEntry[] = []
 const MATH_RENDER_CACHE_LIMIT: number = 64
 const MATH_RENDER_CACHE_MAX_CHARS: number = 600000
+const NOTE_MATH_RENDER_REVEAL_DURATION_MS: number = 180
+const NOTE_MATH_RENDER_REVEAL_OFFSET_VP: number = 4
 const MATH_RENDER_CACHE_KEY_VERSION: string = 'v2'
 const MATH_RENDER_PROTOCOL_VERSION: string = 'MM-MD-v1'
 const MATH_RENDER_CACHE_TTL_MS: number = 10 * 60 * 1000
@@ -207,35 +210,42 @@ export struct MathTextRenderer {
   @Prop renderPriority: number = DEFAULT_MATH_RENDER_PRIORITY
   @Prop forceDisplay: boolean = false
   @Prop minHeight: number = 42
+  onContentReady: () => void = (): void => {}
 
   private controller: webview.WebviewController = new webview.WebviewController()
   private lastAppliedKey: string = ''
   private riskNormalizer: LatexRiskNormalizer = new LatexRiskNormalizer()
   private contentProtocol: ContentProtocol = new ContentProtocol()
   @State private pageReady: boolean = false
-  @State private renderReady: boolean = true
+  @State private renderReady: boolean = false
+  @State private contentVisible: boolean = false
   @State private webFailed: boolean = false
   @State private webHeight: number = 42
   private renderSeq: number = 0
   private heightApplied: boolean = false
   private visibleInViewport: boolean = false
   private formulaVisibleReported: boolean = false
+  private contentReadyReported: boolean = false
+  private webCreateComplete: MathRenderCreateComplete | null = null
   private failureState: MathRenderFailureState = new MathRenderFailureState()
   private preparationMemo: MathRenderPreparationMemo = new MathRenderPreparationMemo()
 
   aboutToAppear(): void {
     this.renderSeq += 1
+    this.contentVisible = false
+    this.contentReadyReported = false
     const seq: number = this.renderSeq
     this.resetWebFailure()
     const prepared: PreparedMathRender = this.preparedRender()
     if (prepared.input.renderMode === 'plainFallback') {
       this.renderReady = true
       this.setWebHeight(this.clampHeight(this.estimateHeight(prepared.input.normalizedText)), false)
+      this.reportContentReady()
       return
     }
     const cached: MathRenderCacheEntry | null = cacheGet(prepared.cacheKey, this.metricSurface)
     if (cached !== null) {
-      this.setWebHeight(this.clampHeight(cached.height), true)
+      this.setWebHeight(this.clampHeight(cached.height), false)
     } else {
       this.setWebHeight(this.estimateHeight(prepared.markdown), false)
     }
@@ -243,13 +253,16 @@ export struct MathTextRenderer {
   }
 
   aboutToDisappear(): void {
+    this.completeWebCreate()
     this.renderSeq += 1
   }
 
   onTextChanged(): void {
     this.renderSeq += 1
     this.heightApplied = false
+    this.contentVisible = false
     this.formulaVisibleReported = false
+    this.contentReadyReported = false
     const seq: number = this.renderSeq
     this.resetWebFailure()
     const prepared: PreparedMathRender = this.preparedRender()
@@ -257,11 +270,12 @@ export struct MathTextRenderer {
       this.lastAppliedKey = ''
       this.renderReady = true
       this.setWebHeight(this.clampHeight(this.estimateHeight(prepared.input.normalizedText)), false)
+      this.reportContentReady()
       return
     }
     const cached: MathRenderCacheEntry | null = cacheGet(prepared.cacheKey, this.metricSurface)
     if (cached !== null) {
-      this.setWebHeight(this.clampHeight(cached.height), true)
+      this.setWebHeight(this.clampHeight(cached.height), false)
       if (this.pageReady) {
         this.renderReady = true
         this.applyCachedRender(prepared, cached)
@@ -289,7 +303,7 @@ export struct MathTextRenderer {
     }
     const cached: MathRenderCacheEntry | null = cacheGet(prepared.cacheKey, this.metricSurface)
     if (cached !== null) {
-      this.setWebHeight(this.clampHeight(cached.height), true)
+      this.setWebHeight(this.clampHeight(cached.height), false)
       this.applyCachedRender(prepared, cached)
       return
     }
@@ -492,6 +506,8 @@ export struct MathTextRenderer {
     this.webHeight = height
     this.heightApplied = applied
     if (applied) {
+      this.contentVisible = true
+      this.reportContentReady()
       ChatRenderBenchmarkStats.recordHeightApplied()
       if (this.metricSurface === 'noteDetail') {
         NoteDetailRenderMetrics.recordHeightApplied()
@@ -540,6 +556,10 @@ export struct MathTextRenderer {
     this.webFailed = this.failureState.shouldUsePlainFallback()
     this.lastAppliedKey = ''
     this.pageReady = false
+    this.contentVisible = false
+    if (this.webFailed) {
+      this.reportContentReady()
+    }
   }
 
   private resetWebFailure = (): void => {
@@ -552,6 +572,9 @@ export struct MathTextRenderer {
     this.webFailed = this.failureState.shouldUsePlainFallback()
     if (!accepted) {
       this.lastAppliedKey = ''
+      if (this.webFailed) {
+        this.reportContentReady()
+      }
     }
     return accepted
   }
@@ -560,6 +583,17 @@ export struct MathTextRenderer {
     this.failureState.recordFailure()
     this.webFailed = this.failureState.shouldUsePlainFallback()
     this.lastAppliedKey = ''
+    if (this.webFailed) {
+      this.reportContentReady()
+    }
+  }
+
+  private reportContentReady = (): void => {
+    if (this.contentReadyReported) {
+      return
+    }
+    this.contentReadyReported = true
+    this.onContentReady()
   }
 
   private normalizeForRender = (raw: string): MathRenderInput => {
@@ -621,14 +655,27 @@ export struct MathTextRenderer {
       this.renderReady = true
       return
     }
+    this.completeWebCreate()
     this.renderReady = false
+    this.contentVisible = false
     this.pageReady = false
-    this.renderBudget.enqueueWebCreate('web|' + cacheKey + '|' + seq.toString(), this.renderPriority, (): void => {
+    this.renderBudget.enqueueWebCreate('web|' + cacheKey + '|' + seq.toString(), this.renderPriority,
+      (complete: MathRenderCreateComplete): void => {
       if (seq !== this.renderSeq) {
+        complete()
         return
       }
+      this.webCreateComplete = complete
       this.renderReady = true
     })
+  }
+
+  private completeWebCreate = (): void => {
+    const complete: MathRenderCreateComplete | null = this.webCreateComplete
+    this.webCreateComplete = null
+    if (complete !== null) {
+      complete()
+    }
   }
 
   private enqueueWebWork = (key: string, run: MathRenderWork): void => {
@@ -678,6 +725,10 @@ export struct MathTextRenderer {
         .lineHeight(this.lineHeight)
         .width('100%')
         .textAlign(TextAlign.Start)
+    } else if (this.metricSurface === 'noteDetail' && !this.renderReady) {
+      Blank()
+        .width('100%')
+        .height(0)
     } else if (!this.renderReady) {
       Text(this.plainFallbackText())
         .fontSize(this.fontSize)
@@ -686,24 +737,41 @@ export struct MathTextRenderer {
         .width('100%')
         .textAlign(TextAlign.Start)
     } else {
-      Web({ src: $rawfile('render.html'), controller: this.controller })
-        .javaScriptAccess(true)
-        .domStorageAccess(false)
-        .fileAccess(false)
-        .horizontalScrollBarAccess(true)
-        .verticalScrollBarAccess(true)
-        .backgroundColor('rgba(0,0,0,0)')
+      Stack() {
+        Web({ src: $rawfile('render.html'), controller: this.controller })
+          .javaScriptAccess(true)
+          .domStorageAccess(false)
+          .fileAccess(false)
+          .horizontalScrollBarAccess(true)
+          .verticalScrollBarAccess(true)
+          .backgroundColor('rgba(0,0,0,0)')
+          .width('100%')
+          .height(this.webHeight)
+          .onAppear((): void => this.recordNoteDetailWebCreate())
+          .onPageEnd((): void => {
+            this.pageReady = true
+            this.renderContent()
+            this.completeWebCreate()
+          })
+          .onRenderExited((event: OnRenderExitedEvent): void => {
+            this.completeWebCreate()
+            this.recordNoteDetailRenderExit(event)
+          })
+      }
         .width('100%')
-        .height(this.webHeight)
+        .height(this.metricSurface === 'noteDetail' && !this.contentVisible ? 0 : this.webHeight)
+        .opacity(this.metricSurface === 'noteDetail' && !this.contentVisible ? 0 : 1)
+        .translate({
+          y: this.metricSurface === 'noteDetail' && !this.contentVisible ? NOTE_MATH_RENDER_REVEAL_OFFSET_VP : 0,
+        })
+        .clip(true)
         .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, currentRatio: number): void => {
           this.onVisibleAreaChanged(isVisible, currentRatio)
         })
-        .onAppear((): void => this.recordNoteDetailWebCreate())
-        .onPageEnd((): void => {
-          this.pageReady = true
-          this.renderContent()
+        .animation({
+          duration: this.metricSurface === 'noteDetail' ? NOTE_MATH_RENDER_REVEAL_DURATION_MS : 0,
+          curve: Curve.FastOutSlowIn,
         })
-        .onRenderExited((event: OnRenderExitedEvent): void => this.recordNoteDetailRenderExit(event))
     }
   }
 }

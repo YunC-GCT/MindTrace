@@ -55,8 +55,11 @@ export function buildNormalizedMathRenderScript(prepared: PreparedMathRender,
 
 export type MathRenderWorkComplete = (workDurationMs: number) => void
 export type MathRenderWork = (complete: MathRenderWorkComplete) => void
+export type MathRenderCreateComplete = () => void
+export type MathRenderCreateWork = (complete: MathRenderCreateComplete) => void
 
 export interface MathRenderBudget {
-  enqueueWebCreate(key: string, priority: number, run: () => void): void
+  enqueueContent(key: string, priority: number, run: () => void): void
+  enqueueWebCreate(key: string, priority: number, run: MathRenderCreateWork): void
   enqueueWebWork(key: string, priority: number, run: MathRenderWork): void
 }

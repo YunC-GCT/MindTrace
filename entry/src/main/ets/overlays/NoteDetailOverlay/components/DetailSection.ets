@@ -21,6 +21,7 @@ import {
 } from 'common'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import {
+  DetailContentRenderGuard,
   DetailRenderSession,
   DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
 } from './DetailRenderSession'
@@ -62,7 +63,7 @@ export struct DetailSection {
   @Prop @Watch('onContentChanged') emphasized: boolean = false
   @State contentReady: boolean = false
   private renderSeq: number = 0
-  private contentRenderKey: string = ''
+  private renderGuard: DetailContentRenderGuard = new DetailContentRenderGuard()
 
   aboutToAppear(): void {
     this.resetContentRender()
@@ -70,6 +71,7 @@ export struct DetailSection {
 
   aboutToDisappear(): void {
     this.renderSeq += 1
+    this.renderGuard.interrupt()
   }
 
   onContentChanged(): void {
@@ -120,17 +122,18 @@ export struct DetailSection {
   private resetContentRender = (): void => {
     const content: string = this.content.trim()
     const key: string = this.title + '|' + detailTextSignature(content) + '|' + (this.emphasized ? '1' : '0')
-    if (key === this.contentRenderKey) {
+    if (!this.renderGuard.shouldEnqueue(key, this.contentReady)) {
       return
     }
-    this.contentRenderKey = key
     this.renderSeq += 1
     const seq: number = this.renderSeq
     if (content.length === 0) {
+      this.renderGuard.settle()
       this.contentReady = false
       return
     }
     if (this.emphasized) {
+      this.renderGuard.settle()
       this.contentReady = true
       return
     }
@@ -139,6 +142,7 @@ export struct DetailSection {
       if (seq !== this.renderSeq) {
         return
       }
+      this.renderGuard.settle()
       this.contentReady = true
     })
   }

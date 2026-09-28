@@ -14,6 +14,7 @@
 
 import { describe, it, expect } from '@ohos/hypium'
 import {
+  DetailContentRenderGuard,
   DetailRenderSession,
   DetailRenderTimer,
   DETAIL_RENDER_PRIORITY_META,
@@ -31,7 +32,11 @@ import {
   buildMathRenderPreparationKey,
   buildNormalizedMathRenderScript,
 } from '../main/ets/services/MathRenderBudget'
-import type { MathRenderWorkComplete } from '../main/ets/services/MathRenderBudget'
+import type {
+  MathRenderCreateComplete,
+  MathRenderWorkComplete,
+} from '../main/ets/services/MathRenderBudget'
+import { MarkdownContentReleaseBarrier } from '../main/ets/services/MarkdownContentReleaseBarrier'
 
 class FakeDetailRenderTimer implements DetailRenderTimer {
   callbacks: Array<() => void> = []
@@ -160,12 +165,32 @@ export default function detailRenderSessionTest(): void {
         'visible-text|visible-formula|near|offscreen-text|offscreen-formula|meta')
     })
 
-    it('visible_work_avoids_an_artificial_frame_delay', 0, () => {
+    it('content_release_uses_the_frame_paced_delay', 0, () => {
       const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
       const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
       session.activate('note-a|visible-delay')
       session.enqueue('visible-text', DETAIL_RENDER_PRIORITY_VISIBLE_TEXT, (): void => {})
-      expect(timer.firstDelay()).assertEqual(0)
+      expect(timer.firstDelay()).assertEqual(16)
+    })
+
+    it('pending_content_does_not_enqueue_twice', 0, () => {
+      const guard: DetailContentRenderGuard = new DetailContentRenderGuard()
+      expect(guard.shouldEnqueue('section-a', false)).assertTrue()
+      expect(guard.shouldEnqueue('section-a', false)).assertFalse()
+    })
+
+    it('interrupted_content_reenqueues_same_key', 0, () => {
+      const guard: DetailContentRenderGuard = new DetailContentRenderGuard()
+      expect(guard.shouldEnqueue('section-a', false)).assertTrue()
+      guard.interrupt()
+      expect(guard.shouldEnqueue('section-a', false)).assertTrue()
+    })
+
+    it('completed_content_does_not_reenqueue_same_key', 0, () => {
+      const guard: DetailContentRenderGuard = new DetailContentRenderGuard()
+      expect(guard.shouldEnqueue('section-a', false)).assertTrue()
+      guard.settle()
+      expect(guard.shouldEnqueue('section-a', true)).assertFalse()
     })
 
     it('same_content_block_key_changes_with_session_identity', 0, () => {
@@ -215,38 +240,168 @@ export default function detailRenderSessionTest(): void {
       expect(session.metricSurface()).assertEqual('noteDetail')
     })
 
-    it('admits_at_most_one_web_create_per_frame', 0, () => {
+    it('releases_markdown_content_units_one_at_a_time', 0, () => {
       const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
       const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
       const order: string[] = []
+      session.activate('note-a|markdown-units')
+      session.enqueueContent('heading', DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        (): void => { order.push('heading') })
+      session.enqueueContent('first-item', DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        (): void => { order.push('first-item') })
+      session.enqueueContent('second-item', DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        (): void => { order.push('second-item') })
+
+      expect(timer.firstDelay()).assertEqual(16)
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('heading')
+      expect(timer.pendingCount()).assertEqual(1)
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('heading|first-item')
+      expect(timer.pendingCount()).assertEqual(1)
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('heading|first-item|second-item')
+      expect(timer.pendingCount()).assertEqual(0)
+    })
+
+    it('waits_for_formula_list_before_releasing_next_heading', 0, () => {
+      const barrier: MarkdownContentReleaseBarrier = new MarkdownContentReleaseBarrier()
+      barrier.waitFor('formula-1')
+      barrier.waitFor('formula-2')
+      barrier.waitFor('formula-3')
+
+      expect(barrier.deferNextBlock()).assertTrue()
+      expect(barrier.complete('formula-2')).assertFalse()
+      expect(barrier.complete('formula-1')).assertFalse()
+      expect(barrier.complete('formula-3')).assertTrue()
+    })
+
+    it('pipelines_five_web_creates_three_per_admission', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      const order: string[] = []
+      const readyCallbacks: MathRenderCreateComplete[] = []
       session.activate('note-a|web-create-budget')
       session.enqueueWebCreate('first', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
-        (): void => { order.push('first') })
+        (complete: MathRenderCreateComplete): void => {
+          order.push('first')
+          readyCallbacks.push(complete)
+        })
       session.enqueueWebCreate('second', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
-        (): void => { order.push('second') })
+        (complete: MathRenderCreateComplete): void => {
+          order.push('second')
+          readyCallbacks.push(complete)
+        })
       session.enqueueWebCreate('third', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
-        (): void => { order.push('third') })
-      timer.flushOne()
-      expect(order.join('|')).assertEqual('first')
-      expect(session.pendingWebCount()).assertEqual(2)
-      expect(timer.delays[0]).assertEqual(16)
-      expect(timer.delays[1]).assertEqual(16)
-      timer.flushOne()
-      expect(order.join('|')).assertEqual('first|second')
+        (complete: MathRenderCreateComplete): void => {
+          order.push('third')
+          readyCallbacks.push(complete)
+        })
+      session.enqueueWebCreate('fourth', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (complete: MathRenderCreateComplete): void => {
+          order.push('fourth')
+          readyCallbacks.push(complete)
+        })
+      session.enqueueWebCreate('fifth', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (complete: MathRenderCreateComplete): void => {
+          order.push('fifth')
+          readyCallbacks.push(complete)
+        })
+      session.enqueueWebCreate('sixth', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (complete: MathRenderCreateComplete): void => {
+          order.push('sixth')
+          complete()
+        })
+
       timer.flushOne()
       expect(order.join('|')).assertEqual('first|second|third')
+      expect(timer.pendingCount()).assertEqual(1)
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('first|second|third|fourth|fifth')
+      expect(timer.pendingCount()).assertEqual(0)
+      expect(timer.delays[0]).assertEqual(16)
+      expect(timer.delays[1]).assertEqual(16)
+      if (readyCallbacks.length > 0) {
+        readyCallbacks[0]()
+      }
+      expect(timer.pendingCount()).assertEqual(1)
+      expect(timer.delays[2]).assertEqual(16)
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('first|second|third|fourth|fifth|sixth')
+    })
+
+    it('runs_ready_web_work_before_next_pipelined_create', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      const order: string[] = []
+      const readyCallbacks: MathRenderCreateComplete[] = []
+      session.activate('note-a|web-create-work-order')
+      session.enqueueWebCreate('first', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderCreateComplete): void => {
+          order.push('create-first')
+          readyCallbacks.push(complete)
+        })
+
+      timer.flushOne()
+      session.enqueueWebCreate('second', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderCreateComplete): void => {
+          order.push('create-second')
+          complete()
+        })
+      session.enqueueWebWork('first-work', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderWorkComplete): void => {
+          order.push('work-first')
+          complete(1)
+        })
+      if (readyCallbacks.length > 0) {
+        readyCallbacks[0]()
+      }
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('create-first|work-first|create-second')
+    })
+
+    it('keeps_three_create_limit_when_ready_work_interleaves', 0, () => {
+      const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
+      const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
+      const order: string[] = []
+      session.activate('note-a|interleaved-create-limit')
+      session.enqueueWebCreate('first', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (completeCreate: MathRenderCreateComplete): void => {
+          order.push('create-first')
+          session.enqueueWebWork('first-ready', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+            (completeWork: MathRenderWorkComplete): void => {
+              order.push('work-first')
+              completeWork(1)
+            })
+          completeCreate()
+        })
+      session.enqueueWebCreate('second', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderCreateComplete): void => { order.push('create-second'); complete() })
+      session.enqueueWebCreate('third', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderCreateComplete): void => { order.push('create-third'); complete() })
+      session.enqueueWebCreate('fourth', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderCreateComplete): void => { order.push('create-fourth'); complete() })
+      session.enqueueWebCreate('fifth', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        (complete: MathRenderCreateComplete): void => { order.push('create-fifth'); complete() })
+
+      timer.flushOne()
+      expect(order.join('|')).assertEqual('create-first|work-first|create-second|create-third')
+      expect(timer.pendingCount()).assertEqual(1)
+      timer.flushOne()
+      expect(order.join('|')).assertEqual(
+        'create-first|work-first|create-second|create-third|create-fourth|create-fifth')
     })
 
     it('measures_formula_work_and_waits_for_async_completion', 0, () => {
       const timer: FakeDetailRenderTimer = new FakeDetailRenderTimer()
       const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
       let workRuns: number = 0
-      let firstComplete: MathRenderWorkComplete | null = null
+      const workCompletions: MathRenderWorkComplete[] = []
       session.activate('note-a|web-work-budget')
       session.enqueueWebWork('first', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
         (complete: MathRenderWorkComplete): void => {
           workRuns += 1
-          firstComplete = complete
+          workCompletions.push(complete)
         })
       session.enqueueWebWork('second', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
         (complete: MathRenderWorkComplete): void => {
@@ -255,10 +410,9 @@ export default function detailRenderSessionTest(): void {
         })
       timer.flushOne()
       expect(workRuns).assertEqual(1)
-      expect(session.pendingWebCount()).assertEqual(1)
       expect(timer.pendingCount()).assertEqual(0)
-      if (firstComplete !== null) {
-        firstComplete(16)
+      if (workCompletions.length > 0) {
+        workCompletions[0](16)
       }
       expect(workRuns).assertEqual(1)
       expect(timer.pendingCount()).assertEqual(1)
@@ -288,7 +442,6 @@ export default function detailRenderSessionTest(): void {
         })
       timer.flushOne()
       expect(order.join('|')).assertEqual('first|second')
-      expect(session.pendingWebCount()).assertEqual(1)
       expect(timer.pendingCount()).assertEqual(1)
       timer.flushOne()
       expect(order.join('|')).assertEqual('first|second|third')
@@ -300,9 +453,9 @@ export default function detailRenderSessionTest(): void {
       let creates: number = 0
       session.activate('note-a|identical-formulas')
       session.enqueueWebCreate('same-cache-key|1', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
-        (): void => { creates += 1 })
+        (complete: MathRenderCreateComplete): void => { creates += 1; complete() })
       session.enqueueWebCreate('same-cache-key|1', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
-        (): void => { creates += 1 })
+        (complete: MathRenderCreateComplete): void => { creates += 1; complete() })
       timer.flushOne()
       timer.flushOne()
       expect(creates).assertEqual(2)
@@ -313,16 +466,19 @@ export default function detailRenderSessionTest(): void {
       const session: DetailRenderSession = new DetailRenderSession('noteDetail', timer)
       const order: string[] = []
       session.activate('note-a|web-priority')
-      session.enqueueWebCreate('offscreen', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
-        (): void => { order.push('offscreen') })
+      session.enqueueWebCreate('offscreen-first', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (complete: MathRenderCreateComplete): void => { order.push('offscreen-first'); complete() })
+      session.enqueueWebCreate('offscreen-second', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (complete: MathRenderCreateComplete): void => { order.push('offscreen-second'); complete() })
+      session.enqueueWebCreate('offscreen-stale', DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+        (complete: MathRenderCreateComplete): void => { order.push('offscreen-stale'); complete() })
       session.enqueueWebCreate('visible', DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
-        (): void => { order.push('visible') })
+        (complete: MathRenderCreateComplete): void => { order.push('visible'); complete() })
       timer.flushOne()
-      expect(order.join('|')).assertEqual('visible')
+      expect(order.join('|')).assertEqual('visible|offscreen-first|offscreen-second')
       session.activate('note-b|web-priority')
       timer.flushOne()
-      expect(order.join('|')).assertEqual('visible')
-      expect(session.pendingWebCount()).assertEqual(0)
+      expect(order.join('|')).assertEqual('visible|offscreen-first|offscreen-second')
     })
 
     it('memoizes_unchanged_preparation_and_invalidates_each_contract_dimension', 0, () => {

@@ -27,7 +27,11 @@ import {
   originalSectionText,
 } from '../model/DetailRenderModel'
 import { detailLinesSignature, detailTextSignature } from './DetailSection'
-import { DetailRenderSession, DETAIL_RENDER_PRIORITY_META } from './DetailRenderSession'
+import {
+  DetailContentRenderGuard,
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_META,
+} from './DetailRenderSession'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 
 @Component
@@ -36,8 +40,8 @@ export struct DetailMetaFooter {
   @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
   @State contentReady: boolean = false
   @State originalText: string = ''
-  private contentRenderKey: string = ''
   private renderSeq: number = 0
+  private renderGuard: DetailContentRenderGuard = new DetailContentRenderGuard()
 
   aboutToAppear(): void {
     this.resetContentRender()
@@ -45,6 +49,7 @@ export struct DetailMetaFooter {
 
   aboutToDisappear(): void {
     this.renderSeq += 1
+    this.renderGuard.interrupt()
   }
 
   onModelChanged(): void {
@@ -165,14 +170,14 @@ export struct DetailMetaFooter {
   private resetContentRender = (): void => {
     const originalText: string = originalSectionText(this.model)
     const key: string = this.modelSignature(originalText)
-    if (key === this.contentRenderKey) {
+    if (!this.renderGuard.shouldEnqueue(key, this.contentReady)) {
       return
     }
-    this.contentRenderKey = key
     this.originalText = originalText
     this.renderSeq += 1
     const seq: number = this.renderSeq
     if (!hasDetailMeta(this.model)) {
+      this.renderGuard.settle()
       this.contentReady = false
       return
     }
@@ -181,6 +186,7 @@ export struct DetailMetaFooter {
       if (seq !== this.renderSeq) {
         return
       }
+      this.renderGuard.settle()
       this.contentReady = true
     })
   }

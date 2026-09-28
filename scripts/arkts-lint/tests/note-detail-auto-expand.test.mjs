@@ -82,6 +82,33 @@ test('NoteDetail Markdown and steps are fully expanded while chat keeps its prof
   assert.match(chat, /profile:\s*'chat'/);
 });
 
+test('NoteDetail Markdown releases complete content units through the budget seam', () => {
+  const markdown = read('entry/src/main/ets/shared/molecules/MarkdownRenderer.ets');
+  const math = read('entry/src/main/ets/shared/atoms/MathTextRenderer.ets');
+  const budget = read('entry/src/main/ets/services/MathRenderBudget.ets');
+  const session = read('entry/src/main/ets/overlays/NoteDetailOverlay/components/DetailRenderSession.ets');
+  const hypium = read('entry/src/test/DetailRenderSession.test.ets');
+
+  assert.match(budget, /enqueueContent\(key:\s*string,\s*priority:\s*number,\s*run:\s*\(\)\s*=>\s*void\):\s*void/);
+  assert.match(session, /enqueueContent\(key:\s*string,\s*priority:\s*number,\s*run:\s*\(\)\s*=>\s*void\):\s*void/);
+  assert.match(markdown, /renderBudget\.enqueueContent/);
+  assert.match(math, /onContentReady:\s*\(\)\s*=>\s*void\s*=\s*\(\):\s*void\s*=>/);
+  assert.match(hypium, /releases_markdown_content_units_one_at_a_time/);
+});
+
+test('a formula list completes before the following Markdown heading is released', () => {
+  const markdown = read('entry/src/main/ets/shared/molecules/MarkdownRenderer.ets');
+  const barrier = read('entry/src/main/ets/services/MarkdownContentReleaseBarrier.ets');
+  const hypium = read('entry/src/test/DetailRenderSession.test.ets');
+
+  assert.match(markdown, /MarkdownContentReleaseBarrier/);
+  assert.match(markdown, /waitFor\(unitKey\)/);
+  assert.match(markdown, /deferNextBlock\(\)/);
+  assert.match(markdown, /complete\(unitKey\)/);
+  assert.match(barrier, /export class MarkdownContentReleaseBarrier/);
+  assert.match(hypium, /waits_for_formula_list_before_releasing_next_heading/);
+});
+
 test('renderer family block order remains stable after automatic expansion', () => {
   const expectations = [
     [rendererPaths[0], ['DefinitionBlock', 'PropertiesBlock', 'ExamplesBlock', 'RelatedBlock', 'SupplementBlock']],

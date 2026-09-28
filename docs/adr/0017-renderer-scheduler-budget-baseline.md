@@ -21,6 +21,15 @@ the DevEco emulator (`p95 > 500ms` on B/C/C′), but the raw evidence is complet
 recomputable. This emulator result is recorded as a performance follow-up, not as a failure of the
 benchmark evidence deliverable.
 
+### NoteDetail scope boundary
+
+The frozen `1 create / 16ms work` values remain the defaults for the chat `RendererScheduler` covered
+by spec 021. NoteDetail now owns a separate instance render session under spec 024. Its current
+simulator-tuned implementation candidate admits at most three Web creates per 16ms admission, keeps at
+most five creates in flight, and retains the 16ms Web-work budget. This NoteDetail candidate does not
+change the chat defaults, does not constitute target-device performance evidence, and does not close
+the spec 024 device gate.
+
 ## Context
 
 spec 021 §6 defines `maxWebCreatesPerFrame` (hard per-frame quantity cap) and `maxWebWorkMsPerFrame`

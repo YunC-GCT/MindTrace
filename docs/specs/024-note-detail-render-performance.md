@@ -23,7 +23,7 @@
 
 1. 使用固定的 A/B/C/C′ 详情 fixture，分别覆盖无公式、少量公式、多公式和连续公式，测量首屏、公式可见、稳定时间、Web 创建、Web 工作、高度更新和长帧。
 2. 新增实例级 NoteDetail render session 作为详情页唯一的分块释放入口，逐个迁移 DetailRenderQueue 调用者并删除旧模块级全局队列；移除 renderer 内部重复的阶段性定时器，正文和步骤列表默认自动全量展开，不再显示“继续阅读”。
-3. 将公式 Web 创建纳入统一的 NoteDetail 预算，初始沿用 ADR-0017 冻结的 `maxWebCreatesPerFrame = 1` 和 `maxWebWorkMsPerFrame = 16`，并保留估算高度与纯文本降级。
+3. 将公式 Web 创建纳入统一的 NoteDetail 预算，初始沿用 ADR-0017 的单创建基线；模拟器交互调优后的实现候选为每轮最多 3 个创建、最多 5 个创建在途、16ms 滚动补位，公式工作仍遵守 `maxWebWorkMsPerFrame = 16`，并保留估算高度与纯文本降级。
 4. 对 WebKeepAlive 做目标设备开/关 A/B，比较冷开、重复打开、render-exit 与稳态内存；只有收益明确且内存成本可接受时，才在应用根部单实例挂载，否则保持关闭并记录否决证据。
 5. 缩小详情状态变化的影响范围：渲染输入变化只重置对应详情实例的队列和子树；编辑状态、删除确认和草稿状态不得触发无关只读分块重新初始化。
 6. 缓存 Markdown/公式规范化结果，避免 `build()` 重建时重复执行协议归一化和风险清洗；不把 chat 的 StreamingReplyDocument 或持久化模型引入 NoteDetail。
@@ -72,7 +72,7 @@
 - The highest seam is the read-only `NoteDetailOverlay` open path. The fixture harness supplies a `NoteItem`, an optional `KnowledgeUnit`, and the complete `KnowledgeUnit[]` reference set, then observes the rendered surface rather than private renderer methods.
 - The fixture matrix is A/B/C/C′: equal or controlled text size, 0/2/6/6 block-formula patterns, with C′ exercising consecutive closed formula pairs. Each fixture runs at least 20 times with cold/warm distinction when a device harness is available.
 - NoteDetail metrics use a surface-specific adapter. It may share low-level counters with existing renderer instrumentation, but it must not depend on chat message models, `StreamingReplyDocument`, chat persistence, or chat list identity.
-- The initial budgets are `maxWebCreatesPerFrame = 1`, `maxWebWorkMsPerFrame = 16`, long-frame threshold `>32ms`, and a 500ms quiet window for stability. These values are inherited from ADR-0017 as the starting contract; changing them requires new device evidence and an ADR update.
+- The ADR-0017 starting budgets are `maxWebCreatesPerFrame = 1` and `maxWebWorkMsPerFrame = 16`. The current simulator-tuned implementation candidate admits up to three creates per 16ms round with at most five creates in flight, while keeping Web work at 16ms. This remains an implementation candidate rather than target-device performance proof; the long-frame threshold stays `>32ms` and the stability quiet window stays 500ms.
 - A new instance-owned NoteDetail render session becomes the only section-release scheduler. Existing `DetailRenderQueue` callers migrate through an expand-migrate-contract sequence; the module-level queue, epoch, timer, enqueue/reset APIs, and renderer-specific staged timers are deleted after zero-call-site verification. Session state is invalidated when its key changes or the overlay disappears.
 - Read-only content is automatically expanded. The user-facing “继续阅读” controls are removed from Markdown and step-list rendering. Automatic release may still be batched, but no content may depend on user interaction to become reachable.
 - Formula rendering keeps the existing `MathTextRenderer` WebView/KaTeX route, `ContentProtocol` validation, estimated height, cache, bridge-size fallback, render-exit fallback, and plain-text fallback. This spec does not introduce a native LaTeX engine.
@@ -123,7 +123,7 @@ GitHub sub-issues and native blocked-by relationships are the authoritative live
 ## Testing Decisions
 
 - Tests assert external behavior and stable seams: content becomes available without a user “继续阅读” action, stale render work is cancelled, formula fallback remains readable, and measured budgets are respected. Tests do not assert private timer names, internal arrays, or exact component nesting.
-- A Node-based contract test covers fixture definitions, metric names, frozen budget identifiers, NoteDetail/chat surface isolation, and automatic-expansion semantics. It follows the existing `scripts/arkts-lint/tests/` structural-test style.
+- A Node-based contract test covers fixture definitions, metric names, configured budget identifiers, NoteDetail/chat surface isolation, and automatic-expansion semantics. It follows the existing `scripts/arkts-lint/tests/` structural-test style.
 - Pure logic tests cover fixture generation, render-session identity, queue cancellation, budget admission, metric aggregation, and cold/warm labeling.
 - A Hypium/device harness covers the actual NoteDetail open path with A/B/C/C′ fixtures. It records p50/p95 for first-visible, formula-visible, open-to-stable, Web creates, height updates, and long frames; it also records render-exit reason and steady memory.
 - Device acceptance defines `visible` as a rendered block in the viewport with its height applied. `stable` means the viewport and the previous-screen content have no height changes for 500ms after the last scheduled work.

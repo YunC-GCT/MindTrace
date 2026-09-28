@@ -16,12 +16,22 @@ const mathPath = 'entry/src/main/ets/shared/atoms/MathTextRenderer.ets';
 const markdownPath = 'entry/src/main/ets/shared/molecules/MarkdownRenderer.ets';
 const budgetPath = 'entry/src/main/ets/services/MathRenderBudget.ets';
 
-test('NoteDetail session owns the frozen formula Web admission budgets', () => {
+test('NoteDetail session owns the configured rolling formula Web admission budgets', () => {
   const session = read(sessionPath);
-  assert.match(session, /export const DETAIL_RENDER_MAX_WEB_CREATES_PER_FRAME:\s*number\s*=\s*1/);
+  assert.match(session, /export const DETAIL_RENDER_MAX_WEB_CREATES_IN_FLIGHT:\s*number\s*=\s*5/);
+  assert.match(session, /export const DETAIL_RENDER_MAX_WEB_CREATES_PER_ADMISSION:\s*number\s*=\s*3/);
+  assert.match(session, /export const DETAIL_RENDER_WEB_CREATE_ADMISSION_MS:\s*number\s*=\s*16/);
+  assert.doesNotMatch(session, /DETAIL_RENDER_WEB_CREATE_STAGGER_MS/);
   assert.match(session, /export const DETAIL_RENDER_MAX_WEB_WORK_MS_PER_FRAME:\s*number\s*=\s*16/);
   assert.match(session, /enqueueWebCreate\(/);
   assert.match(session, /enqueueWebWork\(/);
+});
+
+test('Hypium covers the ordered three-wide rolling Web pipeline and ready work ordering', () => {
+  const hypium = read('entry/src/test/DetailRenderSession.test.ets');
+  assert.match(hypium, /pipelines_five_web_creates_three_per_admission/);
+  assert.match(hypium, /runs_ready_web_work_before_next_pipelined_create/);
+  assert.match(hypium, /keeps_three_create_limit_when_ready_work_interleaves/);
 });
 
 test('NoteDetail formula renderers consume the instance budget while chat and previews stay independent', () => {

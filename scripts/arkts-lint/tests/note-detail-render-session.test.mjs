@@ -73,3 +73,25 @@ test('registered Hypium fixtures cover isolation stale work priority and complet
   assert.match(fixture, /same_identity_local_interaction_keeps_generation_and_completed_work/);
   assert.match(list, /detailRenderSessionTest\(\)/);
 });
+
+test('content render guard exposes stable retry semantics covered by Hypium', () => {
+  const session = read(sessionPath);
+  const fixture = read('entry/src/test/DetailRenderSession.test.ets');
+  const paths = [
+    'entry/src/main/ets/overlays/NoteDetailOverlay/components/DetailSection.ets',
+    'entry/src/main/ets/overlays/NoteDetailOverlay/components/DetailStepsSection.ets',
+    'entry/src/main/ets/overlays/NoteDetailOverlay/components/DetailMetaFooter.ets',
+  ];
+  assert.match(session, /export class DetailContentRenderGuard/);
+  assert.match(session, /shouldEnqueue\(key: string, contentReady: boolean\)/);
+  assert.match(session, /settle\(\)/);
+  assert.match(session, /interrupt\(\)/);
+  for (const path of paths) {
+    const source = read(path);
+    assert.match(source, /DetailContentRenderGuard/,
+      path + ' must use the shared content render guard');
+  }
+  assert.match(fixture, /pending_content_does_not_enqueue_twice/);
+  assert.match(fixture, /interrupted_content_reenqueues_same_key/);
+  assert.match(fixture, /completed_content_does_not_reenqueue_same_key/);
+});
