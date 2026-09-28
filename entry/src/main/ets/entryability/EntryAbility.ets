@@ -1,7 +1,9 @@
 // ============================================================================
 //  entryability/EntryAbility.ets — 应用入口
 //  ----------------------------------------------------------------------------
-//  职责: ArkWeb 启动期预热门禁 + 初始化 LLM 配置 + 数据库 + 沉浸式状态栏 + 加载首页。
+//  职责: 解析默认关闭的 NoteDetail benchmark + ArkWeb 启动期预热 + 初始化服务 + 加载首页。
+//  依赖: NoteDetailBenchmarkLaunch, WebKeepAliveExperiment, ArkWebWarmupService,
+//       LlmConfig, OcrConfig, DatabaseHelper, Kit facades, ChatFilesDirSeam, ChatSessionManager。
 //  沉浸式状态栏: app 内容延伸到 status bar 下方, status bar 背景透明。
 //  视觉效果: 系统时间/电量/信号/wifi 浮在 app 内容上, 与 app 无缝衔接。
 //  ============================================================================
@@ -18,11 +20,23 @@ import { CardSnapshotService } from '../services/CardSnapshotService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
 import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFilesDirSeam';
 import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';
+import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
+import {
+  NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
+  NoteDetailBenchmarkLaunchConfig,
+} from '../services/NoteDetailBenchmarkLaunch';
 
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    const benchmarkConfig: NoteDetailBenchmarkLaunchConfig =
+      NoteDetailBenchmarkLaunchConfig.fromUri(want.uri ?? '');
+    AppStorage.setOrCreate<NoteDetailBenchmarkLaunchConfig>(
+      NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
+      benchmarkConfig,
+    );
+    WebKeepAliveExperiment.configure(benchmarkConfig.webKeepAliveEnabled);
     const warmupResult = ArkWebWarmupService.warmup();
     if (warmupResult.success) {
       hilog.info(DOMAIN, 'testTag', '%{public}s', warmupResult.diagnostic);

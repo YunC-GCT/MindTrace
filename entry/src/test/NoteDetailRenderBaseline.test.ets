@@ -3,7 +3,8 @@
  *
  * 路径: entry/src/test/NoteDetailRenderBaseline.test.ets
  * 职责: 验证 A/B/C/C′、short/long、六 renderer 输入以及确定性指标快照语义。
- * 依赖: Hypium, NoteDetailRenderFixtures, NoteDetailRenderMetrics
+ * 依赖: Hypium, NoteDetailRenderFixtures, NoteDetailRenderMetrics,
+ *       NoteDetailRenderBenchmarkHarness, NoteDetailBenchmarkLaunch, WebKeepAlive
  *
  * 数据流:
  *   固定 fixture/合成时间戳 → 公共 seam → 行为断言
@@ -38,6 +39,7 @@ import {
   KEEP_ALIVE_MAX_RECOVERY,
   WebKeepAliveRecoveryBudget,
 } from '../main/ets/shared/atoms/WebKeepAlive'
+import { NoteDetailBenchmarkLaunchConfig } from '../main/ets/services/NoteDetailBenchmarkLaunch'
 
 const expectedFormulaCount = (id: NoteDetailFixtureId): number => {
   if (id === 'A') { return 0 }
@@ -184,6 +186,22 @@ export default function noteDetailRenderBaselineTest(): void {
       }
       expect(accepted).assertEqual(KEEP_ALIVE_MAX_RECOVERY)
       expect(budget.count()).assertEqual(KEEP_ALIVE_MAX_RECOVERY)
+    })
+
+    it('benchmark_launch_is_default_off_and_parses_whitelisted_URI_tokens', 0, () => {
+      const disabled: NoteDetailBenchmarkLaunchConfig =
+        NoteDetailBenchmarkLaunchConfig.fromUri('mindtrace://normal')
+      expect(disabled.enabled).assertFalse()
+      expect(disabled.webKeepAliveEnabled).assertFalse()
+
+      const enabled: NoteDetailBenchmarkLaunchConfig = NoteDetailBenchmarkLaunchConfig.fromUri(
+        'mindtrace://note-detail-benchmark/fixture=C_P/renderer=proof/length=short/ai=1/keepAlive=1')
+      expect(enabled.enabled).assertTrue()
+      expect(enabled.fixtureId).assertEqual('C_P')
+      expect(enabled.rendererFamily).assertEqual('证明题')
+      expect(enabled.lengthProfile).assertEqual('short')
+      expect(enabled.aiHelperVisible).assertTrue()
+      expect(enabled.webKeepAliveEnabled).assertTrue()
     })
   })
 }

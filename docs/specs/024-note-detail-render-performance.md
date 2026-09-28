@@ -2,7 +2,7 @@
 
 > 本规格定义 NoteDetail 渲染性能改造的证据口径、调度边界与真机验收标准。
 
-> **Status**: proposed (2026-09-27; GitHub issue [#182](https://github.com/YunC-GCT/MindTrace/issues/182))
+> **Status**: in progress (2026-09-28; #182/#185 evidence landed, #189 emulator A/B rejects default enablement, #188 blocked by #187 and target-device evidence)
 > **Related**: [ADR-0017](../adr/0017-renderer-scheduler-budget-baseline.md) · [spec 021](./021-chat-streaming-incremental-rendering.md) · [NoteDetailOverlay 调研](../research/note-detail-overlay-state-2026-09-23.md) · [ArkWeb 渲染稳定性调研](../research/arkweb-render-pipeline-stability-2026-09-11.md)
 
 ## Problem Statement
@@ -153,3 +153,10 @@ GitHub sub-issues and native blocked-by relationships are the authoritative live
 - The existing `MATH_RENDER_CACHE` is a content cache, not a Web instance cache. Benchmark reports must keep these concepts separate.
 - A later slot-pooling or single-Web design must be triggered by measured failure of the P1 targets, not by architectural completeness. It requires separate decisions for height synchronization, scroll behavior, render-exit recovery, and accessibility.
 - The first implementation should preserve the current visual order of NoteType-specific sections. Performance work is successful only if users can still read the same structured content with the same edit/delete/draft semantics.
+
+## Implementation and Acceptance Status (2026-09-28)
+
+- #182 的规格、调研和索引已经落库；#185 已提供 A/B/C/C′、short/long、六 renderer 输入、AI 竞争负载、surface 指标与真实 NoteDetailOverlay harness。
+- #189 的根级实验入口默认关闭。KeepAlive 仅由 `Index` 单实例挂载，benchmark host 在同一根生命周期内自动执行 cold open、close 和 warm reopen。DevEco 模拟器 A/B 未显示稳定收益，因此当前结论为**不默认启用**。
+- 模拟器原始结果与限制见 [NoteDetail 模拟器性能与 WebKeepAlive A/B 证据](../research/note-detail-emulator-acceptance-2026-09-28.md)。这些结果不能作为目标设备达标证明。
+- #188 当前未通过且保持阻塞：GitHub #187 仍为 OPEN，C 公式密集场景有 4 秒窗口内公式不可见，C′ 连续公式仍出现裸分隔符；20 次真机矩阵、p50/p95、外部长帧与内存门禁尚未完成。

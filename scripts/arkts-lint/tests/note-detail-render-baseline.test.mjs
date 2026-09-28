@@ -17,6 +17,7 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const fixturesPath = 'entry/src/main/ets/services/NoteDetailRenderFixtures.ets';
 const metricsPath = 'entry/src/main/ets/services/NoteDetailRenderMetrics.ets';
 const harnessPath = 'entry/src/main/ets/benchmark/NoteDetailRenderBenchmarkHarness.ets';
+const hostPath = 'entry/src/main/ets/benchmark/NoteDetailRenderBenchmarkHost.ets';
 
 test('NoteDetail baseline owns deterministic A/B/C/C-prime fixture inputs', () => {
   assert.ok(existsSync(resolve(root, fixturesPath)), fixturesPath + ' must exist');
@@ -102,22 +103,35 @@ test('device harness drives the real NoteDetailOverlay seam and stays off produc
   assert.ok(harness.indexOf('NoteDetailOverlay({') < harness.indexOf('AgentFloatWindow({'));
   assert.match(harness, /createNoteDetailBenchmarkFixture/);
   assert.match(harness, /NoteDetailRenderMetrics\.enableForRun/);
+  assert.match(harness, /setInterval\([^]*NoteDetailRenderMetrics\.markStable/);
+  assert.match(harness, /clearInterval\(/);
   assert.match(harness, /NoteDetailRenderMetrics\.recordFrameDuration/);
   assert.match(harness, /NoteDetailRenderMetrics\.recordMemory/);
+  assert.doesNotMatch(harness, /import[^\n]*WebKeepAlive|WebKeepAlive\(\)/);
   assert.doesNotMatch(pages, /NoteDetailRenderBenchmarkHarness/);
   assert.doesNotMatch(entryAbility, /NoteDetailRenderBenchmarkHarness/);
   assert.match(listTest, /noteDetailRenderBaselineTest/);
 });
 
-test('WebKeepAlive experiment is default-off, root-scoped, and recovery-bounded', () => {
+test('WebKeepAlive experiment is default-off, root-scoped across cold and warm overlay runs', () => {
   const index = read('entry/src/main/ets/pages/Index.ets');
+  const host = read(hostPath);
   const keepAlive = read('entry/src/main/ets/shared/atoms/WebKeepAlive.ets');
   const experiment = read('entry/src/main/ets/services/WebKeepAliveExperiment.ets');
-  assert.match(index, /@StorageLink\('webKeepAliveExperimentEnabled'\)/);
+  const entryAbility = read('entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.match(index, /@StorageLink\(WEB_KEEP_ALIVE_EXPERIMENT_KEY\)/);
   assert.match(index, /if \(this\.webKeepAliveExperimentEnabled\) \{\s*WebKeepAlive\(\)/s);
   assert.doesNotMatch(index, /webKeepAliveExperimentEnabled:\s*boolean\s*=\s*true/);
+  assert.match(index, /NoteDetailRenderBenchmarkHost\(/);
+  assert.match(host, /if \(this\.overlayVisible\) \{\s*NoteDetailRenderBenchmarkHarness\(/s);
+  assert.match(host, /coldWarmTag:\s*this\.coldWarmTag/);
+  assert.match(host, /this\.overlayVisible = false/);
+  assert.match(host, /this\.coldWarmTag = 'warm'/);
+  assert.match(host, /this\.overlayVisible = true/);
+  assert.doesNotMatch(host, /import[^\n]*WebKeepAlive|WebKeepAlive\(\)/);
   assert.match(experiment, /configure\(enabled: boolean\)/);
   assert.match(experiment, /\?\? false/);
+  assert.match(entryAbility, /WebKeepAliveExperiment\.configure\(/);
   assert.match(keepAlive, /KEEP_ALIVE_MAX_RECOVERY:\s*number\s*=\s*3/);
   assert.match(keepAlive, /claimRecovery\(\)/);
   assert.match(keepAlive, /this\.recoveryBudget\.claimRecovery\(\)/);

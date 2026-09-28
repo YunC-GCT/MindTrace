@@ -13,6 +13,7 @@
  *   - This component is intentionally absent from main_pages.json and EntryAbility.
  *   - Frame duration and memory come from the target-device profiler; no synthetic values are used.
  *   - Metrics are enabled before the child overlay mounts and disabled when the harness unmounts.
+ *   - A 100ms observer records the first 500ms quiet window without coupling it to overlay close time.
  *
  * ArkTS 1.1 strict:
  *   - Literal unions and benchmark objects have explicit types.
@@ -22,7 +23,6 @@
 import { NoteDetailOverlay } from '../overlays/NoteDetailOverlay/NoteDetailOverlay'
 import { AgentFloatWindow } from '../overlays/AgentFloatWindow/AgentFloatWindow'
 import { ChatMsg } from '../overlays/AgentFloatWindow/chat/ChatModels'
-import { WebKeepAlive } from '../shared/atoms/WebKeepAlive'
 import {
   NoteDetailBenchmarkFixture,
   NoteDetailFixtureId,
@@ -76,6 +76,7 @@ export struct NoteDetailRenderBenchmarkHarness {
   @Prop webKeepAliveEnabled: boolean = false
   @Prop cacheTag: NoteDetailCacheTag = 'cold'
   private fixture: NoteDetailBenchmarkFixture = createNoteDetailBenchmarkFixture('A', '概念', 'long')
+  private stableProbeTimerId: number = -1
 
   aboutToAppear(): void {
     this.fixture = createNoteDetailBenchmarkFixture(this.fixtureId, this.rendererFamily, this.lengthProfile)
@@ -90,9 +91,16 @@ export struct NoteDetailRenderBenchmarkHarness {
       cacheTag: this.cacheTag,
     }
     NoteDetailRenderMetrics.enableForRun(config)
+    this.stableProbeTimerId = setInterval((): void => {
+      NoteDetailRenderMetrics.markStable()
+    }, 100)
   }
 
   aboutToDisappear(): void {
+    if (this.stableProbeTimerId >= 0) {
+      clearInterval(this.stableProbeTimerId)
+      this.stableProbeTimerId = -1
+    }
     NoteDetailRenderMetrics.markStable()
     NoteDetailRenderMetrics.dumpSnapshotHilog()
     NoteDetailRenderMetrics.disable()
@@ -100,9 +108,6 @@ export struct NoteDetailRenderBenchmarkHarness {
 
   build() {
     Stack() {
-      if (this.webKeepAliveEnabled) {
-        WebKeepAlive()
-      }
       NoteDetailOverlay({
         note: this.fixture.note,
         unit: this.fixture.unit,

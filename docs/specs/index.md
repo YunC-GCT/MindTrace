@@ -25,7 +25,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **Knowledge graph RDB** | [`021-knowledge-graph-rdb.md`](./021-knowledge-graph-rdb.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015`](./015-knowledge-model-decomposition-v2.md) | **implemented on feature branch** (2026-09-17 — 空 `kg_edge`、统一关系写入、accepted 边图谱查询、RAG demo 预留表) |
 | **022 / multi-device UI** | [`022-multi-device-ui-adaptation.md`](./022-multi-device-ui-adaptation.md) | (implicit; research + codebase-design) | **ready; implementation deferred** (2026-09-08) |
 | **Agent run timeline** | [`023-agent-run-timeline-foundation.md`](./023-agent-run-timeline-foundation.md) | [`0015`](../adr/0015-structured-stream-events.md) | **foundation implemented; workflow emission pending** (2026-09-21) |
-| **NoteDetail render performance** | [`024-note-detail-render-performance.md`](./024-note-detail-render-performance.md) | [`0017`](../adr/0017-renderer-scheduler-budget-baseline.md) · [`021`](./021-chat-streaming-incremental-rendering.md) | **proposed** (2026-09-27, [#182](https://github.com/YunC-GCT/MindTrace/issues/182) — single open-path seam, budgeted Web rendering, scheduler convergence, WebKeepAlive) |
+| **NoteDetail render performance** | [`024-note-detail-render-performance.md`](./024-note-detail-render-performance.md) | [`0017`](../adr/0017-renderer-scheduler-budget-baseline.md) · [`021`](./021-chat-streaming-incremental-rendering.md) | **in progress** (2026-09-28 — #182/#185 evidence landed; #189 emulator A/B keeps WebKeepAlive default-off; #188 blocked by #187 + target-device evidence) |
 
 ## P0 tickets without spec
 
