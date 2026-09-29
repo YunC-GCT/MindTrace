@@ -1,21 +1,35 @@
-// cardservice/src/main/ets/formability/FormAbility.ets
-// W1 块 3 之后实装:onAddForm / onUpdateForm 用 RDBService / APIClient 拉今日复习数据
-import FormExtensionAbility from '@ohos.app.form.FormExtensionAbility';
-import formBindingData from '@ohos.app.form.formBindingData';
+import { Want } from '@kit.AbilityKit';
+import { formBindingData, FormExtensionAbility, formProvider } from '@kit.FormKit';
+import { CardSnapshot, CardSnapshotBinding, CardSnapshotStore } from 'common';
 
 export default class FormAbility extends FormExtensionAbility {
-  onAddForm(want: Object): formBindingData.FormBindingData {
-    // MVP:mock 数据;W2 块 4 后接 RDBService + APIClient.cardsToday()
-    const mockData = {
-      title: '今日复习',
-      todayCount: 5,
-      totalCount: 12
-    };
-    return formBindingData.createFormBindingData(mockData);
+  onAddForm(want: Want): formBindingData.FormBindingData {
+    const snapshot: CardSnapshot = this.loadSnapshot();
+    return formBindingData.createFormBindingData(new CardSnapshotBinding(snapshot));
   }
 
   onUpdateForm(formId: string): void {
-    // MVP:no-op;W2 之后接 APIClient.cardsToday() 拉真数据
-    console.log(`FormAbility onUpdateForm formId=${formId}`);
+    const snapshot: CardSnapshot = this.loadSnapshot();
+    const binding: formBindingData.FormBindingData =
+      formBindingData.createFormBindingData(new CardSnapshotBinding(snapshot));
+    formProvider.updateForm(formId, binding).catch((e: Error) => {
+      console.warn('[FormAbility.onUpdateForm] ' + e.message);
+    });
+  }
+
+  private loadSnapshot(): CardSnapshot {
+    try {
+      return CardSnapshotStore.load(this.context);
+    } catch (e) {
+      console.warn('[FormAbility.loadSnapshot] ' + (e instanceof Error ? e.message : String(e)));
+      const empty: CardSnapshot = {
+        todayReviewCount: 0,
+        streakDays: 0,
+        newUnitCount: 0,
+        masteredRatio: 0,
+        updatedAt: 0,
+      };
+      return empty;
+    }
   }
 }

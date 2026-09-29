@@ -60,3 +60,5 @@ Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [AD
 - [x] PR3 后:`KnowledgeModel.ets` 为轻量编排 agent(554 行,保留其名);常量/提示词/真值检查在协作服务;类体 diff 仅 18 行机械差异(类名/2 处调用直连/2 个转发移除);Dispatcher 经 StructureNode 直连该 agent
 - [x] 每步 `hvigor assembleHap` + naming-lint + link-check 通过
 - [x] Hypium:TruthCheckService 7 例 + PromptBuilder 2 例(用户 GUI 验证 TruthCheckService 通过);KnowledgeModel.test.ets 随类删除,覆盖已迁移(结构化主路径需 LLM 配置,Hypium 与原 KM.test 同样不覆盖)
+
+> **2026-09-09 ownership update**: spec 018 将 `TruthCheckService` 的生产调用权收敛到 `TruthCheckNode`; `KnowledgeModel` 只负责 Structure，不再重复调用 TruthCheck。提取结果与服务级测试保留。

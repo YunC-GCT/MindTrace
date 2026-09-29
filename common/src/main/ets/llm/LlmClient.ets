@@ -13,11 +13,11 @@
 //     ],
 //   });
 //   const text: string = result.text ?? '';
-//   // 流式: 真 SSE (requestInStream), 每 token 触发 onDelta
+//   // 流式: 真 SSE (requestInStream), 每个结构化事件经 onDelta 交付
 //   await client.call({
 //     messages: [...],
 //     stream: true,
-//     onDelta: (delta: string, kind: 'reasoning' | 'content'): void => { ... },
+//     onDelta: (event: StreamEvent): void => { ... },
 //   });
 //
 // 设计:
@@ -33,18 +33,20 @@
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { LlmConfig } from './LlmConfig';
+import { LlmErrorBodyFormatter } from './LlmErrorBodyFormatter';
+import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
+import { Logger } from '../utils/logger';
 import {
-  ChatMessage,
   LlmRequestBody,
   LlmResponse,
-  LlmResponseChoice,
   LlmStreamChunk,
+  LlmStreamChoice,
   LlmStreamDelta,
   LlmStreamCallback,
+  StreamEvent,
   LlmThinkingConfig,
   LlmCallRequest,
   LlmCallResult,
-  LlmToolCall,
   LlmError,
 } from './LlmTypes';
 
@@ -57,6 +59,7 @@ export class LlmClient {
 
   // 唯一公共入口 (ADR-0004 / spec 005): request.stream 选择 JSON / SSE 流式适配路径
   public async call(request: LlmCallRequest): Promise<LlmCallResult> {
+    request.cancellationToken?.throwIfCancelled();
     if (request.stream === true) {
       if (request.onDelta === undefined) {
         throw new LlmError('call: stream=true requires onDelta callback', 'STREAM_FAILED');
@@ -71,8 +74,8 @@ export class LlmClient {
 
   // JSON 适配路径 (原 call): request() + 手动 JSON 解析, 返回 text 与可选 toolCalls
   private async callJsonInternal(request: LlmCallRequest): Promise<LlmCallResult> {
-    // 1. 校验 API key
-    const apiKey: string | null = await this.config.getApiKey();
+    // 1. 校验 API key — PR2-T2 L3 (2026-09-08): per-vendor key(否则 fallback 全局)
+    const apiKey: string | null = await this.config.getApiKey(this.config.getVendorId());
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }
@@ -82,14 +85,27 @@ export class LlmClient {
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
     const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
+    // 非流式调用默认关闭 thinking (2026-09-19): 非流式路径不回传 reasoning_content,
+    // thinking 只会烧 max_tokens 预算 (deepseek reasoning_effort=high 实测 512/800/6000
+    // 预算全被思维链耗尽, finish_reason=length 截断)。需要思考的流式聊天走 requestInStream;
+    // 显式传 enableThinking 的调用方不受此默认影响。
+    const enableThinking: boolean = request.enableThinking !== undefined
+      ? request.enableThinking
+      : false;
+    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
+    const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
 
     const body: LlmRequestBody = {
       model: model,
       messages: request.messages,
-      temperature: temperature,
       max_tokens: maxTokens,
       stream: false,
     };
+    if (!isDeepSeek || !enableThinking) {
+      body.temperature = temperature;
+    }
+    // response_format is the single transport seam for provider-declared
+    // json_schema support; unsupported providers receive json_object instead.
     if (request.responseFormat !== undefined) {
       body.response_format = request.responseFormat;
     }
@@ -99,11 +115,25 @@ export class LlmClient {
     if (request.tool_choice !== undefined) {
       body.tool_choice = request.tool_choice;
     }
+    if (isDeepSeek) {
+      const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
+      body.thinking = thinkingCfg;
+      if (enableThinking) {
+        body.reasoning_effort = 'high';
+      }
+    }
+    if (isQwen) {
+      body.enable_thinking = enableThinking;
+    }
 
     // 3. 发 HTTP POST
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
+    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' stream=false');
     const httpRequest = http.createHttp();
     let response: http.HttpResponse;
+    const removeCancellation: (() => void) | undefined = request.cancellationToken?.onCancel((): void => {
+      httpRequest.destroy();
+    });
     try {
       response = await httpRequest.request(endpointUrl, {
         method: http.RequestMethod.POST,
@@ -114,21 +144,26 @@ export class LlmClient {
         extraData: JSON.stringify(body),
         connectTimeout: timeoutMs,
         readTimeout: timeoutMs,
+        expectDataType: http.HttpDataType.STRING,
       });
     } catch (e) {
       httpRequest.destroy();
+      removeCancellation?.();
+      request.cancellationToken?.throwIfCancelled();
       throw new LlmError(`LLM network error: ${(e as Error).message ?? String(e)}`, 'NETWORK_ERROR');
     }
+    removeCancellation?.();
+    request.cancellationToken?.throwIfCancelled();
     httpRequest.destroy();
 
     // 4. 状态码校验
     if (response.responseCode !== 200) {
-      const errBody: string = (response.result as string) ?? '';
+      const errBody: string = LlmErrorBodyFormatter.format(response.result);
       throw new LlmError(`LLM API error ${response.responseCode}: ${errBody}`, 'API_ERROR');
     }
 
-    // 5. 解析 JSON
-    const raw: string = response.result as string;
+    // 5. 解析 JSON (decodeFull: 保留完整响应体, 不能用 format() 的 256 字符预览截断)
+    const raw: string = LlmErrorBodyFormatter.decodeFull(response.result);
     let parsed: LlmResponse;
     try {
       parsed = JSON.parse(raw) as LlmResponse;
@@ -137,53 +172,12 @@ export class LlmClient {
     }
 
     // 6. 提取 content / tool_calls
-    console.info('[LlmClient] raw response: ' + JSON.stringify(parsed).substring(0, 800));
-    if (parsed.choices.length > 0 && parsed.choices[0].finish_reason === 'length') {
-      throw new LlmError('LLM response truncated by max_tokens', 'API_ERROR');
-    }
-    const toolCalls: LlmToolCall[] = this.extractToolCalls(parsed);
-    const result: LlmCallResult = { text: '', streamed: false };
-    if (toolCalls.length > 0) {
-      // tool_calls 响应: content 常为 null/空, 不走 extractContent 的空内容抛错
-      const first: LlmResponseChoice = parsed.choices[0];
-      if (first.message !== undefined && first.message !== null && first.message.content !== undefined && first.message.content !== null) {
-        result.text = first.message.content;
-      }
-      result.toolCalls = toolCalls;
-    } else {
-      result.text = this.extractContent(parsed);
-    }
-    return result;
-  }
-
-  // tool_calls 提取: 以 message.tool_calls 非空为准 (finish_reason 在 OpenAI 兼容端点间有差异, 仅日志参考)
-  private extractToolCalls(parsed: LlmResponse): LlmToolCall[] {
-    if (parsed.choices.length === 0) {
-      return [];
-    }
-    const message: ChatMessage | null = parsed.choices[0].message;
-    if (message === undefined || message === null || message.tool_calls === undefined || message.tool_calls === null) {
-      return [];
-    }
-    return message.tool_calls;
-  }
-
-  private extractContent(parsed: LlmResponse): string {
-    if (parsed.choices.length === 0) {
-      throw new LlmError('LLM returned empty choices', 'EMPTY_RESPONSE');
-    }
-    const first: LlmResponseChoice = parsed.choices[0];
-    if (first.message === undefined || first.message === null) {
-      throw new LlmError('LLM returned empty message', 'EMPTY_RESPONSE');
-    }
-    const content: string = first.message.content;
-    if (content === undefined || content === null || content.length === 0) {
-      // 推理模型: 实际内容可能在 reasoning_content
-      const reasoning: string = first.message.reasoning_content ?? '';
-      if (reasoning.length > 0) { return reasoning; }
-      throw new LlmError('LLM returned empty content', 'EMPTY_RESPONSE');
-    }
-    return content;
+    const promptTokens: number = parsed.usage?.prompt_tokens ?? 0;
+    const completionTokens: number = parsed.usage?.completion_tokens ?? 0;
+    console.info('[LlmClient] response choices=' + parsed.choices.length.toString()
+      + ' promptTokens=' + promptTokens.toString()
+      + ' completionTokens=' + completionTokens.toString());
+    return LlmResponseParser.buildCallResult(parsed);
   }
 
   // opts?.xxx 返回 string | undefined,转回 string 或用默认
@@ -200,6 +194,13 @@ export class LlmClient {
       return fallback;
     }
     return v;
+  }
+
+  private streamCallbackCode(data: number | undefined): string {
+    if (data === undefined || data === null) {
+      return 'undefined';
+    }
+    return data.toString();
   }
 
   private resolveEndpointUrl(baseUrl: string): string {
@@ -224,14 +225,14 @@ export class LlmClient {
    * SSE 流式适配路径 (原 callStream)
    *
    * 使用 HarmonyOS requestInStream + on('dataReceive') 逐块接收 SSE 事件。
-   * 每收到一个有效 token 即触发 onDelta 回调，实现逐字实时渲染。
+   * 每收到一个有效结构化事件即触发回调，实现逐字实时渲染。
    */
   private async callStreamInternal(
     request: LlmCallRequest,
-    onDelta: LlmStreamCallback,
+    onEvent: LlmStreamCallback,
   ): Promise<void> {
-    // 1. 校验 API key
-    const apiKey: string | null = await this.config.getApiKey();
+    // 1. 校验 API key — PR2-T2 L3 (2026-09-08): per-vendor key
+    const apiKey: string | null = await this.config.getApiKey(this.config.getVendorId());
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }
@@ -241,7 +242,11 @@ export class LlmClient {
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
     const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
-    const enableThinking: boolean = request.enableThinking === true;
+    const enableThinking: boolean = request.enableThinking !== undefined
+      ? request.enableThinking
+      : this.config.getEnableThinking();
+    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
+    const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
 
     // 构造 body (Record 避免 redacted 匹配问题)
     const bodyObj: Record<string, Object> = {
@@ -254,14 +259,20 @@ export class LlmClient {
     bodyObj['max_tokens'] = maxTokens;
 
     // DeepSeek 思考模式不支持 temperature,仅在非思考模式下设置
-    if (!enableThinking) {
+    if (!isDeepSeek || !enableThinking) {
       bodyObj['temperature'] = temperature;
     }
 
-    if (enableThinking) {
-      const thinkingCfg: LlmThinkingConfig = { type: 'enabled' };
+    if (isDeepSeek) {
+      const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
       bodyObj['thinking'] = thinkingCfg as Object;
-      bodyObj['reasoning_effort'] = 'high';
+      if (enableThinking) {
+        bodyObj['reasoning_effort'] = 'high';
+      }
+    }
+
+    if (isQwen) {
+      bodyObj['enable_thinking'] = enableThinking;
     }
 
     if (request.responseFormat !== undefined) {
@@ -272,33 +283,72 @@ export class LlmClient {
 
     // 3. 创建 HttpRequest 并发起流式请求
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
+    const llmLog: Logger = new Logger('LlmClient');
+    llmLog.info('request vendor=' + this.config.getVendorId() + ' model=' + model
+      + ' thinking=' + enableThinking.toString() + ' qwen=' + isQwen.toString() + ' stream=true');
     const httpRequest = http.createHttp();
 
     return new Promise<void>((resolve: (value: void) => void, reject: (reason: Error) => void): void => {
       let sseLineBuffer: string = '';
       let streamEnded: boolean = false;
       let dataReceived: boolean = false;
+      let chunkCount: number = 0;
+      let receivedBytes: number = 0;
+      let thinkingEvents: number = 0;
+      let thinkingChars: number = 0;
+      let textEvents: number = 0;
+      let textChars: number = 0;
+      const trackedEventSink: LlmStreamCallback = (event: StreamEvent): void => {
+        request.cancellationToken?.throwIfCancelled();
+        if (event.type === 'thinking') {
+          thinkingEvents += 1;
+          thinkingChars += event.delta.length;
+        } else if (event.type === 'text') {
+          textEvents += 1;
+          textChars += event.delta.length;
+        }
+        onEvent(event);
+      };
 
       // 超时保护 (2 分钟总超时)
-      const timer: number = setTimeout((): void => {
+      let timer: number = 0;
+      let firstByteTimer: number = 0;
+      let removeCancellation: (() => void) | undefined = undefined;
+      timer = setTimeout((): void => {
         if (!streamEnded) {
           streamEnded = true;
+          clearTimeout(timer);
+          clearTimeout(firstByteTimer);
+          removeCancellation?.();
           httpRequest.destroy();
           console.warn('[LlmClient] stream timeout after ' + timeoutMs.toString() + 'ms');
           reject(new LlmError('LLM stream timed out after ' + timeoutMs.toString() + 'ms', 'TIMEOUT') as Error);
         }
       }, timeoutMs);
 
-      // 首字节超时: 8 秒内无数据则降级
-      const firstByteTimer: number = setTimeout((): void => {
+      // 首字节超时: 30 秒内无数据则降级(2026-09-07 PR1j: deepseek-v4-pro 思考模式
+      // thinking_content 阶段可能 10-20 秒才发出第一个 chunk,8 秒不够)
+      firstByteTimer = setTimeout((): void => {
         if (!streamEnded && !dataReceived) {
           streamEnded = true;
           clearTimeout(timer);
+          removeCancellation?.();
           httpRequest.destroy();
-          console.warn('[LlmClient] no data received within 8s, triggering fallback');
+          console.warn('[LlmClient] no data received within 30s, triggering fallback');
           reject(new LlmError('LLM stream no data', 'STREAM_FAILED') as Error);
         }
-      }, 8000);
+      }, 30000);
+
+      removeCancellation = request.cancellationToken?.onCancel((): void => {
+        if (streamEnded) {
+          return;
+        }
+        streamEnded = true;
+        clearTimeout(timer);
+        clearTimeout(firstByteTimer);
+        httpRequest.destroy();
+        reject(new Error('CONVERSATION_CANCELLED'));
+      });
 
       // 订阅流式数据事件
       httpRequest.on('dataReceive', (chunk: ArrayBuffer): void => {
@@ -307,10 +357,21 @@ export class LlmClient {
         clearTimeout(firstByteTimer);
         try {
           const text: string = LlmClient.arrayBufferToString(chunk);
-          console.info('[LlmClient] dataReceive: ' + text.length.toString() + ' bytes');
+          chunkCount += 1;
+          receivedBytes += text.length;
           sseLineBuffer += text;
-          sseLineBuffer = this.processSseBuffer(sseLineBuffer, onDelta);
+          sseLineBuffer = this.processSseBuffer(sseLineBuffer, trackedEventSink);
         } catch (e) {
+          if (request.cancellationToken?.isCancelled() === true) {
+            if (!streamEnded) {
+              streamEnded = true;
+              clearTimeout(timer);
+              clearTimeout(firstByteTimer);
+              httpRequest.destroy();
+              reject(new Error('CONVERSATION_CANCELLED'));
+            }
+            return;
+          }
           console.warn('[LlmClient] dataReceive error: ' + ((e as Error).message ?? String(e)));
         }
       });
@@ -323,12 +384,20 @@ export class LlmClient {
         streamEnded = true;
         clearTimeout(timer);
         clearTimeout(firstByteTimer);
-        console.info('[LlmClient] dataEnd, buffer: ' + sseLineBuffer.length.toString());
-
+        removeCancellation?.();
         // 处理 buffer 中剩余数据
         if (sseLineBuffer.trim().length > 0) {
-          this.processSseBufferFinal(sseLineBuffer, onDelta);
+          request.cancellationToken?.throwIfCancelled();
+          this.processSseBufferFinal(sseLineBuffer, trackedEventSink);
         }
+
+        llmLog.info('stream completed chunks=' + chunkCount.toString()
+          + ' bytes=' + receivedBytes.toString()
+          + ' thinkingEvents=' + thinkingEvents.toString()
+          + ' thinkingChars=' + thinkingChars.toString()
+          + ' textEvents=' + textEvents.toString()
+          + ' textChars=' + textChars.toString()
+          + ' remaining=' + sseLineBuffer.length.toString());
 
         httpRequest.destroy();
         resolve();
@@ -344,27 +413,30 @@ export class LlmClient {
         extraData: bodyJson,
         connectTimeout: timeoutMs,
         readTimeout: timeoutMs,
-      }, (err: Error, data: number): void => {
-        console.info('[LlmClient] requestInStream cb: err=' + (err ? err.message : 'null') + ' code=' + data.toString());
+      }, (err: Error, data: number | undefined): void => {
+        llmLog.info('requestInStream cb err=' + (err ? err.message : 'null') + ' code=' + this.streamCallbackCode(data));
         if (err) {
           console.error('[LlmClient] stream err: ' + err.message);
           if (!streamEnded) {
             streamEnded = true;
             clearTimeout(timer);
             clearTimeout(firstByteTimer);
+            removeCancellation?.();
             httpRequest.destroy();
             reject(new LlmError(
               'LLM stream request failed: ' + err.message,
-              'STREAM_FAILED',
+              'NETWORK_ERROR',
             ) as Error);
           }
           return;
         }
-        const responseCode: number = data;
+        const responseCode: number = data ?? 0;
         if (responseCode !== 200) {
           if (!streamEnded) {
             streamEnded = true;
             clearTimeout(timer);
+            clearTimeout(firstByteTimer);
+            removeCancellation?.();
             httpRequest.destroy();
             reject(new LlmError(
               'LLM stream API error ' + responseCode.toString(),
@@ -378,49 +450,50 @@ export class LlmClient {
   }
 
   /**
-   * 处理 SSE 行缓冲,解析完整的 SSE events 并触发 onDelta
+   * 处理 SSE 行缓冲,解析完整的 SSE events 并触发结构化事件回调
    * 返回未处理完的剩余 buffer
    */
   private processSseBuffer(
     buffer: string,
-    onDelta: LlmStreamCallback,
+    onEvent: LlmStreamCallback,
   ): string {
     let remaining: string = buffer;
 
-    // 查找完整的 SSE event (以 \n\n 分隔)
+    // 查找完整的 SSE event (以 \n 分隔 — OpenAI/DeepSeek 兼容格式)
+    // 修复 2026-09-07 PR1k: OpenAI/DeepSeek 实际 SSE 格式是 data: {...}\n 每个行一个 event
+    //   不是 SSE 标准的 \n\n 双换行分隔。LlmClient 之前找 \n\n 永远找不到 event 边界,
+    //   buffer 累积到 dataEnd 还没 emit 0 次。
+    //   (参考 OpenAI 官方社区: https://community.openai.com/t/80861)
     while (true) {
-      const doubleNewlineIdx: number = remaining.indexOf('\n\n');
-      if (doubleNewlineIdx < 0) {
-        // 没有完整 event,保留剩余
+      const singleNewlineIdx: number = remaining.indexOf('\n');
+      if (singleNewlineIdx < 0) {
+        // 没有完整 event 行,保留剩余
         break;
       }
 
-      const eventText: string = remaining.substring(0, doubleNewlineIdx + 2);
-      remaining = remaining.substring(doubleNewlineIdx + 2);
+      const eventText: string = remaining.substring(0, singleNewlineIdx);
+      remaining = remaining.substring(singleNewlineIdx + 1);
 
-      // 解析该 event 中的每一行
-      const lines: string[] = eventText.split('\n');
-      for (const line of lines) {
-        const trimmed: string = line.trim();
-        if (trimmed.length === 0) {
-          continue;
-        }
-        if (trimmed.indexOf('data: ') !== 0) {
-          continue;
-        }
+      // 解析该 event 行
+      const trimmed: string = eventText.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+      if (trimmed.indexOf('data:') !== 0) {
+        continue;
+      }
 
-        const dataStr: string = trimmed.substring(6);
-        if (dataStr === '[DONE]') {
-          continue; // 流结束信号,由 dataEnd 事件处理
-        }
+      const dataStr: string = trimmed.substring(5).trim();
+      if (dataStr === '[DONE]') {
+        continue; // 流结束信号,由 dataEnd 事件处理
+      }
 
-        // 解析 JSON chunk
-        try {
-          this.tryEmitSseDelta(dataStr, onDelta);
-        } catch (e) {
-          // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
-          return eventText + remaining;
-        }
+      // 解析 JSON chunk
+      try {
+        this.emitSseEvents(dataStr, onEvent);
+      } catch (e) {
+        // 不完整的 JSON (跨 TCP 包),放回 buffer 等待更多数据
+        return eventText + '\n' + remaining;
       }
     }
 
@@ -430,14 +503,14 @@ export class LlmClient {
   /**
    * 流结束时处理 buffer 中可能残留的最后一段数据
    */
-  private processSseBufferFinal(buffer: string, onDelta: LlmStreamCallback): void {
+  private processSseBufferFinal(buffer: string, onEvent: LlmStreamCallback): void {
     const trimmed: string = buffer.trim();
     if (trimmed.length === 0) {
       return;
     }
     const lines: string[] = trimmed.split('\n');
     for (const line of lines) {
-      const dataPrefix: string = 'data: ';
+      const dataPrefix: string = 'data:';
       const prefixIdx: number = line.indexOf(dataPrefix);
       if (prefixIdx < 0) {
         continue;
@@ -447,7 +520,7 @@ export class LlmClient {
         continue;
       }
       try {
-        this.tryEmitSseDelta(dataStr, onDelta);
+        this.emitSseEvents(dataStr, onEvent);
       } catch (e) {
         // 最终残留数据解析失败,静默丢弃
       }
@@ -455,21 +528,45 @@ export class LlmClient {
   }
 
   /**
-   * 解析单行 SSE data 并触发 onDelta (JSON 解析失败则抛异常)
+   * 解析单行 SSE data 并触发结构化事件回调 (JSON 解析失败则抛异常)。
+   * #111: reasoning_content emit thinking,content emit text;不再把 thinking 伪装为 text。
    */
-  private tryEmitSseDelta(dataStr: string, onDelta: LlmStreamCallback): void {
+  private emitSseEvents(dataStr: string, onEvent: LlmStreamCallback): void {
+    const events: StreamEvent[] = LlmClient.parseStreamEventsFromSseData(dataStr);
+    for (const event of events) {
+      onEvent(event);
+    }
+  }
+
+  /**
+   * Seam A: 单条 SSE data JSON payload -> 结构化 StreamEvent 数组。
+   * 有效 JSON 中 choices 为空或 delta 为 null 时返回空数组;非法/不完整 JSON 保持抛出供 buffer 重试。
+   */
+  public static parseStreamEventsFromSseData(dataStr: string): StreamEvent[] {
     const chunk: LlmStreamChunk = JSON.parse(dataStr) as LlmStreamChunk;
     if (chunk.choices.length === 0) {
-      return;
+      return [];
     }
-    const delta: LlmStreamDelta = chunk.choices[0].delta;
-    // DeepSeek 思考模式: reasoning_content 先于 content 到达
-    if (delta.reasoning_content !== undefined && delta.reasoning_content.length > 0) {
-      onDelta(delta.reasoning_content, 'reasoning');
+    const events: StreamEvent[] = [];
+    const choice: LlmStreamChoice = chunk.choices[0];
+    const delta: LlmStreamDelta | null = choice.delta;
+    if (delta !== undefined && delta !== null) {
+      const reasoning: string = delta.reasoning_content ?? '';
+      if (reasoning.length > 0) {
+        const thinkingEvent: StreamEvent = { type: 'thinking', delta: reasoning };
+        events.push(thinkingEvent);
+      }
+      const content: string = delta.content ?? '';
+      if (content.length > 0) {
+        const textEvent: StreamEvent = { type: 'text', delta: content };
+        events.push(textEvent);
+      }
     }
-    if (delta.content !== undefined && delta.content.length > 0) {
-      onDelta(delta.content, 'content');
+    if (choice.finish_reason === 'length') {
+      const truncationEvent: StreamEvent = { type: 'text', delta: '\n\n' + TRUNCATION_MARKER };
+      events.push(truncationEvent);
     }
+    return events;
   }
 
   /**

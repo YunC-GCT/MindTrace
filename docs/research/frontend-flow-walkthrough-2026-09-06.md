@@ -3,6 +3,7 @@
 > **Date:** 2026-09-06 晚
 > **Status:** 路径式体检 — 4 主路径 + 3 横切, 事实字段机器提取 + 关键流程实读
 > **Source**: 在 [`frontend-ui-design-inventory-2026-09-06.md`](./frontend-ui-design-inventory-2026-09-06.md) 静态清点基础上, 沿用户路径横向排查, 补 "页面状态保留 / 跨页面传参 / 键盘避让 / 沉浸式 / 异常分支"
+> **Status (2026-09-17):** `[obsolete]` `QuickSuggestions` 组件已删除;本文对该组件的引用不再反映当前实现。
 > **配套**: [`frontend-healthcheck-plan-2026-09-06.md`](./frontend-healthcheck-plan-2026-09-06.md) 7 候选待办合同 (本档为输入补充)
 
 ---

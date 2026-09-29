@@ -10,6 +10,9 @@ import {
   W_MEDIUM, W_SEMIBOLD, W_BOLD,
   NoteItem,
   KnowledgeUnit,
+  ContentExcerptBuilder,
+  ContentProtocol,
+  NOTE_SUMMARY_MAX_LENGTH,
   DifficultyLevel,
   ReviewStatus,
   recentDate,
@@ -17,12 +20,31 @@ import {
   typeGlassColor,
   glassSurfaceColor,
 } from 'common'
+import { MathTextRenderer } from '../../shared/atoms/MathTextRenderer'
+import { NoteDetailRenderMetrics } from '../../services/NoteDetailRenderMetrics'
+import {
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+} from './components/DetailRenderSession'
+
+const SUMMARY_BUILDER: ContentExcerptBuilder = new ContentExcerptBuilder()
+const CONTENT_PROTOCOL: ContentProtocol = new ContentProtocol()
 
 @Component
 export struct NoteDetailMeta {
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
   @Prop note: NoteItem = new NoteItem(0, '', '', '', '', 0, '', [], '')
   @Prop unit: KnowledgeUnit | null = null
   @Prop units: KnowledgeUnit[] = []
+  @Prop topInset: number = 0
+
+  aboutToAppear(): void {
+    NoteDetailRenderMetrics.recordHeaderMount()
+  }
+
+  aboutToDisappear(): void {
+    NoteDetailRenderMetrics.recordHeaderUnmount()
+  }
 
   build() {
     Column() {
@@ -70,14 +92,33 @@ export struct NoteDetailMeta {
         .margin({ top: S_4 })
 
       if (this.subtitleText().length > 0) {
-        Text(this.subtitleText())
-          .fontSize(F_SM)
-          .fontColor(TEXT_3)
-          .lineHeight(20)
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-          .margin({ top: S_2 })
+        if (CONTENT_PROTOCOL.hasFormulaSyntax(this.subtitleText())) {
+          MathTextRenderer({
+            text: this.subtitleText(),
+            profile: 'preview',
+            metricSurface: 'noteDetail',
+            renderBudget: this.renderSession,
+            renderPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+            textColor: TEXT_3,
+            formulaColor: TEXT_3,
+            fontSize: F_SM,
+            lineHeight: 20,
+            formulaFontSize: F_SM,
+            formulaLineHeight: 20,
+            minHeight: 20,
+          })
+            .width('100%')
+            .margin({ top: S_2 })
+        } else {
+          Text(this.subtitleText())
+            .fontSize(F_SM)
+            .fontColor(TEXT_3)
+            .lineHeight(20)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .margin({ top: S_2 })
+        }
       }
 
       Row() {
@@ -91,7 +132,7 @@ export struct NoteDetailMeta {
       .margin({ top: S_4 })
     }
     .width('100%')
-    .padding({ left: S_5, right: S_5, top: S_4, bottom: S_5 })
+    .padding({ left: S_5, right: S_5, top: this.topInset + S_4, bottom: S_5 })
     .backgroundColor(BG_CARD)
     .linearGradient({
       angle: 145,
@@ -196,35 +237,8 @@ export struct NoteDetailMeta {
   }
 
   private compactOverview = (raw: string): string => {
-    let text: string = raw
-      .replace(/\r\n/g, ' ')
-      .replace(/\r/g, ' ')
-      .replace(/\n/g, ' ')
-      .replace(/#{1,6}\s*/g, '')
-      .replace(/\*\*/g, '')
-      .replace(/\*/g, '')
-      .replace(/`/g, '')
-      .replace(/\$\$/g, ' ')
-      .replace(/\$/g, '')
-      .replace(/\\\[/g, ' ')
-      .replace(/\\\]/g, ' ')
-      .replace(/\\\(/g, ' ')
-      .replace(/\\\)/g, ' ')
-      .replace(/\\text\{([^{}]*)\}/g, '$1')
-      .replace(/\\operatorname\{([^{}]*)\}/g, '$1')
-      .replace(/\\(?:bar|hat|tilde|vec)\{([^{}]*)\}/g, '$1')
-      .replace(/\\(?:varphi|varepsilon|epsilon|theta|mu|sigma|alpha|beta|lambda|pi|Phi|Omega|Delta)\b/g, '')
-      .replace(/\\[a-zA-Z]+(?:\s*\{[^{}]*\})?/g, ' ')
-      .replace(/[{}_^]/g, ' ')
-      .replace(/\\/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-    text = this.trimOverviewPrefix(text)
-    const limit: number = 58
-    if (text.length > limit) {
-      return text.substring(0, limit).trim() + '...'
-    }
-    return text
+    const text: string = this.trimOverviewPrefix(raw.trim())
+    return SUMMARY_BUILDER.buildSummary(text, NOTE_SUMMARY_MAX_LENGTH)
   }
 
   private trimOverviewPrefix = (text: string): string => {

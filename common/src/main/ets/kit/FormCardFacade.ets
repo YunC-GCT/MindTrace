@@ -15,6 +15,22 @@ export interface CardSnapshot {
   updatedAt: number; // ms since epoch
 }
 
+export class CardSnapshotBinding {
+  todayReviewCount: string = '0';
+  streakDays: string = '0';
+  newUnitCount: string = '0';
+  masteredPercent: string = '0';
+  updatedAt: string = '0';
+
+  constructor(snapshot: CardSnapshot) {
+    this.todayReviewCount = snapshot.todayReviewCount.toString();
+    this.streakDays = snapshot.streakDays.toString();
+    this.newUnitCount = snapshot.newUnitCount.toString();
+    this.masteredPercent = Math.round(snapshot.masteredRatio * 100).toString();
+    this.updatedAt = snapshot.updatedAt.toString();
+  }
+}
+
 export interface FormCardFacade {
   // 将最新快照推送到全部已添加的卡片实例
   pushSnapshot(snapshot: CardSnapshot): Promise<void>;

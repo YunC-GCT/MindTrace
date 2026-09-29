@@ -28,6 +28,13 @@ export const BG_DARK: string      = "#FF0A0C10"
 //  扩展背景色
 // ========================================================================
 export const BG_CARD: string = "#FF10131A"
+export const TAB_NAV_BG: string = "#FF12181C"
+export const TAB_NAV_ACTIVE: string = "#FF68E2BC"
+export const TAB_NAV_MUTED: string = "#FF8B9998"
+export const TAB_NAV_BORDER: string = "#FF222C30"
+export const TAB_AI_BG: string = "#FF090D10"
+export const TAB_AI_BORDER: string = "#FF335E59"
+export const TAB_AI_INNER_BORDER: string = "#FF203835"
 
 // ========================================================================
 //  语义色 (Semantic)
@@ -204,11 +211,18 @@ export const AI_SETTINGS_BTN_H: number = 44   // AiSettings 按钮/输入框高�
 // ========================================================================
 //  TabBar 组件尺寸 (vp)
 // ========================================================================
-export const TAB_BAR_HEIGHT: number = 74
+export const TAB_BAR_HEIGHT: number = 94
+export const TAB_ROW_HEIGHT: number = 70
+export const TAB_CREST_HEIGHT: number = 24
+export const TAB_CREST_WIDTH: number = 96
+export const TAB_AI_SLOT_WIDTH: number = 74
+export const TAB_LABEL_HEIGHT: number = 17
+export const TAB_LABEL_GAP: number = 6
+export const TAB_BOTTOM_PADDING: number = 7
 export const TAB_ICON_SIZE: number  = 22
 export const TAB_BTN_RADIUS: number = 14
-export const AI_BTN_SIZE: number    = 44
-export const AI_ICON_SIZE: number   = 20
+export const AI_BTN_SIZE: number    = 56
+export const AI_ICON_SIZE: number   = 30
 
 // ========================================================================
 //  TabBar 阴影
@@ -227,7 +241,7 @@ export const CAM_PREVIEW_BG: string    = "#FF1A1A1A"
 export const CAM_MASK: string          = "#CC000000"
 export const SHADOW_AI_BTN: ShadowPreset = {
   radius: 20,
-  color: "#735BE3B0",   // MINT 45%
+  color: "#284CCDA4",   // 草稿柔和光晕
   offsetX: 0,
-  offsetY: 6,
+  offsetY: 5,
 }

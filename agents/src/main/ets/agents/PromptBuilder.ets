@@ -4,6 +4,15 @@
 // 现由 KnowledgeModel.callAi 直接调用 (this.promptBuilder.buildPrompt)。
 // 工具化预留位: 结构化若改走 ToolLoop (ADR-0012), 提示词组装仍归本类。
 import { NOTE_TYPE_KEYS } from 'common';
+import type { KnowledgeCategory } from '../models/KnowledgeCategory';
+
+export const KNOWLEDGE_INPUT_LIMIT: number = 12000;
+export const KNOWLEDGE_MAX_TOKENS: number = 12000;
+export const KNOWLEDGE_TIMEOUT_MS: number = 300000;
+export const KNOWLEDGE_CLASSIFY_HINT_TIMEOUT_MS: number = 10000;
+export const KNOWLEDGE_HINT_CONFIDENCE_MIN: number = 0.55;
+export const KNOWLEDGE_FALLBACK_CATEGORY: KnowledgeCategory = '概念';
+export const KNOWLEDGE_FALLBACK_SUBJECT: string = '其它';
 
 export class PromptBuilder {
   // ADR-0006 调用面 (保持不变)
@@ -21,7 +30,7 @@ export class PromptBuilder {
 - chapter: 章节/知识点短语（如"微分中值定理"/"行列式"），无法判断时返回空字符串
 - title: 严谨名称或题目摘要
 - tags: 返回 2-4 个中文关键词（具体概念/方法/技巧），学科名请填在 subject 字段。示例: ["二次函数", "配方法", "顶点", "对称轴"]
-- difficulty: 1-5，1=简单，5=困难
+- difficulty: 1-4，1=简单，2=中等，3=困难，4=专家
 - importance: 1-5，1=低，5=核心
 - fields: 按 category 返回结构化字段数组 [{key, label, value}]
   概念: 定义/性质/示例/相关概念

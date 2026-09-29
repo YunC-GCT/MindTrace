@@ -1,8 +1,7 @@
 // MindTrace - TruthCheckService
 // 2026-09-05 · D2 Ticket #3 · 真值检查服务
 // spec 015 PR1 (2026-09-06): 真值检查实现自 KnowledgeModel 实体化搬入 (纯提取, 行为零变化);
-// 现由 KnowledgeModel.structure 直接调用 (this.truthCheckService.check),
-// CaptureGraph TruthCheckNode 调用面 check(input) 保持不变。
+// 现由 CaptureGraph TruthCheckNode 作为唯一 workflow 步骤调用。
 import { MvpTruthCheckItem, MvpTruthCheckResult } from '../models/TruthCheckResult';
 
 // truthCheck internal interfaces (moved from KnowledgeModel.ets, spec 015 PR1)
@@ -35,7 +34,8 @@ export class TruthCheckService {
   }
 
   /**
-   * 执行 4 项数学真值检验：括号配对、除零检测、等式矛盾、LaTeX 语法
+   * 本地保守校验：括号/LaTeX 语法和独立表达式的明显错误。
+   * 带上下文的推导、反证和错误示例由独立 verifier 判断，不能靠子串断定真伪。
    *
    * @param ocrText - 输入文本
    * @returns MvpTruthCheckResult（检验结果 + 自动修正）
@@ -121,6 +121,11 @@ export class TruthCheckService {
 
     while (idx < text.length) {
       const ch: string = text[idx];
+      if (ch === '\\' && idx + 1 < text.length) {
+        result += ch + text[idx + 1];
+        idx += 2;
+        continue;
+      }
       if (ch === '{') {
         braceDepth = braceDepth + 1;
         result = result + ch;
@@ -156,8 +161,9 @@ export class TruthCheckService {
 
   checkDivisionByZero(text: string): DivisionByZeroCheck {
     const issues: string[] = [];
-    if (text.indexOf('/0') !== -1) {
-      issues.push('possible division by zero: /0');
+    const expression: string = this.standaloneExpression(text);
+    if (/^[+-]?\d+(?:\.\d+)?\s*\/\s*[+-]?0(?:\.0+)?$/.test(expression)) {
+      issues.push('division by zero in standalone expression: ' + expression);
     }
     return {
       hasIssue: issues.length > 0,
@@ -166,20 +172,11 @@ export class TruthCheckService {
   }
   checkEquation(text: string): EquationCheckResult {
     const issues: string[] = [];
+    const expression: string = this.standaloneExpression(text).replace(/\s+/g, '');
     const contradictions: string[] = ['1=0', '0=1', '2=1', '1=2', '0=2', '2=0'];
     for (const contradiction of contradictions) {
-      if (text.indexOf(contradiction) !== -1) {
+      if (expression === contradiction) {
         issues.push('contradictory equation: ' + contradiction);
-      }
-    }
-    if (text.indexOf('\u2260') !== -1) {
-      issues.push('contains not-equal sign, please verify context');
-    }
-    const eqPatterns: string[] = ['x=x', 'X=X', 'a=a', 'A=A'];
-    for (const pattern of eqPatterns) {
-      if (text.indexOf(pattern) !== -1) {
-        issues.push('identity equation: ' + pattern);
-        break;
       }
     }
     return {
@@ -208,7 +205,6 @@ export class TruthCheckService {
     const latexFixes: string[][] = [
       ['\\fract{', '\\frac{'],
       ['\\sqt{', '\\sqrt{'],
-      ['\\begin{align*}', '\\begin{aligned}'],
     ];
     for (const fix of latexFixes) {
       const before: string = corrected;
@@ -222,7 +218,7 @@ export class TruthCheckService {
       }
     }
 
-    corrected = this.patchIntegralDx(corrected, issues);
+    // 不猜测积分变量或补写 dx；微元与公式的语义正确性由 verifier 校验。
 
     return {
       hasError: issues.length > 0,
@@ -232,53 +228,22 @@ export class TruthCheckService {
   }
   // === Utility methods ===
 
+  private standaloneExpression(text: string): string {
+    return text.trim().replace(/^\${1,2}|\${1,2}$/g, '').trim();
+  }
+
   private countOccurrences(text: string, pattern: string): number {
     let count: number = 0;
     let pos: number = text.indexOf(pattern);
     while (pos !== -1) {
-      count = count + 1;
+      // 匹配完整命令，不能把 \rightarrow / \leftarrow 当成定界符。
+      const next: string = text.charAt(pos + pattern.length);
+      if (!/[a-zA-Z]/.test(next)) {
+        count = count + 1;
+      }
       pos = text.indexOf(pattern, pos + 1);
     }
     return count;
   }
 
-  private patchIntegralDx(text: string, issues: string[]): string {
-    let result: string = text;
-    const intPattern: string = '\\int_{';
-    const dxPattern: string = 'dx';
-    let searchPos: number = 0;
-    while (true) {
-      const intIdx: number = result.indexOf(intPattern, searchPos);
-      if (intIdx === -1) {
-        break;
-      }
-      const closeIdx: number = result.indexOf('}', intIdx + intPattern.length);
-      if (closeIdx === -1) {
-        break;
-      }
-      const hatOpen: number = result.indexOf('^{', closeIdx);
-      if (hatOpen === -1) {
-        break;
-      }
-      const hatClose: number = result.indexOf('}', hatOpen + 2);
-      if (hatClose === -1) {
-        break;
-      }
-      const afterIntegral: string = result.substring(hatClose + 1);
-      const trimmedAfter: string = afterIntegral.trim();
-      if (
-        trimmedAfter.indexOf(dxPattern) !== 0 &&
-        trimmedAfter.indexOf('\\,dx') !== 0 &&
-        trimmedAfter.indexOf('\\, dx') !== 0
-      ) {
-        result =
-          result.substring(0, hatClose + 1) +
-          ' \\, dx' +
-          result.substring(hatClose + 1);
-        issues.push('自动修正: 积分表达式补充 \\, dx');
-      }
-      searchPos = hatClose + 1;
-    }
-    return result;
-  }
 }

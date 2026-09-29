@@ -12,11 +12,12 @@ import type {
   LlmGuardJsonResult,
   LlmGuardValidationResult,
   NoteCategory,
+  CancellationToken,
 } from 'common';
 import { OcrTool } from '../mcp/tools/OcrTool';
 
 const CLASSIFY_TEXT_LIMIT: number = 6000;
-const CLASSIFY_MAX_TOKENS: number = 800;
+const CLASSIFY_MAX_TOKENS: number = 8000;
 const CLASSIFY_TIMEOUT_MS: number = 120000;
 const FALLBACK_SUBJECT: string = '其它';
 const FALLBACK_CATEGORY: NoteCategory = '概念';
@@ -36,6 +37,7 @@ interface ParsedClassification {
   subject: string;
   chapter: string;
   confidence: number;
+  cleanedText: string;
 }
 
 const CATEGORY_RULES: CategoryRule[] = [
@@ -82,8 +84,16 @@ export interface TypeClassifierTextResult {
  *   - classify(): LLM 优先识别五类 + 学科；失败时规则兜底，不阻断 Dispatcher。
  */
 export class TypeClassifier {
+  private readonly cancellationToken?: CancellationToken;
+
+  constructor(cancellationToken?: CancellationToken) {
+    this.cancellationToken = cancellationToken;
+  }
+
   async recognizeText(payload: DispatchPayload, context?: Context): Promise<TypeClassifierTextResult> {
+    this.cancellationToken?.throwIfCancelled();
     const rawText: string = await this.extractText(payload, context);
+    this.cancellationToken?.throwIfCancelled();
     return {
       rawText: rawText,
       text: this.preprocessText(rawText),
@@ -97,6 +107,7 @@ export class TypeClassifier {
   }
 
   async classifyText(text: string, timeoutMs: number = CLASSIFY_TIMEOUT_MS): Promise<ClassificationResult> {
+    this.cancellationToken?.throwIfCancelled();
     return await this.classifyPreparedText(this.preprocessText(text), timeoutMs);
   }
 
@@ -108,6 +119,7 @@ export class TypeClassifier {
         chapter: '',
         confidence: 0.2,
         ocrText: text,
+        ocrTextQuality: 'fallback',
       };
     }
 
@@ -118,9 +130,11 @@ export class TypeClassifier {
         subject: parsed.subject,
         chapter: parsed.chapter,
         confidence: parsed.confidence,
-        ocrText: text,
+        ocrText: parsed.cleanedText,
+        ocrTextQuality: 'refined',
       };
     } catch (e) {
+      this.cancellationToken?.throwIfCancelled();
       console.warn('[TypeClassifier] LLM classify failed, using fallback: ' + ((e as Error).message ?? String(e)));
       const fallback: ParsedClassification = this.ruleFallback(text);
       return {
@@ -129,6 +143,7 @@ export class TypeClassifier {
         chapter: fallback.chapter,
         confidence: fallback.confidence,
         ocrText: text,
+        ocrTextQuality: 'fallback',
       };
     }
   }
@@ -211,12 +226,15 @@ export class TypeClassifier {
 
   private async callClassifier(text: string, timeoutMs: number): Promise<ParsedClassification> {
     const categories: string = NOTE_TYPE_KEYS.join(' / ');
-    const system: string = '你是数学笔记分类器。只返回纯 JSON，不要 markdown。' +
+    const system: string = '你是数学 OCR 保守清洗器兼笔记分类器。只返回纯 JSON，不要 markdown。' +
       'category 必须从以下五类选择: ' + categories + '。' +
       'subject 由你根据题目自主判断，不限制枚举；无法判断时返回 "' + FALLBACK_SUBJECT + '"。' +
       'chapter 返回具体章节/知识点短语，无法判断返回空字符串。' +
-      'confidence 返回 0 到 1。';
-    const user: string = '请识别下面数学内容的 category、subject、chapter、confidence。\n\n' + text;
+      'confidence 返回 0 到 1。' +
+      'cleaned_text 必须返回可直接生成学习笔记的清洗正文：修正明显 OCR 错字、乱码、断行和空格，' +
+      '将 LaTeX 公式放入 $$ 块，保留题目条件、问题和用户补充；无法可靠恢复的片段写成 [无法识别]。' +
+      '不得求解题目、补造条件或增加原文没有的事实。';
+    const user: string = '请保守清洗正文，并识别 category、subject、chapter、confidence。\n\n' + text;
     const messages: ChatMessage[] = [
       { role: 'system', content: system + '\n' + JSON_ONLY_RULES },
       { role: 'user', content: user },
@@ -226,8 +244,9 @@ export class TypeClassifier {
       timeoutMs: timeoutMs,
       temperature: 0.1,
       label: 'TypeClassifier classification',
+      cancellationToken: this.cancellationToken,
     }, (json: Record<string, Object>): LlmGuardValidationResult => this.validateClassificationJson(json));
-    return this.classificationFromJson(guarded.json);
+    return this.classificationFromJson(guarded.json, text);
   }
 
   private parseClassification(raw: string): ParsedClassification {
@@ -245,19 +264,24 @@ export class TypeClassifier {
     if (!validation.ok) {
       throw new Error('TypeClassifier JSON invalid: ' + validation.issues.join('; '));
     }
-    return this.classificationFromJson(parsed);
+    return this.classificationFromJson(parsed, '');
   }
 
-  private classificationFromJson(parsed: Record<string, Object>): ParsedClassification {
+  private classificationFromJson(parsed: Record<string, Object>, fallbackText: string): ParsedClassification {
     const rawCategory: Object | undefined = parsed['category'];
     const rawSubject: Object | undefined = parsed['subject'];
     const rawChapter: Object | undefined = parsed['chapter'];
     const rawConfidence: Object | undefined = parsed['confidence'];
+    const rawCleanedText: Object | undefined = parsed['cleaned_text'];
+    const cleanedText: string = typeof rawCleanedText === 'string'
+      ? this.preprocessText(rawCleanedText)
+      : this.preprocessText(fallbackText);
     return {
       category: this.normalizeCategory(String(rawCategory ?? '')),
       subject: this.normalizeSubject(String(rawSubject ?? '')),
       chapter: this.normalizeChapter(String(rawChapter ?? '')),
       confidence: this.normalizeConfidence(Number(rawConfidence ?? 0.65)),
+      cleanedText: cleanedText,
     };
   }
 
@@ -283,6 +307,10 @@ export class TypeClassifier {
         issues.push('confidence must be numeric');
       }
     }
+    const cleanedText: Object | undefined = parsed['cleaned_text'];
+    if (typeof cleanedText !== 'string' || cleanedText.trim().length === 0) {
+      issues.push('cleaned_text must be a non-empty string');
+    }
     return {
       ok: issues.length === 0,
       issues: issues,
@@ -295,6 +323,7 @@ export class TypeClassifier {
       subject: this.pickSubjectByRules(text),
       chapter: this.pickChapterByRules(text),
       confidence: 0.45,
+      cleanedText: text,
     };
   }
 

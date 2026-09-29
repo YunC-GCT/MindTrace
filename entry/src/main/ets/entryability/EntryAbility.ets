@@ -1,7 +1,9 @@
 // ============================================================================
 //  entryability/EntryAbility.ets — 应用入口
 //  ----------------------------------------------------------------------------
-//  职责: 初始化 LLM 配置 + 数据库 + 沉浸式状态栏 + 加载首页。
+//  职责: 解析默认关闭的 NoteDetail benchmark + ArkWeb 启动期预热 + 初始化服务 + 加载首页。
+//  依赖: NoteDetailBenchmarkLaunch, WebKeepAliveExperiment, ArkWebWarmupService,
+//       LlmConfig, OcrConfig, DatabaseHelper, Kit facades, ChatFilesDirSeam, ChatSessionManager。
 //  沉浸式状态栏: app 内容延伸到 status bar 下方, status bar 背景透明。
 //  视觉效果: 系统时间/电量/信号/wifi 浮在 app 内容上, 与 app 无缝衔接。
 //  ============================================================================
@@ -11,11 +13,36 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { LlmConfig, OcrConfig, DatabaseHelper } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
+import { BackgroundTaskFacadeImpl } from '../kit/BackgroundTaskFacadeImpl';
+import { getBackgroundTaskFacade } from '../kit/BackgroundTaskFacadeImpl';
+import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
+import { CardSnapshotService } from '../services/CardSnapshotService';
+import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
+import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFilesDirSeam';
+import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';
+import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
+import {
+  NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
+  NoteDetailBenchmarkLaunchConfig,
+} from '../services/NoteDetailBenchmarkLaunch';
 
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    const benchmarkConfig: NoteDetailBenchmarkLaunchConfig =
+      NoteDetailBenchmarkLaunchConfig.fromUri(want.uri ?? '');
+    AppStorage.setOrCreate<NoteDetailBenchmarkLaunchConfig>(
+      NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
+      benchmarkConfig,
+    );
+    WebKeepAliveExperiment.configure(benchmarkConfig.webKeepAliveEnabled);
+    const warmupResult = ArkWebWarmupService.warmup();
+    if (warmupResult.success) {
+      hilog.info(DOMAIN, 'testTag', '%{public}s', warmupResult.diagnostic);
+    } else {
+      hilog.warn(DOMAIN, 'testTag', '%{public}s', warmupResult.diagnostic);
+    }
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
@@ -30,15 +57,35 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, 'testTag', 'OcrConfig init failed: %{public}s', e.message);
     });
     // 初始化数据库
-    DatabaseHelper.init(this.context).catch((e: Error) => {
-      hilog.error(DOMAIN, 'testTag', 'DB init failed: %{public}s', e.message);
-    });
+    DatabaseHelper.init(this.context)
+      .then((): Promise<void> => CardSnapshotService.refresh(this.context))
+      .catch((e: Error) => {
+        hilog.error(DOMAIN, 'testTag', 'DB/card init failed: %{public}s', e.message);
+      });
     // F3 最小闭环 (spec 013 / ADR-0009): ReminderFacade 实现在组合根构造并注入
     AppStorage.setOrCreate<ReminderFacadeImpl>('reminderFacade', new ReminderFacadeImpl(this.context));
+    AppStorage.setOrCreate<BackgroundTaskFacadeImpl>(
+      'backgroundTaskFacade',
+      new BackgroundTaskFacadeImpl(),
+    );
+    AppStorage.setOrCreate<FormCardFacadeImpl>('formCardFacade', new FormCardFacadeImpl(this.context));
+    // ticket-0.3 (#121): 应用级 filesDir 缝 — 组合根解析一次,发布纯字符串 seam(无 UI 上下文)
+    const chatFilesDirSeam = ChatFilesDirSeam.fromApplicationContext(this.context.getApplicationContext());
+    publishChatFilesDirSeam(chatFilesDirSeam);
+    if (chatFilesDirSeam.state === 'resolved') {
+      hilog.info(DOMAIN, 'testTag', '%{public}s', chatFilesDirSeam.diagnostic);
+    } else {
+      hilog.warn(DOMAIN, 'testTag', '%{public}s', chatFilesDirSeam.diagnostic);
+    }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 
   onDestroy(): void {
+    const facade = getBackgroundTaskFacade();
+    if (facade !== null) {
+      facade.finish('review_sync');
+      facade.finish('note_backup');
+    }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
@@ -60,6 +107,13 @@ export default class EntryAbility extends UIAbility {
       try {
         const avoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
         AppStorage.setOrCreate('statusBarHeight', px2vp(avoidArea.topRect.height));
+        const navigationArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+        AppStorage.setOrCreate('navigationBarHeight', px2vp(navigationArea.bottomRect.height));
+        win.on('avoidAreaChange', (event) => {
+          if (event.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
+            AppStorage.setOrCreate('navigationBarHeight', px2vp(event.area.bottomRect.height));
+          }
+        });
       } catch (e) {
         hilog.error(DOMAIN, 'testTag', 'Failed to get statusBarHeight. Cause: %{public}s', JSON.stringify(e));
       }
@@ -78,5 +132,29 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageDestroy(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy'); }
   onForeground(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground'); }
-  onBackground(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground'); }
+  onBackground(): void {
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+    ChatSessionManager.flushActive().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'testTag', 'Chat history flush failed: %{public}s', e.message);
+    });
+    this.refreshCardSnapshotInBackground().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'testTag', 'Background card refresh failed: %{public}s', e.message);
+    });
+  }
+
+  private async refreshCardSnapshotInBackground(): Promise<void> {
+    const facade = getBackgroundTaskFacade();
+    if (facade === null) {
+      return;
+    }
+    const granted: boolean = await facade.requestOneShot('review_sync');
+    if (!granted) {
+      return;
+    }
+    try {
+      await CardSnapshotService.refresh(this.context);
+    } finally {
+      facade.finish('review_sync');
+    }
+  }
 }

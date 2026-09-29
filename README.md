@@ -2,14 +2,14 @@
 
 > 工程: [YunC-GCT/MindTrace](https://github.com/YunC-GCT/MindTrace) · HarmonyOS 数学学习助手
 > 作者: YunC-GCT <2549237929@qq.com> · 当前主笔: Z
-> 当前版本: **v1.0**(2026-09-04 release) · 阶段: **复赛冲刺**(2026-09-05 ~ 09-08)
-> 最近更新: 2026-09-06
+> 当前版本: **v1.0**(2026-09-04 release) · 阶段: **复赛冲刺**(2026-09-05 ~ 09-09)
+> 最近更新: 2026-09-13
 
 MindTrace 通过 **拍照 → OCR → AI 分类 → 知识结构化 → 持久化 → 复习** 的整链,把"看到的数学题"变成"可复习的知识"。5 module: `entry`(HAP) + `common` / `agents` / `skill` / `cardservice`(HSP)。
 
 ---
 
-## 一、初赛阶段 (2026-07 ~ 09-01) · 谁做了什么
+## 一、初赛阶段 (2026-07 ~ 09-01) · 谁做了什么D:\HMgent\MindTrace-conversation-isolation-batch-2D:\HMgent\MindTrace-conversation-isolation-batch-2
 
 > 逐日完整日志已收敛至 `docs/legacy/` 与 git 历史; 本节按时间线保留分工与关键交付的技术要点。
 
@@ -19,7 +19,7 @@ MindTrace 通过 **拍照 → OCR → AI 分类 → 知识结构化 → 持久�
 
 #### W1 · 公共层 + UI 骨架 (07-13 ~ 14) — Z / center 合并
 
-- **Z**: 公共层五件套(CommonTypes 共享类型、logger、uuid、timeWindow、confidenceSort, merge `d6220c4`); 5 Tab 装配 + 沉浸式状态栏; HomePage(Hero/进度环/FAB)、CameraOverlay、AgentFloatWindow(已接真实 LLM)、NoteDetailOverlay。
+- **Z**: 公共层五件套(CommonTypes 共享类型、logger、uuid、timeWindow、confidenceSort, merge `d6220c4`); 5 Tab 装配 + 沉浸式状态栏; HomePage(Hero/进度环/FAB)、AgentFloatWindow(已接真实 LLM)、NoteDetailOverlay。
 - **center 合并**(`53b09c0`): AiSettingsPage(端点/模型/Key/参数/测试连接); LlmConfig `saveAll`/`loadAll` preferences 持久化; DeepSeek V4(`deepseek-v4-pro`)全 Agent 接入。
 - **CameraPicker**(`9db3309` 等): 系统相机 `cameraPicker.pick()`(免 CAMERA 运行时申请)+ 后置镜头枚举 + 相册入口; module.json5 声明 CAMERA/INTERNET。
 
@@ -112,11 +112,9 @@ entry/src/main/ets/
 │       └── SectionHeader.ets
 ├── overlays/                           # 顶层浮层(被 Index 引用)
 │   ├── AgentFloatWindow.ets            # 真实 LLM 对话
-│   ├── CameraOverlay.ets               # 真实 cameraPicker
 │   └── NoteDetailOverlay.ets           # 5 子组件拆分
-├── prototypes/                         # 独立完整的页面级 UI 原型(后退役)
+├── prototypes/                         # 独立完整页面级 UI 原型(后退役)
 │   ├── AgentFloatWindow.ets
-│   ├── CameraOverlay.ets
 │   ├── NoteDetailOverlay.ets
 │   ├── AgentMessageList.ets
 │   ├── NoteDetailOverlay/              # 5 个子组件
@@ -128,7 +126,6 @@ entry/src/main/ets/
 │       ├── ChatTextSanitizer.ets
 │       ├── EmptyStateHint.ets
 │       ├── MessageInput.ets
-│       ├── QuickSuggestions.ets
 │       ├── SessionBar.ets
 │       └── TypingIndicator.ets
 ├── components/                          # 旧 atom 命名(已废弃)
@@ -202,6 +199,36 @@ agents/src/main/ets/
 - **F3 Kit 接线**: `kit/ReminderFacadeImpl`(reminderAgentManager 日历提醒)实现并组合根注入; UI 入口按裁决暂不挂, 守门反向锁定。
 - 双轴审查结论: **笔记入库链路无损**(持久化关键文件零触碰)。
 
+### 2026-09-09 · LLM 设置页重构 (spec 017 / ticket #83)
+
+- **多供应商配置**: AI 设置页支持 DeepSeek / 通义千问 / 智谱 GLM / Kimi / 豆包与自定义供应商; 每个供应商独立维护 API Key 与模型目录。
+- **折叠编辑**: 点击供应商右侧「编辑」展开本地草稿;「取消」丢弃草稿,「保存」提交当前供应商 key/models 并执行 LLM-only 持久化; 模型输入支持回车与 `+` 添加。
+- **持久化与调用链**: `LlmConfig` 持久化 vendorId / customVendors / vendorModels / activeVendorModels / vendorApiKeys; `LlmClient` 按当前 vendor 解析 endpoint、model 与 key; 自定义供应商 id 跨重启保持稳定。
+
+### 2026-09-10 · Agent 工作流架构重构 (spec 018)
+
+- **整体 LangGraph 设计**: ArkTS 原生 `StateGraph<State, Step>` 统一承载 Capture、ToolCalling、Conversation、SkillIntent 四个领域 workflow；不是 Python/langgraphjs runtime，也不是多后端。
+- **原链路修复**: 修复 TruthCheckNode 丢 KnowledgeUnit、TruthCheck 通过语义反向/失败仍入库、PersistNode 覆盖分类与难度、payload source 丢失；最终 KnowledgeUnit 原样进入唯一 DAO adapter。
+- **入口收敛**: `Dispatcher.dispatch(req, options)` 是 Capture 唯一入口；`AgentChatService` 收敛为 UI facade，业务只在 `ConversationWorkflow`；ToolLoop 删除旧 while 后委托 ToolCalling workflow。
+- **鸿蒙能力**: BackgroundTasksKit 短时任务、FormKit 卡片刷新与 GSKV 跨进程 snapshot 已接线；卡片固定 mock 删除；skill SearchNote 复用唯一 `note_query` 工具面。
+- **职责分离**: per-vendor 面板负责保存大模型配置; 页面底部 ActionBar 仅负责「重置 OCR / 保存 OCR」; 顶部连接测试读取当前供应商的 API Key。
+- **模型目录**: DeepSeek 默认模型为 `deepseek-v4-pro`; 当前允许 `deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`,模型选择按供应商独立保存。
+- **真实 LLM 验证**: 连接测试与悬浮对话已在设备完成真实 DeepSeek 调用;日志确认 `deepseek-v4-flash` 分别走非流式与 SSE 流式请求且 HTTP 200。请求日志只打印 vendor / model / endpoint / stream,不输出 API Key。
+
+### 2026-09-13 · AI 对话推理流收口 (#111 / #113 / #115)
+
+- **结构化推理流**: `StreamEvent` 统一承载 thinking/text 通道;思考内容进入独立「深度思考」区块,最终回答不再混入推理文本。
+- **交互验收**: 思考区默认展开,支持独立折叠;流式增长保持展开态;折叠不会强制聊天列表滚到底部;状态文案为「生成中」/「已完成」。
+- **截断降级**: 供应商返回 `finish_reason=length` 时,流式与非流式均保留已生成内容并追加截断提示,不再抛出或静默丢失回复。
+- **验证结果**: `arkts_check`、arkts-lint、naming-lint、Hypium 测试与 `assembleApp` 均通过;本组改动已整理到 `feature/spec-019-p0` 分支。
+
+### 2026-09-13 · Chat 网络流容错热修复
+
+- **请求容错**: 修复 HarmonyOS `requestInStream` 错误回调中状态码为空导致的 `toString` 崩溃;网络/DNS/超时错误统一映射为稳定的网络失败提示。
+- **流式恢复**: 首个事件到达前的网络失败最多重试一次;流式占位消息在失败时复用并结束,不再遗留「MindTrace AI 正在生成」。
+- **回复一致性**: 流式空响应的 fallback 复用 JSON 校验与 Reply Body 解码,避免将 `{"answer": ...}` envelope 直接展示给用户。
+- **验证结果**: `arkts_check`、arkts-lint 96/96、naming-lint、debug build 均通过;设备对话验证正常。
+
 ---
 
 ## 四、工程化与质量
@@ -226,7 +253,20 @@ DevEco Studio: Build → Build Hap(s)/APP(s), Run → Run 'entry'
 # 或 hvigor CLI (AI 可主动调用; 环境变量见 docs/agents/d2-capturegraph-teaching-2026-09-05.md §6.11)
 
 # 3. LLM 配置
-App 内 我的 → AI 设置: DeepSeek API Key + 连接测试
+App 内 我的 → AI 设置:
+1. 选择预设供应商或添加自定义供应商
+2. 点「编辑」填写该供应商 API Key、维护模型目录
+3. 点面板内「保存」持久化当前供应商配置
+4. 点页面顶部「测试」验证当前 vendor / endpoint / model / key 链路
+
+# 当前已知问题
+# 若测试连接失败,保留界面错误信息与设备日志;不得把真实 API Key 写入仓库或测试文件。
+# 若要确认模型切换,查看设备日志中的 [LlmClient] request vendor=... model=... stream=...
+
+# 4. 提交前验证
+node --test "scripts/arkts-lint/tests/*.test.mjs"  # 284 passed
+node scripts/naming-lint/index.mjs                  # 0 violations
+# DevEco / hvigor: BUILD SUCCESSFUL
 ```
 
 完整演示流程(5 分钟 8 步)、失败降级口径、赛前检查清单见 [docs/agents/demo-script-2026-09-06.md](./docs/agents/demo-script-2026-09-06.md)。

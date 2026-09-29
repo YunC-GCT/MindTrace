@@ -31,6 +31,8 @@ export default function promptBuilderTest(): void {
       const pb: PromptBuilder = createBuilder();
       const prompt: string = pb.buildPrompt('test');
       expect(prompt).assertContain('difficulty');
+      expect(prompt.indexOf('difficulty: 1-4') >= 0).assertTrue();
+      expect(prompt.indexOf('difficulty: 1-5') < 0).assertTrue();
       expect(prompt).assertContain('importance');
       expect(prompt).assertContain('JSON');
     });

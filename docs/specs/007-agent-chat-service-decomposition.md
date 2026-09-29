@@ -1,6 +1,6 @@
 # Ticket #7 — AgentChatService decomposition into 3 services
 
-> **Status**: in progress (2026-09-06 — PR1 IntentClassifier 已落地; PR2 ChatStatusMachine / PR3 ReplyService 待续)
+> **Status**: superseded terminal shape (2026-09-10 — PR1/PR2 保留; PR3 由 spec 018 ConversationWorkflow + 76 LOC AgentChatService facade 取代)
 > **Source ADR**: implicit (mirrors ticket #3, ADR-0006 philosophy)
 > **Files affected**: `entry/src/main/ets/services/AgentChatService.ets` (split into 3 files); `entry/src/main/ets/overlays/AgentFloatWindow/` (consumer, unchanged)
 > **Test files**: new `entry/src/ohosTest/ets/test/AgentChatService.test.ets` (Hypium)
@@ -165,7 +165,7 @@ After PR 3: 3 services extracted, AgentChatService is a thin facade.
 |----|-------|--------|-------|
 | PR1 | extract `IntentClassifier` | ✅ landed (`23be44c`) | IntentClassifier.ets 326 LOC; 4 Node structural guards; Hypium deferred to user |
 | PR2 | extract `ChatStatusMachine` | ✅ landed (`8f5ce3f` + `0399d8f` + `0147078`) | ChatStatusMachine.ets 43 LOC; AgentChatService 562 → 516; 6 Node structural guards; `advance(step): ChatStatusMeta` 纯函数形式（vs spec L60 `advance(reason): void`） |
-| PR3 | extract `ReplyService`, delete legacy | ⏳ pending | 待 spec L59/L61 (`step` 字段 + `reset()` 方法) 决裁 + facade ≤100 LOC 收敛 + Hypium 补齐 |
+| PR3 | extract reply orchestration | ✅ superseded by spec 018 | 原业务体通过 `git mv` 迁入唯一 ConversationWorkflow；AgentChatService 收敛为 76 LOC UI facade，不再新增一层 ReplyService；Hypium/真机待验 |
 
 ## Sequence (3 atomic PRs)
 

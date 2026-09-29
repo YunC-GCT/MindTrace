@@ -15,6 +15,40 @@ import type { ContentValidationResult } from '../main/ets/Index';
 
 export default function contentExcerptBuilderTest(): void {
   describe('ContentExcerptBuilder.note_preview', () => {
+    it('builds_summary_with_short_formula_under_60_chars', 0, () => {
+      const source: string = '当 $a>0$ 时，函数在该区间单调递增并且连续。';
+      const summary: string = new ContentExcerptBuilder().buildSummary(source, 60);
+      const validation: ContentValidationResult = new ContentProtocol().normalizeNoteMarkdown(summary);
+      expect(summary.length <= 60).assertTrue();
+      expect(summary).assertContain('$a>0$');
+      expect(validation.fallbackRequired).assertFalse();
+    });
+
+    it('drops_oversized_formula_without_placeholder_in_summary', 0, () => {
+      const source: string = '正态密度为 '
+        + '$f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}$，'
+        + '用于描述连续型随机变量。';
+      const summary: string = new ContentExcerptBuilder().buildSummary(source, 60);
+      const validation: ContentValidationResult = new ContentProtocol().normalizeNoteMarkdown(summary);
+      expect(summary.length <= 60).assertTrue();
+      expect(summary.indexOf('相应公式') < 0).assertTrue();
+      expect(summary.indexOf('对应公式') < 0).assertTrue();
+      expect(validation.fallbackRequired).assertFalse();
+    });
+
+    it('skips_display_formula_in_summary', 0, () => {
+      const source: string = '正态分布的密度函数如下：\n$$\n'
+        + 'f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}\n'
+        + '$$\n该函数关于均值对称。';
+      const summary: string = new ContentExcerptBuilder().buildSummary(source, 60);
+      const validation: ContentValidationResult = new ContentProtocol().normalizeNoteMarkdown(summary);
+      expect(summary.length <= 60).assertTrue();
+      expect(summary.indexOf('$$') < 0).assertTrue();
+      expect(summary.indexOf('\\frac') < 0).assertTrue();
+      expect(summary).assertContain('正态分布');
+      expect(validation.fallbackRequired).assertFalse();
+    });
+
     it('replaces_long_inline_formula_instead_of_cutting_it', 0, () => {
       const source: string = '正态分布的概率密度函数为 '
         + '$f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}$，'

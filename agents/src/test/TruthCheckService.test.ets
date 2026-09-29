@@ -55,5 +55,24 @@ export default function truthCheckServiceTest(): void {
       const r: MvpTruthCheckResult = s.check('a+b=c');
       expect(r.details.length).assertEqual(4);
     });
+
+    it('truthCheck_valid_math_is_not_rejected_by_substring', 0, () => {
+      const s: TruthCheckService = createService();
+      const examples: string[] = ['x=x', 'x ≠ 0', '10=10', '1/0.5=2', '反证得到 1=0，故假设不成立。'];
+      for (const example of examples) {
+        expect(s.check(example).truthFlag).assertTrue();
+      }
+    });
+
+    it('truthCheck_preserves_valid_latex_and_differentials', 0, () => {
+      const s: TruthCheckService = createService();
+      const examples: string[] = ['\\left\\{x\\right.', '$x \\rightarrow 0$',
+        '$\\int_{0}^{1} f(x)\\,\\mathrm{d}x$', '\\begin{align*}x&=1\\end{align*}'];
+      for (const example of examples) {
+        const result: MvpTruthCheckResult = s.check(example);
+        expect(result.truthFlag).assertTrue();
+        expect(result.correctedText).assertUndefined();
+      }
+    });
   });
 }

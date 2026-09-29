@@ -1,15 +1,32 @@
 /**
  * NoteDaoInterface.ets — NoteDao 接口定义
  *
- * KnowledgeModel MVP 只依赖这个接口，不直接依赖 NoteDao 实现类。
- * 这样测试时可以用 mock 替代，生产环境注入真实 NoteDao。
+ * 路径: agents/src/main/ets/models/NoteDaoInterface.ets
+ * 职责: 定义 agents 端 NoteDao 适配契约,供 entry 通过 NoteDaoAdapter 注入实现
+ * 依赖: common KnowledgeUnit, NoteGenerationCommitResult
  *
- * 接口方法与 D1_CAPTURE_CHAIN_PLAN.md 约定一致:
- *   insert(unit: KnowledgeUnitExt): Promise<number>  // 异步返回 rowId
+ * 数据流:
+ *   KnowledgeUnitWriteService → NoteDaoAdapter → NoteDaoInterface → NoteDao
+ *
+ * ArkTS 1.1 strict 适配:
+ *   - 可选方法用 ? 标记,避免实现端被迫实现不需要的能力
  */
+import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
 
-import { KnowledgeUnitExt } from './KnowledgeUnitExt';
+export interface NoteCommitResult {
+  commitKey: string;
+  rowId: number;
+  noteId: string;
+  version: number;
+  duplicate: boolean;
+  success?: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
 
 export interface NoteDaoInterface {
-  insert(unit: KnowledgeUnitExt): Promise<number>;
+  insert(unit: KnowledgeUnit): Promise<number>;
+  insertWithCommitKey?(unit: KnowledgeUnit, commit: NoteGenerationCommitResult): Promise<NoteCommitResult>;
+  update?(unit: KnowledgeUnit, expectedVersion: number): Promise<NoteCommitResult>;
+  updateWithCommitKey?(unit: KnowledgeUnit, expectedVersion: number, commit: NoteGenerationCommitResult): Promise<NoteCommitResult>;
 }

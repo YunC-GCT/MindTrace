@@ -82,5 +82,55 @@ export default function markdownRendererProtocolTest(): void {
       expect(blocks.length > 1).assertTrue();
       expect(formulaBlockCount).assertEqual(1);
     });
+
+    it('keeps_inline_code_dollars_out_of_formula_chunks', 0, () => {
+      const source: string = repeatText('说明。', 180)
+        + ' 示例 `price=$5` 仍是代码，公式 $x+1$ 在正文中。'
+        + repeatText('结论。', 180);
+      const blocks: MarkdownBlock[] = parseMarkdown(source);
+      let formulaBlockCount: number = 0;
+      let codeLiteralFound: boolean = false;
+      for (const block of blocks) {
+        if (block.text.indexOf('price=$5') >= 0) {
+          codeLiteralFound = true;
+        }
+        if (block.text.indexOf('$x+1$') >= 0) {
+          formulaBlockCount += 1;
+        }
+      }
+      expect(codeLiteralFound).assertTrue();
+      expect(formulaBlockCount).assertEqual(1);
+    });
+
+    it('does_not_split_a_formula_after_inline_code_dollar_at_chunk_boundary', 0, () => {
+      const source: string = repeatText('前置说明。', 105)
+        + ' 示例 `price=$5` 后接长公式 $'
+        + repeatText('x + ', 180) + 'y$。'
+        + repeatText('结论。', 105);
+      const blocks: MarkdownBlock[] = parseMarkdown(source);
+      let formulaBlockCount: number = 0;
+      let formulaBlock: string = '';
+      for (const block of blocks) {
+        if (block.text.indexOf('$x + ') >= 0 || block.text.indexOf('x + x') >= 0) {
+          formulaBlockCount += 1;
+          formulaBlock += block.text;
+        }
+      }
+      expect(formulaBlockCount).assertEqual(1);
+      expect(formulaBlock.endsWith('y$。')).assertTrue();
+    });
+
+    it('parses_consecutive_display_formulas_as_complete_blocks', 0, () => {
+      const blocks: MarkdownBlock[] = parseMarkdown('$$a=b$$$$c=d$$');
+      let formulaCount: number = 0;
+      for (const block of blocks) {
+        if (block.kind === 'formula') {
+          formulaCount += 1;
+        }
+      }
+      expect(formulaCount).assertEqual(2);
+      expect(blocks[0].text).assertEqual('a=b');
+      expect(blocks[1].text).assertEqual('c=d');
+    });
   });
 }

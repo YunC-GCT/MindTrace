@@ -27,6 +27,7 @@ test('ReminderFacade covers schedule and cancel semantics', () => {
 test('BackgroundTaskFacade covers one-shot request and pending check', () => {
   assert.match(background, /requestOneShot\(tag: BackgroundTaskTag\): Promise<boolean>/);
   assert.match(background, /hasPending\(tag: BackgroundTaskTag\): boolean/);
+  assert.match(background, /finish\(tag: BackgroundTaskTag\): void/);
 });
 
 test('FormCardFacade covers snapshot push', () => {

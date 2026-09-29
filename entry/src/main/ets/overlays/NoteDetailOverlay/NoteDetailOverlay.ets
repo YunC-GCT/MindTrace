@@ -3,7 +3,7 @@
 // ============================================================================
 
 import {
-  BG_DARK, BG_CARD, TEXT, DANGER, MINT, TEXT_2, TEXT_3, BORDER,
+  BG_DARK, BG_CARD, TEXT, DANGER_BRIGHT, MINT, TEXT_2, TEXT_3, BORDER,
   F_SM, F_MD,
   W_SEMIBOLD, W_BOLD,
   R_MD,
@@ -16,19 +16,33 @@ import {
   uuid,
   isKnownNoteType,
   normalizeNoteType,
+  ContentExcerptBuilder,
+  NOTE_SUMMARY_MAX_LENGTH,
 } from 'common'
 import { promptAction } from '@kit.ArkUI'
 import { common } from '@kit.AbilityKit'
 import { NoteEditService } from '../../services/NoteEditService'
-import { NoteCloseButton } from './NoteCloseButton'
 import { NoteDetailMeta } from './NoteDetailMeta'
 import { NoteDetailBody } from './NoteDetailBody'
 import { NoteActionBar } from './NoteActionBar'
 import { NoteIconButton } from './NoteIconButton'
 import { NoteEditForm } from './NoteEditForm'
-import { UiDataCacheService } from '../../services/UiDataCacheService'
 import { invalidateDetailRender } from './model/DetailRenderCache'
 import { invalidateMarkdownText } from '../../utils/MarkdownParseCache'
+import {
+  KnowledgeUnitWriteErrorCode,
+  KnowledgeUnitWriteResult,
+} from '../../models/KnowledgeUnitWriteModels'
+import { NoteDraftReadyEvent, IncrementalDiffItem } from 'common'
+import {
+  NOTE_DETAIL_STABILITY_QUIET_MS,
+  NoteDetailRenderMetrics,
+} from '../../services/NoteDetailRenderMetrics'
+import {
+  DetailRenderSession,
+  buildDetailRenderSessionKey,
+} from './components/DetailRenderSession'
+import { noteDetailBackPressCoordinator } from './NoteDetailBackPressCoordinator'
 
 @Component
 export struct NoteDetailOverlay {
@@ -36,6 +50,11 @@ export struct NoteDetailOverlay {
   @Prop @Watch('onDetailInputChanged') unit: KnowledgeUnit | null = null
   @Prop @Watch('onDetailInputChanged') units: KnowledgeUnit[] = []
   @Prop @Watch('onDetailInputChanged') isCreating: boolean = false
+  @Prop generatedDraft: NoteDraftReadyEvent | null = null
+  onDraftCancel: () => void = (): void => {}
+  onDraftConfirm: (candidate: KnowledgeUnit) => Promise<KnowledgeUnit> = async (_candidate: KnowledgeUnit): Promise<KnowledgeUnit> => {
+    throw new Error('草稿确认不可用')
+  }
   @StorageProp('statusBarHeight') sbh: number = 0
   @State localUnit: KnowledgeUnit | null = null
   @State isEditing: boolean = false
@@ -49,16 +68,37 @@ export struct NoteDetailOverlay {
   @State initialTagsText: string = ''
   @State saving: boolean = false
   @State showDiscardConfirm: boolean = false
+  private summaryBuilder: ContentExcerptBuilder = new ContentExcerptBuilder()
+  private stableObservationSeq: number = 0
+  private backPressRegistrationId: number = 0
+  private renderSession: DetailRenderSession = new DetailRenderSession('noteDetail')
   onClose: () => void = (): void => {}
   onEdit: (id: number) => void = (_id: number): void => {}
   onDelete: (id: string) => void = (_id: string): void => {}
   onSaved: (unit: KnowledgeUnit) => void = (_unit: KnowledgeUnit): void => {}
 
   aboutToAppear(): void {
+    this.backPressRegistrationId = noteDetailBackPressCoordinator.register(this.closeOrCancel)
+    this.syncRenderSession()
+    if (this.generatedDraft !== null) {
+      NoteDetailRenderMetrics.recordDraftState()
+      NoteDetailRenderMetrics.recordEditState()
+      this.isEditing = true
+      this.loadForm(this.generatedDraft.candidate)
+      return
+    }
     if (this.isCreating) {
+      NoteDetailRenderMetrics.recordEditState()
       this.isEditing = true
       this.loadForm(null)
     }
+  }
+
+  aboutToDisappear(): void {
+    noteDetailBackPressCoordinator.unregister(this.backPressRegistrationId)
+    this.backPressRegistrationId = 0
+    this.stableObservationSeq += 1
+    this.renderSession.cancel()
   }
 
   build() {
@@ -67,41 +107,10 @@ export struct NoteDetailOverlay {
         .onClick((): void => this.closeOrCancel())
 
       Column() {
-        Row().width('100%').height(this.sbh).backgroundColor(BG_DARK)
-
-        Row() {
-          NoteCloseButton({ onClose: (): void => this.closeOrCancel() })
-
-          Column() {
-            Text(this.modeTitle())
-              .fontSize(F_MD)
-              .fontWeight(W_SEMIBOLD)
-              .fontColor(TEXT)
-              .lineHeight(20)
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .width('100%')
-          }
-          .layoutWeight(1)
-          .margin({ left: 12, right: 12 })
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Start)
-
-          if (!this.isCreating && !this.isEditing && this.effectiveUnit() !== null) {
-            NoteIconButton({
-              name: 'trash',
-              color: DANGER,
-              onTap: (): void => this.confirmDelete(),
-            })
-          }
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .alignItems(VerticalAlign.Center)
-
         Scroll() {
           Column() {
             if (this.isEditing) {
+              Row().width('100%').height(this.sbh).backgroundColor(BG_DARK)
               NoteEditForm({
                 titleText: this.titleText,
                 summaryText: this.summaryText,
@@ -112,14 +121,46 @@ export struct NoteDetailOverlay {
                 onContentChange: (value: string): void => { this.contentText = value },
                 onTagsChange: (value: string): void => { this.tagsText = value },
               })
+              if (this.generatedDraft !== null) {
+                Text('AI 草稿 · 来源 ' + this.generatedDraft.sourceCount.toString()
+                  + ' · soft issues ' + this.generatedDraft.softIssueCount.toString())
+                  .fontSize(F_SM)
+                  .fontColor(TEXT_3)
+                  .width('100%')
+                  .padding({ left: 16, right: 16, bottom: 12 })
+                if (this.generatedDraft.incrementalDiff !== undefined) {
+                  ForEach(this.generatedDraft.incrementalDiff, (item: IncrementalDiffItem) => {
+                    Text(this.diffLabel(item))
+                      .fontSize(F_SM)
+                      .fontColor(TEXT_3)
+                      .width('100%')
+                      .padding({ left: 16, right: 16, bottom: 4 })
+                  }, (item: IncrementalDiffItem): string => item.sectionId)
+                }
+              }
             } else if (!this.canRenderReadOnlyDetail()) {
+              Row().width('100%').height(this.sbh).backgroundColor(BG_DARK)
               this.LoadingState()
             } else {
               Column() {
-                NoteDetailMeta({ note: this.note, unit: this.effectiveUnit(), units: this.units })
-                NoteDetailBody({ note: this.note, unit: this.effectiveUnit(), units: this.units })
+                NoteDetailMeta({
+                  note: this.note,
+                  unit: this.effectiveUnit(),
+                  units: this.units,
+                  topInset: this.sbh,
+                  renderSession: this.renderSession,
+                })
+                NoteDetailBody({
+                  note: this.note,
+                  unit: this.effectiveUnit(),
+                  units: this.units,
+                  renderSession: this.renderSession,
+                })
               }
               .width('100%')
+              .onAreaChange((_oldValue: Area, newValue: Area): void => {
+                this.observeReadOnlyContent(Number(newValue.height))
+              })
             }
           }
           .width('100%')
@@ -128,6 +169,9 @@ export struct NoteDetailOverlay {
         .width('100%')
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
+        .onAreaChange((_oldValue: Area, newValue: Area): void => {
+          this.observeReadOnlyViewport(Number(newValue.height))
+        })
 
         if (this.isEditing) {
           Row() {
@@ -162,6 +206,7 @@ export struct NoteDetailOverlay {
           .backgroundColor(BG_DARK)
         } else if (this.effectiveUnit() !== null) {
           NoteActionBar({
+            onDelete: (): void => this.confirmDelete(),
             onEdit: (): void => this.startEdit(),
             onShare: (): void => this.mockShare(),
           })
@@ -250,7 +295,7 @@ export struct NoteDetailOverlay {
             .textAlign(TextAlign.Center)
             .borderRadius(R_MD)
             .backgroundColor(MINT)
-            .onClick((): void => this.discardEdit())
+            .onClick((): void => this.confirmDiscardEdit())
         }
         .width('100%')
       }
@@ -282,19 +327,24 @@ export struct NoteDetailOverlay {
   }
 
   onDetailInputChanged(): void {
+    this.stableObservationSeq += 1
     if (this.localUnit !== null && this.localUnit.id !== this.currentNoteRawId()) {
       this.localUnit = null
     }
+    this.syncRenderSession()
   }
 
-  private modeTitle = (): string => {
-    if (this.isCreating) {
-      return '新建笔记'
+  private diffLabel = (item: IncrementalDiffItem): string => {
+    if (item.kind === 'added') {
+      return '新增 · ' + item.label
     }
-    if (this.isEditing) {
-      return '编辑笔记'
+    if (item.kind === 'changed') {
+      return '修改 · ' + item.label
     }
-    return '笔记详情'
+    if (item.kind === 'locked') {
+      return '锁定 · ' + item.label
+    }
+    return '保留 · ' + item.label
   }
 
   private startEdit = (): void => {
@@ -305,6 +355,7 @@ export struct NoteDetailOverlay {
     }
     this.loadForm(current)
     this.isEditing = true
+    NoteDetailRenderMetrics.recordEditState()
     this.onEdit(this.note.id)
   }
 
@@ -337,12 +388,21 @@ export struct NoteDetailOverlay {
 
   private discardEdit(): void {
     this.showDiscardConfirm = false
+    if (this.generatedDraft !== null) {
+      this.onDraftCancel()
+      return
+    }
     if (this.isCreating) {
       this.onClose()
       return
     }
     this.isEditing = false
     this.loadForm(this.effectiveUnit())
+  }
+
+  private confirmDiscardEdit = (): void => {
+    NoteDetailRenderMetrics.recordDiscardConfirm()
+    this.discardEdit()
   }
 
   private closeOrCancel = (): void => {
@@ -361,7 +421,7 @@ export struct NoteDetailOverlay {
       return
     }
     const title: string = this.titleText.trim()
-    const summary: string = this.summaryText.trim()
+    const summary: string = this.summaryBuilder.buildSummary(this.summaryText.trim(), NOTE_SUMMARY_MAX_LENGTH)
     const content: string = this.contentText.trim()
     if (title.length === 0) {
       promptAction.showToast({ message: '请输入标题', duration: 1200 })
@@ -373,26 +433,83 @@ export struct NoteDetailOverlay {
     }
 
     this.saving = true
+    let databaseCommitted: boolean = false
     try {
       const now: number = Date.now()
-      const saved: KnowledgeUnit = this.isCreating
-        ? this.buildManualUnit(now, title, summary, content)
-        : this.buildUpdatedUnit(now, title, summary, content)
-      await NoteEditService.upsert(getContext(this) as common.UIAbilityContext, saved, this.isCreating)
-      this.invalidateSavedRenderCaches(saved)
-      this.localUnit = saved
+      const current: KnowledgeUnit | null = this.effectiveUnit()
+      const expectedVersion: number = current !== null ? current.version : 0
+      const saved: KnowledgeUnit = this.generatedDraft !== null
+        ? this.buildGeneratedUnit(now, title, summary, content)
+        : this.isCreating
+          ? this.buildManualUnit(now, title, summary, content)
+          : this.buildUpdatedUnit(now, title, summary, content)
+      const result: KnowledgeUnitWriteResult = this.generatedDraft !== null
+        ? await this.confirmGeneratedDraft(saved)
+        : await NoteEditService.upsert(getContext(this) as common.UIAbilityContext, saved, this.isCreating, expectedVersion)
+      if (!result.committed) {
+        if (result.errorCode === KnowledgeUnitWriteErrorCode.VERSION_CONFLICT) {
+          promptAction.showToast({ message: '笔记已被修改，请重新打开后再保存', duration: 1800 })
+          this.saving = false
+          return
+        }
+        throw new Error(result.errorMessage ?? '笔记未保存')
+      }
+      databaseCommitted = true
+      const committed: KnowledgeUnit = result.unit
+      this.invalidateSavedRenderCaches(committed)
+      this.localUnit = committed
+      this.syncRenderSession()
       this.isEditing = false
       this.showDiscardConfirm = false
-      this.loadForm(saved)
-      this.bumpNotesVersion()
-      UiDataCacheService.setDetail(saved, UiDataCacheService.currentNotesVersion())
-      this.onSaved(saved)
-      promptAction.showToast({ message: this.isCreating ? '笔记已新建' : '笔记已保存', duration: 1200 })
+      this.loadForm(committed)
+      this.onSaved(committed)
+      const suffix: string = result.warnings.length > 0 ? '，部分刷新稍后重试' : ''
+      promptAction.showToast({ message: (this.isCreating ? '笔记已新建' : '笔记已保存') + suffix, duration: 1500 })
     } catch (e) {
       const message: string = (e as Error).message ?? String(e)
-      promptAction.showToast({ message: '保存失败：' + message, duration: 1800 })
+      const prefix: string = databaseCommitted ? '笔记已保存，但页面刷新失败：' : '保存失败：'
+      promptAction.showToast({ message: prefix + message, duration: 1800 })
     }
     this.saving = false
+  }
+
+  private async confirmGeneratedDraft(candidate: KnowledgeUnit): Promise<KnowledgeUnitWriteResult> {
+    if (this.generatedDraft === null) {
+      throw new Error('草稿不可用')
+    }
+    const committed: KnowledgeUnit = await this.onDraftConfirm(candidate)
+    return { committed: true, rowId: 0, unit: committed, warnings: [] }
+  }
+
+  private buildGeneratedUnit(now: number, title: string, summary: string, content: string): KnowledgeUnit {
+    if (this.generatedDraft === null) {
+      throw new Error('草稿不可用')
+    }
+    const source: KnowledgeUnit = this.generatedDraft.candidate
+    return {
+      id: source.id,
+      title: title,
+      content: content,
+      summary: summary,
+      tags: this.parseTags(this.tagsText),
+      subject: source.subject,
+      category: source.category,
+      chapter: source.chapter,
+      difficulty: source.difficulty,
+      source: source.source,
+      createdAt: source.createdAt,
+      updatedAt: now,
+      reviewStatus: source.reviewStatus,
+      nextReviewAt: source.nextReviewAt,
+      intervalDays: source.intervalDays,
+      easeFactor: source.easeFactor,
+      repetitions: source.repetitions,
+      prerequisites: source.prerequisites,
+      related: source.related,
+      embedding: source.embedding,
+      userId: source.userId,
+      version: source.version,
+    }
   }
 
   private buildManualUnit(now: number, title: string, summary: string, content: string): KnowledgeUnit {
@@ -525,14 +642,8 @@ export struct NoteDetailOverlay {
       || this.tagsText !== this.initialTagsText
   }
 
-  private bumpNotesVersion(): void {
-    const v: number = AppStorage.get<number>('notesVersion') ?? 0
-    AppStorage.setOrCreate('notesVersion', v + 1)
-  }
-
   private invalidateSavedRenderCaches = (unit: KnowledgeUnit): void => {
     const previous: KnowledgeUnit | null = this.effectiveUnit()
-    UiDataCacheService.invalidateNote(unit.id)
     invalidateDetailRender(unit.id)
     invalidateMarkdownText(unit.summary)
     invalidateMarkdownText(unit.content)
@@ -546,11 +657,57 @@ export struct NoteDetailOverlay {
     return this.note.rawId.length > 0 ? this.note.rawId : this.note.id.toString()
   }
 
+  private syncRenderSession = (): void => {
+    this.renderSession.activate(buildDetailRenderSessionKey(this.note, this.effectiveUnit()))
+  }
+
   private mockShare = (): void => {
     promptAction.showToast({ message: '分享功能暂未开放', duration: 1500 })
   }
 
   private confirmDelete = (): void => {
-    this.onDelete(this.note.rawId.length > 0 ? this.note.rawId : this.note.id.toString())
+    const noteId: string = this.note.rawId.length > 0 ? this.note.rawId : this.note.id.toString()
+    promptAction.showDialog({
+      title: '删除笔记？',
+      message: '删除后无法恢复，请确认是否继续。',
+      buttons: [
+        { text: '取消', color: TEXT_3 },
+        { text: '删除', color: DANGER_BRIGHT },
+      ],
+    }).then((result): void => {
+      if (result.index === 1) {
+        NoteDetailRenderMetrics.recordDeleteConfirm()
+        this.onDelete(noteId)
+      }
+    }).catch((): void => {
+      promptAction.showToast({ message: '无法打开删除确认', duration: 1200 })
+    })
+  }
+
+  private observeReadOnlyViewport = (height: number): void => {
+    if (!NoteDetailRenderMetrics.isEnabled()) {
+      return
+    }
+    NoteDetailRenderMetrics.recordViewportHeight(height)
+  }
+
+  private observeReadOnlyContent = (height: number): void => {
+    if (!NoteDetailRenderMetrics.isEnabled()) {
+      return
+    }
+    NoteDetailRenderMetrics.recordContentHeight(height)
+    this.stableObservationSeq += 1
+    this.scheduleStabilityProbe(this.stableObservationSeq)
+  }
+
+  private scheduleStabilityProbe = (seq: number): void => {
+    setTimeout((): void => {
+      if (seq !== this.stableObservationSeq || !NoteDetailRenderMetrics.isEnabled()) {
+        return
+      }
+      if (!NoteDetailRenderMetrics.markStable()) {
+        this.scheduleStabilityProbe(seq)
+      }
+    }, NOTE_DETAIL_STABILITY_QUIET_MS)
   }
 }

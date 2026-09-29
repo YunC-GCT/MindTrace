@@ -2,16 +2,17 @@
   "forms": [
     {
       "name": "TodayReviewCard",
-      "src": "pages/FormPage",
+      "displayName": "今日复习",
+      "src": "./ets/widget/pages/FormPage.ets",
       "uiSyntax": "arkts",
-      "formConfigAbility": "ability://FormAbility",
       "supportDimensions": [
         "2*2"
       ],
       "defaultDimension": "2*2",
       "description": "今日复习卡片",
       "isDefault": true,
-      "updateEnabled": false
+      "updateEnabled": false,
+      "isDynamic": true
     }
   ]
 }

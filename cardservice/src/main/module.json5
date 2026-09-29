@@ -10,6 +10,20 @@
       "2in1"
     ],
     "deliveryWithInstall": true,
-    "installationFree": true
+    "installationFree": true,
+    "extensionAbilities": [
+      {
+        "name": "FormAbility",
+        "srcEntry": "./ets/formability/FormAbility.ets",
+        "type": "form",
+        "exported": true,
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
+      }
+    ]
   }
 }

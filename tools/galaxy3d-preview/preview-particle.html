@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>MindTrace 知识星系 · 粒子预览</title>
+    <style>
+      :root {
+        font-family: "HarmonyOS Sans", system-ui, sans-serif;
+        color: #fff;
+        background: #0a0c10;
+      }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body { touch-action: none; -webkit-font-smoothing: antialiased; }
+      canvas { display: block; width: 100%; height: 100%; }
+
+      #label-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 4;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .node-label {
+        position: absolute;
+        min-width: 42px;
+        max-width: 112px;
+        transform: translate(-50%, -135%);
+        padding: 4px 7px;
+        border: 1px solid rgb(91 227 176 / 34%);
+        border-radius: 7px;
+        color: rgb(255 255 255 / 94%);
+        background: rgb(16 19 26 / 76%);
+        box-shadow: 0 0 18px rgb(91 227 176 / 18%);
+        font-size: 11px;
+        line-height: 1.25;
+        text-align: center;
+        overflow-wrap: anywhere;
+        opacity: 0;
+        transition: opacity 160ms ease;
+        backdrop-filter: blur(8px);
+        pointer-events: none;
+      }
+      .node-label[data-visible="true"] { opacity: 1; }
+
+      #hud {
+        position: fixed;
+        top: 12px;
+        left: 14px;
+        right: 14px;
+        z-index: 8;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        pointer-events: none;
+      }
+      #reset-camera {
+        width: 40px; height: 40px;
+        border: 1px solid rgb(255 255 255 / 10%);
+        border-radius: 8px;
+        color: #fff;
+        background: rgb(16 19 26 / 78%);
+        font-size: 23px; line-height: 1;
+        pointer-events: auto;
+        backdrop-filter: blur(12px);
+        cursor: pointer;
+      }
+      #fps-pill {
+        min-width: 62px;
+        padding: 7px 9px;
+        border: 1px solid rgb(255 255 255 / 10%);
+        border-radius: 8px;
+        color: rgb(176 179 193 / 92%);
+        background: rgb(16 19 26 / 72%);
+        font-size: 11px;
+        text-align: center;
+        backdrop-filter: blur(12px);
+      }
+      #hint {
+        position: fixed;
+        left: 14px;
+        bottom: 14px;
+        z-index: 8;
+        padding: 6px 10px;
+        border: 1px solid rgb(255 255 255 / 8%);
+        border-radius: 7px;
+        background: rgb(16 19 26 / 60%);
+        color: rgb(176 179 193 / 88%);
+        font-size: 11px;
+        backdrop-filter: blur(8px);
+      }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <main id="app"></main>
+    <div id="label-layer" aria-hidden="true"></div>
+    <div id="hud">
+      <button id="reset-camera" type="button" title="重置镜头" aria-label="重置镜头">↻</button>
+      <span id="fps-pill">-- fps</span>
+    </div>
+    <div id="hint">拖动旋转 · 滚轮缩放 · 点击节点高亮</div>
+
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+      const MAX_DPR = 1;
+      const HIGH_PARTICLE_BUDGET = 8000;
+      const LOW_PARTICLE_BUDGET = 600;
+      const LOW_FPS_THRESHOLD = 30;
+      const TAP_SLOP_PX = 8;
+      const ENTRY_DURATION_MS = 800;
+      const LABEL_DISTANCE = 92;
+
+      const app = document.getElementById('app');
+      const labelLayer = document.getElementById('label-layer');
+      const fpsPill = document.getElementById('fps-pill');
+      const resetButton = document.getElementById('reset-camera');
+
+      const clock = new THREE.Clock();
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      const defaultCameraPosition = new THREE.Vector3(0, -8, 78);
+      const entryCameraPosition = new THREE.Vector3(0, -8, 116);
+      const cameraTarget = new THREE.Vector3(0, 0, 0);
+
+      let renderer, scene, camera, controls;
+      let particlePoints;
+      const relationLayers = [];
+      const nodeViews = new Map();
+      let pickMeshes = [];
+      let selectedId = null;
+      let activeParticleBudget = HIGH_PARTICLE_BUDGET;
+      let activeDprCap = MAX_DPR;
+      let pausedByHost = false;
+      let degraded = false;
+      let dustMotionEnabled = true;
+      let entryStartedAt = performance.now();
+      let entryAnimating = true;
+      let pointerDown = null;
+      let fpsFrameCount = 0;
+      let fpsWindowMs = 0;
+      let lowFpsMs = 0;
+
+      if (!canUseWebGL()) {
+        alert('当前环境不支持 WebGL,无法预览');
+      } else {
+        try {
+          initScene();
+          const sample = buildSampleSnapshot();
+          initGraph(sample);
+          animate();
+        } catch (error) {
+          console.error(error);
+          alert('初始化失败: ' + (error?.message ?? String(error)));
+        }
+      }
+
+      function initScene() {
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x0a0c10, 0.012);
+        camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 650);
+        camera.position.copy(entryCameraPosition);
+        camera.lookAt(cameraTarget);
+
+        renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
+        renderer.setClearColor(0x0a0c10, 1);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, activeDprCap));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        app.appendChild(renderer.domElement);
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enabled = false;
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.07;
+        controls.rotateSpeed = 0.72;
+        controls.panSpeed = 0.58;
+        controls.zoomSpeed = 0.74;
+        controls.minDistance = 35;
+        controls.maxDistance = 140;
+        controls.screenSpacePanning = true;
+        controls.target.copy(cameraTarget);
+        controls.touches.ONE = THREE.TOUCH.ROTATE;
+        controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+
+        scene.add(new THREE.AmbientLight(0xf5f7ff, 0.72));
+        const keyLight = new THREE.DirectionalLight(0xfff0c8, 1.18);
+        keyLight.position.set(18, -25, 40);
+        scene.add(keyLight);
+
+        const particleGeometry = createParticleGeometry(HIGH_PARTICLE_BUDGET);
+        const particleMaterial = new THREE.PointsMaterial({
+          size: 0.42,
+          map: createRadialTexture('rgba(255,255,255,1)', 'rgba(91,227,176,0.58)'),
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.82,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          sizeAttenuation: true,
+        });
+        particlePoints = new THREE.Points(particleGeometry, particleMaterial);
+        particlePoints.frustumCulled = false;
+        scene.add(particlePoints);
+
+        createRelationLayers();
+
+        window.addEventListener('resize', handleResize);
+        document.addEventListener('visibilitychange', () => { pausedByHost = document.hidden; });
+        resetButton.addEventListener('click', resetCamera);
+        renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+        renderer.domElement.addEventListener('pointerup', handlePointerUp);
+        renderer.domElement.addEventListener('webglcontextlost', (event) => {
+          event.preventDefault();
+          pausedByHost = true;
+        });
+      }
+
+      function createRelationLayers() {
+        const colors = [0xf6c56d, 0x9dd8ff, 0xffdf95, 0xd9f4ff];
+        const opacities = [0.2, 0.16, 0.95, 0.88];
+        colors.forEach((color, index) => {
+          const geometry = new THREE.BufferGeometry();
+          const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity: opacities[index],
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          }));
+          scene.add(lines);
+          relationLayers.push({ geometry, lines });
+        });
+      }
+
+      function initGraph(snapshot) {
+        if (!scene) return;
+        if (selectedId && !snapshot.nodes.some((n) => n.id === selectedId)) selectedId = null;
+
+        const layout = createGalaxyLayout(snapshot.nodes, snapshot.edges);
+        const layoutById = new Map(layout.map((p) => [p.id, p]));
+        const nodeTexture = createRadialTexture('rgba(255,255,255,1)', 'rgba(91,227,176,0.08)');
+        const glowTexture = createRadialTexture('rgba(255,255,255,0.72)', 'rgba(91,227,176,0)');
+        const pickMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+
+        clearNodeViews();
+
+        for (const dto of snapshot.nodes) {
+          const point = layoutById.get(dto.id) ?? { id: dto.id, x: 0, y: 0, z: 0 };
+          const position = new THREE.Vector3(point.x, point.y, point.z);
+          const group = new THREE.Group();
+          group.position.copy(position);
+          const color = safeColor(dto.color);
+
+          const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: glowTexture, color, transparent: true, opacity: 0.46,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+          }));
+          glow.scale.setScalar(7.8);
+          group.add(glow);
+
+          const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: nodeTexture, color, transparent: true, opacity: 0.96,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+          }));
+          sprite.scale.setScalar(3.15 + dto.mastery * 0.8);
+          group.add(sprite);
+
+          scene.add(group);
+
+          const pickMesh = new THREE.Mesh(new THREE.SphereGeometry(3.8, 12, 8), pickMaterial);
+          pickMesh.userData = { id: dto.id };
+          pickMesh.position.copy(position);
+          scene.add(pickMesh);
+          pickMeshes.push(pickMesh);
+
+          const label = document.createElement('div');
+          label.className = 'node-label';
+          label.textContent = dto.label;
+          labelLayer.appendChild(label);
+
+          nodeViews.set(dto.id, { dto, group, sprite, glow, pickMesh, label, position });
+        }
+
+        updateSelectionVisuals();
+        resetCamera();
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const delta = Math.min(clock.getDelta(), 0.05);
+        if (pausedByHost || !renderer || !scene || !camera || !controls) return;
+        updateEntryCamera();
+        controls.update();
+        updateNodeAnimation(delta);
+        updateLabels();
+        if (dustMotionEnabled && particlePoints) particlePoints.rotation.z += delta * 0.014;
+        renderer.render(scene, camera);
+        updatePerformance(delta);
+      }
+
+      function updateEntryCamera() {
+        if (!entryAnimating || !camera || !controls) return;
+        const progress = Math.min(1, (performance.now() - entryStartedAt) / ENTRY_DURATION_MS);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        camera.position.lerpVectors(entryCameraPosition, defaultCameraPosition, eased);
+        camera.lookAt(cameraTarget);
+        if (progress >= 1) {
+          entryAnimating = false;
+          controls.enabled = true;
+        }
+      }
+
+      function updateNodeAnimation(delta) {
+        for (const view of nodeViews.values()) {
+          const selected = view.dto.id === selectedId;
+          const base = 3.15 + view.dto.mastery * 0.8;
+          const nextScale = THREE.MathUtils.lerp(view.sprite.scale.x, selected ? base * 1.42 : base, delta * 10);
+          view.sprite.scale.setScalar(nextScale);
+          const material = view.glow.material;
+          material.opacity = THREE.MathUtils.lerp(material.opacity, selected ? 0.92 : 0.46, delta * 10);
+        }
+      }
+
+      function updateLabels() {
+        if (!camera || !renderer) return;
+        const width = renderer.domElement.clientWidth;
+        const height = renderer.domElement.clientHeight;
+        for (const view of nodeViews.values()) {
+          const projected = view.position.clone().project(camera);
+          const distance = camera.position.distanceTo(view.position);
+          const visible = projected.z > -1 && projected.z < 1 && distance < LABEL_DISTANCE;
+          view.label.dataset.visible = String(visible || view.dto.id === selectedId);
+          view.label.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
+          view.label.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
+        }
+      }
+
+      function setSelection(id) {
+        if (id && !nodeViews.has(id)) return;
+        selectedId = id;
+        updateSelectionVisuals();
+      }
+
+      function updateSelectionVisuals() {
+        updateRelationLines();
+        for (const view of nodeViews.values()) {
+          const material = view.sprite.material;
+          material.opacity = selectedId === view.dto.id ? 1 : 0.84;
+        }
+      }
+
+      function updateRelationLines() {
+        const positions = [[], [], [], []];
+        const snapshotEdges = Array.from(graphEdges);
+        for (const edge of snapshotEdges) {
+          const source = nodeViews.get(edge.fromId);
+          const target = nodeViews.get(edge.toId);
+          if (!source || !target) continue;
+          const baseIndex = edge.type === 'prerequisite' ? 0 : 1;
+          pushSegment(positions[baseIndex], source.position, target.position);
+          if (selectedId === edge.fromId || selectedId === edge.toId) {
+            pushSegment(positions[baseIndex + 2], source.position, target.position);
+          }
+        }
+        relationLayers.forEach((layer, index) => {
+          layer.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions[index], 3));
+          layer.geometry.computeBoundingSphere();
+        });
+      }
+
+      function pushSegment(target, source, destination) {
+        target.push(source.x, source.y, source.z, destination.x, destination.y, destination.z);
+      }
+
+      function handlePointerDown(event) {
+        pointerDown = { x: event.clientX, y: event.clientY };
+      }
+
+      function handlePointerUp(event) {
+        if (!pointerDown || !renderer || !camera) return;
+        const dx = event.clientX - pointerDown.x;
+        const dy = event.clientY - pointerDown.y;
+        pointerDown = null;
+        if (Math.hypot(dx, dy) > TAP_SLOP_PX) return;
+        pointer.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+        pointer.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const hits = raycaster.intersectObjects(pickMeshes, false);
+        if (hits.length === 0) {
+          setSelection(null);
+          return;
+        }
+        const id = hits[0].object.userData.id;
+        if (typeof id === 'string') setSelection(id);
+      }
+
+      function handleResize() {
+        if (!camera || !renderer) return;
+        camera.aspect = window.innerWidth / Math.max(1, window.innerHeight);
+        camera.updateProjectionMatrix();
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, activeDprCap));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function resetCamera() {
+        if (!camera || !controls) return;
+        entryAnimating = true;
+        entryStartedAt = performance.now();
+        controls.enabled = false;
+        camera.position.copy(entryCameraPosition);
+        controls.target.copy(cameraTarget);
+        controls.update();
+      }
+
+      function clearNodeViews() {
+        if (!scene) return;
+        for (const view of nodeViews.values()) {
+          scene.remove(view.group);
+          scene.remove(view.pickMesh);
+          view.label.remove();
+        }
+        nodeViews.clear();
+        pickMeshes = [];
+      }
+
+      function createParticleGeometry(count) {
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        const palette = [
+          new THREE.Color(0x5be3b0),
+          new THREE.Color(0xf6c56d),
+          new THREE.Color(0x9dd8ff),
+        ];
+        for (let index = 0; index < count; index += 1) {
+          const radius = 50 + seededNoise(index * 1.7) * 170;
+          const theta = seededNoise(index + 8.2) * Math.PI * 2;
+          const phi = Math.acos(seededNoise(index + 12.3) * 2 - 1);
+          const offset = index * 3;
+          positions[offset]     = Math.sin(phi) * Math.cos(theta) * radius;
+          positions[offset + 1] = Math.sin(phi) * Math.sin(theta) * radius;
+          positions[offset + 2] = Math.cos(phi) * radius;
+          const color = palette[index % palette.length];
+          colors[offset]     = color.r;
+          colors[offset + 1] = color.g;
+          colors[offset + 2] = color.b;
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setDrawRange(0, activeParticleBudget);
+        return geometry;
+      }
+
+      function createRadialTexture(centerColor, edgeColor) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 96;
+        canvas.height = 96;
+        const context = canvas.getContext('2d');
+        if (!context) return new THREE.Texture();
+        const gradient = context.createRadialGradient(48, 48, 0, 48, 48, 48);
+        gradient.addColorStop(0, centerColor);
+        gradient.addColorStop(0.38, 'rgba(255,255,255,0.42)');
+        gradient.addColorStop(1, edgeColor);
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, 96, 96);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
+      }
+
+      function updatePerformance(delta) {
+        fpsFrameCount += 1;
+        fpsWindowMs += delta * 1000;
+        if (fpsWindowMs < 500) return;
+        const fps = Math.round((fpsFrameCount * 1000) / fpsWindowMs);
+        fpsPill.textContent = degraded ? `${fps} fps · 降级` : `${fps} fps`;
+        lowFpsMs = fps < LOW_FPS_THRESHOLD ? lowFpsMs + fpsWindowMs : 0;
+        if (!degraded && lowFpsMs >= 2000) degradeQuality();
+        fpsFrameCount = 0;
+        fpsWindowMs = 0;
+      }
+
+      function degradeQuality() {
+        degraded = true;
+        dustMotionEnabled = false;
+        activeParticleBudget = LOW_PARTICLE_BUDGET;
+        particlePoints.geometry.setDrawRange(0, activeParticleBudget);
+        activeDprCap = 0.5;
+        handleResize();
+      }
+
+      function safeColor(value) {
+        try {
+          return new THREE.Color(value.replace(/^#(?:FF)?/i, '#'));
+        } catch {
+          return new THREE.Color(0x5be3b0);
+        }
+      }
+
+      function seededNoise(value) {
+        const raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
+        return raw - Math.floor(raw);
+      }
+
+      function canUseWebGL() {
+        const canvas = document.createElement('canvas');
+        return Boolean(canvas.getContext('webgl2') ?? canvas.getContext('webgl'));
+      }
+
+      // ---------- sample snapshot ----------
+      let graphEdges = [];
+      function buildSampleSnapshot() {
+        const nodes = [
+          { id: 'algebra',    label: '代数基础',     subject: 'math', chapter: '基础',    mastery: 0.92, color: '#5be3b0' },
+          { id: 'geometry',   label: '几何初步',     subject: 'math', chapter: '基础',    mastery: 0.74, color: '#5be3b0' },
+          { id: 'function',   label: '函数概念',     subject: 'math', chapter: '函数',    mastery: 0.81, color: '#9dd8ff' },
+          { id: 'trig',       label: '三角函数',     subject: 'math', chapter: '函数',    mastery: 0.42, color: '#9dd8ff' },
+          { id: 'sequence',   label: '数列',         subject: 'math', chapter: '函数',    mastery: 0.66, color: '#9dd8ff' },
+          { id: 'inequality', label: '不等式',       subject: 'math', chapter: '代数',    mastery: 0.55, color: '#f6c56d' },
+          { id: 'derivative', label: '导数',         subject: 'math', chapter: '微积分',  mastery: 0.38, color: '#f6c56d' },
+          { id: 'integral',   label: '积分',         subject: 'math', chapter: '微积分',  mastery: 0.21, color: '#f6c56d' },
+          { id: 'vector',     label: '向量',         subject: 'math', chapter: '几何',    mastery: 0.48, color: '#d9f4ff' },
+          { id: 'solid',      label: '立体几何',     subject: 'math', chapter: '几何',    mastery: 0.30, color: '#d9f4ff' },
+          { id: 'prob',       label: '概率统计',     subject: 'math', chapter: '概率',    mastery: 0.62, color: '#ffe2a8' },
+          { id: 'combin',     label: '组合数学',     subject: 'math', chapter: '概率',    mastery: 0.18, color: '#ffe2a8' },
+        ];
+        const edges = [
+          { id: 'e1',  fromId: 'algebra',    toId: 'function',   type: 'prerequisite' },
+          { id: 'e2',  fromId: 'algebra',    toId: 'inequality', type: 'prerequisite' },
+          { id: 'e3',  fromId: 'geometry',   toId: 'vector',     type: 'prerequisite' },
+          { id: 'e4',  fromId: 'geometry',   toId: 'solid',      type: 'prerequisite' },
+          { id: 'e5',  fromId: 'function',   toId: 'trig',       type: 'prerequisite' },
+          { id: 'e6',  fromId: 'function',   toId: 'sequence',   type: 'prerequisite' },
+          { id: 'e7',  fromId: 'function',   toId: 'derivative', type: 'prerequisite' },
+          { id: 'e8',  fromId: 'derivative', toId: 'integral',   type: 'prerequisite' },
+          { id: 'e9',  fromId: 'trig',       toId: 'vector',     type: 'related' },
+          { id: 'e10', fromId: 'inequality', toId: 'prob',       type: 'related' },
+          { id: 'e11', fromId: 'sequence',   toId: 'prob',       type: 'related' },
+          { id: 'e12', fromId: 'combin',     toId: 'prob',       type: 'prerequisite' },
+          { id: 'e13', fromId: 'vector',     toId: 'solid',      type: 'prerequisite' },
+          { id: 'e14', fromId: 'integral',   toId: 'combin',     type: 'related' },
+        ];
+        graphEdges = edges;
+        return { nodes, edges };
+      }
+
+      // ---------- force layout (copied from tools/galaxy3d-preview/src/force-layout.ts) ----------
+      function createGalaxyLayout(nodes, edges, seed = 20260920) {
+        const ITERATIONS = 300;
+        const REPULSION = 68;
+        const SPRING = 0.018;
+        const CENTER = 0.012;
+        const TARGET_EDGE = 22;
+        const MAX_STEP = 1.6;
+
+        const random = mulberry32(seed);
+        const positions = new Map();
+        const velocities = new Map();
+        const nodeIds = nodes.map((n) => n.id);
+
+        nodes.forEach((node, index) => {
+          const angle = index * 2.399963 + random() * 0.35;
+          const radius = 8 + Math.sqrt(index + 1) * 8.2;
+          positions.set(node.id, {
+            x: Math.cos(angle) * radius,
+            y: Math.sin(angle) * radius * 0.68,
+            z: (random() - 0.5) * 18,
+          });
+          velocities.set(node.id, { x: 0, y: 0, z: 0 });
+        });
+
+        for (let step = 0; step < ITERATIONS; step += 1) {
+          for (let i = 0; i < nodeIds.length; i += 1) {
+            for (let j = i + 1; j < nodeIds.length; j += 1) {
+              const a = positions.get(nodeIds[i]);
+              const b = positions.get(nodeIds[j]);
+              const va = velocities.get(nodeIds[i]);
+              const vb = velocities.get(nodeIds[j]);
+              if (!a || !b || !va || !vb) continue;
+              const dx = a.x - b.x;
+              const dy = a.y - b.y;
+              const dz = a.z - b.z;
+              const distSq = Math.max(dx * dx + dy * dy + dz * dz, 0.01);
+              const dist = Math.sqrt(distSq);
+              const force = REPULSION / distSq;
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
+              const fz = (dz / dist) * force * 0.68;
+              va.x += fx; va.y += fy; va.z += fz;
+              vb.x -= fx; vb.y -= fy; vb.z -= fz;
+            }
+          }
+          for (const edge of edges) {
+            const a = positions.get(edge.fromId);
+            const b = positions.get(edge.toId);
+            const va = velocities.get(edge.fromId);
+            const vb = velocities.get(edge.toId);
+            if (!a || !b || !va || !vb) continue;
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dz = b.z - a.z;
+            const dist = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.01);
+            const force = (dist - TARGET_EDGE) * SPRING;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            const fz = (dz / dist) * force;
+            va.x += fx; va.y += fy; va.z += fz;
+            vb.x -= fx; vb.y -= fy; vb.z -= fz;
+          }
+          for (const id of nodeIds) {
+            const position = positions.get(id);
+            const velocity = velocities.get(id);
+            if (!position || !velocity) continue;
+            velocity.x -= position.x * CENTER;
+            velocity.y -= position.y * CENTER;
+            velocity.z -= position.z * CENTER * 1.25;
+            const length = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z);
+            if (length > MAX_STEP && length > 0) {
+              const scale = MAX_STEP / length;
+              velocity.x *= scale; velocity.y *= scale; velocity.z *= scale;
+            }
+            position.x += velocity.x;
+            position.y += velocity.y;
+            position.z += velocity.z;
+            velocity.x *= 0.82; velocity.y *= 0.82; velocity.z *= 0.82;
+          }
+        }
+
+        return nodeIds.map((id) => {
+          const position = positions.get(id) ?? { x: 0, y: 0, z: 0 };
+          return {
+            id,
+            x: Math.round(position.x * 1000) / 1000,
+            y: Math.round(position.y * 1000) / 1000,
+            z: Math.round(position.z * 1000) / 1000,
+          };
+        });
+      }
+
+      function mulberry32(seed) {
+        let state = seed >>> 0;
+        return () => {
+          state += 0x6d2b79f5;
+          let value = state;
+          value = Math.imul(value ^ (value >>> 15), value | 1);
+          value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+          return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+    </script>
+  </body>
+</html>

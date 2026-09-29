@@ -61,6 +61,9 @@ const PARSE_OPTIONS = {
 export function preprocessArkUI(source) {
   let result = source.replace(/\bstruct\b/g, 'class');
   result = result.replace(/(?<![@])\bBuilder\s+([A-Za-z_$][\w$]*)\s*\(/g, 'function $1(');
+  result = result.replace(/^(\s*)@Concurrent[ \t]*$/gm, (match, indent) => {
+    return indent + ' '.repeat(match.length - indent.length);
+  });
 
   // $r('...') → placeholder identifier (preserves column by padding)
   result = result.replace(/\$\s*r\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (m, p1) => {

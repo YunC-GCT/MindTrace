@@ -1,17 +1,33 @@
 // MindTrace - LLM 配置管理(单例 + preferences 持久化 + 运行时读写)
 // 创建: 2026-07-14
+// PR1 2026-09-07: apiKey 凭据升级到 AssetStoreKit(委托 ApiKeyVault)
+// PR2-T1 2026-09-07: 加 vendorId / customVendorConfig 字段(getEndpoint/getModel 按 vendorId 解析)
 
 import { preferences } from '@kit.ArkData';
+import { ApiKeyVault } from '../security/ApiKeyVault';
 import { LlmConfigInitResult, LlmError } from './LlmTypes';
+import { DEFAULT_VENDOR_ID, findProvider } from './providers';
+import type { CustomVendorConfig } from './providers';
 
 const STORE_NAME = 'llm_config';
-const KEY_API_KEY = 'api_key';
 const KEY_ENDPOINT = 'endpoint';
 const KEY_MODEL = 'model';
 const KEY_TEMPERATURE = 'temperature';
 const KEY_MAX_TOKENS = 'max_tokens';
 const KEY_TIMEOUT_MS = 'timeout_ms';
 const KEY_ENABLE_THINKING = 'enable_thinking';
+const KEY_VENDOR_ID = 'vendor_id';
+const KEY_CUSTOM_VENDOR = 'custom_vendor';
+// PR2-T2 ticket #83 L1 (2026-09-08): per-vendor customVendors 持久化
+// 与单数 legacy cachedCustomVendor 并存(向后兼容);新代码优先用数组
+const KEY_CUSTOM_VENDORS = 'custom_vendors';
+// PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models 持久化
+// Record<vendorId, string[]> — 用户在编辑 panel 加的 model,持久到 preferences
+const KEY_VENDOR_MODELS = 'vendor_models';
+// PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key 持久化
+// Record<vendorId, string> — 用户在 vendor 编辑 panel 填的 key
+const KEY_VENDOR_API_KEYS = 'vendor_api_keys';
+const KEY_ACTIVE_VENDOR_MODELS = 'active_vendor_models';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -19,6 +35,7 @@ const DEFAULT_MODEL = 'deepseek-v4-pro';
 const DEFAULT_TEMPERATURE = 0.1;
 const DEFAULT_MAX_TOKENS = 12000;
 const DEFAULT_TIMEOUT_MS = 120000;
+export const DEFAULT_ENABLE_THINKING = true;
 
 export class LlmConfig {
   private static instance: LlmConfig | null = null;
@@ -31,7 +48,17 @@ export class LlmConfig {
   private cachedTemperature: number = DEFAULT_TEMPERATURE;
   private cachedMaxTokens: number = DEFAULT_MAX_TOKENS;
   private cachedTimeoutMs: number = DEFAULT_TIMEOUT_MS;
-  private cachedEnableThinking: boolean = false;
+  private cachedEnableThinking: boolean = DEFAULT_ENABLE_THINKING;
+  // PR2-T1: vendor 解析
+  private cachedVendorId: string = 'deepseek';
+  private cachedCustomVendor: CustomVendorConfig | null = null;
+  // PR2-T2 L1 (2026-09-08): per-vendor customVendors 数组(替代单数 cachedCustomVendor 的扩展用法)
+  private cachedCustomVendors: CustomVendorConfig[] = [];
+  // PR2-T2 L2 (2026-09-08): per-vendor models Record — 用户编辑 panel 加的 model
+  private cachedVendorModels: Record<string, string[]> = {};
+  // PR2-T2 L3 (2026-09-08): per-vendor API Key Record — vendor 编辑 panel 填的 key
+  private cachedVendorApiKeys: Record<string, string> = {};
+  private cachedActiveVendorModels: Record<string, string> = {};
 
   private constructor() {}
 
@@ -69,38 +96,140 @@ export class LlmConfig {
     if (mt >= 0) { this.cachedMaxTokens = mt; }
     const tm: number = await s.get(KEY_TIMEOUT_MS, -1) as number;
     if (tm >= 0) { this.cachedTimeoutMs = tm; }
-    const et: boolean = await s.get(KEY_ENABLE_THINKING, false) as boolean;
+    const et: boolean = await s.get(KEY_ENABLE_THINKING, DEFAULT_ENABLE_THINKING) as boolean;
     this.cachedEnableThinking = et;
+    // PR2-T1: vendorId + customVendor(JSON 字符串)
+    const vid: string = await s.get(KEY_VENDOR_ID, '') as string;
+    this.cachedVendorId = vid.length > 0 ? vid : DEFAULT_VENDOR_ID;
+    const cvJson: string = await s.get(KEY_CUSTOM_VENDOR, '') as string;
+    if (cvJson.length > 0) {
+      try {
+        this.cachedCustomVendor = JSON.parse(cvJson) as CustomVendorConfig;
+      } catch (_e) {
+        this.cachedCustomVendor = null;
+      }
+    }
+    // PR2-T2 L1: customVendors JSON 数组(新)
+    const cvListJson: string = await s.get(KEY_CUSTOM_VENDORS, '') as string;
+    if (cvListJson.length > 0) {
+      try {
+        const parsed = JSON.parse(cvListJson) as CustomVendorConfig[];
+        this.cachedCustomVendors = Array.isArray(parsed) ? parsed : [];
+      } catch (_e) {
+        this.cachedCustomVendors = [];
+      }
+    }
+    // PR2-T2 L2: vendorModels JSON Record
+    const vmJson: string = await s.get(KEY_VENDOR_MODELS, '') as string;
+    if (vmJson.length > 0) {
+      try {
+        const parsed = JSON.parse(vmJson) as Record<string, string[]>;
+        this.cachedVendorModels = parsed ?? {};
+      } catch (_e) {
+        this.cachedVendorModels = {};
+      }
+    }
+    // PR2-T2 L3: vendorApiKeys JSON Record
+    const vakJson: string = await s.get(KEY_VENDOR_API_KEYS, '') as string;
+    if (vakJson.length > 0) {
+      try {
+        const parsed = JSON.parse(vakJson) as Record<string, string>;
+        this.cachedVendorApiKeys = parsed ?? {};
+      } catch (_e) {
+        this.cachedVendorApiKeys = {};
+      }
+    }
+    const activeModelsJson: string = await s.get(KEY_ACTIVE_VENDOR_MODELS, '') as string;
+    if (activeModelsJson.length > 0) {
+      try {
+        const parsed: Record<string, string> = JSON.parse(activeModelsJson);
+        this.cachedActiveVendorModels = parsed ?? {};
+      } catch (_e) {
+        this.cachedActiveVendorModels = {};
+      }
+    }
   }
 
-  // ===== API Key =====
-  public async getApiKey(): Promise<string | null> {
-    this.requireInited();
-    const v: string = await this.store!.get(KEY_API_KEY, '') as string;
-    return v.length > 0 ? v : null;
+  // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
+  // PR2-T2 L3 (2026-09-08): per-vendor API Key — vendorId 给定则查 per-vendor map,否则 fallback 全局
+  public async getApiKey(vendorId?: string): Promise<string | null> {
+    const keyVendorId: string = vendorId !== undefined && vendorId.length > 0 ? vendorId : this.cachedVendorId;
+    if (keyVendorId.length > 0) {
+      const per: string | undefined = this.cachedVendorApiKeys[keyVendorId];
+      if (per !== undefined && per.length > 0) { return per; }
+    }
+    return ApiKeyVault.get();
   }
 
-  public async setApiKey(key: string): Promise<void> {
-    this.requireInited();
+  // setApiKey(key) 无 vendorId → 全局(back-compat,PR1 AssetStoreKit)
+  // setApiKey(key, vendorId) → per-vendor map
+  public async setApiKey(key: string, vendorId?: string): Promise<void> {
     const t: string = key.trim();
     if (t.length === 0) { throw new LlmError('API key empty', 'NOT_INITIALIZED'); }
-    await this.store!.put(KEY_API_KEY, t);
-    await this.store!.flush();
+    if (vendorId !== undefined && vendorId.length > 0) {
+      this.cachedVendorApiKeys[vendorId] = t;
+      const s = this.store!;
+      await s.put(KEY_VENDOR_API_KEYS, JSON.stringify(this.cachedVendorApiKeys));
+      await s.flush();
+      return;
+    }
+    await ApiKeyVault.put(t);
   }
 
   public async isConfigured(): Promise<boolean> {
-    const k = await this.getApiKey();
+    const k = await this.getApiKey(this.cachedVendorId);
     return k !== null && k.length > 0;
   }
 
-  public async clearApiKey(): Promise<void> {
-    this.requireInited();
-    await this.store!.delete(KEY_API_KEY);
-    await this.store!.flush();
+  // PR2-T2 ticket #83 L3 (2026-09-08): 读所有 per-vendor api keys(VM.load() 用)
+  // PR2-T2 ticket #83 T3 (2026-09-08): defensive copy(Standards #8 fix)— 返回 snapshot 而非 mutable ref
+  // 修:用显式 typed local + Object.keys 复制,不用 spread(arkts-no-spread 严格模式禁 object spread into {...obj})
+  public getAllVendorApiKeys(): Record<string, string> {
+    const snapshot: Record<string, string> = {}
+    for (const k of Object.keys(this.cachedVendorApiKeys)) {
+      snapshot[k] = this.cachedVendorApiKeys[k]
+    }
+    return snapshot
   }
 
-  // ===== Endpoint =====
-  public getEndpoint(): string { return this.cachedEndpoint; }
+  public getAllActiveVendorModels(): Record<string, string> {
+    const snapshot: Record<string, string> = {}
+    for (const k of Object.keys(this.cachedActiveVendorModels)) {
+      snapshot[k] = this.cachedActiveVendorModels[k]
+    }
+    return snapshot
+  }
+
+  // clearApiKey() 无 vendorId → 清全局(back-compat)
+  // clearApiKey(vendorId) → 删 per-vendor entry(PR2-T2 bug fix 2026-09-08: rebuild Record 替代 delete,arkts-no-delete)
+  public async clearApiKey(vendorId?: string): Promise<void> {
+    if (vendorId !== undefined && vendorId.length > 0) {
+      this.cachedVendorApiKeys = this.rebuildRecordWithout<string>(this.cachedVendorApiKeys, vendorId)
+      const s = this.store!;
+      await s.put(KEY_VENDOR_API_KEYS, JSON.stringify(this.cachedVendorApiKeys));
+      await s.flush();
+      return;
+    }
+    await ApiKeyVault.clear();
+  }
+
+  // ===== Endpoint (PR2-T1: 按 vendorId 解析) =====
+  // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
+  public getEndpoint(): string {
+    // PR2-T2 ticket #83 T2 (2026-09-08): isCustomVendor helper 替代 startsWith magic number
+    // T6 follow-up (2026-09-08): 改 static call 消 VM 重复
+    if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
+      // 优先查 customVendors[] 匹配 id(Bug #1 修复:不再只返回 [0])
+      const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
+      if (cv !== null) { return cv.baseUrl; }
+      // legacy 单数字段向后兼容
+      if (this.cachedCustomVendor !== null) { return this.cachedCustomVendor.baseUrl; }
+    }
+    const p = findProvider(this.cachedVendorId);
+    if (p !== null) { return p.baseUrl; }
+    return this.cachedEndpoint;
+  }
+
   public async setEndpoint(v: string): Promise<void> {
     this.requireInited();
     this.cachedEndpoint = this.normalizeEndpoint(v);
@@ -108,13 +237,57 @@ export class LlmConfig {
     await this.store!.flush();
   }
 
-  // ===== Model =====
-  public getModel(): string { return this.cachedModel; }
+  // ===== Model (PR2-T1: 按 vendorId 解析) =====
+  // PR2-T2 ticket #83 bug fix (2026-09-08): 实际 vendorId 是 'custom-{timestamp}',不是字面 'custom'
+  public getModel(): string {
+    if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
+      const activeModel: string | undefined = this.cachedActiveVendorModels[this.cachedVendorId];
+      if (activeModel !== undefined && activeModel.trim().length > 0) {
+        return activeModel;
+      }
+      // PR2-T2 L1: 优先查 customVendors[] 匹配 id
+      const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
+      if (cv !== null) { return cv.model; }
+      // legacy 单数向后兼容
+      if (this.cachedCustomVendor !== null) { return this.cachedCustomVendor.model; }
+    }
+    const activeModel: string | undefined = this.cachedActiveVendorModels[this.cachedVendorId];
+    if (activeModel !== undefined && activeModel.trim().length > 0) {
+      return activeModel;
+    }
+    // PR2-T2 L2: 优先查 vendorModels[vendorId][0](用户加的 model)
+    const userModels: string[] | undefined = this.cachedVendorModels[this.cachedVendorId];
+    if (userModels !== undefined && userModels.length > 0) {
+      return userModels[0];
+    }
+    const p = findProvider(this.cachedVendorId);
+    if (p !== null) { return p.defaultModel; }
+    return this.cachedModel;
+  }
+
   public async setModel(v: string): Promise<void> {
     this.requireInited();
     this.cachedModel = this.normalizeModel(v);
     await this.store!.put(KEY_MODEL, this.cachedModel);
     await this.store!.flush();
+  }
+
+  public getActiveVendorModel(vendorId: string): string {
+    const activeModel: string | undefined = this.cachedActiveVendorModels[vendorId]
+    if (activeModel !== undefined && activeModel.trim().length > 0) { return activeModel }
+    const models: string[] = this.getVendorModels(vendorId)
+    if (models.length > 0) { return models[0] }
+    return ''
+  }
+
+  public async setActiveVendorModel(vendorId: string, model: string): Promise<void> {
+    this.requireInited()
+    const t: string = model.trim()
+    if (vendorId.length === 0 || t.length === 0) { return }
+    this.cachedActiveVendorModels[vendorId] = t
+    const s = this.store!
+    await s.put(KEY_ACTIVE_VENDOR_MODELS, JSON.stringify(this.cachedActiveVendorModels))
+    await s.flush()
   }
 
   // ===== Temperature =====
@@ -153,6 +326,136 @@ export class LlmConfig {
     await this.store!.flush();
   }
 
+  // ===== PR2-T1: Vendor 解析 =====
+  public getVendorId(): string { return this.cachedVendorId; }
+
+  public supportsStrictStructuredOutput(): boolean {
+    if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
+      const custom: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId);
+      return custom !== null && custom.strictStructuredOutput === true;
+    }
+    const provider = findProvider(this.cachedVendorId);
+    return provider !== null && provider.strictStructuredOutput;
+  }
+
+  public async setVendorId(id: string): Promise<void> {
+    this.requireInited();
+    this.cachedVendorId = id;
+    await this.store!.put(KEY_VENDOR_ID, id);
+    await this.store!.flush();
+  }
+
+  public getCustomVendorConfig(): CustomVendorConfig | null { return this.cachedCustomVendor; }
+
+  public async setCustomVendorConfig(cfg: CustomVendorConfig | null): Promise<void> {
+    this.requireInited();
+    this.cachedCustomVendor = cfg;
+    const s = this.store!;
+    if (cfg === null) {
+      await s.delete(KEY_CUSTOM_VENDOR);
+    } else {
+      await s.put(KEY_CUSTOM_VENDOR, JSON.stringify(cfg));
+    }
+    await s.flush();
+  }
+
+  // ===== PR2-T2 L1 (2026-09-08): per-vendor customVendors 数组 =====
+  public getCustomVendors(): CustomVendorConfig[] {
+    return this.cachedCustomVendors;
+  }
+
+  // PR2-T2 ticket #83 bug fix (2026-09-08): 内部 helper — 按 id 找
+  // CustomVendorConfig.id 字段(2026-09-08 引入)保证多 custom vendor 共存时 identity 稳定
+  private findCustomVendor(id: string): CustomVendorConfig | null {
+    for (const v of this.cachedCustomVendors) {
+      if (v.id === id) { return v }
+    }
+    return null
+  }
+
+  // PR2-T2 ticket #83 T2 (2026-09-08): helpers 消除重复 + 消 magic number
+  // T6 follow-up (2026-09-08): 改 public static — VM 也可调(消 VM 重复的 magic)
+  // isCustomVendor(id): VM.addCustomVendor 生成 'custom-'+Date.now() id,此 helper 封装 prefix 检测
+  public static isCustomVendor(id: string): boolean {
+    return id.startsWith('custom') && id.length > 6
+  }
+
+  // rebuildRecordWithout<V>: 替代 inline delete + Object.keys loop(arkts-no-delete 兼容)
+  private rebuildRecordWithout<V>(rec: Record<string, V>, key: string): Record<string, V> {
+    const next: Record<string, V> = {}
+    for (const k of Object.keys(rec)) {
+      if (k !== key) { next[k] = rec[k] }
+    }
+    return next
+  }
+
+  public async setCustomVendors(arr: CustomVendorConfig[]): Promise<void> {
+    this.requireInited();
+    this.cachedCustomVendors = arr;
+    const s = this.store!;
+    if (arr.length === 0) {
+      await s.delete(KEY_CUSTOM_VENDORS);
+    } else {
+      await s.put(KEY_CUSTOM_VENDORS, JSON.stringify(arr));
+    }
+    await s.flush();
+  }
+
+  public async addCustomVendor(cfg: CustomVendorConfig): Promise<void> {
+    await this.setCustomVendors([...this.cachedCustomVendors, cfg]);
+  }
+
+  // PR2-T2 ticket #83 bug fix (2026-09-08): 优先按 id 匹配,fallback (vendorName+baseUrl) tuple
+  public async removeCustomVendor(matcher: CustomVendorConfig): Promise<void> {
+    const filtered: CustomVendorConfig[] = this.cachedCustomVendors.filter(
+      (v: CustomVendorConfig): boolean => {
+        if (matcher.id !== undefined && v.id !== undefined) {
+          return v.id !== matcher.id  // 按 id 匹配(优先)
+        }
+        // fallback:按 (vendorName + baseUrl) tuple
+        return !(v.vendorName === matcher.vendorName && v.baseUrl === matcher.baseUrl)
+      }
+    );
+    await this.setCustomVendors(filtered);
+  }
+
+  // ===== PR2-T2 L2 (2026-09-08): per-vendor models 数组持久化 =====
+  // getVendorModels 返回 vendor 的 model 列表;若空,seed default 1 个
+  public getVendorModels(vendorId: string): string[] {
+    const models: string[] | undefined = this.cachedVendorModels[vendorId];
+    if (models !== undefined && models.length > 0) { return models; }
+    // seed:首次访问且 vendor 是预设,返回 1 个 default model
+    const p = findProvider(vendorId);
+    if (p !== null) { return [p.defaultModel]; }
+    return [];
+  }
+
+  public async addVendorModel(vendorId: string, model: string): Promise<void> {
+    const t: string = model.trim();
+    if (t.length === 0) { return; }
+    const existing: string[] = this.cachedVendorModels[vendorId] ?? [];
+    if (existing.indexOf(t) >= 0) { return; }  // 防重
+    this.cachedVendorModels[vendorId] = [...existing, t];
+    const s = this.store!;
+    await s.put(KEY_VENDOR_MODELS, JSON.stringify(this.cachedVendorModels));
+    await s.flush();
+  }
+
+  public async removeVendorModel(vendorId: string, model: string): Promise<void> {
+    const existing: string[] = this.cachedVendorModels[vendorId] ?? [];
+    const filtered: string[] = existing.filter((m: string): boolean => m !== model);
+    if (filtered.length === 0) {
+      // 空数组 — 删 entry 而非存空数组,简化后续 getVendorModels fallback
+      // PR2-T2 ticket #83 T2 (2026-09-08): rebuildRecordWithout helper 替代 inline delete loop
+      this.cachedVendorModels = this.rebuildRecordWithout<string[]>(this.cachedVendorModels, vendorId)
+    } else {
+      this.cachedVendorModels[vendorId] = filtered;
+    }
+    const s = this.store!;
+    await s.put(KEY_VENDOR_MODELS, JSON.stringify(this.cachedVendorModels));
+    await s.flush();
+  }
+
   // ===== 恢复默认 =====
   public async resetDefaults(): Promise<void> {
     this.requireInited();
@@ -161,14 +464,29 @@ export class LlmConfig {
     this.cachedTemperature = DEFAULT_TEMPERATURE;
     this.cachedMaxTokens = DEFAULT_MAX_TOKENS;
     this.cachedTimeoutMs = DEFAULT_TIMEOUT_MS;
-    this.cachedEnableThinking = false;
+    this.cachedEnableThinking = DEFAULT_ENABLE_THINKING;
+    this.cachedVendorId = 'deepseek';
+    this.cachedCustomVendor = null;
+    // PR2-T2 L1: 同时清 customVendors[]
+    this.cachedCustomVendors = [];
+    // PR2-T2 L2: 同时清 vendorModels
+    this.cachedVendorModels = {};
+    // PR2-T2 L3: 同时清 vendorApiKeys
+    this.cachedVendorApiKeys = {};
+    this.cachedActiveVendorModels = {};
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
     await s.put(KEY_TEMPERATURE, DEFAULT_TEMPERATURE);
     await s.put(KEY_MAX_TOKENS, DEFAULT_MAX_TOKENS);
     await s.put(KEY_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
-    await s.put(KEY_ENABLE_THINKING, false);
+    await s.put(KEY_ENABLE_THINKING, DEFAULT_ENABLE_THINKING);
+    await s.put(KEY_VENDOR_ID, 'deepseek');
+    await s.delete(KEY_CUSTOM_VENDOR);
+    await s.delete(KEY_CUSTOM_VENDORS);
+    await s.delete(KEY_VENDOR_MODELS);
+    await s.delete(KEY_VENDOR_API_KEYS);
+    await s.delete(KEY_ACTIVE_VENDOR_MODELS);
     await s.flush();
   }
 
@@ -199,15 +517,23 @@ export class LlmConfig {
   }
 
   private normalizeEndpoint(v: string): string {
+    return this.normalizeEndpointForVendor(v, this.cachedVendorId);
+  }
+
+  // PR2-T2 集成修复 (2026-09-08): siliconflow 关键字检查仅在 DeepSeek vendor 下生效
+  // 原因: siliconflow 是 DeepSeek API 的 fallback 关键字,其他 vendor 不应被此关键字拒绝。
+  //       VendorPicker PR2-T2 引入 5 vendor 后,如不 vendor-aware,任何 URL 含 siliconflow 子串
+  //       的 endpoint 都会被错误拒绝。
+  private normalizeEndpointForVendor(v: string, vendorId: string): string {
     const t: string = v.trim();
     if (t.length === 0) {
       return DEFAULT_ENDPOINT;
     }
     const lower: string = t.toLowerCase();
-    if (lower.indexOf('siliconflow') >= 0) {
+    if (vendorId === 'deepseek' && lower.indexOf('siliconflow') >= 0) {
       throw new LlmError(
         `LlmConfig.normalizeEndpoint: input "${v}" matches reserved keyword "siliconflow"; ` +
-        `siliconflow is not supported. Use DEFAULT_ENDPOINT or override ` +
+        `siliconflow is not supported for DeepSeek. Use DEFAULT_ENDPOINT or override ` +
         `normalizeEndpoint() if this is intentional.`,
         'NORMALIZE_KEYWORD_REJECTED'
       );
@@ -223,26 +549,43 @@ export class LlmConfig {
   }
 
   private normalizeModel(v: string): string {
+    return this.normalizeModelForVendor(v, this.cachedVendorId);
+  }
+
+  // PR2-T2 集成修复 (2026-09-08): reserved keywords 检查仅在 DeepSeek vendor 下生效
+  // 原因: 5 vendor 引入后,其他 vendor 的合法模型名含 'flash' / 'r1' / 数字版本等子串
+  //       (例: qwen-flash, glm-4-flash, kimi-r1, qwen3-max, kimi-k2.6)。
+  //       Vendor-agnostic 检查会错误拒绝这些合法名,破坏 LLM 链路。
+  // ticket #9 原意 (DeepSeek 模型命名空间) 通过 vendorId === 'deepseek' 限定保留。
+  private normalizeModelForVendor(v: string, vendorId: string): string {
     const t: string = v.trim();
     if (t.length === 0) {
       return DEFAULT_MODEL;
     }
-    const lower: string = t.toLowerCase();
-    if (
-      lower === DEFAULT_MODEL ||
-      lower.indexOf('v3') >= 0 ||
-      lower.indexOf('flash') >= 0 ||
-      lower.indexOf('deepseek-chat') >= 0 ||
-      lower.indexOf('deepseek-reasoner') >= 0 ||
-      lower.indexOf('r1') >= 0
-    ) {
-      throw new LlmError(
-        `LlmConfig.normalizeModel: input "${v}" matches a reserved keyword; ` +
-        `DEFAULT_MODEL is enforced. Reserved keywords: v3, flash, deepseek-chat, ` +
-        `deepseek-reasoner, r1, and the DEFAULT_MODEL value itself.`,
-        'NORMALIZE_KEYWORD_REJECTED'
-      );
+    if (vendorId === 'deepseek') {
+      const lower: string = t.toLowerCase();
+      if (this.isAllowedDeepSeekModel(lower)) {
+        return t;
+      }
+      if (
+        lower.indexOf('v3') >= 0 ||
+        lower.indexOf('flash') >= 0 ||
+        lower.indexOf('r1') >= 0
+      ) {
+        throw new LlmError(
+          `LlmConfig.normalizeModel: input "${v}" matches a reserved keyword; ` +
+          `DEFAULT_MODEL is enforced for DeepSeek. Reserved keywords: v3, flash, r1. ` +
+          `(DEFAULT_MODEL itself is allowed — see ticket PR0 fix 2026-09-06.)`,
+          'NORMALIZE_KEYWORD_REJECTED'
+        );
+      }
     }
     return t;
+  }
+
+  private isAllowedDeepSeekModel(model: string): boolean {
+    return model === 'deepseek-v4-flash'
+      || model === 'deepseek-v4-pro'
+      || model === 'deepseek-v4-flash-vision-exp';
   }
 }

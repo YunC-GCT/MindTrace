@@ -15,6 +15,10 @@ export {
   SCREEN_W, SCREEN_H,
   HEADER_H, FAB_SIZE, HERO_RING_SIZE, NOTE_ICON_SIZE, DOT_SIZE, AVATAR_SIZE, AI_SETTINGS_BTN_H, CAM_SHUTTER_OUTER, CAM_SHUTTER_INNER, CAM_BTN_SIZE, CAM_ALBUM_SIZE, CAM_CONFIRM_H,
   TAB_BAR_HEIGHT, TAB_ICON_SIZE, TAB_BTN_RADIUS, AI_BTN_SIZE, AI_ICON_SIZE,
+  TAB_NAV_BG, TAB_NAV_ACTIVE, TAB_NAV_MUTED, TAB_NAV_BORDER,
+  TAB_AI_BG, TAB_AI_BORDER, TAB_AI_INNER_BORDER,
+  TAB_ROW_HEIGHT, TAB_CREST_HEIGHT, TAB_CREST_WIDTH, TAB_AI_SLOT_WIDTH,
+  TAB_LABEL_HEIGHT, TAB_LABEL_GAP, TAB_BOTTOM_PADDING,
   DANGER, DANGER_BRIGHT, WARNING, SUCCESS,
   GLASS_8, GLASS_10, GLASS_14, CAM_OVERLAY_BG, CAM_PREVIEW_BG, CAM_MASK,
   OVERLAY_MASK, OVERLAY_MASK_SOLID,
@@ -47,6 +51,14 @@ export {
   KGNode,
   KGEdge,
 } from './models/CommonTypes';
+export type {
+  KnowledgeRelationType,
+  KnowledgeRelationSource,
+  KnowledgeRelationStatus,
+  KnowledgeRelation,
+  RagChunk,
+  RagEmbedding,
+} from './models/KnowledgeGraphModels';
 export {
   DifficultyLevel,
   ConfidenceLevel,
@@ -65,12 +77,121 @@ export {
   TruthCheckResult,
   DispatchRequest,
   DispatchResult,
-  DispatchAnalysisResult,
   ApiResponse,
   API_CODE,
   CLASSIFY_CONFIDENCE_THRESHOLD,
 } from './models/CaptureChain';
 export type { ApiCode, DispatchPayload, ImagePayload, TextPayload, FilePayload, NoteCategory } from './models/CaptureChain';
+export type {
+  NoteGenerationMode,
+  SourceKind,
+  NoteGenerationRoute,
+  NoteGenerationStatus,
+  NoteGenerationProgressPhase,
+  NoteGenerationProgressState,
+  NoteGenerationActivity,
+  NoteGenerationProgressEvent,
+  NoteGenerationProgressSink,
+  DraftSectionState,
+  SourceFragment,
+  SourceBundle,
+  NoteGenerationRequirement,
+  NoteGenerationRequest,
+  NoteDraftSection,
+  NoteDraftDocument,
+  NoteGenerationIssue,
+  ProcessIssue,
+  NoteGenerationOutlineSection,
+  NoteGenerationOutline,
+  EvidenceItemType,
+  EvidenceVerificationStatus,
+  EvidenceProvenanceStatus,
+  EvidenceAssertion,
+  EvidenceCandidateSourceRef,
+  NoteGenerationEvidenceCandidate,
+  EvidenceSourceRef,
+  EvidenceReferenceResolution,
+  NoteGenerationEvidenceItem,
+  NoteGenerationVerification,
+  NoteGenerationEvidenceDecision,
+  NoteGenerationStandardResult,
+  NoteGenerationLedgerEntry,
+  NoteGenerationLedger,
+  NoteGenerationSegment,
+  NoteGenerationDeepResult,
+  NoteGenerationBudget,
+  NoteGenerationCoverage,
+  NoteGenerationCheckpointDecision,
+  NoteGenerationProgress,
+  NoteGenerationRun,
+  NoteGenerationCheckpoint,
+  NoteDraftReadyEvent,
+  PreparedCandidate,
+  NoteGenerationRecovery,
+  NoteGenerationResult,
+  NoteGenerationRepository,
+  NoteGenerationCommitResult,
+  NoteGenerationLifecycleEvent,
+  NoteGenerationLifecycleLog,
+  IncrementalSectionState,
+  IncrementalDiffKind,
+  IncrementalSection,
+  IncrementalManifestSection,
+  IncrementalManifest,
+  IncrementalRequirement,
+  IncrementalPlan,
+  IncrementalPatch,
+  IncrementalDiffItem,
+  IncrementalMergeResult,
+  IncrementalBase,
+  IncrementalPatchResponse,
+ } from './models/NoteGenerationModels';
+export {
+  NOTE_DRAFT_SCHEMA_VERSION,
+  NOTE_DRAFT_JSON_SCHEMA,
+  NOTE_OUTLINE_SCHEMA_VERSION,
+  NOTE_EVIDENCE_SCHEMA_VERSION,
+  NOTE_VERIFICATION_SCHEMA_VERSION,
+  NOTE_OUTLINE_JSON_SCHEMA,
+  NOTE_EVIDENCE_JSON_SCHEMA,
+  NOTE_VERIFICATION_JSON_SCHEMA,
+  NOTE_STANDARD_JSON_SCHEMA,
+  buildNoteVerificationJsonSchema,
+  defaultRequirement,
+  selectLightRoute,
+  selectGenerationRoute,
+  lightBudget,
+  standardBudget,
+  deepBudget,
+  segmentSourceBundle,
+  buildDeepOutline,
+  validateDeepOutline,
+  sourceFingerprint,
+  buildSourceId,
+  stableSectionId,
+  normalizeDraftSectionLabel,
+  normalizeDraftDifficulty,
+  validateSourceBundle,
+  normalizeOutline,
+  normalizeDraftCategory,
+  normalizeDraftSummary,
+  normalizeLightDraft,
+  normalizeDeepSectionDraft,
+  buildPipelineEvidence,
+  normalizeEvidenceItems,
+  resolveEvidenceSourceRef,
+  validateDraftDocument,
+  validateDraftShape,
+  parseIncrementalSections,
+  buildIncrementalManifest,
+  detectIncrementalLocks,
+  planIncrementalChange,
+  mergeIncrementalPatches,
+  renderIncrementalSections,
+  buildJsonSchema,
+  parseDirectStandardArtifacts,
+  } from './models/NoteGenerationModels';
+export { NoteGenerationArtifactValidator } from './models/NoteGenerationModels';
 
 // ========== 统一日志 ==========
 export {
@@ -80,16 +201,26 @@ export {
   getLogger,
 } from './utils/logger';
 
-// ========== LLM 共享基础设施 (Z 2026-07-14) ==========
-//   LlmConfig:  单例, preferences 持久化 API key, UI 输入/读取入口
+// ========== LLM 共享基础设施 (Z 2026-07-14, PR1 2026-09-06, PR2-T1 2026-09-07) ==========
+//   LlmConfig:  单例, preferences 持久化 endpoint/model/temp/maxTokens/timeoutMs/EnableThinking/vendorId/customVendor,
+//               API key 委托 ApiKeyVault (TEE + AES256-GCM 加密),
+//               getEndpoint/getModel 按 vendorId 解析(PR2-T1: 5 厂商预设 + 自定义)
 //   LlmClient:  OpenAI 兼容 HTTP 客户端, 所有 agent 统一调用
 //   LlmError:   统一错误类型, 按 kind 分类(NO_API_KEY / NETWORK_ERROR / API_ERROR / ...)
 //   LlmTypes:   ChatMessage / LlmCallRequest / LlmCallResult / LlmErrorKind
-export { LlmConfig } from './llm/LlmConfig';
+//   ApiKeyVault: 凭据 vault (@kit.AssetStoreKit, 兼容读取旧 preferences key)
+//   providers:  5 厂商预设(DeepSeek / Tongyi / GLM / Kimi / Doubao) + findProvider 工厂
+export { LlmConfig, DEFAULT_ENABLE_THINKING } from './llm/LlmConfig';
+export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
+export { CancellationToken } from './llm/CancellationToken';
 export { LlmGuard } from './llm/LlmGuard';
 export { JSON_ONLY_RULES, LATEX_GENERATION_RULES, buildGuardRetryMessage } from './llm/LlmOutputRules';
 export { LlmError } from './llm/LlmTypes';
+export { TRUNCATION_MARKER } from './llm/LlmResponseParser';
+export { LlmErrorBodyFormatter } from './llm/LlmErrorBodyFormatter';
+export { PROVIDERS, DEFAULT_VENDOR_ID, findProvider } from './llm/providers';
+export type { ProviderConfig, CustomVendorConfig } from './llm/providers';
 export type {
   ChatMessage,
   LlmCallOptions,
@@ -100,13 +231,31 @@ export type {
   LlmFunctionDefinition,
   LlmToolCall,
   LlmToolDefinition,
+  LlmResponseFormat,
+  LlmJsonSchema,
+  StreamEvent,
+  StreamEventType,
+  StreamThinkingEvent,
+  StreamTextEvent,
+  StreamToolCallEvent,
+  StreamToolResultEvent,
 } from './llm/LlmTypes';
-export type { LlmGuardJsonOptions, LlmGuardJsonResult, LlmGuardValidationResult, LlmJsonValidator } from './llm/LlmGuard';
+export type {
+  LlmGuardJsonCandidate,
+  LlmGuardJsonExtractionResult,
+  LlmGuardJsonOptions,
+  LlmGuardJsonResult,
+  LlmGuardValidationResult,
+  LlmJsonValidator,
+} from './llm/LlmGuard';
 export type { LlmCaller } from './llm/LlmGuard';
 export { ToolRegistry } from './tools/ToolRegistry';
+export { ToolCatalog } from './tools/ToolCatalog';
 export { ToolLoop } from './tools/ToolLoop';
+export { StateGraph, StateGraphError } from './workflow/StateGraph';
 export type { AgentTool, ToolResult } from './tools/ToolRegistry';
-export type { ToolLoopOptions } from './tools/ToolLoop';
+export type { StateGraphNode, StateGraphRoute, StateGraphHalt, StateGraphErrorKind } from './workflow/StateGraph';
+export type { ToolLoopOptions } from './workflow/tool-calling/ToolCallingState';
 export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools } from './tools/NoteQueryTools';
 
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
@@ -133,7 +282,10 @@ export type {
 
 // ========== MM-MD-v1 内容渲染协议 ==========
 export { ContentProtocol } from './render/ContentProtocol';
-export { ContentExcerptBuilder } from './render/ContentExcerptBuilder';
+export {
+  ContentExcerptBuilder,
+  NOTE_SUMMARY_MAX_LENGTH,
+} from './render/ContentExcerptBuilder';
 export type {
   ContentProtocolRisk,
   ContentValidationResult,
@@ -153,3 +305,5 @@ export type {
   CardSnapshot,
   FormCardFacade,
 } from './kit/FormCardFacade';
+export { CardSnapshotBinding } from './kit/FormCardFacade';
+export { CardSnapshotStore } from './kit/CardSnapshotStore';

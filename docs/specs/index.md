@@ -1,4 +1,4 @@
-# Ticket specs index
+﻿# Ticket specs index
 
 This directory holds **implementation specs** for the P0/P1 tickets identified in the
 2026-09-01 audit ([`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](../legacy/mindtrace/architecture/audit-full-2026-09-01.md)). Each spec is derived from
@@ -11,14 +11,21 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#3** | [`003-knowledge-model-decomposition.md`](./003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | **superseded** by [`015`](./015-knowledge-model-decomposition-v2.md) (2026-09-06; ADR-0006 amended) |
 | **#4** | [`004-dispatcher-single-entry.md`](./004-dispatcher-single-entry.md) | [`0003`](../adr/0003-dispatcher-single-entry-design.md) | **implemented** (D2, 2026-09-05) |
 | **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | **implemented** (2026-09-06) |
-| **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | spec ready, not implemented |
+| **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | **terminal shape superseded by 018** — IntentClassifier/ChatStatusMachine retained; ConversationWorkflow owns orchestration; AgentChatService 76 LOC facade |
 | **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | **implemented** (TDD) |
 | **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | **reverted** (2026-09-06, [ADR-0010](../adr/0010-mcp-tools-semantics.md) — OcrTool 是 MCP 工具, `mcp/` 保留) |
 | **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
 | **#12 / D3** | [`012-frontend-component-model.md`](./012-frontend-component-model.md) | (spec-driven) | **in progress** — `shared/components` split into atoms/molecules/organisms; overlay/service migration pending |
-| **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **ReminderFacadeImpl landed + injected** (F3, 2026-09-06); UI 入口延后 (用户裁决); BackgroundTask/FormCard 延后 |
+| **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **P0 implemented** (2026-09-10 — Reminder/BackgroundTask/FormCard real adapters + composition root; Reminder UI entry remains deferred) |
 | **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop + P1 只读工具 note_query/note_get/review_due_query) |
 | **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **done** (PR1-PR3, 2026-09-06 — 三协作服务拆出, KnowledgeModel 保留为编排 agent) |
+| **PR2-T2 cleanup** | [`017-llm-settings-cleanup.md`](./017-llm-settings-cleanup.md) | (implicit, spec 016 后续;承接 ticket #9) | **draft** (2026-09-08 — grill → to-spec;L4+L5+L6 1 ticket 3 sub-tasks;PR2) |
+| **Agent workflow architecture** | [`018-agent-workflow-architecture.md`](./018-agent-workflow-architecture.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) (scope clarified) | **implemented, device acceptance pending** (2026-09-10 — shared StateGraph + Capture/ToolCalling/Conversation/Skill workflows; single backend) |
+| **Reply body contract** | [`020-reply-body-contract.md`](./020-reply-body-contract.md) | [`0016`](../adr/0016-reply-contract-by-transport.md) | **proposed** (2026-09-12 — grill → to-spec; P0 stream 直出正文 + 持久化门 + 渲染单入口; P1 渲染加固独立 ticket; P2 LlmGuard 容错提取) |
+| **Knowledge graph RDB** | [`021-knowledge-graph-rdb.md`](./021-knowledge-graph-rdb.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015`](./015-knowledge-model-decomposition-v2.md) | **implemented on feature branch** (2026-09-17 — 空 `kg_edge`、统一关系写入、accepted 边图谱查询、RAG demo 预留表) |
+| **022 / multi-device UI** | [`022-multi-device-ui-adaptation.md`](./022-multi-device-ui-adaptation.md) | (implicit; research + codebase-design) | **ready; implementation deferred** (2026-09-08) |
+| **Agent run timeline** | [`023-agent-run-timeline-foundation.md`](./023-agent-run-timeline-foundation.md) | [`0015`](../adr/0015-structured-stream-events.md) | **foundation implemented; workflow emission pending** (2026-09-21) |
+| **NoteDetail render performance** | [`024-note-detail-render-performance.md`](./024-note-detail-render-performance.md) | [`0017`](../adr/0017-renderer-scheduler-budget-baseline.md) · [`021`](./021-chat-streaming-incremental-rendering.md) | **in progress** (2026-09-28 — #182/#185 evidence landed; #189 emulator A/B keeps WebKeepAlive default-off; #188 blocked by #187 + target-device evidence) |
 
 ## P0 tickets without spec
 
@@ -35,14 +42,14 @@ Done:
 - **D2 / spec 011** end-to-end — CaptureGraph + 5 nodes + conditional persist edge, Dispatcher 旧 API 已删
 
 Remaining (recommended order):
-1. **#7** AgentChatService decomposition — 3 atomic PRs, 802-LOC class
+1. ~~**#7** AgentChatService decomposition~~ — terminal shape superseded and implemented by spec 018 ConversationWorkflow
 2. ~~**F1 / spec 014 P1**~~ — implemented (2026-09-06); write tools gated on F2 write-path unification
 
 After all of these, the architecture matches ADR intent:
 - ✅ Dispatcher has 1 public method
 - ✅ LlmClient has 1 public method (call + adapters)
 - ✅ KnowledgeModel slimmed to orchestrating agent + 3 collaborator services (spec 015)
-- ⬜ AgentChatService is a thin facade
+- ✅ AgentChatService is a 76 LOC UI facade; ConversationWorkflow owns orchestration
 - 🚫 `mcp/` stays — ADR-0005 superseded by [ADR-0010](../adr/0010-mcp-tools-semantics.md); `tools/` reserved for CRUD tools
 
 ## How to read a spec

@@ -14,6 +14,14 @@ test('preprocessArkUI: converts struct to class (length-preserving)', () => {
   assert.equal(out, 'export class Foo { }');
 });
 
+test('preprocessArkUI: removes @Concurrent decorator while preserving line count', () => {
+  const input = 'const before = 1;\n@Concurrent\nfunction task(value: number): number { return value; }\nconst after = 2;';
+  const out = preprocessArkUI(input);
+  assert.equal(out.split('\n').length, input.split('\n').length);
+  assert.ok(!out.includes('@Concurrent'));
+  assert.ok(out.includes('function task'));
+});
+
 test('preprocessArkUI: converts @Builder-decorated methods to nothing (only keyword Builder funcName)', () => {
   // Note: @Builder as a decorator is not touched; only the `Builder funcName(` form
   const input = '@Builder NoteRows() { return; }';

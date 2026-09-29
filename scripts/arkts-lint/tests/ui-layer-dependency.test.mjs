@@ -44,10 +44,8 @@ test('pages and overlays never import database/dao or agents internals directly'
   assert.deepEqual(violations, []);
 });
 
-// F2 小步先修 (agent-tools inventory 2026-09-06): StudyPlan AI 生成抽到 Service 层,
-// ViewModel 不再直连 LlmClient / 自带解析; 持久化仍由 ViewModel 的 UI-CRUD 路径执行
-// (行为零变化), 写路径统一属 F2 长期项。
-test('StudyPlan AI generation lives in services layer (F2 small step)', () => {
+// F2 写路径收口: StudyPlan AI 生成、解析和持久化由 Service 单一所有。
+test('StudyPlan AI generation and persistence live in services layer', () => {
   const vm = readFileSync(resolve(root, 'entry/src/main/ets/viewmodels/StudyPlanViewModel.ets'), 'utf8');
   const svc = readFileSync(resolve(root, 'entry/src/main/ets/services/StudyPlanService.ets'), 'utf8');
   assert.doesNotMatch(vm, /LlmClient|LlmCallResult|ChatMessage/, 'StudyPlanViewModel must not touch the LLM layer');
@@ -55,6 +53,6 @@ test('StudyPlan AI generation lives in services layer (F2 small step)', () => {
   assert.match(svc, /class StudyPlanService/);
   assert.match(svc, /static async generateTitles\(knownTitles: string\[\]\): Promise<string\[\]>/);
   assert.match(svc, /new LlmClient\(\)/);
-  assert.match(vm, /StudyPlanService\.generateTitles\(knownTitles\)/);
-  assert.match(vm, /this\.dao\.insert\(item\)/, 'insert stays in the ViewModel until F2 write-path unification');
+  assert.match(svc, /static async generateAndPersist/);
+  assert.match(vm, /StudyPlanService\.generateAndPersist\(knownTitles, this\.dao\)/);
 });

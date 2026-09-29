@@ -1,0 +1,790 @@
+/**
+ * NoteGenerationModels.test.ets — standard 路线契约归一化行为测试
+ *
+ * 路径: common/src/test/NoteGenerationModels.test.ets
+ * 职责: ① parseDirectStandardArtifacts 直解析路径保留模型返回的 tags
+ *   (存在则保留 / 缺省为空 / 非字符串项过滤 / 全链路 draft 携带)
+ *   ② standard 契约归一化 (2026-09-19 P0-3): normalizeDraftCategory
+ *   学科级标签回退、normalizeOutline 空 sourceIds 回填
+ *   ③ deep section 契约归一化 (2026-09-19 P0-4): normalizeDeepSectionDraft
+ *   sourceIds 管线代算、category 映射、MM-MD auto-fix 采用
+ * 依赖: @ohos/hypium, common Index 导出的解析函数与类型
+ *
+ * 数据流:
+ *   JSON 文本 → JSON.parse → parseDirectStandardArtifacts → result.draft.tags 断言
+ *
+ * 背景: P1-B 修复 — parseDirectDraftDocument 原先硬编码 tags: [], 模型返回的
+ * tags 被静默丢弃; 修复后镜像 sourceIds 的内联字符串收集模式读取 parsed['tags']。
+ *
+ * ArkTS 1.1 strict 适配:
+ *   - Record 构造沿用生产同款 JSON.parse(...) as Record<string, Object> 模式
+ */
+
+import { describe, it, expect } from '@ohos/hypium';
+import {
+  parseDirectStandardArtifacts,
+  normalizeDraftCategory,
+  normalizeDraftSummary,
+  normalizeLightDraft,
+  normalizeDeepSectionDraft,
+  normalizeDraftSectionLabel,
+  normalizeDraftDifficulty,
+  buildPipelineEvidence,
+  normalizeEvidenceItems,
+  resolveEvidenceSourceRef,
+  buildNoteVerificationJsonSchema,
+  normalizeOutline,
+  validateDraftDocument,
+  buildDeepOutline,
+  defaultRequirement,
+  segmentSourceBundle,
+  validateDeepOutline,
+  NOTE_DRAFT_SCHEMA_VERSION,
+  NOTE_OUTLINE_SCHEMA_VERSION,
+  SourceBundle,
+  SourceFragment,
+} from '../main/ets/Index';
+import { validateStandardArtifacts } from '../main/ets/models/NoteGenerationModels';
+import type {
+  NoteGenerationStandardResult,
+  NoteGenerationOutline,
+  NoteGenerationSegment,
+  NoteGenerationOutlineSection,
+  NoteGenerationRequirement,
+  NoteGenerationEvidenceItem,
+  NoteGenerationEvidenceCandidate,
+  NoteGenerationIssue,
+  NoteDraftDocument,
+} from '../main/ets/Index';
+
+const DIRECT_DRAFT_WITH_TAGS: string = '{'
+  + '"schemaVersion":"mm-note-draft-v1",'
+  + '"title":"微分中值定理",'
+  + '"summary":"连续+可导 ⇒ 存在 ξ",'
+  + '"subject":"高等数学",'
+  + '"category":"定理",'
+  + '"chapter":"微分中值定理",'
+  + '"difficulty":2,'
+  + '"tags":["微分学","中值定理"],'
+  + '"sections":[{"id":"s1","label":"定义","content":"若 f 在 [a,b] 连续...","sourceIds":["src-1"],"state":"generated","baseHash":""}]'
+  + '}';
+
+const DIRECT_DRAFT_MIXED_TAGS: string = '{'
+  + '"schemaVersion":"mm-note-draft-v1",'
+  + '"title":"洛必达法则",'
+  + '"summary":"0/0 型极限",'
+  + '"subject":"高等数学",'
+  + '"category":"公式",'
+  + '"chapter":"洛必达法则",'
+  + '"difficulty":1,'
+  + '"tags":["极限",123,"导数"],'
+  + '"sections":[{"id":"s1","label":"公式","content":"lim f/g = lim f\'/g\'","sourceIds":["src-1"],"state":"generated","baseHash":""}]'
+  + '}';
+
+function sources(): SourceBundle {
+  const fragment: SourceFragment = {
+    id: 'src-1',
+    kind: 'summary',
+    originId: 'origin-1',
+    sequence: 0,
+    fingerprint: 'fp-1',
+    text: '若 f 在 [a,b] 连续且在 (a,b) 可导, 则存在 ξ ∈ (a,b) 使 f\'(ξ) = (f(b)-f(a))/(b-a)',
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function parseDirect(jsonText: string): NoteGenerationStandardResult {
+  const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+  return parseDirectStandardArtifacts(parsed, sources());
+}
+
+function lightBundle(): SourceBundle {
+  const fragment: SourceFragment = {
+    id: 'src-light',
+    kind: 'conversation',
+    originId: 'origin-light',
+    sequence: 0,
+    fingerprint: 'fp-light',
+    text: '单调性描述的是函数值随着自变量变化而变化的趋势。',
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function deepOutlineSection(): NoteGenerationOutlineSection {
+  return {
+    id: 'sec-1', label: '定义与记号', order: 0, mustInclude: [],
+    sourceIds: ['src-1', 'src-2'],
+  };
+}
+
+function deepRawDraft(content: string): NoteDraftDocument {
+  return {
+    schemaVersion: 'stale-version',
+    title: '正态分布',
+    summary: '连续型随机变量的典型分布',
+    subject: '',
+    category: '概率论与统计学',
+    chapter: '概率',
+    difficulty: 2,
+    tags: ['概率'],
+    sections: [{
+      id: '', label: '', content: content, sourceIds: [],
+      state: 'generated', baseHash: '',
+    }],
+  };
+}
+
+function emptyRequirement(): NoteGenerationRequirement {
+  return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
+}
+
+function multiSegmentBundle(count: number): SourceBundle {
+  const lines: string[] = [];
+  let index: number = 0;
+  while (index < count) {
+    lines.push('这是第' + (index + 1).toString() + '段原始材料文字');
+    lines.push('');
+    index += 1;
+  }
+  const fragment: SourceFragment = {
+    id: 'src-multi',
+    kind: 'conversation',
+    originId: 'origin-multi',
+    sequence: 0,
+    fingerprint: 'fp-multi',
+    text: lines.join('\n'),
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function stdBundle(): SourceBundle {
+  const fragment: SourceFragment = {
+    id: 'src-std',
+    kind: 'conversation',
+    originId: 'origin-std',
+    sequence: 0,
+    fingerprint: 'fp-std',
+    text: '若 X 服从正态分布, 则其概率密度函数关于均值对称。',
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function stdOutline(): NoteGenerationOutline {
+  return {
+    schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
+    sections: [{ id: 'sec-1', label: '定义', order: 0, mustInclude: [], sourceIds: ['src-std'] }],
+  };
+}
+
+function stdEvidence(
+  id: string,
+  claim: string,
+  sourceId: string,
+  excerpt: string,
+): NoteGenerationEvidenceItem {
+  return {
+    id: id,
+    assertion: { type: 'definition', text: claim, targetSectionId: 'sec-1' },
+    sourceRefs: [{
+      id: id + ':ref-1', sourceId: sourceId, sourceFingerprint: 'fp-std',
+      excerpt: excerpt, start: 0, end: excerpt.length,
+    }],
+    origin: 'model',
+  };
+}
+
+function stdCandidate(
+  claim: string,
+  sourceId: string,
+  excerpt: string,
+): NoteGenerationEvidenceCandidate {
+  return {
+    type: 'definition',
+    claim: claim,
+    sourceRefs: [{ sourceId: sourceId, excerpt: excerpt }],
+    targetSectionId: 'sec-1',
+  };
+}
+
+function stdDraft(): NoteDraftDocument {
+  return {
+    schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+    title: '正态分布',
+    summary: '概率密度关于均值对称',
+    subject: '高等数学',
+    category: '概念',
+    chapter: '概率论',
+    difficulty: 2,
+    tags: ['正态分布'],
+    sections: [{
+      id: 'sec-1', label: '定义', content: '概率密度函数关于均值对称。',
+      sourceIds: ['src-std'], state: 'generated', baseHash: '',
+    }],
+    instruction: '保存这条笔记',
+  };
+}
+
+function stdRequirement(): NoteGenerationRequirement {
+  return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
+}
+
+function sectionMap(): Map<string, string[]> {
+  const map: Map<string, string[]> = new Map<string, string[]>();
+  map.set('sec-1', ['src-std']);
+  return map;
+}
+
+function deepBundle(): SourceBundle {
+  const fragment: SourceFragment = {
+    id: 'src-deep',
+    kind: 'conversation',
+    originId: 'origin-deep',
+    sequence: 0,
+    fingerprint: 'fp-deep',
+    text: '定义与记号\n$$f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}$$\n其中 mu 为均值。',
+  };
+  const bundle: SourceBundle = { fragments: [fragment] };
+  return bundle;
+}
+
+function deepOutline(): NoteGenerationOutline {
+  return {
+    schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
+    sections: [{ id: 'sec-f', label: '公式', order: 0, mustInclude: [], sourceIds: ['src-deep'] }],
+  };
+}
+
+function formulaEvidence(pipeline: boolean): NoteGenerationEvidenceItem {
+  const excerpt: string = '$$f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}$$';
+  const start: number = deepBundle().fragments[0].text.indexOf(excerpt);
+  const item: NoteGenerationEvidenceItem = {
+    id: 'ev-formula',
+    assertion: { type: 'formula', text: excerpt, targetSectionId: 'sec-f' },
+    sourceRefs: [{
+      id: 'ev-formula:ref-1', sourceId: 'src-deep', sourceFingerprint: 'fp-deep',
+      excerpt: excerpt, start: start, end: start + excerpt.length,
+    }],
+    origin: pipeline ? 'pipeline' : 'model',
+  };
+  return item;
+}
+
+function deepDraft(): NoteDraftDocument {
+  return {
+    schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+    title: '正态分布',
+    summary: '密度函数关于均值对称',
+    subject: '高等数学',
+    category: '公式',
+    chapter: '概率论',
+    difficulty: 2,
+    tags: ['正态分布'],
+    sections: [{
+      id: 'sec-f', label: '公式',
+      content: '密度函数 $f(x)$ 关于 $x=\\mu$ 对称, 在均值处取得最大值。',
+      sourceIds: ['src-deep'], state: 'generated', baseHash: '',
+    }],
+    instruction: '保存这条笔记',
+  };
+}
+
+function deepRequirement(): NoteGenerationRequirement {
+  return { detailLevel: 'normal', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true };
+}
+
+function countCode(issues: NoteGenerationIssue[], code: string): number {
+  let count: number = 0;
+  for (const issue of issues) {
+    if (issue.code === code) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export default function noteGenerationModelsTest(): void {
+  describe('NoteGenerationModels.direct_draft_tags', () => {
+    it('direct_draft_preserves_model_tags', 0, () => {
+      const result: NoteGenerationStandardResult = parseDirect(DIRECT_DRAFT_WITH_TAGS);
+      expect(result.draft.tags.length).assertEqual(2);
+      expect(result.draft.tags[0]).assertEqual('微分学');
+      expect(result.draft.tags[1]).assertEqual('中值定理');
+    });
+
+    it('direct_draft_without_tags_defaults_to_empty', 0, () => {
+      const jsonWithoutTags: string = DIRECT_DRAFT_WITH_TAGS.replace('"tags":["微分学","中值定理"],', '');
+      const result: NoteGenerationStandardResult = parseDirect(jsonWithoutTags);
+      expect(result.draft.tags.length).assertEqual(0);
+    });
+
+    it('direct_draft_filters_non_string_tag_entries', 0, () => {
+      const result: NoteGenerationStandardResult = parseDirect(DIRECT_DRAFT_MIXED_TAGS);
+      expect(result.draft.tags.length).assertEqual(2);
+      expect(result.draft.tags[0]).assertEqual('极限');
+      expect(result.draft.tags[1]).assertEqual('导数');
+    });
+
+    it('direct_standard_result_draft_carries_tags_end_to_end', 0, () => {
+      const result: NoteGenerationStandardResult = parseDirect(DIRECT_DRAFT_WITH_TAGS);
+      expect(result.draft.title).assertEqual('微分中值定理');
+      expect(result.draft.tags.includes('中值定理')).assertTrue();
+      expect(result.draft.sections.length).assertEqual(1);
+    });
+  });
+
+  describe('NoteGenerationModels.standard_contract_normalization', () => {
+    it('section_labels_hide_internal_ids', 0, () => {
+      expect(normalizeDraftSectionLabel('', 0)).assertEqual('核心内容');
+      expect(normalizeDraftSectionLabel('section-item-811c9dc5', 0)).assertEqual('核心内容');
+      expect(normalizeDraftSectionLabel('section-item-811c9dc5-1', 1)).assertEqual('补充内容2');
+      expect(normalizeDraftSectionLabel('定义', 0)).assertEqual('定义');
+    });
+
+    it('draft_difficulty_stays_within_four_levels', 0, () => {
+      expect(normalizeDraftDifficulty(0)).assertEqual(1);
+      expect(normalizeDraftDifficulty(1)).assertEqual(1);
+      expect(normalizeDraftDifficulty(4)).assertEqual(4);
+      expect(normalizeDraftDifficulty(5)).assertEqual(2);
+    });
+
+    it('draft_summary_is_limited_and_keeps_short_inline_formula', 0, () => {
+      const summary: string = normalizeDraftSummary(
+        '结论是 $a>0$ 时函数递增，且该结论适用于连续可导函数的常见判断场景。',
+      );
+      expect(summary.length <= 60).assertTrue();
+      expect(summary).assertContain('$a>0$');
+      expect(validateDraftDocument({
+        schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+        title: '单调性',
+        summary: summary,
+        subject: '数学分析',
+        category: '概念',
+        chapter: '',
+        difficulty: 2,
+        tags: [],
+        sections: [{
+          id: 'section-1',
+          label: '定义',
+          content: '函数在区间上递增。',
+          sourceIds: [],
+          state: 'generated',
+          baseHash: '',
+        }],
+      }).length).assertEqual(0);
+    });
+
+    it('light_draft_backfills_empty_section_from_source', 0, () => {
+      const draft: NoteDraftDocument = {
+        schemaVersion: '1.0',
+        title: '单调性',
+        summary: '',
+        subject: '',
+        category: '数学分析',
+        chapter: '',
+        difficulty: 0,
+        tags: [],
+        sections: [{
+          id: '',
+          label: '',
+          content: '',
+          sourceIds: [],
+          state: 'generated',
+          baseHash: '',
+        }],
+      };
+      const bundle: SourceBundle = lightBundle();
+      const normalized: NoteDraftDocument = normalizeLightDraft(draft, bundle);
+      expect(normalized.schemaVersion).assertEqual(NOTE_DRAFT_SCHEMA_VERSION);
+      expect(normalized.subject).assertEqual('其它');
+      expect(normalized.category).assertEqual('概念');
+      expect(normalized.difficulty).assertEqual(1);
+      expect(normalized.sections[0].id).assertEqual('section-1');
+      expect(normalized.sections[0].label).assertEqual('核心内容');
+      expect(normalized.sections[0].content).assertContain('单调性描述的是函数值');
+      expect(normalized.sections[0].sourceIds[0]).assertEqual('src-light');
+      const issues: NoteGenerationIssue[] = validateDraftDocument(normalized, ['src-light']);
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('light_draft_replaces_internal_section_label', 0, () => {
+      const draft: NoteDraftDocument = {
+        schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+        title: '单调性',
+        summary: '',
+        subject: '数学分析',
+        category: '概念',
+        chapter: '',
+        difficulty: 2,
+        tags: [],
+        sections: [{
+          id: 'section-item-811c9dc5',
+          label: 'section-item-811c9dc5',
+          content: '函数单调性定义。',
+          sourceIds: ['src-light'],
+          state: 'generated',
+          baseHash: '',
+        }],
+      };
+      const normalized: NoteDraftDocument = normalizeLightDraft(draft, lightBundle());
+      expect(normalized.sections[0].id).assertEqual('section-item-811c9dc5');
+      expect(normalized.sections[0].label).assertEqual('核心内容');
+    });
+
+    it('pipeline_evidence_builds_source_anchor_for_empty_model_evidence', 0, () => {
+      const outline: NoteGenerationOutline = {
+        schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
+        sections: [{
+          id: 'sec-definition',
+          label: '定义',
+          order: 0,
+          mustInclude: [],
+          sourceIds: ['src-evidence'],
+        }],
+      };
+      const bundle: SourceBundle = {
+        fragments: [{
+          id: 'src-evidence',
+          kind: 'conversation',
+          originId: 'origin-evidence',
+          sequence: 0,
+          fingerprint: 'fp-evidence',
+          text: '连续函数是指自变量发生很小变化时，函数值也只发生很小变化。',
+        }],
+      };
+      const evidence: NoteGenerationEvidenceItem[] = buildPipelineEvidence(outline, bundle);
+      expect(evidence.length).assertEqual(1);
+      expect(evidence[0].origin).assertEqual('pipeline');
+      expect(evidence[0].assertion.targetSectionId).assertEqual('sec-definition');
+      expect(evidence[0].sourceRefs[0].sourceId).assertEqual('src-evidence');
+      expect(evidence[0].sourceRefs[0].excerpt).assertContain('连续函数');
+    });
+
+    it('category_subject_level_label_falls_back_to_concept', 0, () => {
+      // 2026-09-19: 模型返回学科级标签 ("概率论与统计学") 原判 CATEGORY_INVALID (hard) 判死
+      expect(normalizeDraftCategory('概率论与统计学')).assertEqual('概念');
+      expect(normalizeDraftCategory('高中数学')).assertEqual('概念');
+    });
+
+    it('category_prefix_matches_map_to_enum', 0, () => {
+      expect(normalizeDraftCategory('证明')).assertEqual('证明题');
+      expect(normalizeDraftCategory('计算题')).assertEqual('计算题');
+      expect(normalizeDraftCategory('几何定理')).assertEqual('定理');
+    });
+
+    it('category_valid_values_pass_through_unchanged', 0, () => {
+      expect(normalizeDraftCategory('概念')).assertEqual('概念');
+      expect(normalizeDraftCategory('  公式  ')).assertEqual('公式');
+    });
+
+    it('outline_backfills_all_sources_when_section_source_ids_empty', 0, () => {
+      // 2026-09-19: 模型常省略 outline section 的 sourceIds → 回填全部源 id
+      const outline: NoteGenerationOutline = {
+        schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
+        sections: [{
+          id: 'raw-1', label: '定义与记号', order: 0, mustInclude: [], sourceIds: [],
+        }],
+      };
+      const normalized: NoteGenerationOutline = normalizeOutline(outline, ['src-1', 'src-2']);
+      expect(normalized.sections[0].sourceIds.length).assertEqual(2);
+      expect(normalized.sections[0].sourceIds.includes('src-1')).assertTrue();
+      expect(normalized.sections[0].sourceIds.includes('src-2')).assertTrue();
+    });
+
+    it('outline_keeps_only_valid_provided_source_ids', 0, () => {
+      const outline: NoteGenerationOutline = {
+        schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION,
+        sections: [{
+          id: 'raw-1', label: '定义与记号', order: 3, mustInclude: [],
+          sourceIds: ['src-2', 'src-unknown'],
+        }],
+      };
+      const normalized: NoteGenerationOutline = normalizeOutline(outline, ['src-1', 'src-2']);
+      expect(normalized.sections[0].sourceIds.length).assertEqual(1);
+      expect(normalized.sections[0].sourceIds[0]).assertEqual('src-2');
+      expect(normalized.sections[0].order).assertEqual(0);
+    });
+  });
+
+  describe('NoteGenerationModels.deep_section_normalization', () => {
+    it('deep_section_backfills_pipeline_fields_and_passes_validation', 0, () => {
+      // 2026-09-19 P0-4: LLM 原始输出 (空 sourceIds / 学科 category / 空 subject /
+      // 旧 schemaVersion) 直接校验 3 次重试全灭; 归一化后 validateDraftDocument 全过
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(deepRawDraft('密度函数 $f(x)$ 如图'), deepOutlineSection());
+      expect(normalized.sections[0].sourceIds.length).assertEqual(2);
+      expect(normalized.sections[0].sourceIds[0]).assertEqual('src-1');
+      expect(normalized.schemaVersion).assertEqual(NOTE_DRAFT_SCHEMA_VERSION);
+      expect(normalized.subject).assertEqual('其它');
+      expect(normalized.category).assertEqual('概念');
+      expect(normalized.sections[0].id).assertEqual('sec-1');
+      expect(normalized.sections[0].label).assertEqual('定义与记号');
+      const issues = validateDraftDocument(normalized, deepOutlineSection().sourceIds);
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('deep_section_adopts_mm_md_autofix_content', 0, () => {
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(deepRawDraft('密度函数 \\(f(x)\\) 如图'), deepOutlineSection());
+      expect(normalized.sections[0].content.includes('$f(x)$')).assertTrue();
+      expect(normalized.sections[0].content.includes('\\(')).assertFalse();
+    });
+
+    it('draft_validation_accepts_recoverable_mm_md_after_normalization', 0, () => {
+      const raw: NoteDraftDocument = deepRawDraft('密度函数 \\(f(x)\\) 如图');
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(raw, deepOutlineSection());
+      const issues: NoteGenerationIssue[] =
+        validateDraftDocument(normalized, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('draft_validation_reports_unrecoverable_mm_md_reason', 0, () => {
+      const raw: NoteDraftDocument = deepRawDraft('密度函数 $f(x) 如图');
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(raw, deepOutlineSection());
+      const issues: NoteGenerationIssue[] =
+        validateDraftDocument(normalized, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(1);
+      expect(issues[0].code).assertEqual('MM_MD_INVALID');
+      expect(issues[0].message).assertContain('unclosed_inline_delimiter');
+    });
+
+    it('deep_section_adopts_safe_html_autofix_content', 0, () => {
+      const raw: string = '强调 <b>bold</b> 文本';
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(deepRawDraft(raw), deepOutlineSection());
+      expect(normalized.sections[0].content.indexOf('<b>')).assertEqual(-1);
+      expect(normalized.sections[0].content).assertContain('bold');
+      const issues: NoteGenerationIssue[] = validateDraftDocument(normalized, deepOutlineSection().sourceIds, true);
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('deep_section_replaces_internal_section_label', 0, () => {
+      const raw: NoteDraftDocument = deepRawDraft('密度函数定义。');
+      raw.sections[0].id = 'section-item-811c9dc5';
+      raw.sections[0].label = 'section-item-811c9dc5';
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(raw, deepOutlineSection());
+      expect(normalized.sections[0].id).assertEqual('section-item-811c9dc5');
+      expect(normalized.sections[0].label).assertEqual('核心内容');
+    });
+
+    it('deep_section_normalization_keeps_valid_metadata_unchanged', 0, () => {
+      const raw: NoteDraftDocument = {
+        schemaVersion: NOTE_DRAFT_SCHEMA_VERSION,
+        title: '微分中值定理',
+        summary: '连续且可导则存在中值点',
+        subject: '高等数学',
+        category: '定理',
+        chapter: '微分学',
+        difficulty: 3,
+        tags: ['中值定理'],
+        sections: [{
+          id: 's9', label: '定理内容', content: '若 f 连续且可导, 则存在 ξ。', sourceIds: ['src-2'],
+          state: 'generated', baseHash: 'hash-1',
+        }],
+      };
+      const normalized: NoteDraftDocument = normalizeDeepSectionDraft(raw, deepOutlineSection());
+      expect(normalized.title).assertEqual('微分中值定理');
+      expect(normalized.subject).assertEqual('高等数学');
+      expect(normalized.category).assertEqual('定理');
+      expect(normalized.sections[0].id).assertEqual('s9');
+      expect(normalized.sections[0].label).assertEqual('定理内容');
+      expect(normalized.sections[0].baseHash).assertEqual('hash-1');
+      expect(normalized.sections[0].sourceIds.length).assertEqual(2);
+    });
+  });
+
+  describe('NoteGenerationModels.deep_outline_cap', () => {
+    it('deep_outline_caps_sections_and_merges_tail_segments', 0, () => {
+      // 2026-09-20 P0-5: 17k 字符对话实录被切成 347 节 = 347 次串行 LLM 调用
+      // (冒烟实测 5 分钟烧 765 万 prompt tokens); 封顶 8 节, 尾部合并
+      const bundle: SourceBundle = multiSegmentBundle(30);
+      const segments: NoteGenerationSegment[] = segmentSourceBundle(bundle);
+      expect(segments.length).assertEqual(30);
+      const outline: NoteGenerationOutline = buildDeepOutline(segments, emptyRequirement());
+      expect(outline.sections.length).assertEqual(8);
+      const lastSegmentIds: string[] = outline.sections[7].segmentIds ?? [];
+      expect(lastSegmentIds.length).assertEqual(23);
+      const issues = validateDeepOutline(outline, segments, bundle, emptyRequirement());
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('deep_outline_keeps_small_segment_counts_unchanged', 0, () => {
+      const bundle: SourceBundle = multiSegmentBundle(3);
+      const segments: NoteGenerationSegment[] = segmentSourceBundle(bundle);
+      const outline: NoteGenerationOutline = buildDeepOutline(segments, emptyRequirement());
+      expect(outline.sections.length).assertEqual(3);
+      expect((outline.sections[0].segmentIds ?? []).length).assertEqual(1);
+    });
+
+    it('deep_outline_preserves_explicit_numbered_parts_before_capping_tail', 0, () => {
+      const lines: string[] = [];
+      const labels: string[] = [
+        '基础定义',
+        '拉格朗日余项',
+        '为什么泰勒多项式能近似函数',
+        '以 e^x 在 x0=0 处展开为例',
+        '常见错误一',
+        '常见错误二',
+        '常见错误三',
+        '与麦克劳林公式的关系',
+        '用泰勒公式求极限的例子',
+        '用泰勒公式估计误差的例子',
+      ];
+      for (let index: number = 0; index < labels.length; index += 1) {
+        lines.push('第' + (index + 1).toString() + '部分：' + labels[index]);
+        lines.push('这一部分说明 ' + labels[index] + ' 的核心内容。');
+        lines.push('');
+        lines.push('公式 ' + (index + 1).toString() + ': P_n(x)=f(x_0)+R_n(x)');
+        lines.push('');
+      }
+      const bundle: SourceBundle = {
+        fragments: [{
+          id: 'src-taylor',
+          kind: 'conversation',
+          originId: 'origin-taylor',
+          sequence: 0,
+          fingerprint: 'fp-taylor',
+          text: lines.join('\n'),
+        }],
+      };
+      const segments: NoteGenerationSegment[] = segmentSourceBundle(bundle);
+      const outline: NoteGenerationOutline = buildDeepOutline(segments, emptyRequirement());
+      expect(outline.sections.length).assertEqual(10);
+      expect(outline.sections[0].label).assertEqual('基础定义');
+      expect(outline.sections[1].label).assertEqual('拉格朗日余项');
+      expect(outline.sections[9].label).assertEqual('用泰勒公式估计误差的例子');
+      expect((outline.sections[0].segmentIds ?? []).length > 1).assertTrue();
+      const issues: NoteGenerationIssue[] = validateDeepOutline(outline, segments, bundle, emptyRequirement());
+      expect(issues.length).assertEqual(0);
+    });
+
+    it('deep_outline_preserves_requested_numbered_section_titles', 0, () => {
+      const instruction: string = '请整理“连续函数、可导性与中值定理”的复习笔记。\n'
+        + '要求生成结构化笔记，包含 4 个 section：\n'
+        + '1. 连续函数的定义与判断方法\n'
+        + '2. 可导与连续的关系\n'
+        + '3. 拉格朗日中值定理\n'
+        + '4. 常见错误与自测题\n'
+        + '每个 section 包含：核心定义、直观解释、关键公式、一个例子、一个常见误区。';
+      const bundle: SourceBundle = {
+        fragments: [{
+          id: 'src-lagrange',
+          kind: 'conversation',
+          originId: 'origin-lagrange',
+          sequence: 0,
+          fingerprint: 'fp-lagrange',
+          text: instruction,
+        }],
+      };
+      const requirement: NoteGenerationRequirement = defaultRequirement(instruction);
+      const segments: NoteGenerationSegment[] = segmentSourceBundle(bundle);
+      const outline: NoteGenerationOutline = buildDeepOutline(segments, requirement);
+      expect(outline.sections.length).assertEqual(4);
+      expect(outline.sections[0].label).assertEqual('连续函数的定义与判断方法');
+      expect(outline.sections[1].label).assertEqual('可导与连续的关系');
+      expect(outline.sections[2].label).assertEqual('拉格朗日中值定理');
+      expect(outline.sections[3].label).assertEqual('常见错误与自测题');
+      expect(outline.sections[2].mustInclude.includes('拉格朗日中值定理')).assertTrue();
+      expect(outline.sections[0].mustInclude.includes('拉格朗日中值定理')).assertFalse();
+      const issues: NoteGenerationIssue[] = validateDeepOutline(outline, segments, bundle, requirement);
+      expect(issues.length).assertEqual(0);
+    });
+  });
+
+  // Issue #190: drafting output is an untrusted assertion candidate. Source IDs,
+  // fingerprints and spans are owned by the pipeline, never by the model.
+  describe('NoteGenerationModels.standard_evidence_normalization', () => {
+    it('normalization_drops_blank_candidates_and_assigns_pipeline_ids', 0, () => {
+      const blankStub: NoteGenerationEvidenceCandidate = {
+        type: 'claim', claim: '', sourceRefs: [{ sourceId: '', excerpt: '' }], targetSectionId: 'sec-1',
+      };
+      const first: NoteGenerationEvidenceCandidate =
+        stdCandidate('概率密度函数关于均值对称', 'src-std', '概率密度函数关于均值对称');
+      const duplicate: NoteGenerationEvidenceCandidate =
+        stdCandidate('正态分布', 'conversation:run-1', '正态分布');
+      const normalized: NoteGenerationEvidenceItem[] =
+        normalizeEvidenceItems([blankStub, first, duplicate], stdBundle(), sectionMap());
+      expect(normalized.length).assertEqual(2);
+      expect(normalized[0].id).assertEqual('evidence-1');
+      expect(normalized[1].id).assertEqual('evidence-2');
+      expect(normalized[1].sourceRefs[0].sourceId).assertEqual('src-std');
+      expect(normalized[1].sourceRefs[0].sourceFingerprint).assertEqual('fp-std');
+    });
+
+    it('normalization_locates_exact_excerpt_even_when_model_source_id_is_wrong', 0, () => {
+      const invalidRef: NoteGenerationEvidenceCandidate =
+        stdCandidate('正态分布', 'conversation:run-9', '概率密度函数关于均值对称');
+      const normalized: NoteGenerationEvidenceItem[] =
+        normalizeEvidenceItems([invalidRef], stdBundle(), sectionMap());
+      expect(normalized.length).assertEqual(1);
+      expect(normalized[0].sourceRefs.length).assertEqual(1);
+      expect(normalized[0].sourceRefs[0].sourceId).assertEqual('src-std');
+      expect(normalized[0].sourceRefs[0].excerpt).assertEqual('概率密度函数关于均值对称');
+    });
+
+    it('unlocatable_candidate_keeps_assertion_but_has_no_fabricated_reference', 0, () => {
+      const fakeCandidate: NoteGenerationEvidenceCandidate =
+        stdCandidate('模型解释', 'src-std', '源材料里不存在的引文');
+      const normalized: NoteGenerationEvidenceItem[] =
+        normalizeEvidenceItems([fakeCandidate], stdBundle(), sectionMap());
+      expect(normalized.length).assertEqual(1);
+      expect(normalized[0].sourceRefs.length).assertEqual(0);
+      const issuesFake: NoteGenerationIssue[] = validateStandardArtifacts(
+        stdOutline(), normalized, stdDraft(), stdBundle(), stdRequirement());
+      expect(countCode(issuesFake, 'EVIDENCE_SOURCE_REQUIRED')).assertEqual(1);
+    });
+
+    it('source_fingerprint_marks_a_reference_stale_without_rewriting_the_quote', 0, () => {
+      const evidence: NoteGenerationEvidenceItem =
+        stdEvidence('ev-stale', '原始资料说 2+2=5', 'src-std', '若 X');
+      evidence.sourceRefs[0].sourceFingerprint = 'old-fingerprint';
+      expect(resolveEvidenceSourceRef(evidence.sourceRefs[0], stdBundle()).status).assertEqual('stale');
+      expect(evidence.sourceRefs[0].excerpt).assertEqual('若 X');
+    });
+
+    it('keeps_an_implausible_statement_when_it_is_a_verbatim_source_quote', 0, () => {
+      const bundle: SourceBundle = { fragments: [{
+        id: 'src-absurd', kind: 'conversation', originId: 'message-absurd', sequence: 0,
+        fingerprint: 'fp-absurd', text: '原始资料写道：2+2=5。',
+      }] };
+      const sourceMap: Map<string, string[]> = new Map<string, string[]>();
+      sourceMap.set('sec-1', ['src-absurd']);
+      const candidate: NoteGenerationEvidenceCandidate =
+        stdCandidate('2+2=5', 'src-absurd', '2+2=5');
+      const normalized: NoteGenerationEvidenceItem[] = normalizeEvidenceItems([candidate], bundle, sourceMap);
+      expect(normalized.length).assertEqual(1);
+      expect(normalized[0].assertion.text).assertEqual('2+2=5');
+      expect(normalized[0].sourceRefs[0].excerpt).assertEqual('2+2=5');
+      expect(resolveEvidenceSourceRef(normalized[0].sourceRefs[0], bundle).status).assertEqual('located');
+    });
+
+    it('verifier_schema_requires_one_positional_status_per_evidence_item', 0, () => {
+      const schema: string = buildNoteVerificationJsonSchema(2);
+      expect(schema).assertContain('"minItems":2');
+      expect(schema).assertContain('"maxItems":2');
+      expect(schema).assertContain('"required":["code","severity","message"]');
+      expect(schema.indexOf('evidenceId')).assertEqual(-1);
+      expect(schema.indexOf('sourceId')).assertEqual(-1);
+      expect(schema.indexOf('sectionId')).assertEqual(-1);
+    });
+  });
+
+  // 2026-09-20 P0-7: deep 管线自建证据 (origin='pipeline') 是溯源元数据 —
+  // 章节由该 segment 生成是结构性事实, 不适用「草稿逐字保留 excerpt」契约;
+  // LLM 声明证据 (origin 缺省) 行为不变
+  describe('NoteGenerationModels.pipeline_evidence_origin', () => {
+    it('pipeline_formula_evidence_skips_verbatim_preservation_check', 0, () => {
+      const issues: NoteGenerationIssue[] = validateStandardArtifacts(
+        deepOutline(), [formulaEvidence(true)], deepDraft(), deepBundle(), deepRequirement());
+      expect(countCode(issues, 'FORMULA_NOT_PRESERVED')).assertEqual(0);
+      expect(countCode(issues, 'EVIDENCE_NOT_PRESERVED')).assertEqual(0);
+    });
+
+    it('model_formula_evidence_still_requires_verbatim_preservation', 0, () => {
+      const issues: NoteGenerationIssue[] = validateStandardArtifacts(
+        deepOutline(), [formulaEvidence(false)], deepDraft(), deepBundle(), deepRequirement());
+      expect(countCode(issues, 'FORMULA_NOT_PRESERVED')).assertEqual(1);
+    });
+
+  });
+}

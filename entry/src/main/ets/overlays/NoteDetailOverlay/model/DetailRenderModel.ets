@@ -17,6 +17,9 @@ import {
   DifficultyLevel,
   KnowledgeUnit,
   NoteItem,
+  ContentExcerptBuilder,
+  NOTE_SUMMARY_MAX_LENGTH,
+  normalizeDraftSectionLabel,
   ReviewStatus,
   normalizeNoteType,
 } from 'common'
@@ -45,6 +48,7 @@ export interface DetailRenderModel {
 
 const SOURCE_CAMERA: string = 'camera_capture'
 export const EXTRA_SECTION_TITLE: string = '\u8865\u5145\u5185\u5bb9'
+const SUMMARY_BUILDER: ContentExcerptBuilder = new ContentExcerptBuilder()
 
 export function emptyDetailRenderModel(): DetailRenderModel {
   return {
@@ -66,7 +70,8 @@ export function emptyDetailRenderModel(): DetailRenderModel {
 export function buildDetailRenderModel(note: NoteItem, unit: KnowledgeUnit | null, units: KnowledgeUnit[]): DetailRenderModel {
   const category: string = resolveCategory(note, unit)
   const body: string = resolveBody(note, unit)
-  const summary: string = unit !== null ? unit.summary.trim() : note.body.trim()
+  const rawSummary: string = unit !== null ? unit.summary : note.body
+  const summary: string = SUMMARY_BUILDER.buildSummary(rawSummary, NOTE_SUMMARY_MAX_LENGTH)
   return {
     category: category,
     subject: resolveSubject(note, unit),
@@ -242,10 +247,11 @@ function pushSection(target: DetailSectionData[], sectionIndex: number, title: s
 }
 
 function buildSection(index: number, title: string, content: string): DetailSectionData {
-  const normalizedTitle: string = normalizeSectionTitle(title)
+  const visibleTitle: string = normalizeDraftSectionLabel(title, index)
+  const normalizedTitle: string = normalizeSectionTitle(visibleTitle)
   return {
     key: normalizedTitle + '_' + index.toString() + '_' + contentHash(content),
-    title: title.trim().length > 0 ? title.trim() : '内容',
+    title: visibleTitle,
     normalizedTitle: normalizedTitle,
     content: content,
   }

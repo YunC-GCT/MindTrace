@@ -4,7 +4,7 @@ D4 adopts HarmonyOS Kits for reminders, background tasks, and form cards ([kits 
 
 ## Status
 
-`accepted` (2026-09-06, D4 P0; implementations deferred)
+`accepted` (2026-09-06, D4 P0; implementations completed 2026-09-10)
 
 ## Considered Options
 
@@ -17,6 +17,7 @@ D4 adopts HarmonyOS Kits for reminders, background tasks, and form cards ([kits 
 - **Chosen (1)**: every kit capability consumed *by the pipeline* costs a contract + an injection point. The 3 P0 contracts compile clean and are inert until implementations land — intentional, per the deferral above.
 - Template modules keep importing kits directly; no lint ban is imposed on `@kit.*` imports anywhere in the repo.
 - When integration starts, implementations land at the composition root (entry) and get injected — no contract changes expected.
+- Follow-up (2026-09-10): Reminder, transient background task and Form card adapters are implemented and injected. Card data uses one GSKV snapshot store across app/card processes; the fixed Form mock was removed.
 
 ## Reversibility
 

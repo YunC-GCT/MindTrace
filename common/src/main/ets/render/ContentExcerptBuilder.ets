@@ -18,9 +18,45 @@ import type { ContentValidationResult } from './ContentProtocol';
 
 const LIST_INLINE_MATH_LIMIT: number = 34;
 const LIST_FORMULA_EXTENSION: number = 28;
+export const NOTE_SUMMARY_MAX_LENGTH: number = 60;
 
 export class ContentExcerptBuilder {
   private contentProtocol: ContentProtocol = new ContentProtocol();
+
+  buildSummary(rawText: string, maxChars: number = NOTE_SUMMARY_MAX_LENGTH): string {
+    if (maxChars <= 0) {
+      return '';
+    }
+    const normalized: string = this.canonicalText(rawText);
+    const parts: string[] = [];
+    let inCode: boolean = false;
+    let inDisplay: boolean = false;
+    for (const rawLine of normalized.split('\n')) {
+      const trimmed: string = rawLine.trim();
+      if (trimmed.indexOf('```') === 0) {
+        inCode = !inCode;
+        continue;
+      }
+      if (inCode) {
+        continue;
+      }
+      if (trimmed === '$$') {
+        inDisplay = !inDisplay;
+        continue;
+      }
+      if (inDisplay || trimmed.length === 0 || this.isHeading(trimmed) || this.isRule(trimmed)) {
+        continue;
+      }
+      const cleaned: string = this.cleanMarkdownLine(trimmed);
+      if (cleaned.length > 0) {
+        this.appendUniquePart(parts, cleaned);
+        if (parts.join('；').length >= maxChars) {
+          break;
+        }
+      }
+    }
+    return this.clipSummaryInlineAware(parts.join('；'), maxChars);
+  }
 
   buildListPreview(rawText: string, maxChars: number = 46): string {
     if (maxChars <= 0) {
@@ -182,6 +218,26 @@ export class ContentExcerptBuilder {
     return this.withEllipsis(this.clipPlain(normalized, maxChars));
   }
 
+  private clipSummaryInlineAware(text: string, maxChars: number): string {
+    const normalized: string = text.trim();
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    const contentLimit: number = Math.max(0, maxChars - 1);
+    let openIndex: number = this.nextUnescapedDollar(normalized, 0);
+    while (openIndex >= 0) {
+      const closeIndex: number = this.nextUnescapedDollar(normalized, openIndex + 1);
+      if (closeIndex < 0) {
+        return this.withSummaryEllipsis(this.clipPlain(normalized.substring(0, openIndex), contentLimit), maxChars);
+      }
+      if (openIndex < contentLimit && closeIndex + 1 > contentLimit) {
+        return this.withSummaryEllipsis(this.clipPlain(normalized.substring(0, openIndex), contentLimit), maxChars);
+      }
+      openIndex = this.nextUnescapedDollar(normalized, closeIndex + 1);
+    }
+    return this.withSummaryEllipsis(this.clipPlain(normalized, contentLimit), maxChars);
+  }
+
   private clipPlain(text: string, maxChars: number): string {
     if (text.length <= maxChars) {
       return text.trim();
@@ -201,6 +257,17 @@ export class ContentExcerptBuilder {
     const trimmed: string = text.trim();
     if (trimmed.length === 0 || trimmed.endsWith('…')) {
       return trimmed;
+    }
+    return trimmed + '…';
+  }
+
+  private withSummaryEllipsis(text: string, maxChars: number): string {
+    const trimmed: string = text.trim();
+    if (trimmed.length === 0 || maxChars <= 0) {
+      return trimmed;
+    }
+    if (trimmed.length >= maxChars) {
+      return trimmed.substring(0, maxChars - 1).trim() + '…';
     }
     return trimmed + '…';
   }

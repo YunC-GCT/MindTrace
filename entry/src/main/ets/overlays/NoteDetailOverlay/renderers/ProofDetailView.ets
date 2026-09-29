@@ -31,6 +31,15 @@ import {
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 import { DetailStepList } from '../components/DetailStepList'
 import { DetailMetaFooter } from '../components/DetailMetaFooter'
+import { DetailReleaseGate } from '../DetailReleaseGate'
+import {
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+  DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+  DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+} from '../components/DetailRenderSession'
 
 const TITLE_PROPOSITION: string = '\u5148\u8bfb\uff1a\u547d\u9898'
 const TITLE_INSIGHT: string = '\u6293\u4f4f\uff1a\u5173\u952e\u601d\u8def'
@@ -73,47 +82,92 @@ function proofModelKey(model: DetailRenderModel): string {
 
 @Component
 export struct ProofDetailView {
-  @Prop @Watch('onModelChanged') model: DetailRenderModel = emptyDetailRenderModel()
-  @State visibleStage: number = 0
-  private renderKey: string = ''
-  private renderSeq: number = 0
-
-  aboutToAppear(): void {
-    this.resetProofFlow()
-  }
-
-  aboutToDisappear(): void {
-    this.renderSeq += 1
-  }
-
-  onModelChanged(): void {
-    this.resetProofFlow()
-  }
+  @Prop model: DetailRenderModel = emptyDetailRenderModel()
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
 
   build() {
     Column() {
-      this.PropositionBlock(sectionTextByKeys(this.model, PROOF_PROPOSITION_KEYS))
-      this.InsightBlock(sectionTextByKeys(this.model, PROOF_INSIGHT_KEYS))
-      this.ProcessBlock(splitReadableLines(sectionTextByKeys(this.model, PROOF_PROCESS_KEYS)))
-      this.ConclusionBlock(sectionTextByKeys(this.model, PROOF_CONCLUSION_KEYS))
-
-      if (this.visibleStage >= 1) {
-        this.GivenBlock(sectionTextByKeys(this.model, PROOF_GIVEN_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('proof|' + proofModelKey(this.model) + '|proposition'),
+        releaseContent: sectionTextByKeys(this.model, PROOF_PROPOSITION_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.PropositionBlock(sectionTextByKeys(this.model, PROOF_PROPOSITION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
       }
 
-      if (this.visibleStage >= 2) {
-        this.SupplementBlock(unmatchedSectionText(this.model, PROOF_TEMPLATE_KEYS))
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('proof|' + proofModelKey(this.model) + '|insight'),
+        releaseContent: sectionTextByKeys(this.model, PROOF_INSIGHT_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.InsightBlock(sectionTextByKeys(this.model, PROOF_INSIGHT_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('proof|' + proofModelKey(this.model) + '|process'),
+        releaseContent: sectionTextByKeys(this.model, PROOF_PROCESS_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.ProcessBlock(splitReadableLines(sectionTextByKeys(this.model, PROOF_PROCESS_KEYS)),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('proof|' + proofModelKey(this.model) + '|conclusion'),
+        releaseContent: sectionTextByKeys(this.model, PROOF_CONCLUSION_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+      }) {
+        this.ConclusionBlock(sectionTextByKeys(this.model, PROOF_CONCLUSION_KEYS),
+          DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('proof|' + proofModelKey(this.model) + '|given'),
+        releaseContent: sectionTextByKeys(this.model, PROOF_GIVEN_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+      }) {
+        this.GivenBlock(sectionTextByKeys(this.model, PROOF_GIVEN_KEYS),
+          DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT)
+      }
+
+      DetailReleaseGate({
+        renderSession: this.renderSession,
+        releaseKey: this.renderSession.scopeKey('proof|' + proofModelKey(this.model) + '|supplement'),
+        releaseContent: unmatchedSectionText(this.model, PROOF_TEMPLATE_KEYS),
+        releasePriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_TEXT,
+        formulaPriority: DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA,
+      }) {
+        this.SupplementBlock(unmatchedSectionText(this.model, PROOF_TEMPLATE_KEYS),
+          DETAIL_RENDER_PRIORITY_OFFSCREEN_FORMULA)
       }
 
       if (!hasAnySectionKey(this.model, PROOF_TEMPLATE_KEYS)
         && unmatchedSectionText(this.model, PROOF_TEMPLATE_KEYS).length === 0) {
-        this.PropositionBlock(fallbackMainText(this.model))
+        DetailReleaseGate({
+          renderSession: this.renderSession,
+          releaseKey: this.renderSession.scopeKey('proof|' + proofModelKey(this.model) + '|fallback'),
+          releaseContent: fallbackMainText(this.model),
+          releasePriority: DETAIL_RENDER_PRIORITY_VISIBLE_TEXT,
+          formulaPriority: DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA,
+        }) {
+          this.PropositionBlock(fallbackMainText(this.model), DETAIL_RENDER_PRIORITY_VISIBLE_FORMULA)
+        }
       }
 
-      if (this.visibleStage >= 3) {
-        DetailMetaFooter({ model: this.model })
-        Blank().height(80)
-      }
+      DetailMetaFooter({ model: this.model, renderSession: this.renderSession })
+      Blank().height(80)
     }
     .width('100%')
     .padding({ left: 20, right: 20, top: S_2, bottom: S_2 })
@@ -134,7 +188,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  PropositionBlock(content: string) {
+  PropositionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ProofTag(LABEL_PROPOSITION, AMBER)
@@ -144,7 +198,13 @@ export struct ProofDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -154,7 +214,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  InsightBlock(content: string) {
+  InsightBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ProofTag(LABEL_INSIGHT, AMBER)
@@ -164,7 +224,13 @@ export struct ProofDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -174,7 +240,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  ProcessBlock(items: string[]) {
+  ProcessBlock(items: string[], renderPriority: number) {
     if (items.length > 0) {
       Column() {
         this.ProofTag(LABEL_PROCESS, AMBER)
@@ -184,7 +250,12 @@ export struct ProofDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        DetailStepList({ items: items, accentColor: AMBER })
+        DetailStepList({
+          renderSession: this.renderSession,
+          renderPriority: renderPriority,
+          items: items,
+          accentColor: AMBER,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -194,7 +265,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  ConclusionBlock(content: string) {
+  ConclusionBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ProofTag(LABEL_CONCLUSION, AMBER)
@@ -204,7 +275,13 @@ export struct ProofDetailView {
           .fontColor(TEXT)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_3, bottom: S_4 })
@@ -214,7 +291,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  GivenBlock(content: string) {
+  GivenBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         this.ProofTag(LABEL_GIVEN, TEXT_3)
@@ -224,7 +301,13 @@ export struct ProofDetailView {
           .fontColor(TEXT_2)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -234,7 +317,7 @@ export struct ProofDetailView {
   }
 
   @Builder
-  SupplementBlock(content: string) {
+  SupplementBlock(content: string, renderPriority: number) {
     if (content.trim().length > 0) {
       Column() {
         Text(EXTRA_SECTION_TITLE)
@@ -243,7 +326,13 @@ export struct ProofDetailView {
           .fontColor(TEXT_3)
           .width('100%')
           .margin({ bottom: S_2 })
-        MarkdownRenderer({ text: content, progressive: true })
+        MarkdownRenderer({
+          text: content,
+          progressive: false,
+          profile: 'note',
+          renderBudget: this.renderSession,
+          renderPriority: renderPriority,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -252,28 +341,4 @@ export struct ProofDetailView {
     }
   }
 
-  private resetProofFlow = (): void => {
-    const key: string = proofModelKey(this.model)
-    if (key === this.renderKey) {
-      return
-    }
-    this.renderKey = key
-    this.renderSeq += 1
-    const seq: number = this.renderSeq
-    this.visibleStage = 0
-    this.scheduleProofStage(seq, 1, 90)
-    this.scheduleProofStage(seq, 2, 190)
-    this.scheduleProofStage(seq, 3, 290)
-  }
-
-  private scheduleProofStage = (seq: number, stage: number, delay: number): void => {
-    setTimeout((): void => {
-      if (seq !== this.renderSeq) {
-        return
-      }
-      if (this.visibleStage < stage) {
-        this.visibleStage = stage
-      }
-    }, delay)
-  }
 }

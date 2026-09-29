@@ -1,71 +1,143 @@
 // ============================================================================
 //  overlays/AgentFloatWindow/AgentFloatWindow.ets — 智能体浮窗(完整版)
 //  ----------------------------------------------------------------------------
-//  特性: 拖拽缩放(floatHeight) · 多会话(SessionBar+ChatSession) · 拍照整链(captureReply)
-//  子组件: ChatHeader / SessionBar / AgentMessageList / QuickSuggestions / ImagePreviewBar / AgentInputBar
-//  业务: AgentChatService
+//  特性: 拖拽缩放(floatHeight) · 多会话(ChatSession + SessionCreator) · 拍照整链(captureReply)
+//  子组件: ChatHeader / AgentMessageList / ImagePreviewBar / AgentInputPanel
+//  业务: AgentChatService / ModelSelector / SessionCreator
 //  ============================================================================
 
 import {
-  BG_DARK, TEXT_4, BORDER,
-  S_3, S_6, R_XL,
+  BG_DARK, TEXT, TEXT_4, BORDER,
+  S_2, S_3, S_4, S_6, R_XL,
+  F_MD, W_SEMIBOLD,
   OVERLAY_MASK, SCREEN_H,
   DUR_FAST, DUR_BASE,
 } from 'common';
-import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import window from '@ohos.window';
 import { AgentChatService, AgentChatCallbacks } from '../../services/AgentChatService';
-import { LlmConfig } from 'common';
+import { getChatFilesDirSeam } from '../../services/ChatFilesDirSeam';
+import { ModelSelector } from '../../services/ModelSelector';
+import { SessionCreator } from '../../services/SessionCreator';
+import { CameraKitLauncher } from '../../services/CameraKitLauncher';
+import { AlbumPickerLauncher } from '../../services/AlbumPickerLauncher';
 import { ChatHeader } from './chat/ChatHeader';
-import { QuickSuggestions } from './chat/QuickSuggestions';
-import { ChatSessionManager, sid } from './chat/ChatSession';
-import { SessionBar } from './chat/SessionBar';
-import { ChatMsg, ChatSession, ChatStatusMeta } from './chat/ChatModels';
+import { ChatSessionManager } from './chat/ChatSession';
+import {
+  ChatMessageOrigin,
+  ChatMessageOutcome,
+  ChatMsg,
+  ChatSession,
+  applyNoteReviewToChatMsg,
+  setChatMsgNoteReviewFeedback,
+  setChatMsgNoteReviewFeedbackValue,
+  transitionChatMessageOutcome,
+} from './chat/ChatModels';
+import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
+import {
+  NoteReviewAnswer,
+  NoteReviewFeedback,
+  NoteReviewSourceResult,
+  copyNoteEvidenceCitation,
+} from '../../models/NoteReviewModels';
+import { NoteReviewSourceService } from '../../services/NoteReviewSourceService';
+import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
-import { AgentInputBar } from './AgentInputBar';
-
-function nowId(): number { return Date.now() * 1000 + Math.floor(Math.random() * 1000); }
+import { AgentInputPanel } from './AgentInputPanel';
+import { agentSheetBottomInset } from './AgentFloatWindowLayout';
+import { NoteReviewSourceOverlay } from './NoteReviewSourceOverlay';
+import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
+import { SessionsPanelController } from '../../services/SessionsPanelController';
+import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
+import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
+import { KnowledgeUnit } from 'common';
+import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
+import { ConversationMessageEvent } from '../../workflows/conversation/ConversationTypes';
+import { AiService } from '../../services/AiService';
+import { DraftRecoveryService } from '../../services/DraftRecoveryService';
+import {
+  SessionDeletionCoordinator,
+  SessionDeletionResult,
+} from '../../services/SessionDeletionCoordinator';
+import { ChatContextProjectionService } from '../../services/ChatContextProjectionService';
+import { ConversationSnapshotMapper } from '../../services/ConversationSnapshotMapper';
+import { ConversationTitleService } from '../../services/ConversationTitleService';
+import {
+  ConversationSessionEvent,
+  ConversationSessionReduceResult,
+  ConversationSessionReducer,
+} from '../../services/ConversationSessionReducer';
+import { ConversationSessionSnapshot } from '../../models/ConversationSnapshotModels';
+import { IConversationNoteRoutePort } from '../../workflows/conversation/ConversationWorkflowPorts';
+import { ChatHistorySaveResult } from '../../services/ChatHistoryPersistence';
 
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
 const FLOAT_UNMOUNT_DELAY_MS: number = DUR_FAST + 40;
+const CHAT_HEADER_HEIGHT: number = 44;
+const HEADER_SEPARATOR_HEIGHT: number = 0.5;
+const PANEL_MASK_TOP: number = S_6 + CHAT_HEADER_HEIGHT + HEADER_SEPARATOR_HEIGHT;
+const PANEL_Z_INDEX: number = 2;
+const PANEL_MASK_Z_INDEX: number = 1;
+
+class AgentInputNoteRouteAdapter implements IConversationNoteRoutePort {
+  private readonly input: AgentInputViewModel;
+
+  constructor(input: AgentInputViewModel) { this.input = input; }
+
+  select(_ref: ConversationRunRef): NoteGenerationRoute | undefined { return this.input.route; }
+}
 
 @Component
 export struct AgentFloatWindow {
   @Prop @Watch('onShowChange') show: boolean = false;
   onClose: () => void = (): void => {};
-  onGoCamera: () => void = (): void => {};
   @Prop @Watch('onPendingImageChange') pendingImageUri: string = '';
+  @Prop benchmarkFixtureMode: boolean = false;
+  @Prop benchmarkFixtureMessages: ChatMsg[] = [];
 
   @State @Watch('onMessagesChange') messages: ChatMsg[] = [];
-  @State inputText: string = '';
-  @State busy: boolean = false;
-  @State statusMeta: ChatStatusMeta | null = null;
-  @State deepThink: boolean = false;
-  @State imagePreview: string = '';
   @State keyboardHeight: number = 0;
-  @State sessions: ChatSession[] = [{ id: 's1', name: '会话 1', messages: [] }];
-  @State activeSid: string = 's1';
-  @State renderKey: number = 0;
+  @State sessions: ChatSession[] = [];
+  @State @Watch('onActiveSessionChange') activeSid: string = '';
+  @State activeSessionTitle: string = '新对话';
   @State floatHeight: number = 48;
   @State overlayVisible: boolean = false;
   @State maskOpacity: number = 0;
   @State sheetOpacity: number = 0;
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
+  @State panelVisible: boolean = false;
+  @State generatedDraft: NoteDraftReadyEvent | null = null;
+  @State sourceOverlayVisible: boolean = false;
+  @State sourceOverlayLoading: boolean = false;
+  @State sourceOverlayCitation: NoteEvidenceCitation | null = null;
+  @State sourceOverlayResult: NoteReviewSourceResult | null = null;
+  private generatedDraftSessionId: string = '';
   private motionSeq: number = 0;
+  private sourceRequestSeq: number = 0;
   private dragStartH: number = 48;
   private mainWindow: window.Window | null = null;
   private scroller: Scroller = new Scroller();
   private sm: ChatSessionManager = new ChatSessionManager();
   private service: AgentChatService | null = null;
+  private sourceResolver: NoteReviewSourceService = new NoteReviewSourceService();
+  private deletionCoordinator: SessionDeletionCoordinator | null = null;
+  private draftRecovery: DraftRecoveryService | null = null;
+  private feedbackRequestCounter: number = 0;
+  private feedbackRequestTokenByMessage: Map<number, number> = new Map<number, number>();
+  @State inputVm: AgentInputViewModel = new AgentInputViewModel();
 
   // ===== 生命周期 =====
 
   aboutToAppear(): void {
-    this.loadHistory();
-    this.initKeyboard();
+    if (this.benchmarkFixtureMode) {
+      this.messages = this.benchmarkFixtureMessages.slice();
+      this.activeSessionTitle = 'NoteDetail 离线性能基线';
+    } else {
+      this.loadHistory();
+      this.initKeyboard();
+    }
     if (this.show) {
       this.overlayVisible = true;
       this.maskOpacity = 1;
@@ -73,20 +145,36 @@ export struct AgentFloatWindow {
       this.sheetOffset = 0;
     }
   }
-  aboutToDisappear(): void { if (this.mainWindow) { this.mainWindow.off('keyboardHeightChange'); }; this.sm.save(this.sessions); }
+  aboutToDisappear(): void {
+    this.service?.cancelAllRuns();
+    if (this.mainWindow) {
+      this.mainWindow.off('keyboardHeightChange');
+    }
+    if (!this.benchmarkFixtureMode) {
+      this.sync();
+      this.sm.flush(this.sessions).catch((): void => {});
+    }
+  }
   onShowChange(): void {
     if (this.show) {
       this.openAnimated();
       return;
     }
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
     this.closeAnimated();
   }
-  onPendingImageChange(): void { if (this.pendingImageUri.length > 0) { this.imagePreview = this.pendingImageUri; } }
+  onPendingImageChange(): void {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+    if (this.pendingImageUri.length > 0) {
+      this.inputVm.setImagePreview(this.pendingImageUri);
+    }
+  }
   onMessagesChange(): void {
     if (this.messages.length > 0) {
-      this.renderKey++;
-      this.sync(); this.sm.save(this.sessions);
-      setTimeout((): void => { this.scroller.scrollEdge(Edge.Bottom); }, 200);
+      this.sync();
+      this.sm.save(this.sessions).catch((): void => {});
     }
   }
 
@@ -99,50 +187,267 @@ export struct AgentFloatWindow {
   // ===== 会话管理 =====
 
   private async loadHistory(): Promise<void> {
+    // ticket-0.3 (#121): 每次浮窗初始化重读 seam,把解析到的 filesDir 交给非 UI 协作者
+    const seam = getChatFilesDirSeam();
+    this.sm.recordFilesDir(seam !== null ? seam.filesDir : '');
+    const inputVm: AgentInputViewModel = this.inputVm;
     const cbs: AgentChatCallbacks = {
-      addAiMsg: (c: string): void => { this.messages = [...this.messages, { id: nowId(), role: 'ai', content: c, ts: Date.now(), streaming: false, reasoning: '' }]; },
-      addAiMsgEmpty: (): number => {
-        const id: number = nowId();
-        this.messages = [...this.messages, { id, role: 'ai', content: '', ts: Date.now(), streaming: true, reasoning: '' }];
+      addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin): number => {
+        const id: number = chatMessageIdPolicy.create();
+        const session: ChatSession | undefined = this.sessions.find(
+          (item: ChatSession): boolean => item.id === ref.sessionId,
+        );
+        const firstUserMessage: boolean = session !== undefined
+          && !session.messages.some((message: ChatMsg): boolean => message.role === 'user');
+        const accepted: boolean = this.updateSessionMessages(ref, 'add-user-message', (messages: ChatMsg[]): ChatMsg[] => [...messages, {
+          id: id, messageKey: ref.runId + ':user', sequence: id, role: 'user', content: content,
+          ts: Date.now(), streaming: false, reasoning: '', origin: origin, outcome: 'completed', runId: ref.runId,
+        }]);
+        if (accepted && firstUserMessage) {
+          this.updateSessionTitle(ref.sessionId, ConversationTitleService.fromFirstMessage(content));
+        }
+        return accepted ? id : -1;
+      },
+      addAiMsg: (ref: ConversationRunRef, c: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number => {
+        const session: ChatSession | undefined = this.sessions.find(
+          (candidate: ChatSession): boolean => candidate.id === ref.sessionId,
+        );
+        const pending: ChatMsg | undefined = session?.messages.find(
+          (message: ChatMsg): boolean => message.role === 'ai' && message.runId === ref.runId
+            && message.outcome === undefined,
+        );
+        const id: number = pending?.id ?? chatMessageIdPolicy.create();
+        this.updateSessionMessages(ref, 'add-ai-message', (messages: ChatMsg[]): ChatMsg[] => {
+          if (pending !== undefined) {
+            return messages.map((message: ChatMsg): ChatMsg => message.id === id
+              ? transitionChatMessageOutcome(
+                ConversationSessionReducer.applyMessageEvent(message, { kind: 'replace-content', content: c }),
+                outcome ?? 'completed',
+              )
+              : message);
+          }
+          return [...messages, {
+            id: id, messageKey: ref.runId + ':assistant:' + id.toString(), sequence: id, role: 'ai', content: c,
+            ts: Date.now(), streaming: false, reasoning: '', origin: origin ?? 'chat',
+            outcome: outcome ?? 'completed', runId: ref.runId,
+          }];
+        });
         return id;
       },
-      appendAiMsg: (id: number, delta: string, kind?: 'reasoning' | 'content'): void => {
-        if (kind === 'reasoning') {
-          this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: m.streaming, reasoning: (m.reasoning ?? '') + delta } : m);
+      addAiMsgEmpty: (ref: ConversationRunRef, origin: ChatMessageOrigin): number => {
+        const session: ChatSession | undefined = this.sessions.find(
+          (candidate: ChatSession): boolean => candidate.id === ref.sessionId,
+        );
+        const pending: ChatMsg | undefined = session?.messages.find(
+          (message: ChatMsg): boolean => message.role === 'ai' && message.runId === ref.runId
+            && message.outcome === undefined,
+        );
+        if (pending !== undefined) { return pending.id; }
+        const id: number = chatMessageIdPolicy.create();
+        this.updateSessionMessages(ref, 'add-ai-placeholder', (messages: ChatMsg[]): ChatMsg[] => [...messages, {
+          id: id, messageKey: ref.runId + ':assistant:' + id.toString(), sequence: id, role: 'ai', content: '',
+          ts: Date.now(), streaming: true, reasoning: '', origin: origin, runId: ref.runId,
+        }]);
+        return id;
+      },
+      updateAiMsg: (ref: ConversationRunRef, id: number, event: ConversationMessageEvent): void => {
+        this.updateSessionMessages(ref, 'update-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map(
+          (message: ChatMsg): ChatMsg => message.id === id
+            ? ConversationSessionReducer.applyMessageEvent(message, event)
+            : message,
+        ));
+      },
+      finishAiMsg: (ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void => {
+        this.updateSessionMessages(ref, 'finish-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => m.id === id ? transitionChatMessageOutcome(m, outcome ?? 'completed') : m));
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      },
+      terminateAiRun: (ref: ConversationRunRef, outcome: ChatMessageOutcome): void => {
+        this.updateSessionMessages(ref, 'finish-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map((m: ChatMsg): ChatMsg => {
+          if (m.role === 'ai' && m.runId === ref.runId && m.outcome === undefined) {
+            return transitionChatMessageOutcome(m, outcome);
+          }
+          return m;
+        }));
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      },
+      getUserMessageId: (ref: ConversationRunRef): number => {
+        const session: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === ref.sessionId);
+        if (session === undefined) { return -1; }
+        for (const message of session.messages) {
+          if (message.role === 'user' && message.runId === ref.runId) { return message.id; }
+        }
+        return -1;
+      },
+      commitHistory: async (ref: ConversationRunRef): Promise<boolean> => {
+        if (!this.sessionExists(ref.sessionId)) { return false; }
+        this.sync();
+        const result = await this.sm.flush(this.sessions);
+        return result.success;
+      },
+      reportDiagnostic: (ref: ConversationRunRef, diagnostic: string): void => {
+        this.inputVm.setErrorForSession(ref.sessionId, diagnostic);
+        this.inputVm.setRetryTargetForSession(ref.sessionId, ref.runId);
+      },
+      updateRunEvent: (ref: ConversationRunRef, event: ConversationMessageEvent): void => {
+        const session: ChatSession | undefined = this.sessions.find(
+          (candidate: ChatSession): boolean => candidate.id === ref.sessionId,
+        );
+        const pending: ChatMsg | undefined = session?.messages.find(
+          (message: ChatMsg): boolean => message.role === 'ai' && message.runId === ref.runId
+            && message.outcome === undefined,
+        );
+        const id: number = pending?.id ?? chatMessageIdPolicy.create();
+        this.updateSessionMessages(ref, 'update-ai-message', (messages: ChatMsg[]): ChatMsg[] => {
+          if (pending !== undefined) {
+            return messages.map((message: ChatMsg): ChatMsg => message.id === id
+              ? ConversationSessionReducer.applyMessageEvent(message, event)
+              : message);
+          }
+          const created: ChatMsg = {
+            id: id,
+            messageKey: ref.runId + ':assistant:' + id.toString(),
+            sequence: id,
+            role: 'ai',
+            content: '',
+            ts: Date.now(),
+            streaming: true,
+            reasoning: '',
+            origin: 'chat',
+            runId: ref.runId,
+          };
+          return [...messages, ConversationSessionReducer.applyMessageEvent(created, event)];
+        });
+      },
+      cancelDraftsByRun: async (sessionId: string, parentConversationRunId: string): Promise<void> => {
+        await new AiService(getContext(this) as common.UIAbilityContext)
+          .cancelDraftsByParentRun(sessionId, parentConversationRunId);
+      },
+      setBusy: (ref: ConversationRunRef, v: boolean): void => { inputVm.setBusyForSession(ref.sessionId, v); },
+      getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
+      getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean): string => this.buildConversationTextForSession(ref, excludeLatestUser),
+      onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent): void => {
+        if (event.originSessionId === ref.sessionId && this.service?.isCurrentRun(ref) === true
+          && this.sessionExists(ref.sessionId) && this.inputVm.setDraftForSession(ref.sessionId, event)) {
+          if (ref.sessionId === this.activeSid) {
+            this.generatedDraft = event;
+            this.generatedDraftSessionId = ref.sessionId;
+          }
         } else {
-          this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content + delta, ts: m.ts, streaming: m.streaming, reasoning: m.reasoning } : m);
+          console.warn('[ConversationRun] code=DRAFT_TARGET_REJECTED; sessionId=' + ref.sessionId + '; runId=' + ref.runId);
         }
       },
-      finishAiMsg: (id: number): void => {
-        this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: false, reasoning: m.reasoning } : m);
+      onNoteReviewReady: (ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void => {
+        this.updateSessionMessages(ref, 'update-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map(
+          (message: ChatMsg): ChatMsg => message.id === messageId
+            ? applyNoteReviewToChatMsg(message, review)
+            : message,
+        ));
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
       },
-      bumpNotesVersion: (): void => { const v: number = AppStorage.get<number>('notesVersion') ?? 0; AppStorage.setOrCreate('notesVersion', v + 1); },
-      setBusy: (v: boolean): void => { this.busy = v; },
-      setStatusMeta: (meta: ChatStatusMeta | null): void => { this.statusMeta = meta; },
-      getContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
-      getConversationText: (excludeLatestUser: boolean): string => this.buildConversationText(excludeLatestUser),
-      getSessionId: (): string => this.activeSid,
     };
-    this.service = new AgentChatService(cbs);
+    const noteRoute: IConversationNoteRoutePort = new AgentInputNoteRouteAdapter(inputVm);
+    const service: AgentChatService = new AgentChatService(cbs, noteRoute);
+    this.service = service;
+    this.draftRecovery = new DraftRecoveryService(getContext(this) as common.UIAbilityContext);
     const ss: ChatSession[] = await this.sm.init(getContext(this));
-    if (ss.length > 0) { this.sessions = ss; this.activeSid = ss[0].id; this.messages = ss[0].messages; return; }
-    this.messages = [{ id: 1, role: 'ai', content: '👋 你好，我是 MindTrace AI。可以帮你分析题目、讲解知识点、整理笔记。试试问我吧 👉', ts: Date.now(), streaming: false, reasoning: '' }];
+    const snapshotPath: string = this.sm.getResolvedSnapshotPath();
+    this.deletionCoordinator = new SessionDeletionCoordinator(
+      getContext(this) as common.UIAbilityContext,
+      snapshotPath.length > 0 ? snapshotPath + '.deletions' : '',
+      (sessions: ConversationSessionSnapshot[]) => this.sm.flush(ConversationSnapshotMapper.retainExistingSessions(sessions, this.sessions)),
+      async (sessionId: string): Promise<void> => {
+        await service.cancelSessionRun(sessionId);
+      },
+    );
+    // Development reset: s1 was the old bootstrap conversation and must not
+    // be promoted to a real history item after the lazy-session migration.
+    const loadedSessions: ChatSession[] = ss.filter((session: ChatSession): boolean => session.id !== 's1');
+    await this.deletionCoordinator.replay(ConversationSnapshotMapper.fromSessions(loadedSessions));
+    const projection = await new ChatContextProjectionService(
+      getContext(this) as common.UIAbilityContext,
+    ).reconcile(ConversationSnapshotMapper.fromSessions(loadedSessions));
+    if (projection.failures > 0) { console.warn('[ChatProjection] ' + projection.diagnostic); }
+    if (loadedSessions.length > 0) {
+      this.sessions = loadedSessions;
+      this.activateSession(loadedSessions[0]);
+    } else {
+      this.sessions = [];
+      this.activeSid = '';
+      this.activeSessionTitle = '新对话';
+      this.messages = [];
+    }
+    this.inputVm.bind(
+      service,
+      (): string => this.activeSid,
+      (): string => this.ensureActiveSession(),
+    );
+    for (const session of loadedSessions) {
+      this.inputVm.registerSession(session.id);
+    }
+    await this.restoreDraftsAfterHistoryLoad(service, loadedSessions);
+  }
+
+  private async restoreDraftsAfterHistoryLoad(
+    service: AgentChatService,
+    loadedSessions: ChatSession[],
+  ): Promise<void> {
+    let detached: NoteDraftReadyEvent | null = null;
+    try {
+      const recoverable: NoteGenerationRun[] = await service.listRecoverableDrafts();
+      for (const draft of recoverable) {
+        if (draft.originSessionId === undefined) {
+          try {
+            if (this.draftRecovery === null) { throw new Error('DETACHED_DRAFT_RECOVERY_UNAVAILABLE'); }
+            detached = await this.draftRecovery.restore(draft.id);
+          } catch (error) {
+            console.warn('[NoteDraftRecovery] code=DETACHED_DRAFT_RESTORE_FAILED; runId=' + draft.id);
+          }
+          continue;
+        }
+        const session: ChatSession | undefined = loadedSessions.find(
+          (candidate: ChatSession): boolean => candidate.id === draft.originSessionId,
+        );
+        if (session === undefined) { continue; }
+        try {
+          const event: NoteDraftReadyEvent | null = await service.checkAndRestoreDrafts(session.id);
+          if (event !== null) {
+            this.inputVm.setDraftForSession(session.id, event);
+            if (session.id === this.activeSid) {
+              this.generatedDraft = event;
+              this.generatedDraftSessionId = session.id;
+            }
+          }
+        } catch (error) {
+          console.warn('[NoteDraftRecovery] code=SESSION_DRAFT_RESTORE_FAILED; sessionId=' + session.id);
+        }
+      }
+    } catch (error) {
+      console.warn('[NoteDraftRecovery] code=LIST_RECOVERABLE_DRAFTS_FAILED');
+    }
+    if (this.generatedDraft === null && detached !== null) {
+      this.generatedDraft = detached;
+      this.generatedDraftSessionId = '';
+    }
   }
 
   private sync(): void {
     const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === this.activeSid);
     if (s !== undefined) { s.messages = this.messages; }
   }
-  private buildConversationText(excludeLatestUser: boolean): string {
+
+  private buildConversationText(messages: ChatMsg[], excludeLatestUser: boolean): string {
     const parts: string[] = [];
     const end: number = excludeLatestUser
-      && this.messages.length > 0
-      && this.messages[this.messages.length - 1].role === 'user'
-      ? this.messages.length - 1
-      : this.messages.length;
+      && messages.length > 0
+      && messages[messages.length - 1].role === 'user'
+      ? messages.length - 1
+      : messages.length;
     let i: number = 0;
     while (i < end) {
-      const msg: ChatMsg = this.messages[i];
+      const msg: ChatMsg = messages[i];
       const role: string = msg.role === 'user' ? '用户' : 'AI';
       if (msg.content.trim().length > 0) {
         parts.push(role + ': ' + msg.content.trim());
@@ -151,41 +456,357 @@ export struct AgentFloatWindow {
     }
     return parts.join('\n\n');
   }
-  private switchSession(sid: string): void {
-    this.sync();
-    // 取消旧会话中正在进行的流式消息
-    if (this.messages.length > 0 && this.messages[this.messages.length - 1].streaming) {
-      this.messages = this.messages.map((m: ChatMsg, i: number): ChatMsg =>
-        i === this.messages.length - 1 ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: false, reasoning: m.reasoning } : m
-      );
-    }
-    const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
-    if (s !== undefined) { this.activeSid = sid; this.messages = s.messages; }
+  private sessionExists(sessionId: string): boolean { return this.sessions.some((item: ChatSession): boolean => item.id === sessionId); }
+  private buildConversationTextForSession(ref: ConversationRunRef, excludeLatestUser: boolean): string {
+    if (this.service?.isCurrentRun(ref) !== true) { return ''; }
+    const target: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === ref.sessionId);
+    if (target === undefined) { return ''; }
+    return this.buildConversationText(target.messages, excludeLatestUser);
   }
-  private newSession(): void { this.sync(); const s: ChatSession = { id: sid(), name: '会话 ' + (this.sessions.length + 1).toString(), messages: [] }; this.sessions = [...this.sessions, s]; this.activeSid = s.id; this.messages = []; this.sm.save(this.sessions); }
-  private deleteSession(sid: string): void { if (this.sessions.length <= 1) { return; } const f = this.sessions.filter((s: ChatSession): boolean => s.id !== sid); this.sessions = f; if (sid === this.activeSid) { this.activeSid = f[0].id; this.messages = f[0].messages; }; this.sm.save(this.sessions); }
+  private updateSessionMessages(ref: ConversationRunRef, event: ConversationSessionEvent, update: (messages: ChatMsg[]) => ChatMsg[]): boolean {
+    const current: boolean = this.service?.isCurrentRun(ref) === true;
+    const result: ConversationSessionReduceResult = ConversationSessionReducer.updateMessages(this.sessions, ref, current, event, update);
+    if (!result.accepted) {
+      console.warn('[ConversationRun] ' + result.diagnostic);
+      return false;
+    }
+    this.sessions = result.sessions;
+    if (ref.sessionId === this.activeSid) {
+      const target: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === ref.sessionId);
+      if (target !== undefined) { this.messages = target.messages; }
+    }
+    return true;
+  }
 
-  // ===== 交互逻辑 =====
+  private updateMessageById(messageId: number, update: (message: ChatMsg) => ChatMsg): boolean {
+    let accepted: boolean = false;
+    const nextSessions: ChatSession[] = [];
+    for (const session of this.sessions) {
+      const nextMessages: ChatMsg[] = [];
+      for (const message of session.messages) {
+        if (message.id === messageId) {
+          nextMessages.push(update(message));
+          accepted = true;
+        } else {
+          nextMessages.push(message);
+        }
+      }
+      nextSessions.push({ id: session.id, name: session.name, messages: nextMessages });
+    }
+    if (!accepted) { return false; }
+    this.sessions = nextSessions;
+    const active: ChatSession | undefined = this.sessions.find((session: ChatSession): boolean => session.id === this.activeSid);
+    if (active !== undefined) { this.messages = active.messages; }
+    return true;
+  }
 
-  private canSend = (): boolean => !this.busy && (this.inputText.trim().length > 0 || this.imagePreview.length > 0);
+  private findSessionIdForMessage(messageId: number): string {
+    for (const session of this.sessions) {
+      for (const message of session.messages) {
+        if (message.id === messageId) { return session.id; }
+      }
+    }
+    return '';
+  }
 
-  private send = (text?: string): void => {
-    const msg: string = (text ?? this.inputText).trim();
-    if (!msg && !this.imagePreview) { return; }
-    if (this.busy) { promptAction.openToast({ message: 'AI 正在回复中...', duration: 1200 }); return; }
-    const uri: string = this.imagePreview;
-    this.messages = [...this.messages, { id: nowId(), role: 'user', content: msg || '[图片]', ts: Date.now(), streaming: false, reasoning: '' }];
-    this.inputText = ''; this.imagePreview = '';
-    if (uri.length > 0) { this.service?.captureReply(uri, msg); return; }
-    this.service?.realReplyStream(msg);
+  private messagesForSession(sessionId: string): ChatMsg[] {
+    const session: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sessionId);
+    return session === undefined ? [] : session.messages;
+  }
+
+  private onNoteReviewFeedback = (messageId: number, feedback: NoteReviewFeedback): void => {
+    const previous: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
+    const requestToken: number = this.nextFeedbackRequestToken(messageId);
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      setChatMsgNoteReviewFeedback(message, feedback)
+    );
+    this.sync();
+    this.sm.flush(this.sessions)
+      .then((result: ChatHistorySaveResult): void => {
+        if (!result.success) {
+          this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestToken);
+          this.clearFeedbackRequestToken(messageId, requestToken);
+          this.showToast('反馈保存失败，请稍后重试');
+          return;
+        }
+        this.clearFeedbackRequestToken(messageId, requestToken);
+      })
+      .catch((): void => {
+        this.rollbackFeedbackIfCurrent(messageId, feedback, previous, requestToken);
+        this.clearFeedbackRequestToken(messageId, requestToken);
+        this.showToast('反馈保存失败，请稍后重试');
+      });
   };
 
-  private modelLabel(): string {
-    const model: string = LlmConfig.getInstance().getModel().trim();
-    if (model === 'deepseek-v4-pro') {
-      return 'DeepSeek-V4-Pro'
+  private nextFeedbackRequestToken(messageId: number): number {
+    this.feedbackRequestCounter += 1;
+    this.feedbackRequestTokenByMessage.set(messageId, this.feedbackRequestCounter);
+    return this.feedbackRequestCounter;
+  }
+
+  private clearFeedbackRequestToken(messageId: number, requestToken: number): void {
+    const current: number | undefined = this.feedbackRequestTokenByMessage.get(messageId);
+    if (current === requestToken) {
+      this.feedbackRequestTokenByMessage.delete(messageId);
     }
-    return model.length > 0 ? model : 'DeepSeek-V4-Pro'
+  }
+
+  private isCurrentFeedbackRequest(messageId: number, requestToken: number): boolean {
+    const current: number | undefined = this.feedbackRequestTokenByMessage.get(messageId);
+    return current === requestToken;
+  }
+
+  private feedbackForMessage(messageId: number): NoteReviewFeedback | undefined {
+    const sessionId: string = this.findSessionIdForMessage(messageId);
+    const messages: ChatMsg[] = this.messagesForSession(sessionId);
+    for (const message of messages) {
+      if (message.id === messageId && message.noteReview !== undefined) {
+        return message.noteReview.feedback;
+      }
+    }
+    return undefined;
+  }
+
+  private rollbackFeedbackIfCurrent(
+    messageId: number,
+    attempted: NoteReviewFeedback,
+    previous: NoteReviewFeedback | undefined,
+    requestToken: number,
+  ): void {
+    if (!this.isCurrentFeedbackRequest(messageId, requestToken)) {
+      return;
+    }
+    const current: NoteReviewFeedback | undefined = this.feedbackForMessage(messageId);
+    if (current !== attempted) {
+      return;
+    }
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      setChatMsgNoteReviewFeedbackValue(message, previous)
+    );
+    this.sync();
+  }
+
+  private openNoteReviewSource = (citation: NoteEvidenceCitation): void => {
+    this.sourceRequestSeq += 1;
+    const seq: number = this.sourceRequestSeq;
+    const safeCitation: NoteEvidenceCitation = copyNoteEvidenceCitation(citation);
+    this.sourceOverlayCitation = safeCitation;
+    this.sourceOverlayResult = null;
+    this.sourceOverlayLoading = true;
+    this.sourceOverlayVisible = true;
+    this.sourceResolver.resolve(safeCitation)
+      .then((result: NoteReviewSourceResult): void => {
+        if (seq !== this.sourceRequestSeq || !this.sourceOverlayVisible) {
+          return;
+        }
+        this.sourceOverlayResult = result;
+        this.sourceOverlayLoading = false;
+      })
+      .catch((): void => {
+        if (seq !== this.sourceRequestSeq || !this.sourceOverlayVisible) {
+          return;
+        }
+        this.sourceOverlayResult = {
+          status: 'unavailable',
+          citation: safeCitation,
+          content: '',
+          currentVersion: safeCitation.version,
+          message: '来源读取失败，请稍后重试。',
+        };
+        this.sourceOverlayLoading = false;
+      });
+  };
+
+  private closeNoteReviewSource = (): void => {
+    this.sourceRequestSeq += 1;
+    this.sourceOverlayVisible = false;
+    this.sourceOverlayLoading = false;
+    this.sourceOverlayCitation = null;
+    this.sourceOverlayResult = null;
+  };
+
+  private updateSessionTitle(sessionId: string, title: string): void {
+    const next: ChatSession[] = [];
+    for (const session of this.sessions) {
+      if (session.id === sessionId) {
+        next.push({ id: session.id, name: title, messages: session.messages });
+      } else {
+        next.push(session);
+      }
+    }
+    this.sessions = next;
+    if (this.activeSid === sessionId) { this.activeSessionTitle = title; }
+  }
+  private switchSession(sid: string): void {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+    const s: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === sid);
+    if (s !== undefined) {
+      this.activateSession(s);
+      this.inputVm.syncBusy(sid);
+      const draft: NoteDraftReadyEvent | undefined = this.inputVm.draftForSession(sid);
+      this.generatedDraft = draft ?? null;
+      this.generatedDraftSessionId = draft === undefined ? '' : sid;
+    }
+  }
+  private newSession(): void {
+    this.sync();
+    const session: ChatSession = SessionCreator.newSession(this.sessions.length);
+    this.sessions = [...this.sessions, session];
+    this.activateSession(session);
+    this.inputVm.switchSession(session.id);
+    this.generatedDraft = null;
+    this.generatedDraftSessionId = '';
+    this.sm.flush(this.sessions).catch((): void => {});
+    this.panelVisible = false;
+  }
+
+  private ensureActiveSession(): string {
+    if (this.activeSid.length > 0 && this.sessionExists(this.activeSid)) {
+      return this.activeSid;
+    }
+    const session: ChatSession = SessionCreator.newSession(this.sessions.length);
+    this.sessions = [...this.sessions, session];
+    this.activateSession(session);
+    this.inputVm.switchSession(session.id);
+    this.generatedDraft = null;
+    this.generatedDraftSessionId = '';
+    return session.id;
+  }
+
+  private togglePanel(): void { this.panelVisible = !this.panelVisible; }
+  private closePanel(): void { this.panelVisible = false; }
+
+  private activateSession(session: ChatSession): void {
+    this.inputVm.registerSession(session.id);
+    this.inputVm.switchSession(session.id);
+    this.activeSessionTitle = session.name;
+    this.activeSid = session.id;
+    this.messages = session.messages;
+  }
+
+  private onActiveSessionChange(): void {
+    const session: ChatSession | undefined = this.sessions.find((item: ChatSession): boolean => item.id === this.activeSid);
+    if (session !== undefined && this.activeSessionTitle !== session.name) {
+      this.activeSessionTitle = session.name;
+    }
+  }
+
+  private onSelectSession(sid: string): void { this.switchSession(sid); this.panelVisible = false; }
+
+  private onRequestSessionDelete(sid: string): void {
+    if (this.sessions.length <= 1) {
+      return;
+    }
+    const target: ChatSession | undefined = this.sessions.find((s: ChatSession): boolean => s.id === sid);
+    if (target === undefined) {
+      return;
+    }
+    SessionsPanelController.requestDelete(
+      this.getUIContext().getPromptAction(),
+      sid,
+      target.name,
+      (deletedSid: string): void => { this.deleteSession(deletedSid).catch((): void => {}); },
+      (): void => { this.showToast('无法打开删除确认，请稍后重试'); }
+    );
+  }
+  private async deleteSession(sid: string): Promise<void> {
+    if (this.sessions.length <= 1) {
+      return;
+    }
+    this.sync();
+    const remaining: ChatSession[] = this.sessions.filter((s: ChatSession): boolean => s.id !== sid);
+    if (this.deletionCoordinator === null) { return; }
+    const result: SessionDeletionResult = await this.deletionCoordinator.deleteSession(
+      sid,
+      ConversationSnapshotMapper.fromSessions(remaining),
+    );
+    if (result.state === 'failed-before-commit') {
+      console.warn('[SessionDeletion] ' + result.diagnostic + '; sessionId=' + sid);
+      return;
+    }
+    this.inputVm.removeSession(sid);
+    this.sessions = remaining;
+    if (sid === this.activeSid) {
+      this.activateSession(remaining[0]);
+      const draft: NoteDraftReadyEvent | undefined = this.inputVm.draftForSession(this.activeSid);
+      this.generatedDraft = draft ?? null;
+      this.generatedDraftSessionId = draft === undefined ? '' : this.activeSid;
+    }
+    if (result.state === 'cleanup-pending') {
+      console.warn('[SessionDeletion] ' + result.diagnostic + '; sessionId=' + sid);
+    }
+  }
+
+  // ===== 交互逻辑 (输入面板已迁出至 AgentInputViewModel; 模型显示已迁出至 ModelSelector; 会话创建已迁出至 SessionCreator; 相机/相册已迁出至 CameraKitLauncher / AlbumPickerLauncher) =====
+
+  private stopStreaming = (): void => {
+    this.inputVm.stop();
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+  };
+
+  // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
+  private showToast(message: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({
+        message,
+        duration: 1500,
+      });
+    } catch (e) {
+      console.warn('[AgentFloatWindow] toast failed: ' + (e as Error).message);
+    }
+  }
+
+  // + 弹窗 → 相机: 拉起 HarmonyOS 系统相机选择器, 拍完写入 VM + Toast
+  private onCameraAction = (): void => {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+    const originSessionId: string = this.ensureActiveSession();
+    CameraKitLauncher.capture(getContext(this) as common.UIAbilityContext)
+      .then((uri: string): void => {
+        if (!this.inputVm.setImagePreviewForSession(originSessionId, uri)) {
+          console.warn('[SessionUiState] code=LATE_PICKER_TARGET_DELETED; sessionId=' + originSessionId);
+          return;
+        }
+        this.showToast('已选图片');
+      })
+      .catch((e: Error): void => {
+        this.showToast('相机启动失败: ' + e.message);
+      });
+  };
+
+  // + 弹窗 → 相册: 拉起 HarmonyOS 系统相册选择器, 选完写入 VM + Toast
+  private onAlbumAction = (): void => {
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+    const originSessionId: string = this.ensureActiveSession();
+    AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext)
+      .then((uris: string[]): void => {
+        if (uris.length > 0) {
+          if (!this.inputVm.setImagePreviewForSession(originSessionId, uris[0])) {
+            console.warn('[SessionUiState] code=LATE_PICKER_TARGET_DELETED; sessionId=' + originSessionId);
+            return;
+          }
+          this.showToast('已选图片');
+        } else {
+          this.showToast('未选择图片');
+        }
+      })
+      .catch((e: Error): void => {
+        this.showToast('相册启动失败: ' + e.message);
+      });
+  };
+
+  private confirmDraft = async (candidate: KnowledgeUnit): Promise<KnowledgeUnit> => {
+    if (this.generatedDraft === null || this.service === null) {
+      throw new Error('草稿服务不可用');
+    }
+    if (this.generatedDraftSessionId.length === 0) {
+      if (this.draftRecovery === null) { throw new Error('DETACHED_DRAFT_RECOVERY_UNAVAILABLE'); }
+      return await this.draftRecovery.confirm(this.generatedDraft, candidate);
+    }
+    return await this.service.confirmDraft(this.generatedDraftSessionId, this.generatedDraft, candidate);
   }
 
   private openAnimated(): void {
@@ -210,6 +831,7 @@ export struct AgentFloatWindow {
   private closeAnimated(): void {
     this.motionSeq += 1;
     const seq: number = this.motionSeq;
+    this.panelVisible = false;
     if (!this.overlayVisible) {
       return;
     }
@@ -237,35 +859,124 @@ export struct AgentFloatWindow {
           .opacity(this.maskOpacity)
           .onClick((): void => this.onClose());
         Column() {
-          // 拖拽手柄
-          Row() { Row().width(36).height(5).borderRadius(3).backgroundColor(TEXT_4); }
-          .width('100%').height(S_6).justifyContent(FlexAlign.Center)
+          // 拖拽手柄 (独立 Row, 全宽, 灰条居中)
+          Row() {
+            Row()
+              .width(36)
+              .height(5)
+              .borderRadius(3)
+              .backgroundColor(TEXT_4)
+          }
+          .width('100%')
+          .height(S_6)
+          .justifyContent(FlexAlign.Center)
           .gesture(PanGesture({ direction: PanDirection.Vertical })
             .onActionStart((): void => { this.dragStartH = this.floatHeight; })
             .onActionUpdate((event: GestureEvent): void => { this.floatHeight = Math.max(30, Math.min(90, this.dragStartH - event.offsetY / SCREEN_H * 100)); }));
 
-          ChatHeader({
-            modelName: this.modelLabel(),
-            deepThink: this.deepThink,
-            onToggleThink: (): void => { this.deepThink = !this.deepThink; },
-            onNewChat: (): void => { this.newSession(); },
-            onClose: this.onClose,
+          Stack({ alignContent: Alignment.TopStart }) {
+            ChatHeader({
+              onToggleHistory: (): void => { this.togglePanel(); },
+              onCreateSession: (): void => { this.newSession(); },
+            });
+            Text(this.activeSessionTitle)
+              .id('chat-session-title-' + this.activeSid)
+              .width('100%')
+              .height(CHAT_HEADER_HEIGHT)
+              .textAlign(TextAlign.Center)
+              .fontSize(F_MD)
+              .fontColor(TEXT)
+              .fontWeight(W_SEMIBOLD)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .padding({ left: S_3, right: S_3 })
+              .position({ x: 0, y: 0 })
+              .hitTestBehavior(HitTestMode.None);
+          }
+          .width('100%')
+          .height(CHAT_HEADER_HEIGHT);
+          Row().width('100%').height(0.5).backgroundColor(BORDER);
+
+          if (this.panelVisible) {
+            Column()
+              .width('100%').height('100%')
+              .backgroundColor(Color.Transparent)
+              .position({ x: 0, y: PANEL_MASK_TOP })
+              .markAnchor({ x: 0, y: 0 })
+              .zIndex(PANEL_MASK_Z_INDEX)
+              .onClick((): void => { this.closePanel(); });
+            SessionsPanel({
+              sessions: this.sessions,
+              activeSid: this.activeSid,
+              onSelect: (sid: string): void => { this.onSelectSession(sid); },
+              onRequestDelete: (sid: string): void => { this.onRequestSessionDelete(sid); },
+            })
+              .position({ x: S_3 + S_4, y: PANEL_MASK_TOP + S_2 })
+              .markAnchor({ x: 0, y: 0 })
+              .zIndex(PANEL_Z_INDEX);
+          }
+
+          AgentMessageList({
+            messages: this.messages,
+            busy: this.inputVm.busy,
+            scroller: this.scroller,
+            onSourceTap: this.openNoteReviewSource,
+            onFeedback: this.onNoteReviewFeedback,
           });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
-          SessionBar({ sessions: this.sessions, activeSid: this.activeSid, onSwitch: (sid: string): void => { this.switchSession(sid); }, onDelete: (sid: string): void => { this.deleteSession(sid); }, onNew: (): void => { this.newSession(); } });
-
-          AgentMessageList({ messages: this.messages, busy: this.busy, statusMeta: this.statusMeta, scroller: this.scroller, onToggleReasoning: (msg: ChatMsg): void => { this.messages = this.messages.map((m: ChatMsg): ChatMsg => m.id === msg.id ? { id: m.id, role: m.role, content: m.content, ts: m.ts, streaming: m.streaming, reasoning: m.reasoning, reasoningExpanded: !(m.reasoningExpanded ?? false) } : m); } });
-          Row().width('100%').height(0.5).backgroundColor(BORDER);
-
-          QuickSuggestions({ onSelect: (p: string): void => { this.send(p); } });
-          ImagePreviewBar({ imagePreview: this.imagePreview, onClear: (): void => { this.imagePreview = ''; } });
-          AgentInputBar({ inputText: this.inputText, canSend: this.canSend(), onTextChange: (v: string): void => { this.inputText = v; }, onSubmit: (): void => { this.send(); }, onCamera: (): void => { this.onGoCamera(); } });
+          ImagePreviewBar({ imagePreview: this.inputVm.imagePreview, onClear: (): void => { this.inputVm.clearImagePreview(); } });
+          AgentInputPanel({
+            vm: this.inputVm,
+            modelName: ModelSelector.currentLabel(),
+            onCamera: this.onCameraAction,
+            onAlbum: this.onAlbumAction,
+            onStop: (): void => { this.stopStreaming(); },
+          });
         }
         .width('100%').height(this.floatHeight + '%').backgroundColor(BG_DARK)
         .borderRadius({ topLeft: R_XL, topRight: R_XL }).padding({ left: S_3, right: S_3 })
         .opacity(this.sheetOpacity)
-        .position({ x: 0, y: '100%' }).markAnchor({ x: 0, y: '100%' }).translate({ y: -(74 + this.keyboardHeight) + this.sheetOffset });
+        .position({ x: 0, y: '100%' }).markAnchor({ x: 0, y: '100%' })
+        .translate({ y: -agentSheetBottomInset(this.keyboardHeight) + this.sheetOffset });
+      }
+      if (this.generatedDraft !== null) {
+        NoteDetailOverlay({
+          generatedDraft: this.generatedDraft,
+          onClose: (): void => {
+            this.inputVm.setDraftForSession(this.generatedDraftSessionId, undefined);
+            this.generatedDraft = null;
+            this.generatedDraftSessionId = '';
+          },
+           onDraftCancel: (): void => {
+             const cancelled: NoteDraftReadyEvent | null = this.generatedDraft;
+             const cancelledSessionId: string = this.generatedDraftSessionId;
+             this.inputVm.setDraftForSession(cancelledSessionId, undefined);
+             this.generatedDraft = null;
+             this.generatedDraftSessionId = '';
+             if (cancelled !== null) {
+               if (cancelledSessionId.length > 0 && this.service !== null) {
+                 this.service.cancelDraft(cancelledSessionId, cancelled.runId).catch((): void => {});
+               } else if (cancelledSessionId.length === 0) {
+                 this.draftRecovery?.cancel(cancelled.runId).catch((): void => {});
+               }
+             }
+           },
+          onDraftConfirm: this.confirmDraft,
+          onSaved: (_unit: KnowledgeUnit): void => {
+            this.inputVm.setDraftForSession(this.generatedDraftSessionId, undefined);
+            this.generatedDraft = null;
+            this.generatedDraftSessionId = '';
+          },
+        })
+      }
+      if (this.sourceOverlayVisible) {
+        NoteReviewSourceOverlay({
+          loading: this.sourceOverlayLoading,
+          citation: this.sourceOverlayCitation,
+          result: this.sourceOverlayResult,
+          onClose: this.closeNoteReviewSource,
+        })
       }
     }.width('100%').height('100%').hitTestBehavior(this.overlayVisible ? HitTestMode.Default : HitTestMode.None);
   }

@@ -12,6 +12,8 @@ const llmTypes = read('common/src/main/ets/llm/LlmTypes.ets');
 const llmGuard = read('common/src/main/ets/llm/LlmGuard.ets');
 const commonIndex = read('common/src/main/ets/Index.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
+const conversationWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 const memoryService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 const studyPlanVm = read('entry/src/main/ets/viewmodels/StudyPlanViewModel.ets');
 const aiSettingsVm = read('entry/src/main/ets/viewmodels/AiSettingsViewModel.ets');
@@ -42,6 +44,8 @@ test('LlmGuard LlmCaller migrated to call(request) shape', () => {
 test('all call sites migrated off the 3-way split', () => {
   for (const [name, text] of [
     ['AgentChatService', chatService],
+    ['ConversationWorkflow', conversationWorkflow],
+    ['ReplyService', replyService],
     ['AgentMemoryService', memoryService],
     ['StudyPlanViewModel', studyPlanVm],
     ['AiSettingsViewModel', aiSettingsVm],
@@ -49,7 +53,7 @@ test('all call sites migrated off the 3-way split', () => {
     assert.doesNotMatch(text, /callSseTokens\(/, `${name} must not use callSseTokens`);
     assert.doesNotMatch(text, /callStream\(/, `${name} must not use callStream`);
   }
-  assert.match(chatService, /stream: true/, 'AgentChatService real reply must use real SSE streaming');
+  assert.match(replyService, /stream: true/, 'ReplyService must use real SSE streaming');
 });
 
 test('common Index exports the new call types', () => {

@@ -21,19 +21,22 @@ import {
 import { DetailStepList } from './DetailStepList'
 import { detailLinesSignature } from './DetailSection'
 import {
-  DETAIL_RENDER_PRIORITY_NORMAL,
-  enqueueDetailRender,
-} from './DetailRenderQueue'
+  DetailContentRenderGuard,
+  DetailRenderSession,
+  DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT,
+} from './DetailRenderSession'
 
 @Component
 export struct DetailStepsSection {
+  @Prop renderSession: DetailRenderSession = new DetailRenderSession()
+  @Prop renderPriority: number = DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT
   @Prop @Watch('onItemsChanged') title: string = ''
   @Prop @Watch('onItemsChanged') items: string[] = []
   @Prop accentColor: ResourceColor = MINT
   @Prop @Watch('onItemsChanged') emphasized: boolean = false
   @State contentReady: boolean = false
   private renderSeq: number = 0
-  private contentRenderKey: string = ''
+  private renderGuard: DetailContentRenderGuard = new DetailContentRenderGuard()
 
   aboutToAppear(): void {
     this.resetContentRender()
@@ -41,6 +44,7 @@ export struct DetailStepsSection {
 
   aboutToDisappear(): void {
     this.renderSeq += 1
+    this.renderGuard.interrupt()
   }
 
   onItemsChanged(): void {
@@ -71,7 +75,12 @@ export struct DetailStepsSection {
         .alignItems(VerticalAlign.Center)
         .margin({ bottom: S_2 })
 
-        DetailStepList({ items: this.items, accentColor: this.accentColor })
+        DetailStepList({
+          renderSession: this.renderSession,
+          renderPriority: this.renderPriority,
+          items: this.items,
+          accentColor: this.accentColor,
+        })
       }
       .width('100%')
       .padding({ top: S_4, bottom: S_3 })
@@ -82,25 +91,27 @@ export struct DetailStepsSection {
 
   private resetContentRender = (): void => {
     const key: string = this.title + '|' + detailLinesSignature(this.items) + '|' + (this.emphasized ? '1' : '0')
-    if (key === this.contentRenderKey) {
+    if (!this.renderGuard.shouldEnqueue(key, this.contentReady)) {
       return
     }
-    this.contentRenderKey = key
     this.renderSeq += 1
     const seq: number = this.renderSeq
     if (this.items.length === 0) {
+      this.renderGuard.settle()
       this.contentReady = false
       return
     }
     if (this.emphasized) {
+      this.renderGuard.settle()
       this.contentReady = true
       return
     }
     this.contentReady = false
-    enqueueDetailRender(key, DETAIL_RENDER_PRIORITY_NORMAL, (): void => {
+    this.renderSession.enqueue('steps|' + key, DETAIL_RENDER_PRIORITY_NEAR_VIEWPORT, (): void => {
       if (seq !== this.renderSeq) {
         return
       }
+      this.renderGuard.settle()
       this.contentReady = true
     })
   }

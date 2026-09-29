@@ -5,7 +5,6 @@
   "author": "",
   "license": "",
   "dependencies": {
-    "common": "file:../common",
-    "agents": "file:../agents"
+    "common": "file:../common"
   }
 }

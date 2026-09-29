@@ -8,8 +8,10 @@ import { AgentState, CaptureGraphError, CaptureNode, CaptureNodeResult, CaptureS
 function state(persist: boolean = true): AgentState {
   const initial: AgentState = {
     captureText: 'x + 1 = 2',
+    source: 'manual',
     currentStep: 'START',
     persist,
+    analysisOnly: false,
   };
   return initial;
 }
@@ -18,8 +20,10 @@ function addNode(graph: CaptureGraph, step: CaptureStep, value: string): void {
   const node: CaptureNode = async (input: AgentState): Promise<CaptureNodeResult> => {
     const updated: AgentState = {
       captureText: input.captureText + value,
+      source: input.source,
       currentStep: input.currentStep,
       persist: input.persist,
+      analysisOnly: input.analysisOnly,
     };
     if (input.classification !== undefined) {
       updated.classification = input.classification;
@@ -48,8 +52,10 @@ async function persistErrorStub(input: AgentState): Promise<CaptureNodeResult> {
   };
   const next: AgentState = {
     captureText: input.captureText,
+    source: input.source,
     currentStep: input.currentStep,
     persist: input.persist,
+    analysisOnly: input.analysisOnly,
     error: error,
   };
   const result: CaptureNodeResult = { state: next };
@@ -65,19 +71,11 @@ async function structureErrorStub(input: AgentState): Promise<CaptureNodeResult>
   };
   const next: AgentState = {
     captureText: input.captureText,
+    source: input.source,
     currentStep: input.currentStep,
     persist: input.persist,
+    analysisOnly: input.analysisOnly,
     error: error,
-  };
-  const result: CaptureNodeResult = { state: next };
-  return result;
-}
-
-async function startNodeStub(input: AgentState): Promise<CaptureNodeResult> {
-  const next: AgentState = {
-    captureText: input.captureText,
-    currentStep: input.currentStep,
-    persist: input.persist,
   };
   const result: CaptureNodeResult = { state: next };
   return result;
@@ -88,12 +86,18 @@ async function passthroughNodeStub(input: AgentState): Promise<CaptureNodeResult
   return result;
 }
 
+async function throwingNodeStub(input: AgentState): Promise<CaptureNodeResult> {
+  throw new Error('node exploded');
+}
+
 async function persistTrackingNodeStub(input: AgentState, tracker: PersistTracker): Promise<CaptureNodeResult> {
   tracker.ran = true;
   const next: AgentState = {
     captureText: input.captureText,
+    source: input.source,
     currentStep: 'persist',
     persist: input.persist,
+    analysisOnly: input.analysisOnly,
   };
   const result: CaptureNodeResult = { state: next };
   return result;
@@ -110,7 +114,6 @@ export default function captureGraphTest(): void {
   describe('CaptureGraph.minimum_loop', () => {
     it('persist_false_skips_persist_node', 0, async () => {
       const graph: CaptureGraph = new CaptureGraph();
-      addNode(graph, 'START', 'c');
       addNode(graph, 'capture', 'l');
       addNode(graph, 'classify', 's');
       addNode(graph, 'structure', 't');
@@ -121,6 +124,7 @@ export default function captureGraphTest(): void {
       graph.addEdge('classify', 'structure');
       graph.addEdge('structure', 'truth_check');
       graph.addConditionalEdge('truth_check', (input: AgentState) => input.persist ? 'persist' : 'END');
+      graph.addEdge('persist', 'END');
       const result: AgentState = await graph.run(state(false));
       expect(result.error === undefined).assertTrue();
       expect(result.persist).assertFalse();
@@ -131,13 +135,14 @@ export default function captureGraphTest(): void {
       moduleTracker.ran = false;
       moduleTracker.captureRan = false;
       const graph: CaptureGraph = new CaptureGraph();
-      graph.addNode('START', startNodeStub);
       graph.addNode('capture', async (input: AgentState): Promise<CaptureNodeResult> => {
         moduleTracker.captureRan = true;
         const next: AgentState = {
           captureText: input.captureText + 'C',
+          source: input.source,
           currentStep: input.currentStep,
           persist: input.persist,
+          analysisOnly: input.analysisOnly,
         };
         const r: CaptureNodeResult = { state: next };
         return r;
@@ -149,8 +154,10 @@ export default function captureGraphTest(): void {
         moduleTracker.ran = true;
         const next: AgentState = {
           captureText: input.captureText + 'P',
+          source: input.source,
           currentStep: 'persist',
           persist: input.persist,
+          analysisOnly: input.analysisOnly,
         };
         const r: CaptureNodeResult = { state: next };
         return r;
@@ -160,7 +167,9 @@ export default function captureGraphTest(): void {
       graph.addEdge('classify', 'structure');
       graph.addEdge('structure', 'truth_check');
       graph.addConditionalEdge('truth_check', (input: AgentState) => input.persist ? 'persist' : 'END');
+      graph.addEdge('persist', 'END');
       const result: AgentState = await graph.run(state());
+      expect(result.error === undefined).assertTrue();
       expect(result.captureText).assertContain('P');
       expect(moduleTracker.captureRan).assertTrue();
       expect(moduleTracker.ran).assertTrue();
@@ -168,10 +177,32 @@ export default function captureGraphTest(): void {
 
     it('node_error_short_circuits_to_end', 0, async () => {
       const graph: CaptureGraph = new CaptureGraph();
-      graph.addNode('START', structureErrorStub);
-      graph.addEdge('START', 'END');
+      graph.addNode('capture', structureErrorStub);
+      graph.addEdge('START', 'capture');
+      graph.addEdge('capture', 'END');
       const result: AgentState = await graph.run(state(false));
       expect(result.error?.kind).assertEqual('STRUCTURE_ERROR');
+      expect(result.currentStep).assertEqual('END');
+    });
+
+    it('node_exception_becomes_structured_error_and_keeps_payload', 0, async () => {
+      const graph: CaptureGraph = new CaptureGraph();
+      graph.addNode('capture', throwingNodeStub);
+      graph.addEdge('START', 'capture');
+      graph.addEdge('capture', 'END');
+      const initial: AgentState = state(false);
+      initial.payload = {
+        kind: 'text',
+        text: 'x + 1 = 2',
+      };
+      const result: AgentState = await graph.run(initial);
+      expect(result.error?.kind).assertEqual('NODE_ERROR');
+      expect(result.error?.message).assertEqual('node exploded');
+      expect(result.error?.step).assertEqual('capture');
+      expect(result.payload?.kind).assertEqual('text');
+      if (result.payload?.kind === 'text') {
+        expect(result.payload.text).assertEqual('x + 1 = 2');
+      }
       expect(result.currentStep).assertEqual('END');
     });
   });

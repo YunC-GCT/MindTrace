@@ -12,4 +12,5 @@ export interface BackgroundTaskFacade {
   requestOneShot(tag: BackgroundTaskTag): Promise<boolean>;
   // 查询当前是否已有同 tag 任务在执行
   hasPending(tag: BackgroundTaskTag): boolean;
+  finish(tag: BackgroundTaskTag): void;
 }

@@ -3,9 +3,59 @@
 import { TypeClassifier } from '../agents/TypeClassifier';
 import { KnowledgeModel } from '../agents/KnowledgeModel';
 import { TruthCheckService } from '../agents/TruthCheckService';
-import { Logger, KnowledgeUnit, DispatchRequest, DispatchResult } from 'common';
-import type { DispatchPayload } from 'common';
-import { AgentState, CaptureGraphError, CaptureStep } from '../graph/AgentState';
+import {
+  Logger,
+  KnowledgeUnit,
+  DispatchRequest,
+  DispatchResult,
+  NoteGenerationRepository,
+  NoteGenerationRequest,
+  NoteGenerationResult,
+  NoteGenerationRun,
+  NoteGenerationIssue,
+  NoteGenerationRequirement,
+  NoteGenerationCheckpoint,
+  NoteGenerationCoverage,
+  NoteGenerationBudget,
+  PreparedCandidate,
+  selectGenerationRoute,
+  standardBudget,
+  lightBudget,
+  defaultRequirement,
+  sourceFingerprint,
+  buildSourceId,
+  SourceBundle,
+  NoteGenerationCommitResult,
+  NoteDraftDocument,
+  NoteDraftSection,
+  NoteGenerationStandardResult,
+  NoteGenerationDeepResult,
+  NoteGenerationRoute,
+  NoteGenerationProgress,
+  NoteGenerationProgressEvent,
+  NoteGenerationProgressSink,
+  IncrementalBase,
+  IncrementalRequirement,
+  IncrementalSection,
+  IncrementalPlan,
+  IncrementalPatchResponse,
+  IncrementalDiffItem,
+  IncrementalManifest,
+  IncrementalMergeResult,
+  parseIncrementalSections,
+  detectIncrementalLocks,
+  planIncrementalChange,
+  mergeIncrementalPatches,
+  renderIncrementalSections,
+  buildIncrementalManifest,
+  validateSourceBundle,
+  deepBudget,
+  segmentSourceBundle,
+  buildDeepOutline,
+  validateDeepOutline,
+} from 'common';
+import type { DispatchPayload, CancellationToken } from 'common';
+import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
 import { CaptureGraph } from '../graph/CaptureGraph';
 import { OcrNodeFactory } from '../graph/nodes/OcrNode';
 import { ClassifyNodeFactory } from '../graph/nodes/ClassifyNode';
@@ -19,7 +69,35 @@ const log = new Logger('Dispatcher');
 export interface DispatchOptions {
   persist?: boolean;
   includeRawText?: boolean;
+  analysisOnly?: boolean;
   dao?: NoteDaoInterface;
+  generationRepository?: NoteGenerationRepository;
+  knowledgeModel?: KnowledgeModel;
+  cancellationToken?: CancellationToken;
+  progressSink?: NoteGenerationProgressSink;
+}
+
+interface GenerationCandidateEvaluation {
+  result: NoteGenerationStandardResult;
+  candidate: KnowledgeUnit;
+  issues: NoteGenerationIssue[];
+  hardIssueCount: number;
+  contradictionCount: number;
+  coverage: NoteGenerationCoverage;
+  tokenCost: number;
+  changeScope: number;
+  issueFingerprint: string;
+  deepResult?: NoteGenerationDeepResult;
+}
+
+interface DeepFormulaDefinition {
+  formula: string;
+  sectionId: string;
+}
+
+interface DeepFormulaCandidate {
+  symbol: string;
+  formula: string;
 }
 
 export class Dispatcher {
@@ -30,61 +108,1520 @@ export class Dispatcher {
   }
 
   // D2 唯一最终公共入口: 跑 CaptureGraph, 失败返回结构化错误。
-  async dispatch(req: DispatchRequest, context?: Context, options: DispatchOptions = {}): Promise<DispatchResult> {
+  async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
     return await this.dispatchRequest(req, options);
   }
 
   private async dispatchRequest(req: DispatchRequest, options: DispatchOptions): Promise<DispatchResult> {
+    options.cancellationToken?.throwIfCancelled();
     const t0: number = Date.now();
+    if (req.preparedCandidate !== undefined) {
+      return await this.dispatchPreparedCandidate(req, req.preparedCandidate, options, t0);
+    }
+    if (req.generation !== undefined) {
+      if (req.generation.mode === 'regenerate') {
+        return await this.dispatchIncrementalGeneration(req.generation, req, options, t0);
+      }
+      return await this.dispatchGeneration(req.generation, req, options, t0);
+    }
     log.info('dispatch enter, source=' + req.source + ', payload.kind=' + req.payload.kind);
     const initial: AgentState = {
-      captureText: '',
+      captureText: this.seedText(req),
+      source: Dispatcher.sourceFromPayload(req.payload),
+      payload: req.payload,
       currentStep: 'START',
       persist: options.persist !== false,
+      analysisOnly: options.analysisOnly === true,
+      cancellationToken: options.cancellationToken,
     };
-    const graph: CaptureGraph = this.buildGraph(req, options);
-    const finalState: AgentState = await graph.run(initial, { persist: options.persist !== false });
+    const graph: CaptureGraph = this.buildGraph(options);
+    const finalState: AgentState = await graph.run(initial);
+    options.cancellationToken?.throwIfCancelled();
     const error: CaptureGraphError | undefined = finalState.error;
     if (error !== undefined) {
       log.error('capture graph failed: ' + error.kind + ' step=' + error.step + ' msg=' + error.message);
-      return {
+      const failed: DispatchResult = {
         success: false,
         route: 'D1',
         errorMessage: error.message,
         durationMs: Date.now() - t0,
       };
+      if (finalState.classification !== undefined) {
+        failed.classification = finalState.classification;
+      }
+      if (options.includeRawText === true) {
+        failed.recognizedText = finalState.captureText;
+      }
+      return failed;
+    }
+    if (finalState.analysisOnly) {
+      const analysis: DispatchResult = {
+        success: finalState.classification !== undefined,
+        route: 'D1',
+        durationMs: Date.now() - t0,
+      };
+      if (finalState.classification !== undefined) {
+        analysis.classification = finalState.classification;
+      } else {
+        analysis.errorMessage = 'capture workflow did not produce a classification';
+      }
+      if (options.includeRawText === true) {
+        analysis.recognizedText = finalState.captureText;
+      }
+      log.info('dispatch analysis completed');
+      return analysis;
     }
     const unit: KnowledgeUnit | undefined = finalState.knowledgeUnit;
     if (unit === undefined) {
-      return {
+      const missing: DispatchResult = {
         success: false,
         route: 'D1',
         errorMessage: 'capture graph did not produce a knowledge unit',
         durationMs: Date.now() - t0,
       };
+      if (finalState.classification !== undefined) {
+        missing.classification = finalState.classification;
+      }
+      if (options.includeRawText === true) {
+        missing.recognizedText = finalState.captureText;
+      }
+      return missing;
     }
-    return {
+    const success: DispatchResult = {
       success: true,
       route: 'D1',
       data: unit,
       durationMs: Date.now() - t0,
     };
+    if (finalState.classification !== undefined) {
+      success.classification = finalState.classification;
+    }
+    if (options.includeRawText === true) {
+      success.recognizedText = finalState.captureText;
+    }
+    log.info('dispatch completed persisted=' + finalState.persist.toString() + ' category=' + unit.category);
+    return success;
   }
 
-  buildGraph(req: DispatchRequest, options: DispatchOptions = {}): CaptureGraph {
-    const graph: CaptureGraph = new CaptureGraph();
-    const classifier: TypeClassifier = new TypeClassifier();
-    const structure: KnowledgeModel = new KnowledgeModel();
-    const truth: TruthCheckService = new TruthCheckService();
-    graph.addNode('START', async (input: AgentState) => {
-      const seed: AgentState = {
-        captureText: this.seedText(req),
-        payload: req.payload,
-        currentStep: input.currentStep,
-        persist: input.persist,
-      };
-      return { state: seed };
+  private async dispatchIncrementalGeneration(
+    request: NoteGenerationRequest,
+    req: DispatchRequest,
+    options: DispatchOptions,
+    startedAt: number,
+  ): Promise<DispatchResult> {
+    if (request.targetNoteId === undefined || request.targetNoteId.trim().length === 0) {
+      return { success: false, route: 'D1', errorCode: 'NOTE_ID_REQUIRED', errorMessage: '增量重生成需要明确的 noteId', durationMs: Date.now() - startedAt };
+    }
+    if (request.baseVersion === undefined) {
+      return { success: false, route: 'D1', errorCode: 'BASE_VERSION_REQUIRED', errorMessage: '增量重生成需要 baseVersion', durationMs: Date.now() - startedAt };
+    }
+    if (options.generationRepository === undefined || options.generationRepository.getRegenerationBase === undefined) {
+      return { success: false, route: 'D1', errorCode: 'REGENERATION_REPOSITORY_REQUIRED', errorMessage: '增量重生成基础资料不可用', durationMs: Date.now() - startedAt };
+    }
+    this.emitGenerationProgress(options, {
+      phase: 'prepare',
+      state: 'running',
+      activity: 'collect_sources',
     });
+    const base: IncrementalBase | undefined = await options.generationRepository.getRegenerationBase(request.targetNoteId);
+    if (base === undefined) {
+      this.emitGenerationProgress(options, {
+        phase: 'prepare',
+        state: 'failed',
+        activity: 'collect_sources',
+      });
+      return { success: false, route: 'D1', errorCode: 'NOTE_NOT_FOUND', errorMessage: '找不到指定 KnowledgeUnit', durationMs: Date.now() - startedAt };
+    }
+    if (base.baseVersion !== request.baseVersion) {
+      return { success: false, route: 'D1', errorCode: 'VERSION_CONFLICT', errorMessage: '笔记版本已变化，请重新预览', durationMs: Date.now() - startedAt };
+    }
+    const parsed: IncrementalSection[] = parseIncrementalSections(base.unit.content);
+    const locked: IncrementalSection[] = detectIncrementalLocks(parsed, base.manifest);
+    const requirement: IncrementalRequirement = {
+      instruction: request.instruction,
+      targetSectionIds: request.requirement?.targetSectionIds ?? [],
+      mustInclude: request.requirement?.mustInclude ?? [],
+      preserveUserEdits: request.requirement?.preserveUserEdits !== false,
+    };
+    const planningManifest: IncrementalManifest = {
+      noteId: base.manifest.noteId,
+      baseVersion: base.baseVersion,
+      sections: base.manifest.sections.slice(0),
+      sourceIds: base.manifest.sourceIds.slice(0),
+      createdAt: base.manifest.createdAt,
+    };
+    const plan: IncrementalPlan = planIncrementalChange(requirement, locked, planningManifest, request.sources.fragments);
+    if (plan.targetSectionIds.length === 0) {
+      this.emitGenerationProgress(options, {
+        phase: 'prepare',
+        state: 'failed',
+        activity: 'collect_sources',
+      });
+      const result: NoteGenerationResult = this.incrementalResult(request, base.manifest, plan, [], 'needs-input');
+      result.issues.push({ stage: 'plan', code: 'NO_UNLOCKED_TARGET', severity: 'hard', message: '没有可安全重生成的未锁定目标章节', repairable: false });
+      return { success: false, route: 'D1', generation: result, errorCode: 'NO_UNLOCKED_TARGET', errorMessage: '没有可安全重生成的未锁定目标章节', durationMs: Date.now() - startedAt };
+    }
+    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
+    const sourceBundle: SourceBundle = {
+      fragments: base.sources.fragments.concat(request.sources.fragments),
+    };
+    const run: NoteGenerationRun = {
+      id: request.runId,
+      originSessionId: request.originSessionId,
+      parentConversationRunId: request.parentConversationRunId,
+      route: 'standard',
+      status: 'running',
+      instruction: request.instruction,
+      sourceCount: sourceBundle.fragments.length,
+      tokenBudget: standardBudget().maxTokens,
+      sourceIds: sourceBundle.fragments.map((fragment): string => fragment.id),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await options.generationRepository.saveRun(run, sourceBundle);
+    this.emitGenerationProgress(options, {
+      phase: 'prepare',
+      state: 'success',
+      activity: 'collect_sources',
+    });
+    this.emitGenerationProgress(options, {
+      phase: 'compose',
+      state: 'running',
+      activity: 'repair_draft',
+    });
+    const patchResponse: IncrementalPatchResponse = await model.repairIncrementalSections(
+      request,
+      plan,
+      locked,
+      sourceBundle.fragments,
+    );
+    this.emitGenerationProgress(options, {
+      phase: 'compose',
+      state: 'success',
+      activity: 'repair_draft',
+    });
+    this.emitGenerationProgress(options, {
+      phase: 'verify',
+      state: 'running',
+      activity: 'check_accuracy',
+    });
+    const merged: IncrementalMergeResult = mergeIncrementalPatches(locked, plan, patchResponse.patches);
+    const manifest: IncrementalManifest = buildIncrementalManifest(
+      base.unit.id,
+      base.baseVersion + 1,
+      merged.sections,
+      base.manifest.sourceIds.concat(plan.newSourceIds),
+    );
+    if (!merged.ok) {
+      this.emitGenerationProgress(options, {
+        phase: 'verify',
+        state: 'failed',
+        activity: 'check_accuracy',
+      });
+      const result: NoteGenerationResult = this.incrementalResult(request, manifest, plan, merged.diff, 'needs-input');
+      for (const issue of merged.issues) {
+        result.issues.push({ stage: 'merge', code: issue, severity: 'hard', message: issue, repairable: false });
+      }
+      return { success: false, route: 'D1', generation: result, errorMessage: merged.issues.join(';'), durationMs: Date.now() - startedAt };
+    }
+    const nextContent: string = renderIncrementalSections(merged.sections);
+    const candidate: KnowledgeUnit = this.copyRegeneratedUnit(base.unit, nextContent);
+    const checkpointId: string = request.runId + ':incremental';
+    const checkpoint: NoteGenerationCheckpoint = {
+      id: checkpointId,
+      runId: request.runId,
+      iteration: 0,
+      stage: 'truth_check',
+      candidateHash: sourceFingerprint(JSON.stringify(candidate)),
+      documentJson: JSON.stringify(candidate),
+      accepted: true,
+      issueCodes: [],
+      createdAt: Date.now(),
+    };
+    await options.generationRepository.saveCheckpoint(checkpoint);
+    const generation: NoteGenerationResult = this.incrementalResult(request, manifest, plan, merged.diff, 'ready-preview');
+    generation.candidate = candidate;
+    generation.bestCheckpointId = checkpointId;
+    generation.sourceIds = base.manifest.sourceIds.concat(plan.newSourceIds);
+    generation.incrementalInstruction = request.instruction;
+    await options.generationRepository.saveRun({
+      id: run.id,
+      route: run.route,
+      status: 'ready-preview',
+      instruction: run.instruction,
+      sourceCount: run.sourceCount,
+      tokenBudget: run.tokenBudget,
+      bestCheckpointId: checkpointId,
+      stopReason: 'incremental_complete',
+      issueCount: 0,
+      sourceIds: run.sourceIds,
+      createdAt: run.createdAt,
+      updatedAt: Date.now(),
+    }, sourceBundle);
+    this.emitGenerationProgress(options, {
+      phase: 'verify',
+      state: 'success',
+      activity: 'check_accuracy',
+    });
+    return { success: true, route: 'D1', data: candidate, generation: generation, durationMs: Date.now() - startedAt };
+  }
+
+  private incrementalResult(
+    request: NoteGenerationRequest,
+    manifest: IncrementalManifest,
+    plan: IncrementalPlan,
+    diff: IncrementalDiffItem[],
+    status: 'ready-preview' | 'needs-input',
+  ): NoteGenerationResult {
+    return {
+      runId: request.runId, route: 'standard', status: status, issues: [], questions: [],
+      promptTokens: 0, completionTokens: 0, stopReason: 'incremental_complete',
+      incrementalPlan: plan, incrementalManifest: manifest, incrementalDiff: diff,
+      baseVersion: plan.baseVersion,
+    };
+  }
+
+  private copyRegeneratedUnit(unit: KnowledgeUnit, content: string): KnowledgeUnit {
+    return {
+      id: unit.id, title: unit.title, content: content, summary: unit.summary, tags: unit.tags,
+      subject: unit.subject, category: unit.category, chapter: unit.chapter, difficulty: unit.difficulty,
+      source: unit.source, createdAt: unit.createdAt, updatedAt: Date.now(), reviewStatus: unit.reviewStatus,
+      nextReviewAt: unit.nextReviewAt, intervalDays: unit.intervalDays, easeFactor: unit.easeFactor,
+      repetitions: unit.repetitions, prerequisites: unit.prerequisites, related: unit.related,
+      embedding: unit.embedding, userId: unit.userId, version: unit.version,
+    };
+  }
+
+  private async dispatchGeneration(
+    request: NoteGenerationRequest,
+    req: DispatchRequest,
+    options: DispatchOptions,
+    startedAt: number,
+  ): Promise<DispatchResult> {
+    const bundle: SourceBundle = this.normalizeBundle(request);
+    this.emitGenerationProgress(options, {
+      phase: 'prepare',
+      state: 'running',
+      activity: 'collect_sources',
+    });
+    let route = request.route ?? selectGenerationRoute(bundle, request.instruction);
+    // 2026-09-20 P0-7: deep 源预算超限时自动降级 standard — 原先 preflight 直接
+    // needs-input 终止 (dbpull5 实测 3 连 missing_facts, 用户反复重试均 25ms 拒绝);
+    // standard 单次调用可承载长源, 降级优于中断问询
+    if (route === 'deep') {
+      const deepSourceLimit: number = deepBudget().maxSourceChars ?? 0;
+      if (deepSourceLimit > 0) {
+        let sourceChars: number = 0;
+        for (const fragment of bundle.fragments) {
+          sourceChars += fragment.text.length;
+        }
+        if (sourceChars > deepSourceLimit) {
+          log.info('generation run=' + request.runId + ' downgrade deep->standard: sourceChars='
+            + sourceChars.toString() + ' > ' + deepSourceLimit.toString());
+          route = 'standard';
+        }
+      }
+    }
+    const budget = route === 'deep' ? deepBudget() : route === 'standard' ? standardBudget() : lightBudget();
+    const requirement = request.requirement ?? defaultRequirement(request.instruction);
+    const run: NoteGenerationRun = {
+      id: request.runId,
+      originSessionId: request.originSessionId,
+      parentConversationRunId: request.parentConversationRunId,
+      route: route,
+      status: 'running',
+      instruction: request.instruction,
+      sourceCount: bundle.fragments.length,
+      tokenBudget: budget.maxTokens,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      sourceIds: bundle.fragments.map((fragment): string => fragment.id),
+      pendingSourceIds: request.pendingSourceIds ?? [],
+      sourceSummary: this.sourceSummary(bundle),
+    };
+    if (options.generationRepository !== undefined) {
+      await options.generationRepository.saveRun(run, bundle);
+    }
+    const missing: NoteGenerationIssue[] = [];
+    let processBlocked: boolean = false;
+    const sourceGateIssues: NoteGenerationIssue[] = validateSourceBundle(bundle);
+    for (const issue of sourceGateIssues) {
+      missing.push(issue);
+      processBlocked = true;
+    }
+    if (bundle.fragments.length === 0) {
+      missing.push({ stage: 'source', code: 'MISSING_SOURCE', severity: 'hard', message: '请提供一段对话或一份 OCR 材料', repairable: false });
+    }
+    if (request.instruction.trim().length === 0) {
+      missing.push({ stage: 'requirement', code: 'MISSING_INSTRUCTION', severity: 'hard', message: '请说明希望生成的笔记内容', repairable: false });
+    }
+    if (request.instruction.indexOf('缺少') >= 0 || request.instruction.indexOf('未知') >= 0) {
+      missing.push({ stage: 'requirement', code: 'MISSING_USER_FACT', severity: 'hard', message: '请补充题目中的关键已知条件', repairable: false });
+    }
+    if (route === 'deep' && budget.maxSourceChars !== undefined) {
+      let sourceChars: number = 0;
+      for (const fragment of bundle.fragments) {
+        sourceChars += fragment.text.length;
+      }
+      if (sourceChars > budget.maxSourceChars) {
+        missing.push({
+          stage: 'source',
+          code: 'SOURCE_BUDGET_EXCEEDED',
+          severity: 'hard',
+          message: '材料总量超过 deep route 来源预算，请缩小范围: ' + bundle.fragments.map((item): string => item.id).join(','),
+          repairable: false,
+        });
+      }
+    }
+    if (route === 'deep' && missing.length === 0) {
+      const segments = segmentSourceBundle(bundle);
+      const plannedOutline = buildDeepOutline(segments, requirement);
+      const outlineIssues = validateDeepOutline(plannedOutline, segments, bundle, requirement);
+      for (const issue of outlineIssues) {
+        missing.push(issue);
+        processBlocked = true;
+      }
+    }
+    if (missing.length > 0) {
+      this.emitGenerationProgress(options, {
+        phase: 'prepare',
+        state: 'failed',
+        activity: 'collect_sources',
+      });
+      const questions: string[] = [];
+      if (!processBlocked) {
+        for (const issue of missing) {
+          questions.push(issue.message);
+        }
+      }
+      const preflightStatus = processBlocked ? 'failed' : 'needs-input';
+      const preflightStopReason: string = processBlocked ? 'process_gate' : 'missing_facts';
+      const generation: NoteGenerationResult = {
+        runId: request.runId,
+        route: route,
+        status: preflightStatus,
+        issues: missing,
+        questions: questions,
+        stopReason: preflightStopReason,
+        promptTokens: 0,
+        completionTokens: 0,
+      };
+      if (options.generationRepository !== undefined) {
+        const completedRun: NoteGenerationRun = {
+          id: run.id,
+          originSessionId: run.originSessionId,
+          parentConversationRunId: run.parentConversationRunId,
+          route: run.route,
+          status: preflightStatus,
+          instruction: run.instruction,
+          sourceCount: run.sourceCount,
+          tokenBudget: run.tokenBudget,
+          stopReason: preflightStopReason,
+          issueCount: missing.length,
+          createdAt: run.createdAt,
+          updatedAt: Date.now(),
+          sourceIds: run.sourceIds,
+          pendingSourceIds: run.pendingSourceIds,
+          sourceSummary: run.sourceSummary,
+        };
+        await options.generationRepository.saveRun(completedRun, bundle);
+      }
+      log.info('generation run=' + request.runId + ' route=' + route + ' sources=' + bundle.fragments.length.toString()
+        + ' issues=' + missing.length.toString() + ' tokens=0');
+      return { success: false, route: 'D1', generation: generation, errorMessage: questions.join('; '), durationMs: Date.now() - startedAt };
+    }
+
+    const generationPayload: DispatchRequest = {
+      source: req.source,
+      payload: { kind: 'text', text: this.bundleText(bundle) },
+    };
+    this.emitGenerationProgress(options, {
+      phase: 'prepare',
+      state: 'success',
+      activity: 'collect_sources',
+    });
+    if (route === 'standard') {
+      this.emitGenerationProgress(options, {
+        phase: 'compose',
+        state: 'running',
+        activity: 'write_draft',
+      });
+      return await this.dispatchStandardGeneration(
+        request,
+        generationPayload,
+        options,
+        startedAt,
+        run,
+        bundle,
+        budget,
+        requirement,
+      );
+    }
+    if (route === 'deep') {
+      this.emitGenerationProgress(options, {
+        phase: 'compose',
+        state: 'running',
+        activity: 'plan_structure',
+      });
+      return await this.dispatchDeepGeneration(
+        request,
+        bundle,
+        options,
+        startedAt,
+        run,
+        budget,
+        requirement,
+      );
+    }
+    const initial: AgentState = {
+      captureText: this.bundleText(bundle),
+      source: 'note_generation',
+      payload: generationPayload.payload,
+      generationRequest: {
+        runId: request.runId,
+        instruction: request.instruction,
+        mode: request.mode,
+        sources: bundle,
+        requirement: requirement,
+        targetNoteId: request.targetNoteId,
+        baseVersion: request.baseVersion,
+        pendingSourceIds: request.pendingSourceIds,
+        route: route,
+      },
+      currentStep: 'START',
+      persist: false,
+      analysisOnly: false,
+      cancellationToken: options.cancellationToken,
+    };
+    this.emitGenerationProgress(options, {
+      phase: 'compose',
+      state: 'running',
+      activity: 'write_draft',
+    });
+    const graph: CaptureGraph = this.buildGenerationGraph(options.knowledgeModel, options.cancellationToken);
+    const finalState: AgentState = await graph.run(initial);
+    this.emitGenerationProgress(options, {
+      phase: 'compose',
+      state: finalState.error === undefined ? 'success' : 'failed',
+      activity: 'write_draft',
+    });
+    const errors: NoteGenerationIssue[] = [];
+    if (finalState.error !== undefined) {
+      errors.push({ stage: finalState.error.step, code: finalState.error.kind, severity: 'hard', message: finalState.error.message, repairable: false });
+    }
+    const candidate: KnowledgeUnit | undefined = finalState.error === undefined ? finalState.knowledgeUnit : undefined;
+    const draft = finalState.draft;
+    const standardResult = finalState.standardResult;
+    if (standardResult !== undefined) {
+      for (const issue of standardResult.verification.issues) {
+        if (!errors.some((existing: NoteGenerationIssue): boolean => existing.code === issue.code && existing.sectionId === issue.sectionId && existing.sourceId === issue.sourceId)) {
+          errors.push(issue);
+        }
+      }
+    }
+    const checkpointId: string = request.runId + ':0';
+    const candidateHash: string = candidate === undefined ? '' : sourceFingerprint(JSON.stringify(candidate));
+    if (draft !== undefined && options.generationRepository !== undefined) {
+      const checkpoint: NoteGenerationCheckpoint = {
+        id: checkpointId,
+        runId: request.runId,
+        iteration: 0,
+        stage: 'truth_check',
+        candidateHash: candidateHash,
+        documentJson: candidate === undefined ? JSON.stringify(draft) : JSON.stringify(candidate),
+        accepted: candidate !== undefined && finalState.truthCheck?.passed === true,
+        issueCodes: errors.map((issue: NoteGenerationIssue): string => issue.code),
+        outlineJson: standardResult === undefined ? undefined : JSON.stringify(standardResult.outline),
+        evidenceJson: standardResult === undefined ? undefined : JSON.stringify(standardResult.evidence),
+        verificationJson: standardResult === undefined ? undefined : JSON.stringify(standardResult.verification),
+        createdAt: Date.now(),
+      };
+      await options.generationRepository.saveCheckpoint(checkpoint);
+    }
+    const status = candidate !== undefined ? 'ready-preview' : 'failed';
+    const referencedPendingSourceIds: string[] = this.referencedPendingSourceIds(
+      draft,
+      request.pendingSourceIds ?? [],
+    );
+    const result: NoteGenerationResult = {
+      runId: request.runId,
+      route: route,
+      status: status,
+      candidate: candidate,
+      draft: draft,
+      bestCheckpointId: candidate !== undefined && finalState.truthCheck?.passed === true ? checkpointId : undefined,
+      issues: errors,
+      questions: [],
+      stopReason: candidate !== undefined ? 'light_complete' : 'workflow_error',
+      promptTokens: 0,
+      completionTokens: 0,
+      sourceIds: run.sourceIds,
+      outline: standardResult?.outline,
+      evidence: standardResult?.evidence,
+      verification: standardResult?.verification,
+    };
+    if (options.generationRepository !== undefined) {
+      const completedRun: NoteGenerationRun = {
+        id: run.id,
+        originSessionId: run.originSessionId,
+        parentConversationRunId: run.parentConversationRunId,
+        route: run.route,
+        status: status,
+        instruction: run.instruction,
+        sourceCount: run.sourceCount,
+        tokenBudget: run.tokenBudget,
+        bestCheckpointId: result.bestCheckpointId,
+        stopReason: result.stopReason,
+        issueCount: errors.length,
+        createdAt: run.createdAt,
+        updatedAt: Date.now(),
+        sourceIds: run.sourceIds,
+        pendingSourceIds: referencedPendingSourceIds,
+        sourceSummary: run.sourceSummary,
+      };
+      await options.generationRepository.saveRun(completedRun, bundle);
+    }
+    log.info('generation run=' + request.runId + ' route=' + route + ' sources=' + bundle.fragments.length.toString()
+      + ' issues=' + errors.length.toString() + ' tokens=0');
+    return {
+      success: candidate !== undefined,
+      route: 'D1',
+      data: candidate,
+      generation: result,
+      recognizedText: options.includeRawText === true ? finalState.captureText : undefined,
+      errorMessage: candidate === undefined ? (errors.length > 0 ? errors[0].message : 'generation failed') : undefined,
+      durationMs: Date.now() - startedAt,
+    };
+  }
+
+  private emitGenerationProgress(options: DispatchOptions, event: NoteGenerationProgressEvent): void {
+    if (options.progressSink !== undefined) {
+      options.progressSink(event);
+    }
+  }
+
+  private async dispatchStandardGeneration(
+    request: NoteGenerationRequest,
+    req: DispatchRequest,
+    options: DispatchOptions,
+    startedAt: number,
+    run: NoteGenerationRun,
+    bundle: SourceBundle,
+    budget: NoteGenerationBudget,
+    requirement: NoteGenerationRequirement,
+  ): Promise<DispatchResult> {
+    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
+    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(
+      request,
+      budget.maxTokens,
+      bundle,
+      requirement,
+    );
+    let current: NoteGenerationStandardResult;
+    try {
+      current = await model.structureStandardDraft(budgetedRequest, options.progressSink);
+    } catch (e) {
+      return await this.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
+        round: 0,
+        stopReason: 'initial_generation_failed',
+        rollback: false,
+        tokenBudget: budget.maxTokens,
+        estimatedTokenCost: 0,
+      }, 'initial generation failed: ' + (e as Error).message);
+    }
+
+    const finalEvaluation: GenerationCandidateEvaluation = await this.evaluateStandardCandidate(
+      current,
+      bundle,
+      requirement,
+      model,
+    );
+    const checkpointId: string = request.runId + ':0';
+    const bestCheckpointId: string = checkpointId;
+    const checkpoint: NoteGenerationCheckpoint = {
+      id: checkpointId,
+      runId: request.runId,
+      iteration: 0,
+      stage: 'truth_check',
+      candidateHash: sourceFingerprint(JSON.stringify(finalEvaluation.candidate)),
+      documentJson: JSON.stringify(finalEvaluation.candidate),
+      accepted: finalEvaluation.hardIssueCount === 0,
+      issueCodes: finalEvaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
+      outlineJson: JSON.stringify(finalEvaluation.result.outline),
+      evidenceJson: JSON.stringify(finalEvaluation.result.evidence),
+      verificationJson: JSON.stringify(finalEvaluation.result.verification),
+      issueFingerprint: finalEvaluation.issueFingerprint,
+      coverage: finalEvaluation.coverage,
+      tokenCost: finalEvaluation.tokenCost,
+      changeScope: finalEvaluation.changeScope,
+      decision: 'initial',
+      createdAt: Date.now(),
+    };
+    if (options.generationRepository !== undefined) {
+      await options.generationRepository.saveCheckpoint(checkpoint);
+    }
+    let stopReason: string = 'standard_complete';
+    if (finalEvaluation.hardIssueCount === 0) {
+      this.emitGenerationProgress(options, {
+        phase: 'verify', state: 'success', activity: 'check_accuracy',
+      });
+    } else {
+      stopReason = this.readOnlyVerificationStopReason(finalEvaluation.issues);
+    }
+    const round: number = 0;
+    const rollback: boolean = false;
+    const progress: NoteGenerationProgress = {
+      round: round,
+      stopReason: stopReason,
+      rollback: rollback,
+      issueCount: finalEvaluation?.issues.length ?? 0,
+      issueFingerprint: finalEvaluation?.issueFingerprint,
+      tokenBudget: budget.maxTokens,
+      estimatedTokenCost: finalEvaluation.tokenCost,
+    };
+    if (finalEvaluation.hardIssueCount > 0) {
+      return await this.finishStandardGeneration(
+        request,
+        this.completedRun(run, bestCheckpointId, stopReason),
+        bundle,
+        options,
+        startedAt,
+        finalEvaluation.issues,
+        undefined,
+        progress,
+        this.generationFailureMessage('standard', finalEvaluation.issues, progress),
+        finalEvaluation.result,
+      );
+    }
+    const finalCandidate: KnowledgeUnit = finalEvaluation.candidate;
+    return await this.finishStandardGeneration(
+      request,
+      this.completedRun(run, bestCheckpointId, stopReason),
+      bundle,
+      options,
+      startedAt,
+      finalEvaluation.issues,
+      finalCandidate,
+      progress,
+      undefined,
+      finalEvaluation.result,
+    );
+  }
+
+  private async dispatchDeepGeneration(
+    request: NoteGenerationRequest,
+    bundle: SourceBundle,
+    options: DispatchOptions,
+    startedAt: number,
+    run: NoteGenerationRun,
+    budget: NoteGenerationBudget,
+    requirement: NoteGenerationRequirement,
+  ): Promise<DispatchResult> {
+    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
+    const budgetedRequest: NoteGenerationRequest = this.withTokenBudget(
+      request,
+      budget.maxTokens,
+      bundle,
+      requirement,
+    );
+    let current: NoteGenerationDeepResult;
+    try {
+      current = await model.structureDeepDraft(budgetedRequest, options.progressSink);
+    } catch (e) {
+      return await this.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
+        round: 0,
+        stopReason: 'initial_deep_generation_failed',
+        rollback: false,
+        tokenBudget: budget.maxTokens,
+        estimatedTokenCost: 0,
+      }, 'initial deep generation failed: ' + (e as Error).message, undefined, 'deep');
+    }
+    const finalEvaluation: GenerationCandidateEvaluation = await this.evaluateDeepCandidate(
+      current,
+      bundle,
+      requirement,
+      model,
+    );
+    const checkpointId: string = request.runId + ':0';
+    const bestCheckpointId: string = checkpointId;
+    const checkpoint: NoteGenerationCheckpoint = {
+      id: checkpointId,
+      runId: request.runId,
+      iteration: 0,
+      stage: 'truth_check',
+      candidateHash: sourceFingerprint(JSON.stringify(finalEvaluation.candidate)),
+      documentJson: JSON.stringify(finalEvaluation.candidate),
+      accepted: finalEvaluation.hardIssueCount === 0,
+      issueCodes: finalEvaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
+      outlineJson: JSON.stringify(finalEvaluation.result.outline),
+      evidenceJson: JSON.stringify(finalEvaluation.result.evidence),
+      verificationJson: JSON.stringify(finalEvaluation.result.verification),
+      issueFingerprint: finalEvaluation.issueFingerprint,
+      coverage: finalEvaluation.coverage,
+      tokenCost: finalEvaluation.tokenCost,
+      changeScope: finalEvaluation.changeScope,
+      decision: 'initial',
+      createdAt: Date.now(),
+    };
+    if (options.generationRepository !== undefined) {
+      await options.generationRepository.saveCheckpoint(checkpoint);
+    }
+    let stopReason: string = 'deep_complete';
+    if (finalEvaluation.hardIssueCount === 0) {
+      this.emitGenerationProgress(options, {
+        phase: 'verify', state: 'success', activity: 'check_accuracy',
+      });
+    } else {
+      stopReason = this.readOnlyVerificationStopReason(finalEvaluation.issues);
+    }
+    const round: number = 0;
+    const rollback: boolean = false;
+    const progress: NoteGenerationProgress = {
+      round: round,
+      stopReason: stopReason,
+      rollback: rollback,
+      issueCount: finalEvaluation.issues.length,
+      issueFingerprint: finalEvaluation.issueFingerprint,
+      tokenBudget: budget.maxTokens,
+      estimatedTokenCost: finalEvaluation.tokenCost,
+    };
+    const deepResult: NoteGenerationDeepResult | undefined = finalEvaluation.deepResult;
+    if (finalEvaluation.hardIssueCount > 0) {
+      return await this.finishStandardGeneration(
+        request,
+        this.completedRun(run, bestCheckpointId, stopReason),
+        bundle,
+        options,
+        startedAt,
+        finalEvaluation.issues,
+        undefined,
+        progress,
+        this.generationFailureMessage('deep', finalEvaluation.issues, progress),
+        deepResult,
+        'deep',
+      );
+    }
+    return await this.finishStandardGeneration(
+      request,
+      this.completedRun(run, bestCheckpointId, stopReason),
+      bundle,
+      options,
+      startedAt,
+      finalEvaluation.issues,
+      finalEvaluation.candidate,
+      progress,
+      undefined,
+      deepResult,
+      'deep',
+    );
+  }
+
+  private async evaluateStandardCandidate(
+    result: NoteGenerationStandardResult,
+    bundle: SourceBundle,
+    requirement: NoteGenerationRequirement,
+    model: KnowledgeModel,
+  ): Promise<GenerationCandidateEvaluation> {
+    const candidate: KnowledgeUnit = model.draftToKnowledgeUnit(result.draft, 'note_generation');
+    const issues: NoteGenerationIssue[] = [];
+    for (const issue of result.verification.issues) {
+      issues.push(issue);
+    }
+    const truthState: AgentState = await this.buildPreparedGraph(undefined).run({
+      captureText: this.bundleText(bundle),
+      source: 'note_generation',
+      payload: { kind: 'text', text: this.bundleText(bundle) },
+      generationRequest: {
+        runId: 'candidate-check',
+        instruction: requirement.mustInclude.join(','),
+        mode: 'create',
+        sources: bundle,
+      },
+      currentStep: 'START',
+      persist: false,
+      analysisOnly: false,
+      knowledgeUnit: candidate,
+    });
+    if (truthState.error !== undefined) {
+      issues.push({
+        stage: 'truth_check',
+        code: 'TRUTH_CHECK_ERROR',
+        severity: 'hard',
+        message: truthState.error.message,
+        repairable: false,
+      });
+    }
+    let hardIssueCount: number = 0;
+    let contradictionCount: number = 0;
+    const issueCodes: string[] = [];
+    for (const issue of issues) {
+      if (issue.severity === 'hard') {
+        hardIssueCount += 1;
+      }
+      if (issue.code === 'EVIDENCE_CONTRADICTED') {
+        contradictionCount += 1;
+      }
+      const issueKey: string = issue.code + ':' + (issue.stage ?? '') + ':'
+        + (issue.sectionId ?? '') + ':' + (issue.sourceId ?? '');
+      if (!issueCodes.includes(issueKey)) {
+        issueCodes.push(issueKey);
+      }
+    }
+    issueCodes.sort();
+    let mustMatched: number = 0;
+    for (const item of requirement.mustInclude) {
+      let included: boolean = false;
+      for (const section of result.draft.sections) {
+        if (section.content.includes(item) || section.label.includes(item)) {
+          included = true;
+          break;
+        }
+      }
+      if (included) {
+        mustMatched += 1;
+      }
+    }
+    const mustCoverage: number = requirement.mustInclude.length === 0
+      ? 1 : mustMatched / requirement.mustInclude.length;
+    let supportedCount: number = 0;
+    for (const decision of result.verification.decisions) {
+      if (decision.status === 'supported') {
+        supportedCount += 1;
+      }
+    }
+    const evidenceCoverage: number = result.evidence.length === 0 ? 0 : supportedCount / result.evidence.length;
+    const coverage: NoteGenerationCoverage = {
+      mustInclude: mustCoverage,
+      evidence: evidenceCoverage,
+      lockedPreservation: 1,
+    };
+    const tokenCost: number = Math.ceil(JSON.stringify(result).length / 4);
+    return {
+      result: result,
+      candidate: candidate,
+      issues: issues,
+      hardIssueCount: hardIssueCount,
+      contradictionCount: contradictionCount,
+      coverage: coverage,
+      tokenCost: tokenCost,
+      changeScope: 0,
+      issueFingerprint: issueCodes.join('|'),
+    };
+  }
+
+  private async evaluateDeepCandidate(
+    result: NoteGenerationDeepResult,
+    bundle: SourceBundle,
+    requirement: NoteGenerationRequirement,
+    model: KnowledgeModel,
+  ): Promise<GenerationCandidateEvaluation> {
+    const evaluation: GenerationCandidateEvaluation = await this.evaluateStandardCandidate(
+      result,
+      bundle,
+      requirement,
+      model,
+    );
+    const mergeIssues: NoteGenerationIssue[] = this.deepMergeIssues(result, bundle, requirement);
+    for (const issue of mergeIssues) {
+      evaluation.issues.push(issue);
+      evaluation.hardIssueCount += issue.severity === 'hard' ? 1 : 0;
+    }
+    const issueCodes: string[] = [];
+    for (const issue of evaluation.issues) {
+      const key: string = issue.code + ':' + (issue.sectionId ?? '') + ':' + (issue.sourceId ?? '');
+      if (!issueCodes.includes(key)) {
+        issueCodes.push(key);
+      }
+    }
+    issueCodes.sort();
+    evaluation.issueFingerprint = issueCodes.join('|');
+    evaluation.deepResult = result;
+    return evaluation;
+  }
+
+  private deepMergeIssues(
+    result: NoteGenerationDeepResult,
+    bundle: SourceBundle,
+    requirement: NoteGenerationRequirement,
+  ): NoteGenerationIssue[] {
+    const issues: NoteGenerationIssue[] = [];
+    const mappedSources: string[] = [];
+    const seenSections: string[] = [];
+    for (const section of result.outline.sections) {
+      if (seenSections.includes(section.id)) {
+        issues.push({ stage: 'merge', code: 'DEEP_SECTION_DUPLICATE', severity: 'hard', message: 'deep outline contains duplicate section ids', repairable: true, sectionId: section.id });
+      }
+      seenSections.push(section.id);
+      if (section.sourceIds.length === 0) {
+        issues.push({ stage: 'outline', code: 'DEEP_ORPHAN_SECTION', severity: 'hard', message: 'deep section has no source mapping', repairable: false, sectionId: section.id });
+      }
+      for (const sourceId of section.sourceIds) {
+        if (!mappedSources.includes(sourceId)) {
+          mappedSources.push(sourceId);
+        }
+        if (!bundle.fragments.some((fragment): boolean => fragment.id === sourceId)) {
+          issues.push({ stage: 'outline', code: 'DEEP_SOURCE_INVALID', severity: 'hard', message: 'deep outline references an unknown source', repairable: false, sourceId: sourceId, sectionId: section.id });
+        }
+      }
+    }
+    for (const fragment of bundle.fragments) {
+      if (fragment.kind !== 'summary' && !mappedSources.includes(fragment.id)) {
+        issues.push({ stage: 'outline', code: 'DEEP_SOURCE_ORPHANED', severity: 'hard', message: 'deep source has no section destination: ' + fragment.id, repairable: false, sourceId: fragment.id });
+      }
+    }
+    for (const item of requirement.mustInclude) {
+      let found: boolean = false;
+      for (const section of result.draft.sections) {
+        if (section.content.includes(item) || section.label.includes(item)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        issues.push({ stage: 'merge', code: 'DEEP_MUST_INCLUDE_MISSING', severity: 'hard', message: 'deep draft does not cover must-include: ' + item, repairable: true });
+      }
+    }
+    for (let index: number = 0; index < result.draft.sections.length; index += 1) {
+      const section: NoteDraftSection = result.draft.sections[index];
+      for (let nextIndex: number = index + 1; nextIndex < result.draft.sections.length; nextIndex += 1) {
+        const next: NoteDraftSection = result.draft.sections[nextIndex];
+        if (section.content.trim().length > 0 && section.content === next.content) {
+          issues.push({ stage: 'merge', code: 'DEEP_SECTION_DUPLICATE_CONTENT', severity: 'hard', message: 'deep sections duplicate the same content', repairable: true, sectionId: next.id });
+        }
+      }
+    }
+    const formulaBySymbol: Map<string, DeepFormulaDefinition> = new Map<string, DeepFormulaDefinition>();
+    for (const section of result.draft.sections) {
+      const formulas: DeepFormulaCandidate[] = this.deepFormulaCandidates(section.content);
+      for (const candidate of formulas) {
+        const symbol: string = candidate.symbol;
+        const formula: string = candidate.formula;
+        const previous: DeepFormulaDefinition | undefined = formulaBySymbol.get(symbol);
+        if (previous !== undefined && previous.formula !== formula) {
+          const message: string = 'deep sections use inconsistent formula symbols: symbol=' + symbol
+            + '; previousFormula=' + previous.formula
+            + '; currentFormula=' + formula
+            + '; previousSection=' + previous.sectionId
+            + '; currentSection=' + section.id;
+          issues.push({ stage: 'merge', code: 'DEEP_SYMBOL_DRIFT', severity: 'soft', message: message, repairable: true, sectionId: section.id });
+        } else {
+          formulaBySymbol.set(symbol, { formula: formula, sectionId: section.id });
+        }
+      }
+      if (section.content.includes('参见') || section.content.includes('见第')) {
+        let referenceResolved: boolean = false;
+        for (const other of result.draft.sections) {
+          if (other.id !== section.id && (section.content.includes(other.label) || section.content.includes(other.id))) {
+            referenceResolved = true;
+            break;
+          }
+        }
+        if (!referenceResolved) {
+          issues.push({ stage: 'merge', code: 'DEEP_REFERENCE_INVALID', severity: 'hard', message: 'deep section contains an unresolved cross-section reference', repairable: true, sectionId: section.id });
+        }
+      }
+    }
+    for (let firstIndex: number = 0; firstIndex < bundle.fragments.length; firstIndex += 1) {
+      const firstText: string = bundle.fragments[firstIndex].text;
+      for (let secondIndex: number = firstIndex + 1; secondIndex < bundle.fragments.length; secondIndex += 1) {
+        const secondText: string = bundle.fragments[secondIndex].text;
+        if ((firstText.includes('不成立') && secondText.includes('成立'))
+          || (firstText.includes('成立') && secondText.includes('不成立'))) {
+          issues.push({ stage: 'merge', code: 'DEEP_CONTRADICTION', severity: 'hard', message: 'deep source fragments contain contradictory conclusions', repairable: true });
+        }
+      }
+    }
+    return issues;
+  }
+
+  private deepFormulaCandidates(content: string): DeepFormulaCandidate[] {
+    const candidates: DeepFormulaCandidate[] = [];
+    const lines: string[] = content.split('\n');
+    let inDisplayFormula: boolean = false;
+    for (const rawLine of lines) {
+      const trimmed: string = rawLine.trim();
+      if (trimmed === '$$') {
+        inDisplayFormula = !inDisplayFormula;
+        continue;
+      }
+      if (inDisplayFormula) {
+        const candidate: DeepFormulaCandidate | undefined = this.parseDeepFormulaCandidate(trimmed);
+        if (candidate !== undefined) {
+          candidates.push(candidate);
+        }
+        continue;
+      }
+      let cursor: number = 0;
+      while (cursor < rawLine.length) {
+        const openIndex: number = rawLine.indexOf('$', cursor);
+        if (openIndex < 0 || rawLine.charAt(openIndex + 1) === '$') {
+          break;
+        }
+        const closeIndex: number = rawLine.indexOf('$', openIndex + 1);
+        if (closeIndex < 0) {
+          break;
+        }
+        const candidateText: string = rawLine.substring(openIndex + 1, closeIndex).trim();
+        const candidate: DeepFormulaCandidate | undefined = this.parseDeepFormulaCandidate(candidateText);
+        if (candidate !== undefined) {
+          candidates.push(candidate);
+        }
+        cursor = closeIndex + 1;
+      }
+    }
+    return candidates;
+  }
+
+  private parseDeepFormulaCandidate(formula: string): DeepFormulaCandidate | undefined {
+    const equalsIndex: number = formula.indexOf('=');
+    if (equalsIndex <= 0) {
+      return undefined;
+    }
+    const symbol: string = formula.substring(0, equalsIndex).replace(/&/g, '').trim();
+    if (symbol.length === 0 || symbol.indexOf(' ') >= 0 || symbol.indexOf('：') >= 0 || symbol.indexOf(':') >= 0) {
+      return undefined;
+    }
+    if (!/^[A-Za-z\\][A-Za-z0-9_]*(\([^=]*\))?$/.test(symbol)) {
+      return undefined;
+    }
+    return { symbol: symbol, formula: formula.trim() };
+  }
+  private generationFailureMessage(
+    route: NoteGenerationRoute,
+    issues: NoteGenerationIssue[],
+    progress: NoteGenerationProgress,
+  ): string {
+    const summary: string = this.issueSummary(issues);
+    const routeLabel: string = route === 'deep' ? 'deep generation failed' : 'standard generation failed';
+    const stopReason: string = progress.stopReason ?? '';
+    const stopText: string = stopReason.length > 0 ? stopReason : 'unknown';
+    if (summary.length === 0) {
+      return routeLabel + ': stop=' + stopText + '; no issue details';
+    }
+    return routeLabel + ': stop=' + stopText + '; ' + summary;
+  }
+
+  private readOnlyVerificationStopReason(issues: NoteGenerationIssue[]): string {
+    for (const issue of issues) {
+      if (issue.severity === 'hard' && issue.code === 'VERIFIER_UNAVAILABLE') {
+        return 'verifier_unavailable';
+      }
+    }
+    for (const issue of issues) {
+      if (issue.severity === 'hard' && (issue.stage === 'verifier' || issue.code === 'EVIDENCE_CONTRADICTED'
+        || issue.code === 'EVIDENCE_AMBIGUOUS')) {
+        return 'content_verification_failed';
+      }
+    }
+    return 'artifact_validation_failed';
+  }
+
+  private issueSummary(issues: NoteGenerationIssue[]): string {
+    const parts: string[] = [];
+    const seen: string[] = [];
+    for (const issue of issues) {
+      const stage: string = issue.stage ?? '';
+      const code: string = issue.code.length > 0 ? issue.code : 'UNKNOWN_ISSUE';
+      const message: string = issue.message.trim();
+      const location: string = (issue.sectionId ?? '') + ':' + (issue.sourceId ?? '');
+      const key: string = code + ':' + stage + ':' + location + ':' + message;
+      if (seen.includes(key)) {
+        continue;
+      }
+      seen.push(key);
+      let part: string = '[' + code + ']';
+      if (stage.length > 0) {
+        part += ' stage=' + stage;
+      }
+      if (issue.sectionId !== undefined) {
+        part += ' section=' + issue.sectionId;
+      }
+      if (issue.sourceId !== undefined) {
+        part += ' source=' + issue.sourceId;
+      }
+      if (message.length > 0) {
+        part += ' ' + message;
+      }
+      parts.push(part);
+    }
+    return parts.join('; ');
+  }
+
+  private generationDiagnostics(
+    route: NoteGenerationRoute,
+    runId: string,
+    issues: NoteGenerationIssue[],
+    progress: NoteGenerationProgress,
+    errorMessage: string,
+  ): string {
+    return JSON.stringify({
+      route: route,
+      runId: runId,
+      stopReason: progress.stopReason ?? 'unknown',
+      round: progress.round,
+      issueCount: issues.length,
+      issueFingerprint: progress.issueFingerprint ?? '',
+      rollback: progress.rollback,
+      tokenBudget: progress.tokenBudget ?? 0,
+      estimatedTokenCost: progress.estimatedTokenCost ?? 0,
+      errorMessage: errorMessage,
+      issues: issues,
+    });
+  }
+
+  private async finishStandardGeneration(
+    request: NoteGenerationRequest,
+    run: NoteGenerationRun,
+    bundle: SourceBundle,
+    options: DispatchOptions,
+    startedAt: number,
+    issues: NoteGenerationIssue[],
+    candidate: KnowledgeUnit | undefined,
+    progress: NoteGenerationProgress,
+    errorMessage?: string,
+    standardResult?: NoteGenerationStandardResult,
+    route: NoteGenerationRoute = 'standard',
+  ): Promise<DispatchResult> {
+    const status = candidate === undefined ? 'needs-input' : 'ready-preview';
+    const deepResult: NoteGenerationDeepResult | undefined = route === 'deep' && standardResult !== undefined
+      ? standardResult as NoteGenerationDeepResult : undefined;
+    const diagnostics: string | undefined = route === 'deep' && errorMessage !== undefined
+      ? this.generationDiagnostics(route, request.runId, issues, progress, errorMessage) : undefined;
+    const result: NoteGenerationResult = {
+      runId: request.runId,
+       route: route,
+      status: status,
+      candidate: candidate,
+      draft: standardResult?.draft,
+      bestCheckpointId: run.bestCheckpointId,
+      issues: issues,
+      questions: candidate === undefined ? issues.map((issue: NoteGenerationIssue): string => issue.message) : [],
+      stopReason: progress.stopReason,
+      promptTokens: 0,
+      completionTokens: 0,
+      sourceIds: run.sourceIds,
+      outline: standardResult?.outline,
+      evidence: standardResult?.evidence,
+       verification: standardResult?.verification,
+       ledger: deepResult?.ledger,
+      segments: deepResult?.segments,
+      progress: progress,
+      diagnostics: diagnostics,
+    };
+    if (options.generationRepository !== undefined) {
+      const completedRun: NoteGenerationRun = {
+        id: run.id,
+        originSessionId: run.originSessionId,
+        parentConversationRunId: run.parentConversationRunId,
+        route: run.route,
+        status: status,
+        instruction: run.instruction,
+        sourceCount: run.sourceCount,
+        tokenBudget: run.tokenBudget,
+        bestCheckpointId: run.bestCheckpointId,
+        stopReason: progress.stopReason,
+        issueCount: issues.length,
+        createdAt: run.createdAt,
+        updatedAt: Date.now(),
+        sourceIds: run.sourceIds,
+        pendingSourceIds: run.pendingSourceIds,
+        sourceSummary: run.sourceSummary,
+      };
+      await options.generationRepository.saveRun(completedRun, bundle);
+      await options.generationRepository.appendLifecycleLog({
+        runId: request.runId,
+        event: 'finished',
+        checkpointId: run.bestCheckpointId,
+        issueCount: issues.length,
+        sourceCount: bundle.fragments.length,
+        round: progress.round,
+        stopReason: progress.stopReason,
+        rollback: progress.rollback,
+      });
+      log.info('generation progress run=' + request.runId + ' round=' + progress.round.toString()
+        + ' stop=' + progress.stopReason + ' rollback=' + progress.rollback.toString());
+    }
+    if (diagnostics !== undefined) {
+      log.warn('generation diagnostics summary run=' + request.runId
+        + ' route=' + route
+        + ' stopReason=' + (progress.stopReason ?? 'unknown')
+        + ' round=' + progress.round.toString()
+        + ' issueCount=' + issues.length.toString()
+        + ' issueFingerprint=' + (progress.issueFingerprint ?? '')
+        + ' rollback=' + progress.rollback.toString()
+        + ' tokenBudget=' + (progress.tokenBudget ?? 0).toString()
+        + ' estimatedTokenCost=' + (progress.estimatedTokenCost ?? 0).toString());
+      this.logDiagnosticIssues(request.runId, issues);
+    }
+    return {
+      success: candidate !== undefined,
+      route: 'D1',
+      data: candidate,
+      generation: result,
+      errorMessage: errorMessage,
+      durationMs: Date.now() - startedAt,
+    };
+  }
+
+  private logDiagnosticIssues(runId: string, issues: NoteGenerationIssue[]): void {
+    const issueKeys: string[] = [];
+    const issueCounts: number[] = [];
+    const uniqueIssues: NoteGenerationIssue[] = [];
+    for (const issue of issues) {
+      const key: string = JSON.stringify(issue);
+      const existingIndex: number = issueKeys.indexOf(key);
+      if (existingIndex >= 0) {
+        issueCounts[existingIndex] += 1;
+      } else {
+        issueKeys.push(key);
+        issueCounts.push(1);
+        uniqueIssues.push(issue);
+      }
+    }
+    for (let index: number = 0; index < uniqueIssues.length; index += 1) {
+      log.warn('generation diagnostics issue run=' + runId
+        + ' occurrence=' + issueCounts[index].toString()
+        + ' ' + JSON.stringify(uniqueIssues[index]));
+    }
+  }
+
+  private completedRun(run: NoteGenerationRun, checkpointId: string | undefined, stopReason: string): NoteGenerationRun {
+    return {
+      id: run.id,
+      originSessionId: run.originSessionId,
+      parentConversationRunId: run.parentConversationRunId,
+      route: run.route,
+      status: run.status,
+      instruction: run.instruction,
+      sourceCount: run.sourceCount,
+      tokenBudget: run.tokenBudget,
+      bestCheckpointId: checkpointId,
+      stopReason: stopReason,
+      issueCount: run.issueCount,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+      sourceIds: run.sourceIds,
+      pendingSourceIds: run.pendingSourceIds,
+      sourceSummary: run.sourceSummary,
+    };
+  }
+
+  private withTokenBudget(
+    request: NoteGenerationRequest,
+    tokenBudget: number,
+    bundle: SourceBundle,
+    requirement: NoteGenerationRequirement,
+  ): NoteGenerationRequest {
+    return {
+      runId: request.runId,
+      originSessionId: request.originSessionId,
+      parentConversationRunId: request.parentConversationRunId,
+      instruction: request.instruction,
+      mode: request.mode,
+      sources: bundle,
+      requirement: requirement,
+      targetNoteId: request.targetNoteId,
+      baseVersion: request.baseVersion,
+      pendingSourceIds: request.pendingSourceIds,
+      route: request.route,
+      tokenBudget: tokenBudget,
+      incrementalPlan: request.incrementalPlan,
+      incrementalSections: request.incrementalSections,
+    };
+  }
+
+  private async dispatchPreparedCandidate(
+    req: DispatchRequest,
+    prepared: PreparedCandidate,
+    options: DispatchOptions,
+    startedAt: number,
+  ): Promise<DispatchResult> {
+    const actualHash: string = sourceFingerprint(JSON.stringify(prepared.candidate));
+    if (actualHash !== prepared.candidateHash) {
+      return { success: false, route: 'D1', errorMessage: '候选内容已变化', durationMs: Date.now() - startedAt };
+    }
+    if (options.generationRepository === undefined) {
+      return { success: false, route: 'D1', errorMessage: '缺少草稿检查点', durationMs: Date.now() - startedAt };
+    }
+    const commitKey: string = prepared.commitKey ?? prepared.runId + ':' + prepared.checkpointId + ':' + prepared.candidateHash;
+    const existingCommit: NoteGenerationCommitResult | undefined = await options.generationRepository.getCommitResult(commitKey);
+    if (existingCommit !== undefined && existingCommit.candidateJson !== undefined && existingCommit.candidateJson.length > 0) {
+      const restoredCandidate: KnowledgeUnit = JSON.parse(existingCommit.candidateJson) as KnowledgeUnit;
+      // Re-saving an idempotent commit also heals a stale ready-preview run left
+      // by a process interruption between the durable note commit and run update.
+      await options.generationRepository.saveCommitResult(existingCommit);
+      await options.generationRepository.appendLifecycleLog({
+        runId: prepared.runId,
+        event: 'duplicate-confirm',
+        checkpointId: prepared.checkpointId,
+        sourceCount: prepared.pendingSourceIds?.length ?? 0,
+      });
+      return { success: true, route: 'D1', data: restoredCandidate, durationMs: Date.now() - startedAt };
+    }
+    const recovery = await options.generationRepository.restore(prepared.runId);
+    if (recovery === undefined) {
+      return { success: false, route: 'D1', errorMessage: '草稿运行不存在', durationMs: Date.now() - startedAt };
+    }
+    let checkpoint: NoteGenerationCheckpoint | undefined = undefined;
+    for (const item of recovery.checkpoints) {
+      if (item.id === prepared.checkpointId) {
+        checkpoint = item;
+        break;
+      }
+    }
+    if (checkpoint === undefined || checkpoint.runId !== prepared.runId || checkpoint.candidateHash !== prepared.candidateHash) {
+      return { success: false, route: 'D1', errorMessage: '草稿检查点不匹配', durationMs: Date.now() - startedAt };
+    }
+    const initial: AgentState = {
+      captureText: this.seedText(req),
+      source: 'note_generation',
+      payload: req.payload,
+      currentStep: 'START',
+      persist: true,
+      analysisOnly: false,
+      preparedCandidate: prepared,
+      knowledgeUnit: prepared.candidate,
+      cancellationToken: options.cancellationToken,
+    };
+    const graph: CaptureGraph = this.buildPreparedGraph(options.dao);
+    const finalState: AgentState = await graph.run(initial);
+    if (finalState.error !== undefined) {
+      const conflict: boolean = finalState.error.message.indexOf('VERSION_CONFLICT') >= 0;
+      return {
+        success: false,
+        route: 'D1',
+        errorCode: conflict ? 'VERSION_CONFLICT' : undefined,
+        errorMessage: finalState.error.message,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+    let committedCandidate: KnowledgeUnit = prepared.candidate;
+    if (finalState.commitResult !== undefined) {
+      committedCandidate = this.copyRegeneratedUnit(prepared.candidate, prepared.candidate.content);
+      committedCandidate.version = finalState.commitResult.version;
+      const contentChanged: boolean = prepared.incrementalDiff?.some(
+        (item: IncrementalDiffItem): boolean => item.kind === 'changed' || item.kind === 'added',
+      ) === true;
+      if (prepared.updateExisting === true && contentChanged) {
+        committedCandidate.embedding = [];
+      }
+      const commit: NoteGenerationCommitResult = {
+        commitKey: commitKey,
+        runId: prepared.runId,
+        checkpointId: prepared.checkpointId,
+        noteId: finalState.commitResult.noteId,
+        version: finalState.commitResult.version,
+        sourceIds: prepared.pendingSourceIds ?? prepared.sourceIds ?? [],
+        candidateJson: JSON.stringify(committedCandidate),
+        committedAt: Date.now(),
+      };
+      await options.generationRepository.saveCommitResult(commit);
+      await options.generationRepository.appendLifecycleLog({
+        runId: prepared.runId,
+        event: finalState.commitResult.duplicate ? 'duplicate-confirm' : 'committed',
+        checkpointId: prepared.checkpointId,
+        sourceCount: commit.sourceIds.length,
+      });
+    }
+    return { success: true, route: 'D1', data: committedCandidate, durationMs: Date.now() - startedAt };
+  }
+
+  private buildPreparedGraph(dao?: NoteDaoInterface): CaptureGraph {
+    const graph: CaptureGraph = new CaptureGraph();
+    const truth: TruthCheckService = new TruthCheckService();
+    graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
+    if (dao !== undefined) {
+      graph.addNode('persist', PersistNodeFactory.create(dao));
+    } else {
+      graph.addNode('persist', async (input: AgentState): Promise<CaptureNodeResult> => {
+        const next: AgentState = copyAgentState(input);
+        next.error = {
+          kind: 'PERSIST_DAO_REQUIRED',
+          message: 'persist requested but no NoteDaoInterface was provided',
+          step: 'persist',
+          retriable: false,
+        };
+        return { state: next };
+      });
+    }
+    graph.addEdge('START', 'truth_check');
+    graph.addConditionalEdge('truth_check', (input: AgentState): CaptureStep => input.persist ? 'persist' : 'END');
+    graph.addEdge('persist', 'END');
+    return graph;
+  }
+
+  private buildGenerationGraph(model?: KnowledgeModel, cancellationToken?: CancellationToken): CaptureGraph {
+    const graph: CaptureGraph = new CaptureGraph();
+    const structure: KnowledgeModel = model ?? new KnowledgeModel(undefined, cancellationToken);
+    const truth: TruthCheckService = new TruthCheckService();
+    graph.addNode('structure', StructureNodeFactory.create(structure));
+    graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
+    graph.addEdge('START', 'structure');
+    graph.addEdge('structure', 'truth_check');
+    graph.addConditionalEdge('truth_check', (_input: AgentState): CaptureStep => 'END');
+    return graph;
+  }
+
+  private normalizeBundle(request: NoteGenerationRequest): SourceBundle {
+    const fragments = request.sources.fragments.slice(0);
+    fragments.sort((left, right): number => left.sequence - right.sequence);
+    const normalized: SourceBundle = { fragments: [] };
+    let sequence: number = 0;
+    for (const fragment of fragments) {
+      const id: string = fragment.id.length > 0 ? fragment.id : buildSourceId(fragment.kind, fragment.originId, sequence);
+      normalized.fragments.push({
+        id: id,
+        kind: fragment.kind,
+        originId: fragment.originId,
+        sequence: sequence,
+        // Source text is the authority at the Dispatcher boundary. Never trust a
+        // caller-supplied fingerprint that may actually be a record or OCR ID.
+        fingerprint: sourceFingerprint(fragment.text),
+        text: fragment.text,
+      });
+      sequence += 1;
+    }
+    return normalized;
+  }
+
+  private sourceSummary(bundle: SourceBundle): string {
+    const kinds: string[] = [];
+    for (const fragment of bundle.fragments) {
+      if (!kinds.includes(fragment.kind)) {
+        kinds.push(fragment.kind);
+      }
+    }
+    return 'count=' + bundle.fragments.length.toString() + ';kinds=' + kinds.join(',');
+  }
+
+  private referencedPendingSourceIds(draft: NoteDraftDocument | undefined, pendingSourceIds: string[]): string[] {
+    const referenced: string[] = [];
+    if (draft === undefined) {
+      return referenced;
+    }
+    for (const section of draft.sections) {
+      for (const sourceId of section.sourceIds) {
+        if (pendingSourceIds.includes(sourceId) && !referenced.includes(sourceId)) {
+          referenced.push(sourceId);
+        }
+      }
+    }
+    return referenced;
+  }
+
+  private bundleText(bundle: SourceBundle): string {
+    const lines: string[] = [];
+    for (const fragment of bundle.fragments) {
+      lines.push('[source:' + fragment.id + '] ' + fragment.text);
+    }
+    return lines.join('\n');
+  }
+
+  private buildGraph(options: DispatchOptions = {}): CaptureGraph {
+    const graph: CaptureGraph = new CaptureGraph();
+    const classifier: TypeClassifier = new TypeClassifier(options.cancellationToken);
+    const structure: KnowledgeModel = new KnowledgeModel(undefined, options.cancellationToken);
+    const truth: TruthCheckService = new TruthCheckService();
     graph.addNode('capture', OcrNodeFactory.create(classifier));
     graph.addNode('classify', ClassifyNodeFactory.create(classifier));
     graph.addNode('structure', StructureNodeFactory.create(structure));
@@ -92,13 +1629,27 @@ export class Dispatcher {
     if (options.dao !== undefined) {
       graph.addNode('persist', PersistNodeFactory.create(options.dao));
     } else {
-      graph.addNode('persist', async (input: AgentState) => ({ state: input }));
+      graph.addNode('persist', async (input: AgentState): Promise<CaptureNodeResult> => {
+        const next: AgentState = copyAgentState(input);
+        const error: CaptureGraphError = {
+          kind: 'PERSIST_DAO_REQUIRED',
+          message: 'persist requested but no NoteDaoInterface was provided',
+          step: 'persist',
+          retriable: false,
+        };
+        next.error = error;
+        const result: CaptureNodeResult = { state: next };
+        return result;
+      });
     }
     graph.addEdge('START', 'capture');
     graph.addEdge('capture', 'classify');
-    graph.addEdge('classify', 'structure');
+    graph.addConditionalEdge('classify', (input: AgentState): CaptureStep => {
+      return input.analysisOnly ? 'END' : 'structure';
+    });
     graph.addEdge('structure', 'truth_check');
     graph.addConditionalEdge('truth_check', (input: AgentState): CaptureStep => input.persist ? 'persist' : 'END');
+    graph.addEdge('persist', 'END');
     return graph;
   }
 

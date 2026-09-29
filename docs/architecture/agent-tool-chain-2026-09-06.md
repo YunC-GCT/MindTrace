@@ -2,11 +2,15 @@
 
 > 汇总视图。规范细节以被引用文档为准,本文不复制内容——读完这页知道"谁连谁、缺口在哪",要细节点引用。
 
+## 架构定位
+
+本链路属于 MindTrace 整体 LangGraph Agent 工作流架构中的 tool-calling workflow。它与 Capture workflow、conversation workflow、skill intent workflow 使用同一套 Node/Edge/State/路由设计原则，但不是第二套后端。`ToolRegistry` 是唯一工具能力事实源；调用方不得各自复制工具实现或持久化逻辑。
+
 ## 链路图
 
 ```text
-调用方 A: 应用内 LLM 工具循环            调用方 B: skill/ (小艺, 未来)
-ToolLoop (spec 014; common/tools/)      IntentRouter (ADR-0011 实装路径)
+调用方 A: 应用内 LLM 工具循环            调用方 B: skill/ SearchNote
+ToolLoop (spec 014; common/tools/)      SkillIntentWorkflow + IntentRouter
   | LlmCaller seam → LlmClient            | Intents Kit (@InsightIntent*, API 11+)
   | 云端 OpenAI 兼容 function-calling     | want.action → 只读 intent 先行
   v                                       v
@@ -14,7 +18,7 @@ ToolLoop (spec 014; common/tools/)      IntentRouter (ADR-0011 实装路径)
            register / listDefinitions / execute
                           |
                           v
-        AgentTool 只读 3 件 (P1, 赛后实现): note_query / note_get / review_due_query
+        AgentTool 只读 3 件: note_query / note_get / review_due_query
                           |
                           v
         DatabaseHelper RDB store (schema SoT: entry NoteDao, spec 014 §4 警示)
@@ -27,13 +31,13 @@ ToolLoop (spec 014; common/tools/)      IntentRouter (ADR-0011 实装路径)
 
 | 链路段 | 状态 | 权威文档 |
 |---|---|---|
-| ToolLoop / 协议字段 / extractToolCalls | spec-only(复赛冲刺序 3,零实现) | [spec 014](../specs/014-tool-calling-protocol.md) / [ADR-0012](../adr/0012-tool-calling-protocol.md) |
-| ToolRegistry 契约(AgentTool/ToolResult) | 同上,随 spec 014 落地 | 同上 |
-| skill/ IntentRouter | 预留位,实装另立 spec(前置:7 个 intent 语义队员确认) | [ADR-0011](../adr/0011-skill-xiaoyi-reservation.md) / 调研 §5 |
-| 只读 AgentTool 3 件(P1) | 接口形状已定,实现赛后 | spec 014 §4 |
+| ToolLoop / 协议字段 / extractToolCalls | 已实现；ToolLoop 由 StateGraph 承载 ToolCalling workflow | [spec 014](../specs/014-tool-calling-protocol.md) / [spec 018](../specs/018-agent-workflow-architecture.md) |
+| ToolRegistry / ToolCatalog | 已实现；catalog 是只读工具组合的唯一事实源 | ADR-0012 / spec 018 |
+| skill/ IntentRouter | SearchNote 已实装；其余 6 action 明确 unsupported，待语义确认 | ADR-0011 / spec 018 |
+| 只读 AgentTool 3 件(P1) | 已实现；SearchNote 使用 note_query | spec 014 §4 |
 | 写类工具 | 赛后,F2 写库路径统一的前置 | ADR-0012 Consequences / [inventory](agent-tools-inventory-2026-09-06.md) F2 |
 | OcrTool | 现役,`mcp/` 语义(非 Registry 成员);注册为 AgentTool 属后续单独决策 | ADR-0010 |
-| Kit 三 facade(Reminder/BackgroundTask/FormCard) | 契约已立,接线 = 复赛冲刺序 2(ReminderFacade 优先) | ADR-0009 / spec 013 |
+| Kit 三 facade(Reminder/BackgroundTask/FormCard) | 三个真实 adapter 已注入；Form mock 已删除 | ADR-0009 / spec 013 |
 
 ## 与结构化 sub-agent 的关系
 
@@ -41,4 +45,4 @@ ToolLoop (spec 014; common/tools/)      IntentRouter (ADR-0011 实装路径)
 
 ## Last updated
 
-2026-09-06(由 KnowledgeModel 拆分 goal 的"skill 链路规范"裁决产出)
+2026-09-10(spec 018 Agent workflow 架构收口)

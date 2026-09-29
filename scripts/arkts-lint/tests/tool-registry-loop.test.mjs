@@ -9,7 +9,12 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const llmTypes = read('common/src/main/ets/llm/LlmTypes.ets');
 const commonIndex = read('common/src/main/ets/Index.ets');
 const registry = read('common/src/main/ets/tools/ToolRegistry.ets');
+const catalog = read('common/src/main/ets/tools/ToolCatalog.ets');
 const toolLoop = read('common/src/main/ets/tools/ToolLoop.ets');
+const workflow = read('common/src/main/ets/workflow/tool-calling/ToolCallingWorkflow.ets');
+const state = read('common/src/main/ets/workflow/tool-calling/ToolCallingState.ets');
+const callModelNode = read('common/src/main/ets/workflow/tool-calling/nodes/CallModelNode.ets');
+const executeToolsNode = read('common/src/main/ets/workflow/tool-calling/nodes/ExecuteToolsNode.ets');
 
 // spec 014 §2: ToolRegistry — AgentTool/ToolResult/注册校验/容错执行。
 test('ToolRegistry declares AgentTool + ToolResult + registry API', () => {
@@ -42,22 +47,32 @@ test('no entry imports in common/src/main/ets/tools/ (topology red line, ADR-001
 test('ToolLoop injects LlmCaller and declares ToolLoopOptions', () => {
   assert.match(toolLoop, /constructor\(llm: LlmCaller\)/);
   assert.match(toolLoop, /run\(messages: ChatMessage\[\], registry: ToolRegistry, options\?: ToolLoopOptions\)/);
-  assert.match(toolLoop, /export interface ToolLoopOptions/);
-  assert.match(toolLoop, /maxSteps\?: number;/);
-  assert.match(toolLoop, /callOptions\?: LlmCallOptions;/);
-  assert.match(toolLoop, /listDefinitions\(\)/);
+  assert.match(state, /export interface ToolLoopOptions/);
+  assert.match(state, /maxSteps\?: number;/);
+  assert.match(state, /callOptions\?: LlmCallOptions;/);
+  assert.match(workflow, /listDefinitions\(\)/);
 });
 
 test('ToolLoop appends assistant(tool_calls) + role=tool messages; throws TOOL_LOOP_MAX_STEPS', () => {
-  assert.match(toolLoop, /tool_calls: result\.toolCalls/);
-  assert.match(toolLoop, /role: 'tool'/);
-  assert.match(toolLoop, /tool_call_id: /);
-  assert.match(toolLoop, /'TOOL_LOOP_MAX_STEPS'/);
+  assert.match(toolLoop, /new ToolCallingWorkflow/);
+  assert.doesNotMatch(toolLoop, /while \(/);
+  assert.doesNotMatch(toolLoop, /\.execute\(/);
+  assert.match(state, /interface ToolCallingState/);
+  assert.match(state, /toolCalls\?: LlmToolCall\[\]/);
+  assert.match(workflow, /StateGraph<ToolCallingState, ToolCallingStep>/);
+  assert.match(callModelNode, /this\.llm\.call\(/);
+  assert.match(executeToolsNode, /content: ''/);
+  assert.match(executeToolsNode, /tool_calls: toolCalls/);
+  assert.match(executeToolsNode, /role: 'tool'/);
+  assert.match(executeToolsNode, /tool_call_id: /);
+  assert.match(workflow, /'TOOL_LOOP_MAX_STEPS'/);
 });
 
 test('common Index exports the tool surface and wire types', () => {
   assert.match(commonIndex, /export \{ ToolRegistry \} from '\.\/tools\/ToolRegistry'/);
   assert.match(commonIndex, /export \{ ToolLoop \} from '\.\/tools\/ToolLoop'/);
+  assert.match(commonIndex, /export \{ ToolCatalog \} from '\.\/tools\/ToolCatalog'/);
+  assert.match(catalog, /createReadOnlyNoteTools\(\)/);
   assert.match(commonIndex, /AgentTool/);
   assert.match(commonIndex, /ToolResult/);
   assert.match(commonIndex, /LlmToolDefinition/);

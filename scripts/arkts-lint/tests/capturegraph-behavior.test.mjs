@@ -6,17 +6,20 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const stateFile = readFileSync(resolve(root, 'agents/src/main/ets/graph/AgentState.ets'), 'utf8');
 const graphFile = readFileSync(resolve(root, 'agents/src/main/ets/graph/CaptureGraph.ets'), 'utf8');
+const runtimeFile = readFileSync(resolve(root, 'common/src/main/ets/workflow/StateGraph.ets'), 'utf8');
 const testFile = readFileSync(resolve(root, 'agents/src/test/CaptureGraph.test.ets'), 'utf8');
 
 test('CaptureGraph defines typed graph state and error fields', () => {
   assert.match(stateFile, /interface AgentState/);
   assert.match(stateFile, /captureText/);
+  assert.match(stateFile, /source: string/);
   assert.match(stateFile, /classification\?/);
   assert.match(stateFile, /knowledgeUnit\?/);
   assert.match(stateFile, /truthCheck\?/);
   assert.match(stateFile, /error\?/);
   assert.match(stateFile, /currentStep/);
   assert.match(stateFile, /persist/);
+  assert.match(stateFile, /analysisOnly: boolean/);
   assert.match(stateFile, /interface CaptureGraphError/);
   assert.match(stateFile, /retriable/);
 });
@@ -27,7 +30,9 @@ test('CaptureGraph exposes nodes, edges, conditional routing, and run', () => {
   assert.match(graphFile, /addEdge/);
   assert.match(graphFile, /addConditionalEdge/);
   assert.match(graphFile, /async run/);
-  assert.match(graphFile, /while \(current !== 'END'\)/);
+  assert.match(graphFile, /StateGraph<AgentState, CaptureStep>/);
+  assert.doesNotMatch(graphFile, /while \(current !== 'END'\)/);
+  assert.match(runtimeFile, /class StateGraph/);
 });
 
 test('CaptureGraph tests cover persist false, default persist, and error short circuit', () => {
@@ -35,4 +40,6 @@ test('CaptureGraph tests cover persist false, default persist, and error short c
   assert.match(testFile, /default_path_runs_persist_node/);
   assert.match(testFile, /node_error_short_circuits_to_end/);
   assert.match(testFile, /input\.persist \? 'persist' : 'END'/);
+  assert.match(testFile, /graph\.addEdge\('persist', 'END'\)/);
+  assert.match(testFile, /expect\(result\.error === undefined\)\.assertTrue\(\)/);
 });

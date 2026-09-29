@@ -12,6 +12,7 @@ import { SubjectNoteList } from "./SubjectNoteList"
 import { SubjectTypeEmpty } from "./SubjectTypeEmpty"
 import { unitToNoteItem } from "../../utils/NoteItemMapper"
 import { invalidateDetailRender } from "../../overlays/NoteDetailOverlay/model/DetailRenderCache"
+import { noteDetailBackPressCoordinator } from "../../overlays/NoteDetailOverlay/NoteDetailBackPressCoordinator"
 
 @Entry
 @Component
@@ -38,6 +39,10 @@ struct SubjectDetailPage {
 
   onNotesVersionChange(): void {
     this.reloadNotes()
+  }
+
+  onBackPress(): boolean {
+    return noteDetailBackPressCoordinator.handleBack()
   }
 
   private readParams(): void {

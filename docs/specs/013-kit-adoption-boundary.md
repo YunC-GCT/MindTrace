@@ -1,6 +1,6 @@
 # D4 — 鸿蒙 Kit 采用范围与替换边界
 
-> **Status**: P0 契约已落地 (`common/kit/`, 2026-09-05);**F3 ReminderFacadeImpl 已实现并注入** (@kit.BackgroundTasksKit, entry 组合根, 2026-09-06, 复赛冲刺序 2);UI 入口按用户裁决暂不挂 (2026-09-06);BackgroundTaskFacade / FormCardFacade 实现延后
+> **Status**: P0 implemented (2026-09-10 — Reminder/BackgroundTask/FormCard 三 facade 均有真实实现并在 entry 组合根注入；卡片固定 mock 已删除；Reminder UI 入口仍按用户裁决不挂)
 > **Date**: 2026-09-05
 > **Source decision**: GitHub issue #11
 > **Scope**: 仅架构规范化与 Kit 替换边界定义，不在本阶段实施具体替换。
@@ -81,3 +81,10 @@ Kit facade 位于 common/kit/。
 - 实际 Kit 调用实现
 - 性能优化与降级策略
 - 端侧 Kit 替代现有服务的迁移脚本
+
+## Follow-up implementation (2026-09-10)
+
+- `BackgroundTaskFacadeImpl` 使用 BackgroundTasksKit 短时任务，并在完成/超时后主动取消。
+- `FormCardFacadeImpl` 使用 FormKit 查询运行中卡片并更新；`CardSnapshotStore` 以 GSKV 作为应用与卡片进程的单一 snapshot 数据源。
+- `FormAbility` 删除固定 mock，创建与更新都读取共享 snapshot。
+- EntryAbility 在启动和后台阶段刷新卡片 snapshot；三 facade 均由组合根注入。

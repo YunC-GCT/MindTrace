@@ -4,7 +4,7 @@ The 2026-09-06 agent-tools audit ([F4](../architecture/agent-tools-inventory-202
 
 ## Status
 
-`accepted` (2026-09-06, team ruling recorded during the agent-tools audit grilling loop)
+`accepted` (2026-09-06; SearchNote implementation follow-up 2026-09-10)
 
 ## Considered Options
 
@@ -18,6 +18,7 @@ The 2026-09-06 agent-tools audit ([F4](../architecture/agent-tools-inventory-202
 - Implementation path when work starts: register the intents with Intents Kit (`@InsightIntent{Link,Page,Function,Form,Entry}` decorators, API 11+; the target SDK 6.1.1 = API 24 supports it), route `want.action` in `SkillAbility` through an IntentRouter onto the shared tool surface ([spec 014](../specs/014-tool-calling-protocol.md) ToolRegistry). A2A Server capabilities are API 26 — roadmap only. Survey: [agent-toolkit-and-skill-dispatch-2026-09-06](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md) §4-5.
 - Topology constraint to design around: `skill/` (HSP) can only see `common` + `agents`; all DAOs and chat orchestration live in `entry` (HAP) and are unreachable — read-only intents first.
 - Open item before any implementation spec: the 7 intent actions' semantics are inferred from their names only; a teammate must confirm them.
+- Follow-up (2026-09-10): `SearchNote` was explicitly selected as the first real intent. `SkillAbility → IntentRouter → SkillIntentWorkflow → ToolCatalog/ToolRegistry.note_query` is implemented; the other six actions return `UNSUPPORTED_INTENT` until their semantics are confirmed. This reuses the single common tool surface and does not create a skill-side backend.
 
 ## Reversibility
 
