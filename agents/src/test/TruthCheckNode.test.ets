@@ -1,5 +1,5 @@
 /**
- * TruthCheckNode.test.ets — TruthCheckNode 输入拼接与错误传播行为测试
+ * TruthCheckNode.test.ets — TruthCheckNode 候选输入隔离与错误传播行为测试
  *
  * 路径: agents/src/test/TruthCheckNode.test.ets
  * 职责: 验证 TruthCheckNode 的真值检查输入包含 knowledgeUnit.content,
@@ -11,7 +11,7 @@
  *
  * 背景: P1-C 修复 — 原条件要求 generationRequest 或 preparedCandidate 存在才拼接
  * unit 内容, 导致正常拍照路径 (只产 knowledgeUnit) 落库内容从未被真值校验;
- * 修复后只要有 knowledgeUnit 就拼接 captureText + '\n' + content。
+ * 2026-09-29: 有 knowledgeUnit 时只检查候选 content；原始 captureText 保留给来源核验。
  *
  * ArkTS 1.1 strict 适配:
  *   - CapturingTruthCheckService 用子类覆写 check() 捕获输入, 避免侵入真实服务
@@ -85,9 +85,10 @@ export default function truthCheckNodeTest(): void {
     it('unit_content_included_in_check_input_on_capture_path', 0, async () => {
       const service: CapturingTruthCheckService = new CapturingTruthCheckService();
       const node = TruthCheckNodeFactory.create(service);
-      await node(state(unit()));
-      expect(service.lastInput).assertContain('x + 1 = 2');
-      expect(service.lastInput).assertContain('落库内容包含矛盾等式 1=0 用于触发真值检查');
+      const candidate: KnowledgeUnit = unit();
+      const result = await node(state(candidate));
+      expect(service.lastInput).assertEqual(candidate.content);
+      expect(result.state.captureText).assertEqual('x + 1 = 2');
     });
 
     it('capture_text_only_when_no_knowledge_unit', 0, async () => {
@@ -121,9 +122,8 @@ export default function truthCheckNodeTest(): void {
     });
   });
 
-  // 2026-09-20 P0-6: patchIntegralDx 窗口修复 — 原实现只检查指数紧邻位置,
-  // 正确积分 $\int f(x)\,dx=1$ 被误判缺 dx 并注入破坏内容 (TRUTH_CHECK_ERROR 硬阻塞)
-  describe('TruthCheckService.integral_dx_patch', () => {
+  // 本地规则不推测积分变量；微元缺失由上下文语义校验判断。
+  describe('TruthCheckService.integral_preservation', () => {
     it('correct_integral_with_integrand_before_dx_passes', 0, () => {
       const service: TruthCheckService = new TruthCheckService();
       const result: MvpTruthCheckResult = service.truthCheck('$\\int_{-\\infty}^{\\infty} f(x)\\,dx=1$');
@@ -138,22 +138,11 @@ export default function truthCheckNodeTest(): void {
       expect(result.correctedText).assertUndefined();
     });
 
-    it('missing_dx_still_patched_within_integrand_window', 0, () => {
+    it('missing_differential_does_not_invent_an_integration_variable', 0, () => {
       const service: TruthCheckService = new TruthCheckService();
       const result: MvpTruthCheckResult = service.truthCheck('$\\int_{0}^{1} x^2 = 1/3$');
-      expect(result.truthFlag).assertFalse();
-      let patched: boolean = false;
-      for (const detail of result.details) {
-        if (detail.checkName === 'latexSyntax' && !detail.passed) {
-          for (const issue of detail.issues) {
-            if (issue.indexOf('积分表达式补充') >= 0) {
-              patched = true;
-            }
-          }
-        }
-      }
-      expect(patched).assertTrue();
-      expect(result.correctedText ?? '').assertContain('\\, dx');
+      expect(result.truthFlag).assertTrue();
+      expect(result.correctedText).assertUndefined();
     });
   });
 }

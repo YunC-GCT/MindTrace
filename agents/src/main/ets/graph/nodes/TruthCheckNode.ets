@@ -9,7 +9,7 @@ export class TruthCheckNodeFactory {
     return async (input: AgentState): Promise<CaptureNodeResult> => {
        input.cancellationToken?.throwIfCancelled();
        const truthInput: string = input.knowledgeUnit !== undefined
-         ? input.captureText + '\n' + input.knowledgeUnit.content
+         ? input.knowledgeUnit.content
          : input.captureText;
        const result = service.check(truthInput);
       const messages: string[] = [];

@@ -99,7 +99,7 @@ export class AgentMemoryService implements ChatProjectionWriter {
     if (chapter.length > 0) {
       lines.push('章节: ' + chapter);
     }
-    lines.push('置信度: ' + result.confidence.toString());
+    lines.push('分类置信度（模型元数据，非 OCR 准确率或数学真值）: ' + result.confidence.toString());
     if (ocrText.length > 0) {
       lines.push('OCR:');
       lines.push(ocrText);

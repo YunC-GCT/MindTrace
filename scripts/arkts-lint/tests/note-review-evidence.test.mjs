@@ -85,6 +85,54 @@ function loadEvidenceService(runtime = {}) {
   );
 }
 
+test('natural-language evidence requests retrieve a topic instead of the entire sentence', async () => {
+  const queries = [];
+  const registry = { async execute(_name, args) {
+    const query = JSON.parse(args).query;
+    queries.push(query);
+    const hits = query === '极限' ? [citation()] : [];
+    return { ok: true, content: JSON.stringify({ hits }) };
+  } };
+  const { NoteEvidenceService } = loadEvidenceService({ store: {}, registry });
+  const service = new NoteEvidenceService();
+  for (const input of ['解释一下极限', '请帮我讲讲极限', '根据我的笔记解释一下极限', '极限是什么？']) {
+    const result = await service.build(input, { graphMode: 'none' });
+    assert.equal(result.citations.length, 1, input);
+    assert.equal(result.query, '极限', input);
+  }
+  assert.deepEqual(queries, ['极限', '极限', '极限', '极限']);
+});
+
+test('retrieval status distinguishes hits, no match, unavailable storage and partial graph failure', () => {
+  const { NoteEvidenceService } = loadEvidenceService();
+  const service = new NoteEvidenceService();
+  assert.match(service.formatRetrievalStatus(context([citation()])), /笔记检索：命中 1 条/);
+  assert.match(service.formatRetrievalStatus({ ...context([]), reason: 'no-match' }), /未命中/);
+  assert.match(service.formatRetrievalStatus({ ...context([]), degraded: true, reason: 'store-not-ready' }), /失败.*尚未就绪/);
+  assert.match(service.formatRetrievalStatus({ ...context([]), degraded: true, reason: 'search-failed' }), /失败.*查询异常/);
+  assert.match(service.formatRetrievalStatus({ ...context([citation()]), degraded: true, reason: 'graph-failed' }), /命中 1 条.*关系扩展/);
+  assert.match(service.formatRetrievalStatus({ ...context([]), reason: 'empty-query' }), /未检索.*主题/);
+});
+
+test('topic normalization preserves mathematical symbols and words inside the topic', () => {
+  const { NoteRetrievalQuery } = loadNoteReviewEtsModule('entry/src/main/ets/services/NoteRetrievalQuery.ets');
+  for (const topic of ['阶乘 n!', 'f(x)=x^2', String.raw`\frac{1}{x}`, '机器学习的学习率', '能量守恒']) {
+    assert.equal(NoteRetrievalQuery.normalize(topic), topic);
+    assert.equal(NoteRetrievalQuery.normalize('请帮我解释一下' + topic + '？'), topic);
+  }
+  assert.equal(NoteRetrievalQuery.normalize('解释一下'), '');
+  assert.equal(NoteRetrievalQuery.normalize('请解释一下这个'), '');
+});
+
+test('empty extracted topic never triggers a broad database query', async () => {
+  const { NoteEvidenceService } = loadEvidenceService({ store: {}, registry: {
+    execute() { assert.fail('empty topic must not query'); },
+  } });
+  const result = await new NoteEvidenceService().build('请解释一下');
+  assert.equal(result.reason, 'empty-query');
+  assert.equal(result.citations.length, 0);
+});
+
 test('NoteEvidenceService filters same-note wrong-version citations', () => {
   const { NoteEvidenceService } = loadEvidenceService();
   const service = new NoteEvidenceService();
