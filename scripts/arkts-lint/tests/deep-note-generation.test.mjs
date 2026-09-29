@@ -14,7 +14,7 @@ test('Issue 103 wires a real deep route through Dispatcher and KnowledgeModel', 
   assert.match(dispatcher, /route === 'deep'/)
   assert.match(dispatcher, /dispatchDeepGeneration/)
   assert.match(dispatcher, /structureDeepDraft/)
-  assert.match(dispatcher, /repairDeepDraft/)
+  assert.doesNotMatch(dispatcher, /repairDeepDraft/)
   assert.match(dispatcher, /deepMergeIssues/)
   assert.doesNotMatch(dispatcher, /DEEP_ROUTE_UNSUPPORTED/)
   assert.match(model, /segmentSourceBundle/)
@@ -44,7 +44,16 @@ test('deep generation reports real section and verification activity', () => {
   assert.match(model, /current: sectionIndex/)
   assert.match(model, /total: outline\.sections\.length/)
   assert.match(model, /activity: 'check_accuracy'/)
-  assert.match(dispatcher, /activity: 'repair_draft'/)
+  assert.doesNotMatch(dispatcher, /repairDeepDraft/)
   assert.match(dispatcher, /structureDeepDraft\(budgetedRequest, options\.progressSink\)/)
-  assert.match(dispatcher, /repairDeepDraft\(budgetedRequest, current, evaluation\.issues, options\.progressSink\)/)
+  assert.match(model, /callIndependentVerifier\(/)
+  assert.match(model, /evidenceStatuses/)
+})
+
+test('deep evidence never fabricates an empty source anchor when an excerpt cannot be located', () => {
+  const model = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+
+  assert.match(model, /if \(located >= 0\) \{[\s\S]*?refs\.push\(/)
+  assert.doesNotMatch(model, /refs\.push\(\{[\s\S]*?excerpt:\s*''/)
+  assert.match(model, /sourceRefs: refs/)
 })

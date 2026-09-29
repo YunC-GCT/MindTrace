@@ -48,6 +48,7 @@ import {
   NoteGenerationRoute,
   NoteGenerationRun,
   SourceFragment,
+  sourceFingerprint,
 } from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
@@ -580,7 +581,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
           kind: 'ocr',
           originId: imageUri,
           sequence: 1,
-          fingerprint: ocrSourceId,
+          fingerprint: sourceFingerprint(ocrText),
           text: ocrText,
         });
       }

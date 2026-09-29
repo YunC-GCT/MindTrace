@@ -9,7 +9,7 @@
  *   Current run message/OCR -> context eligibility guard -> RDB memory projection.
  */
 import { common } from '@kit.AbilityKit';
-import { CancellationToken, ClassificationResult, SourceFragment } from 'common';
+import { CancellationToken, ClassificationResult, SourceFragment, sourceFingerprint } from 'common';
 import { AgentMemoryService } from '../../services/AgentMemoryService';
 import { AgentMemoryRecord } from '../../models/AgentMemoryModels';
 import { ChatMessageOrigin } from './ConversationState';
@@ -142,7 +142,7 @@ export class ConversationMemoryProjection {
           kind: 'ocr',
           originId: record.source,
           sequence: sequence,
-          fingerprint: record.id,
+          fingerprint: sourceFingerprint(record.content),
           text: record.content,
         });
         sequence += 1;

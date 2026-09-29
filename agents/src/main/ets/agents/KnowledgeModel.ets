@@ -46,12 +46,11 @@ import {
   buildPipelineEvidence,
   sourceFingerprint,
   validateSourceBundle,
-  NoteGenerationEvidenceVerifier,
+  NoteGenerationArtifactValidator,
+  buildNoteVerificationJsonSchema,
   NOTE_OUTLINE_SCHEMA_VERSION,
   NOTE_DRAFT_SCHEMA_VERSION,
-  NOTE_EVIDENCE_JSON_SCHEMA,
   NOTE_STANDARD_JSON_SCHEMA,
-  NOTE_VERIFICATION_JSON_SCHEMA,
 } from 'common';
 import type {
   ChatMessage,
@@ -71,6 +70,8 @@ import type {
   NoteGenerationRequest,
   NoteGenerationOutline,
   NoteGenerationOutlineSection,
+  NoteGenerationEvidenceCandidate,
+  EvidenceCandidateSourceRef,
   NoteGenerationEvidenceItem,
   EvidenceSourceRef,
   EvidenceItemType,
@@ -273,44 +274,13 @@ export class KnowledgeModel {
       requirement,
       request.tokenBudget,
     );
-    const verified: NoteGenerationStandardResult = this.applyVerification(normalized, verification);
-    verified.reextractionCount = 0;
+    const verified: NoteGenerationStandardResult = {
+      outline: normalized.outline,
+      evidence: normalized.evidence,
+      draft: normalized.draft,
+      verification: verification,
+    };
     return verified;
-  }
-
-  async repairStandardDraft(
-    request: NoteGenerationRequest,
-    current: NoteGenerationStandardResult,
-    issues: NoteGenerationIssue[],
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteGenerationStandardResult> {
-    const requirement: NoteGenerationRequirement = request.requirement ?? {
-      detailLevel: 'normal',
-      mustInclude: [],
-      mustAvoid: [],
-      targetSectionIds: [],
-      preserveUserEdits: true,
-    };
-    const repairedEvidence: NoteGenerationEvidenceItem[] = await this.callEvidenceRepair(request, current, requirement);
-    const repaired: NoteGenerationStandardResult = {
-      outline: current.outline,
-      evidence: repairedEvidence,
-      draft: current.draft,
-      verification: { status: 'supported', issues: issues, checkedEvidenceIds: [], decisions: [] },
-    };
-    const normalized: NoteGenerationStandardResult = this.normalizeStandardResult(repaired, request.sources, request.instruction);
-    this.emitProgress(progressSink, {
-      phase: 'verify',
-      state: 'running',
-      activity: 'check_accuracy',
-    });
-    const verification: NoteGenerationVerification = await this.callIndependentVerifier(
-      normalized,
-      request.sources,
-      requirement,
-      request.tokenBudget,
-    );
-    return this.mergeVerifiedEvidence(current, this.applyVerification(normalized, verification), request.sources, requirement);
   }
 
   async structureDeepDraft(
@@ -399,135 +369,20 @@ export class KnowledgeModel {
       state: 'running',
       activity: 'check_accuracy',
     });
-    const verification: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
-      outline,
-      evidence,
-      draft,
-      request.sources,
-      requirement,
-    );
-    return {
+    const verificationInput: NoteGenerationStandardResult = {
       outline: outline,
       evidence: evidence,
       draft: draft,
-      verification: verification,
-      ledger: ledger,
-      segments: segments,
+      verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] },
     };
-  }
-
-  async repairDeepDraft(
-    request: NoteGenerationRequest,
-    current: NoteGenerationDeepResult,
-    issues: NoteGenerationIssue[],
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteGenerationDeepResult> {
-    const targets: string[] = [];
-    let globalRepairRequired: boolean = false;
-    for (const issue of issues) {
-      if (issue.sectionId !== undefined && !targets.includes(issue.sectionId)) {
-        targets.push(issue.sectionId);
-      }
-      if (issue.sourceId !== undefined) {
-        for (const outlineSection of current.outline.sections) {
-          if (outlineSection.sourceIds.includes(issue.sourceId) && !targets.includes(outlineSection.id)) {
-            targets.push(outlineSection.id);
-          }
-        }
-      }
-      if (issue.code === 'DEEP_MUST_INCLUDE_MISSING') {
-        for (const outlineSection of current.outline.sections) {
-          for (const requiredItem of outlineSection.mustInclude) {
-            if (issue.message.includes(requiredItem) && !targets.includes(outlineSection.id)) {
-              targets.push(outlineSection.id);
-            }
-          }
-        }
-      }
-      if (issue.code === 'DEEP_CONTRADICTION' || issue.code === 'TRUTH_CHECK_ERROR') {
-        globalRepairRequired = true;
-      }
-    }
-    if (globalRepairRequired) {
-      for (const outlineSection of current.outline.sections) {
-        if (!targets.includes(outlineSection.id)) {
-          targets.push(outlineSection.id);
-        }
-      }
-    }
-    if (targets.length === 0) {
-      throw new Error('deep repair target unresolved');
-    }
-    const segments: NoteGenerationSegment[] = current.segments ?? segmentSourceBundle(request.sources);
-    const ledger: NoteGenerationLedger = {
-      formulas: current.ledger.formulas.slice(0),
-      terminology: current.ledger.terminology.slice(0),
-      conclusions: current.ledger.conclusions.slice(0),
-    };
-    const sections: NoteDraftSection[] = [];
-    let repairIndex: number = 0;
-    for (const outlineSection of current.outline.sections) {
-      let next: NoteDraftSection | undefined = current.draft.sections.find(
-        (item: NoteDraftSection): boolean => item.id === outlineSection.id,
-      );
-      if (targets.includes(outlineSection.id)) {
-        repairIndex += 1;
-        this.emitProgress(progressSink, {
-          phase: 'compose',
-          state: 'running',
-          activity: 'repair_draft',
-          current: repairIndex,
-          total: targets.length,
-        });
-        const repairedDocument: NoteDraftDocument = await this.callDeepSectionDraft(
-          request,
-          outlineSection,
-          segments,
-          ledger,
-        );
-        next = repairedDocument.sections[0];
-      }
-      if (next === undefined) {
-        throw new Error('deep repair lost section: ' + outlineSection.id);
-      }
-      const repairedSection: NoteDraftSection = {
-        id: outlineSection.id,
-        label: outlineSection.label,
-        content: next.content,
-        sourceIds: outlineSection.sourceIds.slice(0),
-        state: next.state,
-        baseHash: next.baseHash,
-      };
-      sections.push(repairedSection);
-      this.updateDeepLedger(ledger, outlineSection, repairedSection.content, segments);
-    }
-    const draft: NoteDraftDocument = {
-      schemaVersion: current.draft.schemaVersion,
-      title: current.draft.title,
-      summary: current.draft.summary,
-      subject: current.draft.subject,
-      category: current.draft.category,
-      chapter: current.draft.chapter,
-      difficulty: current.draft.difficulty,
-      tags: current.draft.tags.slice(0),
-      sections: sections,
-      instruction: request.instruction,
-    };
-    const evidence: NoteGenerationEvidenceItem[] = this.buildDeepEvidence(current.outline, sections, segments, request.sources);
-    this.emitProgress(progressSink, {
-      phase: 'verify',
-      state: 'running',
-      activity: 'check_accuracy',
-    });
-    const verification: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
-      current.outline,
-      evidence,
-      draft,
+    const verification: NoteGenerationVerification = await this.callIndependentVerifier(
+      verificationInput,
       request.sources,
-      request.requirement ?? { detailLevel: 'detailed', mustInclude: [], mustAvoid: [], targetSectionIds: [], preserveUserEdits: true },
+      requirement,
+      request.tokenBudget,
     );
     return {
-      outline: current.outline,
+      outline: outline,
       evidence: evidence,
       draft: draft,
       verification: verification,
@@ -760,9 +615,8 @@ export class KnowledgeModel {
         continue;
       }
       const excerpt: string = segment.text.substring(0, Math.min(segment.text.length, 240));
-      // 2026-09-20 P0-7: segment 文本是 fragment 的切片 (经 trim), 偏移由管线
-      // 重算 — 原先 start:0 写死, 除首节外全部 EVIDENCE_EXCERPT_NOT_LOCATABLE
-      // (dbpull5 deep run 实测 ×6); 找不到时降级为空 excerpt 锚点 (与 P0-6 放宽一致)
+      // segment 文本必须重新定位到原始 fragment 后才能成为引用。定位失败时只保留
+      // assertion 并留下空 sourceRefs，让 artifact validator 明确报错；不得伪造空引文或偏移。
       let fragment: SourceFragment | undefined = undefined;
       for (const candidate of bundle.fragments) {
         if (candidate.id === sourceId) {
@@ -770,106 +624,33 @@ export class KnowledgeModel {
           break;
         }
       }
-      let ref: EvidenceSourceRef = { sourceId: sourceId, excerpt: '', start: 0, end: 0 };
+      const evidenceId: string = 'evidence-' + section.id;
+      const refs: EvidenceSourceRef[] = [];
       if (fragment !== undefined) {
         const located: number = fragment.text.indexOf(excerpt);
         if (located >= 0) {
-          ref = { sourceId: sourceId, excerpt: excerpt, start: located, end: located + excerpt.length };
+          refs.push({
+            id: evidenceId + ':ref-1',
+            sourceId: sourceId,
+            sourceFingerprint: fragment.fingerprint,
+            excerpt: fragment.text.substring(located, located + excerpt.length),
+            start: located,
+            end: located + excerpt.length,
+          });
         }
       }
       evidence.push({
-        id: 'evidence-' + section.id,
-        type: segment.boundary === 'formula_block' ? 'formula' : segment.boundary === 'derivation' ? 'step' : 'claim',
-        claim: excerpt,
-        sourceRefs: [ref],
-        targetSectionId: section.id,
-        // 2026-09-20 P0-7: 溯源是结构性的 (章节由该 segment 生成), 不再按
-        // 「内容逐字包含原文头」猜测 ambiguous — 该猜测叠加校验器 hard 判定
-        // 使改写型 deep 草稿必然全灭 (dbpull5 实测 EVIDENCE_AMBIGUOUS ×6)
-        verification: 'supported',
+        id: evidenceId,
+        assertion: {
+          type: segment.boundary === 'formula_block' ? 'formula' : segment.boundary === 'derivation' ? 'step' : 'claim',
+          text: excerpt,
+          targetSectionId: section.id,
+        },
+        sourceRefs: refs,
         origin: 'pipeline',
       });
     }
     return evidence;
-  }
-
-  private async callEvidenceRepair(
-    request: NoteGenerationRequest,
-    current: NoteGenerationStandardResult,
-    requirement: NoteGenerationRequirement,
-  ): Promise<NoteGenerationEvidenceItem[]> {
-    const failedIds: string[] = [];
-    for (const item of current.evidence) {
-      if (item.verification !== 'supported') {
-        failedIds.push(item.id);
-      }
-    }
-    for (const issue of current.verification.issues) {
-      for (const item of current.evidence) {
-        let affected: boolean = false;
-        for (const ref of item.sourceRefs) {
-          if (issue.sourceId !== undefined && issue.sourceId === ref.sourceId) {
-            affected = true;
-            break;
-          }
-        }
-        if (!affected && issue.sectionId !== undefined && issue.sectionId === item.targetSectionId) {
-          affected = true;
-        }
-        if (affected && !failedIds.includes(item.id)) {
-          failedIds.push(item.id);
-        }
-      }
-    }
-    for (const requiredItem of requirement.mustInclude) {
-      let covered: boolean = false;
-      for (const section of current.outline.sections) {
-        if (section.mustInclude.includes(requiredItem)) {
-          for (const item of current.evidence) {
-            if (item.targetSectionId === section.id) {
-              covered = true;
-              break;
-            }
-          }
-        }
-        if (covered) {
-          break;
-        }
-      }
-      if (!covered) {
-        failedIds.push('coverage-gap:' + requiredItem);
-      }
-    }
-    const systemMessage: ChatMessage = {
-      role: 'system',
-      content: 'Return JSON only with an evidence array. Re-extract only these failed evidence IDs: '
-        + failedIds.join(',') + '. Do not rewrite supported evidence, outline, or draft. '
-        + 'Each replacement needs an exact source excerpt and target section.\n'
-        + 'sources=' + this.standardSourceText(request.sources) + '\n'
-        + 'current=' + JSON.stringify(current.evidence) + '\n'
-        + 'mustInclude=' + requirement.mustInclude.join(','),
-    };
-    const userMessage: ChatMessage = { role: 'user', content: 'Repair only contradicted, ambiguous, or uncovered evidence.' };
-    // 行为变更 (2026-09-19): 提取/校验失败不再静默返回 [], GenerationJsonError 向上传播,
-    // 由 Dispatcher 归入 repair_failed 并保留 best checkpoint (spec §13.12)
-    const parsed: Record<string, Object> = await this.jsonCaller.callJson(
-      [systemMessage, userMessage],
-      {
-        label: 'evidence repair',
-        maxTokens: this.budgetedRequestTokens(request, 2400),
-        timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-        responseFormat: this.structuredResponseFormat(NOTE_EVIDENCE_JSON_SCHEMA, 'mindtrace_note_evidence_repair'),
-      },
-      (json: Record<string, Object>): LlmGuardValidationResult => {
-        const value: Object | undefined = this.readRecordValue(json, 'evidence');
-        if (value === undefined || !Array.isArray(value)) {
-          return { ok: false, issues: ['evidence must be an array'] };
-        }
-        return { ok: true, issues: [] };
-      },
-    );
-    const evidenceValue: Object | undefined = this.readRecordValue(parsed, 'evidence');
-    return this.parseEvidence(evidenceValue as Object);
   }
 
   private async callStandardArtifacts(
@@ -1043,33 +824,41 @@ export class KnowledgeModel {
   ): Promise<NoteGenerationVerification> {
     const systemMessage: ChatMessage = {
       role: 'system',
-      content: 'Act as an independent verifier. Return JSON only. Classify EVERY evidence item listed below '
-        + 'as supported, contradicted, or ambiguous, using its exact id in the decisions array. '
-        + 'Do not rewrite evidence, draft, or decide persistence.\n'
-        + 'evidence ids to classify: ' + result.evidence.map((item: NoteGenerationEvidenceItem): string => item.id).join(',') + '\n'
-        + 'evidence=' + JSON.stringify(result.evidence) + '\n'
+      content: 'Act as a read-only independent note verifier. Return JSON only. Verify the outline, draft, '
+        + 'evidence, source grounding, and requirement coverage. Never rewrite, replace, repair, or generate '
+        + 'outline, draft, or evidence. Return evidenceStatuses in the same order as the supplied evidence array; '
+        + 'each value must be supported, contradicted, or ambiguous. Never copy or invent evidence IDs. When '
+        + 'evidence is empty, evidenceStatuses must be empty, but you must still verify the outline, draft, '
+        + 'sources, and requirements. For evidenceStatuses, judge only whether each cited excerpt supports the '
+        + 'assertion. If a source faithfully contains an implausible or factually wrong statement, keep that '
+        + 'evidence status supported and report the factual problem separately in issues and the overall status.\n'
+        + 'outline=' + JSON.stringify(result.outline) + '\n'
+        + 'draft=' + JSON.stringify(result.draft) + '\n'
+        + 'evidenceByPosition=' + this.verifierEvidenceText(result.evidence) + '\n'
         + 'sources=' + this.standardSourceText(bundle) + '\n'
-        + 'mustInclude=' + requirement.mustInclude.join(','),
+        + 'mustInclude=' + requirement.mustInclude.join(',') + '\n'
+        + 'mustAvoid=' + requirement.mustAvoid.join(','),
     };
-    const userMessage: ChatMessage = { role: 'user', content: 'Verify every evidence source excerpt and claim.' };
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: 'Verify the complete note and classify each evidence assertion by array position.',
+    };
     const messages: ChatMessage[] = [systemMessage, userMessage];
     let modelVerification: NoteGenerationVerification;
     try {
-      // 外层降级策略保留: seam 任何失败 (含重试耗尽) → VERIFIER_UNAVAILABLE
       const parsed: Record<string, Object> = await this.jsonCaller.callJson(
         messages,
         {
           label: 'independent verifier',
-          // 2600 (2026-09-19): decisions 数组需覆盖全部 evidence id, 1600 实测不够
           maxTokens: this.budgetedTokens(tokenBudget, 2600),
           timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-          responseFormat: this.structuredResponseFormat(NOTE_VERIFICATION_JSON_SCHEMA, 'mindtrace_note_verification'),
+          responseFormat: this.verificationResponseFormat(result.evidence),
         },
         (json: Record<string, Object>): LlmGuardValidationResult => {
           const issues: string[] = [];
-          const decisionsValue: Object | undefined = this.readRecordValue(json, 'decisions');
-          if (decisionsValue !== undefined && !Array.isArray(decisionsValue)) {
-            issues.push('decisions must be an array');
+          const statusesValue: Object | undefined = this.readRecordValue(json, 'evidenceStatuses');
+          if (statusesValue !== undefined && !Array.isArray(statusesValue)) {
+            issues.push('evidenceStatuses must be an array');
           }
           const issuesValue: Object | undefined = this.readRecordValue(json, 'issues');
           if (issuesValue !== undefined && !Array.isArray(issuesValue)) {
@@ -1080,67 +869,21 @@ export class KnowledgeModel {
         (json: Record<string, Object>): string[] =>
           this.validateIndependentVerifierJson(json, result.evidence),
       );
-      modelVerification = this.parseVerification(parsed);
+      modelVerification = this.parseVerification(parsed, result.evidence);
     } catch (e) {
       modelVerification = { status: 'ambiguous', issues: [{
-        stage: 'evidence', code: 'VERIFIER_UNAVAILABLE', severity: 'hard',
-        message: 'independent verifier did not return a result', repairable: true,
+        stage: 'verifier', code: 'VERIFIER_UNAVAILABLE', severity: 'hard',
+        message: 'independent verifier did not return a complete result', repairable: false,
       }], checkedEvidenceIds: [], decisions: [] };
     }
-    if (result.evidence.length === 0) {
-      modelVerification = this.relaxEmptyEvidenceVerification(modelVerification);
-    }
-    const local: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
+    const local: NoteGenerationVerification = new NoteGenerationArtifactValidator().verify(
       result.outline,
       result.evidence,
       result.draft,
       bundle,
       requirement,
     );
-    const verifierIssues: NoteGenerationIssue[] = [];
-    for (const item of result.evidence) {
-      let decided: boolean = false;
-      for (const decision of modelVerification.decisions) {
-        if (decision.evidenceId === item.id) {
-          decided = true;
-          break;
-        }
-      }
-      if (!decided) {
-        verifierIssues.push({
-          stage: 'evidence', code: 'VERIFIER_DECISION_MISSING', severity: 'hard',
-          message: 'independent verifier did not classify every evidence item', repairable: true,
-        });
-      }
-    }
-    const completeModelVerification: NoteGenerationVerification = {
-      status: verifierIssues.length > 0 && modelVerification.status === 'supported' ? 'ambiguous' : modelVerification.status,
-      issues: modelVerification.issues.concat(verifierIssues),
-      checkedEvidenceIds: modelVerification.checkedEvidenceIds,
-      decisions: modelVerification.decisions,
-    };
-    return this.combineVerification(completeModelVerification, local);
-  }
-
-  private relaxEmptyEvidenceVerification(verification: NoteGenerationVerification): NoteGenerationVerification {
-    const issues: NoteGenerationIssue[] = [];
-    for (const issue of verification.issues) {
-      issues.push({
-        stage: issue.stage,
-        code: issue.code,
-        severity: 'soft',
-        message: issue.message,
-        repairable: issue.repairable,
-        sourceId: issue.sourceId,
-        sectionId: issue.sectionId,
-      });
-    }
-    return {
-      status: verification.status === 'contradicted' ? 'ambiguous' : verification.status,
-      issues: issues,
-      checkedEvidenceIds: verification.checkedEvidenceIds.slice(0),
-      decisions: verification.decisions.slice(0),
-    };
+    return this.combineVerification(modelVerification, local);
   }
 
   private normalizeStandardResult(
@@ -1209,33 +952,19 @@ export class KnowledgeModel {
     };
     const remappedEvidence: NoteGenerationEvidenceItem[] = [];
     for (const item of result.evidence) {
-      const oldIndex: number = originalSectionIds.indexOf(item.targetSectionId);
+      const oldIndex: number = originalSectionIds.indexOf(item.assertion.targetSectionId);
       remappedEvidence.push({
         id: item.id,
-        type: item.type,
-        claim: item.claim,
-        sourceRefs: item.sourceRefs,
-        targetSectionId: oldIndex >= 0 ? outline.sections[oldIndex].id : item.targetSectionId,
-        verification: item.verification,
-      });
-    }
-    // 2026-09-20 P0-6: 先做 evidence 契约归一化 (丢空壳/回填 id/修 sourceId),
-    // 再做 excerpt 偏移定位 (定位依赖 sourceId 可查)
-    const normalizedEvidence: NoteGenerationEvidenceItem[] =
-      normalizeEvidenceItems(remappedEvidence, sourceIds, outlineSourceIdsBySectionId);
-    let evidence: NoteGenerationEvidenceItem[] = [];
-    for (const item of normalizedEvidence) {
-      evidence.push({
-        id: item.id,
-        type: item.type,
-        claim: item.claim,
-        // 2026-09-19: excerpt 偏移自动定位 (LLM 数不准字符偏移, 管线代算)
-        sourceRefs: this.relocateEvidenceRefs(item.sourceRefs, bundle),
-        targetSectionId: item.targetSectionId,
-        verification: item.verification,
+        assertion: {
+          type: item.assertion.type,
+          text: item.assertion.text,
+          targetSectionId: oldIndex >= 0 ? outline.sections[oldIndex].id : item.assertion.targetSectionId,
+        },
+        sourceRefs: item.sourceRefs.slice(0),
         origin: item.origin,
       });
     }
+    let evidence: NoteGenerationEvidenceItem[] = remappedEvidence;
     if (evidence.length === 0) {
       evidence = buildPipelineEvidence(outline, bundle);
     }
@@ -1244,43 +973,8 @@ export class KnowledgeModel {
       evidence: evidence,
       draft: draft,
       verification: result.verification,
-      reextractionCount: result.reextractionCount,
     };
     return normalizedResult;
-  }
-
-  /**
-   * evidence excerpt 偏移自动定位 (2026-09-19):
-   * validateStandardArtifacts 要求 ref.start 精确等于 source 中 excerpt 的
-   * indexOf 结果 — LLM 无法可靠计算字符偏移, 必挂 EVIDENCE_EXCERPT_NOT_LOCATABLE。
-   * excerpt 真实存在于源时由管线重算 start/end; 找不到则保留原值 (校验器判 hard,
-   * 杜绝伪造 excerpt)。
-   */
-  private relocateEvidenceRefs(refs: EvidenceSourceRef[], bundle: SourceBundle): EvidenceSourceRef[] {
-    const relocated: EvidenceSourceRef[] = [];
-    for (const ref of refs) {
-      let fragment: SourceFragment | undefined = undefined;
-      for (const candidate of bundle.fragments) {
-        if (candidate.id === ref.sourceId) {
-          fragment = candidate;
-          break;
-        }
-      }
-      if (fragment !== undefined && ref.excerpt.trim().length > 0) {
-        const located: number = fragment.text.indexOf(ref.excerpt);
-        if (located >= 0) {
-          relocated.push({
-            sourceId: ref.sourceId,
-            excerpt: ref.excerpt,
-            start: located,
-            end: located + ref.excerpt.length,
-          });
-          continue;
-        }
-      }
-      relocated.push(ref);
-    }
-    return relocated;
   }
 
   /**
@@ -1299,104 +993,6 @@ export class KnowledgeModel {
       return validation.normalizedText;
     }
     return content;
-  }
-
-  private applyVerification(
-    result: NoteGenerationStandardResult,
-    verification: NoteGenerationVerification,
-  ): NoteGenerationStandardResult {
-    const evidence: NoteGenerationEvidenceItem[] = [];
-    for (const item of result.evidence) {
-      let status: EvidenceVerificationStatus = item.verification;
-      for (const decision of verification.decisions) {
-        if (decision.evidenceId === item.id) {
-          status = decision.status;
-          break;
-        }
-      }
-      evidence.push({
-        id: item.id,
-        type: item.type,
-        claim: item.claim,
-        sourceRefs: item.sourceRefs,
-        targetSectionId: item.targetSectionId,
-        verification: status,
-        origin: item.origin,
-      });
-    }
-    return { outline: result.outline, evidence: evidence, draft: result.draft, verification: verification };
-  }
-
-  private mergeVerifiedEvidence(
-    original: NoteGenerationStandardResult,
-    repaired: NoteGenerationStandardResult,
-    bundle: SourceBundle,
-    requirement: NoteGenerationRequirement,
-  ): NoteGenerationStandardResult {
-    const repairedById: Map<string, NoteGenerationEvidenceItem> = new Map<string, NoteGenerationEvidenceItem>();
-    for (const item of repaired.evidence) {
-      repairedById.set(item.id, item);
-    }
-    const evidence: NoteGenerationEvidenceItem[] = [];
-    for (const item of original.evidence) {
-      if (item.verification === 'supported') {
-        evidence.push(item);
-      } else {
-        let replacement: NoteGenerationEvidenceItem | undefined = repairedById.get(item.id);
-        if (replacement === undefined) {
-          for (const repairedItem of repaired.evidence) {
-            if (repairedItem.targetSectionId === item.targetSectionId && repairedItem.type === item.type) {
-              replacement = repairedItem;
-              break;
-            }
-          }
-        }
-        evidence.push(replacement ?? item);
-      }
-    }
-    for (const item of repaired.evidence) {
-      if (original.evidence.find((oldItem: NoteGenerationEvidenceItem): boolean => oldItem.id === item.id) === undefined) {
-        evidence.push(item);
-      }
-    }
-    const frozenSectionIds: string[] = [];
-    for (const item of original.evidence) {
-      if (item.verification === 'supported' && !frozenSectionIds.includes(item.targetSectionId)) {
-        frozenSectionIds.push(item.targetSectionId);
-      }
-    }
-    const frozenSections: NoteDraftSection[] = [];
-    for (const section of repaired.draft.sections) {
-      let frozen: NoteDraftSection | undefined = undefined;
-      for (const originalSection of original.draft.sections) {
-        if (originalSection.id === section.id && frozenSectionIds.includes(section.id)) {
-          frozen = originalSection;
-          break;
-        }
-      }
-      frozenSections.push(frozen ?? section);
-    }
-    const frozenDraft: NoteDraftDocument = {
-      schemaVersion: repaired.draft.schemaVersion,
-      title: repaired.draft.title,
-      summary: normalizeDraftSummary(repaired.draft.summary),
-      subject: repaired.draft.subject,
-      category: repaired.draft.category,
-      chapter: repaired.draft.chapter,
-      difficulty: repaired.draft.difficulty,
-      tags: repaired.draft.tags,
-      sections: frozenSections,
-      instruction: repaired.draft.instruction,
-    };
-    const local: NoteGenerationVerification = new NoteGenerationEvidenceVerifier().verify(
-      original.outline,
-      evidence,
-      frozenDraft,
-      bundle,
-      requirement,
-    );
-    const combined: NoteGenerationVerification = this.combineVerification(repaired.verification, local);
-    return { outline: original.outline, evidence: evidence, draft: frozenDraft, verification: combined };
   }
 
   private combineVerification(
@@ -1432,7 +1028,7 @@ export class KnowledgeModel {
         decisions.push(decision);
       }
     }
-    return { status: status, issues: issues, checkedEvidenceIds: local.checkedEvidenceIds, decisions: decisions };
+    return { status: status, issues: issues, checkedEvidenceIds: model.checkedEvidenceIds, decisions: decisions };
   }
 
   private standardSourceText(bundle: SourceBundle): string {
@@ -1441,6 +1037,26 @@ export class KnowledgeModel {
       lines.push('[source:' + fragment.id + '] ' + fragment.text);
     }
     return lines.join('\n');
+  }
+
+  private verifierEvidenceText(evidence: NoteGenerationEvidenceItem[]): string {
+    const lines: string[] = [];
+    let index: number = 0;
+    for (const item of evidence) {
+      lines.push('[' + index.toString() + '] origin=' + item.origin
+        + '; assertionType=' + item.assertion.type
+        + '; targetSectionId=' + item.assertion.targetSectionId
+        + '; assertionText=' + JSON.stringify(item.assertion.text));
+      for (const ref of item.sourceRefs) {
+        lines.push('  sourceRef sourceId=' + ref.sourceId
+          + '; sourceFingerprint=' + ref.sourceFingerprint
+          + '; start=' + ref.start.toString()
+          + '; end=' + ref.end.toString()
+          + '; excerpt=' + JSON.stringify(ref.excerpt));
+      }
+      index += 1;
+    }
+    return lines.length === 0 ? '[]' : lines.join('\n');
   }
 
   private parseStandardResult(parsed: Record<string, Object>, sources: SourceBundle): NoteGenerationStandardResult {
@@ -1472,9 +1088,15 @@ export class KnowledgeModel {
       }
       throw new Error('standard artifacts require draft; keys=' + Object.keys(parsed).join(','));
     }
+    const outline: NoteGenerationOutline = this.parseOutline(outlineValue as Record<string, Object>);
+    const sourceIdsBySectionId: Map<string, string[]> = new Map<string, string[]>();
+    for (const section of outline.sections) {
+      sourceIdsBySectionId.set(section.id, section.sourceIds);
+    }
+    const candidates: NoteGenerationEvidenceCandidate[] = this.parseEvidenceCandidates(evidenceValue);
     return {
-      outline: this.parseOutline(outlineValue as Record<string, Object>),
-      evidence: this.parseEvidence(evidenceValue),
+      outline: outline,
+      evidence: normalizeEvidenceItems(candidates, sources, sourceIdsBySectionId),
       draft: this.parseDraftDocument(draftValue as Record<string, Object>),
       verification: { status: 'supported', issues: [], checkedEvidenceIds: [], decisions: [] },
     };
@@ -1500,14 +1122,14 @@ export class KnowledgeModel {
     return { schemaVersion: NOTE_OUTLINE_SCHEMA_VERSION, sections: sections };
   }
 
-  private parseEvidence(value: Object): NoteGenerationEvidenceItem[] {
-    const evidence: NoteGenerationEvidenceItem[] = [];
+  private parseEvidenceCandidates(value: Object): NoteGenerationEvidenceCandidate[] {
+    const evidence: NoteGenerationEvidenceCandidate[] = [];
     if (!Array.isArray(value)) {
       return evidence;
     }
     for (const item of value as Object[]) {
       const record: Record<string, Object> = item as Record<string, Object>;
-      const references: EvidenceSourceRef[] = [];
+      const references: EvidenceCandidateSourceRef[] = [];
       const referenceValue: Object | undefined = this.readRecordValue(record, 'sourceRefs');
       if (referenceValue !== undefined && Array.isArray(referenceValue)) {
         for (const reference of referenceValue as Object[]) {
@@ -1515,44 +1137,44 @@ export class KnowledgeModel {
           references.push({
             sourceId: String(this.readRecordValue(ref, 'sourceId') ?? ''),
             excerpt: String(this.readRecordValue(ref, 'excerpt') ?? ''),
-            start: Number(this.readRecordValue(ref, 'start') ?? 0),
-            end: Number(this.readRecordValue(ref, 'end') ?? 0),
           });
         }
       }
       const typeValue: string = String(this.readRecordValue(record, 'type') ?? 'claim');
       const evidenceType: EvidenceItemType = typeValue === 'definition' || typeValue === 'formula'
         || typeValue === 'step' || typeValue === 'example' || typeValue === 'conclusion' ? typeValue : 'claim';
-      const statusValue: string = String(this.readRecordValue(record, 'verification') ?? 'supported');
-      const verification: EvidenceVerificationStatus = statusValue === 'contradicted' || statusValue === 'ambiguous' ? statusValue : 'supported';
       evidence.push({
-        id: String(this.readRecordValue(record, 'id') ?? ''),
         type: evidenceType,
         claim: String(this.readRecordValue(record, 'claim') ?? ''),
         sourceRefs: references,
         targetSectionId: String(this.readRecordValue(record, 'targetSectionId') ?? ''),
-        verification: verification,
       });
     }
     return evidence;
   }
 
   // 入参由 seam 预解析并保证顶层对象, 空文分支不再存在 (2026-09-19 统一 JSON 生命周期)
-  private parseVerification(parsed: Record<string, Object>): NoteGenerationVerification {
+  private parseVerification(
+    parsed: Record<string, Object>,
+    evidence: NoteGenerationEvidenceItem[],
+  ): NoteGenerationVerification {
     const statusValue: string = String(this.readRecordValue(parsed, 'status') ?? 'ambiguous');
-    const status: EvidenceVerificationStatus = statusValue === 'supported' ? 'supported' : statusValue === 'contradicted' ? 'contradicted' : 'ambiguous';
+    let status: EvidenceVerificationStatus = statusValue === 'supported'
+      ? 'supported' : statusValue === 'contradicted' ? 'contradicted' : 'ambiguous';
     const decisions: NoteGenerationEvidenceDecision[] = [];
-    const decisionValue: Object | undefined = this.readRecordValue(parsed, 'decisions');
-    if (decisionValue !== undefined && Array.isArray(decisionValue)) {
-      for (const item of decisionValue as Object[]) {
-        const record: Record<string, Object> = item as Record<string, Object>;
-        const itemStatus: string = String(this.readRecordValue(record, 'status') ?? 'ambiguous');
+    const checkedEvidenceIds: string[] = [];
+    const statusesValue: Object | undefined = this.readRecordValue(parsed, 'evidenceStatuses');
+    if (statusesValue !== undefined && Array.isArray(statusesValue)) {
+      const statuses: Object[] = statusesValue as Object[];
+      for (let index: number = 0; index < evidence.length; index += 1) {
+        const itemStatus: string = String(statuses[index] ?? 'ambiguous');
         const decisionStatus: EvidenceVerificationStatus = itemStatus === 'supported'
           ? 'supported' : itemStatus === 'contradicted' ? 'contradicted' : 'ambiguous';
         decisions.push({
-          evidenceId: String(this.readRecordValue(record, 'evidenceId') ?? ''),
+          evidenceId: evidence[index].id,
           status: decisionStatus,
         });
+        checkedEvidenceIds.push(evidence[index].id);
       }
     }
     const issues: NoteGenerationIssue[] = [];
@@ -1563,20 +1185,59 @@ export class KnowledgeModel {
         const severityValue: string = String(this.readRecordValue(record, 'severity') ?? 'hard');
         const severity: 'hard' | 'soft' = severityValue === 'soft' ? 'soft' : 'hard';
         issues.push({
-          stage: String(this.readRecordValue(record, 'stage') ?? 'evidence'),
+          stage: 'verifier',
           code: String(this.readRecordValue(record, 'code') ?? 'VERIFIER_PROCESS_ISSUE'),
           severity: severity,
           message: String(this.readRecordValue(record, 'message') ?? 'verifier reported a process issue'),
-          repairable: true,
+          repairable: false,
           sourceId: this.readOptionalString(record, 'sourceId'),
           sectionId: this.readOptionalString(record, 'sectionId'),
         });
       }
     }
+    for (let index: number = 0; index < decisions.length; index += 1) {
+      const decision: NoteGenerationEvidenceDecision = decisions[index];
+      const sectionId: string = evidence[index].assertion.targetSectionId;
+      if (decision.status === 'contradicted') {
+        status = 'contradicted';
+        issues.push({
+          stage: 'verifier', code: 'EVIDENCE_CONTRADICTED', severity: 'hard',
+          message: 'the assertion is contradicted by its cited source', repairable: false, sectionId: sectionId,
+        });
+      } else if (decision.status === 'ambiguous') {
+        if (status === 'supported') {
+          status = 'ambiguous';
+        }
+        issues.push({
+          stage: 'verifier', code: 'EVIDENCE_AMBIGUOUS', severity: 'hard',
+          message: 'the cited source does not unambiguously support the assertion', repairable: false,
+          sectionId: sectionId,
+        });
+      }
+    }
+    let hasHardIssue: boolean = false;
+    for (const issue of issues) {
+      if (issue.severity === 'hard') {
+        hasHardIssue = true;
+        break;
+      }
+    }
+    if (!hasHardIssue && status === 'contradicted') {
+      issues.push({
+        stage: 'verifier', code: 'NOTE_CONTRADICTED', severity: 'hard',
+        message: 'the verifier found the note contradicted by the supplied sources or requirements',
+        repairable: false,
+      });
+    } else if (!hasHardIssue && status === 'ambiguous') {
+      issues.push({
+        stage: 'verifier', code: 'NOTE_AMBIGUOUS', severity: 'hard',
+        message: 'the verifier could not establish that the complete note is supported', repairable: false,
+      });
+    }
     return {
       status: status,
       issues: issues,
-      checkedEvidenceIds: this.readStringArray(this.readRecordValue(parsed, 'checkedEvidenceIds')),
+      checkedEvidenceIds: checkedEvidenceIds,
       decisions: decisions,
     };
   }
@@ -1586,36 +1247,45 @@ export class KnowledgeModel {
     evidence: NoteGenerationEvidenceItem[],
   ): string[] {
     const issues: string[] = [];
-    const decisionValue: Object | undefined = this.readRecordValue(json, 'decisions');
-    if (decisionValue === undefined || !Array.isArray(decisionValue)) {
-      return ['decisions must be an array'];
+    const statusValue: Object | undefined = this.readRecordValue(json, 'status');
+    if (statusValue !== 'supported' && statusValue !== 'contradicted' && statusValue !== 'ambiguous') {
+      issues.push('status must be supported, contradicted, or ambiguous');
     }
-    const expectedIds: string[] = evidence.map((item: NoteGenerationEvidenceItem): string => item.id);
-    const seenIds: string[] = [];
-    for (const item of decisionValue as Object[]) {
-      if (item === null || typeof item !== 'object') {
-        issues.push('each decision must be an object');
-        continue;
+    const verifierIssuesValue: Object | undefined = this.readRecordValue(json, 'issues');
+    if (verifierIssuesValue === undefined || !Array.isArray(verifierIssuesValue)) {
+      issues.push('issues must be an array');
+    } else {
+      for (const issueValue of verifierIssuesValue as Object[]) {
+        if (issueValue === null || typeof issueValue !== 'object' || Array.isArray(issueValue)) {
+          issues.push('each verifier issue must be an object');
+          continue;
+        }
+        const issue: Record<string, Object> = issueValue as Record<string, Object>;
+        const codeValue: Object | undefined = this.readRecordValue(issue, 'code');
+        const severityValue: Object | undefined = this.readRecordValue(issue, 'severity');
+        const messageValue: Object | undefined = this.readRecordValue(issue, 'message');
+        if (typeof codeValue !== 'string' || codeValue.trim().length === 0) {
+          issues.push('each verifier issue must include a non-empty code');
+        }
+        if (severityValue !== 'hard' && severityValue !== 'soft') {
+          issues.push('each verifier issue severity must be hard or soft');
+        }
+        if (typeof messageValue !== 'string' || messageValue.trim().length === 0) {
+          issues.push('each verifier issue must include a non-empty message');
+        }
       }
-      const record: Record<string, Object> = item as Record<string, Object>;
-      const evidenceIdValue: Object | undefined = this.readRecordValue(record, 'evidenceId');
-      if (typeof evidenceIdValue !== 'string' || evidenceIdValue.trim().length === 0) {
-        issues.push('each decision must include a non-empty evidenceId');
-      } else if (!expectedIds.includes(evidenceIdValue)) {
-        issues.push('decision references unknown evidenceId: ' + evidenceIdValue);
-      } else if (seenIds.includes(evidenceIdValue)) {
-        issues.push('decision duplicates evidenceId: ' + evidenceIdValue);
-      } else {
-        seenIds.push(evidenceIdValue);
-      }
-      const statusValue: Object | undefined = this.readRecordValue(record, 'status');
+    }
+    const statusesValue: Object | undefined = this.readRecordValue(json, 'evidenceStatuses');
+    if (statusesValue === undefined || !Array.isArray(statusesValue)) {
+      return ['evidenceStatuses must be an array'];
+    }
+    const statuses: Object[] = statusesValue as Object[];
+    if (statuses.length !== evidence.length) {
+      issues.push('evidenceStatuses must contain one status for every evidence item');
+    }
+    for (const statusValue of statuses) {
       if (statusValue !== 'supported' && statusValue !== 'contradicted' && statusValue !== 'ambiguous') {
-        issues.push('decision status must be supported, contradicted, or ambiguous');
-      }
-    }
-    for (const evidenceId of expectedIds) {
-      if (!seenIds.includes(evidenceId)) {
-        issues.push('decisions missing evidenceId: ' + evidenceId);
+        issues.push('evidence status must be supported, contradicted, or ambiguous');
       }
     }
     return issues;
@@ -1680,6 +1350,11 @@ export class KnowledgeModel {
       return { type: 'json_schema', json_schema: jsonSchema };
     }
     return { type: 'json_object' };
+  }
+
+  private verificationResponseFormat(evidence: NoteGenerationEvidenceItem[]): LlmResponseFormat {
+    const schemaText: string = buildNoteVerificationJsonSchema(evidence.length);
+    return this.structuredResponseFormat(schemaText, 'mindtrace_note_verification');
   }
 
   private parseDraftDocument(parsed: Record<string, Object>): NoteDraftDocument {

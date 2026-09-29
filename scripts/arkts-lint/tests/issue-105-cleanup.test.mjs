@@ -61,7 +61,7 @@ test('Issue 105 acceptance scenarios have executable Hypium coverage', () => {
   for (const scenario of [
     'runId: \'light-98\'', 'runId: \'standard-101\'', 'runId: \'deep-103\'',
     'runId: \'needs-input-101\'', 'runId: \'repair-102\'',
-    'diminishing_returns', 'rollback', 'ready-preview', 'cancelRun', 'restore',
+    'content_verification_failed', 'rollback', 'ready-preview', 'cancelRun', 'restore',
     'duplicate', 'regenerate', 'VERSION_CONFLICT',
   ]) {
     assert.match(generationTests + repositoryTests + incrementalTests, new RegExp(scenario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),

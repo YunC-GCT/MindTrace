@@ -48,6 +48,16 @@ test('normalizeBundle re-sequences fragments and fills missing IDs', () => {
   assert.match(dispatcher, /fragment\.id\.length > 0 \? fragment\.id : buildSourceId/);
 });
 
+test('standard and deep generation receive the normalized source bundle', () => {
+  const calls = dispatcher.match(
+    /withTokenBudget\(\s*request,\s*budget\.maxTokens,\s*bundle,\s*requirement,\s*\)/g,
+  ) ?? [];
+  assert.equal(calls.length, 2);
+  assert.match(dispatcher, /private withTokenBudget\([\s\S]*?bundle: SourceBundle[\s\S]*?sources: bundle/);
+  assert.match(dispatcher, /private withTokenBudget\([\s\S]*?requirement: NoteGenerationRequirement[\s\S]*?requirement: requirement/);
+  assert.doesNotMatch(dispatcher, /private withTokenBudget\([\s\S]*?sources: request\.sources/);
+});
+
 test('incremental generation concatenates base and new sources', () => {
   assert.match(dispatcher, /base\.sources\.fragments\.concat\(request\.sources\.fragments\)/);
   assert.match(dispatcher, /base\.manifest\.sourceIds\.concat\(plan\.newSourceIds\)/);

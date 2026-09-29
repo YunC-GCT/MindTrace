@@ -127,9 +127,33 @@ export interface NoteGenerationOutline {
 
 export type EvidenceItemType = 'claim' | 'definition' | 'formula' | 'step' | 'example' | 'conclusion';
 export type EvidenceVerificationStatus = 'supported' | 'contradicted' | 'ambiguous';
+export type EvidenceProvenanceStatus = 'located' | 'stale' | 'missing';
+
+export interface EvidenceAssertion {
+  type: EvidenceItemType;
+  text: string;
+  targetSectionId: string;
+}
+
+// Untrusted shape accepted from the drafting model. The pipeline never accepts
+// model-owned IDs, fingerprints, or offsets as provenance; it resolves the quote
+// against SourceBundle and assigns all persistent identity itself.
+export interface EvidenceCandidateSourceRef {
+  sourceId: string;
+  excerpt: string;
+}
+
+export interface NoteGenerationEvidenceCandidate {
+  type: EvidenceItemType;
+  claim: string;
+  sourceRefs: EvidenceCandidateSourceRef[];
+  targetSectionId: string;
+}
 
 export interface EvidenceSourceRef {
+  id: string;
   sourceId: string;
+  sourceFingerprint: string;
   excerpt: string;
   start: number;
   end: number;
@@ -137,14 +161,16 @@ export interface EvidenceSourceRef {
 
 export interface NoteGenerationEvidenceItem {
   id: string;
-  type: EvidenceItemType;
-  claim: string;
+  assertion: EvidenceAssertion;
   sourceRefs: EvidenceSourceRef[];
-  targetSectionId: string;
-  verification: EvidenceVerificationStatus;
-  // 2026-09-20 P0-7: 'pipeline' = deep 管线代算的溯源证据 (章节由该 segment
-  // 生成是结构性事实); 缺省视为 'model' (LLM 声明, 需逐字保留契约约束)
-  origin?: 'pipeline' | 'model';
+  // 'pipeline' = deterministic source extraction; 'model' = model assertion
+  // whose references were still resolved and frozen by the pipeline.
+  origin: 'pipeline' | 'model';
+}
+
+export interface EvidenceReferenceResolution {
+  status: EvidenceProvenanceStatus;
+  excerpt: string;
 }
 
 export interface NoteGenerationVerification {
@@ -164,7 +190,6 @@ export interface NoteGenerationStandardResult {
   evidence: NoteGenerationEvidenceItem[];
   draft: NoteDraftDocument;
   verification: NoteGenerationVerification;
-  reextractionCount?: number;
 }
 
 export interface NoteGenerationLedgerEntry {
@@ -195,8 +220,6 @@ export interface NoteGenerationDeepResult extends NoteGenerationStandardResult {
 
 export interface NoteGenerationBudget {
   maxTokens: number;
-  maxNodeRuns: number;
-  maxRepairRounds: number;
   maxSourceChars?: number;
 }
 
@@ -302,7 +325,7 @@ export interface NoteGenerationCommitResult {
   generationMetadata?: string;
 }
 
-export type NoteGenerationLifecycleEvent = 'resumed' | 'retried' | 'committed'
+export type NoteGenerationLifecycleEvent = 'resumed' | 'retried' | 'finished' | 'committed'
   | 'duplicate-confirm' | 'cancelled';
 
 export interface NoteGenerationLifecycleLog {
@@ -780,8 +803,29 @@ export const NOTE_OUTLINE_JSON_SCHEMA: string = buildJsonSchema(
   NOTE_OUTLINE_SCHEMA_PROPERTIES,
 );
 
+const NOTE_EVIDENCE_CANDIDATE_REF_JSON_SCHEMA: string = '{'
+  + '"type":"object",'
+  + '"additionalProperties":false,'
+  + '"required":["sourceId","excerpt"],'
+  + '"properties":{'
+  + '"sourceId":{"type":"string"},'
+  + '"excerpt":{"type":"string"}'
+  + '}}';
+
+const NOTE_EVIDENCE_CANDIDATE_JSON_SCHEMA: string = '{'
+  + '"type":"object",'
+  + '"additionalProperties":false,'
+  + '"required":["type","claim","sourceRefs","targetSectionId"],'
+  + '"properties":{'
+  + '"type":{"enum":["claim","definition","formula","step","example","conclusion"]},'
+  + '"claim":{"type":"string"},'
+  + '"sourceRefs":{"type":"array","items":' + NOTE_EVIDENCE_CANDIDATE_REF_JSON_SCHEMA + '},'
+  + '"targetSectionId":{"type":"string"}'
+  + '}}';
+
 const NOTE_EVIDENCE_SCHEMA_PROPERTIES: Record<string, string> = {};
-NOTE_EVIDENCE_SCHEMA_PROPERTIES['evidence'] = '{"type":"array"}';
+NOTE_EVIDENCE_SCHEMA_PROPERTIES['evidence'] = '{"type":"array","items":'
+  + NOTE_EVIDENCE_CANDIDATE_JSON_SCHEMA + '}';
 
 export const NOTE_EVIDENCE_JSON_SCHEMA: string = buildJsonSchema(
   'mindtrace.note-evidence.v1',
@@ -789,20 +833,38 @@ export const NOTE_EVIDENCE_JSON_SCHEMA: string = buildJsonSchema(
   NOTE_EVIDENCE_SCHEMA_PROPERTIES,
 );
 
-export const NOTE_VERIFICATION_JSON_SCHEMA: string = '{'
-  + '"$id":"mindtrace.note-verification.v1",'
+const NOTE_VERIFIER_ISSUE_JSON_SCHEMA: string = '{'
   + '"type":"object",'
   + '"additionalProperties":false,'
-  + '"required":["status","issues","checkedEvidenceIds","decisions"],'
+  + '"required":["code","severity","message"],'
   + '"properties":{'
-  + '"status":{"enum":["supported","contradicted","ambiguous"]},'
-  + '"issues":{"type":"array"},'
-  + '"checkedEvidenceIds":{"type":"array","items":{"type":"string"}},'
-  + '"decisions":{"type":"array","items":{"type":"object"}}}}';
+  + '"code":{"type":"string","minLength":1},'
+  + '"severity":{"enum":["hard","soft"]},'
+  + '"message":{"type":"string","minLength":1}'
+  + '}}';
+
+export function buildNoteVerificationJsonSchema(evidenceCount?: number): string {
+  const lengthRules: string = evidenceCount === undefined ? ''
+    : ',"minItems":' + evidenceCount.toString() + ',"maxItems":' + evidenceCount.toString();
+  return '{'
+    + '"$id":"mindtrace.note-verification.v1",'
+    + '"type":"object",'
+    + '"additionalProperties":false,'
+    + '"required":["status","issues","evidenceStatuses"],'
+    + '"properties":{'
+    + '"status":{"enum":["supported","contradicted","ambiguous"]},'
+    + '"issues":{"type":"array","items":' + NOTE_VERIFIER_ISSUE_JSON_SCHEMA + '},'
+    + '"evidenceStatuses":{"type":"array"' + lengthRules
+    + ',"items":{"enum":["supported","contradicted","ambiguous"]}}'
+    + '}}';
+}
+
+export const NOTE_VERIFICATION_JSON_SCHEMA: string = buildNoteVerificationJsonSchema();
 
 const NOTE_STANDARD_SCHEMA_PROPERTIES: Record<string, string> = {};
 NOTE_STANDARD_SCHEMA_PROPERTIES['outline'] = '{"type":"object","required":["schemaVersion","sections"]}';
-NOTE_STANDARD_SCHEMA_PROPERTIES['evidence'] = '{"type":"array","items":{"type":"object"}}';
+NOTE_STANDARD_SCHEMA_PROPERTIES['evidence'] = '{"type":"array","items":'
+  + NOTE_EVIDENCE_CANDIDATE_JSON_SCHEMA + '}';
 NOTE_STANDARD_SCHEMA_PROPERTIES['draft'] = '{"type":"object","required":["schemaVersion","title","sections"]}';
 
 export const NOTE_STANDARD_JSON_SCHEMA: string = buildJsonSchema(
@@ -911,15 +973,15 @@ export function selectGenerationRoute(bundle: SourceBundle, instruction: string)
 
 export function lightBudget(): NoteGenerationBudget {
   // 1200 -> 3000 (2026-09-19): 结构化 draft JSON (含 LaTeX 字段值) 偶超 1200, 留安全余量
-  return { maxTokens: 3000, maxNodeRuns: 8, maxRepairRounds: 0 };
+  return { maxTokens: 3000 };
 }
 
 export function standardBudget(): NoteGenerationBudget {
-  return { maxTokens: 6000, maxNodeRuns: 12, maxRepairRounds: 2 };
+  return { maxTokens: 6000 };
 }
 
 export function deepBudget(): NoteGenerationBudget {
-  return { maxTokens: 14000, maxNodeRuns: 20, maxRepairRounds: 4, maxSourceChars: 36000 };
+  return { maxTokens: 14000, maxSourceChars: 36000 };
 }
 
 function segmentBoundary(line: string): 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph' | undefined {
@@ -1432,73 +1494,117 @@ export function normalizeOutline(outline: NoteGenerationOutline, sourceIds: stri
 }
 
 export function normalizeEvidenceItems(
-  evidence: NoteGenerationEvidenceItem[],
-  validSourceIds: string[],
+  candidates: NoteGenerationEvidenceCandidate[],
+  bundle: SourceBundle,
   sourceIdsBySectionId: Map<string, string[]>,
 ): NoteGenerationEvidenceItem[] {
   const normalized: NoteGenerationEvidenceItem[] = [];
-  const usedIds: string[] = [];
-  let index: number = 0;
-  for (const item of evidence) {
+  for (const candidate of candidates) {
     let hasExcerpt: boolean = false;
-    for (const ref of item.sourceRefs) {
+    for (const ref of candidate.sourceRefs) {
       if (ref.excerpt.trim().length > 0) {
         hasExcerpt = true;
         break;
       }
     }
-    // 2026-09-20 P0-6: 全空 evidence 壳 (无 claim 无 excerpt) 直接丢弃 —
-    // round 0 实测 LLM 输出 8 个空壳, 留下必挂 EVIDENCE_SOURCE_REQUIRED
-    if (item.claim.trim().length === 0 && !hasExcerpt) {
+    if (candidate.claim.trim().length === 0 && !hasExcerpt) {
       continue;
     }
-    index += 1;
-    const baseId: string = item.id.trim().length > 0
-      ? item.id.trim() : 'evidence-' + index.toString();
-    let id: string = baseId;
-    let suffix: number = 2;
-    // 2026-09-20 P0-6: 重复 id 去重 — verifier 按 id 匹配判定,
-    // 撞号 = VERIFIER_DECISION_MISSING (round 1 'evidence-1'×3 实测)
-    while (usedIds.includes(id)) {
-      id = baseId + '-' + suffix.toString();
-      suffix += 1;
-    }
-    usedIds.push(id);
-    const sectionSourceIds: string[] = sourceIdsBySectionId.get(item.targetSectionId) ?? [];
-    const fallbackSourceId: string = sectionSourceIds.length > 0 ? sectionSourceIds[0]
-      : (validSourceIds.length > 0 ? validSourceIds[0] : '');
+    const id: string = 'evidence-' + (normalized.length + 1).toString();
+    const sectionSourceIds: string[] = sourceIdsBySectionId.get(candidate.targetSectionId) ?? [];
     const refs: EvidenceSourceRef[] = [];
-    for (const ref of item.sourceRefs) {
-      let sourceId: string = ref.sourceId;
-      // 2026-09-20 P0-6: 空/非法 sourceId (LLM 常写 run id 缺前缀) 回退到
-      // 目标 section 的首个源, 否则首个 fragment
-      if (!validSourceIds.includes(sourceId)) {
-        if (fallbackSourceId.length === 0) {
-          continue;
-        }
-        sourceId = fallbackSourceId;
+    const refKeys: string[] = [];
+    for (const candidateRef of candidate.sourceRefs) {
+      if (candidateRef.excerpt.length === 0) {
+        continue;
       }
-      refs.push({ sourceId: sourceId, excerpt: ref.excerpt, start: ref.start, end: ref.end });
+      let source: SourceFragment | undefined = findSourceById(bundle, candidateRef.sourceId);
+      if (source === undefined || !source.text.includes(candidateRef.excerpt)) {
+        source = undefined;
+        for (const sectionSourceId of sectionSourceIds) {
+          const sectionSource: SourceFragment | undefined = findSourceById(bundle, sectionSourceId);
+          if (sectionSource !== undefined && sectionSource.text.includes(candidateRef.excerpt)) {
+            source = sectionSource;
+            break;
+          }
+        }
+      }
+      if (source === undefined) {
+        for (const fragment of bundle.fragments) {
+          if (fragment.text.includes(candidateRef.excerpt)) {
+            source = fragment;
+            break;
+          }
+        }
+      }
+      if (source === undefined) {
+        continue;
+      }
+      const start: number = source.text.indexOf(candidateRef.excerpt);
+      const end: number = start + candidateRef.excerpt.length;
+      const refKey: string = source.id + ':' + start.toString() + ':' + end.toString();
+      if (refKeys.includes(refKey)) {
+        continue;
+      }
+      refKeys.push(refKey);
+      refs.push({
+        id: id + ':ref-' + (refs.length + 1).toString(),
+        sourceId: source.id,
+        sourceFingerprint: source.fingerprint,
+        excerpt: source.text.substring(start, end),
+        start: start,
+        end: end,
+      });
     }
-    // 2026-09-20 P0-6: 全部 ref 被丢弃时补一条锚点 (excerpt 允许为空,
-    // 见 validateStandardArtifacts 的空 excerpt 放宽)
-    if (refs.length === 0 && fallbackSourceId.length > 0) {
-      refs.push({ sourceId: fallbackSourceId, excerpt: '', start: 0, end: 0 });
-    }
-    if (refs.length === 0) {
-      continue;
+    if (refs.length === 0 && candidate.claim.length > 0) {
+      for (const fragment of bundle.fragments) {
+        const start: number = fragment.text.indexOf(candidate.claim);
+        if (start >= 0) {
+          refs.push({
+            id: id + ':ref-1',
+            sourceId: fragment.id,
+            sourceFingerprint: fragment.fingerprint,
+            excerpt: fragment.text.substring(start, start + candidate.claim.length),
+            start: start,
+            end: start + candidate.claim.length,
+          });
+          break;
+        }
+      }
     }
     normalized.push({
       id: id,
-      type: item.type,
-      claim: item.claim,
+      assertion: {
+        type: candidate.type,
+        text: candidate.claim,
+        targetSectionId: candidate.targetSectionId,
+      },
       sourceRefs: refs,
-      targetSectionId: item.targetSectionId,
-      verification: item.verification,
-      origin: item.origin,
+      origin: 'model',
     });
   }
   return normalized;
+}
+
+export function resolveEvidenceSourceRef(
+  ref: EvidenceSourceRef,
+  bundle: SourceBundle,
+): EvidenceReferenceResolution {
+  const source: SourceFragment | undefined = findSourceById(bundle, ref.sourceId);
+  if (source === undefined) {
+    return { status: 'missing', excerpt: '' };
+  }
+  if (source.fingerprint !== ref.sourceFingerprint) {
+    return { status: 'stale', excerpt: '' };
+  }
+  if (ref.start < 0 || ref.end < ref.start || ref.end > source.text.length) {
+    return { status: 'missing', excerpt: '' };
+  }
+  const excerpt: string = source.text.substring(ref.start, ref.end);
+  if (excerpt !== ref.excerpt) {
+    return { status: 'missing', excerpt: excerpt };
+  }
+  return { status: 'located', excerpt: excerpt };
 }
 
 export function validateStandardArtifacts(
@@ -1567,48 +1673,35 @@ export function validateStandardArtifacts(
     issues.push({ stage: 'evidence', code: 'EVIDENCE_OPTIONAL', severity: 'soft', message: 'standard route has no evidence ledger; draft can still be previewed', repairable: true });
   }
   for (const item of evidence) {
-    if (!sectionIds.includes(item.targetSectionId)) {
-      issues.push({ stage: 'evidence', code: 'EVIDENCE_SECTION_INVALID', severity: 'hard', message: 'evidence target section is unknown', repairable: true, sectionId: item.targetSectionId });
+    if (!sectionIds.includes(item.assertion.targetSectionId)) {
+      issues.push({ stage: 'evidence', code: 'EVIDENCE_SECTION_INVALID', severity: 'hard', message: 'evidence target section is unknown', repairable: false, sectionId: item.assertion.targetSectionId });
     }
     if (item.sourceRefs.length === 0) {
-      issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_REQUIRED', severity: 'hard', message: 'evidence must cite a source', repairable: true });
+      issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_REQUIRED', severity: 'hard', message: 'evidence assertion must cite a located source reference', repairable: false });
     }
     let previousSourceSequence: number = -1;
     for (const ref of item.sourceRefs) {
       const source: SourceFragment | undefined = sourceById.get(ref.sourceId);
       if (source === undefined) {
-        issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_INVALID', severity: 'hard', message: 'evidence references an unknown source', repairable: true, sourceId: ref.sourceId });
+        issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_INVALID', severity: 'hard', message: 'evidence references an unknown source', repairable: false, sourceId: ref.sourceId });
         continue;
       }
-      // 2026-09-20 P0-6: LLM 系统性返回空 excerpt (round 1 修复轮 16/16 全空);
-      // 空 excerpt 只保留 sourceId 锚点, 跳过定位检查 — claim 真实性仍由
-      // independent verifier 的 LLM 校验兜底; 提供但伪造的 excerpt 仍判 hard
-      if (ref.excerpt.trim().length > 0) {
-        const located: number = source.text.indexOf(ref.excerpt);
-        if (located < 0 || ref.start !== located
-          || ref.end < ref.start || ref.end - ref.start < ref.excerpt.length) {
-          issues.push({ stage: 'evidence', code: 'EVIDENCE_EXCERPT_NOT_LOCATABLE', severity: 'hard', message: 'evidence excerpt cannot be located in source', repairable: true, sourceId: ref.sourceId });
-        }
+      const resolution: EvidenceReferenceResolution = resolveEvidenceSourceRef(ref, bundle);
+      if (resolution.status === 'stale') {
+        issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_STALE', severity: 'hard', message: 'evidence source fingerprint no longer matches the captured source', repairable: false, sourceId: ref.sourceId });
+      } else if (resolution.status === 'missing') {
+        issues.push({ stage: 'evidence', code: 'EVIDENCE_REFERENCE_INVALID', severity: 'hard', message: 'evidence span does not resolve to the captured source text', repairable: false, sourceId: ref.sourceId });
       }
       if (source.sequence < previousSourceSequence) {
-        issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_ORDER_INVALID', severity: 'hard', message: 'evidence source references are out of order', repairable: true, sourceId: ref.sourceId });
+        issues.push({ stage: 'evidence', code: 'EVIDENCE_SOURCE_ORDER_INVALID', severity: 'hard', message: 'evidence source references are out of order', repairable: false, sourceId: ref.sourceId });
       }
       previousSourceSequence = source.sequence;
-      if (item.type === 'formula' && !source.text.includes(ref.excerpt)) {
-        issues.push({ stage: 'evidence', code: 'FORMULA_NOT_PRESERVED', severity: 'hard', message: 'formula evidence is not preserved', repairable: true, sourceId: ref.sourceId });
-      }
-    }
-    if (item.verification === 'contradicted') {
-      issues.push({ stage: 'evidence', code: 'EVIDENCE_CONTRADICTED', severity: 'hard', message: 'verifier found contradicted evidence', repairable: true });
-    }
-    if (item.verification === 'ambiguous') {
-      issues.push({ stage: 'evidence', code: 'EVIDENCE_AMBIGUOUS', severity: 'hard', message: 'verifier found ambiguous evidence', repairable: true });
     }
   }
   if (requirement.mustInclude.includes('公式')) {
     let formulaEvidence: boolean = false;
     for (const item of evidence) {
-      if (item.type === 'formula') {
+      if (item.assertion.type === 'formula') {
         formulaEvidence = true;
         break;
       }
@@ -1633,7 +1726,7 @@ export function validateStandardArtifacts(
   for (const item of evidence) {
     let target: NoteDraftSection | undefined = undefined;
     for (const section of draft.sections) {
-      if (section.id === item.targetSectionId) {
+      if (section.id === item.assertion.targetSectionId) {
         target = section;
         break;
       }
@@ -1658,8 +1751,8 @@ export function validateStandardArtifacts(
           if (!target.content.includes(normalizedExcerpt)) {
             // 公式类仍为 hard (公式必须逐字保留);
             // 非公式 claim/step/例题属于改写场景, 逐字包含要求过严 → 降为 soft
-            const code: string = item.type === 'formula' ? 'FORMULA_NOT_PRESERVED' : 'EVIDENCE_NOT_PRESERVED';
-            const severity: 'hard' | 'soft' = item.type === 'formula' ? 'hard' : 'soft';
+            const code: string = item.assertion.type === 'formula' ? 'FORMULA_NOT_PRESERVED' : 'EVIDENCE_NOT_PRESERVED';
+            const severity: 'hard' | 'soft' = item.assertion.type === 'formula' ? 'hard' : 'soft';
             issues.push({ stage: 'draft', code: code, severity: severity, message: 'draft section does not preserve evidence content', repairable: true, sectionId: target.id, sourceId: ref.sourceId });
           }
         }
@@ -1669,7 +1762,7 @@ export function validateStandardArtifacts(
   return issues;
 }
 
-export class NoteGenerationEvidenceVerifier {
+export class NoteGenerationArtifactValidator {
   verify(
     outline: NoteGenerationOutline,
     evidence: NoteGenerationEvidenceItem[],
@@ -1678,28 +1771,8 @@ export class NoteGenerationEvidenceVerifier {
     requirement: NoteGenerationRequirement,
   ): NoteGenerationVerification {
     const issues: NoteGenerationIssue[] = validateStandardArtifacts(outline, evidence, draft, bundle, requirement);
-    let status: EvidenceVerificationStatus = 'supported';
-    for (const item of evidence) {
-      if (item.verification === 'contradicted') {
-        status = 'contradicted';
-        break;
-      }
-      if (item.verification === 'ambiguous' && status === 'supported') {
-        status = 'ambiguous';
-      }
-    }
-    if (issues.length > 0 && status === 'supported') {
-      status = 'ambiguous';
-    }
-    const checkedEvidenceIds: string[] = [];
-    for (const item of evidence) {
-      checkedEvidenceIds.push(item.id);
-    }
-    const decisions: NoteGenerationEvidenceDecision[] = [];
-    for (const item of evidence) {
-      decisions.push({ evidenceId: item.id, status: item.verification });
-    }
-    return { status: status, issues: issues, checkedEvidenceIds: checkedEvidenceIds, decisions: decisions };
+    const status: EvidenceVerificationStatus = issues.length > 0 ? 'ambiguous' : 'supported';
+    return { status: status, issues: issues, checkedEvidenceIds: [], decisions: [] };
   }
 }
 
@@ -1845,18 +1918,22 @@ export function buildPipelineEvidence(
     const start: number = excerpt.length > 0 ? source.text.indexOf(excerpt) : 0;
     const locatedStart: number = start >= 0 ? start : 0;
     const evidenceType: EvidenceItemType = classifyEvidenceType(section.label);
+    const evidenceId: string = 'pipeline-evidence-' + (index + 1).toString();
     evidence.push({
-      id: 'pipeline-evidence-' + (index + 1).toString(),
-      type: evidenceType,
-      claim: excerpt.length > 0 ? excerpt : section.label,
+      id: evidenceId,
+      assertion: {
+        type: evidenceType,
+        text: excerpt.length > 0 ? excerpt : section.label,
+        targetSectionId: section.id,
+      },
       sourceRefs: [{
+        id: evidenceId + ':ref-1',
         sourceId: sourceId,
+        sourceFingerprint: source.fingerprint,
         excerpt: excerpt,
         start: locatedStart,
         end: locatedStart + excerpt.length,
       }],
-      targetSectionId: section.id,
-      verification: 'supported',
       origin: 'pipeline',
     });
   }
@@ -2153,13 +2230,23 @@ export function parseDirectStandardArtifacts(
       const excerpt: string = findDirectDraftExcerpt(source.text, section.content);
       if (excerpt.length > 0) {
         const start: number = source.text.indexOf(excerpt);
+        const evidenceId: string = 'direct-evidence-' + section.id;
         evidence.push({
-          id: 'direct-evidence-' + section.id,
-          type: classifyEvidenceType(section.label),
-          claim: excerpt,
-          sourceRefs: [{ sourceId: source.id, excerpt: excerpt, start: start, end: start + excerpt.length }],
-          targetSectionId: section.id,
-          verification: 'supported',
+          id: evidenceId,
+          assertion: {
+            type: classifyEvidenceType(section.label),
+            text: excerpt,
+            targetSectionId: section.id,
+          },
+          sourceRefs: [{
+            id: evidenceId + ':ref-1',
+            sourceId: source.id,
+            sourceFingerprint: source.fingerprint,
+            excerpt: excerpt,
+            start: start,
+            end: start + excerpt.length,
+          }],
+          origin: 'pipeline',
         });
       }
     }
