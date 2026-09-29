@@ -144,6 +144,9 @@ export function copyChatMsgForPersistence(message: ChatMsg): ChatMsg {
   if (message.reasoning !== undefined) {
     next.reasoning = message.reasoning
   }
+  if (message.runParts !== undefined) {
+    next.runParts = copyAgentRunParts(message.runParts)
+  }
   const noteReview: NoteReviewAnswer | undefined = sanitizeNoteReviewAnswer(message.noteReview)
   if (noteReview !== undefined) {
     next.noteReview = noteReview

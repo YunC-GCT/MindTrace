@@ -34,9 +34,11 @@ import { CHAT_HISTORY_V1_SCHEMA_VERSION } from '../main/ets/services/ChatHistory
 import {
   ChatMsg,
   ChatSession,
+  chatMessageRunParts,
   copyChatSessionsForMemory,
   copyChatSessionsForPersistence,
 } from '../main/ets/overlays/AgentFloatWindow/chat/ChatModels';
+import { AgentRunPart } from '../main/ets/overlays/AgentFloatWindow/chat/AgentRunModels';
 
 const SAMPLE_SESSIONS: ChatSession[] = [{
   id: 's1',
@@ -187,6 +189,76 @@ export default function chatHistoryPersistenceTest(): void {
   });
 
   describe('ChatHistoryPersistence.issue155_decoder_contract', () => {
+    it('should preserve the complete agent run timeline across a save-load restart', 0, async () => {
+      const store: FakeStore = new FakeStore();
+      const sessions: ChatSession[] = [{
+        id: 's1',
+        name: '数学',
+        messages: [{
+          id: 1,
+          role: 'ai',
+          content: '最终答案',
+          ts: 1,
+          streaming: false,
+          reasoning: '思考过程',
+          runParts: [{
+            id: 'message-1-status-0',
+            sequence: 0,
+            kind: 'status',
+            status: 'success',
+            content: '正在读取学习记录',
+            progressKey: 'conversation:context',
+          }, {
+            id: 'message-1-tool-1',
+            sequence: 1,
+            kind: 'tool',
+            status: 'success',
+            content: '找到 3 条笔记',
+            toolCallId: 'call-1',
+            toolName: 'note_query',
+            detail: '{"keyword":"极限"}',
+          }, {
+            id: 'message-1-thinking-2',
+            sequence: 2,
+            kind: 'thinking',
+            status: 'success',
+            content: '思考过程',
+          }, {
+            id: 'message-1-answer-3',
+            sequence: 3,
+            kind: 'answer',
+            status: 'success',
+            content: '最终答案',
+          }],
+        }],
+      }];
+
+      const saving: Promise<ChatHistorySaveResult> = new ChatHistoryPersistence(
+        store,
+        new FakePreferences(''),
+        'chat-history/sessions.json',
+      ).save(sessions, true);
+      await wait(0);
+      store.releaseNext();
+      const saved: ChatHistorySaveResult = await saving;
+      const loaded: ChatHistoryLoadResult = await new ChatHistoryPersistence(
+        store,
+        new FakePreferences(''),
+        'chat-history/sessions.json',
+      ).load();
+      const restoredParts: AgentRunPart[] = chatMessageRunParts(loaded.sessions[0].messages[0]);
+
+      expect(saved.success).assertTrue();
+      expect(loaded.state).assertEqual('loaded');
+      expect(restoredParts.length).assertEqual(4);
+      expect(restoredParts[0].kind).assertEqual('status');
+      expect(restoredParts[0].progressKey).assertEqual('conversation:context');
+      expect(restoredParts[1].kind).assertEqual('tool');
+      expect(restoredParts[1].toolCallId).assertEqual('call-1');
+      expect(restoredParts[2].kind).assertEqual('thinking');
+      expect(restoredParts[3].kind).assertEqual('answer');
+    });
+
     it('should distinguish valid, corrupt, and unsupported root versions', 0, () => {
       const valid = decodeChatHistorySnapshot(JSON.stringify({ schemaVersion: CHAT_HISTORY_SCHEMA_VERSION, sessions: SAMPLE_SESSIONS }));
       expect(valid.error).assertEqual('none');

@@ -34,6 +34,11 @@ import {
   copyChatSessionsForPersistence,
   normalizeDecodedChatMessage,
 } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import {
+  AgentRunPart,
+  AgentRunPartKind,
+  AgentRunPartStatus,
+} from '../overlays/AgentFloatWindow/chat/AgentRunModels';
 import { ChatFilesDirSeam } from './ChatFilesDirSeam';
 import {
   CHAT_HISTORY_SCHEMA_VERSION,
@@ -63,11 +68,24 @@ export interface ChatHistoryMessageWire {
   streaming: boolean;
   reasoning?: string;
   reasoningExpanded?: boolean;
+  runParts?: ChatHistoryAgentRunPartWire[];
   origin?: string;
   outcome?: string;
   runId?: string;
   sequence?: number;
   messageKey?: string;
+}
+
+export interface ChatHistoryAgentRunPartWire {
+  id: string;
+  sequence: number;
+  kind: string;
+  status: string;
+  content: string;
+  toolCallId?: string;
+  toolName?: string;
+  detail?: string;
+  progressKey?: string;
 }
 
 export interface ChatHistorySessionWire {
@@ -149,6 +167,8 @@ const MAX_MESSAGES_PER_SESSION: number = 5000;
 const MAX_SESSION_NAME_LENGTH: number = 80;
 const MAX_MESSAGE_TEXT_LENGTH: number = 262144;
 const MAX_MESSAGE_KEY_LENGTH: number = 256;
+const MAX_RUN_PART_COUNT: number = 5000;
+const MAX_RUN_PART_IDENTITY_LENGTH: number = 256;
 
 function defaultSessions(): ChatSession[] { return []; }
 
@@ -206,6 +226,15 @@ function isOutcome(value: string): boolean {
   return value === 'completed' || value === 'interrupted' || value === 'cancelled' || value === 'failed';
 }
 
+function isAgentRunPartKind(value: string): boolean {
+  return value === 'thinking' || value === 'tool' || value === 'answer'
+    || value === 'status' || value === 'error';
+}
+
+function isAgentRunPartStatus(value: string): boolean {
+  return value === 'pending' || value === 'running' || value === 'success' || value === 'failed';
+}
+
 interface SessionValidationResult {
   sessions?: ChatSession[];
   diagnostic: string;
@@ -219,6 +248,79 @@ interface LegacyParseResult {
 interface MessageValidationResult {
   message?: ChatMsg;
   diagnostic: string;
+}
+
+interface AgentRunPartsValidationResult {
+  parts?: AgentRunPart[];
+  diagnostic: string;
+}
+
+function invalidRunPartIdentity(value: string): boolean {
+  return value.length === 0 || value.length > MAX_RUN_PART_IDENTITY_LENGTH
+    || hasForbiddenIdentityControl(value);
+}
+
+function validateAgentRunParts(
+  input: ChatHistoryAgentRunPartWire[],
+  path: string,
+): AgentRunPartsValidationResult {
+  if (!Array.isArray(input) || input.length > MAX_RUN_PART_COUNT) {
+    return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PARTS', path) };
+  }
+  const parts: AgentRunPart[] = [];
+  let partIndex: number = 0;
+  for (const part of input) {
+    const partPath: string = path + '[' + partIndex.toString() + ']';
+    if (part === null || typeof part !== 'object') {
+      return { diagnostic: decodeDiagnostic('validate', 'RUN_PART_NOT_OBJECT', partPath) };
+    }
+    if (typeof part.id !== 'string' || invalidRunPartIdentity(part.id)) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_ID', partPath + '.id') };
+    }
+    if (typeof part.sequence !== 'number' || !Number.isSafeInteger(part.sequence) || part.sequence < 0) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_SEQUENCE', partPath + '.sequence') };
+    }
+    if (typeof part.kind !== 'string' || !isAgentRunPartKind(part.kind)) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_KIND', partPath + '.kind') };
+    }
+    if (typeof part.status !== 'string' || !isAgentRunPartStatus(part.status)) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_STATUS', partPath + '.status') };
+    }
+    if (typeof part.content !== 'string' || part.content.length > MAX_MESSAGE_TEXT_LENGTH
+      || hasForbiddenMessageControl(part.content)) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_CONTENT', partPath + '.content') };
+    }
+    if (part.toolCallId !== undefined && (typeof part.toolCallId !== 'string'
+      || invalidRunPartIdentity(part.toolCallId))) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_TOOL_CALL_ID', partPath + '.toolCallId') };
+    }
+    if (part.toolName !== undefined && (typeof part.toolName !== 'string'
+      || part.toolName.length > MAX_RUN_PART_IDENTITY_LENGTH || hasForbiddenIdentityControl(part.toolName))) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_TOOL_NAME', partPath + '.toolName') };
+    }
+    if (part.detail !== undefined && (typeof part.detail !== 'string'
+      || part.detail.length > MAX_MESSAGE_TEXT_LENGTH || hasForbiddenMessageControl(part.detail))) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_DETAIL', partPath + '.detail') };
+    }
+    if (part.progressKey !== undefined && (typeof part.progressKey !== 'string'
+      || invalidRunPartIdentity(part.progressKey))) {
+      return { diagnostic: decodeDiagnostic('validate', 'INVALID_RUN_PART_PROGRESS_KEY', partPath + '.progressKey') };
+    }
+    const trusted: AgentRunPart = {
+      id: part.id,
+      sequence: part.sequence,
+      kind: part.kind as AgentRunPartKind,
+      status: part.status as AgentRunPartStatus,
+      content: part.content,
+    };
+    if (part.toolCallId !== undefined) { trusted.toolCallId = part.toolCallId; }
+    if (part.toolName !== undefined) { trusted.toolName = part.toolName; }
+    if (part.detail !== undefined) { trusted.detail = part.detail; }
+    if (part.progressKey !== undefined) { trusted.progressKey = part.progressKey; }
+    parts.push(trusted);
+    partIndex += 1;
+  }
+  return { parts: parts, diagnostic: '' };
 }
 
 function validateMessage(
@@ -251,6 +353,15 @@ function validateMessage(
     || message.reasoning.length > MAX_MESSAGE_TEXT_LENGTH
     || hasForbiddenMessageControl(message.reasoning))) {
     return { diagnostic: decodeDiagnostic('validate', 'INVALID_REASONING', path + '.reasoning') };
+  }
+  let runParts: AgentRunPart[] | undefined = undefined;
+  if (message.runParts !== undefined) {
+    const runPartsResult: AgentRunPartsValidationResult =
+      validateAgentRunParts(message.runParts, path + '.runParts');
+    if (runPartsResult.parts === undefined) {
+      return { diagnostic: runPartsResult.diagnostic };
+    }
+    runParts = runPartsResult.parts;
   }
   if (!legacyInput && message.reasoningExpanded !== undefined) {
     return { diagnostic: decodeDiagnostic('validate', 'UI_STATE_IN_SNAPSHOT', path + '.reasoningExpanded') };
@@ -293,6 +404,7 @@ function validateMessage(
     streaming: message.streaming,
   };
   if (message.reasoning !== undefined) { trusted.reasoning = message.reasoning; }
+  if (runParts !== undefined) { trusted.runParts = runParts; }
   if (legacyInput && message.reasoningExpanded !== undefined) {
     trusted.reasoningExpanded = message.reasoningExpanded;
   }
