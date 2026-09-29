@@ -10,6 +10,7 @@ import { S_2, S_4 } from 'common';
 import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
 import { NoteReviewFeedback } from '../../models/NoteReviewModels';
 import { ChatBubble } from './chat/ChatBubble';
+import { ChatAutoFollowState } from './chat/ChatAutoFollowState';
 import { EmptyStateHint } from './chat/EmptyStateHint';
 import { ChatMsg, chatItemKey } from './chat/ChatModels';
 
@@ -62,6 +63,7 @@ export struct AgentMessageList {
     (_messageId: number, _feedback: NoteReviewFeedback): void => {};
   scroller: Scroller = new Scroller();
   private dataSource: ChatMessageDataSource = new ChatMessageDataSource();
+  private autoFollowState: ChatAutoFollowState = new ChatAutoFollowState();
   private lastStreamProgressKey: string = '';
 
   aboutToAppear(): void {
@@ -74,7 +76,11 @@ export struct AgentMessageList {
     const progressKey: string = this.currentStreamProgressKey();
     if (progressKey.length > 0 && progressKey !== this.lastStreamProgressKey) {
       this.lastStreamProgressKey = progressKey;
-      setTimeout((): void => { this.scroller.scrollEdge(Edge.Bottom); }, 50);
+      setTimeout((): void => {
+        if (this.autoFollowState.shouldFollowStreamProgress()) {
+          this.scroller.scrollEdge(Edge.Bottom);
+        }
+      }, 50);
     }
   }
 
@@ -108,7 +114,16 @@ export struct AgentMessageList {
         .width('100%')
       }
     }
-    .layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
+    .layoutWeight(1)
+    .width('100%')
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
+    .onScrollStart((): void => {
+      this.autoFollowState.onUserScrollStart();
+    })
+    .onScrollStop((): void => {
+      this.autoFollowState.onScrollStop(this.scroller.isAtEnd());
+    });
   }
   private currentStreamProgressKey(): string {
     if (this.messages.length === 0) {

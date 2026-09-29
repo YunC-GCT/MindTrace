@@ -95,48 +95,55 @@ class FakeRepository implements NoteGenerationRepository {
   }
 }
 
-class VerifierContractFailureLlm implements LlmCaller {
+class VerifierResponseLlm implements LlmCaller {
   verifierCalls: number = 0;
+  verifierSystemMessage: string = '';
+  private verifierResponse: string;
+
+  constructor(verifierResponse: string = '{"status":"supported","issues":[],"evidenceStatuses":[]}') {
+    this.verifierResponse = verifierResponse;
+  }
 
   async call(request: LlmCallRequest): Promise<LlmCallResult> {
     const system: string = request.messages.length > 0 ? request.messages[0].content : '';
     if (system.includes('math note standard route')) {
-      return { text: VerifierContractFailureLlm.standardArtifacts(), streamed: false };
+      return { text: VerifierResponseLlm.standardArtifacts(), streamed: false };
     }
     if (system.includes('read-only independent note verifier')) {
       this.verifierCalls += 1;
+      this.verifierSystemMessage = system;
       return {
-        text: '{"status":"supported","issues":[],"evidenceStatuses":[]}',
+        text: this.verifierResponse,
         streamed: false,
       };
     }
-    throw new Error('unexpected LLM request in verifier failure fixture');
+    throw new Error('unexpected LLM request in verifier response fixture');
   }
 
   private static standardArtifacts(): string {
     return '{'
       + '"outline":{"schemaVersion":"mindtrace.note-outline.v1","sections":['
-      + VerifierContractFailureLlm.outlineSection('section-one', '定义一', 0)
-      + ',' + VerifierContractFailureLlm.outlineSection('section-two', '定义二', 1)
-      + ',' + VerifierContractFailureLlm.outlineSection('section-three', '定义三', 2)
-      + ',' + VerifierContractFailureLlm.outlineSection('section-four', '定义四', 3)
-      + ',' + VerifierContractFailureLlm.outlineSection('section-five', '定义五', 4)
+      + VerifierResponseLlm.outlineSection('section-one', '定义一', 0)
+      + ',' + VerifierResponseLlm.outlineSection('section-two', '定义二', 1)
+      + ',' + VerifierResponseLlm.outlineSection('section-three', '定义三', 2)
+      + ',' + VerifierResponseLlm.outlineSection('section-four', '定义四', 3)
+      + ',' + VerifierResponseLlm.outlineSection('section-five', '定义五', 4)
       + ']},'
       + '"evidence":['
-      + VerifierContractFailureLlm.evidenceItem('section-one', '第一条定义。')
-      + ',' + VerifierContractFailureLlm.evidenceItem('section-two', '第二条定义。')
-      + ',' + VerifierContractFailureLlm.evidenceItem('section-three', '第三条定义。')
-      + ',' + VerifierContractFailureLlm.evidenceItem('section-four', '第四条定义。')
-      + ',' + VerifierContractFailureLlm.evidenceItem('section-five', '第五条定义。')
+      + VerifierResponseLlm.evidenceItem('section-one', '第一条定义。')
+      + ',' + VerifierResponseLlm.evidenceItem('section-two', '第二条定义。')
+      + ',' + VerifierResponseLlm.evidenceItem('section-three', '第三条定义。')
+      + ',' + VerifierResponseLlm.evidenceItem('section-four', '第四条定义。')
+      + ',' + VerifierResponseLlm.evidenceItem('section-five', '第五条定义。')
       + '],'
       + '"draft":{"schemaVersion":"mindtrace.note-draft.v1","title":"五条定义",'
       + '"summary":"五条定义的整理","subject":"数学分析","category":"概念",'
       + '"chapter":"基础概念","difficulty":1,"tags":["定义"],"sections":['
-      + VerifierContractFailureLlm.draftSection('section-one', '定义一', '第一条定义。')
-      + ',' + VerifierContractFailureLlm.draftSection('section-two', '定义二', '第二条定义。')
-      + ',' + VerifierContractFailureLlm.draftSection('section-three', '定义三', '第三条定义。')
-      + ',' + VerifierContractFailureLlm.draftSection('section-four', '定义四', '第四条定义。')
-      + ',' + VerifierContractFailureLlm.draftSection('section-five', '定义五', '第五条定义。')
+      + VerifierResponseLlm.draftSection('section-one', '定义一', '第一条定义。')
+      + ',' + VerifierResponseLlm.draftSection('section-two', '定义二', '第二条定义。')
+      + ',' + VerifierResponseLlm.draftSection('section-three', '定义三', '第三条定义。')
+      + ',' + VerifierResponseLlm.draftSection('section-four', '定义四', '第四条定义。')
+      + ',' + VerifierResponseLlm.draftSection('section-five', '定义五', '第五条定义。')
       + ']}}';
   }
 
@@ -699,7 +706,7 @@ export default function dispatcherNoteGenerationTest(): void {
     it('stops before content repair when the independent verifier is unavailable', 0, async () => {
       const repository: FakeRepository = new FakeRepository();
       const progressEvents: NoteGenerationProgressEvent[] = [];
-      const verifierCaller: VerifierContractFailureLlm = new VerifierContractFailureLlm();
+      const verifierCaller: VerifierResponseLlm = new VerifierResponseLlm();
       const sourceText: string = '第一条定义。\n第二条定义。\n第三条定义。\n第四条定义。\n第五条定义。';
       const request: DispatchRequest = {
         source: 'app',
@@ -732,6 +739,87 @@ export default function dispatcherNoteGenerationTest(): void {
       expect(verifierCaller.verifierCalls).assertEqual(3);
       expect(progressEvents.some((event: NoteGenerationProgressEvent): boolean =>
         event.activity === 'repair_draft')).assertFalse();
+    });
+
+    it('accepts the legacy overallStatus verifier alias when canonical status is absent', 0, async () => {
+      const repository: FakeRepository = new FakeRepository();
+      const verifierCaller: VerifierResponseLlm = new VerifierResponseLlm(
+        '{"overallStatus":"supported","issues":[],"evidenceStatuses":['
+          + '"supported","supported","supported","supported","supported"]}',
+      );
+      const sourceText: string = '第一条定义。\n第二条定义。\n第三条定义。\n第四条定义。\n第五条定义。';
+      const request: DispatchRequest = {
+        source: 'app',
+        payload: { kind: 'text', text: sourceText },
+        generation: {
+          runId: 'verifier-overall-status-101',
+          instruction: '整理笔记',
+          mode: 'create',
+          route: 'standard',
+          sources: { fragments: [{
+            id: 'source-a',
+            kind: 'conversation',
+            originId: 'message-a',
+            sequence: 0,
+            fingerprint: 'source-a-fingerprint',
+            text: sourceText,
+          }] },
+        },
+      };
+
+      const result: DispatchResult = await new Dispatcher().dispatch(request, {
+        persist: false,
+        generationRepository: repository,
+        knowledgeModel: new KnowledgeModel(verifierCaller),
+      });
+
+      expect(result.success).assertTrue();
+      expect(result.generation?.status).assertEqual('ready-preview');
+      expect(result.generation?.verification?.status).assertEqual('supported');
+      expect(result.generation?.stopReason).assertEqual('standard_complete');
+      expect(verifierCaller.verifierSystemMessage).assertContain(
+        'Use exact top-level keys: status, issues, evidenceStatuses.',
+      );
+      expect(verifierCaller.verifierSystemMessage).assertContain(
+        'Do not use overallStatus or any other alias.',
+      );
+    });
+
+    it('does not let the legacy overallStatus alias override an invalid canonical status', 0, async () => {
+      const repository: FakeRepository = new FakeRepository();
+      const verifierCaller: VerifierResponseLlm = new VerifierResponseLlm(
+        '{"status":null,"overallStatus":"supported","issues":[],"evidenceStatuses":['
+          + '"supported","supported","supported","supported","supported"]}',
+      );
+      const sourceText: string = '第一条定义。\n第二条定义。\n第三条定义。\n第四条定义。\n第五条定义。';
+      const request: DispatchRequest = {
+        source: 'app',
+        payload: { kind: 'text', text: sourceText },
+        generation: {
+          runId: 'verifier-canonical-status-101',
+          instruction: '整理笔记',
+          mode: 'create',
+          route: 'standard',
+          sources: { fragments: [{
+            id: 'source-a',
+            kind: 'conversation',
+            originId: 'message-a',
+            sequence: 0,
+            fingerprint: 'source-a-fingerprint',
+            text: sourceText,
+          }] },
+        },
+      };
+
+      const result: DispatchResult = await new Dispatcher().dispatch(request, {
+        persist: false,
+        generationRepository: repository,
+        knowledgeModel: new KnowledgeModel(verifierCaller),
+      });
+
+      expect(result.success).assertFalse();
+      expect(result.generation?.stopReason).assertEqual('verifier_unavailable');
+      expect(verifierCaller.verifierCalls).assertEqual(3);
     });
 
     it('returns needs-input for facts that only the user can supply', 0, async () => {

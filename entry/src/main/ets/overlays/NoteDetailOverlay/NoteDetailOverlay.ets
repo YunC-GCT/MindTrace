@@ -42,6 +42,7 @@ import {
   DetailRenderSession,
   buildDetailRenderSessionKey,
 } from './components/DetailRenderSession'
+import { noteDetailBackPressCoordinator } from './NoteDetailBackPressCoordinator'
 
 @Component
 export struct NoteDetailOverlay {
@@ -69,6 +70,7 @@ export struct NoteDetailOverlay {
   @State showDiscardConfirm: boolean = false
   private summaryBuilder: ContentExcerptBuilder = new ContentExcerptBuilder()
   private stableObservationSeq: number = 0
+  private backPressRegistrationId: number = 0
   private renderSession: DetailRenderSession = new DetailRenderSession('noteDetail')
   onClose: () => void = (): void => {}
   onEdit: (id: number) => void = (_id: number): void => {}
@@ -76,6 +78,7 @@ export struct NoteDetailOverlay {
   onSaved: (unit: KnowledgeUnit) => void = (_unit: KnowledgeUnit): void => {}
 
   aboutToAppear(): void {
+    this.backPressRegistrationId = noteDetailBackPressCoordinator.register(this.closeOrCancel)
     this.syncRenderSession()
     if (this.generatedDraft !== null) {
       NoteDetailRenderMetrics.recordDraftState()
@@ -92,6 +95,8 @@ export struct NoteDetailOverlay {
   }
 
   aboutToDisappear(): void {
+    noteDetailBackPressCoordinator.unregister(this.backPressRegistrationId)
+    this.backPressRegistrationId = 0
     this.stableObservationSeq += 1
     this.renderSession.cancel()
   }
