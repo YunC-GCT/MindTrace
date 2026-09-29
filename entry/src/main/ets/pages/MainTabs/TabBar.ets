@@ -1,7 +1,7 @@
 // ============================================================================
-//  pages/MainTabs/TabBar.ets — 底部导航栏分子组件
+//  pages/MainTabs/TabBar.ets — 五入口底部导航容器
 //  ----------------------------------------------------------------------------
-//  职责: 渲染 5 个 Tab 按钮（4 普通 + 1 中央 AI），含渐变背景和毛玻璃效果。
+//  职责: 承载 4 个页面入口与中央 AI 入口，提供统一底栏背景和中央承托层。
 //  来源: 从 Index.ets 提取内联 TabBar Row。
 //  数据流: @Prop cur + onTabChange callback 通知父组件切换。
 //  接口:
@@ -12,9 +12,9 @@
 //  ============================================================================
 
 import {
-  MINT_DARK, BG_DARK, BORDER,
-  S_1, S_2,
-  TAB_BAR_HEIGHT,
+  MINT_BORDER, BG_DARK, BORDER,
+  S_1, S_2, S_4,
+  TAB_BAR_HEIGHT, AI_BTN_SIZE,
 } from "common"
 import { TabButton } from "./TabButton"
 import { AiTabButton } from "./AiTabButton"
@@ -40,32 +40,64 @@ export struct TabBar {
   onAiTap: () => void = (): void => {}
 
   build() {
-    Row() {
-      ForEach(TABS,
-        (tab: TabItem, i: number): void => {
-          if (i === 2) {
-            AiTabButton({ onTap: (): void => { this.onAiTap() } })
-          } else {
-            TabButton({
-              icon: tab.icon,
-              label: tab.name,
-              active: this.cur === i,
-              onTap: (): void => { this.onTabChange(i) },
-            })
-          }
-        },
-        (tab: TabItem): string => tab.idx.toString()
-      )
+    Stack({ alignContent: Alignment.Bottom }) {
+      // 背景层独立出来，中央承托层可以覆盖顶部边界，形成轻微的 AI 凹托。
+      Row()
+        .width("100%").height(TAB_BAR_HEIGHT)
+        .padding({ left: S_1 + 2, right: S_1 + 2, bottom: S_2 + 2 })
+        .linearGradient({
+          angle: 180,
+          colors: [["#00000000", 0], [BG_DARK, 1]],
+        })
+        .backdropBlur(24)
+        .border({ width: { top: 1 }, color: BORDER })
+
+      Row() {
+        TabButton({
+          icon: TABS[0].icon,
+          label: TABS[0].name,
+          active: this.cur === 0,
+          onTap: (): void => { this.onTabChange(0) },
+        })
+        TabButton({
+          icon: TABS[1].icon,
+          label: TABS[1].name,
+          active: this.cur === 1,
+          onTap: (): void => { this.onTabChange(1) },
+        })
+
+        Stack() {
+          Ellipse()
+            .width(AI_BTN_SIZE + S_4)
+            .height(AI_BTN_SIZE + S_2)
+            .fill(BG_DARK)
+            .stroke(MINT_BORDER)
+            .strokeWidth(1)
+
+          AiTabButton({ onTap: (): void => { this.onAiTap() } })
+        }
+        .layoutWeight(1)
+        .height(TAB_BAR_HEIGHT)
+        .alignContent(Alignment.Bottom)
+
+        TabButton({
+          icon: TABS[3].icon,
+          label: TABS[3].name,
+          active: this.cur === 3,
+          onTap: (): void => { this.onTabChange(3) },
+        })
+        TabButton({
+          icon: TABS[4].icon,
+          label: TABS[4].name,
+          active: this.cur === 4,
+          onTap: (): void => { this.onTabChange(4) },
+        })
+      }
+      .width("100%").height(TAB_BAR_HEIGHT)
+      .padding({ left: S_1 + 2, right: S_1 + 2, bottom: S_2 + 2 })
+      .justifyContent(FlexAlign.SpaceAround)
+      .alignItems(VerticalAlign.Bottom)
     }
     .width("100%").height(TAB_BAR_HEIGHT)
-    .padding({ left: S_1 + 2, right: S_1 + 2, bottom: S_2 + 2 })
-    .linearGradient({
-      angle: 180,
-      colors: [["#00000000", 0], [BG_DARK, 1]],
-    })
-    .backdropBlur(24)
-    .border({ width: { top: 1 }, color: BORDER })
-    .justifyContent(FlexAlign.SpaceAround)
-    .alignItems(VerticalAlign.Center)
   }
 }
