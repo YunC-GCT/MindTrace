@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="25" viewBox="0 0 96 25">
+  <!-- Draft crest: original 126 x 40 curve scaled by .76 horizontally and .6 vertically. -->
+  <path d="M0 24 C11.4 24 12.92 22.2 19 12.6 C24.32 4.2 33.44 0 48 0 C62.56 0 71.68 4.2 77 12.6 C83.08 22.2 84.6 24 96 24 V25 H0 Z" fill="#12181c"/>
+  <path d="M0 24 C11.4 24 12.92 22.2 19 12.6 C24.32 4.2 33.44 0 48 0 C62.56 0 71.68 4.2 77 12.6 C83.08 22.2 84.6 24 96 24" fill="none" stroke="#222c30" stroke-width="0.7"/>
+</svg>

@@ -45,6 +45,7 @@ import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputPanel } from './AgentInputPanel';
+import { agentSheetBottomInset } from './AgentFloatWindowLayout';
 import { NoteReviewSourceOverlay } from './NoteReviewSourceOverlay';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
 import { SessionsPanelController } from '../../services/SessionsPanelController';
@@ -936,7 +937,8 @@ export struct AgentFloatWindow {
         .width('100%').height(this.floatHeight + '%').backgroundColor(BG_DARK)
         .borderRadius({ topLeft: R_XL, topRight: R_XL }).padding({ left: S_3, right: S_3 })
         .opacity(this.sheetOpacity)
-        .position({ x: 0, y: '100%' }).markAnchor({ x: 0, y: '100%' }).translate({ y: -(74 + this.keyboardHeight) + this.sheetOffset });
+        .position({ x: 0, y: '100%' }).markAnchor({ x: 0, y: '100%' })
+        .translate({ y: -agentSheetBottomInset(this.keyboardHeight) + this.sheetOffset });
       }
       if (this.generatedDraft !== null) {
         NoteDetailOverlay({

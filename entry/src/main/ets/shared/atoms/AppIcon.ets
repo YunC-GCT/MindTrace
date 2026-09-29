@@ -1,11 +1,37 @@
 // ============================================================================
-//  shared/atoms/AppIcon.ets - lightweight icon component
+//  shared/atoms/AppIcon.ets — 共享图标原子组件
 // ----------------------------------------------------------------------------
-//  Prefer existing SVG resources. For missing assets, use compact glyph marks
-//  with stable sizing instead of hand-rolled Path viewBox math.
+//  路径: entry/src/main/ets/shared/atoms/AppIcon.ets
+//  职责: 五入口图标共享草稿的 Lucide 路径，支持描边颜色、线宽和尺寸。
+//  依赖: common 令牌；状态: name / iconSize / color / strokeWidth 输入。
+//  数据流: 底栏、个人中心、登录及其他页面 → AppIcon → ArkUI Shape。
+//  Lucide 路径授权见 resources/rawfile/lucide-license.txt。
 // ============================================================================
 
 import { TEXT_3, W_BOLD } from "common"
+
+// 固定 24 × 24 的原稿坐标，不按各页面分别重画图标。
+function outlinePath(name: string): string {
+  if (name === "home") {
+    return "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8 " +
+      "M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+  }
+  if (name === "notes") {
+    return "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+  }
+  if (name === "review") {
+    return "M4 3H20A2 2 0 0 1 22 5V15A2 2 0 0 1 20 17H4A2 2 0 0 1 2 15V5A2 2 0 0 1 4 3Z M8 21H16 M12 17V21"
+  }
+  if (name === "me") {
+    return "M17 8A5 5 0 1 1 7 8A5 5 0 1 1 17 8Z M20 21a8 8 0 0 0-16 0"
+  }
+  if (name === "ai") {
+    return "M20.341 6.484A10 10 0 0 1 10.266 21.85 M3.659 17.516A10 10 0 0 1 13.74 2.152 " +
+      "M15 12A3 3 0 1 1 9 12A3 3 0 1 1 15 12Z M21 5A2 2 0 1 1 17 5A2 2 0 1 1 21 5Z " +
+      "M7 19A2 2 0 1 1 3 19A2 2 0 1 1 7 19Z"
+  }
+  return ""
+}
 
 @Component
 export struct AppIcon {
@@ -36,16 +62,18 @@ export struct AppIcon {
 
   build() {
     Stack() {
-      if (this.name === "notes") {
-        Image($r("app.media.ic_notes")).width(this.iconSize).height(this.iconSize).fillColor(this.color)
-      } else if (this.name === "ai") {
-        Image($r("app.media.ic_ai")).width(this.iconSize).height(this.iconSize).fillColor(this.color)
-      } else if (this.name === "review") {
-        Image($r("app.media.ic_review")).width(this.iconSize).height(this.iconSize).fillColor(this.color)
-      } else if (this.name === "me") {
-        Image($r("app.media.ic_me")).width(this.iconSize).height(this.iconSize).fillColor(this.color)
-      } else if (this.name === "home") {
-        Image($r("app.media.ic_home")).width(this.iconSize).height(this.iconSize).fillColor(this.color)
+      if (outlinePath(this.name).length > 0) {
+        Shape() {
+          Path().commands(outlinePath(this.name))
+        }
+        // Path 命令使用 px；视口也必须用 px，避免高密度屏幕缩小图形。
+        .viewPort({ x: 0, y: 0, width: "24px", height: "24px" })
+        .width(this.iconSize).height(this.iconSize)
+        .fill(Color.Transparent)
+        .stroke(this.color)
+        .strokeWidth(`${this.strokeWidth}px`)
+        .strokeLineCap(LineCapStyle.Round)
+        .strokeLineJoin(LineJoinStyle.Round)
       } else if (this.name === "camera") {
         Image($r("app.media.ic_camera")).width(this.iconSize).height(this.iconSize).fillColor(this.color)
       } else if (this.name === "album") {

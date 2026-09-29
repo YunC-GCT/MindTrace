@@ -107,6 +107,13 @@ export default class EntryAbility extends UIAbility {
       try {
         const avoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
         AppStorage.setOrCreate('statusBarHeight', px2vp(avoidArea.topRect.height));
+        const navigationArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+        AppStorage.setOrCreate('navigationBarHeight', px2vp(navigationArea.bottomRect.height));
+        win.on('avoidAreaChange', (event) => {
+          if (event.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
+            AppStorage.setOrCreate('navigationBarHeight', px2vp(event.area.bottomRect.height));
+          }
+        });
       } catch (e) {
         hilog.error(DOMAIN, 'testTag', 'Failed to get statusBarHeight. Cause: %{public}s', JSON.stringify(e));
       }
