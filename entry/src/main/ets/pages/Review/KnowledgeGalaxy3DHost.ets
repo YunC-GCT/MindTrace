@@ -52,7 +52,7 @@ export struct KnowledgeGalaxy3DHost {
 
   private nativeCallbacks: GalaxyRendererCallbacks = new GalaxyRendererCallbackSet(
     (): void => this.handleRendererEvent('native_ready'),
-    (id: string): void => this.openById(id),
+    (id: string): void => this.selectOrOpenById(id),
     (): void => this.clearSelection(),
     (reason: string): void => this.handleRendererFailure('native_failure', reason),
     (sample: GalaxyPerformanceSample): void => { this.performance = sample },
@@ -60,7 +60,7 @@ export struct KnowledgeGalaxy3DHost {
 
   private webCallbacks: GalaxyRendererCallbacks = new GalaxyRendererCallbackSet(
     (): void => this.handleRendererEvent('web_ready'),
-    (id: string): void => this.openById(id),
+    (id: string): void => this.selectOrOpenById(id),
     (): void => this.clearSelection(),
     (reason: string): void => this.handleRendererFailure('web_failure', reason),
     (sample: GalaxyPerformanceSample): void => { this.performance = sample },
@@ -103,7 +103,7 @@ export struct KnowledgeGalaxy3DHost {
         GalaxyWebAdapter({
           snapshot: this.snapshot,
           selectedId: this.selectedId,
-          paused: this.paused,
+          paused: this.paused || this.selectedNote !== null,
           callbacks: this.webCallbacks,
         })
       } else {
@@ -187,6 +187,17 @@ export struct KnowledgeGalaxy3DHost {
       console.warn('[KnowledgeGalaxy3DHost] Web renderer failed: ' + reason)
     } else if (currentMode === 'native' && this.rendererMode === 'web') {
       console.info('[KnowledgeGalaxy3DHost] Native renderer unavailable: ' + reason)
+    }
+  }
+
+  private selectOrOpenById = (id: string): void => {
+    if (this.selectedNote !== null || this.findPlanet(id) === null) {
+      return
+    }
+    if (this.selectedId === id) {
+      this.openById(id)
+    } else {
+      this.selectedId = id
     }
   }
 

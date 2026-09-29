@@ -72,7 +72,7 @@ test('Web preview keeps stars and knowledge nodes visible without CanvasTexture 
   assert.match(webPreview, /const core = new THREE\.Mesh\(new THREE\.SphereGeometry/);
   assert.match(webPreview, /const glow = new THREE\.Mesh\(new THREE\.SphereGeometry/);
   assert.doesNotMatch(webPreview, /new THREE\.Sprite\(/);
-  assert.match(webPreview, /createDomStarfield\(\)/);
+  assert.match(webPreview, /createDomStarfield\(starLayer\)/);
   assert.match(webPreview, /orb\.className = 'node-orb'/);
   assert.match(webPreview, /view\.orb\.style\.transform = `translate\(-50%, -50%\) scale/);
   assert.match(webPreview, /if \(degraded\) \{[\s\S]*?degradedProjectionFrame[\s\S]*?\} else \{/);

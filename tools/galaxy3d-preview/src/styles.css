@@ -23,6 +23,89 @@ canvas { display: block; width: 100%; height: 100%; }
 
 #node-layer { z-index: 3; }
 
+#relation-layer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.galaxy-relation {
+  stroke-width: .75;
+  stroke-linecap: round;
+}
+.relation-edge-glow { filter: blur(2px); transition: opacity 160ms ease; }
+
+#relation-hint {
+  position: fixed;
+  bottom: 14px;
+  left: 20px;
+  right: 20px;
+  z-index: 8;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: #b0b3c1;
+  background: rgb(10 12 16 / 85%);
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
+  pointer-events: none;
+}
+
+.galaxy-star-plane {
+  position: absolute;
+  /* Overscan keeps moving edges outside the viewport throughout each cycle. */
+  inset: -48px;
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: star-drift var(--drift-duration) ease-in-out infinite alternate,
+    star-breathe var(--breathe-duration) ease-in-out infinite alternate;
+}
+
+.galaxy-star-plane--far {
+  --drift-duration: 70s;
+  --breathe-duration: 11s;
+  --drift-x: 14px;
+  --drift-y: -10px;
+  animation-delay: -21s, -3s;
+}
+
+.galaxy-star-plane--middle {
+  --drift-duration: 48s;
+  --breathe-duration: 8s;
+  --drift-x: -25px;
+  --drift-y: 18px;
+  animation-delay: -16s, -5s;
+}
+
+.galaxy-star-plane--near {
+  --drift-duration: 32s;
+  --breathe-duration: 6s;
+  --drift-x: 36px;
+  --drift-y: -24px;
+  animation-delay: -9s, -1s;
+}
+
+@keyframes star-drift {
+  from { transform: translate3d(calc(-1 * var(--drift-x)), calc(-1 * var(--drift-y)), 0); }
+  to { transform: translate3d(var(--drift-x), var(--drift-y), 0); }
+}
+
+@keyframes star-breathe {
+  from { opacity: .62; }
+  to { opacity: 1; }
+}
+
+#star-layer[data-paused="true"] .galaxy-star-plane {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .galaxy-star-plane { animation: none; will-change: auto; }
+}
+
 .galaxy-star {
   position: absolute;
   border-radius: 50%;
@@ -41,10 +124,8 @@ canvas { display: block; width: 100%; height: 100%; }
   box-shadow: 0 0 8px 2px var(--node-color), 0 0 24px 5px var(--node-color);
   opacity: 0;
   will-change: left, top, transform, opacity;
+  transition: opacity 160ms ease;
 }
-
-.node-orb[data-visible="true"] { opacity: .9; }
-.node-orb[data-selected="true"] { opacity: 1; }
 
 #label-layer {
   position: fixed;
@@ -74,7 +155,6 @@ canvas { display: block; width: 100%; height: 100%; }
   backdrop-filter: blur(8px);
 }
 
-.node-label[data-visible="true"] { opacity: 1; }
 
 #hud {
   position: fixed;
