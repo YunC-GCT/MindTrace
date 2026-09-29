@@ -22,6 +22,7 @@ import {
   NoteDetailBenchmarkLaunchConfig,
 } from "../services/NoteDetailBenchmarkLaunch"
 import { NoteDetailRenderBenchmarkHost } from "../benchmark/NoteDetailRenderBenchmarkHost"
+import { noteDetailBackPressCoordinator } from "../overlays/NoteDetailOverlay/NoteDetailBackPressCoordinator"
 
 const overlays = new OverlayService();
 
@@ -39,6 +40,10 @@ struct Index {
 
   aboutToAppear(): void {
     try { this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.NONE); } catch (e) {}
+  }
+
+  onBackPress(): boolean {
+    return noteDetailBackPressCoordinator.handleBack()
   }
 
   build() {

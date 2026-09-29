@@ -24,6 +24,7 @@ import conversationWorkflowFailureTest from './ConversationWorkflowFailure.test'
 import noteDetailRenderBaselineTest from './NoteDetailRenderBaseline.test';
 import mathRenderFailureStateTest from './MathRenderFailureState.test';
 import detailRenderSessionTest from './DetailRenderSession.test';
+import noteDetailBackPressCoordinatorTest from './NoteDetailBackPressCoordinator.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -52,4 +53,5 @@ export default function testsuite() {
   noteDetailRenderBaselineTest();
   mathRenderFailureStateTest();
   detailRenderSessionTest();
+  noteDetailBackPressCoordinatorTest();
 }
