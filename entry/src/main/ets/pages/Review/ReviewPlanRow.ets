@@ -1,11 +1,18 @@
+/**
+ * ReviewPlanRow.ets — 复习计划卡片
+ * 路径: entry/src/main/ets/pages/Review/ReviewPlanRow.ets
+ * 职责: 展示标题、优先级与队列动作；拖动标题区发出排序意图。
+ * 依赖: common 设计令牌、ReviewQueueMoveButton、DeleteButton。
+ * 数据流: ReviewPlanView → 展示属性 → 操作回调；业务由父页面处理。
+ */
 import {
   AMBER, BG_CARD, BORDER, GLASS_8, MINT, PINK, TEXT, TEXT_2, TEXT_3,
-  S_2, S_3,
+  S_1, S_2, S_3,
   R_LG, R_FULL,
-  F_XS, F_SM,
+  F_XS, F_BASE,
   W_BOLD, W_SEMIBOLD,
 } from "common"
-import { AppIcon } from "../../shared/atoms/AppIcon"
+import { ReviewQueueMoveButton } from "./ReviewQueueMoveButton"
 import { DeleteButton } from "../../shared/atoms/DeleteButton"
 
 @Component
@@ -46,13 +53,6 @@ export struct ReviewPlanRow {
   private rowBorderColor(): ResourceColor {
     if (this.dragMode === 0) {
       return BORDER
-    }
-    return MINT
-  }
-
-  private handleColor(): ResourceColor {
-    if (this.dragMode === 0) {
-      return TEXT_2
     }
     return MINT
   }
@@ -135,24 +135,15 @@ export struct ReviewPlanRow {
         this.DropSlot()
       }
 
-      Row({ space: S_3 }) {
-        AppIcon({ name: "handle", iconSize: F_XS + 7, color: this.handleColor(), strokeWidth: 1.8 })
-          .width(16)
-          .flexShrink(0)
-
-        Circle({ width: 8, height: 8 })
-          .fill(this.dotColor())
-          .flexShrink(0)
-
-        Column({ space: 3 }) {
+      Row({ space: S_1 }) {
+        Column({ space: S_1 }) {
           Text(this.title)
-            .fontSize(F_SM + 1)
+            .fontSize(F_BASE)
             .fontWeight(W_SEMIBOLD)
             .fontColor(TEXT)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width("100%")
-
           Text(this.meta)
             .fontSize(F_XS)
             .fontColor(TEXT_3)
@@ -161,41 +152,47 @@ export struct ReviewPlanRow {
             .width("100%")
         }
         .layoutWeight(1)
+        .height(48)
+        .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Start)
+        .accessibilityDescription("拖动标题区域调整顺序")
+        .gesture(
+          PanGesture({ direction: PanDirection.Vertical })
+            .onActionStart((): void => { this.dragStartY = this.dragOffset })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.dragOffset = Math.max(-120, Math.min(120, this.dragStartY + event.offsetY))
+              this.updateDragMode()
+            })
+            .onActionEnd((): void => this.finishDrag())
+            .onActionCancel((): void => {
+              this.dragOffset = 0
+              this.dragMode = 0
+            })
+        )
 
-        Row({ space: 3 }) {
-          Text(this.tag)
-            .fontSize(F_XS)
-            .fontWeight(W_BOLD)
-            .fontColor(MINT)
-            .height(24)
-            .padding({ left: S_2, right: S_2 })
-            .borderRadius(R_FULL)
-            .backgroundColor(GLASS_8)
+        Text(this.tag)
+          .fontSize(F_XS)
+          .fontWeight(W_BOLD)
+          .fontColor(this.dotColor())
+          .padding({ left: S_2, right: S_2 })
+          .flexShrink(0)
 
-          if (this.actionIcon.length > 0) {
-            Button() {
-              AppIcon({ name: this.actionIcon, iconSize: F_XS + 6, color: this.actionColor, strokeWidth: 1.8 })
-            }
-            .width(28)
-            .height(28)
-            .borderRadius(R_FULL)
-            .backgroundColor(GLASS_8)
-            .onClick((): void => this.onAction())
-          }
-
-          DeleteButton({
-            boxSize: 28,
-            iconSize: F_XS + 6,
-            onTap: (): void => this.onRemovePlan(),
+        if (this.actionIcon.length > 0) {
+          ReviewQueueMoveButton({
+            moveUp: this.actionIcon === "chevron-up",
+            color: this.actionColor,
+            onTap: (): void => this.onAction(),
           })
         }
-        .flexShrink(0)
-        .alignItems(VerticalAlign.Center)
+
+        DeleteButton({
+          boxSize: 28,
+          iconSize: F_XS + 6,
+          onTap: (): void => this.onRemovePlan(),
+        })
       }
       .width("100%")
-      .height(58)
-      .padding({ left: S_3, right: S_3 })
+      .padding({ left: S_3, right: S_2, top: S_2, bottom: S_2 })
       .backgroundColor(this.rowBg())
       .border({ width: this.dragMode === 0 ? 0.5 : 1, color: this.rowBorderColor() })
       .borderRadius(R_LG)
@@ -209,19 +206,5 @@ export struct ReviewPlanRow {
       }
     }
     .width("100%")
-    .gesture(
-      PanGesture({ direction: PanDirection.Vertical })
-        .onActionStart((): void => {
-          this.dragStartY = this.dragOffset
-        })
-        .onActionUpdate((event: GestureEvent): void => {
-          const nextOffset: number = this.dragStartY + event.offsetY
-          this.dragOffset = Math.max(-120, Math.min(120, nextOffset))
-          this.updateDragMode()
-        })
-        .onActionEnd((): void => {
-          this.finishDrag()
-        })
-    )
   }
 }
