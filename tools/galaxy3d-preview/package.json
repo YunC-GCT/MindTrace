@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build && node scripts/inline-web-assets.mjs && node scripts/generate-native-scene.mjs",
-    "test": "node --test --experimental-strip-types src/bridge.test.mjs",
+    "test": "node --test --experimental-strip-types src/bridge.test.mjs src/relation-overlay.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

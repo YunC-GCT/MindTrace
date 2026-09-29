@@ -35,7 +35,8 @@ const inlineScript = script.replaceAll('</script', '<\\/script');
 const inlineStyle = style.replaceAll('</style', '<\\/style');
 const singleFileHtml = html
   .replace(scriptTag, () => `<script type="module">\n${inlineScript}\n</script>`)
-  .replace(styleTag, () => `<style>\n${inlineStyle}\n</style>`);
+  .replace(styleTag, () => `<style>\n${inlineStyle}\n</style>`)
+  .replace(/[\t ]+$/gm, '');
 
 await writeFile(htmlPath, singleFileHtml, 'utf8');
 await rm(assetsDir, { recursive: true });

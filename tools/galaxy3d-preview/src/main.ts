@@ -2,6 +2,10 @@ import './styles.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GalaxyBridge } from './bridge';
+import { createDomStarfield } from './background-starfield';
+import { GalaxyRelationOverlay, incidentRelations } from './relation-overlay';
+import type { ProjectedNode } from './relation-overlay';
+import { projectViewportNode } from './viewport-projection';
 import { createGalaxyLayout } from './force-layout';
 import type { GalaxyEdgeDTO, GalaxyNodeDTO, GalaxySnapshotDTO, HostMessage, LayoutPoint } from './types';
 
@@ -12,9 +16,7 @@ const LOW_PARTICLE_BUDGET = 600;
 const LOW_FPS_THRESHOLD = 30;
 const TAP_SLOP_PX = 8;
 const ENTRY_DURATION_MS = 800;
-const LABEL_DISTANCE = 92;
 const PERF_SAMPLE_MS = 2000;
-const DOM_STAR_COUNT = 180;
 
 interface NodeView {
   dto: GalaxyNodeDTO;
@@ -27,11 +29,6 @@ interface NodeView {
   position: THREE.Vector3;
 }
 
-interface RelationLayer {
-  geometry: THREE.BufferGeometry;
-  lines: THREE.LineSegments;
-}
-
 const app = requireElement<HTMLDivElement>('app');
 const starLayer = requireElement<HTMLDivElement>('star-layer');
 const nodeLayer = requireElement<HTMLDivElement>('node-layer');
@@ -39,6 +36,7 @@ const labelLayer = requireElement<HTMLDivElement>('label-layer');
 const fpsPill = requireElement<HTMLSpanElement>('fps-pill');
 const resetButton = requireElement<HTMLButtonElement>('reset-camera');
 const bridge = new GalaxyBridge();
+const relations = new GalaxyRelationOverlay(document.body);
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -52,7 +50,6 @@ let camera: THREE.PerspectiveCamera | null = null;
 let controls: OrbitControls | null = null;
 let particleGeometry: THREE.BufferGeometry | null = null;
 let particlePoints: THREE.Points | null = null;
-let relationLayers: RelationLayer[] = [];
 let graph: GalaxySnapshotDTO = { nodes: [], edges: [] };
 let nodeViews = new Map<string, NodeView>();
 let pickMeshes: THREE.Mesh[] = [];
@@ -64,7 +61,7 @@ let degraded = false;
 let dustMotionEnabled = true;
 let entryStartedAt = performance.now();
 let entryAnimating = true;
-let pointerDown: { x: number; y: number } | null = null;
+let pointerDown: { id: number; x: number; y: number } | null = null;
 let fpsFrameCount = 0;
 let fpsWindowMs = 0;
 let lowFpsMs = 0;
@@ -72,7 +69,8 @@ let lastPerfSampleMs = 0;
 let degradedProjectionFrame = 0;
 
 bridge.onMessage(handleHostMessage);
-createDomStarfield();
+createDomStarfield(starLayer);
+syncBackgroundMotion();
 
 if (!canUseWebGL()) {
   bridge.post('scene_failure', { reason: 'webgl_unavailable' });
@@ -133,31 +131,14 @@ function initScene(): void {
   particlePoints = new THREE.Points(particleGeometry, particleMaterial);
   particlePoints.frustumCulled = false;
   scene.add(particlePoints);
-  relationLayers = createRelationLayers(scene);
 
   window.addEventListener('resize', handleResize);
-  document.addEventListener('visibilitychange', () => { pausedByHost = document.hidden; });
+  document.addEventListener('visibilitychange', syncBackgroundMotion);
   resetButton.addEventListener('click', resetCamera);
   renderer.domElement.addEventListener('pointerdown', handlePointerDown);
   renderer.domElement.addEventListener('pointerup', handlePointerUp);
+  renderer.domElement.addEventListener('pointercancel', () => { pointerDown = null; });
   renderer.domElement.addEventListener('webglcontextlost', handleContextLost);
-}
-
-function createRelationLayers(targetScene: THREE.Scene): RelationLayer[] {
-  const colors = [0xf6c56d, 0x9dd8ff, 0xffdf95, 0xd9f4ff];
-  const opacities = [0.2, 0.16, 0.95, 0.88];
-  return colors.map((color, index) => {
-    const geometry = new THREE.BufferGeometry();
-    const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity: opacities[index],
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }));
-    targetScene.add(lines);
-    return { geometry, lines };
-  });
 }
 
 function initGraph(snapshot: GalaxySnapshotDTO): void {
@@ -214,7 +195,7 @@ function initGraph(snapshot: GalaxySnapshotDTO): void {
 function animate(): void {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
-  if (pausedByHost || !renderer || !scene || !camera || !controls) return;
+  if (pausedByHost || document.hidden || !renderer || !scene || !camera || !controls) return;
   updateEntryCamera();
   controls.update();
   if (degraded) {
@@ -257,23 +238,29 @@ function updateLabels(): void {
   if (!camera || !renderer) return;
   const width = renderer.domElement.clientWidth;
   const height = renderer.domElement.clientHeight;
+  const projectedNodes = new Map<string, ProjectedNode>();
   for (const view of nodeViews.values()) {
     const projected = view.position.clone().project(camera);
     const distance = camera.position.distanceTo(view.position);
-    const visible = projected.z > -1 && projected.z < 1 && distance < LABEL_DISTANCE;
+    const cameraSpace = view.position.clone().applyMatrix4(camera.matrixWorldInverse);
     const left = (projected.x * 0.5 + 0.5) * width;
     const top = (-projected.y * 0.5 + 0.5) * height;
     const perspectiveScale = THREE.MathUtils.clamp(74 / Math.max(1, distance), 0.72, 1.55);
     const selectedScale = view.dto.id === selectedId ? 1.42 : 1;
-    view.orb.dataset.visible = String(visible || view.dto.id === selectedId);
+    const endpoint = projectViewportNode(left, top, -cameraSpace.z, distance,
+      width, height, 9 * perspectiveScale * selectedScale + 5);
+    projectedNodes.set(view.dto.id, endpoint);
+    const dimmed = view.orb.dataset.dimmed === 'true';
+    view.orb.style.opacity = String(endpoint.alpha * (dimmed ? 0.35 : 0.9) * (1 - endpoint.edgeGlow));
     view.orb.style.left = `${left}px`;
     view.orb.style.top = `${top}px`;
     view.orb.style.transform = `translate(-50%, -50%) scale(${perspectiveScale * selectedScale})`;
     view.orb.style.zIndex = String(Math.round((1 - projected.z) * 100));
-    view.label.dataset.visible = String(visible || view.dto.id === selectedId);
+    view.label.style.opacity = String(endpoint.labelAlpha * (dimmed ? 0.5 : 1));
     view.label.style.left = `${left}px`;
     view.label.style.top = `${top}px`;
   }
+  relations.update(projectedNodes, width, height);
 }
 
 function setSelection(id: string | null, notifyHost: boolean): void {
@@ -285,46 +272,34 @@ function setSelection(id: string | null, notifyHost: boolean): void {
 }
 
 function updateSelectionVisuals(): void {
-  updateRelationLines();
+  relations.select(graph.edges, selectedId);
+  const connected = new Set<string>();
+  for (const edge of incidentRelations(graph.edges, selectedId)) {
+    connected.add(edge.fromId);
+    connected.add(edge.toId);
+  }
   for (const view of nodeViews.values()) {
     const material = view.core.material as THREE.MeshBasicMaterial;
     material.opacity = 1;
     view.orb.dataset.selected = String(selectedId === view.dto.id);
+    const dimmed = selectedId !== null && view.dto.id !== selectedId && !connected.has(view.dto.id);
+    view.orb.dataset.dimmed = String(dimmed);
+    view.label.dataset.dimmed = String(dimmed);
   }
+  updateLabels();
 }
 
 function nodeCoreScale(node: GalaxyNodeDTO): number {
   return 1.35 + node.mastery * 0.55;
 }
 
-function updateRelationLines(): void {
-  const positions: number[][] = [[], [], [], []];
-  for (const edge of graph.edges) {
-    const source = nodeViews.get(edge.fromId);
-    const target = nodeViews.get(edge.toId);
-    if (!source || !target) continue;
-    const baseIndex = edge.type === 'prerequisite' ? 0 : 1;
-    pushSegment(positions[baseIndex], source.position, target.position);
-    if (selectedId === edge.fromId || selectedId === edge.toId) {
-      pushSegment(positions[baseIndex + 2], source.position, target.position);
-    }
-  }
-  relationLayers.forEach((layer, index) => {
-    layer.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions[index], 3));
-    layer.geometry.computeBoundingSphere();
-  });
-}
-
-function pushSegment(target: number[], source: THREE.Vector3, destination: THREE.Vector3): void {
-  target.push(source.x, source.y, source.z, destination.x, destination.y, destination.z);
-}
-
 function handlePointerDown(event: PointerEvent): void {
-  pointerDown = { x: event.clientX, y: event.clientY };
+  // A second finger starts a pinch, never the second click that opens a note.
+  pointerDown = event.isPrimary ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
 }
 
 function handlePointerUp(event: PointerEvent): void {
-  if (!pointerDown || !renderer || !camera) return;
+  if (!pointerDown || pointerDown.id !== event.pointerId || !renderer || !camera) return;
   const dx = event.clientX - pointerDown.x;
   const dy = event.clientY - pointerDown.y;
   pointerDown = null;
@@ -362,6 +337,7 @@ function resetCamera(): void {
 function handleContextLost(event: Event): void {
   event.preventDefault();
   pausedByHost = true;
+  syncBackgroundMotion();
   bridge.post('scene_failure', { reason: 'webgl_context_lost' });
 }
 
@@ -373,6 +349,7 @@ function handleHostMessage(message: HostMessage): void {
     setSelection(message.payload.selectedId ?? null, false);
   } else if (message.type === 'set_paused') {
     pausedByHost = message.payload.paused === true;
+    syncBackgroundMotion();
     if (!pausedByHost) clock.start();
   } else if (message.type === 'reset_camera') {
     resetCamera();
@@ -431,21 +408,10 @@ function createParticleGeometry(count: number): THREE.BufferGeometry {
   return geometry;
 }
 
-function createDomStarfield(): void {
-  for (let index = 0; index < DOM_STAR_COUNT; index += 1) {
-    const star = document.createElement('i');
-    const size = 1 + seededNoise(index + 41.7) * 2.2;
-    const palette = ['#d9f4ff', '#5be3b0', '#f6c56d'];
-    star.className = 'galaxy-star';
-    star.style.left = `${seededNoise(index * 2.3 + 3.1) * 100}%`;
-    star.style.top = `${seededNoise(index * 4.7 + 9.4) * 100}%`;
-    star.style.width = `${size}px`;
-    star.style.height = `${size}px`;
-    star.style.color = palette[index % palette.length];
-    star.style.backgroundColor = palette[index % palette.length];
-    star.style.opacity = `${0.24 + seededNoise(index + 17.2) * 0.58}`;
-    starLayer.appendChild(star);
-  }
+function syncBackgroundMotion(): void {
+  // Host pause and document visibility are independent; foregrounding must not
+  // restart a scene that is still covered by an ArkUI detail overlay.
+  starLayer.dataset.paused = String(pausedByHost || document.hidden);
 }
 
 function updatePerformance(delta: number): void {
