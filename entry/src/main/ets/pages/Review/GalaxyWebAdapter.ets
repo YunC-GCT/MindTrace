@@ -182,6 +182,7 @@ export struct GalaxyWebAdapter {
       }
       this.callbacks.onReady()
       this.sendInitialGraph()
+      this.onPausedChanged()
     } else if (message.type === 'scene_failure') {
       this.callbacks.onFailure(message.payload.reason ?? 'web_scene_failed')
     } else if (message.type === 'node_selected') {

@@ -300,7 +300,7 @@ export struct GalaxyComponent3DAdapter {
         view.node.visible = false
         continue
       }
-      view.node.visible = true
+      view.node.visible = this.selectedId === view.edge.fromId || this.selectedId === view.edge.toId
       const dx: number = target.node.position.x - source.node.position.x
       const dy: number = target.node.position.y - source.node.position.y
       const dz: number = target.node.position.z - source.node.position.z
