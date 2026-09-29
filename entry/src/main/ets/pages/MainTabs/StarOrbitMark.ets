@@ -2,46 +2,20 @@
  * StarOrbitMark.ets — 星轨 AI 入口图形
  *
  * 路径: entry/src/main/ets/pages/MainTabs/StarOrbitMark.ets
- * 职责: 用 ArkUI 基础图形绘制双轨道、中心星核和轨道卫星。
- * 依赖: common 设计令牌；不依赖业务状态。
+ * 职责: 复用 AppIcon 的 Orbit 图形，配置底栏尺寸与颜色。
+ * 层级: 页面局部展示组件；状态: orbitSize 尺寸输入。
+ * 依赖: common 令牌、AppIcon；不依赖业务状态。
+ * 数据流: AiTabButton → AppIcon。
  */
 
-import { MINT, MINT_LIGHT } from "common"
+import { AI_ICON_SIZE, TAB_NAV_ACTIVE } from "common"
+import { AppIcon } from "../../shared/atoms/AppIcon"
 
 @Component
 export struct StarOrbitMark {
-  @Prop orbitSize: number = 30
-  @Prop color: ResourceColor = MINT
+  @Prop orbitSize: number = AI_ICON_SIZE
 
   build() {
-    Stack() {
-      Ellipse()
-        .width(this.orbitSize * 0.92)
-        .height(this.orbitSize * 0.34)
-        .fill(Color.Transparent)
-        .stroke(this.color)
-        .strokeWidth(1.15)
-        .rotate({ angle: 24 })
-
-      Ellipse()
-        .width(this.orbitSize * 0.92)
-        .height(this.orbitSize * 0.34)
-        .fill(Color.Transparent)
-        .stroke(this.color)
-        .strokeWidth(1.15)
-        .rotate({ angle: -24 })
-
-      Circle({ width: this.orbitSize * 0.34, height: this.orbitSize * 0.34 })
-        .fill(MINT_LIGHT)
-        .stroke(this.color)
-        .strokeWidth(1)
-
-      Circle({ width: this.orbitSize * 0.11, height: this.orbitSize * 0.11 })
-        .fill(this.color)
-        .translate({ x: this.orbitSize * 0.39, y: -this.orbitSize * 0.15 })
-    }
-    .width(this.orbitSize)
-    .height(this.orbitSize)
-    .alignContent(Alignment.Center)
+    AppIcon({ name: "ai", iconSize: this.orbitSize, color: TAB_NAV_ACTIVE, strokeWidth: 1.6 })
   }
 }

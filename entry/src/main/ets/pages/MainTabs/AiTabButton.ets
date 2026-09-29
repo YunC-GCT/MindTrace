@@ -8,9 +8,9 @@
 //  ============================================================================
 
 import {
-  MINT, BG_DARK, BORDER,
+  TAB_NAV_ACTIVE, TAB_AI_BG, TAB_AI_BORDER, TAB_AI_INNER_BORDER,
   AI_BTN_SIZE, SHADOW_AI_BTN,
-  F_XS, W_MEDIUM, S_1,
+  F_SM, W_MEDIUM, S_2, TAB_LABEL_GAP, TAB_LABEL_HEIGHT, TAB_AI_SLOT_WIDTH,
 } from "common"
 import { StarOrbitMark } from "./StarOrbitMark"
 
@@ -19,23 +19,29 @@ export struct AiTabButton {
   onTap: () => void = (): void => {}
 
   build() {
-    Column() {
+    Column({ space: TAB_LABEL_GAP }) {
       Stack() {
-        StarOrbitMark({ orbitSize: 30, color: MINT })
+        Circle({ width: AI_BTN_SIZE - S_2, height: AI_BTN_SIZE - S_2 })
+          .fill(Color.Transparent)
+          .stroke(TAB_AI_INNER_BORDER)
+          .strokeWidth(0.7)
+        StarOrbitMark()
       }
-      .width(AI_BTN_SIZE + 8).height(AI_BTN_SIZE + 8)
+      .width(AI_BTN_SIZE).height(AI_BTN_SIZE)
       .borderRadius(AI_BTN_SIZE / 2)
-      .backgroundColor(BG_DARK)
-      .border({ width: 1, color: BORDER })
+      .backgroundColor(TAB_AI_BG)
+      .border({ width: 0.7, color: TAB_AI_BORDER })
       .shadow(SHADOW_AI_BTN)
 
       Text("AI 助手")
-        .fontSize(F_XS)
+        .fontSize(F_SM)
         .fontWeight(W_MEDIUM)
-        .fontColor(MINT)
-        .margin({ top: S_1 })
+        .fontColor(TAB_NAV_ACTIVE)
+        .height(TAB_LABEL_HEIGHT)
     }
+    .width(TAB_AI_SLOT_WIDTH)
     .alignItems(HorizontalAlign.Center)
+    .accessibilityText("打开 AI 助手")
     .onClick((): void => { this.onTap() })
   }
 }

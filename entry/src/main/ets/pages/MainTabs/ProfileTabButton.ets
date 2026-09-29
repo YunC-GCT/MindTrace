@@ -18,7 +18,7 @@ export struct ProfileTabButton {
 
   build() {
     TabButton({
-      icon: $r("app.media.ic_me"),
+      iconName: "me",
       label: "我的",
       active: this.active,
       onTap: this.onTap,

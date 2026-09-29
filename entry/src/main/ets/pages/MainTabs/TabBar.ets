@@ -13,34 +13,38 @@
 //  ============================================================================
 
 import {
-  MINT_BORDER, BG_DARK, BORDER,
-  S_1, S_2,
-  TAB_BAR_HEIGHT, AI_BTN_SIZE, S_4,
+  TAB_NAV_BG, TAB_NAV_BORDER,
+  TAB_BAR_HEIGHT, TAB_ROW_HEIGHT, TAB_BOTTOM_PADDING,
+  S_6,
 } from "common"
 import { HomeTabButton } from "./HomeTabButton"
 import { NotesTabButton } from "./NotesTabButton"
 import { AiTabButton } from "./AiTabButton"
 import { ReviewTabButton } from "./ReviewTabButton"
 import { ProfileTabButton } from "./ProfileTabButton"
+import { TabBarCrest } from "./TabBarCrest"
 
 @Component
 export struct TabBar {
   @Prop cur: number = 0
+  @StorageProp('navigationBarHeight') navigationBarHeight: number = 0
   onTabChange: (i: number) => void = (_i: number): void => {}
   onAiTap: () => void = (): void => {}
 
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
-      // 背景层独立出来，中央承托层可以覆盖顶部边界，形成轻微的 AI 凹托。
+      // 背景延伸到系统手势区，原生手势条由系统绘制。
       Row()
-        .width("100%").height(TAB_BAR_HEIGHT)
-        .padding({ left: S_1 + 2, right: S_1 + 2, bottom: S_2 + 2 })
-        .linearGradient({
-          angle: 180,
-          colors: [["#00000000", 0], [BG_DARK, 1]],
-        })
-        .backdropBlur(24)
-        .border({ width: { top: 1 }, color: BORDER })
+        .width("100%").height(TAB_ROW_HEIGHT + Math.max(S_6, this.navigationBarHeight))
+        .backgroundColor(TAB_NAV_BG)
+        .border({ width: { top: 0.7 }, color: TAB_NAV_BORDER })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+
+      Column() {
+        TabBarCrest()
+      }
+      .width("100%").height(TAB_BAR_HEIGHT + Math.max(S_6, this.navigationBarHeight))
+      .hitTestBehavior(HitTestMode.None)
 
       Row() {
         HomeTabButton({
@@ -52,20 +56,7 @@ export struct TabBar {
           onTap: (): void => { this.onTabChange(1) },
         })
 
-        Stack() {
-          Ellipse()
-            .width(AI_BTN_SIZE + S_4)
-            .height(AI_BTN_SIZE - S_1)
-            .fill(BG_DARK)
-            .stroke(MINT_BORDER)
-            .strokeWidth(1)
-            .offset({ y: -S_2 })
-
-          AiTabButton({ onTap: (): void => { this.onAiTap() } })
-        }
-        .layoutWeight(1)
-        .height(TAB_BAR_HEIGHT)
-        .alignContent(Alignment.Bottom)
+        AiTabButton({ onTap: (): void => { this.onAiTap() } })
 
         ReviewTabButton({
           active: this.cur === 3,
@@ -76,11 +67,10 @@ export struct TabBar {
           onTap: (): void => { this.onTabChange(4) },
         })
       }
-      .width("100%").height(TAB_BAR_HEIGHT)
-      .padding({ left: S_1 + 2, right: S_1 + 2, bottom: S_2 + 2 })
-      .justifyContent(FlexAlign.SpaceAround)
+      .width("100%").height(TAB_BAR_HEIGHT + Math.max(S_6, this.navigationBarHeight))
+      .padding({ left: 10, right: 10, bottom: TAB_BOTTOM_PADDING + Math.max(S_6, this.navigationBarHeight) })
       .alignItems(VerticalAlign.Bottom)
     }
-    .width("100%").height(TAB_BAR_HEIGHT)
+    .width("100%").height(TAB_BAR_HEIGHT + Math.max(S_6, this.navigationBarHeight))
   }
 }

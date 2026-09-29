@@ -18,7 +18,7 @@ export struct NotesTabButton {
 
   build() {
     TabButton({
-      icon: $r("app.media.ic_notes"),
+      iconName: "notes",
       label: "笔记",
       active: this.active,
       onTap: this.onTap,

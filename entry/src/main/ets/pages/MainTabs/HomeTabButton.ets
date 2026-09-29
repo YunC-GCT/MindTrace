@@ -18,7 +18,7 @@ export struct HomeTabButton {
 
   build() {
     TabButton({
-      icon: $r("app.media.ic_home"),
+      iconName: "home",
       label: "首页",
       active: this.active,
       onTap: this.onTap,

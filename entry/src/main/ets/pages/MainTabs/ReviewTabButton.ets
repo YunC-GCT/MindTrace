@@ -18,7 +18,7 @@ export struct ReviewTabButton {
 
   build() {
     TabButton({
-      icon: $r("app.media.ic_review"),
+      iconName: "review",
       label: "复习",
       active: this.active,
       onTap: this.onTap,
