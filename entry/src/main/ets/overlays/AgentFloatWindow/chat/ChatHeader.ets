@@ -15,7 +15,7 @@
  *   onCreateSession?: 右 NewChatPlusButton 点击回调 (直接新建会话)
  */
 
-import { S_1, S_2, S_3, S_4 } from 'common';
+import { S_1, S_3, S_4 } from 'common';
 import { HistoryChip } from './HistoryChip';
 import { NewChatPlusButton } from './NewChatPlusButton';
 
@@ -37,7 +37,7 @@ export struct ChatHeader {
       .width('100%')
       .height(44)
       .alignItems(VerticalAlign.Center)
-      .padding({ left: S_4, right: S_3, top: S_2, bottom: S_1 });
+      .padding({ left: S_4, right: S_3, top: S_1, bottom: S_1 });
 
       // 覆盖层: 标题 (占整行宽, textAlign.Center 居中到整行水平中点)
     }
