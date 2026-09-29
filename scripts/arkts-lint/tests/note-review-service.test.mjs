@@ -158,6 +158,17 @@ test('NoteReviewService classifies five review intents and excludes note generat
   assert.equal(service.classifyIntent('你在哪里'), undefined);
 });
 
+test('review extraction removes conversational filler before querying saved notes', async () => {
+  const provider = providerFor({ 极限: evidence([citation()]), default: evidence([]) });
+  const { NoteReviewService } = loadReviewService();
+  const service = new NoteReviewService(provider);
+  for (const query of ['根据我的笔记解释一下极限', '请根据我的笔记讲解一下极限', '我的笔记里极限是什么？']) {
+    const plan = await service.plan(query);
+    assert.equal(plan.kind, 'model', query);
+    assert.equal(provider.calls.at(-1).query, '极限', query);
+  }
+});
+
 test('NoteReviewService plans explain and quiz with bounded topic and question extraction', async () => {
   const provider = providerFor({
     极限: evidence([citation({ noteId: 'note-limit' })]),
@@ -429,21 +440,21 @@ test('ConversationWorkflow terminal note review finishes the real message and sk
       events.push('add-empty');
       return 77;
     },
-    replaceAiMsg(id, content) {
-      events.push(`replace:${id}:${content}`);
+    updateAiMsg(_ref, id, event) {
+      events.push(`replace:${id}:${event.content}`);
     },
-    finishAiMsg(id) {
+    finishAiMsg(_ref, id) {
       events.push(`finish:${id}`);
     },
-    onNoteReviewReady(id, review) {
+    onNoteReviewReady(_ref, id, review) {
       events.push(`review:${id}:${review.reason}`);
     },
-    onProgress(step) {
+    onProgress(_ref, step) {
       events.push(`progress:${step}`);
     },
-    getSessionId() {
-      return 's1';
-    },
+    isCurrentRun() { return true; },
+    async commitHistory() { return true; },
+    reportDiagnostic(_ref, diagnostic) { assert.fail(diagnostic); },
     getContext() {
       return {};
     },
@@ -474,7 +485,7 @@ test('ConversationWorkflow terminal note review finishes the real message and sk
     quizCount: 3,
   };
 
-  await workflow.handleNoteReviewComplete('s1', '', '', plan);
+  await workflow.handleNoteReviewComplete({ sessionId: 's1', runId: 'r1' }, '', '', plan);
 
   assert.equal(completeCalls, 0);
   assert.deepEqual(events.slice(0, 4), [
@@ -493,30 +504,28 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
       events.push('add-empty');
       return 88;
     },
-    appendAiMsg(id, event) {
-      events.push(`append:${id}:${event.delta ?? ''}`);
+    updateAiMsg(_ref, id, event) {
+      events.push(event.kind === 'stream' ? `append:${id}:${event.event.delta ?? ''}` : `replace:${id}:${event.content}`);
     },
-    replaceAiMsg(id, content) {
-      events.push(`replace:${id}:${content}`);
-    },
-    finishAiMsg(id) {
+    finishAiMsg(_ref, id) {
       events.push(`finish:${id}`);
     },
-    onNoteReviewReady(id, review) {
+    onNoteReviewReady(_ref, id, review) {
       events.push(`review:${id}:${review.reason}`);
     },
-    onProgress(step) {
+    onProgress(_ref, step) {
       events.push(`progress:${step}`);
     },
-    getSessionId() {
-      return 's1';
-    },
+    isCurrentRun() { return true; },
+    async commitHistory() { return true; },
+    reportDiagnostic(_ref, diagnostic) { assert.fail(diagnostic); },
     getContext() {
       return {};
     },
   };
   const workflow = new ConversationWorkflow(callbacks);
   workflow.replyService = {
+    async isConfigured() { return true; },
     normalize(value) {
       return value;
     },
@@ -582,7 +591,7 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
     quizCount: 3,
   };
 
-  await workflow.handleNoteReviewStream('s1', '', '', plan);
+  await workflow.handleNoteReviewStream({ sessionId: 's1', runId: 'r1' }, '', '', plan);
 
   const reviewIndex = events.findIndex((event) => event.startsWith('review:88:'));
   const finishIndex = events.findIndex((event) => event === 'finish:88');
@@ -611,7 +620,7 @@ test('ConversationWorkflow classify_intent node keeps explicit review on chat wi
   });
   const workflow = new ConversationWorkflow({
     onProgress() {},
-    getSessionId() { return 's1'; },
+    isCurrentRun() { return true; },
     getContext() { return {}; },
   });
   let reviewCalls = 0;
@@ -625,13 +634,13 @@ test('ConversationWorkflow classify_intent node keeps explicit review on chat wi
   const graph = workflow.buildGraph();
   const next = await graph.nodes.classify_intent({
     request: { kind: 'text', userContent: '根据我的笔记解释极限', responseMode: 'complete' },
-    sessionId: 's1',
+    runRef: { sessionId: 's1', runId: 'r1' },
     currentStep: 'START',
   });
 
   assert.equal(next.intent, 'chat');
   assert.equal(reviewCalls, 1);
-  assert.equal(workflow.intentClassifier.remoteCalls, 0);
+  assert.equal(workflow.intentClassifier.classifier.remoteCalls, 0);
 });
 
 test('ConversationWorkflow classify_intent node keeps local note generation before review and remote fallback', async () => {
@@ -666,7 +675,7 @@ test('ConversationWorkflow classify_intent node keeps local note generation befo
   });
   const workflow = new ConversationWorkflow({
     onProgress() {},
-    getSessionId() { return 's1'; },
+    isCurrentRun() { return true; },
     getContext() { return {}; },
   });
   let reviewCalls = 0;
@@ -685,11 +694,11 @@ test('ConversationWorkflow classify_intent node keeps local note generation befo
   ]) {
     const next = await graph.nodes.classify_intent({
       request: { kind: 'text', userContent, responseMode: 'complete' },
-      sessionId: 's1',
+      runRef: { sessionId: 's1', runId: 'r1' },
       currentStep: 'START',
     });
     assert.equal(next.intent, 'note_generation');
   }
   assert.equal(reviewCalls, 0);
-  assert.equal(workflow.intentClassifier.remoteCalls, 0);
+  assert.equal(workflow.intentClassifier.classifier.remoteCalls, 0);
 });

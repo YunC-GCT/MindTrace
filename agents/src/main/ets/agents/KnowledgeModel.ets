@@ -111,6 +111,17 @@ import {
 /** deep ledger 单条 value 上限 (字符): 防止共享 ledger 随节数膨胀推高 prompt (P0-5) */
 const DEEP_LEDGER_VALUE_MAX_CHARS: number = 160;
 
+const NOTE_MATH_REASONING_RULES: string =
+  'Distinguish source givens, derived conclusions, and unconfirmed conditions. '
+  + 'Solve the supplied problem and explain checkable derivation steps; do not merely transcribe it. '
+  + 'You may add relevant definitions and standard theorems, stating their applicability and linking derivations to the source givens. '
+  + 'Never present a derived result or an invented example as a verbatim source quotation. '
+  + 'Do not silently guess unclear symbols, domains, orientations or other key conditions. '
+  + 'If a missing condition changes the answer, state the precise question for the user and keep any resulting answer explicitly conditional. '
+  + 'Before returning, check algebra, signs and consistent normal/boundary orientation; for extrema compare interior and boundary candidates; '
+  + 'verify auxiliary-function derivatives and substitutions. Correct source errors only with an explicit explanation, preserving the original quotation. '
+  + 'Classification confidence is model metadata, not OCR accuracy or mathematical truth.\n';
+
 export class KnowledgeModel {
   private contentProtocol: ContentProtocol = new ContentProtocol();
   private contentExcerptBuilder: ContentExcerptBuilder = new ContentExcerptBuilder();
@@ -496,6 +507,7 @@ export class KnowledgeModel {
         + 'category must be one of 概念/定理/公式/证明题/计算题; '
         + 'title must not contain math delimiters; summary may contain short inline math using $...$, '
         + 'but must be no longer than 60 characters and must not use display math. '
+        + NOTE_MATH_REASONING_RULES
         + LATEX_GENERATION_RULES + '\n'
         + 'User instruction=' + request.instruction + '\n'
         + 'section label=' + outlineSection.label + '\n'
@@ -672,6 +684,7 @@ export class KnowledgeModel {
         + 'Summary must be no longer than 60 characters; it may contain short inline math using $...$, '
         + 'but must not contain display math.\n'
         + 'Evidence excerpts must be copied verbatim (character-exact) from the sources.\n'
+        + NOTE_MATH_REASONING_RULES
         + LATEX_GENERATION_RULES + '\n'
         + 'Output schema: top-level object with outline and draft; evidence is an optional array of evidence items. '
         + 'outline contains schemaVersion and sections; '
@@ -834,6 +847,19 @@ export class KnowledgeModel {
         + 'sources, and requirements. For evidenceStatuses, judge only whether each cited excerpt supports the '
         + 'assertion. If a source faithfully contains an implausible or factually wrong statement, keep that '
         + 'evidence status supported and report the factual problem separately in issues and the top-level status.\n'
+        + 'Distinguish literal source quotations from mathematical derivations and explicitly labeled supplementary knowledge. '
+        + 'Do not reject a valid derivation merely because its conclusion is not verbatim in the source. '
+        + 'Check its premises, theorem applicability and intermediate steps instead. Evidence excerpts must still be verbatim and support their assertions. '
+        + 'Classification confidence (including legacy fields labeled 置信度) is model metadata, not OCR accuracy or mathematical truth; '
+        + 'confidence metadata alone is not grounds for a hard issue or an ambiguous evidence status. '
+        + 'Hard issues include demonstrated mathematical errors, unsupported critical assumptions, misleading quotations, '
+        + 'and missing conditions that prevent establishing a required answer. An explicitly conditional answer or request for clarification '
+        + 'is not itself a false claim; verify that it does not hide an unconditional conclusion. '
+        + 'Check normal/boundary orientation and signs, boundary versus interior extrema, and auxiliary-function calculations. '
+        + 'Treat wording, optional elaboration and presentation preferences as soft issues. '
+        + 'Use top-level supported when only soft issues remain; contradicted for established errors; ambiguous for unresolved critical conditions. '
+        + 'Give each issue a Chinese message identifying the exact formula or claim, why it fails, and what needs correction or user confirmation; '
+        + 'include sectionId and sourceId when identifiable. Do not emit generic LOGIC_GAP or GROUNDING_GAP without a concrete missing step or premise.\n'
         + 'outline=' + JSON.stringify(result.outline) + '\n'
         + 'draft=' + JSON.stringify(result.draft) + '\n'
         + 'evidenceByPosition=' + this.verifierEvidenceText(result.evidence) + '\n'

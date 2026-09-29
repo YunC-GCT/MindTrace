@@ -43,7 +43,7 @@ test('ConversationWorkflow owns intent orchestration and AgentChatService stays 
 
 test('ConversationWorkflow owns reply implementation without duplicate facade logic', () => {
   assert.match(workflow, /private clip\(text: string, limit: number\): string/);
-  assert.match(workflow, /private formatAnalyzeReply\(/);
+  assert.match(workflow, /private createImageRecognitionReplyContext\(/);
   assert.match(workflow, /private readonly replyService: IConversationReplyPort/);
   assert.match(replyService, /async complete\(/);
   assert.match(replyService, /async stream\(/);

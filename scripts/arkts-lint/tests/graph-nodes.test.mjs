@@ -51,6 +51,6 @@ test('TruthCheckNode uses truthFlag directly and short-circuits failed checks', 
 
 test('TruthCheck has one production owner in the Capture workflow', () => {
   assert.match(truthCheck, /service\.check\(truthInput\)/);
-  assert.match(truthCheck, /input\.captureText \+ '\\n' \+ input\.knowledgeUnit\.content/);
+  assert.match(truthCheck, /\? input\.knowledgeUnit\.content\s*: input\.captureText/);
   assert.doesNotMatch(knowledgeModel, /TruthCheckService|truthCheckService\.check/);
 });

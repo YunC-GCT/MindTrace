@@ -25,6 +25,8 @@ export interface ClassificationResult {
   confidence: number;
   // OCR 文本(图片走 OCR 后才有;纯文本分类时为空, 由 Dispatcher fallback 到 payload)
   ocrText?: string;
+  // OCR 正文质量: refined 表示 LLM 已完成保守清洗; fallback 表示只保留本地规则结果。
+  ocrTextQuality?: 'refined' | 'fallback';
 }
 
 // ==================== C 真值检验 ====================

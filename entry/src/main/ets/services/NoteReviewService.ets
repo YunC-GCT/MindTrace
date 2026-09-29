@@ -22,6 +22,7 @@ import {
   NoteEvidenceService,
   NoteEvidenceStreamFilter,
 } from './NoteEvidenceService';
+import { NoteRetrievalQuery } from './NoteRetrievalQuery';
 
 const REVIEW_MAX_CALLS: number = 6;
 const REVIEW_MAX_CITATIONS: number = 10;
@@ -122,7 +123,7 @@ export class NoteReviewService {
       return 'quiz';
     }
     if (hasNoteContext
-      && NoteReviewService.containsAny(text, ['解释', '讲讲', '说明', '是什么', '为什么'])) {
+      && NoteReviewService.containsAny(text, ['解释', '讲讲', '讲解', '介绍', '说明', '是什么', '为什么'])) {
       return 'explain';
     }
     return undefined;
@@ -151,7 +152,7 @@ export class NoteReviewService {
       return this.unavailable(intent, userContent, context.reason);
     }
     if (context.citations.length === 0) {
-      return this.terminal(intent, userContent, 'insufficient', 'no-match', [], '没有在个人笔记中找到足够依据。可以换一个主题或先保存相关笔记。');
+      return this.terminal(intent, userContent, 'insufficient', 'no-match', [], '笔记检索：未命中已保存笔记。可以换一个主题或先保存相关笔记。');
     }
     const reviewContext: NoteEvidenceContext = this.contextFrom(context.query, context.citations, [], false, '');
     if (reviewContext.citations.length === 0) {
@@ -291,7 +292,7 @@ export class NoteReviewService {
   extractTopics(userContent: string, intent: NoteReviewIntent): NoteReviewTopicSet {
     const result: NoteReviewTopicSet = new NoteReviewTopicSet();
     result.quizCount = this.extractQuizCount(userContent);
-    let text: string = userContent.trim();
+    let text: string = NoteRetrievalQuery.normalize(userContent);
     text = text.replace(/根据我的笔记/g, '');
     text = text.replace(/根据笔记/g, '');
     text = text.replace(/根据/g, '');
@@ -550,7 +551,8 @@ export class NoteReviewService {
   }
 
   private unavailable(intent: NoteReviewIntent, query: string, reason: string): NoteReviewPlan {
-    return this.terminal(intent, query, 'unavailable', reason, [], '个人笔记检索暂不可用，请稍后重试。');
+    const detail: string = reason === 'store-not-ready' ? '笔记库尚未就绪' : '查询异常';
+    return this.terminal(intent, query, 'unavailable', reason, [], '笔记检索：失败（' + detail + '），请稍后重试。');
   }
 
   private failure(

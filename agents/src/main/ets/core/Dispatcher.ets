@@ -947,8 +947,8 @@ export class Dispatcher {
         stage: 'truth_check',
         code: 'TRUTH_CHECK_ERROR',
         severity: 'hard',
-        message: 'candidate truth check failed',
-        repairable: true,
+        message: truthState.error.message,
+        repairable: false,
       });
     }
     let hardIssueCount: number = 0;
@@ -1203,13 +1203,13 @@ export class Dispatcher {
 
   private readOnlyVerificationStopReason(issues: NoteGenerationIssue[]): string {
     for (const issue of issues) {
-      if (issue.code === 'VERIFIER_UNAVAILABLE') {
+      if (issue.severity === 'hard' && issue.code === 'VERIFIER_UNAVAILABLE') {
         return 'verifier_unavailable';
       }
     }
     for (const issue of issues) {
-      if (issue.stage === 'verifier' || issue.code === 'EVIDENCE_CONTRADICTED'
-        || issue.code === 'EVIDENCE_AMBIGUOUS') {
+      if (issue.severity === 'hard' && (issue.stage === 'verifier' || issue.code === 'EVIDENCE_CONTRADICTED'
+        || issue.code === 'EVIDENCE_AMBIGUOUS')) {
         return 'content_verification_failed';
       }
     }
@@ -1222,8 +1222,9 @@ export class Dispatcher {
     for (const issue of issues) {
       const stage: string = issue.stage ?? '';
       const code: string = issue.code.length > 0 ? issue.code : 'UNKNOWN_ISSUE';
-      const message: string = this.clipDiagnostic(issue.message, 90);
-      const key: string = code + ':' + stage + ':' + message;
+      const message: string = issue.message.trim();
+      const location: string = (issue.sectionId ?? '') + ':' + (issue.sourceId ?? '');
+      const key: string = code + ':' + stage + ':' + location + ':' + message;
       if (seen.includes(key)) {
         continue;
       }
@@ -1232,26 +1233,18 @@ export class Dispatcher {
       if (stage.length > 0) {
         part += ' stage=' + stage;
       }
+      if (issue.sectionId !== undefined) {
+        part += ' section=' + issue.sectionId;
+      }
+      if (issue.sourceId !== undefined) {
+        part += ' source=' + issue.sourceId;
+      }
       if (message.length > 0) {
         part += ' ' + message;
       }
       parts.push(part);
-      if (parts.length >= 4) {
-        break;
-      }
-    }
-    if (issues.length > parts.length) {
-      parts.push('... +' + (issues.length - parts.length).toString() + ' issues');
     }
     return parts.join('; ');
-  }
-
-  private clipDiagnostic(text: string, limit: number): string {
-    const normalized: string = text.replace(/\s+/g, ' ').trim();
-    if (normalized.length <= limit) {
-      return normalized;
-    }
-    return normalized.substring(0, limit) + '...';
   }
 
   private generationDiagnostics(

@@ -13,6 +13,7 @@
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper, ToolCatalog, ToolRegistry, ToolResult } from 'common';
 import { KnowledgeRelationDao, GraphExpansion, GraphExpansionLimits } from '../database/KnowledgeRelationDao';
+import { NoteRetrievalQuery } from './NoteRetrievalQuery';
 import {
   NoteEvidenceCitation,
   NoteEvidenceContext,
@@ -63,7 +64,7 @@ export interface CitationVersionRef {
 export class NoteEvidenceService {
   // 构建证据上下文; 任何失败都降级为 degraded 上下文, 不阻断回答
   async build(query: string, options?: NoteEvidenceOptions): Promise<NoteEvidenceContext> {
-    const normalizedQuery: string = query.trim();
+    const normalizedQuery: string = NoteRetrievalQuery.normalize(query);
     const topK: number = NoteEvidenceService.clampTopK(options?.topK);
     const maxDepth: number = NoteEvidenceService.clampDepth(options?.maxDepth);
     if (normalizedQuery.length === 0) {
@@ -115,12 +116,29 @@ export class NoteEvidenceService {
   }
 
   // 回答末尾的确定性来源块: 只列真实 noteId/version/excerpt
+  formatRetrievalStatus(context: NoteEvidenceContext): string {
+    if (context.citations.length > 0) {
+      const count: number = Math.min(context.citations.length, EVIDENCE_MAX_CITATIONS);
+      const partial: string = context.degraded ? '；知识关系扩展不完整，仅使用已取得的笔记证据' : '';
+      return '笔记检索：命中 ' + count.toString() + ' 条' + partial + '。';
+    }
+    if (context.degraded) {
+      const reason: string = context.reason === 'store-not-ready' ? '笔记库尚未就绪' : '查询异常';
+      return '笔记检索：失败（' + reason + '），本次回答未使用个人笔记证据。';
+    }
+    if (context.reason === 'empty-query') {
+      return '笔记检索：未检索（没有明确主题），本次回答未使用个人笔记证据。';
+    }
+    return '笔记检索：未命中已保存笔记，本次回答未使用个人笔记证据。';
+  }
+
   formatSources(context: NoteEvidenceContext): string {
     if (context.citations.length === 0) {
       return '';
     }
     const limited: NoteEvidenceCitation[] = NoteEvidenceService.capCitations(context.citations);
     const lines: string[] = [];
+    lines.push(this.formatRetrievalStatus(context));
     lines.push('参考来源：');
     for (const citation of limited) {
       lines.push('- ' + NoteEvidenceService.roleLabel(citation.role)

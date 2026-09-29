@@ -34,7 +34,8 @@ export class TruthCheckService {
   }
 
   /**
-   * 执行 4 项数学真值检验：括号配对、除零检测、等式矛盾、LaTeX 语法
+   * 本地保守校验：括号/LaTeX 语法和独立表达式的明显错误。
+   * 带上下文的推导、反证和错误示例由独立 verifier 判断，不能靠子串断定真伪。
    *
    * @param ocrText - 输入文本
    * @returns MvpTruthCheckResult（检验结果 + 自动修正）
@@ -120,6 +121,11 @@ export class TruthCheckService {
 
     while (idx < text.length) {
       const ch: string = text[idx];
+      if (ch === '\\' && idx + 1 < text.length) {
+        result += ch + text[idx + 1];
+        idx += 2;
+        continue;
+      }
       if (ch === '{') {
         braceDepth = braceDepth + 1;
         result = result + ch;
@@ -155,8 +161,9 @@ export class TruthCheckService {
 
   checkDivisionByZero(text: string): DivisionByZeroCheck {
     const issues: string[] = [];
-    if (text.indexOf('/0') !== -1) {
-      issues.push('possible division by zero: /0');
+    const expression: string = this.standaloneExpression(text);
+    if (/^[+-]?\d+(?:\.\d+)?\s*\/\s*[+-]?0(?:\.0+)?$/.test(expression)) {
+      issues.push('division by zero in standalone expression: ' + expression);
     }
     return {
       hasIssue: issues.length > 0,
@@ -165,20 +172,11 @@ export class TruthCheckService {
   }
   checkEquation(text: string): EquationCheckResult {
     const issues: string[] = [];
+    const expression: string = this.standaloneExpression(text).replace(/\s+/g, '');
     const contradictions: string[] = ['1=0', '0=1', '2=1', '1=2', '0=2', '2=0'];
     for (const contradiction of contradictions) {
-      if (text.indexOf(contradiction) !== -1) {
+      if (expression === contradiction) {
         issues.push('contradictory equation: ' + contradiction);
-      }
-    }
-    if (text.indexOf('\u2260') !== -1) {
-      issues.push('contains not-equal sign, please verify context');
-    }
-    const eqPatterns: string[] = ['x=x', 'X=X', 'a=a', 'A=A'];
-    for (const pattern of eqPatterns) {
-      if (text.indexOf(pattern) !== -1) {
-        issues.push('identity equation: ' + pattern);
-        break;
       }
     }
     return {
@@ -207,7 +205,6 @@ export class TruthCheckService {
     const latexFixes: string[][] = [
       ['\\fract{', '\\frac{'],
       ['\\sqt{', '\\sqrt{'],
-      ['\\begin{align*}', '\\begin{aligned}'],
     ];
     for (const fix of latexFixes) {
       const before: string = corrected;
@@ -221,7 +218,7 @@ export class TruthCheckService {
       }
     }
 
-    corrected = this.patchIntegralDx(corrected, issues);
+    // 不猜测积分变量或补写 dx；微元与公式的语义正确性由 verifier 校验。
 
     return {
       hasError: issues.length > 0,
@@ -231,82 +228,22 @@ export class TruthCheckService {
   }
   // === Utility methods ===
 
+  private standaloneExpression(text: string): string {
+    return text.trim().replace(/^\${1,2}|\${1,2}$/g, '').trim();
+  }
+
   private countOccurrences(text: string, pattern: string): number {
     let count: number = 0;
     let pos: number = text.indexOf(pattern);
     while (pos !== -1) {
-      count = count + 1;
+      // 匹配完整命令，不能把 \rightarrow / \leftarrow 当成定界符。
+      const next: string = text.charAt(pos + pattern.length);
+      if (!/[a-zA-Z]/.test(next)) {
+        count = count + 1;
+      }
       pos = text.indexOf(pattern, pos + 1);
     }
     return count;
   }
 
-  private patchIntegralDx(text: string, issues: string[]): string {
-    let result: string = text;
-    const intPattern: string = '\\int_{';
-    let searchPos: number = 0;
-    while (true) {
-      const intIdx: number = result.indexOf(intPattern, searchPos);
-      if (intIdx === -1) {
-        break;
-      }
-      const closeIdx: number = result.indexOf('}', intIdx + intPattern.length);
-      if (closeIdx === -1) {
-        break;
-      }
-      const hatOpen: number = result.indexOf('^{', closeIdx);
-      if (hatOpen === -1) {
-        break;
-      }
-      const hatClose: number = result.indexOf('}', hatOpen + 2);
-      if (hatClose === -1) {
-        break;
-      }
-      // 2026-09-21: 接受任意积分微元 (dx/du/dt/dy...), 避免换元积分
-      // \varphi(u)\,du 被误判缺 dx 并注入错误内容。
-      const afterIntegral: string = result.substring(hatClose + 1);
-      let windowEnd: number = afterIntegral.length;
-      const stoppers: string[] = ['$', '\\]', '\\int', '\n'];
-      for (const stopper of stoppers) {
-        const stopIdx: number = afterIntegral.indexOf(stopper);
-        if (stopIdx >= 0 && stopIdx < windowEnd) {
-          windowEnd = stopIdx;
-        }
-      }
-      const integrandWindow: string = afterIntegral.substring(0, windowEnd);
-      if (!this.hasDifferential(integrandWindow)) {
-        result =
-          result.substring(0, hatClose + 1) +
-          ' \\, dx' +
-          result.substring(hatClose + 1);
-        issues.push('自动修正: 积分表达式补充 \\, dx');
-      }
-      searchPos = hatClose + 1;
-    }
-    return result;
-  }
-
-  private hasDifferential(text: string): boolean {
-    let index: number = 0;
-    while (index < text.length - 1) {
-      const current: string = text.charAt(index);
-      const next: string = text.charAt(index + 1);
-      if (current === 'd' && this.isAsciiLetter(next)) {
-        const previous: string = index > 0 ? text.charAt(index - 1) : '';
-        if (!this.isAsciiLetter(previous)) {
-          return true;
-        }
-      }
-      index += 1;
-    }
-    return false;
-  }
-
-  private isAsciiLetter(value: string): boolean {
-    if (value.length === 0) {
-      return false;
-    }
-    const code: number = value.charCodeAt(0);
-    return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-  }
 }
