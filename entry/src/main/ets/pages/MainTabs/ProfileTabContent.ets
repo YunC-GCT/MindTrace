@@ -11,11 +11,9 @@
 
 import { ProfilePage } from "../Profile/ProfilePage"
 
-@Component
-export struct ProfileTabContent {
-  build() {
-    TabContent() {
-      ProfilePage()
-    }
+@Builder
+export function buildProfileTabContent() {
+  TabContent() {
+    ProfilePage()
   }
 }

@@ -11,13 +11,9 @@
 
 import { ReviewPage } from "../Review/ReviewPage"
 
-@Component
-export struct ReviewTabContent {
-  onGoAI: () => void = (): void => {}
-
-  build() {
-    TabContent() {
-      ReviewPage({ onGoAI: this.onGoAI })
-    }
+@Builder
+export function buildReviewTabContent(onGoAI: () => void) {
+  TabContent() {
+    ReviewPage({ onGoAI: onGoAI })
   }
 }

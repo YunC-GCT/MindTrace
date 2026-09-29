@@ -11,11 +11,9 @@
 
 import { NotesPage } from "../Notes/NotesPage"
 
-@Component
-export struct NotesTabContent {
-  build() {
-    TabContent() {
-      NotesPage()
-    }
+@Builder
+export function buildNotesTabContent() {
+  TabContent() {
+    NotesPage()
   }
 }

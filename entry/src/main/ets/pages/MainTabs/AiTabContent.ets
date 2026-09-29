@@ -11,14 +11,12 @@
 
 import { BG_DARK } from "common"
 
-@Component
-export struct AiTabContent {
-  build() {
-    TabContent() {
-      Column()
-        .width("100%")
-        .height("100%")
-        .backgroundColor(BG_DARK)
-    }
+@Builder
+export function buildAiTabContent() {
+  TabContent() {
+    Column()
+      .width("100%")
+      .height("100%")
+      .backgroundColor(BG_DARK)
   }
 }

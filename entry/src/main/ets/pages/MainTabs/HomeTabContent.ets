@@ -11,17 +11,12 @@
 
 import { HomePage } from "../Home/HomePage"
 
-@Component
-export struct HomeTabContent {
-  onGoCamera: () => void = (): void => {}
-  onGoReview: () => void = (): void => {}
-
-  build() {
-    TabContent() {
-      HomePage({
-        onGoCamera: this.onGoCamera,
-        onGoReview: this.onGoReview,
-      })
-    }
+@Builder
+export function buildHomeTabContent(onGoCamera: () => void, onGoReview: () => void) {
+  TabContent() {
+    HomePage({
+      onGoCamera: onGoCamera,
+      onGoReview: onGoReview,
+    })
   }
 }

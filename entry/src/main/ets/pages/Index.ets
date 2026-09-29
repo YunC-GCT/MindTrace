@@ -11,11 +11,11 @@ import { BG_DARK } from "common"
 import { TabBar } from "./MainTabs/TabBar"
 import { MainTabNavigation } from "./MainTabs/MainTabNavigation"
 import { MainTabActions } from "./MainTabs/MainTabActions"
-import { HomeTabContent } from "./MainTabs/HomeTabContent"
-import { NotesTabContent } from "./MainTabs/NotesTabContent"
-import { AiTabContent } from "./MainTabs/AiTabContent"
-import { ReviewTabContent } from "./MainTabs/ReviewTabContent"
-import { ProfileTabContent } from "./MainTabs/ProfileTabContent"
+import { buildHomeTabContent } from "./MainTabs/HomeTabContent"
+import { buildNotesTabContent } from "./MainTabs/NotesTabContent"
+import { buildAiTabContent } from "./MainTabs/AiTabContent"
+import { buildReviewTabContent } from "./MainTabs/ReviewTabContent"
+import { buildProfileTabContent } from "./MainTabs/ProfileTabContent"
 import { AgentFloatWindow } from "../overlays/AgentFloatWindow/AgentFloatWindow"
 import { KeyboardAvoidMode } from "@kit.ArkUI"
 import { WebKeepAlive } from "../shared/atoms/WebKeepAlive"
@@ -72,16 +72,14 @@ struct Index {
       } else {
         Column() {
           Tabs({ index: this.cur, controller: this.tc }) {
-            HomeTabContent({
-              onGoCamera: (): void => { tabActions.openCamera() },
-              onGoReview: (): void => { this.navigation.select(3) },
-            })
-            NotesTabContent()
-            AiTabContent()
-            ReviewTabContent({
-              onGoAI: (): void => { this.navigation.openAssistant() },
-            })
-            ProfileTabContent()
+            buildHomeTabContent(
+              (): void => { tabActions.openCamera() },
+              (): void => { this.navigation.select(3) },
+            )
+            buildNotesTabContent()
+            buildAiTabContent()
+            buildReviewTabContent((): void => { this.navigation.openAssistant() })
+            buildProfileTabContent()
           }
           .barHeight(0).layoutWeight(1).scrollable(false)
           .onChange((i: number): void => { this.navigation.onSystemIndexChanged(i) })
