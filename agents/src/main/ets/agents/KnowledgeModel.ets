@@ -826,12 +826,14 @@ export class KnowledgeModel {
       role: 'system',
       content: 'Act as a read-only independent note verifier. Return JSON only. Verify the outline, draft, '
         + 'evidence, source grounding, and requirement coverage. Never rewrite, replace, repair, or generate '
-        + 'outline, draft, or evidence. Return evidenceStatuses in the same order as the supplied evidence array; '
+        + 'outline, draft, or evidence. Use exact top-level keys: status, issues, evidenceStatuses. '
+        + 'Do not use overallStatus or any other alias. Return evidenceStatuses in the same order as the supplied '
+        + 'evidence array; '
         + 'each value must be supported, contradicted, or ambiguous. Never copy or invent evidence IDs. When '
         + 'evidence is empty, evidenceStatuses must be empty, but you must still verify the outline, draft, '
         + 'sources, and requirements. For evidenceStatuses, judge only whether each cited excerpt supports the '
         + 'assertion. If a source faithfully contains an implausible or factually wrong statement, keep that '
-        + 'evidence status supported and report the factual problem separately in issues and the overall status.\n'
+        + 'evidence status supported and report the factual problem separately in issues and the top-level status.\n'
         + 'outline=' + JSON.stringify(result.outline) + '\n'
         + 'draft=' + JSON.stringify(result.draft) + '\n'
         + 'evidenceByPosition=' + this.verifierEvidenceText(result.evidence) + '\n'
@@ -1153,12 +1155,20 @@ export class KnowledgeModel {
     return evidence;
   }
 
+  private readVerifierStatusValue(json: Record<string, Object>): Object | undefined {
+    const statusValue: Object | undefined = this.readRecordValue(json, 'status');
+    if (statusValue !== undefined) {
+      return statusValue;
+    }
+    return this.readRecordValue(json, 'overallStatus');
+  }
+
   // 入参由 seam 预解析并保证顶层对象, 空文分支不再存在 (2026-09-19 统一 JSON 生命周期)
   private parseVerification(
     parsed: Record<string, Object>,
     evidence: NoteGenerationEvidenceItem[],
   ): NoteGenerationVerification {
-    const statusValue: string = String(this.readRecordValue(parsed, 'status') ?? 'ambiguous');
+    const statusValue: string = String(this.readVerifierStatusValue(parsed) ?? 'ambiguous');
     let status: EvidenceVerificationStatus = statusValue === 'supported'
       ? 'supported' : statusValue === 'contradicted' ? 'contradicted' : 'ambiguous';
     const decisions: NoteGenerationEvidenceDecision[] = [];
@@ -1247,7 +1257,7 @@ export class KnowledgeModel {
     evidence: NoteGenerationEvidenceItem[],
   ): string[] {
     const issues: string[] = [];
-    const statusValue: Object | undefined = this.readRecordValue(json, 'status');
+    const statusValue: Object | undefined = this.readVerifierStatusValue(json);
     if (statusValue !== 'supported' && statusValue !== 'contradicted' && statusValue !== 'ambiguous') {
       issues.push('status must be supported, contradicted, or ambiguous');
     }
