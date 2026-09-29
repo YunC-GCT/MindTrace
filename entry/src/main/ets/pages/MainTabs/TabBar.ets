@@ -8,30 +8,20 @@
 //    @Prop  cur      — 当前选中 Tab 索引
 //    onTabChange      — (index: number) => void
 //    onAiTap           — AI 按钮点击回调
-//  依赖: TabButton, AiTabButton (pages/MainTabs)
+//  依赖: HomeTabButton, NotesTabButton, AiTabButton, ReviewTabButton,
+//       ProfileTabButton (pages/MainTabs)
 //  ============================================================================
 
 import {
   MINT_BORDER, BG_DARK, BORDER,
-  S_1, S_2, S_4,
+  S_1, S_2,
   TAB_BAR_HEIGHT, AI_BTN_SIZE,
 } from "common"
-import { TabButton } from "./TabButton"
+import { HomeTabButton } from "./HomeTabButton"
+import { NotesTabButton } from "./NotesTabButton"
 import { AiTabButton } from "./AiTabButton"
-
-interface TabItem {
-  idx: number
-  name: string
-  icon: Resource
-}
-
-const TABS: TabItem[] = [
-  { idx: 0, name: "首页", icon: $r("app.media.ic_home") },
-  { idx: 1, name: "笔记", icon: $r("app.media.ic_notes") },
-  { idx: 2, name: "AI",   icon: $r("app.media.ic_ai") },
-  { idx: 3, name: "复习", icon: $r("app.media.ic_review") },
-  { idx: 4, name: "我的", icon: $r("app.media.ic_me") },
-]
+import { ReviewTabButton } from "./ReviewTabButton"
+import { ProfileTabButton } from "./ProfileTabButton"
 
 @Component
 export struct TabBar {
@@ -53,23 +43,19 @@ export struct TabBar {
         .border({ width: { top: 1 }, color: BORDER })
 
       Row() {
-        TabButton({
-          icon: TABS[0].icon,
-          label: TABS[0].name,
+        HomeTabButton({
           active: this.cur === 0,
           onTap: (): void => { this.onTabChange(0) },
         })
-        TabButton({
-          icon: TABS[1].icon,
-          label: TABS[1].name,
+        NotesTabButton({
           active: this.cur === 1,
           onTap: (): void => { this.onTabChange(1) },
         })
 
         Stack() {
           Ellipse()
-            .width(AI_BTN_SIZE + S_4)
-            .height(AI_BTN_SIZE + S_2)
+            .width(AI_BTN_SIZE + S_2)
+            .height(AI_BTN_SIZE + S_1)
             .fill(BG_DARK)
             .stroke(MINT_BORDER)
             .strokeWidth(1)
@@ -80,15 +66,11 @@ export struct TabBar {
         .height(TAB_BAR_HEIGHT)
         .alignContent(Alignment.Bottom)
 
-        TabButton({
-          icon: TABS[3].icon,
-          label: TABS[3].name,
+        ReviewTabButton({
           active: this.cur === 3,
           onTap: (): void => { this.onTabChange(3) },
         })
-        TabButton({
-          icon: TABS[4].icon,
-          label: TABS[4].name,
+        ProfileTabButton({
           active: this.cur === 4,
           onTap: (): void => { this.onTabChange(4) },
         })
