@@ -15,7 +15,7 @@
 import {
   MINT_BORDER, BG_DARK, BORDER,
   S_1, S_2,
-  TAB_BAR_HEIGHT, AI_BTN_SIZE,
+  TAB_BAR_HEIGHT, AI_BTN_SIZE, S_4,
 } from "common"
 import { HomeTabButton } from "./HomeTabButton"
 import { NotesTabButton } from "./NotesTabButton"
@@ -54,11 +54,12 @@ export struct TabBar {
 
         Stack() {
           Ellipse()
-            .width(AI_BTN_SIZE + S_2)
-            .height(AI_BTN_SIZE + S_1)
+            .width(AI_BTN_SIZE + S_4)
+            .height(AI_BTN_SIZE - S_1)
             .fill(BG_DARK)
             .stroke(MINT_BORDER)
             .strokeWidth(1)
+            .offset({ y: -S_2 })
 
           AiTabButton({ onTap: (): void => { this.onAiTap() } })
         }
