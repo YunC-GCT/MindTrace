@@ -1,7 +1,7 @@
 # PR0 — fix(common): normalizeModel 不再把 DEFAULT_MODEL 本身视为 reserved keyword
 
 > **分支**:`bugfix/llm-config-audit-2026-09-06`(已存在)
-> **Spec**:[016](../specs/016-llm-settings-redesign.md)
+> **Spec**:[016](../../../specs/016-llm-settings-redesign.md)
 > **工作量**:1 行删除 + 1 个 RED 测试套件
 > **风险**:极低
 > **顺序**:第 1 个 PR(可独立先做,用户立即可用)
@@ -105,9 +105,9 @@ private normalizeModel(v: string): string {
 
 ## 相关
 
-- [spec 009](../specs/009-llm-config-throw-on-silent-override.md) — ticket #9 原始修复精神
-- [scope §附录 D](../llm-settings-scope-2026-09-06.md) — 真实根因诊断详细报告
-- [spec 016](../specs/016-llm-settings-redesign.md) — 主 spec(本 ticket 是 spec 016 的一部分)
+- [spec 009](../../../specs/009-llm-config-throw-on-silent-override.md) — ticket #9 原始修复精神
+- [scope §附录 D](../../llm-settings-scope-2026-09-06.md) — 真实根因诊断详细报告
+- [spec 016](../../../specs/016-llm-settings-redesign.md) — 主 spec(本 ticket 是 spec 016 的一部分)
 
 ## 最后更新
 

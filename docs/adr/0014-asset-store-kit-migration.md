@@ -13,7 +13,7 @@ await p.put('api_key', key)
 await p.flush()
 ```
 
-这是 **明文 KV**,违反 [docs/agents/security.md](../agents/security.md) 长期意图("API Key 不入 git" 是防止提交,不防止设备本地明文)。调研 [docs/research/llm-provider-patterns-2026-09-06.md §1.3](../research/llm-provider-patterns-2026-09-06.md) 强推:`@kit.AssetStoreKit` 是 TEE 硬件加密 + AES256-GCM,正是为 Token 类凭据设计。
+这是 **明文 KV**,违反 [docs/agents/security.md](../agents/security.md) 长期意图("API Key 不入 git" 是防止提交,不防止设备本地明文)。调研 docs/research/llm-provider-patterns-2026-09-06.md §1.3（原文未随仓库保留）强推:`@kit.AssetStoreKit` 是 TEE 硬件加密 + AES256-GCM,正是为 Token 类凭据设计。
 
 ## 候选方案
 
@@ -65,7 +65,7 @@ await p.flush()
 
 - [spec 016](../specs/016-llm-settings-redesign.md) — 实施 spec
 - [ADR 0013](./0013-llm-provider-presets.md) — 配套(同一个 spec)
-- [research §1.3 AssetStoreKit](../research/llm-provider-patterns-2026-09-06.md#1-鸿蒙生态现有方案) — TEE + AES256-GCM 细节
+- research §1.3 AssetStoreKit（原文未随仓库保留）— TEE + AES256-GCM 细节
 - [docs/agents/security.md](../agents/security.md) — 当前凭据存储描述(待更新)
 
 ## 最后更新
