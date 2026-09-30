@@ -110,7 +110,7 @@ MindTrace/
 ├── AppScope/               # 应用级配置与资源
 ├── tools/ocr_service/      # 独立 OCR 服务
 ├── scripts/                # 测试与工程检查脚本
-├── docs/                   # 架构、规格、方案与历史归档
+├── docs/                   # 精简说明、英文说明与基础规范
 ├── build-profile.json5     # SDK、模块与签名配置
 ├── oh-package.json5        # 工程依赖
 ├── CONTEXT.md              # 项目术语
