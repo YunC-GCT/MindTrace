@@ -1,4 +1,5 @@
 # MindTrace → LangGraph 迁移方案
+> **失效历史链接已移除，原引用可查Git历史**
 
 > **日期:** 2026-09-02
 > **范围:** 把 MindTrace 的 agent 流水线从当前自定义 `Dispatcher` 迁移到 **LangGraph** 需要做哪些调整
@@ -216,7 +217,7 @@ def build_graph():
 
 ## 4. 要引入的 LangGraph 概念
 
-根据 [agent-glossary.md](../agents/agent-glossary.md),MindTrace 将采用这些通用概念:
+根据 agent-glossary.md,MindTrace 将采用这些通用概念:
 
 | 概念 | 在 MindTrace 中的用途 |
 |---|---|

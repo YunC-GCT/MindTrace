@@ -1,0 +1,49 @@
+name: document-links
+
+# Verify markdown links resolve after doc/code renames. Runs the read-only
+# checker and its unit tests only — it never rewrites files or commits.
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: document-links-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests (link-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run link-check unit tests
+        run: node --test scripts/link-check/tests/*.test.mjs
+
+  lint:
+    name: Check (markdown links)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run link-check (must exit 0)
+        run: node scripts/link-check/index.mjs

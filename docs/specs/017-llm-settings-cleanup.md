@@ -4,7 +4,7 @@
 > **Source ADR**: implicit(spec 016 后续;承接 ticket #9 "LlmConfig 静默覆盖修复未完")
 > **前序 spec**: [`016-llm-settings-redesign.md`](./016-llm-settings-redesign.md) §6.4 公共接口变更 + §8 验收标准
 > **审计依据**: [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` §7 finding #9](../legacy/mindtrace/architecture/audit-full-2026-09-01.md)
-> **handoff**: [`docs/agents/handoffs/pr2-t2-vendorpicker-handoff-2026-09-08.md` §8 已知限制](../agents/handoffs/pr2-t2-vendorpicker-handoff-2026-09-08.md) (L1-L5 列表)
+> **handoff**: `docs/agents/handoffs/pr2-t2-vendorpicker-handoff-2026-09-08.md` §8 已知限制（原文未随仓库保留）(L1-L5 列表)
 > **作者**: 主线程(grill-with-docs → to-spec)
 > **最后更新**: 2026-09-08
 

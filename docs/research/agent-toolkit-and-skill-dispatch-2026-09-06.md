@@ -2,7 +2,7 @@
 
 > **调研问题**(复赛阶段提出): ① 增删查改(CRUD)类 agent 工具, 鸿蒙生态有没有现成 Kit/机制可用? ② LangGraph 等框架能否直接拿来改造使用(对照 [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md))? ③ `skill/` 模块(小艺 skill 预留位, 见 [agent-tools inventory](../architecture/agent-tools-inventory-2026-09-06.md) F4 裁决)如何做合理的意图调度设计?
 > **方法**: 3 个后台 research agent 对一手信源(developer.huawei.com 官方文档/API 参考/版本说明、langchain-ai 官方仓库与文档、npm registry、GitHub)逐条核实; 其中华为文档中心经官方 Markdown 端点抓取 30+ 页并核对全量 sitemap(40,754 条 URL)。**版本基线已核实: HarmonyOS 6.1.1 = API 24**(本项目 build-profile 的 target, [官方版本索引](https://developer.huawei.com/consumer/cn/doc/harmonyos-releases/overview-allversion); 6.1.0=API 23, 6.0.0=API 20, 7.0=API 26)。
-> **前置文档**: [agent-framework-comparison-2026-09-02](./agent-framework-comparison-2026-09-02.md) · [langgraph-migration-2026-09-02](./langgraph-migration-2026-09-02.md)(其 Python sidecar 建议已被 ADR-0008 否决) · [harmonyos-kits-survey-2026-09-05](./harmonyos-kits-survey-2026-09-05.md)。
+> **前置文档**: [agent-framework-comparison-2026-09-02](../legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md)（历史参考）· [langgraph-migration-2026-09-02](../legacy/mindtrace/research/langgraph-migration-2026-09-02.md)（历史参考）(其 Python sidecar 建议已被 ADR-0008 否决) · [harmonyos-kits-survey-2026-09-05](./harmonyos-kits-survey-2026-09-05.md)。
 
 ## 0. 结论速览
 

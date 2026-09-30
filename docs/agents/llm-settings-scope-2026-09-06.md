@@ -66,7 +66,7 @@
 
 ## 调研摘要
 
-详见 [`docs/research/llm-provider-patterns-2026-09-06.md`](./research/llm-provider-patterns-2026-09-06.md)(493 行)。
+详见 `docs/research/llm-provider-patterns-2026-09-06.md`（原文未随仓库保留）(493 行)。
 
 **关键事实**:
 - **Q5:B(AssetStoreKit)被调研强力背书**:TEE + AES256-GCM,正是 Token 类凭据

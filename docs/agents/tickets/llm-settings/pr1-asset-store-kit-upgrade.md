@@ -1,8 +1,8 @@
 # PR1 — feat(common): LlmConfig apiKey 升级到 AssetStoreKit
 
 > **分支**:`bugfix/llm-config-audit-2026-09-06`
-> **Spec**:[016](../specs/016-llm-settings-redesign.md)
-> **源 ADR**:[0014](../adr/0014-asset-store-kit-migration.md)
+> **Spec**:[016](../../../specs/016-llm-settings-redesign.md)
+> **源 ADR**:[0014](../../../adr/0014-asset-store-kit-migration.md)
 > **依赖**:无(独立可做)
 > **工作量**:1 个新文件 + LlmConfig 委托改造 + 单元测试
 > **风险**:中(Q13=C 兼容读取降低风险)
@@ -10,7 +10,7 @@
 
 ## 为什么
 
-详见 [ADR 0014 §背景](../adr/0014-asset-store-kit-migration.md#背景)。
+详见 [ADR 0014 §背景](../../../adr/0014-asset-store-kit-migration.md#背景)。
 
 ## 改动
 

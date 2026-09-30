@@ -1,9 +1,10 @@
 # MindTrace Tool Layer & Per-Agent Patterns
+> **失效历史链接已移除，原引用可查Git历史**
 
 > **Date**: 2026-09-16
 > **Scope**: ① 工具调用面 (ToolRegistry / ToolLoop / LLM wire / MCP) 的完整拓扑;② 10 个核心 agent/workflow 的设计模式判定 (ReAct / Reflexion / Plan-Execute / Router / Pipeline …)。
 > **方法**: 仅引用代码 + 已存 docs/ADR/spec, 全部论断 `path:LINE`。
-> **关系**: 与 [`capturegraph-architecture-evolution-2026-09-16.md`](./capturegraph-architecture-evolution-2026-09-16.md) §5 (CaptureGraph) / §6 (兄弟 workflow) 互补 — 那是 "图运行机制", 本文档是 "工具面 + 模式标签"。
+> **关系**: 与 `capturegraph-architecture-evolution-2026-09-16.md` §5 (CaptureGraph) / §6 (兄弟 workflow) 互补 — 那是 "图运行机制", 本文档是 "工具面 + 模式标签"。
 > **作者备注**: 6 类候选模式标签见 §0.1; §4 列出 doc 与 code 的 drift (含 ToolLoop 零生产消费方)。
 
 ---
@@ -135,7 +136,7 @@ export class ToolRegistry {
 | `SkillAbility` | `skill/src/main/ets/skillability/SkillAbility.ets:2, 27` | 通过 `ToolCatalog.createReadOnlyRegistry()` 取得, 转发给 SkillIntentWorkflow |
 | `SkillIntentWorkflow` | `skill/src/main/ets/workflows/intent/SkillIntentWorkflow.ets:1, 5, 7, 38` | 注入后**只**对 `'note_query'` 直接 `registry.execute` (`:38`), 不走 LLM |
 
-> **DRIFT 提示**: spec 018 §1 ([`docs/specs/018-agent-workflow-architecture.md:44`](../specs/018-agent-workflow-architecture.md)) 列 Tool-calling 入口 = `ToolLoop.run`; **全仓生产代码无 ToolLoop 调用** (grep `new ToolLoop` 仅命中测试 `common/src/test/LlmToolCalling.test.ets:128,148,164,185` 与构建缓存)。**唯一真实工具消费方是 skill/ 的 SearchNote**, 详见 §4。
+> **DRIFT 提示**: spec 018 §1 (`docs/specs/018-agent-workflow-architecture.md:44`) 列 Tool-calling 入口 = `ToolLoop.run`; **全仓生产代码无 ToolLoop 调用** (grep `new ToolLoop` 仅命中测试 `common/src/test/LlmToolCalling.test.ets:128,148,164,185` 与构建缓存)。**唯一真实工具消费方是 skill/ 的 SearchNote**, 详见 §4。
 
 ### 1.3 ToolCatalog — 只读工具目录工厂
 
@@ -199,7 +200,7 @@ export interface ToolCallingState {
 }
 ```
 
-对齐 spec 018 §3 "至少包含 messages、step count、max steps、last result 和 tool calls" ([`docs/specs/018-agent-workflow-architecture.md:61`](../specs/018-agent-workflow-architecture.md))。
+对齐 spec 018 §3 "至少包含 messages、step count、max steps、last result 和 tool calls" (`docs/specs/018-agent-workflow-architecture.md:61`)。
 
 #### 1.5.2 `run` 与终止条件
 
@@ -748,16 +749,16 @@ private async handleWant(want: Want): Promise<void> {
 
 | # | Agent / Workflow | Pattern | Has loop? | Max iter | Tool seam | State channels |
 |---|---|---|---|---|---|---|
-| 1 | `TypeClassifier` ([`agents/src/main/ets/agents/TypeClassifier.ets`](../agents/src/main/ets/agents/TypeClassifier.ets)) | Single-shot LLM + Pure function fallback | 内无 (外 LlmGuard JSON 重试 ≤2) | n/a | 同步调 `OcrTool.recognize` (`:140, 146`), LLM 走 `LlmGuard.callJsonWithRetry` (`:224-229`) | 无 (函数式) |
-| 2 | `KnowledgeModel` ([`agents/src/main/ets/agents/KnowledgeModel.ets`](../agents/src/main/ets/agents/KnowledgeModel.ets)) | Plan-and-Execute + Reflexion (外层 Dispatcher 循环) | 内无 (外 Dispatcher 标准/深度 repair 循环) | n/a (Dispatcher 编排) | `LlmCaller.call` + `LlmGuard.callJsonWithRetry` (`:144-150`); 不调 AgentTool | 无 (函数式, 持有 PromptBuilder/ContentProtocol) |
-| 3 | `TruthCheckService` ([`agents/src/main/ets/agents/TruthCheckService.ets`](../agents/src/main/ets/agents/TruthCheckService.ets)) | Pure function | 无 | n/a | 无 | 无 |
-| 4 | `PromptBuilder` ([`agents/src/main/ets/agents/PromptBuilder.ets`](../agents/src/main/ets/agents/PromptBuilder.ets)) | Pure function (类惯用语) | 无 | n/a | 无 | 无 (常量类) |
-| 5 | `OcrTool` ([`agents/src/main/ets/mcp/tools/OcrTool.ets`](../agents/src/main/ets/mcp/tools/OcrTool.ets)) | Pure function (HTTP/SDK wrapper) | 传输层重试 ≤2 (`:74, 256, 268`) | 2 | 无 (不实现 AgentTool) | 无 |
-| 6 | `CaptureGraph` ([`agents/src/main/ets/graph/CaptureGraph.ets`](../agents/src/main/ets/graph/CaptureGraph.ets)) | Pipeline / DAG orchestration | 无 (单 pass DAG; haltWhen 短路) | n/a | 不直调; 节点调 LLM/DB/OCR | `AgentState` 13 字段 (`AgentState.ets:33-51`) |
-| 7 | `ToolCallingWorkflow` ([`common/src/main/ets/workflow/tool-calling/ToolCallingWorkflow.ets`](../common/src/main/ets/workflow/tool-calling/ToolCallingWorkflow.ets)) | **ReAct** | ✅ 显式循环 | `DEFAULT_MAX_STEPS=4` (`:9`) | `ToolRegistry.execute` via ExecuteToolsNode (`:24`) + `LlmCaller.call` via CallModelNode (`:21`) | `ToolCallingState` 8 字段 (`ToolCallingState.ets:10-19`) |
-| 8 | `ConversationWorkflow` ([`entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`](../entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets)) | Multi-turn chat with state + Router | 内无 (外多轮) | n/a | 不调 AgentTool (无 ToolRegistry import); LLM 走 ReplyService (`:297, 337`) | `ConversationState` 9 字段 (`ConversationState.ets:49-60`) |
-| 9 | `SkillIntentWorkflow` ([`skill/src/main/ets/workflows/intent/SkillIntentWorkflow.ets`](../skill/src/main/ets/workflows/intent/SkillIntentWorkflow.ets)) | Router / Classifier | 无 | n/a | `ToolRegistry.execute('note_query', ...)` (`:38`); 不调 LLM | `SkillIntentState` 3 字段 (`SkillIntentState.ets:16-19`) |
-| 10 | `ReplyService` ([`entry/src/main/ets/services/ReplyService.ets`](../entry/src/main/ets/services/ReplyService.ets)) | Adapter (Stream + JSON fallback) | retry ≤2 (`:81`) | 2 | 不调 AgentTool; 调 `LlmClient.call` + `LlmGuard.callJsonWithRetry` | 局部流式累积 (`:73, 94`) |
+| 1 | `TypeClassifier` (`agents/src/main/ets/agents/TypeClassifier.ets`) | Single-shot LLM + Pure function fallback | 内无 (外 LlmGuard JSON 重试 ≤2) | n/a | 同步调 `OcrTool.recognize` (`:140, 146`), LLM 走 `LlmGuard.callJsonWithRetry` (`:224-229`) | 无 (函数式) |
+| 2 | `KnowledgeModel` (`agents/src/main/ets/agents/KnowledgeModel.ets`) | Plan-and-Execute + Reflexion (外层 Dispatcher 循环) | 内无 (外 Dispatcher 标准/深度 repair 循环) | n/a (Dispatcher 编排) | `LlmCaller.call` + `LlmGuard.callJsonWithRetry` (`:144-150`); 不调 AgentTool | 无 (函数式, 持有 PromptBuilder/ContentProtocol) |
+| 3 | `TruthCheckService` (`agents/src/main/ets/agents/TruthCheckService.ets`) | Pure function | 无 | n/a | 无 | 无 |
+| 4 | `PromptBuilder` (`agents/src/main/ets/agents/PromptBuilder.ets`) | Pure function (类惯用语) | 无 | n/a | 无 | 无 (常量类) |
+| 5 | `OcrTool` (`agents/src/main/ets/mcp/tools/OcrTool.ets`) | Pure function (HTTP/SDK wrapper) | 传输层重试 ≤2 (`:74, 256, 268`) | 2 | 无 (不实现 AgentTool) | 无 |
+| 6 | `CaptureGraph` (`agents/src/main/ets/graph/CaptureGraph.ets`) | Pipeline / DAG orchestration | 无 (单 pass DAG; haltWhen 短路) | n/a | 不直调; 节点调 LLM/DB/OCR | `AgentState` 13 字段 (`AgentState.ets:33-51`) |
+| 7 | `ToolCallingWorkflow` (`common/src/main/ets/workflow/tool-calling/ToolCallingWorkflow.ets`) | **ReAct** | ✅ 显式循环 | `DEFAULT_MAX_STEPS=4` (`:9`) | `ToolRegistry.execute` via ExecuteToolsNode (`:24`) + `LlmCaller.call` via CallModelNode (`:21`) | `ToolCallingState` 8 字段 (`ToolCallingState.ets:10-19`) |
+| 8 | `ConversationWorkflow` (`entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`) | Multi-turn chat with state + Router | 内无 (外多轮) | n/a | 不调 AgentTool (无 ToolRegistry import); LLM 走 ReplyService (`:297, 337`) | `ConversationState` 9 字段 (`ConversationState.ets:49-60`) |
+| 9 | `SkillIntentWorkflow` (`skill/src/main/ets/workflows/intent/SkillIntentWorkflow.ets`) | Router / Classifier | 无 | n/a | `ToolRegistry.execute('note_query', ...)` (`:38`); 不调 LLM | `SkillIntentState` 3 字段 (`SkillIntentState.ets:16-19`) |
+| 10 | `ReplyService` (`entry/src/main/ets/services/ReplyService.ets`) | Adapter (Stream + JSON fallback) | retry ≤2 (`:81`) | 2 | 不调 AgentTool; 调 `LlmClient.call` + `LlmGuard.callJsonWithRetry` | 局部流式累积 (`:73, 94`) |
 
 **模式分布**: 4 Pure function (TruthCheckService / PromptBuilder / OcrTool) + 2 Single-shot (TypeClassifier / ReplyService) + 1 ReAct (ToolCallingWorkflow) + 1 Plan-and-Execute+Reflexion (KnowledgeModel) + 1 Pipeline (CaptureGraph) + 1 Router (SkillIntentWorkflow) + 1 Multi-turn chat + Router (ConversationWorkflow)。
 
@@ -863,12 +864,12 @@ private async handleWant(want: Want): Promise<void> {
 
 ## 7. Related
 
-- [`docs/research/capturegraph-architecture-evolution-2026-09-16.md`](./capturegraph-architecture-evolution-2026-09-16.md) — CaptureGraph 唯一权威 (图运行机制, 4 workflow 节点表, 决策一致性)
-- [`docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md`](./agent-toolkit-and-skill-dispatch-2026-09-06.md) — 工具层 / skill 调度调研基线
-- [`docs/research/agent-reasoning-process-display-research-2026-09-11.md`](./agent-reasoning-process-display-research-2026-09-11.md) — ToolCallingWorkflow 零生产消费方 最早记录 (与 §4.1 #1 同源)
-- [`docs/specs/014-tool-calling-protocol.md`](../specs/014-tool-calling-protocol.md) — 协议/ToolRegistry/ToolLoop 实现 spec
-- [`docs/specs/018-agent-workflow-architecture.md`](../specs/018-agent-workflow-architecture.md) — 4 workflow 共享 StateGraph 内核 spec
-- [`docs/adr/0010-mcp-tools-semantics.md`](../adr/0010-mcp-tools-semantics.md) — `mcp/` vs `tools/` 语义
-- [`docs/adr/0011-skill-xiaoyi-reservation.md`](../adr/0011-skill-xiaoyi-reservation.md) — skill/ 模块是 SearchNote 第一行动作
-- [`docs/adr/0012-tool-calling-protocol.md`](../adr/0012-tool-calling-protocol.md) — OpenAI 兼容工具调用协议 + ToolRegistry 落位
-- [`docs/adr/0008-capturegraph-self-built-runtime.md`](../adr/0008-capturegraph-self-built-runtime.md) — LangGraph 是设计模型不是运行时
+- `docs/research/capturegraph-architecture-evolution-2026-09-16.md` — CaptureGraph 唯一权威 (图运行机制, 4 workflow 节点表, 决策一致性)
+- `docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md` — 工具层 / skill 调度调研基线
+- `docs/research/agent-reasoning-process-display-research-2026-09-11.md` — ToolCallingWorkflow 零生产消费方 最早记录 (与 §4.1 #1 同源)
+- `docs/specs/014-tool-calling-protocol.md` — 协议/ToolRegistry/ToolLoop 实现 spec
+- `docs/specs/018-agent-workflow-architecture.md` — 4 workflow 共享 StateGraph 内核 spec
+- `docs/adr/0010-mcp-tools-semantics.md` — `mcp/` vs `tools/` 语义
+- `docs/adr/0011-skill-xiaoyi-reservation.md` — skill/ 模块是 SearchNote 第一行动作
+- `docs/adr/0012-tool-calling-protocol.md` — OpenAI 兼容工具调用协议 + ToolRegistry 落位
+- `docs/adr/0008-capturegraph-self-built-runtime.md` — LangGraph 是设计模型不是运行时

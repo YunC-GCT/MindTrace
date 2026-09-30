@@ -1,9 +1,10 @@
 # MCP Packaging Path for MindTrace Tools — 2026-09-16
+> **失效历史链接已移除，原引用可查Git历史**
 
 > **Scope**: Should future tool implementations follow the MCP-style pattern of `OcrTool` (`agents/src/main/ets/mcp/tools/`, ADR-0010) or the ToolRegistry/AgentTool pattern (`common/src/main/ets/tools/`, ADR-0012)?
 > **Method**: Every claim cites `path:LINE`; one new file, no edits.
 > **Audience**: Decisions on items H1 (ToolLoop wiring) / S3-S4 (SSE tool events) / S5 (P1 wiring) / P2 (write tools) — see §7.
-> **Anchors**: [ADR-0010](../adr/0010-mcp-tools-semantics.md) (mcp/ semantics), [ADR-0012](../adr/0012-tool-calling-protocol.md) + [spec 014](../specs/014-tool-calling-protocol.md) (ToolRegistry protocol), [CONTEXT.md:110-116](../../CONTEXT.md) (vocabulary), [prior analysis](../legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) (drift inventory).
+> **Anchors**: ADR-0010 (mcp/ semantics), ADR-0012 + spec 014 (ToolRegistry protocol), CONTEXT.md:110-116 (vocabulary), prior analysis (drift inventory).
 
 ---
 
@@ -15,7 +16,7 @@ Two tool populations co-exist in MindTrace today. They are **deliberately differ
 
 - **Class with public methods**, not the `AgentTool` 4 件套. `agents/src/main/ets/mcp/tools/OcrTool.ets:52` declares `export class OcrTool { ... }` directly — no `name`, no `description`, no `parameters: Record<string, Object>`, no `execute(args)` signature.
 - **Called directly from code**, not through `ToolRegistry.execute`. Today the only caller is `TypeClassifier.extractText` (`agents/src/main/ets/agents/TypeClassifier.ets:140-148`) which does `const tool = new OcrTool(); baseText = await tool.recognize(payload.imageUri)`.
-- **Lives under `agents/src/main/ets/mcp/tools/`** — directory semantics = "按 MCP 语义封装的 agent 工具" ([ADR-0010](../adr/0010-mcp-tools-semantics.md):3, [CONTEXT.md:110-113](../../CONTEXT.md)). The `mcp/` name is **taxonomy**, not "we have a running MCP server" (none does).
+- **Lives under `agents/src/main/ets/mcp/tools/`** — directory semantics = "按 MCP 语义封装的 agent 工具" (ADR-0010:3, CONTEXT.md:110-113). The `mcp/` name is **taxonomy**, not "we have a running MCP server" (none does).
 - **Throws on failure**, not `ToolResult{ok:false, content}`: `OcrTool.ets:101` throws `'OCR failed: ' + result.message` and `:106` throws `'OCR returned empty text'`. This is the synchronous-tool contract — callers handle the throw locally, no LLM "self-recovery" loop.
 - **Configurable endpoint, no per-call name argument** — `OcrTool` constructor takes `formulaEndpoint?` (`:55-58`); runtime mode via `OcrConfig` singleton.
 
@@ -24,7 +25,7 @@ Two tool populations co-exist in MindTrace today. They are **deliberately differ
 - **4 件套 contract** — `common/src/main/ets/tools/ToolRegistry.ets:17-22` defines `AgentTool { name, description, parameters, execute(args) }`.
 - **`ToolResult` instead of throw** — same file `:11-14`: `ToolResult { ok: boolean; content: string }`. `execute()` is **defensive**: unknown name → `ok:false 'unknown tool: ' + name` (`:60`); bad JSON → `ok:false 'invalid tool arguments...'` (`:72`). The defensive shape exists because LLM may hallucinate tool names; a throw would kill the loop.
 - **Naming-rule-gated registration** — `ToolRegistry.ets:25-37` enforces `^[a-z][a-z0-9_]{0,63}$` at register time (stricter than OpenAI wire rule).
-- **Lives under `common/src/main/ets/tools/`** — `ToolRegistry.ets:1-77`, `ToolCatalog.ets:1-27`, `NoteQueryTools.ets:1-253`. Common because both `agents/` and `skill/` import it ([ADR-0012](../adr/0012-tool-calling-protocol.md):11 — "registry cannot live in entry because skill/ (HSP) cannot import entry (HAP)").
+- **Lives under `common/src/main/ets/tools/`** — `ToolRegistry.ets:1-77`, `ToolCatalog.ets:1-27`, `NoteQueryTools.ets:1-253`. Common because both `agents/` and `skill/` import it (ADR-0012:11 — "registry cannot live in entry because skill/ (HSP) cannot import entry (HAP)").
 - **Wire-shaped** — `listDefinitions()` (`ToolRegistry.ets:46-54`) emits OpenAI `LlmToolDefinition { type:'function', function:{name,description,parameters} }` ready for `LlmRequestBody.tools`.
 - **Production consumer today**: only `SkillAbility.handleWant` (`skill/src/main/ets/skillability/SkillAbility.ets:27`) → `SkillIntentWorkflow.run` → `registry.execute('note_query', ...)` (`SkillIntentWorkflow.ets:38`) — **a non-LLM call**. `ToolLoop.run` has zero production callers (see §3).
 
@@ -40,10 +41,10 @@ The two shapes serve different call graphs:
 | Registry membership | none | `ToolRegistry.register(tool)` |
 | Naming-rule | none (TypeScript class) | `^[a-z][a-z0-9_]{0,63}$` at register |
 | Module location | `agents/src/main/ets/mcp/tools/` | `common/src/main/ets/tools/` |
-| ADR | [0010](../adr/0010-mcp-tools-semantics.md) | [0012](../adr/0012-tool-calling-protocol.md) |
+| ADR | 0010 | 0012 |
 | Production callers today | `TypeClassifier.extractText` (`:140-148`) | `SkillAbility.handleWant` → `SkillIntentWorkflow.execute_search` |
 
-The directory split is **not** "MCP runs a server vs LLM uses ToolRegistry". It is "is the tool *chosen by an LLM* (ToolRegistry) or *invoked as part of a pipeline* (mcp/)". This is what [CONTEXT.md:110-113](../../CONTEXT.md) makes canonical:
+The directory split is **not** "MCP runs a server vs LLM uses ToolRegistry". It is "is the tool *chosen by an LLM* (ToolRegistry) or *invoked as part of a pipeline* (mcp/)". This is what CONTEXT.md:110-113 makes canonical:
 
 > MCP 工具 (mcp/): A tool in `agents/src/main/ets/mcp/tools/` (currently `OcrTool`), built by the team as an MCP-语义 tool. The directory classifies tools by **MCP tool semantics** — not by whether an MCP server is running (none does today). CRUD-style tools (增删查改) belong in `tools/` instead (ADR-0010).
 
@@ -95,9 +96,9 @@ if (payload.kind === 'file') {
 
 Three reasons stated in the ADRs/specs:
 
-1. **Taxonomy** ([ADR-0010](../adr/0010-mcp-tools-semantics.md):3,11): `mcp/` is for "按 MCP 语义封装的 agent 工具", `tools/` (in `common/`) is for "增删查改类". OCR is not CRUD; it's a pipeline step.
-2. **Tool Registry scope** ([ADR-0012](../adr/0012-tool-calling-protocol.md):20): "`OcrTool` stays where it is (`mcp/`, MCP-semantic) — registering it as an `AgentTool` is a possible follow-up, not part of this decision." And [spec 014](../specs/014-tool-calling-protocol.md):136 (out-of-scope): "OcrTool 注册为 AgentTool(保持 `mcp/` 语义不动, ADR-0010; 可能的后续单独决策)".
-3. **Call-graph fit**: OCR is invoked during `capture` *before* LLM involvement ([CaptureGraph capture step](../../CONTEXT.md:56-58)). Wrapping it in `ToolRegistry` would force a tool-call round-trip and JSON Schema definition for a tool that's already a typed ArkTS call site.
+1. **Taxonomy** (ADR-0010:3,11): `mcp/` is for "按 MCP 语义封装的 agent 工具", `tools/` (in `common/`) is for "增删查改类". OCR is not CRUD; it's a pipeline step.
+2. **Tool Registry scope** (ADR-0012:20): "`OcrTool` stays where it is (`mcp/`, MCP-semantic) — registering it as an `AgentTool` is a possible follow-up, not part of this decision." And spec 014:136 (out-of-scope): "OcrTool 注册为 AgentTool(保持 `mcp/` 语义不动, ADR-0010; 可能的后续单独决策)".
+3. **Call-graph fit**: OCR is invoked during `capture` *before* LLM involvement (CaptureGraph capture step). Wrapping it in `ToolRegistry` would force a tool-call round-trip and JSON Schema definition for a tool that's already a typed ArkTS call site.
 
 ### 2.4 What would change if converted to AgentTool
 
@@ -125,10 +126,10 @@ The 4 pending items from the capturegraph-tool-layer §4 drift table (mapped 1-1
 
 | ID | Item | Drift reference |
 |---|---|---|
-| **H1** | `ToolLoop` 接 `ConversationWorkflow` (tool loop zero production consumers) | [§4.1 #1-#2](../legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) |
-| **S3/S4** | SSE `tool_call`/`tool_result` emit + `ToolLoop` event output | [§4.2 #3-#4](../legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) |
-| **S5** | P1 只读工具 in `entry`/`agents` 注入 | [§4.2 #5](../legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) |
-| **P2** | `NoteQueryTools` write tools (note insert/update/delete) | [spec 014 §"Out of scope"](../specs/014-tool-calling-protocol.md):134; [ADR-0012 §Chosen 3](../adr/0012-tool-calling-protocol.md) |
+| **H1** | `ToolLoop` 接 `ConversationWorkflow` (tool loop zero production consumers) | §4.1 #1-#2 |
+| **S3/S4** | SSE `tool_call`/`tool_result` emit + `ToolLoop` event output | §4.2 #3-#4 |
+| **S5** | P1 只读工具 in `entry`/`agents` 注入 | §4.2 #5 |
+| **P2** | `NoteQueryTools` write tools (note insert/update/delete) | spec 014 §"Out of scope":134; ADR-0012 §Chosen 3 |
 
 ### H1 — Should `ToolLoop` wrap MCP-style tools or ToolRegistry tools?
 
@@ -144,7 +145,7 @@ The 4 pending items from the capturegraph-tool-layer §4 drift table (mapped 1-1
 
 Drift detail:
 - `LlmTypes.ets:129` defines `StreamEventType = 'thinking' | 'text' | 'tool_call' | 'tool_result'` — all 4 vocabulary slots exist.
-- `LlmClient.parseStreamEventsFromSseData` (`LlmClient.ets:497-522`) currently emits only `thinking` and `text` ([capturegraph-tool-layer §1.7.3](../legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) at lines 423-444).
+- `LlmClient.parseStreamEventsFromSseData` (`LlmClient.ets:497-522`) currently emits only `thinking` and `text` (capturegraph-tool-layer §1.7.3 at lines 423-444).
 - `ToolLoop.run` returns only the final `LlmCallResult` (`ToolCallingWorkflow.ets:41-44`); intermediate tool_call/tool_result not exposed to UI.
 
 **Path is independent of MCP vs ToolRegistry** — both shapes use the same `LlmClient` and `ToolLoop` infrastructure:
@@ -170,13 +171,13 @@ Current state: `ToolCatalog.createReadOnlyRegistry()` is called **only by `Skill
 
 ### P2 — Write tools (Note insert/update/delete)
 
-Deferred by ADR ([spec 014 §Out-of-scope](../specs/014-tool-calling-protocol.md):134; [ADR-0012 §Chosen 3](../adr/0012-tool-calling-protocol.md)): "写类工具(Note insert/update/delete)— 与 F2 写库路径统一绑定, 赛后另立 spec".
+Deferred by ADR (spec 014 §Out-of-scope:134; ADR-0012 §Chosen 3): "写类工具(Note insert/update/delete)— 与 F2 写库路径统一绑定, 赛后另立 spec".
 
 **Path**: **ToolRegistry, not MCP**. Four reasons:
 
 1. **LLM gate** — write tools **must** be LLM-chosen (user asks "save this as a note" → LLM decides when). MCP-style tools are pipeline-invoked, not LLM-invoked.
-2. **Validation gate unification** ([ADR-0012](../adr/0012-tool-calling-protocol.md):13): "three AI-triggered write paths already exist with inconsistent gating (inventory F2); adding LLM-initiated writes before that unification would compound the risk. Write tools are a post-competition phase." A unified gate has to be a single `ToolRegistry.execute()` path so the gate logic lives at one boundary.
-3. **Schema-ownership** ([ADR-0012](../adr/0012-tool-calling-protocol.md):19): "`knowledge_unit` etc. are currently declared by `entry` DAOs — P1 tools must either lift shared schema constants into `common` or cite NoteDao as the schema source-of-truth." Write tools amplify this — they need to share column names with both `entry/NoteDao` and `common/ToolRegistry`. The MCP path does not solve this; the ToolRegistry path puts the schema discussion at the registry boundary where it already exists.
+2. **Validation gate unification** (ADR-0012:13): "three AI-triggered write paths already exist with inconsistent gating (inventory F2); adding LLM-initiated writes before that unification would compound the risk. Write tools are a post-competition phase." A unified gate has to be a single `ToolRegistry.execute()` path so the gate logic lives at one boundary.
+3. **Schema-ownership** (ADR-0012:19): "`knowledge_unit` etc. are currently declared by `entry` DAOs — P1 tools must either lift shared schema constants into `common` or cite NoteDao as the schema source-of-truth." Write tools amplify this — they need to share column names with both `entry/NoteDao` and `common/ToolRegistry`. The MCP path does not solve this; the ToolRegistry path puts the schema discussion at the registry boundary where it already exists.
 4. **Audit/observability** — `ToolRegistry.execute` already routes through `LlmError('TOOL_REGISTRY_ERROR', 'TOOL_LOOP_MAX_STEPS')` and `ToolResult{ok:false, content}`. Adding write tools to a separate MCP-style surface would require a parallel observability story.
 
 **Hybrid (theoretical)**: a write tool that's both LLM-callable **and** directly invokable from pipeline code (e.g. `KnowledgeUnit.persist` writes during `CaptureGraph` persist node AND a future LLM-initiated "re-write this note"). Implementation: ToolRegistry AgentTool with **explicit caller discrimination** (only callable from `ConversationWorkflow`, not from arbitrary LLM loops). Cost: ACL on `ToolRegistry` itself — adds complexity without solving the F2 unification problem.
@@ -190,9 +191,9 @@ Deferred by ADR ([spec 014 §Out-of-scope](../specs/014-tool-calling-protocol.md
 ### 4.1 What an MCP server would look like
 
 Per [MCP spec 2026-07-28](https://modelcontextprotocol.io/specification/latest) (verified 2026-09-16):
-- Transport: **JSON-RPC 2.0** over stdio / streamable HTTP (per [research ⑤ §2.4 #4](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md):52 — "MCP 规范(2026-07-28 版) ... JSON-RPC 2.0, 语言无关").
+- Transport: **JSON-RPC 2.0** over stdio / streamable HTTP (per research ⑤ §2.4 #4:52 — "MCP 规范(2026-07-28 版) ... JSON-RPC 2.0, 语言无关").
 - Server features: `tools/list`, `tools/call`, `resources/*`, `prompts/*`. We only need `tools/list` + `tools/call`.
-- Hosting: per [research ⑤ §4.2](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md):67 — "app 以 MCP Server 形式向小艺注册 tools" — the 小艺开放平台 MCP 上架 flow.
+- Hosting: per research ⑤ §4.2:67 — "app 以 MCP Server 形式向小艺注册 tools" — the 小艺开放平台 MCP 上架 flow.
 
 ### 4.2 Feasibility in ArkTS
 
@@ -200,14 +201,14 @@ Per [MCP spec 2026-07-28](https://modelcontextprotocol.io/specification/latest) 
 
 **Schema**: feasible. Tool definitions (`LlmToolDefinition`) already in spec 014 (`LlmTypes.ets:175-185`) are wire-compatible with MCP `Tool` schema (both are JSON Schema objects in `parameters`).
 
-**Caveat — no official HarmonyOS MCP server SDK** ([research ⑤ §2.4 #4](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md):52 — "MCP 规范 ... 语言无关 — 官方 TS SDK 不可移植, 按 spec 自实现最小 client 与项目 OcrTool 思路一致"). Self-implement per spec; borrow patterns from `@modelcontextprotocol/sdk` TypeScript reference.
+**Caveat — no official HarmonyOS MCP server SDK** (research ⑤ §2.4 #4:52 — "MCP 规范 ... 语言无关 — 官方 TS SDK 不可移植, 按 spec 自实现最小 client 与项目 OcrTool 思路一致"). Self-implement per spec; borrow patterns from `@modelcontextprotocol/sdk` TypeScript reference.
 
 ### 4.3 Comparison to current `SkillAbility` Want-based interface
 
 | Dimension | `SkillAbility` (today) | MCP server (future) |
 |---|---|---|
 | Caller | 小艺 platform via Want | any MCP-compatible host |
-| Transport | `Want` + `AbilityResult` ([`SkillAbility.ets:40-46`](../skill/src/main/ets/skillability/SkillAbility.ets:40)) | JSON-RPC 2.0 over HTTP (or stdio) |
+| Transport | `Want` + `AbilityResult` (`SkillAbility.ets:40-46`) | JSON-RPC 2.0 over HTTP (or stdio) |
 | Tool identity | `want.action` mapped by `IntentRouter.fromWant` | `tool.name` in `tools/call` |
 | Surface | 7 declared actions in `module.json5` | flat list from `ToolRegistry.listDefinitions()` |
 | Protocol spec | OpenHarmony-specific | Industry-standard MCP |
@@ -237,7 +238,7 @@ Apply these in order. First matching rule wins.
 | 3 | Is the tool invoked by LLM via `tool_calls` JSON? | **ToolRegistry path** (`common/src/main/ets/tools/`) | continue |
 | 4 | Is the tool called by `SkillAbility.handleWant` (no LLM, Want-driven)? | **ToolRegistry path** (reuses the shared tool surface, see ADR-0011) | continue |
 | 5 | Is the tool stateful / multi-step / streaming? | **ToolRegistry path** (ToolLoop will wrap it; `ToolResult{ok,content}` handles error) | continue |
-| 6 | Is the tool a CRUD (增删查改) operation? | **ToolRegistry path** ([ADR-0010](../adr/0010-mcp-tools-semantics.md):11) | continue |
+| 6 | Is the tool a CRUD (增删查改) operation? | **ToolRegistry path** (ADR-0010:11) | continue |
 | 7 | (Fallback) | **Default to MCP path** if no other rule matches, then evaluate | |
 
 The dominant axis is **"who calls this tool, and how?"** — not "is MCP exposed as a server?". MCP-style is for *pipeline tools*, ToolRegistry-style is for *LLM/skills tools*.
@@ -259,8 +260,8 @@ The dominant axis is **"who calls this tool, and how?"** — not "is MCP exposed
 | **Naming rule** | None (TypeScript identifier) | `^[a-z][a-z0-9_]{0,63}$` at register (`ToolRegistry.ets:25-37`) |
 | **Discoverability** | Class symbol only | Listed via `ToolRegistry.listDefinitions()` |
 | **Module location** | `agents/src/main/ets/mcp/tools/` | `common/src/main/ets/tools/` (reachable by `skill/` HSP) |
-| **ADR basis** | [ADR-0010](../adr/0010-mcp-tools-semantics.md) | [ADR-0012](../adr/0012-tool-calling-protocol.md), [spec 014](../specs/014-tool-calling-protocol.md) |
-| **Open spec risk** | Low — ADR-0010 settled | Medium — write tools gated on F2 ([ADR-0012](../adr/0012-tool-calling-protocol.md):13) |
+| **ADR basis** | ADR-0010 | ADR-0012, spec 014 |
+| **Open spec risk** | Low — ADR-0010 settled | Medium — write tools gated on F2 (ADR-0012:13) |
 
 ---
 
@@ -271,7 +272,7 @@ The dominant axis is **"who calls this tool, and how?"** — not "is MCP exposed
 | **H1** | ToolLoop 接 ConversationWorkflow | **Direct Tool (ToolRegistry)** | `ToolLoop.run` takes `ToolRegistry`; LLM emits `tool_calls` JSON; MCP-style throws break ReAct self-recovery | `ToolLoop.ets:21-24`, `ExecuteToolsNode.ets:24`, `ToolRegistry.ets:57-76` |
 | **S3/S4** | SSE `tool_call`/`tool_result` emit + ToolLoop event output | **Direct Tool (LlmClient stream extension)** | Events describe AgentTool names + `ToolResult.content` — ToolRegistry vocabulary; MCP-style doesn't produce `tool_calls` | `LlmTypes.ets:129` (StreamEvent 4-type), `LlmClient.ets:497-522`, `ToolCallingWorkflow.ets:22-45` |
 | **S5** | P1 只读工具 in entry/agents 注入 | **Direct Tool (ToolRegistry via `ToolCatalog`)** | P1 tools are already ToolRegistry-shaped; injecting them via `EntryAbility` composition root is the natural fix; OCR stays MCP (no change) | `ToolCatalog.ets:19-26`, `NoteQueryTools.ets:50-247`, drift §4.2 #5 |
-| **P2** | NoteQueryTools write tools (note insert/update/delete) | **Direct Tool (ToolRegistry)** | LLM-mediated writes need validation-gate unification (F2) — putting writes on a separate MCP-style surface would fork the gate; spec 014 explicitly defers | [spec 014 §Out-of-scope:134](../specs/014-tool-calling-protocol.md), [ADR-0012 §Chosen 3](../adr/0012-tool-calling-protocol.md) |
+| **P2** | NoteQueryTools write tools (note insert/update/delete) | **Direct Tool (ToolRegistry)** | LLM-mediated writes need validation-gate unification (F2) — putting writes on a separate MCP-style surface would fork the gate; spec 014 explicitly defers | spec 014 §Out-of-scope:134, ADR-0012 §Chosen 3 |
 
 **Net recommendation**: all 4 items use the **Direct Tool (ToolRegistry) path**. The MCP path is the right call for `OcrTool`-shaped pipeline tools (image→text, future audio→text, etc.); none of the 4 items are pipeline tools. **OcrTool should not be re-shaped**; if a future LLM-driven chat needs OCR, the recommended path is a thin `OcrAgentTool implements AgentTool` wrapper (~30 LOC) that holds an `OcrTool` instance and translates `args:{imageUri}` → `tool.recognize()` → `JSON.stringify(result)`.
 
@@ -324,16 +325,16 @@ The dominant axis is **"who calls this tool, and how?"** — not "is MCP exposed
 
 ## §9 Cross-references / see also
 
-- [ADR-0010](../adr/0010-mcp-tools-semantics.md) — `mcp/` semantics (canonical)
-- [ADR-0011](../adr/0011-skill-xiaoyi-reservation.md) — `skill/` reservation (canonical)
-- [ADR-0012](../adr/0012-tool-calling-protocol.md) — ToolRegistry protocol (canonical)
-- [spec 014](../specs/014-tool-calling-protocol.md) — Protocol spec (canonical)
-- [spec 018](../specs/018-agent-workflow-architecture.md) — 4-workflow architecture (canonical)
-- [CONTEXT.md](../../CONTEXT.md) — vocabulary at lines 110-116
-- [`capturegraph-tool-layer-and-patterns-2026-09-16.md` §1.9](../legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) — "MCP 工具 (OcrTool) vs ToolRegistry" comparison
-- [`capturegraph-tool-layer-and-patterns-2026-09-16.md` §4.1-§4.2](../legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) — drift items H1/S3-S4/S5
-- [research ⑤ §2.4 #4](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md) — MCP spec language-agnostic note
-- [research ⑤ §4.2](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md) — 小艺开放平台 MCP 上架
+- ADR-0010 — `mcp/` semantics (canonical)
+- ADR-0011 — `skill/` reservation (canonical)
+- ADR-0012 — ToolRegistry protocol (canonical)
+- spec 014 — Protocol spec (canonical)
+- spec 018 — 4-workflow architecture (canonical)
+- CONTEXT.md — vocabulary at lines 110-116
+- `capturegraph-tool-layer-and-patterns-2026-09-16.md` §1.9 — "MCP 工具 (OcrTool) vs ToolRegistry" comparison
+- `capturegraph-tool-layer-and-patterns-2026-09-16.md` §4.1-§4.2 — drift items H1/S3-S4/S5
+- research ⑤ §2.4 #4 — MCP spec language-agnostic note
+- research ⑤ §4.2 — 小艺开放平台 MCP 上架
 - [MCP spec 2026-07-28](https://modelcontextprotocol.io/specification/latest) — JSON-RPC 2.0 transport
 
 ---
@@ -346,12 +347,12 @@ Reading every primary source uncovered a few inconsistencies worth recording (in
 |---|---|---|---|---|
 | 1 | User prompt refers to `capturegraph-architecture §10.5 #5-#8` as the source of H1/S3-S4/S5/P2 | §10.5 is "DispatchResult carries optional classification/recognized text" (`capturegraph-processing-chain-2026-09-16.md:394-396`) — unrelated | The 4 items are real drift but live in `capturegraph-tool-layer-and-patterns-2026-09-16.md` §4.1 #1-#2 (H1) + §4.2 #3-#5 (S3-S4/S5); P2 lives in `spec 014` out-of-scope list | `capturegraph-tool-layer-and-patterns-2026-09-16.md:778-787` |
 | 2 | User prompt cites `agents/src/main/ets/TypeClassifier.ets:140-148` | Path is `agents/src/main/ets/agents/TypeClassifier.ets:140-148` | Same lines, different prefix | Verified by reading `TypeClassifier.ets` |
-| 3 | `OcrTool` described in [research ⑤ §4.2](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md):67 as a future "MCP Server" candidate | ADR-0010:18 explicitly defers the server decision to the maintainer | Today: no MCP server; ADR says "由该工具的维护队员决定" | `docs/adr/0010-mcp-tools-semantics.md:18` |
+| 3 | `OcrTool` described in research ⑤ §4.2:67 as a future "MCP Server" candidate | ADR-0010:18 explicitly defers the server decision to the maintainer | Today: no MCP server; ADR says "由该工具的维护队员决定" | `docs/adr/0010-mcp-tools-semantics.md:18` |
 | 4 | `OcrTool.ets:107` throws on empty text — counted as "throw on failure" | True for `recognize()` (high-level pipeline entry, `:101, 106`); **not** true for `recognizeImage`/ `recognizeBytes` which return `OcrRecognitionResult{success:false}` | Two different failure-handling shapes within the same class | `OcrTool.ets:89-95` vs `:101, 106` |
-| 5 | CaptureGraph description in [CONTEXT.md:85](../../CONTEXT.md) says "built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008)" | Spec 018 §Out-of-scope line 144 says "Checkpoint / Subgraph / HITL / Reducer / parallel fan-out" | Both consistent | — |
+| 5 | CaptureGraph description in CONTEXT.md:85 says "built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008)" | Spec 018 §Out-of-scope line 144 says "Checkpoint / Subgraph / HITL / Reducer / parallel fan-out" | Both consistent | — |
 | 6 | `TypeClassifier.ets:140, 146` constructs `new OcrTool()` per call (no singleton) | OcrTool class has no shared state, only `formulaEndpoint` field | Construction is idempotent; not a leak, just verbose | `OcrTool.ets:53-58` |
 | 7 | `ToolCatalog.ets:19` named `createReadOnlyRegistry` — read-only is intentional | ADR-0012 §Chosen 3: write tools are post-competition | Consistent | — |
-| 8 | [research ⑤ §2.4 #4](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md):52 mentions `@langchain/langgraph/web` "全网零鸿蒙案例" | 2026-09-06; MCP server SDK for HarmonyOS not searched at the time | Today's MCP server SDK availability for HarmonyOS: still none found; spec is language-agnostic so self-implement ~200 LOC | [MCP spec 2026-07-28](https://modelcontextprotocol.io/specification/latest) |
+| 8 | research ⑤ §2.4 #4:52 mentions `@langchain/langgraph/web` "全网零鸿蒙案例" | 2026-09-06; MCP server SDK for HarmonyOS not searched at the time | Today's MCP server SDK availability for HarmonyOS: still none found; spec is language-agnostic so self-implement ~200 LOC | [MCP spec 2026-07-28](https://modelcontextprotocol.io/specification/latest) |
 
 **No spec/ADR/code contradictions** found — all "drift" entries are either user-prompt naming mismatches or non-contradictory timing notes.
 
