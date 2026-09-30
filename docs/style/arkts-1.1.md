@@ -1,6 +1,6 @@
 # ArkTS 1.1 Strict — Syntax Rules for MindTrace
 
-> **目的**: 抽取自 [`docs/legacy/mindtrace/research/huawei-arkui-agent-20260901.md` §3](../legacy/mindtrace/research/huawei-arkui-agent-20260901.md#3-arkts-11-strict-mode-constraints),做成**可被任意 agent 直接加载**的语法规则手册。
+> **目的**: 保留 MindTrace 参赛提交所需的 ArkTS 1.1 关键语法约束，方便维护者快速检查 HarmonyOS 代码。
 > **使用方**: AGENTS.md 引用、Lint job (Phase 4 ticket #15) 用本文件生成 grep 模式、新 session 接 MindTrace 时**应加载本文件**再写代码。
 > **生成日期**: 2026-09-01 (审计同步)
 > **权威源**: <https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-migration-background>

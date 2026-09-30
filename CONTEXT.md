@@ -1,193 +1,80 @@
-# MindTrace Domain Context
+# MindTrace 项目术语
 
-> **For:** MindTrace project only.
-> **Scope:** MindTrace-specific terms (`KnowledgeUnit`, `NoteType`, etc.)
-> **NOT for:** universal agent architecture terms (Atom, Molecule, Node, State, etc.) — see [`docs/agents/agent-glossary.md`](./docs/agents/agent-glossary.md).
+本文件只保留参赛提交和后续维护需要的核心术语，避免把历史调研和过程索引带入主分支。
 
-The single source of truth for what MindTrace-specific words mean. New agent sessions or PRs that introduce a new MindTrace-specific term must register it here; terms not here should be challenged.
+## 产品闭环
 
-## Universal vs project-specific
+**输入**
+用户通过拍照、相册或文本提交数学材料。
 
-This file is **project-specific** (MindTrace). For universal agent / software architecture terms that apply to any agent project, see [`docs/agents/agent-glossary.md`](./docs/agents/agent-glossary.md) — that file covers:
+**草稿**
+AI 根据输入生成结构化笔记候选。草稿可预览、编辑、取消或确认。
 
-- Agent, sub-agent, Node, Edge, State, Channel, StateGraph
-- Checkpoint, Thread, Run, Command, Interrupt
-- Tool, Reducer, Dispatcher, Subgraph, HITL, Streaming
-- Atomic Design: Atom, Molecule, Organism, Template, Page
-- Frontend Service vs Backend Service
-- Component, Hook, Prop, State (React)
+**确认保存**
+用户确认后才写入正式笔记。预览和取消不创建正式笔记。
 
-## Language (MindTrace-specific)
+**复习回答**
+系统根据已保存笔记检索材料，生成带来源引用的回答。
 
-**Order**:
-The single source-of-truth pipeline the user triggers when capturing a math note. An Order flows Capture → Classify → Structure → TruthCheck → Persist; with `persist: false` it runs analysis-only and stops before Persist.
-_Avoid_: pipeline, job, request
+**溯源**
+回答中的引用可回到真实笔记、版本和摘录。
 
-**KnowledgeUnit**:
-The canonical structured representation of a note. Carries subject, chapter, difficulty (1–4), type, content, embedding, prerequisites, related links, review state.
-_Avoid_: Card, NoteData, Unit (in user-facing copy), note (in code surface)
+## 数据与知识
 
-**NoteType (5 values)**:
-The semantic category of a KnowledgeUnit, exactly one of: 概念, 定理, 公式, 证明题, 计算题. Persisted as the `type` field; rule IDs reference it.
-_Avoid_: kind, category (used internally for the subject axis only), class
+**KnowledgeUnit**
+结构化知识单元，承载学科、章节、题型、难度、正文、前置关系、关联关系和复习状态。
 
-**NoteCategory (5 values)**:
-The subject axis. A KnowledgeUnit belongs to exactly one subject. 概念/定理/公式/证明题/计算题 is NoteType, not NoteCategory. NoteCategory is the subject axis (数学分析, 线性代数, etc.). NoteType and NoteCategory are independent — a "概念" can belong to "线性代数".
-_Avoid_: subject, tag
+**NoteType**
+数学内容类型，包括概念、定理、公式、证明题和计算题。
 
-**Subject**:
-The high-level grouping axis (数学分析, 线性代数, 概率论, etc.). Independent of note type.
-_Avoid_: category, tag, topic (in code surface)
+**NoteCategory**
+学科或课程维度，例如数学分析、线性代数、概率论。它与 NoteType 独立。
 
-**Chapter**:
-Mid-level grouping within a Subject (e.g. "极限与连续" within 数学分析). Free-text; not enforced to be unique across notes.
+**Prerequisite**
+前置知识关系，表示理解当前知识前需要掌握的内容。
 
-**Difficulty**:
-One of EASY / MEDIUM / HARD / EXPERT (numeric 1–4). Indicates mastery cost, not review urgency.
+**Related**
+关联知识关系，表示有帮助但不构成硬性前置的内容。
 
-**Prerequisites**:
-A directed edge: this KnowledgeUnit's `prerequisites` array lists the KnowledgeUnit IDs that must be understood first.
-_Avoid_: dependencies (in code surface), requires
+**ReviewStatus**
+复习状态，用于驱动复习计划和学习进度展示。
 
-**Related**:
-A non-gating edge: this KnowledgeUnit's `related` array lists the KnowledgeUnit IDs that are useful but not blocking.
-_Avoid_: seeAlso, links
+## Agent 与工作流
 
-**Capture**:
-The act of producing raw text from an image, via OCR or manual input. Output is a string, not a KnowledgeUnit.
+**Dispatcher**
+Agent 调度入口，负责把输入材料交给分类、结构化、校验和持久化链路。
 
-**Structure**:
-The act of turning a Capture result into a KnowledgeUnit (subject, chapter, type, etc.). Performed by the LLM.
-_Avoid_: organize, process (in code surface)
+**StateGraph**
+ArkTS 原生工作流内核，用节点、边和状态组织采集、对话、工具调用与小艺意图流程。
 
-**TruthCheck**:
-The pipeline step that validates the structured KnowledgeUnit against the capture text before persisting (the `truth_check` step of the CaptureGraph). A failed check stops the Order with a CaptureGraphError — no fallback KnowledgeUnit is produced.
+**Capture Workflow**
+材料理解流程，通常包含 OCR、分类、结构化、真值校验和保存。
 
-**ReviewStatus (5 values)**:
-NEW / LEARNING / REVIEW / GRADUATED / LAPSED. Drives spaced-repetition scheduling.
-_Avoid_: state (in code surface, e.g. `state`), status (ambiguous with HTTP status)
+**Conversation Workflow**
+对话与复习回答流程，负责检索笔记、组织上下文、调用模型并输出结果。
 
-**ReviewInterval**:
-Days until next review, computed from ReviewStatus and review history.
-_Avoid_: interval (in code surface), delay
+**Sub-agent**
+主流程中的内部协作者，例如分类、结构化或校验模块。它们不是用户直接交互的独立产品入口。
 
-**Embedding**:
-A fixed-dimension vector representation of the note content, used for similarity search. Stored on KnowledgeUnit.
+## 技术边界
 
-**Dispatch**:
-The orchestration entry point that runs a Capture through the AI pipeline. Returns either a structured analysis or a KnowledgeUnit.
+**LlmClient**
+统一模型调用层，封装普通回复和流式输出。
 
-**Dispatcher**:
-The class in `agents/core/Dispatcher.ets` that runs the Capture workflow. Single public entry: `dispatch(req, options)`. Sub-agents are private collaborators.
-_Avoid_: Controller, Manager, Handler
+**ContentProtocol**
+统一 Markdown、公式和回答正文格式。
 
-**CaptureGraph**:
-The Capture workflow's native ArkTS implementation of the LangGraph graph model. **LangGraph is the project's primary Agent workflow architecture design**, and its naming (Node / Edge / State / conditional edge / START / END) is canonical (universal definitions in `docs/agents/agent-glossary.md`). CaptureGraph (in `agents/src/main/ets/graph/`) executes an Order: fixed edges between steps, plus a conditional edge after `truth_check` that reaches `persist` only when the state's `persist` flag is set. It is the first concrete workflow, not the name of the whole Agent architecture. Built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008).
+**OCR 服务**
+仓库 `tools/ocr_service/` 下的外部 OCR 服务，用于公式或图片识别回退。
 
-**CaptureStep**:
-The node vocabulary of the CaptureGraph: `START | capture | classify | structure | truth_check | persist | END`. Lowercase for steps, uppercase for sentinels.
+**RDB**
+HarmonyOS 关系型数据库，用于保存笔记、版本、关系、会话和复习数据。
 
-**CaptureGraphError**:
-The structured error a CaptureGraph node throws on failure: `kind`, `message`, `step`, `retriable`, optional `cause`. It short-circuits the Order — the user sees an error, never a fabricated KnowledgeUnit.
+**小艺 skill**
+HarmonyOS 系统级意图入口，当前重点复用笔记检索能力。
 
-**DispatchOptions**:
-The per-dispatch options bag passed to `Dispatcher.dispatch`: `analysisOnly`, `persist`, `includeRawText`, and `dao` (the injected persistence implementation).
+## 命名提醒
 
-**Sub-agent**:
-A private collaborator inside the Dispatcher pipeline (TypeClassifier, KnowledgeModel). Sub-agents are not user-facing.
-_Avoid_: agent (overloaded, see below)
-
-**NoteDaoAdapter**:
-The entry-side adapter that implements `agents`' `NoteDaoInterface` on top of `entry`'s `NoteDao`. The seam that lets the agents module persist without depending on entry.
-
-**KnowledgeUnitWriteService**:
-The entry-side coordination seam for all KnowledgeUnit creates and updates. It delegates the atomic KnowledgeUnit-plus-revision mutation to the sole RDB owner (`NoteDao`), reports optimistic-lock conflicts as `VERSION_CONFLICT`, and treats cache, notesVersion, and card refresh failures as post-commit warnings.
-_Avoid_: writing KnowledgeUnit directly from UI or AI adapters; treating a post-commit refresh warning as a failed save.
-
-**Kit Facade (contract)**:
-An interface in `common/src/main/ets/kit/` (`ReminderFacade`, `BackgroundTaskFacade`, `FormCardFacade`) declaring a HarmonyOS kit capability for a business workflow. Production implementations live in entry/template modules and are injected at the composition root. This is a seam, not an import ban — DevEco template modules import kit APIs directly as part of their platform role (ADR-0009).
-
-**MCP 工具 (mcp/)**:
-A tool in `agents/src/main/ets/mcp/tools/` (currently `OcrTool`), built by the team as an MCP-语义 tool. The directory classifies tools by MCP tool semantics — not by whether an MCP server is running (none does today). CRUD-style tools (增删查改) belong in `tools/` instead (ADR-0010).
-_Avoid_: renaming `mcp/` away; calling it "the MCP server".
-
-**OCR 服务 (tools/ocr_service/)**:
-The team-built Python FastAPI OCR service at the **repo-root** `tools/` directory (formula/combined recognition over HTTP :8000, started via `start.bat`), consumed by `OcrTool`. Entirely distinct from `agents/src/main/ets/tools/` — the ArkTS CRUD-tool reservation slot (ADR-0010).
-_Avoid_: confusing repo-root `tools/` (Python 服务) with the agents `tools/` 预留位 (F7, agent-tools inventory 2026-09-06).
-
-**小艺 skill (skill/)**:
-The Xiaoyi integration HSP. Its seven declared intent actions enter the typed SkillIntent workflow. `SearchNote` currently reuses the shared `note_query` tool; the other six actions return explicit unsupported results until their product semantics are confirmed (ADR-0011, spec 018).
-_Avoid_: calling it a second backend; implementing unconfirmed actions by guessing.
-
-**StreamEvent**:
-The structured streaming event object emitted on the LLM streaming path: `{type, ...payload}` with `type` one of `thinking | text | tool_call | tool_result`. One event vocabulary for the whole chain (client → workflow → UI). The UI-facing word for `thinking` is 思考; the wire field stays `reasoning_content` — three words, one concept, distinct layers (ADR-0015).
-_Avoid_: `(delta, kind)` string pairs; naming the event type "reasoning" (that is the wire field name).
-
-**Token Budget (输出预算)**:
-`max_tokens` caps the model's **output** only — thinking and the visible reply share one budget. It is unrelated to input-side clipping (memoryContext, counted in chars). Current chat reply paths explicitly use `ReplyService.CHAT_REPLY_MAX_TOKENS = 12000` to avoid the historical 4096 truncation failure after thinking was enabled; that value happens to match the current `LlmConfig.DEFAULT_MAX_TOKENS`, but it is not automatic config inheritance.
-_Avoid_: "raising max_tokens to fit more context" (that is input, not budget); assuming the chat reply cap follows `LlmConfig.DEFAULT_MAX_TOKENS` without changing `ReplyService`.
-
-**截断处理 (Truncation Handling)**:
-When a provider reports `finish_reason === 'length'`, both transports keep the generated content and append `*(回复因长度限制被截断)*`; the non-stream text path returns it instead of throwing, and the stream path emits it as a final text event. If a stream has no visible text for reasons other than truncation, `ReplyService` still falls back to a non-stream call.
-_Avoid_: dropping partial content on truncation; diagnosing this as a StreamEvent parser failure.
-
-**Reply Envelope**:
-The JSON wrapper an LLM returns on the complete (non-stream) reply transport (`{"answer": "..."}`). A wire-format artifact owned by the reply seam — it is converted to a Reply Body before any consumer sees it. Never a legal value of chat content, history, or memory (ADR-0016).
-_Avoid_: storing it; rendering it; calling it "the reply".
-
-**Reply Body**:
-The canonical chat reply content: MM-MD-v1 Markdown with formulas in `$$` blocks. The only legal value of a chat message's `content` field and of persisted reply history. On the stream transport the model emits it directly; on the complete transport it is extracted from the Reply Envelope. Invariant: chat content is always a Reply Body, never a Reply Envelope (ADR-0016).
-_Avoid_: raw model output; envelope payload (those are wire values, not bodies).
-
-**Evidence Assertion**:
-A claim used while generating a note. Model output is only an untrusted candidate; the pipeline assigns its persistent identity and resolves any citation against captured source text. An assertion is not a quotation and is not a verifier decision.
-_Avoid_: treating a model-provided ID, source ID, offset, or fingerprint as trusted provenance.
-
-**Evidence Source Ref**:
-An immutable citation handle containing an internal reference ID, source ID, source-text fingerprint, exact excerpt, and `[start, end)` span. Resolution reports `located`, `stale`, or `missing` without changing the captured quote. A verbatim quote remains provenance even when the quoted statement is factually wrong.
-_Avoid_: silently correcting a quote; using a database/OCR record ID as the source-text fingerprint.
-
-**Note Verification**:
-The read-only check of the complete generated note: outline, draft, source grounding, requirements, and optional evidence assertions. The model returns statuses aligned by evidence array position; the pipeline maps those positions to internal evidence IDs. Empty evidence does not skip verification.
-_Avoid_: asking the verifier to echo runtime IDs; letting verification rewrite evidence or trigger automatic content regeneration.
-
-## Ambiguous terms
-
-The word **agent** is overloaded in this codebase. Use the precise form:
-
-| Form | Meaning | Where |
-|------|---------|-------|
-| **MindTrace** | The whole app (project name) | repo name, `AppScope` config |
-| **`agents/`** (HSP) | The AI business module | `agents/src/main/ets/...` |
-| **`Agent*` (user-facing service)** | An in-app AI helper. *TODO: rename to `Assistant*` per `docs/adr/0002-agent-terminology-disambiguation.md`* | `AgentChatService`, `AgentFloatWindow`, `AgentMemoryService` |
-| **sub-agent** | A private collaborator inside the Dispatcher | `TypeClassifier`, `KnowledgeModel` |
-
-**User-facing rule**: when writing copy the user sees (toast, placeholder, button label), use the precise form ("assistant" or "AI helper"), never "agent". When naming code, the migration is staged.
-
-## Disambiguation pitfalls
-
-| Confusion | Disambiguation |
-|-----------|----------------|
-| "subject" (math) vs "subject" (vs object) | Always math sense here. "Object" appears only in OOP context (interface fields, decorator). |
-| "note" (raw OCR text) vs "note" (KnowledgeUnit) | User says "note" → means KnowledgeUnit. Raw text from OCR is "OCR result" or "capture text". |
-| "category" (NoteType) vs "category" (NoteCategory) | Two different fields. "category" in code = NoteCategory (subject axis). The 5-type classification is `type` or `NoteType`. |
-| "preview" (in code) vs "preview" (in git/diff) | `ENABLE_GALAXY_PREVIEW_UNITS` is the demo fixture flag, not UI rendering. |
-| "Lint" (CLI tool) vs "lint" (the verb) | Capital "Lint" = the `scripts/arkts-lint/` engine. "lint" = the action of running it. |
-
-## Rules
-
-- **Be opinionated.** The glossary disambiguates; it does not enumerate every synonym. When two words could mean the same thing, pick one and list the others under `_Avoid_`.
-- **Be project-specific.** This file is for MindTrace. Universal terms (Node, Edge, State, Atom, Molecule) live in [`docs/agents/agent-glossary.md`](./docs/agents/agent-glossary.md). General terms (function, string, Promise) don't belong in either glossary.
-- **Cross-reference code.** When a term is defined here, it should match the field name in code. If you find a mismatch, surface it.
-
-## Note on this file
-
-This file is **devoid of implementation details**. Where a term's meaning *requires* code knowledge (e.g. "Dispatcher" is the class name in `agents/core/Dispatcher.ets`), the link is given for grounding but the *meaning* here is what an agent should treat as canonical. If the code contradicts this file, the code is wrong.
-
-Implementation decisions (why this Dispatcher signature, why LlmGuard exists, why mcp/ is misnamed) live in [`docs/adr/`](./docs/adr/).
-
-## Migration note (2026-09-02)
-
-Universal agent terms (previously here) have been moved to [`docs/agents/agent-glossary.md`](./docs/agents/agent-glossary.md) as part of the naming governance refactor. This file now contains only MindTrace-specific terms.
-
-If a term is **not** in this file and is **not** a common programming term, it likely belongs in the universal glossary.
+- 面向用户的文案优先使用“AI 助手”“复习助手”，避免直接暴露内部 Agent 术语。
+- “笔记”默认指已经保存的结构化知识单元；原始图片文字应称为 OCR 结果或输入材料。
+- “来源”指可追溯到笔记 ID、版本和摘录的证据，不等于模型自行生成的解释。
