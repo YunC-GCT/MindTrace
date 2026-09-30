@@ -288,8 +288,6 @@ export struct ReviewGraphView {
       if (this.hasSubject(this.selectedSubject)) {
         this.startRotation()
       }
-      const v: number = AppStorage.get<number>("notesVersion") ?? 0
-      AppStorage.setOrCreate("notesVersion", v + 1)
       try { promptAction.showToast({ message: "已删除笔记", duration: 1200 }) } catch (_e) {}
     } else {
       try { promptAction.showToast({ message: "删除笔记失败", duration: 1500 }) } catch (_e) {}

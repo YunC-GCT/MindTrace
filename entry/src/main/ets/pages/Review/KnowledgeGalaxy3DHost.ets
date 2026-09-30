@@ -241,8 +241,6 @@ export struct KnowledgeGalaxy3DHost {
     }
     this.closeDetail()
     this.snapshot = projectGalaxyGraph(this.vm.systems)
-    const version: number = AppStorage.get<number>('notesVersion') ?? 0
-    AppStorage.setOrCreate('notesVersion', version + 1)
     try { promptAction.showToast({ message: '已删除笔记', duration: 1200 }) } catch (_error) {}
   }
 

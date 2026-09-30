@@ -203,6 +203,14 @@ export class UiDataCacheService {
     UiDataCacheService.invalidateNotesSnapshots()
   }
 
+  static notifyNoteChanged(id: string): number {
+    UiDataCacheService.invalidateNote(id)
+    const nextVersion: number = UiDataCacheService.currentNotesVersion() + 1
+    AppStorage.setOrCreate("notesVersion", nextVersion)
+    uiCacheLog("[UiDataCache] notes changed id=" + id + " version=" + nextVersion.toString())
+    return nextVersion
+  }
+
   static getStudyPlanSnapshot(): StudyPlanSnapshot | null {
     if (UiDataCacheService.studyPlanSnapshot !== null
       && UiDataCacheService.studyPlanSnapshot.version === UiDataCacheService.studyPlanVersion) {

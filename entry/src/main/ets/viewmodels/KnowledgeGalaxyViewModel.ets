@@ -15,6 +15,7 @@ import {
 } from "common"
 import { KnowledgeRelationDao } from "../database/KnowledgeRelationDao"
 import { NoteDao } from "../database/NoteDao"
+import { UiDataCacheService } from "../services/UiDataCacheService"
 import { unitToNoteItem } from "../utils/NoteItemMapper"
 
 const UNCLASSIFIED_SUBJECT: string = "未分类"
@@ -294,6 +295,7 @@ export class KnowledgeGalaxyViewModel {
     try {
       const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       await new NoteDao(store).deleteById(id)
+      UiDataCacheService.notifyNoteChanged(id)
       return await this.load(context)
     } catch (e) {
       console.warn("[KnowledgeGalaxyViewModel] deleteNote failed: " + ((e as Error).message ?? String(e)))
