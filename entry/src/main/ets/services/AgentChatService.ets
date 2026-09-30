@@ -48,6 +48,14 @@ export class AgentChatService {
     return await this.runtime.confirmDraft(sessionId, event, candidate);
   }
 
+  async resumeNoteContextClarification(
+    sessionId: string,
+    runId: string,
+    topicId: string,
+  ): Promise<NoteDraftReadyEvent> {
+    return await this.runtime.resumeNoteContextClarification(sessionId, runId, topicId);
+  }
+
   async cancelDraft(sessionId: string, runId: string): Promise<void> {
     await this.runtime.cancelDraft(sessionId, runId);
   }

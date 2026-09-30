@@ -28,6 +28,7 @@ const KEY_VENDOR_MODELS = 'vendor_models';
 // Record<vendorId, string> — 用户在 vendor 编辑 panel 填的 key
 const KEY_VENDOR_API_KEYS = 'vendor_api_keys';
 const KEY_ACTIVE_VENDOR_MODELS = 'active_vendor_models';
+const KEY_MODEL_CONTEXT_WINDOWS = 'model_context_windows';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -36,6 +37,7 @@ const DEFAULT_TEMPERATURE = 0.1;
 const DEFAULT_MAX_TOKENS = 12000;
 const DEFAULT_TIMEOUT_MS = 120000;
 export const DEFAULT_ENABLE_THINKING = true;
+export const DEFAULT_CONTEXT_WINDOW_TOKENS: number = 65536;
 
 export class LlmConfig {
   private static instance: LlmConfig | null = null;
@@ -59,6 +61,7 @@ export class LlmConfig {
   // PR2-T2 L3 (2026-09-08): per-vendor API Key Record — vendor 编辑 panel 填的 key
   private cachedVendorApiKeys: Record<string, string> = {};
   private cachedActiveVendorModels: Record<string, string> = {};
+  private cachedModelContextWindows: Record<string, number> = {};
 
   private constructor() {}
 
@@ -148,6 +151,15 @@ export class LlmConfig {
         this.cachedActiveVendorModels = {};
       }
     }
+    const contextWindowsJson: string = await s.get(KEY_MODEL_CONTEXT_WINDOWS, '') as string;
+    if (contextWindowsJson.length > 0) {
+      try {
+        const parsed: Record<string, number> = JSON.parse(contextWindowsJson);
+        this.cachedModelContextWindows = parsed ?? {};
+      } catch (_e) {
+        this.cachedModelContextWindows = {};
+      }
+    }
   }
 
   // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
@@ -198,6 +210,37 @@ export class LlmConfig {
       snapshot[k] = this.cachedActiveVendorModels[k]
     }
     return snapshot
+  }
+
+  public getAllModelContextWindows(): Record<string, number> {
+    const snapshot: Record<string, number> = {}
+    for (const k of Object.keys(this.cachedModelContextWindows)) {
+      snapshot[k] = this.cachedModelContextWindows[k]
+    }
+    return snapshot
+  }
+
+  public getContextWindowTokens(vendorId?: string, model?: string): number {
+    const resolvedVendor: string = vendorId !== undefined && vendorId.length > 0
+      ? vendorId : this.cachedVendorId
+    const resolvedModel: string = model !== undefined && model.trim().length > 0
+      ? model.trim() : this.getModel()
+    const value: number | undefined = this.cachedModelContextWindows[
+      LlmConfig.contextWindowKey(resolvedVendor, resolvedModel)
+    ]
+    if (value === undefined) { return DEFAULT_CONTEXT_WINDOW_TOKENS }
+    return LlmConfig.normalizeContextWindow(value)
+  }
+
+  public async setContextWindowTokens(vendorId: string, model: string, value: number): Promise<void> {
+    this.requireInited()
+    const normalizedModel: string = model.trim()
+    if (vendorId.length === 0 || normalizedModel.length === 0) { return }
+    const key: string = LlmConfig.contextWindowKey(vendorId, normalizedModel)
+    this.cachedModelContextWindows[key] = LlmConfig.normalizeContextWindow(value)
+    const s = this.store!
+    await s.put(KEY_MODEL_CONTEXT_WINDOWS, JSON.stringify(this.cachedModelContextWindows))
+    await s.flush()
   }
 
   // clearApiKey() 无 vendorId → 清全局(back-compat)
@@ -474,6 +517,7 @@ export class LlmConfig {
     // PR2-T2 L3: 同时清 vendorApiKeys
     this.cachedVendorApiKeys = {};
     this.cachedActiveVendorModels = {};
+    this.cachedModelContextWindows = {};
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
@@ -487,6 +531,7 @@ export class LlmConfig {
     await s.delete(KEY_VENDOR_MODELS);
     await s.delete(KEY_VENDOR_API_KEYS);
     await s.delete(KEY_ACTIVE_VENDOR_MODELS);
+    await s.delete(KEY_MODEL_CONTEXT_WINDOWS);
     await s.flush();
   }
 
@@ -514,6 +559,15 @@ export class LlmConfig {
     if (!this.inited || this.store === null) {
       throw new LlmError('LlmConfig not initialized', 'NOT_INITIALIZED');
     }
+  }
+
+  private static contextWindowKey(vendorId: string, model: string): string {
+    return vendorId + '::' + model
+  }
+
+  private static normalizeContextWindow(value: number): number {
+    if (value !== value) { return DEFAULT_CONTEXT_WINDOW_TOKENS }
+    return Math.max(4096, Math.min(1048576, Math.floor(value)))
   }
 
   private normalizeEndpoint(v: string): string {

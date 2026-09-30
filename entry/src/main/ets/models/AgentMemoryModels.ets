@@ -1,3 +1,5 @@
+import { NoteTopicCandidate, SourceBundle } from 'common';
+
 export type ChatRole = 'system' | 'user' | 'assistant';
 
 export interface ChatMessageWriteRequest {
@@ -53,4 +55,41 @@ export interface AgentMemoryContext {
   pendingNotes: AgentMemoryRecord[];
   recentMessages: ChatMessageRecord[];
   text: string;
+}
+
+export type NoteGenerationContextCandidateKind = 'conversation' | 'ocr' | 'summary';
+
+export interface NoteGenerationContextCandidate {
+  id: string;
+  kind: NoteGenerationContextCandidateKind;
+  originId: string;
+  provenanceIds?: string[];
+  sequence: number;
+  role?: ChatRole;
+  outcome?: string;
+  text: string;
+  createdAt: number;
+  priority: number;
+}
+
+export interface NoteGenerationContextBuildInput {
+  summary?: AgentMemoryRecord;
+  pendingNotes: AgentMemoryRecord[];
+  recentMessages: ChatMessageRecord[];
+  instruction: string;
+  inlineMaterial: string;
+  currentConversationText: string;
+  currentRunId: string;
+  contextWindowTokens: number;
+}
+
+export interface NoteGenerationContextResult {
+  bundle: SourceBundle;
+  contextText: string;
+  topics: NoteTopicCandidate[];
+  requiresClarification: boolean;
+  pendingSourceIds: string[];
+  contextBudgetTokens: number;
+  estimatedTokens: number;
+  budgetDeferred: boolean;
 }

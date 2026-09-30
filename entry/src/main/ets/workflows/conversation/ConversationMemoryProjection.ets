@@ -11,7 +11,7 @@
 import { common } from '@kit.AbilityKit';
 import { CancellationToken, ClassificationResult, SourceFragment, sourceFingerprint } from 'common';
 import { AgentMemoryService } from '../../services/AgentMemoryService';
-import { AgentMemoryRecord } from '../../models/AgentMemoryModels';
+import { AgentMemoryRecord, NoteGenerationContextResult } from '../../models/AgentMemoryModels';
 import { ChatMessageOrigin } from './ConversationState';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 
@@ -101,6 +101,28 @@ export class ConversationMemoryProjection {
 
   async contextForNote(ref: ConversationRunRef): Promise<string> {
     return await this.loadContext(ref, 'note');
+  }
+
+  async structuredContextForNote(
+    ref: ConversationRunRef,
+    instruction: string,
+    inlineMaterial: string,
+    currentConversationText: string,
+  ): Promise<NoteGenerationContextResult | undefined> {
+    if (!this.host.acceptsMemoryRun(ref)) { return undefined; }
+    try {
+      return await this.service().getStructuredContextForNoteGeneration(
+        ref.sessionId,
+        instruction,
+        inlineMaterial,
+        currentConversationText,
+        ref.runId,
+      );
+    } catch (error) {
+      console.warn('[ConversationMemoryProjection] load structured note context failed: '
+        + ConversationMemoryProjection.errorMessage(error));
+      return undefined;
+    }
   }
 
   async learnerProfile(ref: ConversationRunRef): Promise<string> {

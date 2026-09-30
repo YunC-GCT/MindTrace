@@ -163,6 +163,7 @@ struct AiSettingsPage {
             vendorApiKeys: this.vm.vendorApiKeys,
             vendorModels: this.vm.vendorModels,
             activeVendorModels: this.vm.activeVendorModels,
+            modelContextWindows: this.vm.modelContextWindows,
             customVendors: this.vm.customVendors,
             onSelect: (id: string): void => { this.vm.selectVendor(id) },
             // PR2-T2 P3: modal 确认后回调,把 4 字段 cfg 传给 ViewModel
@@ -183,6 +184,9 @@ struct AiSettingsPage {
             },
             onSelectModel: (vendorId: string, model: string): void => {
               this.vm.selectVendorModel(vendorId, model)
+            },
+            onContextWindowChange: (vendorId: string, model: string, value: number): void => {
+              this.vm.setModelContextWindow(vendorId, model, value)
             },
             onSaveEdit: (_vendorId: string): void => {
               this.saveLlm()

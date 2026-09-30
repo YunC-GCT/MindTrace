@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 12;
+const DB_SCHEMA_VERSION: number = 13;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -113,11 +113,13 @@ CREATE TABLE IF NOT EXISTS note_generation_run (
   instruction TEXT NOT NULL DEFAULT '',
   source_count INTEGER NOT NULL DEFAULT 0,
   token_budget INTEGER NOT NULL DEFAULT 0,
+  context_budget_tokens INTEGER NOT NULL DEFAULT 0,
   best_checkpoint_id TEXT NOT NULL DEFAULT '',
   stop_reason TEXT NOT NULL DEFAULT '',
   issue_count INTEGER NOT NULL DEFAULT 0,
   origin_session_id TEXT NOT NULL DEFAULT '',
   parent_conversation_run_id TEXT NOT NULL DEFAULT '',
+  clarification_json TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 )`;
@@ -130,6 +132,7 @@ CREATE TABLE IF NOT EXISTS note_generation_source (
   sequence INTEGER NOT NULL,
   fingerprint TEXT NOT NULL,
   text TEXT NOT NULL,
+  provenance_ids TEXT NOT NULL DEFAULT '[]',
   PRIMARY KEY (run_id, id)
 )`;
 const SQL_CREATE_NOTE_GENERATION_CHECKPOINT: string = `
@@ -306,6 +309,12 @@ const SQL_MIGRATE_GENERATION_ORIGIN_SESSION: string =
   "ALTER TABLE note_generation_run ADD COLUMN origin_session_id TEXT NOT NULL DEFAULT ''";
 const SQL_MIGRATE_GENERATION_PARENT_RUN: string =
   "ALTER TABLE note_generation_run ADD COLUMN parent_conversation_run_id TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_GENERATION_CLARIFICATION: string =
+  "ALTER TABLE note_generation_run ADD COLUMN clarification_json TEXT NOT NULL DEFAULT ''";
+const SQL_MIGRATE_GENERATION_CONTEXT_BUDGET: string =
+  "ALTER TABLE note_generation_run ADD COLUMN context_budget_tokens INTEGER NOT NULL DEFAULT 0";
+const SQL_MIGRATE_GENERATION_SOURCE_PROVENANCE: string =
+  "ALTER TABLE note_generation_source ADD COLUMN provenance_ids TEXT NOT NULL DEFAULT '[]'";
 const SQL_BACKFILL_CHAT_MESSAGE_KEY: string =
   "UPDATE chat_message SET message_key = id WHERE message_key = ''";
 const SQL_BACKFILL_CHAT_SEQUENCE: string =
@@ -473,6 +482,12 @@ export class DatabaseHelper {
     if (!hasGenerationOriginSession) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_ORIGIN_SESSION); }
     const hasGenerationParentRun: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "parent_conversation_run_id");
     if (!hasGenerationParentRun) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_PARENT_RUN); }
+    const hasGenerationClarification: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "clarification_json");
+    if (!hasGenerationClarification) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_CLARIFICATION); }
+    const hasGenerationContextBudget: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "context_budget_tokens");
+    if (!hasGenerationContextBudget) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_CONTEXT_BUDGET); }
+    const hasGenerationSourceProvenance: boolean = await DatabaseHelper.hasColumn(store, "note_generation_source", "provenance_ids");
+    if (!hasGenerationSourceProvenance) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_SOURCE_PROVENANCE); }
 
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_MESSAGE_KEY);
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_SEQUENCE);

@@ -9,7 +9,7 @@
  *   Workflow callback -> current-run guard -> typed UI event sink.
  */
 import { common } from '@kit.AbilityKit';
-import { CancellationToken, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
+import { CancellationToken, NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
 import {
   ConversationMessageEvent,
   ConversationWorkflowCallbacks,
@@ -143,6 +143,17 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
   onNoteReviewReady?(ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void {
     if (this.accepts(ref, 'note-review-ready') && this.callbacks.onNoteReviewReady !== undefined) {
       this.callbacks.onNoteReviewReady(ref, messageId, review);
+    }
+  }
+
+  onNoteContextClarificationReady?(
+    ref: ConversationRunRef,
+    messageId: number,
+    clarification: NoteContextClarification,
+  ): void {
+    if (this.accepts(ref, 'note-context-clarification-ready')
+      && this.callbacks.onNoteContextClarificationReady !== undefined) {
+      this.callbacks.onNoteContextClarificationReady(ref, messageId, clarification);
     }
   }
 

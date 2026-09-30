@@ -12,10 +12,13 @@ import {
   LearnerLevel,
   LearnerProfile,
   ChatMessageWriteRequest,
+  NoteGenerationContextResult,
 } from '../models/AgentMemoryModels';
 import { WritePathValidator } from './WritePathValidator';
 import { SessionIdPolicy } from './ConversationIdentity';
 import type { ChatProjectionWriter } from '../models/ConversationSnapshotModels';
+import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
+import { NoteContextValidityReviewer } from './NoteContextValidityReviewer';
 
 const RECENT_REPLY_LIMIT: number = 28;
 const RECENT_NOTE_LIMIT: number = 100;
@@ -117,13 +120,40 @@ export class AgentMemoryService implements ChatProjectionWriter {
   }
 
   async getContextForNoteGeneration(sessionId: string): Promise<string> {
+    const context: NoteGenerationContextResult = await this.getStructuredContextForNoteGeneration(
+      sessionId,
+      '',
+      '',
+      '',
+      '',
+    );
+    return context.contextText;
+  }
+
+  async getStructuredContextForNoteGeneration(
+    sessionId: string,
+    instruction: string,
+    inlineMaterial: string,
+    currentConversationText: string,
+    currentRunId: string,
+  ): Promise<NoteGenerationContextResult> {
     const store: relationalStore.RdbStore = await this.getStore();
     const memoryDao: AgentMemoryDao = new AgentMemoryDao(store);
     const messageDao: ChatMessageDao = new ChatMessageDao(store);
     const summary: AgentMemoryRecord | null = await memoryDao.queryLatestSummary(sessionId);
     const pendingNotes: AgentMemoryRecord[] = await memoryDao.queryPendingNotes(sessionId);
     const messages: ChatMessageRecord[] = await messageDao.queryRecent(sessionId, RECENT_NOTE_LIMIT);
-    return AgentMemoryService.buildContextText(summary, pendingNotes, messages, NOTE_CONTEXT_LIMIT);
+    const deterministic: NoteGenerationContextResult = NoteGenerationContextBuilder.build({
+      summary: summary === null ? undefined : summary,
+      pendingNotes: pendingNotes,
+      recentMessages: messages,
+      instruction: instruction,
+      inlineMaterial: inlineMaterial,
+      currentConversationText: currentConversationText,
+      currentRunId: currentRunId.length > 0 ? currentRunId : sessionId,
+      contextWindowTokens: AgentMemoryService.safeContextWindowTokens(),
+    });
+    return await NoteContextValidityReviewer.review(deterministic, instruction);
   }
 
   async getPendingNoteMaterials(sessionId: string): Promise<AgentMemoryRecord[]> {
@@ -582,6 +612,14 @@ export class AgentMemoryService implements ChatProjectionWriter {
 
   private static newId(prefix: string): string {
     return prefix + '_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000000).toString();
+  }
+
+  private static safeContextWindowTokens(): number {
+    try {
+      return LlmConfig.getInstance().getContextWindowTokens();
+    } catch (e) {
+      return 65536;
+    }
   }
 
   private static errorMessage(e: Object): string {

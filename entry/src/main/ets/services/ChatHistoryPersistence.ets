@@ -33,7 +33,9 @@ import {
   ChatMessageOutcome,
   copyChatSessionsForPersistence,
   normalizeDecodedChatMessage,
+  sanitizeNoteContextClarification,
 } from '../overlays/AgentFloatWindow/chat/ChatModels';
+import type { NoteContextClarification } from 'common';
 import {
   AgentRunPart,
   AgentRunPartKind,
@@ -74,6 +76,7 @@ export interface ChatHistoryMessageWire {
   runId?: string;
   sequence?: number;
   messageKey?: string;
+  noteContextClarification?: NoteContextClarification;
 }
 
 export interface ChatHistoryAgentRunPartWire {
@@ -385,6 +388,8 @@ function validateMessage(
     || hasForbiddenIdentityControl(message.messageKey))) {
     return { diagnostic: decodeDiagnostic('validate', 'INVALID_MESSAGE_KEY', path + '.messageKey') };
   }
+  const clarification: NoteContextClarification | undefined =
+    sanitizeNoteContextClarification(message.noteContextClarification);
   if (message.streaming && message.outcome !== undefined) {
     return { diagnostic: decodeDiagnostic('validate', 'STREAMING_WITH_TERMINAL_OUTCOME', path + '.outcome') };
   }
@@ -413,6 +418,7 @@ function validateMessage(
   if (message.runId !== undefined) { trusted.runId = message.runId; }
   if (message.sequence !== undefined) { trusted.sequence = message.sequence; }
   if (message.messageKey !== undefined) { trusted.messageKey = message.messageKey; }
+  if (clarification !== undefined) { trusted.noteContextClarification = clarification; }
   return { message: normalizeDecodedChatMessage(trusted), diagnostic: '' };
 }
 

@@ -14,6 +14,9 @@ import {
   NoteGenerationRoute,
   NoteGenerationProgressEvent,
   NoteGenerationProgressSink,
+  NoteContextClarification,
+  NoteTopicCandidate,
+  SourceBundle,
   SourceFragment,
 } from 'common';
 import { ConversationWorkflow } from '../main/ets/workflows/conversation/ConversationWorkflow';
@@ -140,6 +143,41 @@ class FailingCapturePort implements IConversationCapturePort {
     _progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     throw new Error(this.route === 'note' ? 'NOTE_FAILED' : 'UNEXPECTED_NOTE_CALL');
+  }
+  async generateNoteDraftWithBundle(
+    _runId: string,
+    _instruction: string,
+    _bundle: SourceBundle,
+    _pendingSourceIds: string[],
+    _contextBudgetTokens: number,
+    _token?: CancellationToken,
+    _originSessionId?: string,
+    _parentConversationRunId?: string,
+    _route?: NoteGenerationRoute,
+    _progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    throw new Error(this.route === 'note' ? 'NOTE_FAILED' : 'UNEXPECTED_NOTE_CALL');
+  }
+  async saveNoteContextClarification(
+    _runId: string,
+    _instruction: string,
+    _bundle: SourceBundle,
+    _topics: NoteTopicCandidate[],
+    _pendingSourceIds: string[],
+    _contextBudgetTokens: number,
+    _originSessionId?: string,
+    _parentConversationRunId?: string,
+    _route?: NoteGenerationRoute,
+  ): Promise<NoteContextClarification> {
+    throw new Error(this.route === 'note' ? 'NOTE_FAILED' : 'UNEXPECTED_NOTE_CALL');
+  }
+  async resumeNoteContextClarification(
+    _runId: string,
+    _topicId: string,
+    _token?: CancellationToken,
+    _progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    throw new Error('NOTE_CLARIFICATION_FAILED');
   }
   async regenerateNoteDraft(
     _runId: string,

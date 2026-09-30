@@ -30,6 +30,30 @@ function readLlmConfigSource() {
   return readFileSync(TARGET_FILE, 'utf8').replace(/\r\n/g, '\n');
 }
 
+function findMethodBody(src, signaturePattern) {
+  const signature = src.match(signaturePattern);
+  if (signature === null || signature.index === undefined) {
+    return null;
+  }
+  const openIndex = src.indexOf('{', signature.index);
+  if (openIndex < 0) {
+    return null;
+  }
+  let depth = 0;
+  for (let index = openIndex; index < src.length; index++) {
+    const ch = src[index];
+    if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return src.slice(openIndex + 1, index);
+      }
+    }
+  }
+  return null;
+}
+
 function findBranchBodyContainingNth(src, marker, n = 1) {
   return findBranchBodyContaining_(src, marker, n);
 }
@@ -125,7 +149,9 @@ test('LlmConfig: file exists and is parseable', () => {
 
 test('LlmConfig: normalizeEndpoint throws on reserved keyword (siliconflow)', () => {
   const src = readLlmConfigSource();
-  const body = findBranchBodyContaining(src, 'siliconflow');
+  const methodBody = findMethodBody(src, /private\s+normalizeEndpointForVendor\s*\(/);
+  assert.ok(methodBody !== null, 'normalizeEndpointForVendor body not found');
+  const body = findBranchBodyContaining(methodBody, 'siliconflow');
   assert.ok(body !== null, 'siliconflow branch not found in normalizeEndpoint');
   assert.match(body, /throw/, 'siliconflow branch must throw');
   assert.match(body, /LlmError/, 'throw must use LlmError type');

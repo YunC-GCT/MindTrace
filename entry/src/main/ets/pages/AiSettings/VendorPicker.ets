@@ -64,6 +64,7 @@ export struct VendorPicker {
   @Prop vendorApiKeys: Record<string, string> = {};
   @Prop vendorModels: Record<string, string[]> = {};
   @Prop activeVendorModels: Record<string, string> = {};
+  @Prop modelContextWindows: Record<string, number> = {};
   @Prop customVendors: CustomVendorConfig[] = [];
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 恢复 click-to-expand
@@ -75,6 +76,7 @@ export struct VendorPicker {
   @State originalApiKeyInput: string = '';
   @State localModels: string[] = [];
   @State localActiveModel: string = '';
+  @State localContextWindow: string = '65536';
 
   // PR2-T2: panel 内 model 输入(仅 input 状态,实际数据走 local localModels)
   @State newModelInput: string = '';
@@ -107,6 +109,8 @@ export struct VendorPicker {
     (_v: string, _m: string): void => {};
   onSelectModel: (vendorId: string, model: string) => void =
     (_v: string, _m: string): void => {};
+  onContextWindowChange: (vendorId: string, model: string, value: number) => void =
+    (_v: string, _m: string, _value: number): void => {};
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 保存按钮 触发 parent save
   onSaveEdit: (vendorId: string) => void = (_vendorId: string): void => {};
@@ -123,6 +127,7 @@ export struct VendorPicker {
     this.localActiveModel = active !== undefined && active.length > 0
       ? active
       : (this.localModels.length > 0 ? this.localModels[0] : '')
+    this.localContextWindow = this.contextWindowFor(vendorId, this.localActiveModel).toString()
     this.newModelInput = ''
   }
 
@@ -136,6 +141,7 @@ export struct VendorPicker {
     this.originalApiKeyInput = ''
     this.localModels = []
     this.localActiveModel = ''
+    this.localContextWindow = '65536'
     this.newModelInput = ''
   }
 
@@ -162,9 +168,16 @@ export struct VendorPicker {
     }
     if (this.localActiveModel.length > 0) {
       this.onSelectModel(vendorId, this.localActiveModel)
+      const parsedWindow: number = Number(this.localContextWindow)
+      this.onContextWindowChange(vendorId, this.localActiveModel, parsedWindow)
     }
     this.originalApiKeyInput = this.apiKeyInput
     this.onSaveEdit(vendorId)
+  }
+
+  private contextWindowFor(vendorId: string, model: string): number {
+    const value: number | undefined = this.modelContextWindows[vendorId + '::' + model]
+    return value === undefined ? 65536 : value
   }
 
   build() {
@@ -330,7 +343,10 @@ export struct VendorPicker {
                   .fontSize(F_SM)
                   .fontColor(this.localActiveModel === m ? MINT : TEXT)
                   .layoutWeight(1)
-                  .onClick((): void => { this.localActiveModel = m })
+                  .onClick((): void => {
+                    this.localActiveModel = m
+                    this.localContextWindow = this.contextWindowFor(itemId, m).toString()
+                  })
                 Text('×')
                   .fontSize(16)
                   .fontColor(TEXT_3)
@@ -388,6 +404,22 @@ export struct VendorPicker {
           }
           .width('100%')
           .margin({ top: S_2 })
+
+          Text('上下文窗口（token）')
+            .fontSize(F_XS)
+            .fontColor(TEXT_3)
+            .fontWeight(W_MEDIUM)
+            .margin({ top: S_3, bottom: S_2 })
+          TextInput({ placeholder: '65536', text: this.localContextWindow })
+            .width('100%')
+            .height(32)
+            .fontSize(F_SM)
+            .inputFilter('[0-9]*')
+            .backgroundColor(BG_CARD)
+            .border({ width: 1, color: BORDER })
+            .borderRadius(R_SM)
+            .padding({ left: S_2 })
+            .onChange((v: string): void => { this.localContextWindow = v })
 
           // PR2-T2 ticket #83 follow-up (2026-09-08): 取消 / 保存 2 按钮(draft 提交入口)
           Row() {

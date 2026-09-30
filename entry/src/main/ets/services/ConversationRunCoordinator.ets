@@ -36,6 +36,7 @@ export type ConversationRunRequestKind =
   | 'confirm-draft'
   | 'restore-draft'
   | 'retry-draft'
+  | 'resume-clarification'
   | 'cancel-draft';
 
 export interface ConversationRunRequest {

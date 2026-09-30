@@ -28,7 +28,10 @@ import {
   ChatMessageOutcome,
   ChatMsg,
   ChatSession,
+  applyNoteContextClarificationToChatMsg,
   applyNoteReviewToChatMsg,
+  resetChatMsgNoteTopicSelection,
+  selectChatMsgNoteTopic,
   setChatMsgNoteReviewFeedback,
   setChatMsgNoteReviewFeedbackValue,
   transitionChatMessageOutcome,
@@ -49,7 +52,7 @@ import { agentSheetBottomInset } from './AgentFloatWindowLayout';
 import { NoteReviewSourceOverlay } from './NoteReviewSourceOverlay';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
 import { SessionsPanelController } from '../../services/SessionsPanelController';
-import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
+import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
 import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
@@ -347,6 +350,19 @@ export struct AgentFloatWindow {
         this.sync();
         this.sm.flush(this.sessions).catch((): void => {});
       },
+      onNoteContextClarificationReady: (
+        ref: ConversationRunRef,
+        messageId: number,
+        clarification: NoteContextClarification,
+      ): void => {
+        this.updateSessionMessages(ref, 'update-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map(
+          (message: ChatMsg): ChatMsg => message.id === messageId
+            ? applyNoteContextClarificationToChatMsg(message, clarification)
+            : message,
+        ));
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      },
     };
     const noteRoute: IConversationNoteRoutePort = new AgentInputNoteRouteAdapter(inputVm);
     const service: AgentChatService = new AgentChatService(cbs, noteRoute);
@@ -395,6 +411,7 @@ export struct AgentFloatWindow {
     loadedSessions: ChatSession[],
   ): Promise<void> {
     let detached: NoteDraftReadyEvent | null = null;
+    let restoredClarificationCard: boolean = false;
     try {
       const recoverable: NoteGenerationRun[] = await service.listRecoverableDrafts();
       for (const draft of recoverable) {
@@ -411,6 +428,13 @@ export struct AgentFloatWindow {
           (candidate: ChatSession): boolean => candidate.id === draft.originSessionId,
         );
         if (session === undefined) { continue; }
+        if (draft.status === 'needs-input' && draft.clarification !== undefined
+          && draft.clarification.status === 'pending') {
+          if (this.restoreClarificationCard(session, draft)) {
+            restoredClarificationCard = true;
+          }
+          continue;
+        }
         try {
           const event: NoteDraftReadyEvent | null = await service.checkAndRestoreDrafts(session.id);
           if (event !== null) {
@@ -431,6 +455,47 @@ export struct AgentFloatWindow {
       this.generatedDraft = detached;
       this.generatedDraftSessionId = '';
     }
+    if (restoredClarificationCard) {
+      this.sessions = loadedSessions.slice(0);
+      const active: ChatSession | undefined = loadedSessions.find(
+        (session: ChatSession): boolean => session.id === this.activeSid,
+      );
+      if (active !== undefined) { this.messages = active.messages; }
+      await this.sm.flush(this.sessions);
+    }
+  }
+
+  private restoreClarificationCard(session: ChatSession, draft: NoteGenerationRun): boolean {
+    const clarification: NoteContextClarification | undefined = draft.clarification;
+    if (clarification === undefined || clarification.status !== 'pending') {
+      return false;
+    }
+    for (let index: number = 0; index < session.messages.length; index += 1) {
+      const message: ChatMsg = session.messages[index];
+      if (message.noteContextClarification?.runId === draft.id) {
+        session.messages[index] = applyNoteContextClarificationToChatMsg(message, clarification);
+        return true;
+      }
+    }
+    const id: number = chatMessageIdPolicy.create();
+    const created: ChatMsg = {
+      id: id,
+      role: 'ai',
+      content: '检测到多个数学主题，请选择本次要整理的一个主题。',
+      ts: clarification.createdAt,
+      streaming: false,
+      origin: 'chat',
+      outcome: 'completed',
+      runId: draft.parentConversationRunId ?? draft.id,
+      sequence: id,
+      messageKey: draft.id + ':clarification:' + id.toString(),
+    };
+    const restored: ChatMsg = applyNoteContextClarificationToChatMsg(created, clarification);
+    if (restored.noteContextClarification === undefined) {
+      return false;
+    }
+    session.messages.push(restored);
+    return true;
   }
 
   private sync(): void {
@@ -537,6 +602,51 @@ export struct AgentFloatWindow {
         this.showToast('反馈保存失败，请稍后重试');
       });
   };
+
+  private onNoteTopicSelect = (messageId: number, runId: string, topicId: string): void => {
+    const sessionId: string = this.findSessionIdForMessage(messageId);
+    if (sessionId.length === 0 || !this.canSelectNoteTopic(messageId, runId, topicId)) {
+      return;
+    }
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      selectChatMsgNoteTopic(message, topicId)
+    );
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+    const service: AgentChatService | null = this.service;
+    if (service === null) {
+      this.rollbackNoteTopicSelection(messageId, runId, topicId);
+      return;
+    }
+    service.resumeNoteContextClarification(sessionId, runId, topicId)
+      .catch((): void => {
+        this.rollbackNoteTopicSelection(messageId, runId, topicId);
+        this.showToast('主题选择处理失败，请重试');
+      });
+  };
+
+  private rollbackNoteTopicSelection(messageId: number, runId: string, topicId: string): void {
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      resetChatMsgNoteTopicSelection(message, runId, topicId)
+    );
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+  }
+
+  private canSelectNoteTopic(messageId: number, runId: string, topicId: string): boolean {
+    for (const session of this.sessions) {
+      for (const message of session.messages) {
+        const clarification: NoteContextClarification | undefined = message.noteContextClarification;
+        if (message.id === messageId && clarification !== undefined
+          && clarification.runId === runId && clarification.status === 'pending') {
+          for (const candidate of clarification.candidates) {
+            if (candidate.id === topicId) { return true; }
+          }
+        }
+      }
+    }
+    return false;
+  }
 
   private nextFeedbackRequestToken(messageId: number): number {
     this.feedbackRequestCounter += 1;
@@ -922,6 +1032,7 @@ export struct AgentFloatWindow {
             scroller: this.scroller,
             onSourceTap: this.openNoteReviewSource,
             onFeedback: this.onNoteReviewFeedback,
+            onTopicSelect: this.onNoteTopicSelect,
           });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
