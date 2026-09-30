@@ -95,6 +95,9 @@ export type {
   DraftSectionState,
   SourceFragment,
   SourceBundle,
+  NoteContextClarificationStatus,
+  NoteTopicCandidate,
+  NoteContextClarification,
   NoteGenerationRequirement,
   NoteGenerationRequest,
   NoteDraftSection,
@@ -210,7 +213,7 @@ export {
 //   LlmTypes:   ChatMessage / LlmCallRequest / LlmCallResult / LlmErrorKind
 //   ApiKeyVault: 凭据 vault (@kit.AssetStoreKit, 兼容读取旧 preferences key)
 //   providers:  5 厂商预设(DeepSeek / Tongyi / GLM / Kimi / Doubao) + findProvider 工厂
-export { LlmConfig, DEFAULT_ENABLE_THINKING } from './llm/LlmConfig';
+export { LlmConfig, DEFAULT_ENABLE_THINKING, DEFAULT_CONTEXT_WINDOW_TOKENS } from './llm/LlmConfig';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
 export { CancellationToken } from './llm/CancellationToken';

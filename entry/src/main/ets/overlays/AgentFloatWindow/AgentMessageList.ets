@@ -61,6 +61,8 @@ export struct AgentMessageList {
   onSourceTap: (citation: NoteEvidenceCitation) => void = (_citation: NoteEvidenceCitation): void => {};
   onFeedback: (messageId: number, feedback: NoteReviewFeedback) => void =
     (_messageId: number, _feedback: NoteReviewFeedback): void => {};
+  onTopicSelect: (messageId: number, runId: string, topicId: string) => void =
+    (_messageId: number, _runId: string, _topicId: string): void => {};
   scroller: Scroller = new Scroller();
   private dataSource: ChatMessageDataSource = new ChatMessageDataSource();
   private autoFollowState: ChatAutoFollowState = new ChatAutoFollowState();
@@ -99,6 +101,7 @@ export struct AgentMessageList {
               msg: msg,
               onSourceTap: this.onSourceTap,
               onFeedback: this.onFeedback,
+              onTopicSelect: this.onTopicSelect,
             });
           }
           .width('100%')

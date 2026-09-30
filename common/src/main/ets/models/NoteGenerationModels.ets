@@ -43,6 +43,7 @@ export interface SourceFragment {
   sequence: number;
   fingerprint: string;
   text: string;
+  provenanceIds?: string[];
 }
 
 export interface SourceBundle {
@@ -211,6 +212,25 @@ export interface NoteGenerationSegment {
   sequence: number;
   boundary: 'message' | 'ocr_page' | 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph';
   text: string;
+  provenanceIds?: string[];
+}
+
+export type NoteContextClarificationStatus = 'pending' | 'selected' | 'cancelled';
+
+export interface NoteTopicCandidate {
+  id: string;
+  displayName: string;
+  sourceIds: string[];
+  confidence: number;
+}
+
+export interface NoteContextClarification {
+  runId: string;
+  instruction: string;
+  status: NoteContextClarificationStatus;
+  candidates: NoteTopicCandidate[];
+  selectedTopicId?: string;
+  createdAt: number;
 }
 
 export interface NoteGenerationDeepResult extends NoteGenerationStandardResult {
@@ -250,12 +270,14 @@ export interface NoteGenerationRun {
   instruction: string;
   sourceCount: number;
   tokenBudget: number;
+  contextBudgetTokens?: number;
   bestCheckpointId?: string;
   stopReason?: string;
   issueCount?: number;
   sourceIds?: string[];
   pendingSourceIds?: string[];
   sourceSummary?: string;
+  clarification?: NoteContextClarification;
   createdAt?: number;
   updatedAt?: number;
 }

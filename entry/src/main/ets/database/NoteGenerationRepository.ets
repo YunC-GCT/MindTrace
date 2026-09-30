@@ -13,6 +13,8 @@ import {
   NoteGenerationRepository as NoteGenerationRepositoryContract,
   NoteGenerationRecovery,
   NoteGenerationRun,
+  NoteContextClarification,
+  NoteTopicCandidate,
   SourceBundle,
   SourceFragment,
   KnowledgeUnit,
@@ -35,6 +37,13 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
   }
 
   async saveRun(run: NoteGenerationRun, bundle: SourceBundle): Promise<void> {
+    const runExists: boolean = await this.hasRow('note_generation_run', 'id', run.id);
+    const persistedClarification: string = run.clarification === undefined && runExists
+      ? await this.readRunOptionalString(run.id, 'clarification_json')
+      : '';
+    const persistedContextBudget: number = run.contextBudgetTokens === undefined && runExists
+      ? await this.readRunOptionalNumber(run.id, 'context_budget_tokens')
+      : 0;
     const runBucket: relationalStore.ValuesBucket = {
       'id': run.id,
       'route': run.route,
@@ -42,6 +51,7 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       'instruction': run.instruction,
       'source_count': run.sourceCount,
       'token_budget': run.tokenBudget,
+      'context_budget_tokens': run.contextBudgetTokens ?? persistedContextBudget,
       'best_checkpoint_id': run.bestCheckpointId ?? '',
       'stop_reason': run.stopReason ?? '',
       'issue_count': run.issueCount ?? 0,
@@ -50,10 +60,10 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       'source_ids': JSON.stringify(run.sourceIds ?? []),
       'pending_source_ids': JSON.stringify(run.pendingSourceIds ?? []),
       'source_summary': run.sourceSummary ?? '',
+      'clarification_json': run.clarification === undefined ? persistedClarification : JSON.stringify(run.clarification),
       'created_at': run.createdAt ?? Date.now(),
       'updated_at': run.updatedAt ?? Date.now(),
     };
-    const runExists: boolean = await this.hasRow('note_generation_run', 'id', run.id);
     if (runExists) {
       const runPredicates = new relationalStore.RdbPredicates('note_generation_run');
       runPredicates.equalTo('id', run.id);
@@ -78,6 +88,7 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
         'sequence': fragment.sequence,
         'fingerprint': fragment.fingerprint,
         'text': fragment.text,
+        'provenance_ids': JSON.stringify(fragment.provenanceIds ?? [fragment.id]),
       };
       if (!(await this.hasSource(run.id, fragment.id))) {
         await this.insertRow('note_generation_source', sourceBucket);
@@ -122,6 +133,26 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
     const found: boolean = resultSet.goToFirstRow();
     resultSet.close();
     return found;
+  }
+
+  private async readRunOptionalString(runId: string, column: string): Promise<string> {
+    const predicates = new relationalStore.RdbPredicates('note_generation_run');
+    predicates.equalTo('id', runId);
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, [column]);
+    if (!resultSet.goToFirstRow()) {
+      resultSet.close();
+      return '';
+    }
+    const value: string = NoteGenerationRepository.readOptionalString(resultSet, column);
+    resultSet.close();
+    return value;
+  }
+
+  private async readRunOptionalNumber(runId: string, column: string): Promise<number> {
+    const text: string = await this.readRunOptionalString(runId, column);
+    if (text.length === 0) { return 0; }
+    const value: number = Number(text);
+    return value === value ? value : 0;
   }
 
   private async hasSource(runId: string, sourceId: string): Promise<boolean> {
@@ -511,6 +542,7 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       instruction: rs.getString(rs.getColumnIndex('instruction')),
       sourceCount: rs.getLong(rs.getColumnIndex('source_count')),
       tokenBudget: rs.getLong(rs.getColumnIndex('token_budget')),
+      contextBudgetTokens: NoteGenerationRepository.readOptionalNumber(rs, 'context_budget_tokens'),
       bestCheckpointId: rs.getString(rs.getColumnIndex('best_checkpoint_id')) || undefined,
       stopReason: rs.getString(rs.getColumnIndex('stop_reason')) || undefined,
       issueCount: rs.getLong(rs.getColumnIndex('issue_count')),
@@ -519,6 +551,9 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       sourceIds: sourceIds,
       pendingSourceIds: pendingSourceIds,
       sourceSummary: NoteGenerationRepository.readOptionalString(rs, 'source_summary') || undefined,
+      clarification: NoteGenerationRepository.parseClarification(
+        NoteGenerationRepository.readOptionalString(rs, 'clarification_json'),
+      ),
     };
     return result;
   }
@@ -533,6 +568,13 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
   }
 
   private static rowToSource(rs: relationalStore.ResultSet): SourceFragment {
+    const provenanceText: string = NoteGenerationRepository.readOptionalString(rs, 'provenance_ids');
+    let provenanceIds: string[] = [];
+    try {
+      provenanceIds = JSON.parse(provenanceText) as string[];
+    } catch (_e) {
+      provenanceIds = [];
+    }
     return {
       id: rs.getString(rs.getColumnIndex('id')),
       kind: rs.getString(rs.getColumnIndex('kind')) as 'conversation' | 'ocr' | 'summary' | 'existing_note',
@@ -540,7 +582,47 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       sequence: rs.getLong(rs.getColumnIndex('sequence')),
       fingerprint: rs.getString(rs.getColumnIndex('fingerprint')),
       text: rs.getString(rs.getColumnIndex('text')),
+      provenanceIds: provenanceIds.length > 0 ? provenanceIds : undefined,
     };
+  }
+
+  private static parseClarification(text: string): NoteContextClarification | undefined {
+    if (text.trim().length === 0) { return undefined; }
+    try {
+      const parsed: NoteContextClarification = JSON.parse(text) as NoteContextClarification;
+      const validStatus: boolean = parsed.status === 'pending'
+        || parsed.status === 'selected'
+        || parsed.status === 'cancelled';
+      if (parsed === undefined || parsed === null || Array.isArray(parsed)
+        || typeof parsed.runId !== 'string' || parsed.runId.length === 0
+        || typeof parsed.instruction !== 'string'
+        || typeof parsed.createdAt !== 'number'
+        || !validStatus
+        || !Array.isArray(parsed.candidates)
+        || (parsed.selectedTopicId !== undefined && typeof parsed.selectedTopicId !== 'string')) {
+        return undefined;
+      }
+      for (const candidate of parsed.candidates) {
+        if (!NoteGenerationRepository.isValidTopicCandidate(candidate)) { return undefined; }
+      }
+      return parsed;
+    } catch (_e) {
+      return undefined;
+    }
+  }
+
+  private static isValidTopicCandidate(candidate: NoteTopicCandidate): boolean {
+    if (candidate === undefined || candidate === null || Array.isArray(candidate)
+      || typeof candidate.id !== 'string' || candidate.id.length === 0
+      || typeof candidate.displayName !== 'string'
+      || typeof candidate.confidence !== 'number'
+      || !Array.isArray(candidate.sourceIds)) {
+      return false;
+    }
+    for (const sourceId of candidate.sourceIds) {
+      if (typeof sourceId !== 'string') { return false; }
+    }
+    return true;
   }
 
   private static rowToCheckpoint(rs: relationalStore.ResultSet): NoteGenerationCheckpoint {

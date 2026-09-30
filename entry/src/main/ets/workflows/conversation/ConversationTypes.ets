@@ -19,7 +19,7 @@
 
 import { common } from '@kit.AbilityKit';
 import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
-import { NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
+import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
 import type { StreamEvent } from 'common';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { CancellationToken } from 'common';
@@ -74,5 +74,6 @@ export interface ConversationWorkflowCallbacks {
   getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string;
   onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void;
   onNoteReviewReady?(ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void;
+  onNoteContextClarificationReady?(ref: ConversationRunRef, messageId: number, clarification: NoteContextClarification): void;
   onOcrBlank?(ref: ConversationRunRef, imageUri: string): void;
 }

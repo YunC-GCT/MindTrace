@@ -25,6 +25,7 @@ import {
   sourceFingerprint,
   buildSourceId,
   SourceBundle,
+  SourceFragment,
   NoteGenerationCommitResult,
   NoteDraftDocument,
   NoteDraftSection,
@@ -1578,10 +1579,26 @@ export class Dispatcher {
         // caller-supplied fingerprint that may actually be a record or OCR ID.
         fingerprint: sourceFingerprint(fragment.text),
         text: fragment.text,
+        provenanceIds: this.normalizeProvenanceIds(fragment),
       });
       sequence += 1;
     }
     return normalized;
+  }
+
+  private normalizeProvenanceIds(fragment: SourceFragment): string[] {
+    const result: string[] = [];
+    const candidates: string[] = fragment.provenanceIds ?? [fragment.id];
+    for (const value of candidates) {
+      const normalized: string = value.trim();
+      if (normalized.length > 0 && !result.includes(normalized)) {
+        result.push(normalized);
+      }
+    }
+    if (result.length === 0 && fragment.id.trim().length > 0) {
+      result.push(fragment.id.trim());
+    }
+    return result;
   }
 
   private sourceSummary(bundle: SourceBundle): string {

@@ -16,7 +16,10 @@ import {
   NoteDraftReadyEvent,
   NoteGenerationRoute,
   NoteGenerationProgressSink,
+  NoteContextClarification,
   SourceFragment,
+  SourceBundle,
+  NoteTopicCandidate,
 } from 'common';
 import { AiService } from '../../services/AiService';
 import { IntentClassifier, ReplyContext, TextIntent } from '../../services/IntentClassifier';
@@ -48,6 +51,35 @@ export interface IConversationCapturePort {
     originSessionId?: string,
     parentConversationRunId?: string,
     route?: NoteGenerationRoute,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent>;
+  generateNoteDraftWithBundle(
+    runId: string,
+    instruction: string,
+    bundle: SourceBundle,
+    pendingSourceIds: string[],
+    contextBudgetTokens: number,
+    token?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
+    route?: NoteGenerationRoute,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent>;
+  saveNoteContextClarification(
+    runId: string,
+    instruction: string,
+    bundle: SourceBundle,
+    topics: NoteTopicCandidate[],
+    pendingSourceIds: string[],
+    contextBudgetTokens: number,
+    originSessionId?: string,
+    parentConversationRunId?: string,
+    route?: NoteGenerationRoute,
+  ): Promise<NoteContextClarification>;
+  resumeNoteContextClarification(
+    runId: string,
+    topicId: string,
+    token?: CancellationToken,
     progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent>;
   regenerateNoteDraft(
@@ -145,6 +177,65 @@ class ConversationCaptureAdapter implements IConversationCapturePort {
       route,
       progressSink,
     );
+  }
+
+  async generateNoteDraftWithBundle(
+    runId: string,
+    instruction: string,
+    bundle: SourceBundle,
+    pendingSourceIds: string[],
+    contextBudgetTokens: number,
+    token?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
+    route?: NoteGenerationRoute,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    return await this.ai.generateNoteDraftWithBundle(
+      runId,
+      instruction,
+      bundle,
+      pendingSourceIds,
+      contextBudgetTokens,
+      token,
+      originSessionId,
+      parentConversationRunId,
+      route,
+      progressSink,
+    );
+  }
+
+  async saveNoteContextClarification(
+    runId: string,
+    instruction: string,
+    bundle: SourceBundle,
+    topics: NoteTopicCandidate[],
+    pendingSourceIds: string[],
+    contextBudgetTokens: number,
+    originSessionId?: string,
+    parentConversationRunId?: string,
+    route?: NoteGenerationRoute,
+  ): Promise<NoteContextClarification> {
+    return await this.ai.saveNoteContextClarification(
+      runId,
+      instruction,
+      bundle,
+      topics,
+      pendingSourceIds,
+      contextBudgetTokens,
+      originSessionId,
+      parentConversationRunId,
+      route,
+    );
+  }
+
+  async resumeNoteContextClarification(
+    runId: string,
+    topicId: string,
+    token?: CancellationToken,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    return await this.ai.resumeNoteContextClarification(runId, topicId, token, progressSink);
   }
 
   async regenerateNoteDraft(

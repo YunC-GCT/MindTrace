@@ -135,6 +135,14 @@ export class ConversationRuntime {
     return await this.draftCoordinator.confirm(sessionId, event, candidate);
   }
 
+  async resumeNoteContextClarification(
+    sessionId: string,
+    runId: string,
+    topicId: string,
+  ): Promise<NoteDraftReadyEvent> {
+    return await this.draftCoordinator.resumeClarification(sessionId, runId, topicId);
+  }
+
   async cancelDraft(sessionId: string, runId: string): Promise<void> {
     await this.draftCoordinator.cancel(sessionId, runId);
   }

@@ -85,6 +85,7 @@ export class AiSettingsViewModel {
     // Bug fix (2026-09-08): 还原所有 vendor keys(原代码只还原 current)
     this.vendorApiKeys = llm.getAllVendorApiKeys()
     this.activeVendorModels = llm.getAllActiveVendorModels()
+    this.modelContextWindows = llm.getAllModelContextWindows()
 
     try {
       const key: string | null = await llm.getApiKey(this.vendorId)
@@ -137,6 +138,14 @@ export class AiSettingsViewModel {
       for (const vid of Object.keys(this.activeVendorModels)) {
         const model: string = this.activeVendorModels[vid]
         if (model.length > 0) { await llm.setActiveVendorModel(vid, model) }
+      }
+      for (const key of Object.keys(this.modelContextWindows)) {
+        const separator: number = key.indexOf('::')
+        if (separator > 0 && separator < key.length - 2) {
+          const vendorId: string = key.substring(0, separator)
+          const model: string = key.substring(separator + 2)
+          await llm.setContextWindowTokens(vendorId, model, this.modelContextWindows[key])
+        }
       }
       // PR2-T2 ticket #83 L3 (2026-09-08): 持久化 per-vendor API Key
       for (const vid of Object.keys(this.vendorApiKeys)) {
@@ -295,6 +304,7 @@ export class AiSettingsViewModel {
   // in-memory mirror;save() 持久化到 LlmConfig
   vendorApiKeys: Record<string, string> = {}
   activeVendorModels: Record<string, string> = {}
+  modelContextWindows: Record<string, number> = {}
 
   selectVendor(id: string): void {
     this.vendorId = id
@@ -307,6 +317,22 @@ export class AiSettingsViewModel {
     }
     next[vendorId] = model
     this.activeVendorModels = next
+  }
+
+  setModelContextWindow(vendorId: string, model: string, value: number): void {
+    if (vendorId.length === 0 || model.trim().length === 0) { return }
+    const safeValue: number = value === value ? value : 65536
+    const next: Record<string, number> = {}
+    for (const k of Object.keys(this.modelContextWindows)) {
+      next[k] = this.modelContextWindows[k]
+    }
+    next[vendorId + '::' + model.trim()] = Math.max(4096, Math.min(1048576, Math.floor(safeValue)))
+    this.modelContextWindows = next
+  }
+
+  getModelContextWindow(vendorId: string, model: string): number {
+    const value: number | undefined = this.modelContextWindows[vendorId + '::' + model.trim()]
+    return value === undefined ? 65536 : value
   }
 
   // PR2-T2 P3: 添加新 vendor(由 VendorPicker modal 确认后回调)

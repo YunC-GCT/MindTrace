@@ -43,6 +43,7 @@ import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './Conve
 import { StreamReplyResult } from '../../services/ReplyService';
 import {
   NoteDraftReadyEvent,
+  NoteContextClarification,
   NoteGenerationProgressEvent,
   NoteGenerationProgressSink,
   NoteGenerationRoute,
@@ -52,6 +53,7 @@ import {
 } from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
+import { NoteGenerationContextResult } from '../../models/AgentMemoryModels';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
 import { NoteReviewAnswer } from '../../models/NoteReviewModels';
 import {
@@ -230,6 +232,22 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
 
   async retryDraft(ref: ConversationRunRef, runId: string): Promise<NoteDraftReadyEvent> {
     return await this.draftWorkflow.retry(ref, runId);
+  }
+
+  async resumeNoteContextClarification(
+    ref: ConversationRunRef,
+    runId: string,
+    topicId: string,
+  ): Promise<NoteDraftReadyEvent> {
+    const event: NoteDraftReadyEvent = await this.capturePort.resumeNoteContextClarification(
+      runId,
+      topicId,
+      this.cbs.getCancellationToken(ref),
+      this.noteGenerationProgressSink(ref),
+    );
+    this.cbs.onDraftReady(ref, event);
+    this.cbs.completeProgress(ref);
+    return event;
   }
 
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
@@ -937,7 +955,6 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       await this.addAiMessage(ref, '请先选择要修改的明确笔记，再提出增量修改要求。', this.originFor(ref), 'failed');
       return undefined;
     }
-    const memoryContext: string = await this.safeGetContextForNoteGeneration(ref);
     await this.safeSaveUserMessage(ref, userInstruction);
     try {
       const configured: boolean = await this.replyService.isConfigured();
@@ -945,27 +962,48 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         throw new Error('NO_API_KEY');
       }
 
-      let conversation: string = this.intentClassifier.inlineNoteMaterial(userInstruction).trim();
-      if (conversation.length === 0) {
-        conversation = memoryContext.trim();
-      }
-      if (conversation.length === 0) {
-        conversation = this.cbs.getConversationText(ref, true).trim();
-      }
-      if (conversation.length === 0) {
+      const inlineMaterial: string = this.intentClassifier.inlineNoteMaterial(userInstruction).trim();
+      const fallbackConversation: string = this.cbs.getConversationText(ref, true).trim();
+      const noteContext: NoteGenerationContextResult | undefined = await this.safeGetStructuredContextForNoteGeneration(
+        ref,
+        userInstruction,
+        inlineMaterial,
+        fallbackConversation,
+      );
+      if (noteContext === undefined || noteContext.bundle.fragments.length === 0) {
         await this.addAiMessage(ref, '当前会话还没有可整理的内容', this.originFor(ref), 'failed');
         return undefined;
       }
 
       const noteGenerationRunId: string = 'conversation-' + Date.now().toString();
       if (!this.cbs.isCurrentRun(ref)) { return undefined; }
-      const pendingSources: SourceFragment[] = await this.memoryProjection.pendingSources(ref);
-      const event: NoteDraftReadyEvent = await this.generateNoteDraft(
+      if (noteContext.requiresClarification) {
+        const clarification: NoteContextClarification = await this.capturePort.saveNoteContextClarification(
+          noteGenerationRunId,
+          userInstruction,
+          noteContext.bundle,
+          noteContext.topics,
+          noteContext.pendingSourceIds,
+          noteContext.contextBudgetTokens,
+          ref.sessionId,
+          ref.runId,
+          route,
+        );
+        const clarificationMessage: string = this.replyService.normalize(this.topicClarificationMessage(noteContext));
+        const messageId: number = this.cbs.addAiMsg(ref, clarificationMessage, this.originFor(ref), 'completed');
+        if (messageId > 0) {
+          if (this.cbs.onNoteContextClarificationReady !== undefined) {
+            this.cbs.onNoteContextClarificationReady(ref, messageId, clarification);
+          }
+          await this.safeSaveAssistantMessage(ref, clarificationMessage, messageId);
+        }
+        return undefined;
+      }
+      const event: NoteDraftReadyEvent = await this.generateNoteDraftFromContext(
         ref,
         noteGenerationRunId,
         userInstruction,
-        conversation,
-        pendingSources,
+        noteContext,
         this.cancellationToken(ref),
         route,
       );
@@ -1027,6 +1065,41 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       route,
       this.noteGenerationProgressSink(ref),
     );
+  }
+
+  private async generateNoteDraftFromContext(
+    ref: ConversationRunRef,
+    runId: string,
+    instruction: string,
+    context: NoteGenerationContextResult,
+    cancellationToken?: CancellationToken,
+    route?: NoteGenerationRoute,
+  ): Promise<NoteDraftReadyEvent> {
+    return await this.capturePort.generateNoteDraftWithBundle(
+      runId,
+      instruction,
+      context.bundle,
+      context.pendingSourceIds,
+      context.contextBudgetTokens,
+      cancellationToken,
+      ref.sessionId,
+      ref.runId,
+      route,
+      this.noteGenerationProgressSink(ref),
+    );
+  }
+
+  private topicClarificationMessage(context: NoteGenerationContextResult): string {
+    const lines: string[] = [];
+    if (context.topics.length === 0) {
+      return '我还无法可靠判断这些材料的唯一数学主题。请输入一个具体主题后再生成笔记。';
+    }
+    lines.push('我发现材料里有多个数学主题。请先回复你要整理哪一个主题，我再生成单主题笔记：');
+    for (let index: number = 0; index < context.topics.length; index += 1) {
+      const topic = context.topics[index];
+      lines.push((index + 1).toString() + '. ' + topic.displayName);
+    }
+    return lines.join('\n');
   }
 
   private noteGenerationProgressSink(ref: ConversationRunRef): NoteGenerationProgressSink {
@@ -1196,6 +1269,20 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
 
   private async safeGetContextForNoteGeneration(ref: ConversationRunRef): Promise<string> {
     return await this.memoryProjection.contextForNote(ref);
+  }
+
+  private async safeGetStructuredContextForNoteGeneration(
+    ref: ConversationRunRef,
+    instruction: string,
+    inlineMaterial: string,
+    currentConversationText: string,
+  ): Promise<NoteGenerationContextResult | undefined> {
+    return await this.memoryProjection.structuredContextForNote(
+      ref,
+      instruction,
+      inlineMaterial,
+      currentConversationText,
+    );
   }
 
   private async safeGetLearnerProfileContext(ref: ConversationRunRef): Promise<string> {

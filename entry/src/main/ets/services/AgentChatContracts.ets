@@ -9,7 +9,7 @@
  *   Conversation workflow event -> typed callback contract -> session-owned UI state.
  */
 import { common } from '@kit.AbilityKit';
-import { NoteDraftReadyEvent } from 'common';
+import { NoteContextClarification, NoteDraftReadyEvent } from 'common';
 import { NoteReviewAnswer } from '../models/NoteReviewModels';
 import { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
 import { ChatMessageOrigin, ChatMessageOutcome } from '../workflows/conversation/ConversationState';
@@ -37,5 +37,10 @@ export interface AgentChatCallbacks {
   getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean) => string;
   onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent) => void;
   onNoteReviewReady?: (ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer) => void;
+  onNoteContextClarificationReady?: (
+    ref: ConversationRunRef,
+    messageId: number,
+    clarification: NoteContextClarification,
+  ) => void;
   onOcrBlank?: (ref: ConversationRunRef, imageUri: string) => void;
 }

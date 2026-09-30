@@ -34,7 +34,11 @@ import {
   NoteGenerationCheckpoint,
   NoteGenerationResult,
   NoteGenerationRun,
+  NoteGenerationRepository as NoteGenerationRepositoryContract,
   SourceFragment,
+  SourceBundle,
+  NoteContextClarification,
+  NoteTopicCandidate,
   NoteGenerationRecovery,
   sourceFingerprint,
   IncrementalManifest,
@@ -51,11 +55,13 @@ import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
 import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFactory';
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from './AgentMemoryService';
+import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
 import type { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
-
 export class AiService {
+  private static readonly activeClarificationRuns: Set<string> = new Set<string>();
+
   // UIAbilityContext 引用,capture() 准备图片文件时用
   private context?: common.UIAbilityContext;
 
@@ -140,7 +146,6 @@ export class AiService {
   ): Promise<NoteDraftReadyEvent> {
     cancellationToken?.throwIfCancelled();
     AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     const fragments: SourceFragment[] = [{
       id: 'conversation:' + runId,
       kind: 'conversation',
@@ -164,9 +169,174 @@ export class AiService {
       pendingSourceIds: pendingSources.map((fragment): string => fragment.id),
       route: route,
     };
+    return await this.dispatchNoteDraft(
+      request,
+      sourceText,
+      request.pendingSourceIds ?? [],
+      cancellationToken,
+      progressSink,
+    );
+  }
+
+  async resumeNoteContextClarification(
+    runId: string,
+    topicId: string,
+    cancellationToken?: CancellationToken,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const recovery: NoteGenerationRecovery | undefined = await repository.restore(runId);
+    if (recovery === undefined) {
+      throw new Error('TOPIC_CLARIFICATION_NOT_PENDING');
+    }
+    if (recovery.run.clarification === undefined) {
+      if (recovery.bestCheckpoint !== undefined
+        && (recovery.run.status === 'ready-preview' || recovery.run.status === 'committed')) {
+        return await this.restoreDraft(runId);
+      }
+      throw new Error('TOPIC_CLARIFICATION_NOT_PENDING');
+    }
+    const clarification: NoteContextClarification = recovery.run.clarification;
+    if (clarification.status === 'selected') {
+      if (clarification.selectedTopicId !== topicId) {
+        throw new Error('TOPIC_CLARIFICATION_ALREADY_SELECTED');
+      }
+      if (recovery.bestCheckpoint !== undefined) {
+        return await this.restoreDraft(runId);
+      }
+      return await this.generateSelectedClarificationDraftWithRollback(
+        repository,
+        recovery,
+        topicId,
+        false,
+        cancellationToken,
+        progressSink,
+      );
+    }
+    if (recovery.run.status !== 'needs-input' || clarification.status !== 'pending') {
+      throw new Error('TOPIC_CLARIFICATION_NOT_PENDING');
+    }
+    const selected: NoteContextClarification = {
+      runId: clarification.runId,
+      instruction: clarification.instruction,
+      status: 'selected',
+      candidates: clarification.candidates,
+      selectedTopicId: topicId,
+      createdAt: clarification.createdAt,
+    };
+    recovery.run.clarification = selected;
+    return await this.generateSelectedClarificationDraftWithRollback(
+      repository,
+      recovery,
+      topicId,
+      true,
+      cancellationToken,
+      progressSink,
+    );
+  }
+
+  private async generateSelectedClarificationDraftWithRollback(
+    repository: NoteGenerationRepositoryContract,
+    recovery: NoteGenerationRecovery,
+    topicId: string,
+    persistSelection: boolean,
+    cancellationToken?: CancellationToken,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    if (AiService.activeClarificationRuns.has(recovery.run.id)) {
+      throw new Error('TOPIC_CLARIFICATION_IN_PROGRESS');
+    }
+    AiService.activeClarificationRuns.add(recovery.run.id);
+    try {
+      if (persistSelection) {
+        recovery.run.updatedAt = Date.now();
+        await repository.saveRun(recovery.run, recovery.sources);
+      }
+      return await this.generateSelectedClarificationDraft(recovery, topicId, cancellationToken, progressSink);
+    } catch (error) {
+      await this.restorePendingClarification(repository, recovery);
+      if (error instanceof Error) {
+        throw new Error(error.message);
+      }
+      throw new Error(JSON.stringify(error));
+    } finally {
+      AiService.activeClarificationRuns.delete(recovery.run.id);
+    }
+  }
+
+  private async restorePendingClarification(
+    repository: NoteGenerationRepositoryContract,
+    recovery: NoteGenerationRecovery,
+  ): Promise<void> {
+    const clarification: NoteContextClarification | undefined = recovery.run.clarification;
+    if (clarification === undefined || clarification.status !== 'selected') { return; }
+    const pending: NoteContextClarification = {
+      runId: clarification.runId,
+      instruction: clarification.instruction,
+      status: 'pending',
+      candidates: clarification.candidates,
+      createdAt: clarification.createdAt,
+    };
+    recovery.run.status = 'needs-input';
+    recovery.run.stopReason = 'topic_clarification_required';
+    recovery.run.bestCheckpointId = undefined;
+    recovery.run.clarification = pending;
+    recovery.run.updatedAt = Date.now();
+    await repository.saveRun(recovery.run, recovery.sources);
+  }
+
+  private async generateSelectedClarificationDraft(
+    recovery: NoteGenerationRecovery,
+    topicId: string,
+    cancellationToken?: CancellationToken,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    const clarification: NoteContextClarification | undefined = recovery.run.clarification;
+    if (clarification === undefined) { throw new Error('TOPIC_CLARIFICATION_NOT_PENDING'); }
+    let allowedSourceIds: string[] = [];
+    for (const candidate of clarification.candidates) {
+      if (candidate.id === topicId) { allowedSourceIds = candidate.sourceIds.slice(0); }
+    }
+    if (allowedSourceIds.length === 0) { throw new Error('TOPIC_CLARIFICATION_INVALID_SELECTION'); }
+    const fragments: SourceFragment[] = [];
+    for (const fragment of recovery.sources.fragments) {
+      if (allowedSourceIds.includes(fragment.id)) { fragments.push(fragment); }
+    }
+    if (fragments.length === 0) { throw new Error('TOPIC_CLARIFICATION_SOURCE_MISSING'); }
+    const selectedBundle: SourceBundle = NoteGenerationContextBuilder.trimBundleToBudget(
+      { fragments: fragments },
+      AiService.contextBudgetForRecovery(recovery.run),
+    );
+    if (selectedBundle.fragments.length === 0) { throw new Error('TOPIC_CLARIFICATION_SOURCE_MISSING'); }
+    const pendingSourceIds: string[] = [];
+    for (const fragment of selectedBundle.fragments) {
+      if ((recovery.run.pendingSourceIds ?? []).includes(fragment.id)) { pendingSourceIds.push(fragment.id); }
+    }
+    return await this.generateNoteDraftWithBundle(
+      recovery.run.id,
+      recovery.run.instruction,
+      selectedBundle,
+      pendingSourceIds,
+      AiService.contextBudgetForRecovery(recovery.run),
+      cancellationToken,
+      recovery.run.originSessionId,
+      recovery.run.parentConversationRunId,
+      recovery.run.route,
+      progressSink,
+    );
+  }
+
+  private async dispatchNoteDraft(
+    request: NoteGenerationRequest,
+    payloadText: string,
+    pendingSourceIds: string[],
+    cancellationToken?: CancellationToken,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     const result: DispatchResult = await new Dispatcher().dispatch({
       source: 'app',
-      payload: { kind: 'text', text: sourceText },
+      payload: { kind: 'text', text: payloadText },
       generation: request,
     }, {
       persist: false,
@@ -203,9 +373,9 @@ export class AiService {
       }
     }
     return {
-      runId: runId,
-      originSessionId: originSessionId,
-      parentConversationRunId: parentConversationRunId,
+      runId: request.runId,
+      originSessionId: request.originSessionId,
+      parentConversationRunId: request.parentConversationRunId,
       checkpointId: result.generation.bestCheckpointId,
       candidateHash: sourceFingerprint(JSON.stringify(candidate)),
       candidate: candidate,
@@ -213,11 +383,85 @@ export class AiService {
       sourceCount: request.sources.fragments.length,
       softIssueCount: softIssueCount,
       sourceIds: request.sources.fragments.map((fragment): string => fragment.id),
-      pendingSourceIds: this.referencedPendingSourceIds(generation, pendingSources),
+      pendingSourceIds: this.referencedPendingSourceIdsFromIds(generation, pendingSourceIds),
       incrementalManifest: incrementalManifest,
       expectedVersion: candidate.version,
-      incrementalInstruction: instruction,
+      incrementalInstruction: request.instruction,
     };
+  }
+
+  async generateNoteDraftWithBundle(
+    runId: string,
+    instruction: string,
+    bundle: SourceBundle,
+    pendingSourceIds: string[],
+    _contextBudgetTokens: number,
+    cancellationToken?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
+    route: NoteGenerationRoute = 'standard',
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    cancellationToken?.throwIfCancelled();
+    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
+    const request: NoteGenerationRequest = {
+      runId: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
+      instruction: instruction,
+      mode: 'create',
+      sources: bundle,
+      pendingSourceIds: pendingSourceIds,
+      route: route,
+    };
+    const sourceText: string = AiService.bundleText(bundle);
+    return await this.dispatchNoteDraft(request, sourceText, pendingSourceIds, cancellationToken, progressSink);
+  }
+
+  async saveNoteContextClarification(
+    runId: string,
+    instruction: string,
+    bundle: SourceBundle,
+    topics: NoteTopicCandidate[],
+    pendingSourceIds: string[],
+    contextBudgetTokens: number,
+    originSessionId?: string,
+    parentConversationRunId?: string,
+    route: NoteGenerationRoute = 'standard',
+  ): Promise<NoteContextClarification> {
+    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
+    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const existing: NoteGenerationRecovery | undefined = await repository.restore(runId);
+    if (existing !== undefined && existing.run.clarification !== undefined) {
+      return existing.run.clarification;
+    }
+    const clarification: NoteContextClarification = {
+      runId: runId,
+      instruction: instruction,
+      status: 'pending',
+      candidates: topics,
+      createdAt: Date.now(),
+    };
+    const now: number = Date.now();
+    const run: NoteGenerationRun = {
+      id: runId,
+      originSessionId: originSessionId,
+      parentConversationRunId: parentConversationRunId,
+      route: route,
+      status: 'needs-input',
+      instruction: instruction,
+      sourceCount: bundle.fragments.length,
+      tokenBudget: 0,
+      contextBudgetTokens: contextBudgetTokens,
+      sourceIds: bundle.fragments.map((fragment): string => fragment.id),
+      pendingSourceIds: pendingSourceIds,
+      sourceSummary: 'topic-clarification-required',
+      clarification: clarification,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await repository.saveRun(run, bundle);
+    return clarification;
   }
 
   async regenerateNoteDraft(
@@ -361,7 +605,22 @@ export class AiService {
 
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
-    return await repository.listRecoverableRuns();
+    const runs: NoteGenerationRun[] = await repository.listRecoverableRuns();
+    for (let index: number = 0; index < runs.length; index += 1) {
+      const run: NoteGenerationRun = runs[index];
+      const clarification: NoteContextClarification | undefined = run.clarification;
+      const interruptedSelection: boolean = run.status === 'needs-input'
+        && clarification !== undefined
+        && clarification.status === 'selected'
+        && run.bestCheckpointId === undefined
+        && !AiService.activeClarificationRuns.has(run.id);
+      if (!interruptedSelection) { continue; }
+      const recovery: NoteGenerationRecovery | undefined = await repository.restore(run.id);
+      if (recovery === undefined) { continue; }
+      await this.restorePendingClarification(repository, recovery);
+      runs[index] = recovery.run;
+    }
+    return runs;
   }
 
   async cancelDraftsByParentRun(sessionId: string, parentConversationRunId: string): Promise<void> {
@@ -429,7 +688,12 @@ export class AiService {
     }
     if (event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0) {
       try {
-        await new AgentMemoryService(this.requireContext()).markPendingMaterialsUsed(event.pendingSourceIds);
+        const pendingMemoryIds: string[] = await this.resolvePendingMemoryIds(
+          repository,
+          event.runId,
+          event.pendingSourceIds,
+        );
+        await new AgentMemoryService(this.requireContext()).markPendingMaterialsUsed(pendingMemoryIds);
       } catch (e) {
         log.warn('pending source cleanup warning runId=' + event.runId + ' count=' + event.pendingSourceIds.length.toString());
       }
@@ -437,20 +701,56 @@ export class AiService {
     return result.data;
   }
 
-  private referencedPendingSourceIds(result: NoteGenerationResult, pendingSources: SourceFragment[]): string[] {
+  private async resolvePendingMemoryIds(
+    repository: NoteGenerationRepositoryContract,
+    runId: string,
+    referencedFragmentIds: string[],
+  ): Promise<string[]> {
+    const recovery: NoteGenerationRecovery | undefined = await repository.restore(runId);
+    if (recovery === undefined) {
+      return referencedFragmentIds.slice(0);
+    }
+    const result: string[] = [];
+    for (const fragment of recovery.sources.fragments) {
+      if (fragment.kind !== 'ocr' || !referencedFragmentIds.includes(fragment.id)) {
+        continue;
+      }
+      const provenanceIds: string[] = fragment.provenanceIds ?? [fragment.id];
+      for (const provenanceId of provenanceIds) {
+        if (!result.includes(provenanceId)) { result.push(provenanceId); }
+      }
+    }
+    return result.length > 0 ? result : referencedFragmentIds.slice(0);
+  }
+
+  private referencedPendingSourceIdsFromIds(result: NoteGenerationResult, pendingSourceIds: string[]): string[] {
     const referenced: string[] = [];
     if (result.draft !== undefined) {
       for (const section of result.draft.sections) {
         for (const sourceId of section.sourceIds) {
-          for (const pendingSource of pendingSources) {
-            if (pendingSource.id === sourceId && !referenced.includes(sourceId)) {
-              referenced.push(sourceId);
-            }
+          if (pendingSourceIds.includes(sourceId) && !referenced.includes(sourceId)) {
+            referenced.push(sourceId);
           }
         }
       }
     }
     return referenced;
+  }
+
+  private static bundleText(bundle: SourceBundle): string {
+    const lines: string[] = [];
+    for (const fragment of bundle.fragments) {
+      lines.push('[source:' + fragment.id + ']');
+      lines.push(fragment.text);
+    }
+    return lines.join('\n\n');
+  }
+
+  private static contextBudgetForRecovery(run: NoteGenerationRun): number {
+    if (run.contextBudgetTokens !== undefined && run.contextBudgetTokens > 0) {
+      return run.contextBudgetTokens;
+    }
+    return run.tokenBudget;
   }
 
   private static recoveryEvent(

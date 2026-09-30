@@ -81,6 +81,19 @@ export class ConversationDraftCoordinator {
     );
   }
 
+  async resumeClarification(
+    sessionId: string,
+    runId: string,
+    topicId: string,
+  ): Promise<NoteDraftReadyEvent> {
+    return await this.executeEvent(
+      sessionId,
+      'resume-clarification',
+      (ref: ConversationRunRef): Promise<NoteDraftReadyEvent> =>
+        this.workflow.resumeNoteContextClarification(ref, runId, topicId),
+    );
+  }
+
   async cancel(sessionId: string, runId: string): Promise<void> {
     await this.executeVoid(
       sessionId,

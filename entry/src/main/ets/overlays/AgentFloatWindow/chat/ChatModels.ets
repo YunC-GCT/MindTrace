@@ -26,7 +26,7 @@ import {
   copyNoteReviewAnswer,
 } from '../../../models/NoteReviewModels'
 import { NoteEvidenceCitation, NoteEvidenceRole } from '../../../models/NoteEvidenceModels'
-import type { StreamEvent } from 'common'
+import type { NoteContextClarification, NoteTopicCandidate, StreamEvent } from 'common'
 import {
   AgentRunPart,
   AgentRunPartStatus,
@@ -77,6 +77,9 @@ export interface ChatMsg {
   // 笔记可追溯复习回答元数据;旧会话缺失或损坏时按可选字段丢弃
   noteReview?: NoteReviewAnswer
 
+  // 多主题笔记生成澄清卡片;旧会话缺失或损坏时按可选字段丢弃
+  noteContextClarification?: NoteContextClarification
+
 }
 
 export function chatItemKey(message: ChatMsg): string {
@@ -86,7 +89,8 @@ export function chatItemKey(message: ChatMsg): string {
   const streamingPart: string = message.streaming ? '_streaming1' : '_streaming0'
   const runPart: string = '_run' + agentRunRevision(chatMessageRunParts(message))
   const reviewPart: string = '_review' + noteReviewRevision(message.noteReview)
-  return idPart + contentLengthPart + reasoningLengthPart + streamingPart + runPart + reviewPart
+  const clarificationPart: string = '_clarification' + noteContextClarificationRevision(message.noteContextClarification)
+  return idPart + contentLengthPart + reasoningLengthPart + streamingPart + runPart + reviewPart + clarificationPart
 }
 
 export function chatMessageReasoning(message: ChatMsg): string {
@@ -116,6 +120,11 @@ export function copyChatMsgForMemory(message: ChatMsg): ChatMsg {
   const noteReview: NoteReviewAnswer | undefined = sanitizeNoteReviewAnswer(message.noteReview)
   if (noteReview !== undefined) {
     next.noteReview = noteReview
+  }
+  const clarification: NoteContextClarification | undefined =
+    sanitizeNoteContextClarification(message.noteContextClarification)
+  if (clarification !== undefined) {
+    next.noteContextClarification = clarification
   }
   copyMessageMetadata(message, next)
   return next
@@ -150,6 +159,11 @@ export function copyChatMsgForPersistence(message: ChatMsg): ChatMsg {
   const noteReview: NoteReviewAnswer | undefined = sanitizeNoteReviewAnswer(message.noteReview)
   if (noteReview !== undefined) {
     next.noteReview = noteReview
+  }
+  const clarification: NoteContextClarification | undefined =
+    sanitizeNoteContextClarification(message.noteContextClarification)
+  if (clarification !== undefined) {
+    next.noteContextClarification = clarification
   }
   copyMessageMetadata(message, next)
   return next
@@ -328,6 +342,70 @@ export function setChatMsgNoteReviewFeedbackValue(
   return next
 }
 
+export function applyNoteContextClarificationToChatMsg(
+  message: ChatMsg,
+  clarification: NoteContextClarification,
+): ChatMsg {
+  const safeClarification: NoteContextClarification | undefined = sanitizeNoteContextClarification(clarification)
+  if (safeClarification === undefined) {
+    return copyChatMsgForMemory(message)
+  }
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.noteContextClarification = safeClarification
+  return next
+}
+
+export function selectChatMsgNoteTopic(message: ChatMsg, topicId: string): ChatMsg {
+  const clarification: NoteContextClarification | undefined =
+    sanitizeNoteContextClarification(message.noteContextClarification)
+  if (clarification === undefined || clarification.status !== 'pending') {
+    return copyChatMsgForMemory(message)
+  }
+  let matched: boolean = false
+  for (const candidate of clarification.candidates) {
+    if (candidate.id === topicId) {
+      matched = true
+    }
+  }
+  if (!matched) {
+    return copyChatMsgForMemory(message)
+  }
+  const nextClarification: NoteContextClarification = {
+    runId: clarification.runId,
+    instruction: clarification.instruction,
+    status: 'selected',
+    candidates: copyNoteTopicCandidates(clarification.candidates),
+    selectedTopicId: topicId,
+    createdAt: clarification.createdAt,
+  }
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.noteContextClarification = nextClarification
+  return next
+}
+
+export function resetChatMsgNoteTopicSelection(
+  message: ChatMsg,
+  runId: string,
+  topicId: string,
+): ChatMsg {
+  const clarification: NoteContextClarification | undefined =
+    sanitizeNoteContextClarification(message.noteContextClarification)
+  if (clarification === undefined || clarification.runId !== runId
+    || clarification.status !== 'selected' || clarification.selectedTopicId !== topicId) {
+    return copyChatMsgForMemory(message)
+  }
+  const pending: NoteContextClarification = {
+    runId: clarification.runId,
+    instruction: clarification.instruction,
+    status: 'pending',
+    candidates: copyNoteTopicCandidates(clarification.candidates),
+    createdAt: clarification.createdAt,
+  }
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  next.noteContextClarification = pending
+  return next
+}
+
 export function sanitizeNoteReviewAnswer(review: NoteReviewAnswer | null | undefined): NoteReviewAnswer | undefined {
   if (review === undefined || review === null || Array.isArray(review)) {
     return undefined
@@ -410,6 +488,94 @@ function noteReviewRevision(review: NoteReviewAnswer | undefined): string {
   return safeReview.intent + ':' + safeReview.status + ':' + safeReview.citations.length.toString()
     + ':' + (safeReview.feedback === undefined ? 'none' : safeReview.feedback)
     + ':' + safeReview.createdAt.toString()
+}
+
+export function sanitizeNoteContextClarification(
+  clarification: NoteContextClarification | null | undefined,
+): NoteContextClarification | undefined {
+  if (clarification === undefined || clarification === null || Array.isArray(clarification)) {
+    return undefined
+  }
+  if (typeof clarification.runId !== 'string'
+    || typeof clarification.instruction !== 'string'
+    || typeof clarification.createdAt !== 'number'
+    || !isNoteContextClarificationStatus(clarification.status)
+    || !Array.isArray(clarification.candidates)) {
+    return undefined
+  }
+  const candidates: NoteTopicCandidate[] = []
+  for (const candidate of clarification.candidates) {
+    const safeCandidate: NoteTopicCandidate | undefined = sanitizeNoteTopicCandidate(candidate)
+    if (safeCandidate === undefined) {
+      return undefined
+    }
+    candidates.push(safeCandidate)
+  }
+  if (clarification.selectedTopicId !== undefined && typeof clarification.selectedTopicId !== 'string') {
+    return undefined
+  }
+  const checked: NoteContextClarification = {
+    runId: clarification.runId,
+    instruction: clarification.instruction,
+    status: clarification.status,
+    candidates: candidates,
+    createdAt: clarification.createdAt,
+  }
+  if (clarification.selectedTopicId !== undefined) {
+    checked.selectedTopicId = clarification.selectedTopicId
+  }
+  return checked
+}
+
+function sanitizeNoteTopicCandidate(candidate: NoteTopicCandidate): NoteTopicCandidate | undefined {
+  if (candidate === undefined || candidate === null || Array.isArray(candidate)) {
+    return undefined
+  }
+  if (typeof candidate.id !== 'string'
+    || typeof candidate.displayName !== 'string'
+    || typeof candidate.confidence !== 'number'
+    || !Array.isArray(candidate.sourceIds)) {
+    return undefined
+  }
+  const sourceIds: string[] = []
+  for (const sourceId of candidate.sourceIds) {
+    if (typeof sourceId !== 'string') {
+      return undefined
+    }
+    sourceIds.push(sourceId)
+  }
+  return {
+    id: candidate.id,
+    displayName: candidate.displayName,
+    sourceIds: sourceIds,
+    confidence: candidate.confidence,
+  }
+}
+
+function copyNoteTopicCandidates(candidates: NoteTopicCandidate[]): NoteTopicCandidate[] {
+  const copied: NoteTopicCandidate[] = []
+  for (const candidate of candidates) {
+    copied.push({
+      id: candidate.id,
+      displayName: candidate.displayName,
+      sourceIds: candidate.sourceIds.slice(0),
+      confidence: candidate.confidence,
+    })
+  }
+  return copied
+}
+
+function noteContextClarificationRevision(clarification: NoteContextClarification | undefined): string {
+  const safeClarification: NoteContextClarification | undefined = sanitizeNoteContextClarification(clarification)
+  if (safeClarification === undefined) {
+    return 'none'
+  }
+  return safeClarification.runId + ':' + safeClarification.status + ':'
+    + (safeClarification.selectedTopicId ?? 'none') + ':' + safeClarification.candidates.length.toString()
+}
+
+function isNoteContextClarificationStatus(value: string): boolean {
+  return value === 'pending' || value === 'selected' || value === 'cancelled'
 }
 
 function isNoteReviewIntent(value: NoteReviewIntent): boolean {
