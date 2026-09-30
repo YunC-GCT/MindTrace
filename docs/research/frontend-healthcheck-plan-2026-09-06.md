@@ -159,7 +159,7 @@ Phase C (高风险, 单 PR):
 
 > 这些资料不到位, 任何 PR 都不开工 (除 C0 已落地)
 
-1. **真机验收 C0**: 按 [demo-script-2026-09-06.md §2 步骤 3](../../agents/demo-script-2026-09-06.md) 走一遍"AI 对话→笔记入库"
+1. **真机验收 C0**: 按 [demo-script-2026-09-06.md §2 步骤 3](../agents/demo-script-2026-09-06.md) 走一遍"AI 对话→笔记入库"
 2. **动效设计裁决**: C7 的呼吸周期 + ReviewGraphView 时长迁移 + 按压反馈 scope (见 §1 C7 触发条件)
 3. **API 兼容性检查**: C4 的 @StorageProp 在 API 24 (HarmonyOS 6.1.1) 的官方 d.ts 行为
 4. **spec 012 收口计划**: C1 + C2 + C5 是一组 spec 012 后续 PR (PR1-PR3?), 给出顺序与边界

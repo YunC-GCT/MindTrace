@@ -1,8 +1,8 @@
 # PR2-T1 — feat(common): 新增 provider 预设 + CustomVendorConfig + vendorId/customVendorConfig 字段
 
 > **分支**:`bugfix/llm-config-audit-2026-09-06`
-> **Spec**:[016](../specs/016-llm-settings-redesign.md)
-> **源 ADR**:[0013](../adr/0013-llm-provider-presets.md)
+> **Spec**:[016](../../../specs/016-llm-settings-redesign.md)
+> **源 ADR**:[0013](../../../adr/0013-llm-provider-presets.md)
 > **依赖**:PR1(AssetStoreKit 必须先做,本 PR 增加 vendor 字段也涉及 LlmConfig)
 > **工作量**:1 新建文件 + LlmConfig 增加 4 个方法 + 5 个单元测试
 > **风险**:低(增量改动,不影响旧 API)
@@ -10,7 +10,7 @@
 
 ## 为什么
 
-详见 [ADR 0013 §背景](../adr/0013-llm-provider-presets.md#背景)。
+详见 [ADR 0013 §背景](../../../adr/0013-llm-provider-presets.md#背景)。
 
 ## 改动
 

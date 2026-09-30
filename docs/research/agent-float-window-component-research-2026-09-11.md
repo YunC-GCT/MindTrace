@@ -354,8 +354,8 @@ AgentFloatWindow 是一个**健康的自绘聊天浮窗**: 11 文件 1124 行, �
 - A parallel design conversation (spec 021 + render-jank research) proposes dropping `content.length` / `reasoning.length` from `chatItemKey` entirely (third position: `id` only, or `id + streaming`). That is **not** part of the #111 slice and is intentionally not adopted here; the 2026-09-13 UI Amendment's choice to keep length-based keys (so the pure-thinking phase does not freeze) and drop only `reasoningExpanded` is a deliberate middle ground.
 
 ### Cross-references after reconciliation
-- Spec: [`docs/specs/019-reasoning-process-display-p0.md`](../../specs/019-reasoning-process-display-p0.md)
-- ADR: [`docs/adr/0015-structured-stream-events.md`](../../adr/0015-structured-stream-events.md)
+- Spec: [`docs/specs/019-reasoning-process-display-p0.md`](../specs/019-reasoning-process-display-p0.md)
+- ADR: [`docs/adr/0015-structured-stream-events.md`](../adr/0015-structured-stream-events.md)
 - Implementation: [`ChatModels.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets), [`ChatBubble.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets), [`AgentFloatWindow.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets)
 
 > 2026-09-13 reconciliation note appended by two-axis code review (no overwrite of the original 2026-09-11 findings, per AGENTS.md red line 3).

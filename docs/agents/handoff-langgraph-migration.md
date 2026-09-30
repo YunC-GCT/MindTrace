@@ -21,7 +21,7 @@
 
 ## 启动前必做(3 步)
 
-1. **读** [`docs/research/langgraph-migration-2026-09-02.md`](../research/langgraph-migration-2026-09-02.md) — 10 节完整研究,这是入口
+1. **读** [`docs/research/langgraph-migration-2026-09-02.md`](../legacy/mindtrace/research/langgraph-migration-2026-09-02.md)（历史参考）— 10 节完整研究,这是入口
 2. **读** [`CONTEXT.md`](../../../CONTEXT.md) — 19 个 MindTrace 术语(项目专属)
 3. **读** [`docs/agents/agent-glossary.md`](../agents/agent-glossary.md) — 通用 agent 术语(Node, Edge, State, Checkpoint 等)
 

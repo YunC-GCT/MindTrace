@@ -4,7 +4,7 @@
 
 > **Session 范围**: 2026-09-19 ~ 2026-09-20 · P1「JSON 生命周期统一」+ 冒烟期 P0-1~P0-7 修复 + 失败根因终局取证
 > **状态**: P0-7 已构建并部署到模拟器; 用户复测**仍失败** —— 两道 hard 闸门根因已实锤定位, 修复按用户指示冻结（"别修了, 告诉我原因"）
-> **权威进度日志**: [docs/plans/knowledge-model-decomposition-plan.md](../plans/knowledge-model-decomposition-plan.md) §23.1-23.13（1733 行, UTF-8）。本文是索引与结论, 逐补丁细节以 §23 为准
+> **权威进度日志**: docs/plans/knowledge-model-decomposition-plan.md（原文未随仓库保留）§23.1-23.13（1733 行, UTF-8）。本文是索引与结论, 逐补丁细节以 §23 为准
 > **用途**: 复盘 / 代码整合 / 对接
 
 ---

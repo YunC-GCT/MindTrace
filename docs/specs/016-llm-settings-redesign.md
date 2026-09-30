@@ -2,7 +2,7 @@
 
 > **状态**: draft (2026-09-06)
 > **源 ADR**: [0013](../adr/0013-llm-provider-presets.md)、[0014](../adr/0014-asset-store-kit-migration.md)
-> **调研依据**: [docs/research/llm-provider-patterns-2026-09-06.md](../research/llm-provider-patterns-2026-09-06.md)
+> **调研依据**: docs/research/llm-provider-patterns-2026-09-06.md（原文未随仓库保留）
 > **作者**: 主线程(grilling + research)
 > **最后更新**: 2026-09-06
 

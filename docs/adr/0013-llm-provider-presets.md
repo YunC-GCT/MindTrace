@@ -6,7 +6,7 @@
 
 AI 设置页(2026-09-06 用户反馈)三大痛点之一:**UI 不尽人意,缺少国内大模型厂商列表**。当前 `entry/src/main/ets/pages/AiSettings/EndpointPicker.ets` 只有 2 个选项:DeepSeek 官方 + 自定义 OpenAI 兼容端点。
 
-调研 [docs/research/llm-provider-patterns-2026-09-06.md](../research/llm-provider-patterns-2026-09-06.md) §6 给出 5 个 seam 候选。本 ADR 决策 **seam #3** 的具体设计:静态 const + factory + provider 预设表。
+调研 docs/research/llm-provider-patterns-2026-09-06.md（原文未随仓库保留）§6 给出 5 个 seam 候选。本 ADR 决策 **seam #3** 的具体设计:静态 const + factory + provider 预设表。
 
 ## 候选方案
 
@@ -53,7 +53,7 @@ AI 设置页(2026-09-06 用户反馈)三大痛点之一:**UI 不尽人意,缺少
 
 - [spec 016](../specs/016-llm-settings-redesign.md) — 实施 spec
 - [ADR 0014](./0014-asset-store-kit-migration.md) — 凭据存储升级(配套)
-- [research §6 seam 候选](../research/llm-provider-patterns-2026-09-06.md#6-seam-候选) — 5 个候选
+- research §6 seam 候选（原文未随仓库保留）— 5 个候选
 - [frontend-component-audit-2026-09-06.md §5 finding 5](../research/frontend-component-audit-2026-09-06.md) — AiSettings 9 子件不上收(本 ADR 不上收)
 
 ## 最后更新

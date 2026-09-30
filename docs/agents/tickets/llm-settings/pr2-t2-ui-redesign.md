@@ -1,8 +1,8 @@
 # PR2-T2 — feat(entry): AiSettings 页 UI 重构,引入 VendorPicker + CustomVendorForm
 
 > **分支**:`bugfix/llm-config-audit-2026-09-06`
-> **Spec**:[016](../specs/016-llm-settings-redesign.md)
-> **源 ADR**:[0013](../adr/0013-llm-provider-presets.md)
+> **Spec**:[016](../../../specs/016-llm-settings-redesign.md)
+> **源 ADR**:[0013](../../../adr/0013-llm-provider-presets.md)
 > **依赖**:PR2-T1(provider 预设必须先有)
 > **工作量**:2 新建 + 5 修改 + ViewModel 改造 + OCR 完全不动
 > **风险**:中(UI 重组,需仔细保留 OCR)
