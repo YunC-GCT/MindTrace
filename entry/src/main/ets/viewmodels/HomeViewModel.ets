@@ -16,22 +16,33 @@ export class HomeViewModel {
   avg: number = 0
   today: number = 0
 
-  async init(context: Context): Promise<boolean> {
+  async init(
+    context: Context,
+    version: number = UiDataCacheService.currentNotesVersion(),
+  ): Promise<boolean> {
     this.greeting = this.greet()
     this.dateText = this.dateStr()
-    return this.loadNotes(context)
+    return this.loadNotes(context, version)
   }
 
-  async loadNotes(context: Context): Promise<boolean> {
+  async loadNotes(
+    context: Context,
+    version: number = UiDataCacheService.currentNotesVersion(),
+  ): Promise<boolean> {
     try {
-      const version: number = UiDataCacheService.currentNotesVersion()
       const snapshot: NotesSnapshot = await UiDataCacheService.loadNotesSnapshot(context, version)
+      if (UiDataCacheService.currentNotesVersion() !== version) {
+        return true
+      }
       this.units = snapshot.units
       this.notes = snapshot.notes
       this.refreshStats()
       PreloadQueue.preloadHome(context)
       return true
     } catch (e) {
+      if (UiDataCacheService.currentNotesVersion() !== version) {
+        return true
+      }
       console.warn("[HomeViewModel] loadNotes failed: " + ((e as Error).message ?? String(e)))
       this.units = []
       this.notes = []
@@ -54,12 +65,10 @@ export class HomeViewModel {
 
   async deleteNote(context: Context, id: string): Promise<boolean> {
     try {
-      UiDataCacheService.invalidateNote(id)
       const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       await new NoteDao(store).deleteById(id)
-      const version: number = UiDataCacheService.currentNotesVersion()
-      AppStorage.setOrCreate("notesVersion", version + 1)
-      return await this.loadNotes(context)
+      const version: number = UiDataCacheService.notifyNoteChanged(id)
+      return await this.loadNotes(context, version)
     } catch (e) {
       console.warn("[HomeViewModel] deleteNote failed: " + ((e as Error).message ?? String(e)))
       return false

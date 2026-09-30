@@ -54,15 +54,18 @@ struct SubjectDetailPage {
   }
 
   private reloadNotes(): void {
-    const version: number = AppStorage.get<number>("notesVersion") ?? 0
+    const version: number = this.notesVersion
     const reloadKey: string = version.toString() + "|" + this.subject
     if (this.loadedReloadKey === reloadKey || this.loadingReloadKey === reloadKey) {
       return
     }
     this.loadingReloadKey = reloadKey
-    this.vm.loadNotes(getContext(this)).then((ok: boolean): void => {
-      if (!ok) {
+    this.vm.loadNotes(getContext(this), version).then((ok: boolean): void => {
+      if (!ok && this.notesVersion === version) {
         try { promptAction.showToast({ message: "笔记加载失败", duration: 1500 }) } catch (_e) {}
+        return
+      }
+      if (this.notesVersion !== version) {
         return
       }
       this.ensureSubject()

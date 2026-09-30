@@ -14,9 +14,8 @@ import { DatabaseHelper } from 'common';
 import { NoteDao } from '../database/NoteDao';
 import { KnowledgeUnitPostCommitEffect } from '../models/KnowledgeUnitWriteModels';
 import {
-  KnowledgeUnitCacheInvalidationEffect,
   KnowledgeUnitCardRefreshEffect,
-  KnowledgeUnitNotesVersionEffect,
+  KnowledgeUnitNotesChangedEffect,
 } from './KnowledgeUnitPostCommitEffects';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
 
@@ -25,8 +24,7 @@ export class KnowledgeUnitWriteServiceFactory {
     const existing: relationalStore.RdbStore | null = DatabaseHelper.getStore();
     const store: relationalStore.RdbStore = existing !== null ? existing : await DatabaseHelper.init(context);
     const effects: KnowledgeUnitPostCommitEffect[] = [
-      new KnowledgeUnitCacheInvalidationEffect(),
-      new KnowledgeUnitNotesVersionEffect(),
+      new KnowledgeUnitNotesChangedEffect(),
       new KnowledgeUnitCardRefreshEffect(context),
     ];
     return new KnowledgeUnitWriteService(new NoteDao(store), effects);

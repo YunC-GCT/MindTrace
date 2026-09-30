@@ -68,7 +68,7 @@ test('callers do not duplicate centralized notesVersion and cache side effects',
   assert.doesNotMatch(conversation, /this\.cbs\.bumpNotesVersion\(\)/);
   assert.doesNotMatch(conversationTypes, /bumpNotesVersion/);
   assert.doesNotMatch(chatService, /bumpNotesVersion/);
-  assert.match(effects, /UiDataCacheService\.invalidateNote\(unit\.id\)/);
-  assert.match(effects, /AppStorage\.setOrCreate\('notesVersion', version \+ 1\)/);
+  assert.match(effects, /UiDataCacheService\.notifyNoteChanged\(unit\.id\)/);
+  assert.doesNotMatch(effects, /AppStorage\.setOrCreate\('notesVersion'/);
   assert.match(effects, /CardSnapshotService\.refresh\(this\.context\)/);
 });

@@ -13,7 +13,7 @@
  * ArkTS 1.1 strict 适配:
  *   - 无 any/unknown
  *   - 无 C 风格 for
- *   - struct 内只使用 @Builder
+ *   - 动态指标使用 @Prop 子组件保持响应式依赖
  */
 
 import {
@@ -25,16 +25,6 @@ import {
   borderToneColor,
 } from "common"
 import { SubjectGroup } from "../../viewmodels/NotesViewModel"
-
-class SummaryMetric {
-  label: string
-  value: string
-
-  constructor(label: string, value: string) {
-    this.label = label
-    this.value = value
-  }
-}
 
 function topSubjectGroups(groups: SubjectGroup[]): SubjectGroup[] {
   const result: SubjectGroup[] = []
@@ -48,12 +38,30 @@ function topSubjectGroups(groups: SubjectGroup[]): SubjectGroup[] {
   return result
 }
 
-function metrics(totalCount: number, subjectCount: number, weeklyNewCount: number): SummaryMetric[] {
-  return [
-    new SummaryMetric("全部笔记", totalCount.toString()),
-    new SummaryMetric("学科分组", subjectCount.toString()),
-    new SummaryMetric("本周新增", weeklyNewCount.toString()),
-  ]
+@Component
+struct SummaryMetricCell {
+  @Prop value: number = 0
+  @Prop label: string = ""
+
+  build() {
+    Column() {
+      Text(this.value.toString())
+        .fontSize(F_MD + 2)
+        .fontWeight(W_BOLD)
+        .fontColor(TEXT)
+        .maxLines(1)
+      Text(this.label)
+        .fontSize(F_XS)
+        .fontWeight(W_SEMIBOLD)
+        .fontColor(TEXT_2)
+        .maxLines(1)
+        .margin({ top: 2 })
+    }
+    .layoutWeight(1)
+    .height(44)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
 }
 
 @Component
@@ -66,18 +74,11 @@ export struct NotesSummaryPanel {
   build() {
     Column() {
       Row() {
-        ForEach(metrics(this.totalCount, this.subjectCount, this.weeklyNewCount),
-          (item: SummaryMetric, index: number): void => {
-            if (index > 0) {
-              Row()
-                .width(1)
-                .height(28)
-                .backgroundColor(GLASS_8)
-            }
-            this.MetricCell(item)
-          },
-          (item: SummaryMetric): string => item.label
-        )
+        SummaryMetricCell({ value: this.totalCount, label: "全部笔记" })
+        this.MetricDivider()
+        SummaryMetricCell({ value: this.subjectCount, label: "学科分组" })
+        this.MetricDivider()
+        SummaryMetricCell({ value: this.weeklyNewCount, label: "本周新增" })
       }
       .width("100%")
       .height(44)
@@ -93,7 +94,7 @@ export struct NotesSummaryPanel {
                 .backgroundColor(borderToneColor(group.color))
                 .layoutWeight(group.count)
             },
-            (group: SubjectGroup): string => group.subject + "_bar"
+            (group: SubjectGroup): string => group.subject + "_" + group.count.toString() + "_bar"
           )
         }
         .width("100%")
@@ -124,7 +125,7 @@ export struct NotesSummaryPanel {
               .margin({ right: S_3, top: S_1 })
               .alignItems(VerticalAlign.Center)
             },
-            (group: SubjectGroup): string => group.subject + "_legend"
+            (group: SubjectGroup): string => group.subject + "_" + group.count.toString() + "_legend"
           )
         }
         .width("100%")
@@ -144,23 +145,10 @@ export struct NotesSummaryPanel {
   }
 
   @Builder
-  MetricCell(item: SummaryMetric) {
-    Column() {
-      Text(item.value)
-        .fontSize(F_MD + 2)
-        .fontWeight(W_BOLD)
-        .fontColor(TEXT)
-        .maxLines(1)
-      Text(item.label)
-        .fontSize(F_XS)
-        .fontWeight(W_SEMIBOLD)
-        .fontColor(TEXT_2)
-        .maxLines(1)
-        .margin({ top: 2 })
-    }
-    .layoutWeight(1)
-    .height(44)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
+  MetricDivider() {
+    Row()
+      .width(1)
+      .height(28)
+      .backgroundColor(GLASS_8)
   }
 }

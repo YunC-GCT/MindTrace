@@ -31,10 +31,15 @@ export class NotesViewModel {
   subjectGroups: SubjectGroup[] = []
   weeklyNewCount: number = 0
 
-  async loadNotes(context: Context): Promise<boolean> {
+  async loadNotes(
+    context: Context,
+    version: number = UiDataCacheService.currentNotesVersion(),
+  ): Promise<boolean> {
     try {
-      const version: number = UiDataCacheService.currentNotesVersion()
       const snapshot: NotesSnapshot = await UiDataCacheService.loadNotesSnapshot(context, version)
+      if (UiDataCacheService.currentNotesVersion() !== version) {
+        return true
+      }
       this.units = snapshot.units
       this.notes = snapshot.notes
       const cachedGroups: SubjectGroup[] | null = UiDataCacheService.getSubjectGroups(version)
@@ -47,6 +52,9 @@ export class NotesViewModel {
       this.weeklyNewCount = this.countRecentNotes(this.notes, 7)
       return true
     } catch (e) {
+      if (UiDataCacheService.currentNotesVersion() !== version) {
+        return true
+      }
       console.warn("[NotesViewModel] loadNotes failed: " + ((e as Error).message ?? String(e)))
       this.units = []
       this.notes = []
@@ -70,12 +78,10 @@ export class NotesViewModel {
 
   async deleteNote(context: Context, id: string): Promise<boolean> {
     try {
-      UiDataCacheService.invalidateNote(id)
       const store: relationalStore.RdbStore = await DatabaseHelper.init(context)
       await new NoteDao(store).deleteById(id)
-      const version: number = UiDataCacheService.currentNotesVersion()
-      AppStorage.setOrCreate("notesVersion", version + 1)
-      return await this.loadNotes(context)
+      const version: number = UiDataCacheService.notifyNoteChanged(id)
+      return await this.loadNotes(context, version)
     } catch (e) {
       console.warn("[NotesViewModel] deleteNote failed: " + ((e as Error).message ?? String(e)))
       return false
