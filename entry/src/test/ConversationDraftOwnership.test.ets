@@ -40,11 +40,15 @@ class RecordingDraftHost implements IConversationDraftWorkflowHost {
 
 class FixedDraftGateway implements IConversationDraftGateway {
   private readonly event: NoteDraftReadyEvent;
+  confirmed: number = 0;
 
   constructor(event: NoteDraftReadyEvent) { this.event = event; }
 
   async restore(_runId: string): Promise<NoteDraftReadyEvent> { return this.event; }
-  async confirm(_event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> { return candidate; }
+  async confirm(_event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
+    this.confirmed += 1;
+    return candidate;
+  }
   async cancel(_runId: string): Promise<void> {}
   async retry(_runId: string): Promise<NoteDraftReadyEvent> { return this.event; }
   async listRecoverable(): Promise<NoteGenerationRun[]> { return []; }
@@ -91,6 +95,31 @@ async function restoreError(owner: string | null): Promise<string> {
 
 export default function conversationDraftOwnershipTest(): void {
   describe('ConversationDraftOwnership.issue173_behavior', () => {
+    it('should confirm a draft after rechecking persisted ownership', 0, async () => {
+      const event: NoteDraftReadyEvent = draftEvent('session-a');
+      const gateway: FixedDraftGateway = new FixedDraftGateway(event);
+      const workflow: ConversationDraftWorkflow = ConversationDraftWorkflow.create(new RecordingDraftHost(), gateway);
+      const ref: ConversationRunRef = { sessionId: 'session-a', runId: 'conversation-a' };
+      const restored: NoteDraftReadyEvent = await workflow.restore(ref, event.runId);
+      const committed: KnowledgeUnit = await workflow.confirm(ref, restored, restored.candidate);
+      expect(committed.id).assertEqual('note-ownership');
+      expect(gateway.confirmed).assertEqual(1);
+    });
+
+    it('should not confirm when persisted ownership was lost after preview', 0, async () => {
+      const event: NoteDraftReadyEvent = draftEvent('session-a');
+      const gateway: FixedDraftGateway = new FixedDraftGateway(draftEvent(null));
+      const workflow: ConversationDraftWorkflow = ConversationDraftWorkflow.create(new RecordingDraftHost(), gateway);
+      let errorMessage: string = '';
+      try {
+        await workflow.confirm({ sessionId: 'session-a', runId: 'conversation-a' }, event, event.candidate);
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+      }
+      expect(errorMessage).assertEqual('DETACHED_DRAFT_REQUIRES_RECOVERY_ENTRY');
+      expect(gateway.confirmed).assertEqual(0);
+    });
+
     it('should reject a draft with empty ownership', 0, async () => {
       expect(await restoreError(null)).assertEqual('DETACHED_DRAFT_REQUIRES_RECOVERY_ENTRY');
     });

@@ -26,6 +26,7 @@ export function createRuntime(respond = () => { throw new Error('Unexpected LLM 
   const common = {};
   const options = { cache: new Map(), globals: { Error }, mocks: {
     common,
+    'common/src/main/ets/Index': common,
     'common/src/main/ets/llm/LlmClient.ets': { LlmClient },
     '@ohos.hilog': { debug() {}, info() {}, warn() {}, error() {} },
     '@kit.ArkData': { preferences: unavailable },

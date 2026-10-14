@@ -2,7 +2,7 @@
  * CaptureStructurer.ets — Capture 结构化业务闭包
  *
  * 路径: agents/src/main/ets/agents/CaptureStructurer.ets
- * 职责: 承载分类 hint、classic LLM 结构化、响应校验归一化和 KnowledgeUnit 投影。
+ * 职责: 承载分类 hint、classic LLM 结构化、响应校验归一化和 Capture / 草稿的 KnowledgeUnit 投影。
  * 依赖: common/src/main/ets/Index、TypeClassifier、PromptBuilder、GenerationJsonCaller
  *
  * 数据流:
@@ -11,12 +11,7 @@
  * 第一阶段只做行为保持的文件提取；TruthCheck 仍由 Capture workflow Node 负责。
  */
 import type { KnowledgeCategory } from '../models/KnowledgeCategory';
-import {
-  KnowledgeUnitExt,
-  createUnitExt,
-  StructuredField,
-  AiRawResponse,
-} from '../models/KnowledgeUnitExt';
+import { KnowledgeUnitExt, createUnitExt, StructuredField, AiRawResponse } from '../models/KnowledgeUnitExt';
 import {
   DifficultyLevel,
   ContentExcerptBuilder,
@@ -27,70 +22,24 @@ import {
   LlmError,
   LlmGuard,
   LlmClient,
-  LlmConfig,
   normalizeNoteType,
   NOTE_TYPE_KEYS,
   ReviewStatus,
-  normalizeOutline,
-  normalizeDraftCategory,
-  normalizeDraftSummary,
-  normalizeLightDraft,
   normalizeDraftSectionLabel,
   normalizeDraftDifficulty,
-  segmentSourceBundle,
-  buildDeepOutline,
-  buildPipelineEvidence,
-  sourceFingerprint,
-  validateSourceBundle,
-  NoteGenerationArtifactValidator,
-  buildNoteVerificationJsonSchema,
-  NOTE_OUTLINE_SCHEMA_VERSION,
-  NOTE_DRAFT_SCHEMA_VERSION,
-  NOTE_STANDARD_JSON_SCHEMA,
-} from 'common';
+} from 'common/src/main/ets/Index';
 import type {
   ChatMessage,
   ClassificationResult,
   ContentValidationResult,
   KnowledgeUnit,
   LlmGuardJsonResult,
-  LlmGuardJsonExtractionResult,
-  LlmGuardJsonCandidate,
   LlmGuardValidationResult,
   LlmCaller,
-  LlmJsonSchema,
-  LlmResponseFormat,
   NoteDraftDocument,
-  NoteDraftSection,
-  NoteGenerationIssue,
-  NoteGenerationRequest,
-  NoteGenerationOutline,
-  NoteGenerationOutlineSection,
-  NoteGenerationEvidenceCandidate,
-  EvidenceCandidateSourceRef,
-  NoteGenerationEvidenceItem,
-  EvidenceSourceRef,
-  EvidenceItemType,
-  EvidenceVerificationStatus,
-  NoteGenerationEvidenceDecision,
-  NoteGenerationStandardResult,
-  NoteGenerationDeepResult,
-  NoteGenerationSegment,
-  NoteGenerationLedger,
-  NoteGenerationLedgerEntry,
-  NoteGenerationVerification,
-  NoteGenerationProgressEvent,
-  NoteGenerationProgressSink,
-  SourceBundle,
-  NoteGenerationRequirement,
-  IncrementalPlan,
-  IncrementalSection,
-  IncrementalPatch,
-  IncrementalPatchResponse,
-  SourceFragment,
   CancellationToken,
-} from 'common';
-import { NOTE_DRAFT_JSON_SCHEMA, normalizeDeepSectionDraft, normalizeEvidenceItems, parseDirectStandardArtifacts, validateDraftDocument, validateDraftShape } from 'common';
+} from 'common/src/main/ets/Index';
+
 import { TypeClassifier } from './TypeClassifier';
 import { GenerationJsonCaller } from './GenerationJsonCaller';
 import {
@@ -103,20 +52,6 @@ import {
   KNOWLEDGE_TIMEOUT_MS,
   PromptBuilder,
 } from './PromptBuilder';
-
-/** deep ledger 单条 value 上限 (字符): 防止共享 ledger 随节数膨胀推高 prompt (P0-5) */
-const DEEP_LEDGER_VALUE_MAX_CHARS: number = 160;
-
-const NOTE_MATH_REASONING_RULES: string =
-  'Distinguish source givens, derived conclusions, and unconfirmed conditions. '
-  + 'Solve the supplied problem and explain checkable derivation steps; do not merely transcribe it. '
-  + 'You may add relevant definitions and standard theorems, stating their applicability and linking derivations to the source givens. '
-  + 'Never present a derived result or an invented example as a verbatim source quotation. '
-  + 'Do not silently guess unclear symbols, domains, orientations or other key conditions. '
-  + 'If a missing condition changes the answer, state the precise question for the user and keep any resulting answer explicitly conditional. '
-  + 'Before returning, check algebra, signs and consistent normal/boundary orientation; for extrema compare interior and boundary candidates; '
-  + 'verify auxiliary-function derivatives and substitutions. Correct source errors only with an explicit explanation, preserving the original quotation. '
-  + 'Classification confidence is model metadata, not OCR accuracy or mathematical truth.\n';
 
 export class CaptureStructurer {
   private contentProtocol: ContentProtocol = new ContentProtocol();
@@ -208,7 +143,32 @@ export class CaptureStructurer {
     );
   }
 
-  toKnowledgeUnit(ext: KnowledgeUnitExt, createdAt: number, summaryOverride: string = ''): KnowledgeUnit {
+  draftToKnowledgeUnit(document: NoteDraftDocument, source: string): KnowledgeUnit {
+    const fields: StructuredField[] = [];
+    let index: number = 0;
+    for (const section of document.sections) {
+      fields.push({
+        key: section.id,
+        label: normalizeDraftSectionLabel(section.label, index),
+        value: section.content,
+      });
+      index += 1;
+    }
+    const ext: KnowledgeUnitExt = createUnitExt(
+      document.category as KnowledgeCategory,
+      document.subject,
+      document.title,
+      document.summary,
+    );
+    ext.fields = fields;
+    ext.tags = document.tags;
+    ext.difficulty = document.difficulty;
+    ext.source = source;
+    ext.chapter = document.chapter;
+    return this.toKnowledgeUnit(ext, Date.now(), document.summary);
+  }
+
+  private toKnowledgeUnit(ext: KnowledgeUnitExt, createdAt: number, summaryOverride: string = ''): KnowledgeUnit {
     const generatedSummary: string = this.summaryFromFields(ext);
     const summary: string = summaryOverride.trim().length > 0
       ? this.contentExcerptBuilder.buildSummary(summaryOverride, 60)

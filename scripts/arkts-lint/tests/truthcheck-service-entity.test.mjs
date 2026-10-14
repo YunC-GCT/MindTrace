@@ -10,7 +10,7 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const tcs = read('agents/src/main/ets/agents/TruthCheckService.ets');
 const km = read('agents/src/main/ets/agents/KnowledgeModel.ets');
 const captureStructurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
-const draftComposer = read('agents/src/main/ets/agents/DraftComposer.ets');
+const draftVerifier = read('agents/src/main/ets/agents/NoteDraftVerifier.ets');
 const tcsTestPath = resolve(root, 'agents/src/test/TruthCheckService.test.ets');
 
 // Execute production service, node, graph and dispatcher, not a mirror of their rules.
@@ -97,10 +97,10 @@ test('soft verifier advice does not mislabel a hard local gate failure', () => {
 });
 
 test('generation and verification prompts separate derived math from source quotations and metadata', () => {
-  assert.match(captureStructurer, /Distinguish source givens, derived conclusions, and unconfirmed conditions/);
-  assert.match(draftComposer, /Do not reject a valid derivation merely because its conclusion is not verbatim/);
-  assert.match(draftComposer, /confidence metadata alone is not grounds for a hard issue/);
-  assert.match(draftComposer, /Give each issue a Chinese message/);
+  assert.match(read('agents/src/main/ets/agents/GenerationDraftSupport.ets'), /Distinguish source givens, derived conclusions, and unconfirmed conditions/);
+  assert.match(draftVerifier, /Do not reject a valid derivation merely because its conclusion is not verbatim/);
+  assert.match(draftVerifier, /confidence metadata alone is not grounds for a hard issue/);
+  assert.match(draftVerifier, /Give each issue a Chinese message/);
   assert.match(read('entry/src/main/ets/services/AgentMemoryService.ets'), /分类置信度（模型元数据，非 OCR 准确率或数学真值）/);
 });
 

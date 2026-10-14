@@ -347,6 +347,8 @@ export class Dispatcher {
     generation.incrementalInstruction = request.instruction;
     await options.generationRepository.saveRun({
       id: run.id,
+      originSessionId: run.originSessionId,
+      parentConversationRunId: run.parentConversationRunId,
       route: run.route,
       status: 'ready-preview',
       instruction: run.instruction,

@@ -2,6 +2,75 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRuntime, generationRequest, draft, memoryStorage } from './knowledge-dispatch-runtime.mjs';
 
+test('incremental merge permits a general derivative and a chapter-local worked example without patches', () => {
+  const { common } = createRuntime();
+  const content = "## 幂函数求导法则\n$$\nf'(x) = n x^{n-1}\n$$\n\n## 平方例子\n当 n=2 时：\n$$\nf'(x) = 2 x^{2-1} = 2x\n$$";
+  const sections = common.parseIncrementalSections(content);
+  const plan = { noteId: 'scope-regression', baseVersion: 1, targetSectionIds: [],
+    lockedSectionIds: [], existingSourceIds: [], newSourceIds: [], relevantSourceIds: [] };
+  const result = common.mergeIncrementalPatches(sections, plan, []);
+  assert.equal(result.ok, true, result.issues.join(';'));
+  assert.equal(result.sections[0].content, "$$\nf'(x) = n x^{n-1}\n$$");
+  assert.equal(result.sections[1].content, "当 n=2 时：\n$$\nf'(x) = 2 x^{2-1} = 2x\n$$");
+});
+
+test('incremental merge still rejects conflicting equations within one section', () => {
+  const { common } = createRuntime();
+  const sections = common.parseIncrementalSections("## 例子\nf'(x) = 2x\nf'(x) = 3x");
+  const result = common.mergeIncrementalPatches(sections, {
+    noteId: 'scope-regression', baseVersion: 1, targetSectionIds: [], lockedSectionIds: [],
+    existingSourceIds: [], newSourceIds: [], relevantSourceIds: [],
+  }, []);
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.includes('FORMULA_INCONSISTENT:' + sections[0].id));
+});
+
+test('incremental example patch preserves a locked rule and global terminology/reference gates', () => {
+  const { common } = createRuntime();
+  const sections = common.parseIncrementalSections("## 法则\n用户编辑标记\nf'(x) = n x^{n-1}\n术语:导数=变化率\n## 例子\nf'(x) = 2x");
+  sections[0].state = 'locked';
+  const plan = { noteId: 'scope-regression', baseVersion: 2, targetSectionIds: [sections[1].id],
+    lockedSectionIds: [sections[0].id], existingSourceIds: ['source'], newSourceIds: [], relevantSourceIds: ['source'] };
+  const patch = { sectionId: sections[1].id, operation: 'replace',
+    content: "f'(x) = 2x\n先确定指数，再应用法则。", sourceIds: ['source'] };
+  const result = common.mergeIncrementalPatches(sections, plan, [patch]);
+  assert.equal(result.ok, true, result.issues.join(';'));
+  assert.equal(result.sections[0].content, "用户编辑标记\nf'(x) = n x^{n-1}\n术语:导数=变化率");
+  assert.equal(result.diff[0].kind, 'locked');
+  assert.equal(result.sections[1].content, patch.content);
+  const invalid = common.mergeIncrementalPatches(sections, plan, [{ ...patch,
+    content: '术语:导数=面积\n参见不存在的章节',
+  }]);
+  assert.equal(invalid.ok, false);
+  assert.ok(invalid.issues.includes('TERM_INCONSISTENT:' + sections[1].id));
+  assert.ok(invalid.issues.includes('REFERENCE_UNRESOLVED:' + sections[1].id));
+});
+
+test('draft projection compatibility preserves content, metadata and initial review schedule without LLM IO', () => {
+  const runtime = createRuntime();
+  const document = draft();
+  const before = Date.now();
+  const unit = runtime.model.draftToKnowledgeUnit(document, 'note_generation');
+  const after = Date.now();
+  assert.equal(unit.content, '## 定义\n函数在一点连续。\n\n## 原文\n函数连续性的定义');
+  assert.equal(unit.title, '连续性');
+  assert.equal(unit.summary, '函数连续性的定义');
+  assert.equal(unit.category, '概念');
+  assert.equal(unit.subject, '数学分析');
+  assert.equal(unit.chapter, '连续性');
+  assert.equal(unit.difficulty, runtime.common.DifficultyLevel.EASY);
+  assert.equal(unit.source, 'note_generation');
+  assert.equal(unit.reviewStatus, runtime.common.ReviewStatus.NEW);
+  assert.ok(unit.createdAt >= before && unit.createdAt <= after);
+  assert.equal(unit.updatedAt, unit.createdAt);
+  assert.equal(unit.nextReviewAt - unit.createdAt, 86400000);
+  assert.equal(unit.intervalDays, 1);
+  assert.equal(unit.easeFactor, 2.5);
+  assert.equal(unit.repetitions, 0);
+  assert.equal(unit.version, 1);
+  assert.equal(runtime.requests.length, 0);
+});
+
 test('light preview keeps source fallback, transport budget and zero DAO writes', async () => {
   const runtime = createRuntime(() => draft(''));
   const storage = memoryStorage();
@@ -22,11 +91,29 @@ test('light preview keeps source fallback, transport budget and zero DAO writes'
   assert.equal(progress.at(-1).state, 'success');
 });
 
-test('preview confirmation persists before commit receipt and duplicate confirmation is idempotent', async () => {
-  const runtime = createRuntime(() => draft());
+for (const route of ['light', 'standard', 'deep']) {
+test(`${route} preview confirmation persists before commit receipt and duplicate confirmation is idempotent`, async () => {
+  const runtime = createRuntime(request => {
+    if (request.messages[0].content.includes('read-only independent note verifier')) {
+      return { status: 'supported', issues: [], evidenceStatuses: ['supported'] };
+    }
+    if (route === 'standard') return standardResponse();
+    if (route === 'deep') {
+      const value = draft('定义：函数在一点连续。');
+      value.sections[0].label = request.messages[0].content.match(/section label=([^\n]+)/)[1];
+      return value;
+    }
+    return draft();
+  });
   const storage = memoryStorage();
   const options = { generationRepository: storage.repository, dao: storage.dao };
-  const preview = await runtime.dispatcher.dispatch(generationRequest(), options);
+  const previewRequest = generationRequest(route);
+  previewRequest.generation.instruction = '整理材料';
+  const preview = await runtime.dispatcher.dispatch(previewRequest, options);
+  assert.equal(preview.success, true, JSON.stringify(preview));
+  assert.equal(preview.generation.status, 'ready-preview');
+  assert.equal(storage.writes.length, 0);
+  assert.equal(storage.checkpoints.length, 1);
   const checkpoint = storage.checkpoints[0];
   const preparedCandidate = { runId: 'baseline-run', checkpointId: checkpoint.id,
     candidate: preview.data, candidateHash: checkpoint.candidateHash, commitKey: 'baseline-commit' };
@@ -40,8 +127,9 @@ test('preview confirmation persists before commit receipt and duplicate confirma
   assert.equal(duplicate.success, true);
   assert.equal(duplicate.data.id, saved.data.id);
   assert.equal(storage.writes.length, 1);
-  assert.equal(runtime.requests.length, 1);
+  assert.equal(runtime.requests.length, route === 'light' ? 1 : 2);
 });
+}
 
 test('TruthCheck rejects an authenticated but invalid checkpoint before any durable write', async () => {
   const runtime = createRuntime(() => draft());
@@ -294,6 +382,29 @@ test('truncation is non-retriable and never becomes a partial preview', async ()
   assert.match(result.errorMessage, /truncated/);
 });
 
+test('incremental compatibility seam filters inputs and retries invalid patch domains without widening scope', async () => {
+  const runtime = createRuntime((_request, index) => ({ patches: [{
+    sectionId: index === 1 ? 'unplanned' : 'target', operation: 'replace',
+    content: '更新内容', sourceIds: ['allowed'],
+  }] }));
+  const request = generationRequest().generation;
+  request.tokenBudget = 900;
+  const plan = { targetSectionIds: ['target'], relevantSourceIds: ['allowed'] };
+  const sections = [{ id: 'target', content: 'TARGET_INPUT' }, { id: 'locked', content: 'EXCLUDED_SECTION' }];
+  const sources = [{ id: 'allowed', text: 'ALLOWED_SOURCE' }, { id: 'excluded', text: 'EXCLUDED_SOURCE' }];
+  const result = await runtime.model.repairIncrementalSections(request, plan, sections, sources);
+  assert.equal(result.patches[0].sectionId, 'target');
+  assert.equal(runtime.requests.length, 2);
+  for (const call of runtime.requests) {
+    assert.equal(call.maxTokens, 900);
+    assert.equal(call.timeoutMs, 300000);
+    const prompt = JSON.stringify(call.messages);
+    assert.match(prompt, /TARGET_INPUT/);
+    assert.match(prompt, /ALLOWED_SOURCE/);
+    assert.doesNotMatch(prompt, /EXCLUDED_SECTION|EXCLUDED_SOURCE/);
+  }
+});
+
 for (const attackLocked of [false, true]) {
   test(`incremental ${attackLocked ? 'rejects a patch to' : 'preserves'} user-locked sections`, async () => {
     let targetId, lockedId;
@@ -314,7 +425,8 @@ for (const attackLocked of [false, true]) {
         fingerprint: 'old', text: '旧例子' }] } });
     const request = generationRequest('standard');
     Object.assign(request.generation, { mode: 'regenerate', targetNoteId: unit.id, baseVersion: 2,
-      instruction: '增加一个例子' });
+      instruction: '增加一个例子', originSessionId: 'session-incremental',
+      parentConversationRunId: 'conversation-incremental' });
     const options = { generationRepository: storage.repository, dao: storage.dao };
     if (attackLocked) {
       // Existing incremental dispatch propagates the domain error instead of wrapping it.
@@ -328,6 +440,9 @@ for (const attackLocked of [false, true]) {
       const result = await runtime.dispatcher.dispatch(request, options);
       assert.equal(result.success, true, JSON.stringify(result));
       assert.equal(result.generation.status, 'ready-preview');
+      const recovered = await storage.repository.restore(request.generation.runId);
+      assert.equal(recovered.run.originSessionId, 'session-incremental');
+      assert.equal(recovered.run.parentConversationRunId, 'conversation-incremental');
       assert.match(result.data.content, /用户改过的定义/);
       assert.match(result.data.content, /新增例子/);
       assert.equal(result.data.id, unit.id);
