@@ -37,6 +37,7 @@
 | [`note-detail-emulator-acceptance-2026-09-28.md`](./note-detail-emulator-acceptance-2026-09-28.md) | 2026-09-28 | #189 WebKeepAlive off/on 与 #188 公式密集模拟器验收 | active (simulator evidence) |
 | [`ocr-llm-preprocessing-2026-09-29.md`](./ocr-llm-preprocessing-2026-09-29.md) | 2026-09-29 | OCR 后的 LLM 预处理链路核查（相机 → OCR → 分类 → 生成 → 持久化） | active |
 | [`knowledge-galaxy-mapping-2026-10-18.md`](./knowledge-galaxy-mapping-2026-10-18.md) | 2026-10-18 | 知识星系映射规范表：知识结构 → 三维星系，产品确认与实现对齐 | active (映射契约) |
+| [`github-issue-pr-audit-2026-10-18.md`](./github-issue-pr-audit-2026-10-18.md) | 2026-10-18 | GitHub issue / PR 状态对账：已完成未关闭、失效 spec 引用、PR #216 review 阻塞 | active (运维对账) |
 
 临时原料 [`_positioning-facts-2026-09-04.md`](./_positioning-facts-2026-09-04.md)（下划线前缀）按约定不入正式索引，供 `project-positioning-2026-09-04.md` 溯源。
 
