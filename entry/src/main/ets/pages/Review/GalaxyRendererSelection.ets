@@ -2,7 +2,8 @@
 //  pages/Review/GalaxyRendererSelection.ets - renderer fallback policy
 // ============================================================================
 
-export type GalaxyRendererMode = 'native' | 'web' | 'fallback'
+// unavailable is an error state, not a third renderer.
+export type GalaxyRendererMode = 'native' | 'web' | 'unavailable'
 
 export type GalaxyRendererEvent =
   'native_ready' | 'native_failure' | 'web_ready' | 'web_failure'
@@ -19,7 +20,7 @@ export function nextGalaxyRendererMode(
     return event === 'native_failure' ? 'web' : 'native'
   }
   if (current === 'web') {
-    return event === 'web_failure' ? 'fallback' : 'web'
+    return event === 'web_failure' ? 'unavailable' : 'web'
   }
-  return 'fallback'
+  return 'unavailable'
 }

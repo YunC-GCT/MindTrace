@@ -7,9 +7,17 @@ import {
   Node,
   RaycastResult,
   Scene,
+  Vec2,
+  Geometry,
+  Material,
+  MaterialType,
+  MetallicRoughnessMaterial,
+  NodeType,
+  EnvironmentBackgroundType,
 } from '@kit.ArkGraphics3D'
 import { TEXT, TEXT_2, BG_CARD, BORDER, R_MD, S_2 } from 'common'
 import { AppIcon } from '../../shared/atoms/AppIcon'
+import { findGalaxyTemplate, rotateGalaxyPoint, galaxyEdgeRotation, projectGalaxyPoint, galaxyRaycastPosition } from './GalaxyNativeScene'
 import type { GalaxyGraphEdge, GalaxyGraphNode, GalaxyGraphSnapshot } from './GalaxyGraphProjection'
 import {
   GalaxyNoopCallbacks,
@@ -17,7 +25,7 @@ import {
   GalaxyRendererCallbacks,
 } from './GalaxyRendererContracts'
 
-const CAMERA_DEFAULT_DISTANCE: number = 72
+const CAMERA_DEFAULT_DISTANCE: number = 120
 const CAMERA_MIN_DISTANCE: number = 38
 const CAMERA_MAX_DISTANCE: number = 130
 const NODE_TEMPLATE_PATH: string = 'NodeTemplate'
@@ -31,6 +39,7 @@ class NativeNodeView {
   baseX: number = 0
   baseY: number = 0
   baseZ: number = 0
+  material: Material | null = null
 
   constructor(id: string, node: Node, x: number, y: number, z: number) {
     this.id = id
@@ -51,17 +60,43 @@ class NativeEdgeView {
   }
 }
 
+@Observed
 class NativeLabelView {
   id: string = ''
   label: string = ''
   x: number = 0
   y: number = 0
+  visible: boolean = false
 
   constructor(id: string, label: string, x: number, y: number) {
     this.id = id
     this.label = label
     this.x = x
     this.y = y
+  }
+}
+
+@Component
+struct NativeGalaxyLabel {
+  @ObjectLink label: NativeLabelView
+  @Prop selectedId: string = ''
+
+  build() {
+    Text(this.label.label)
+      .fontSize(11)
+      .fontColor(this.label.id === this.selectedId ? TEXT : TEXT_2)
+      .maxLines(2)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .textAlign(TextAlign.Center)
+      .width(104)
+      .padding({ left: 5, right: 5, top: 3, bottom: 3 })
+      .backgroundColor('#C010131A')
+      .border({ width: 0.5, color: BORDER })
+      .borderRadius(R_MD)
+      .position({ x: this.label.x - 52, y: this.label.y - 28 })
+      .visibility(this.label.visible ? Visibility.Visible : Visibility.Hidden)
+      .accessibilityText(this.label.label)
+      .hitTestBehavior(HitTestMode.None)
   }
 }
 
@@ -73,7 +108,10 @@ export struct GalaxyComponent3DAdapter {
   @Prop viewportWidth: number = 360
   @Prop viewportHeight: number = 520
   callbacks: GalaxyRendererCallbacks = new GalaxyNoopCallbacks()
-  @State private scene: Scene | null = null
+  // Keep native resource lifetime separate from the reactive readiness flag.
+  private scene: Scene | null = null
+  private templateScene: Scene | null = null
+  @State private hasScene: boolean = false
   @State private labels: NativeLabelView[] = []
   private camera: Camera | null = null
   private nodeViews: NativeNodeView[] = []
@@ -81,9 +119,14 @@ export struct GalaxyComponent3DAdapter {
   private nodePathToId: Map<string, string> = new Map<string, string>()
   private rotationAngle: number = 0
   private panStartAngle: number = 0
+  private pitchAngle: number = 0
+  private panStartPitch: number = 0
   private cameraDistance: number = CAMERA_DEFAULT_DISTANCE
   private pinchStartDistance: number = CAMERA_DEFAULT_DISTANCE
   private loadGeneration: number = 0
+  private graphGeneration: number = 0
+  private labelTimer: number = -1
+  private labelFramesRemaining: number = 0
 
   aboutToAppear(): void {
     this.loadScene()
@@ -95,19 +138,23 @@ export struct GalaxyComponent3DAdapter {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      if (this.scene !== null) {
+      if (this.hasScene && this.scene !== null) {
         Component3D({ scene: this.scene })
           .width('100%')
           .height('100%')
+          .onAppear((): void => this.updateCameraDistance())
+          .onAreaChange((): void => this.onViewportChanged())
           .gesture(
             GestureGroup(
               GestureMode.Parallel,
               PanGesture({ direction: PanDirection.All })
                 .onActionStart((): void => {
                   this.panStartAngle = this.rotationAngle
+                  this.panStartPitch = this.pitchAngle
                 })
                 .onActionUpdate((event: GestureEvent): void => {
                   this.rotationAngle = this.panStartAngle + event.offsetX * 0.006
+                  this.pitchAngle = this.clamp(this.panStartPitch + event.offsetY * 0.006, -1.4, 1.4)
                   this.applySceneTransforms()
                 }),
               PinchGesture({ fingers: 2 })
@@ -130,19 +177,7 @@ export struct GalaxyComponent3DAdapter {
 
         ForEach(this.labels,
           (label: NativeLabelView): void => {
-            Text(label.label)
-              .fontSize(11)
-              .fontColor(label.id === this.selectedId ? TEXT : TEXT_2)
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .textAlign(TextAlign.Center)
-              .width(104)
-              .padding({ left: 5, right: 5, top: 3, bottom: 3 })
-              .backgroundColor('#C010131A')
-              .border({ width: 0.5, color: BORDER })
-              .borderRadius(R_MD)
-              .position({ x: label.x - 52, y: label.y - 28 })
-              .accessibilityText(label.label)
+            NativeGalaxyLabel({ label: label, selectedId: this.selectedId })
           },
           (label: NativeLabelView): string => label.id,
         )
@@ -176,12 +211,15 @@ export struct GalaxyComponent3DAdapter {
 
   resetCamera(): void {
     this.rotationAngle = 0
+    this.pitchAngle = 0
     this.cameraDistance = CAMERA_DEFAULT_DISTANCE
     this.applySceneTransforms()
     this.updateCameraDistance()
   }
 
-  pause(): void {}
+  pause(): void {
+    this.stopLabelRefresh()
+  }
 
   resume(): void {
     this.requestRender()
@@ -189,11 +227,17 @@ export struct GalaxyComponent3DAdapter {
 
   release(): void {
     this.loadGeneration++
+    this.stopLabelRefresh()
     this.clearGraphNodes()
     if (this.scene !== null) {
       try { this.scene.destroy() } catch (_error) {}
     }
     this.scene = null
+    if (this.templateScene !== null) {
+      try { this.templateScene.destroy() } catch (_error) {}
+      this.templateScene = null
+    }
+    this.hasScene = false
     this.camera = null
     this.labels = []
   }
@@ -212,17 +256,42 @@ export struct GalaxyComponent3DAdapter {
       const relatedTemplate: Node | null = this.findNode(loaded, RELATED_TEMPLATE_PATH)
       if (cameraNode === null || nodeTemplate === null
         || prerequisiteTemplate === null || relatedTemplate === null) {
+        console.warn('[GalaxyNative] template lookup failed: camera=' + String(cameraNode !== null)
+          + ' node=' + String(nodeTemplate !== null) + ' prerequisite=' + String(prerequisiteTemplate !== null)
+          + ' related=' + String(relatedTemplate !== null) + ' root=' + (loaded.root?.path ?? 'null'))
         loaded.destroy()
         this.callbacks.onFailure('native_scene_templates_missing')
         return
       }
+      let templates: Scene
+      try {
+        templates = await Scene.load($rawfile('galaxy3d/native/galaxy-scene.glb'))
+      } catch (error) {
+        loaded.destroy()
+        throw new Error(this.errorMessage(error))
+      }
+      if (generation !== this.loadGeneration) {
+        templates.destroy()
+        loaded.destroy()
+        return
+      }
       this.scene = loaded
+      this.templateScene = templates
       this.camera = cameraNode as Camera
       this.camera.enabled = true
+      this.camera.msaa = true
+      this.camera.clearColor = { r: 0.003, g: 0.004, b: 0.006, a: 1 }
+      loaded.environment.backgroundType = EnvironmentBackgroundType.BACKGROUND_NONE
+      loaded.environment.indirectDiffuseFactor = { x: 0.25, y: 0.25, z: 0.3, w: 1 }
+      loaded.environment.indirectSpecularFactor = { x: 0.25, y: 0.25, z: 0.3, w: 1 }
+      console.info('[GalaxyNative] scene templates resolved: camera=' + cameraNode.path + cameraNode.name
+        + ' node=' + nodeTemplate.path + nodeTemplate.name)
       nodeTemplate.visible = false
       prerequisiteTemplate.visible = false
       relatedTemplate.visible = false
       this.rebuildGraph()
+      this.hasScene = true
+      console.info('[GalaxyNative] ready renderer=native nodes=' + this.nodeViews.length.toString())
       this.callbacks.onReady()
       this.callbacks.onPerformance(new GalaxyPerformanceSample('native', 0, 0, false))
     } catch (error) {
@@ -231,12 +300,12 @@ export struct GalaxyComponent3DAdapter {
   }
 
   private rebuildGraph(): void {
-    if (this.scene === null || this.scene.root === null) {
+    if (this.scene === null || this.scene.root === null || this.templateScene === null) {
       return
     }
-    const nodeTemplate: Node | null = this.findNode(this.scene, NODE_TEMPLATE_PATH)
-    const prerequisiteTemplate: Node | null = this.findNode(this.scene, PREREQUISITE_TEMPLATE_PATH)
-    const relatedTemplate: Node | null = this.findNode(this.scene, RELATED_TEMPLATE_PATH)
+    const nodeTemplate: Node | null = this.findNode(this.templateScene, NODE_TEMPLATE_PATH)
+    const prerequisiteTemplate: Node | null = this.findNode(this.templateScene, PREREQUISITE_TEMPLATE_PATH)
+    const relatedTemplate: Node | null = this.findNode(this.templateScene, RELATED_TEMPLATE_PATH)
     if (nodeTemplate === null || prerequisiteTemplate === null || relatedTemplate === null) {
       this.callbacks.onFailure('native_scene_templates_missing')
       return
@@ -250,17 +319,21 @@ export struct GalaxyComponent3DAdapter {
       const y: number = Math.sin(angle) * radius * 0.68
       const z: number = Math.sin(index * 1.73) * 7
       const sceneNode: Node = this.scene.importNode('GalaxyNode_' + index.toString(), nodeTemplate, this.scene.root)
+      if (!sceneNode) throw new Error('native_node_import_failed')
       sceneNode.visible = true
       const scale: number = 0.7 + graphNode.mastery * 0.45
       sceneNode.scale = { x: scale, y: scale, z: scale }
-      this.nodeViews.push(new NativeNodeView(graphNode.id, sceneNode, x, y, z))
-      this.nodePathToId.set(sceneNode.path, graphNode.id)
+      const view: NativeNodeView = new NativeNodeView(graphNode.id, sceneNode, x, y, z)
+      this.nodeViews.push(view)
+      this.applyNodeMaterial(view, graphNode.color, this.graphGeneration)
+      this.nodePathToId.set(sceneNode.name, graphNode.id)
       index++
     }
     index = 0
     for (const edge of this.snapshot.edges) {
       const template: Node = edge.type === 'prerequisite' ? prerequisiteTemplate : relatedTemplate
       const edgeNode: Node = this.scene.importNode('GalaxyEdge_' + index.toString(), template, this.scene.root)
+      if (!edgeNode) throw new Error('native_edge_import_failed')
       edgeNode.visible = true
       this.edgeViews.push(new NativeEdgeView(edge, edgeNode))
       index++
@@ -270,8 +343,10 @@ export struct GalaxyComponent3DAdapter {
   }
 
   private clearGraphNodes(): void {
+    this.graphGeneration++
     for (const view of this.nodeViews) {
       try { view.node.destroy() } catch (_error) {}
+      try { view.material?.destroy() } catch (_error) {}
     }
     for (const view of this.edgeViews) {
       try { view.node.destroy() } catch (_error) {}
@@ -281,11 +356,48 @@ export struct GalaxyComponent3DAdapter {
     this.nodePathToId.clear()
   }
 
+  private applyNodeMaterial = async (view: NativeNodeView, color: string, generation: number): Promise<void> => {
+    if (this.scene === null) return
+    try {
+      const resource: Material = await this.scene.getResourceFactory().createMaterial(
+        { name: 'KnowledgeMaterial_' + view.node.name }, MaterialType.METALLIC_ROUGHNESS)
+      if (generation !== this.graphGeneration || this.scene === null) {
+        resource.destroy()
+        return
+      }
+      view.material = resource
+      const material: MetallicRoughnessMaterial = resource as MetallicRoughnessMaterial
+      const hex: string = color.replace('#', '').slice(-6)
+      const rgb: number = /^[0-9a-fA-F]{6}$/.test(hex) ? parseInt(hex, 16) : 0x5be3b0
+      const r: number = this.linearColor((rgb >> 16) & 255)
+      const g: number = this.linearColor((rgb >> 8) & 255)
+      const b: number = this.linearColor(rgb & 255)
+      material.baseColor.factor = { x: r, y: g, z: b, w: 1 }
+      material.material.factor = { x: 0, y: 0.38, z: 0.08, w: 0.5 }
+      material.emissive.factor = { x: r * 0.07, y: g * 0.07, z: b * 0.07, w: 1 }
+      const pending: Node[] = [view.node]
+      while (pending.length > 0) {
+        const current: Node = pending.pop()!
+        if (current.nodeType === NodeType.GEOMETRY) (current as Geometry).mesh.materialOverride = material
+        for (let index: number = 0; index < current.children.count(); index++) {
+          const child: Node | null = current.children.get(index)
+          if (child !== null) pending.push(child)
+        }
+      }
+      this.requestRender()
+    } catch (error) {
+      if (generation === this.graphGeneration) console.warn('[GalaxyNative] material failed: ' + this.errorMessage(error))
+    }
+  }
+
+  private linearColor = (value: number): number => {
+    const channel: number = value / 255
+    return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4)
+  }
+
   private applySceneTransforms(): void {
     for (const view of this.nodeViews) {
-      const positionX: number = view.baseX * Math.cos(this.rotationAngle) - view.baseY * Math.sin(this.rotationAngle)
-      const positionY: number = view.baseX * Math.sin(this.rotationAngle) + view.baseY * Math.cos(this.rotationAngle)
-      view.node.position = { x: positionX, y: positionY, z: view.baseZ }
+      view.node.position = rotateGalaxyPoint({ x: view.baseX, y: view.baseY, z: view.baseZ }, this.rotationAngle, this.pitchAngle)
     }
     this.positionEdges()
     this.updateLabels()
@@ -305,7 +417,6 @@ export struct GalaxyComponent3DAdapter {
       const dy: number = target.node.position.y - source.node.position.y
       const dz: number = target.node.position.z - source.node.position.z
       const length: number = Math.max(0.1, Math.sqrt(dx * dx + dy * dy + dz * dz))
-      const angle: number = Math.atan2(dy, dx)
       const selected: boolean = this.selectedId === view.edge.fromId || this.selectedId === view.edge.toId
       const width: number = selected ? 0.18 : 0.07
       view.node.position = {
@@ -313,8 +424,8 @@ export struct GalaxyComponent3DAdapter {
         y: (source.node.position.y + target.node.position.y) / 2,
         z: (source.node.position.z + target.node.position.z) / 2,
       }
-      view.node.rotation = { x: 0, y: 0, z: Math.sin(angle / 2), w: Math.cos(angle / 2) }
-      view.node.scale = { x: length / 1.7, y: width, z: width }
+      view.node.rotation = galaxyEdgeRotation({ x: dx, y: dy, z: dz })
+      view.node.scale = { x: length, y: width, z: width }
     }
   }
 
@@ -333,35 +444,51 @@ export struct GalaxyComponent3DAdapter {
   private updateCameraDistance(): void {
     if (this.camera !== null) {
       this.camera.position = { x: 0, y: 0, z: this.cameraDistance }
+      this.camera.rotation = { x: 0, y: 0, z: 0, w: 1 }
+      this.camera.fov = 0.84
+      this.updateLabels()
       this.requestRender()
     }
   }
 
   private handleTap(event: GestureEvent): void {
-    if (this.camera === null || event.fingerList.length === 0) {
+    if (this.camera === null || this.paused || event.fingerList.length === 0) {
       return
     }
     const width: number = Math.max(1, this.viewportWidth)
     const height: number = Math.max(1, this.viewportHeight)
-    const x: number = event.fingerList[0].localX / width * 2 - 1
-    const y: number = 1 - event.fingerList[0].localY / height * 2
-    this.camera.raycast({ x: x, y: y }, {}).then((hits: RaycastResult[]): void => {
+    const position: Vec2 = galaxyRaycastPosition(event.fingerList[0].localX, event.fingerList[0].localY, width, height)
+    const generation: number = this.graphGeneration
+    this.camera.raycast(position, {}).then((hits: RaycastResult[]): void => {
+      if (generation !== this.graphGeneration || this.paused || this.camera === null) return
       if (hits.length === 0) {
         this.callbacks.onClearSelection()
         return
       }
-      const id: string = this.nodePathToId.get(hits[0].node.path) ?? ''
+      let id: string = ''
+      // Native Node.path may name the parent path. Use the unique imported node
+      // name and walk Geometry parents; skip stars/edges rather than masking hits.
+      for (const hit of hits) {
+        let current: Node | null = hit.node
+        while (current !== null && id.length === 0) {
+          id = this.nodePathToId.get(current.name) ?? ''
+          current = current.parent
+        }
+        if (id.length > 0) break
+      }
       if (id.length > 0) {
         this.callbacks.onSelect(id)
       } else {
         this.callbacks.onClearSelection()
       }
     }).catch((error: Error): void => {
+      if (generation !== this.graphGeneration || this.paused || this.camera === null) return
       this.callbacks.onFailure('native_raycast_failed: ' + error.message)
     })
   }
 
   private updateLabels(): void {
+    if (this.camera === null) return
     const labels: NativeLabelView[] = []
     const width: number = Math.max(1, this.viewportWidth)
     const height: number = Math.max(1, this.viewportHeight)
@@ -370,16 +497,40 @@ export struct GalaxyComponent3DAdapter {
       if (graphNode === null) {
         continue
       }
-      const x: number = width / 2 + view.node.position.x / this.cameraDistance * width * 0.9
-      const y: number = height / 2 - view.node.position.y / this.cameraDistance * height * 0.9
-      labels.push(new NativeLabelView(view.id, graphNode.label, x, y))
+      const point: Vec2 | null = projectGalaxyPoint(view.node.position, this.camera.getViewMatrix(),
+        this.camera.getProjectionMatrix(), width, height)
+      const previous: NativeLabelView | undefined = this.labels.find((label: NativeLabelView): boolean => label.id === view.id)
+      const label: NativeLabelView = previous ?? new NativeLabelView(view.id, graphNode.label, 0, 0)
+      label.visible = point !== null
+      if (point !== null) {
+        if (Math.abs(label.x - point.x) > 0.2) label.x = point.x
+        if (Math.abs(label.y - point.y) > 0.2) label.y = point.y
+      }
+      label.label = graphNode.label
+      labels.push(label)
     }
-    this.labels = labels
+    const changed: boolean = labels.length !== this.labels.length || labels.some((label: NativeLabelView, index: number): boolean => {
+      const previous: NativeLabelView = this.labels[index]
+      return previous.id !== label.id
+    })
+    if (changed) this.labels = labels
   }
 
   private requestRender(): void {
     if (!this.paused && this.scene !== null) {
       this.scene.renderFrame({ alwaysRender: false })
+      // Camera matrices are updated by the native render thread, not by setters.
+      // Refresh a short burst after a change rather than leaving labels one frame behind.
+      this.labelFramesRemaining = 6
+      if (this.labelTimer < 0) {
+        this.labelTimer = setInterval((): void => {
+          if (this.paused || this.scene === null || this.labelFramesRemaining-- <= 0) {
+            this.stopLabelRefresh()
+            return
+          }
+          this.updateLabels()
+        }, 33)
+      }
     }
   }
 
@@ -394,11 +545,24 @@ export struct GalaxyComponent3DAdapter {
   private onPausedChanged(): void {
     if (!this.paused) {
       this.resume()
+    } else {
+      this.pause()
     }
   }
 
+  private stopLabelRefresh = (): void => {
+    if (this.labelTimer >= 0) clearInterval(this.labelTimer)
+    this.labelTimer = -1
+    this.labelFramesRemaining = 0
+  }
+
+  private onViewportChanged = (): void => {
+    this.updateLabels()
+    this.requestRender()
+  }
+
   private findNode(scene: Scene, path: string): Node | null {
-    return scene.getNodeByPath(path) ?? scene.getNodeByPath('/' + path)
+    return findGalaxyTemplate(scene, path)
   }
 
   private findNodeView(id: string): NativeNodeView | null {
