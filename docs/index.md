@@ -98,23 +98,23 @@ Every doc directory has an `index.md` (NOT `README.md`) that:
 - Links to the canonical template
 
 Currently (every directory, including execution bundles and legacy subdirectories):
-- `docs/index.md` — this file
-- `docs/adr/index.md`
-- `docs/specs/index.md`
-- `docs/specs/execution/index.md`
-- `docs/specs/execution/{bundle}/index.md` — one per bundle
-- `docs/research/index.md`
-- `docs/architecture/index.md`
-- `docs/agents/index.md`
-- `docs/agents/patterns/index.md`
-- `docs/style/index.md`
-- `docs/template/index.md`
-- `docs/legacy/index.md`
-- `docs/legacy/mindtrace/index.md`
+- [`docs/index.md`](./index.md) — this file
+- [`docs/adr/index.md`](./adr/index.md)
+- [`docs/specs/index.md`](./specs/index.md)
+- [`docs/specs/execution/index.md`](./specs/execution/index.md)
+- [`docs/specs/execution/{bundle}/index.md`](./specs/execution/) — one per bundle
+- [`docs/research/index.md`](./research/index.md)
+- [`docs/architecture/index.md`](./architecture/index.md)
+- [`docs/agents/index.md`](./agents/index.md)
+- [`docs/agents/patterns/index.md`](./agents/patterns/index.md)
+- [`docs/style/index.md`](./style/index.md)
+- [`docs/template/index.md`](./template/index.md)
+- [`docs/legacy/index.md`](./legacy/index.md)
+- [`docs/legacy/mindtrace/index.md`](./legacy/mindtrace/index.md)
 - `docs/legacy/mindtrace/{architecture,competition,plans,handoffs}/index.md`
 - `scripts/*/README.md` (tooling uses README.md per ecosystem convention)
 
-If you add a new doc directory — including a new execution bundle — also add an `index.md` for it.
+If you add a new doc directory — including a new execution bundle — also add an `index.md` for it. Run `node scripts/doc-trace/index.mjs` to verify reachability and coverage.
 
 ## How this index stays current
 
@@ -123,4 +123,4 @@ If you add a new doc directory — including a new execution bundle — also add
 - When the project structure changes, update §"Top-level layout"
 - Updates go via a `docs(index):` commit; bump this file's `Last updated` timestamp
 
-Last updated: 2026-10-18 (corpus normalization: execution bundles under `docs/specs/execution/`, execution/legacy indexes completed, one-off handoffs frozen into `docs/legacy/mindtrace/handoffs/`, every doc directory now has an `index.md`)
+Last updated: 2026-10-18 (document control: reachable directory indexes, `doc-trace` gate, ArkTS AI coding checklist, and spec/ADR status reconciliation)
