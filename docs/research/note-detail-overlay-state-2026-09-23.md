@@ -303,6 +303,8 @@ Concept Theorem Formula Proof Comp Fallback
 
 ## 9. 文档/审计历史对应表
 
+> 下表中标注 `（原文已清理）` 的 legacy 文件已在 2026-10-18 的文档大清洗中删除，引用保留为证据出处；需要原文时查 git 历史。
+
 | 文档 / 审计 | 关键 finding |
 |---|---|
 | `docs/specs/020-reply-body-contract.md:68, 123, 147` | "NoteDetailOverlay 家族已全走 MDR,无需动";公式拆分 FSR/MDR/MathTextRenderer 三套 |
@@ -327,11 +329,11 @@ Concept Theorem Formula Proof Comp Fallback
 | `docs/agents/demo-script-2026-09-06.md:31` | 步 5:打开笔记详情 → 验证 MM-MD-v1 渲染(独立公式 `$$` 单独成行,字段分区) |
 | `docs/agents/smoke-test.md:12` | 步 6:笔记详情浮层打开/关闭,期望浮层无残留 |
 | `docs/legacy/mindtrace/architecture/deep-dive-2026-09-01.md:365-468 (§F4.1-F4.9)` | **§F4.1 P0 mockShare shipped in production** (L555-557);F4.2 P0 saveEdit 5 步混杂;F4.3 5 个 @Watch 触发同一 watcher;F4.4 parseTags 分隔符不全;F4.5/F4.6 category/tag 重叠;F4.7 DiscardConfirm 嵌套布局;F4.8 bumpNotesVersion 三处写;F4.9 SOURCE_CAMERA 常量 |
-| `docs/legacy/mindtrace/architecture/audit-2026-09-01.md:67` | ✅ NoteDetailOverlay 三大浮层之一 |
-| `docs/legacy/mindtrace/plans/w3/ui-preload-cache-optimization-2026-07-21.md:88` | NoteDetailOverlay 新增 `DetailRenderCache` 的来源 |
-| `docs/legacy/mindtrace/plans/w3/notes-page-structure-proposal-2026-07-19.html:627-849` | "完成 smoke test 后,再进入笔记详情页新结构规划" — 详情页重构**未实施** |
-| `docs/legacy/mindtrace/plans/w3/render-protocol-optimization-route-2026-07-22.md:1996` | "NoteDetailOverlay 改用 `List + LazyForEach`,每个 `DetailBlock` 对应一个 `ListItem`" — **未实施** |
-| `docs/legacy/mindtrace/plans/w3/dead-code-archive-2026-07-19.md:33` | `ConfDot.ets` unused(2026-07 标记) |
+| `docs/legacy/mindtrace/architecture/audit-2026-09-01.md:67`（原文已清理） | ✅ NoteDetailOverlay 三大浮层之一 |
+| `docs/legacy/mindtrace/plans/w3/ui-preload-cache-optimization-2026-07-21.md:88`（原文已清理） | NoteDetailOverlay 新增 `DetailRenderCache` 的来源 |
+| `docs/legacy/mindtrace/plans/w3/notes-page-structure-proposal-2026-07-19.html:627-849`（原文已清理） | "完成 smoke test 后,再进入笔记详情页新结构规划" — 详情页重构**未实施** |
+| `docs/legacy/mindtrace/plans/w3/render-protocol-optimization-route-2026-07-22.md:1996`（原文已清理） | "NoteDetailOverlay 改用 `List + LazyForEach`,每个 `DetailBlock` 对应一个 `ListItem`" — **未实施** |
+| `docs/legacy/mindtrace/plans/w3/dead-code-archive-2026-07-19.md:33`（原文已清理） | `ConfDot.ets` unused(2026-07 标记) |
 | `docs/legacy/mindtrace/competition/references-2026-07-26.md:13` | KaTeX 用于 chat 气泡 + **笔记详情页公式展示** + 公式预览卡片 |
 | `docs/adr/` | **0 条直接命中 `NoteDetailOverlay`** — 设计权落在 `frontend-component-audit-2026-09-06.md` 和 `presentation-deep-dive-2026-09-16.md` |
 

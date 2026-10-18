@@ -53,7 +53,7 @@
 | 调研文档 | `<topic-slug>-YYYY-MM-DD.md` |
 | 临时原料 | `_<topic-slug>-YYYY-MM-DD.md`（下划线前缀，不入正式索引） |
 | HTML 镜像 | 同 slug `.html`，与 md 并列（不入 git，见 `docs/style/html-in-docs.md`） |
-| 归档 | 移入 `docs/legacy/mindtrace/research/` 后保留日期与 slug |
+| 归档 | 已被取代的调研在内容并入当前文档后删除（git 历史可查），不再保留 `docs/legacy/mindtrace/research/` |
 
 ## Maintenance
 
@@ -63,13 +63,16 @@
 
 ## Last updated
 
-2026-10-18（目录规范化：补全 20 篇未登记研究；临时原料链接修正）
+2026-10-18（目录规范化：补全 20 篇未登记研究；临时原料链接修正；旧研究大清洗——已被取代或描述被否决架构的文档删除，映射见下）
 
-## Superseded (已归档, 留作决策历史)
+## Superseded / removed
 
-- [`docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`](../legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md) — pre-D2 基线 (159 LOC Dispatcher + 929 LOC god class)
-- [`docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`](../legacy/mindtrace/research/langgraph-migration-2026-09-02.md) — Python sidecar 迁移提案 (未采纳, 详见 §3.2)
-- [`docs/legacy/mindtrace/research/capturegraph-processing-chain-2026-09-16.md`](../legacy/mindtrace/research/capturegraph-processing-chain-2026-09-16.md) — 当日 earlier 全链 map (合并后被取代)
-- [`docs/legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md`](../legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) — 当日 Tool 层 + 设计模式研究 (已合并)
-- [`docs/legacy/mindtrace/research/tool-packaging-mcp-path-2026-09-16.md`](../legacy/mindtrace/research/tool-packaging-mcp-path-2026-09-16.md) — MCP 路径调研 (已合并进 §10.6)
-- [`docs/legacy/mindtrace/research/tool-packaging-direct-kit-path-2026-09-16.md`](../legacy/mindtrace/research/tool-packaging-direct-kit-path-2026-09-16.md) — Direct Tool 路径调研 (已合并进 §10.6)
+Older research that was fully merged into the authoritative documents above, or that described rejected architectures, was deleted in the 2026-10-18 corpus purge (it remains in git history). The mapping:
+
+| Removed | Now lives in |
+|---|---|
+| `agent-framework-comparison-2026-09-02`, `langgraph-migration-2026-09-02` | [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) (decision) + `capturegraph-architecture-evolution-2026-09-16` (current state) |
+| `capturegraph-processing-chain-2026-09-16`, `capturegraph-tool-layer-and-patterns-2026-09-16` | [`capturegraph-architecture-evolution-2026-09-16.md`](./capturegraph-architecture-evolution-2026-09-16.md) §5 / §7 / §8 |
+| `tool-packaging-mcp-path-2026-09-16`, `tool-packaging-direct-kit-path-2026-09-16` | same file §10.6 (Direct Tool decision) |
+| `formula-render-strategies`, `multi-webview-performance`, `harmonyos-http-streaming` (2026-07-24) | [spec 021](../specs/021-chat-streaming-incremental-rendering.md) + `chat-markdown-latex-render-jank-2026-09-13` |
+| `huawei-arkui-agent-20260901` | [`docs/style/arkts-1.1.md`](../style/arkts-1.1.md) (rules extracted) |

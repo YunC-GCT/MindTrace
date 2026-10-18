@@ -45,7 +45,7 @@ docs/
 | **Set a coding rule** | `docs/style/naming-conventions.md` (the canonical spec) |
 | **Find an ArkTS rule** | [`docs/style/arkts-1.1.md`](./style/arkts-1.1.md) |
 | **Understand the current architecture** | `docs/adr/` (current decisions) — for historical audits see [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./legacy/mindtrace/architecture/audit-full-2026-09-01.md) |
-| **Find an API contract** | [`docs/legacy/mindtrace/api/contract.md`](./legacy/mindtrace/api/contract.md) |
+| **Find an API contract** | `common/src/main/ets/models/` + `CONTEXT.md`（当前类型与术语契约） |
 | **Look up a workflow (issue tracking, triage)** | `docs/agents/` — see [`agents/index.md`](./agents/index.md) |
 | **Find an old session's decision trail** | `docs/legacy/mindtrace/handoffs/` (frozen; not current guidance) |
 | **Create a new doc** | Pick a template from `docs/template/`, then run `node scripts/naming-lint/index.mjs` to verify the name conforms |

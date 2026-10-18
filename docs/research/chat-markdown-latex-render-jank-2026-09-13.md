@@ -130,7 +130,7 @@
 
 - **[arkweb-render-pipeline-stability-2026-09-11](./arkweb-render-pipeline-stability-2026-09-11.md)**: 本篇是其"下一章" — 进程模型、保活结论、网络优化不适用性**直接继承不重述**; 焦点从进程稳定性 (THREAD_BLOCK_6S) 转向 UI 层卡顿与预缓存缺口。**行动项: 其记载的 EntryAbility 修复在当前树丢失, 应作为回归项立即恢复** (本篇方案 #1)。
 - **[agent-reasoning-process-display-research-2026-09-11](./agent-reasoning-process-display-research-2026-09-11.md)**: 同一 ChatBubble 渲染路径的 reasoning 展示侧; 其"无官方折叠/打字机组件"的结论与本篇 E9 空结果一致。
-- **[docs/legacy/mindtrace/plans/w4/formula-split-render-plan-2026-07-24.md](../legacy/mindtrace/plans/w4/formula-split-render-plan-2026-07-24.md)**: WebView 1800vp 可见上限 (超出留白) 是"多 WebView 分块拆分"的源头约束; 任何"单 Web 整消息"方案 (本篇 #9) 必须正面回答它。
+- `docs/legacy/mindtrace/plans/w4/formula-split-render-plan-2026-07-24.md`（原文已清理）: WebView 1800vp 可见上限 (超出留白) 是"多 WebView 分块拆分"的源头约束; 任何"单 Web 整消息"方案 (本篇 #9) 必须正面回答它。
 
 ## Open questions
 

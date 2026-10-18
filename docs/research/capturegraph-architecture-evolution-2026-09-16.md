@@ -45,7 +45,7 @@ MindTrace 后端 agent workflow 是一�?*正在持续完善�?agent 工作流�
 ## 3. 决策 �?当前取向与趋�? �?LangGraph 设计模式, 趋向完整稳定�?agent 工作流框�?
 ### 3.1 基线 (2026-09-02)
 
-来源: research �?(legacy) �?[`docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md)
+来源: research �?(legacy) �?`docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`（原文已清理）
 
 | 组件 | LOC | 公共 API |
 |---|---|---|
@@ -57,7 +57,7 @@ MindTrace 后端 agent workflow 是一�?*正在持续完善�?agent 工作流�
 数据�? `AiService.capture �?Dispatcher.dispatch �?TypeClassifier.recognizeText (�?LlmClient.callStream) �?KnowledgeModel.structure (�?LlmClient.call) �?DispatchResult`�?*同步 / 线�?/ 无状态机 / �?checkpoint / 无中�?/ 无条件路�?*。与 LangGraph 概念匹配 0/12�?
 ### 3.2 评估过的另一条路�?�?Python sidecar LangGraph (2026-09-02, 未采�?
 
-来源: research �?(legacy) �?[`docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md)
+来源: research �?(legacy) �?`docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`（原文已清理）
 
 提案: Python HTTP 边车�?LangGraph, ArkTS 前端 `POST /dispatch` 调用。估�?**3-5 人周** (1 工程�?4-6 �?, 渐进 4 阶段�?
 **未采纳的三条具体原因** (�?ADR-0008):
@@ -1017,7 +1017,7 @@ private async handleWant(want: Want): Promise<void> {
 
 ### 10.6 包装方式调研 �?MCP vs Direct Tool (background agent 2026-09-16 完成)
 
-**调研来源**: [`docs/research/tool-packaging-mcp-path-2026-09-16.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/legacy/mindtrace/research/tool-packaging-mcp-path-2026-09-16.md) (legacy) + [`docs/research/tool-packaging-direct-kit-path-2026-09-16.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/legacy/mindtrace/research/tool-packaging-direct-kit-path-2026-09-16.md) (legacy)
+**调研来源**: ``docs/research/tool-packaging-mcp-path-2026-09-16.md``（原文已清理） (legacy) + ``docs/research/tool-packaging-direct-kit-path-2026-09-16.md``（原文已清理） (legacy)
 
 #### 10.6.1 两种路径的本质区�?
 | 维度 | **MCP 路径** (`mcp/tools/OcrTool.ets` 模式, ADR-0010) | **Direct Tool 路径** (`common/tools/` ToolRegistry, ADR-0012 / spec 014) |
@@ -1133,10 +1133,10 @@ private async handleWant(want: Want): Promise<void> {
 
 | 文件 | 路径 |
 |---|---|
-| �?baseline | [`docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md) |
-| �?Python sidecar proposal (not adopted, �?§3.2) | [`docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md) |
-| �?full chain map | [`docs/legacy/mindtrace/research/capturegraph-processing-chain-2026-09-16.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/legacy/mindtrace/research/capturegraph-processing-chain-2026-09-16.md) |
-| �?tool layer + patterns | [`docs/legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md) |
+| �?baseline | `docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`（原文已清理） |
+| �?Python sidecar proposal (not adopted, �?§3.2) | `docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`（原文已清理） |
+| �?full chain map | `docs/legacy/mindtrace/research/capturegraph-processing-chain-2026-09-16.md`（原文已清理） |
+| �?tool layer + patterns | `docs/legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md`（原文已清理） |
 | D2 实施日志 | [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/agents/d2-capturegraph-teaching-2026-09-05.md) |
 
 ### 11.2 权威规范 (spec / ADR)
