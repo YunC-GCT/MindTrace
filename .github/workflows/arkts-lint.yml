@@ -3,9 +3,9 @@ name: arkts-lint
 # Run on push to main, on PRs, and manual dispatch
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 # Cancel in-progress runs for same branch on new push
@@ -45,6 +45,12 @@ jobs:
       - name: Run unit tests
         working-directory: scripts/arkts-lint
         run: npm test
+
+      - name: Check generated rule manifest is current
+        run: node scripts/arkts-lint/export-rules.mjs --check
+
+      - name: Run agent-gate unit tests
+        run: node --test scripts/agent-gate/tests/*.test.mjs
 
   lint-ast:
     name: Lint (arkts-lint v0.3 AST)

@@ -1,0 +1,246 @@
+{
+  "generatedFrom": "scripts/arkts-lint/rules",
+  "doc": "docs/style/arkts-1.1.md",
+  "checklist": "docs/style/arkts-ai-coding.md",
+  "count": 34,
+  "rules": [
+    {
+      "id": "arkts-as-casts",
+      "code": "10605053",
+      "severity": "error",
+      "title": "尖括号强转 <T>x 禁用, 用 x as T",
+      "fix": "改为 `(x as Foo)` 形式"
+    },
+    {
+      "id": "arkts-implements-only-iface",
+      "code": "10605051",
+      "severity": "warn",
+      "title": "implements 必须是 interface (AST 难区分, 需人工核对)",
+      "fix": "确认 implements 的是 interface (命名约定 I 前缀或单独定义)"
+    },
+    {
+      "id": "arkts-limited-throw",
+      "code": "10605087",
+      "severity": "error",
+      "title": "throw 非 Error 禁用 (throw \"string\" 等)",
+      "fix": "throw new Error(\"...\")"
+    },
+    {
+      "id": "arkts-no-any-unknown",
+      "code": "10605008",
+      "severity": "error",
+      "title": "any / unknown 类型禁用",
+      "fix": "用具体类型; catch 处 (e as Error).message ?? String(e)"
+    },
+    {
+      "id": "arkts-no-call-signatures",
+      "code": "10605014",
+      "severity": "error",
+      "title": "对象类型含 call signature 禁用",
+      "fix": "用箭头函数类型 (x: number) => string"
+    },
+    {
+      "id": "arkts-no-class-literals",
+      "code": "10605050",
+      "severity": "error",
+      "title": "class 表达式禁用",
+      "fix": "用 class 声明,不用 class 表达式"
+    },
+    {
+      "id": "arkts-no-conditional-types",
+      "code": "10605022",
+      "severity": "error",
+      "title": "条件类型 禁用 (T extends U ? X : Y)",
+      "fix": "用重载或分支"
+    },
+    {
+      "id": "arkts-no-ctor-prop-decls",
+      "code": "10605025",
+      "severity": "error",
+      "title": "构造函数参数中声明字段 禁用",
+      "fix": "显式声明字段 + 构造函数赋值"
+    },
+    {
+      "id": "arkts-no-delete",
+      "code": "10605059",
+      "severity": "error",
+      "title": "delete obj.prop 禁用",
+      "fix": "设 undefined 或从对象中过滤"
+    },
+    {
+      "id": "arkts-no-destruct-assignment",
+      "code": "10605069",
+      "severity": "error",
+      "title": "[a, b] = arr 解构赋值禁用",
+      "fix": "用索引访问 const a = arr[0]; const b = arr[1]"
+    },
+    {
+      "id": "arkts-no-destruct-decls",
+      "code": "10605074",
+      "severity": "error",
+      "title": "let { a, b } = obj 解构声明禁用",
+      "fix": "const a = obj.a; const b = obj.b"
+    },
+    {
+      "id": "arkts-no-destruct-params",
+      "code": "10605091",
+      "severity": "error",
+      "title": "function f({a, b}) 解构参数禁用",
+      "fix": "显式命名参数: function f(req: { a: T; b: U }) { ... }"
+    },
+    {
+      "id": "arkts-no-for-in",
+      "code": "10605080",
+      "severity": "error",
+      "title": "for..in 循环禁用",
+      "fix": "用 for...of 或 forEach"
+    },
+    {
+      "id": "arkts-no-func-expressions",
+      "code": "10605046",
+      "severity": "error",
+      "title": "function 表达式禁用",
+      "fix": "用箭头函数 `() => {}`"
+    },
+    {
+      "id": "arkts-no-generators",
+      "code": "10605094",
+      "severity": "error",
+      "title": "function* 生成器禁用",
+      "fix": "用 async/await + Promise"
+    },
+    {
+      "id": "arkts-no-indexed-signatures",
+      "code": "10605017",
+      "severity": "error",
+      "title": "[k: T]: V 索引签名 禁用",
+      "fix": "用 Map<K, V>"
+    },
+    {
+      "id": "arkts-no-intersection-types",
+      "code": "10605019",
+      "severity": "error",
+      "title": "T & U 交叉类型禁用",
+      "fix": "用 interface extends A, B 替代"
+    },
+    {
+      "id": "arkts-no-is",
+      "code": "10605096",
+      "severity": "error",
+      "title": "类型谓词 arg is T 禁用",
+      "fix": "用 `instanceof` + `as` 组合"
+    },
+    {
+      "id": "arkts-no-jsx",
+      "code": "10605054",
+      "severity": "error",
+      "title": "JSX 禁用 (ArkTS 用 @Builder 而非 <Component />)",
+      "fix": "用 @Builder 方法或 ArkUI 组件调用"
+    },
+    {
+      "id": "arkts-no-mapped-types",
+      "code": "10605083",
+      "severity": "error",
+      "title": "mapped types 禁用 ([K in keyof T])",
+      "fix": "显式字段声明"
+    },
+    {
+      "id": "arkts-no-nested-funcs",
+      "code": "10605092",
+      "severity": "error",
+      "title": "嵌套函数声明禁用",
+      "fix": "提取为模块顶层函数或箭头"
+    },
+    {
+      "id": "arkts-no-polymorphic-unops",
+      "code": "10605055",
+      "severity": "error",
+      "title": "一元算符 + / ~ 对非数值禁用",
+      "fix": "用 Number(x) 或显式类型转换"
+    },
+    {
+      "id": "arkts-no-private-identifiers",
+      "code": "10605003",
+      "severity": "error",
+      "title": "#field 语法禁用, 用 private 关键字",
+      "fix": "用 private (TS 风格) 替代 #field"
+    },
+    {
+      "id": "arkts-no-props-by-index",
+      "code": "10605029",
+      "severity": "warn",
+      "title": "obj[\"key\"] 动态属性访问禁用 (JSON 解析场景不可避免, 标 warn)",
+      "fix": "预定义字段 或 Map.get()"
+    },
+    {
+      "id": "arkts-no-standalone-this",
+      "code": "10605093",
+      "severity": "warn",
+      "title": "自由函数/static 中 this 禁用 (partial detection)",
+      "fix": "用具体类名替代 this"
+    },
+    {
+      "id": "arkts-no-structural-typing",
+      "code": "10605030",
+      "severity": "warn",
+      "title": "结构兼容禁用 (partial detection)",
+      "fix": "显式声明字段类型"
+    },
+    {
+      "id": "arkts-no-symbol",
+      "code": "10605002",
+      "severity": "error",
+      "title": "Symbol() 禁用",
+      "fix": "用 enum 或静态常量"
+    },
+    {
+      "id": "arkts-no-type-query",
+      "code": "10605060",
+      "severity": "error",
+      "title": "typeof x 作为类型 禁用",
+      "fix": "用具体类型替代 typeof"
+    },
+    {
+      "id": "arkts-no-types-in-catch",
+      "code": "10605079",
+      "severity": "error",
+      "title": "catch (e: T) typed 禁用",
+      "fix": "catch (e) + (e as Error).message ?? String(e)"
+    },
+    {
+      "id": "arkts-no-typing-with-this",
+      "code": "10605021",
+      "severity": "error",
+      "title": "this 类型禁用",
+      "fix": "用具体类名替代 this"
+    },
+    {
+      "id": "arkts-no-var",
+      "code": "10605005",
+      "severity": "error",
+      "title": "var 禁用, 用 let",
+      "fix": "var 改 let"
+    },
+    {
+      "id": "arkts-no-with",
+      "code": "10605084",
+      "severity": "error",
+      "title": "with 语句禁用",
+      "fix": "用显式属性访问替代"
+    },
+    {
+      "id": "no-get-accessor",
+      "code": "project-pref",
+      "severity": "warn",
+      "title": "struct 内禁 get accessor (项目偏好)",
+      "fix": "用 @State 直接暴露或 @Computed (API 12+)"
+    },
+    {
+      "id": "struct-no-regular-methods",
+      "code": "project-pref",
+      "severity": "warn",
+      "title": "struct 内禁用普通方法 (项目偏好, 官方允许)",
+      "fix": "用箭头函数字段 `handleClick = (): void => { ... }`"
+    }
+  ]
+}

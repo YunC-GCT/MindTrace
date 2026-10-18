@@ -70,6 +70,21 @@
 
 ---
 
+## AI 编码执行契约 (写代码 / 改代码必守)
+
+> 这一节是给 **AI agent 的运行时约束**，不是建议。与“必守红线”叠加生效。
+
+1. **先读后写**：改 `.ets` 前读 [`docs/style/arkts-ai-coding.md`](./docs/style/arkts-ai-coding.md)；不确定的规则查 [`docs/style/arkts-1.1.md`](./docs/style/arkts-1.1.md) 或机器可读清单 [`docs/style/arkts-rules.json`](./docs/style/arkts-rules.json)。不要凭记忆猜 ArkTS 语法。
+2. **改完必跑 gate**：`node scripts/agent-gate/index.mjs`。它检查改动的 `.ets`（BOM / 文件头 / 模块边界）、`arkts-lint`、`naming-lint`、`link-check`、`doc-trace`。
+3. **交付必须带 gate 结果**：回复 / PR / commit 里写 `RESULT: PASS` 或失败项；没有 gate 输出的“已完成”视为未完成。
+4. **不许绕过**：不得用 `--no-verify`、注释掉 lint 规则、删除/跳过测试、改 `build-profile` 或 CI 来让 gate 变绿。gate 失败先修第一条 error，再重跑。
+5. **边界不放宽**：`agents/` 不 import `entry/`；`pages/` / `overlays/` 不直接 import `CaptureGraph` / `Dispatcher` / `NoteDao`（走 service）；不新建第 6 个 module；不改 `mcp/` 语义（ADR-0010）。
+6. **设计变更先落文档**：改架构 / 协议 / 数据模型前，先看 ADR 与 spec；新的不可逆决策写 ADR，不把决定藏在代码里。
+7. **只改该改的**：不顺手重构无关文件，不整段覆盖 user 的手工编辑；历史文档（`docs/legacy/`）只读。
+8. **报告事实**：命令失败就贴失败输出；不要用“应该”“大概”代替验证结果。
+
+---
+
 ## 比赛定位 & 演示流程
 
 ### 项目亮点 (展示给评委)
@@ -133,6 +148,7 @@
 | 启动 OCR 服务 | 运行 `tools/ocr_service/start.bat` (端口 8000; python 依赖见 tools/ocr_service/README.md) |
 | 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (数量以输出为准, 全绿即可) |
 | 跑 v0.3 lint 扫描 | `node scripts/arkts-lint/index.mjs --quiet` |
+| **交付前跑总 gate** | `node scripts/agent-gate/index.mjs`（改动集）/ `--all`（全仓）/ `--json`（机器读） |
 | 创建新 module | `cp common/oh-package.json5 <new>/oh-package.json5` (必须含 `main` 字段) |
 | 验 .ets 无 BOM | PowerShell: `[System.IO.File]::ReadAllBytes(path)[0..2]` (应为 `0x69 0x6D 0x70`) |
 

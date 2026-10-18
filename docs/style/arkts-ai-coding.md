@@ -9,10 +9,10 @@
 ## 0. 预检顺序
 
 1. 读 [`CONTEXT.md`](../../CONTEXT.md) 的相关词条（尤其 `Dispatcher` / `KnowledgeUnit` / `StreamEvent` / `Reply Body`）。
-2. 读本页；需要细节再查 [`arkts-1.1.md`](./arkts-1.1.md) 对应小节。
+2. 读本页；需要细节再查 [`arkts-1.1.md`](./arkts-1.1.md) 对应小节；需要机器可读的规则清单用 [`arkts-rules.json`](./arkts-rules.json)。
 3. 新文件先套 [`file-header-template.md`](../agents/file-header-template.md) 的文件头。
-4. 改完依次跑：`arkts-lint` → `naming-lint` → `link-check` → 相关测试 → build。
-5. 结果写进 PR / commit 说明；不要只写“已通过”。
+4. 改完跑 `node scripts/agent-gate/index.mjs`；它会串起 lint / naming / link / doc-trace。
+5. 交付时贴 gate 的 `RESULT: PASS`（或失败项）；没有 gate 输出的“完成”不算完成。
 
 ---
 
@@ -138,6 +138,9 @@ bgCol: string = '#fff'
 ## 4. 验证命令（按顺序）
 
 ```bash
+# 0. 一条命令跑总 gate（推荐；按改动集自动选检查项）
+node scripts/agent-gate/index.mjs
+
 # 1. ArkTS 规则扫描（0 errors；warning 逐条判断）
 node scripts/arkts-lint/index.mjs --quiet
 
@@ -165,6 +168,7 @@ node scripts/link-check/index.mjs
 
 ## 5. 完成定义（DoD）
 
+- [ ] `node scripts/agent-gate/index.mjs` → `RESULT: PASS`
 - [ ] 没有引入 `any` / `unknown` / 解构 / `var` / `for...in` / `delete` / JSX
 - [ ] struct 内没有普通方法、没有 `get` accessor、字段名不与 CommonAttribute 冲突
 - [ ] `build()` 内没有 I/O、`await`、重计算
@@ -189,6 +193,7 @@ node scripts/link-check/index.mjs
 | 项目偏好（软约定） | §项目偏好 |
 | API 版本矩阵 | §API 版本矩阵 |
 | 验证命令与 grep 起点 | §验证命令 |
+| 机器可读规则清单 | [`arkts-rules.json`](./arkts-rules.json)（由 `node scripts/arkts-lint/export-rules.mjs` 生成） |
 | 多 module 工程规则 | §项目级额外规则 |
 
 > 本页只做“写代码前的压缩记忆”；与 [`arkts-1.1.md`](./arkts-1.1.md) 冲突时，以全文和 lint 规则为准；与 ADR 冲突时，先停下来说明冲突，不要静默覆盖决策。
