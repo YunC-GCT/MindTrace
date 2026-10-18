@@ -21,6 +21,7 @@
 | [`api-version.md`](./api-version.md) | API 版本兼容策略与“哪些能力是 API 26 roadmap” |
 | [`branch-protection.md`](./branch-protection.md) | `main` / `develop` 保护规则与 required checks |
 | [`ci-failure-workflow.md`](./ci-failure-workflow.md) | CI 失败时的排查顺序与责任边界 |
+| [`document-control.md`](./document-control.md) | 文档状态词汇、控制块、追溯链与 `doc-trace` 检查规则 |
 | [`d2-capturegraph-teaching-2026-09-05.md`](./d2-capturegraph-teaching-2026-09-05.md) | CaptureGraph 教学版讲解（D2 落地记录） |
 | [`demo-script-2026-09-06.md`](./demo-script-2026-09-06.md) | 复赛 5 分钟演示脚本与赛前检查 |
 | [`domain.md`](./domain.md) | 领域建模 / spec / ADR 的写作流程 |
