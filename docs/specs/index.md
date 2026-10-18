@@ -1,4 +1,4 @@
-﻿# Ticket specs index
+﻿# Specs index
 
 This directory holds **implementation specs** for the P0/P1 tickets identified in the
 2026-09-01 audit ([`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](../legacy/mindtrace/architecture/audit-full-2026-09-01.md)). Each spec is derived from
@@ -19,13 +19,21 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#13 / D4** | [`013-kit-adoption-boundary.md`](./013-kit-adoption-boundary.md) | [`0009`](../adr/0009-kit-facade-injection-boundary.md) | **P0 implemented** (2026-09-10 — Reminder/BackgroundTask/FormCard real adapters + composition root; Reminder UI entry remains deferred) |
 | **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop + P1 只读工具 note_query/note_get/review_due_query) |
 | **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **done** (PR1-PR3, 2026-09-06 — 三协作服务拆出, KnowledgeModel 保留为编排 agent) |
+| **LLM settings redesign** | [`016-llm-settings-redesign.md`](./016-llm-settings-redesign.md) | [`0013`](../adr/0013-llm-provider-presets.md) · [`0014`](../adr/0014-asset-store-kit-migration.md) | **draft** (2026-09-06 — 供应商预设 + api key 分供应商存储 + 设置页重构；执行记录在 `docs/legacy/mindtrace/handoffs/llm-settings/`) |
 | **PR2-T2 cleanup** | [`017-llm-settings-cleanup.md`](./017-llm-settings-cleanup.md) | (implicit, spec 016 后续;承接 ticket #9) | **draft** (2026-09-08 — grill → to-spec;L4+L5+L6 1 ticket 3 sub-tasks;PR2) |
 | **Agent workflow architecture** | [`018-agent-workflow-architecture.md`](./018-agent-workflow-architecture.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) (scope clarified) | **implemented, device acceptance pending** (2026-09-10 — shared StateGraph + Capture/ToolCalling/Conversation/Skill workflows; single backend) |
+| **Reasoning display P0** | [`019-reasoning-process-display-p0.md`](./019-reasoning-process-display-p0.md) | [`0015`](../adr/0015-structured-stream-events.md) | **proposed** (2026-09-11 — StreamEvent 协议 + enableThinking 供给 + 双区块；执行记录 [`execution/019-reasoning-process-display-p0/`](./execution/019-reasoning-process-display-p0/)） |
 | **Reply body contract** | [`020-reply-body-contract.md`](./020-reply-body-contract.md) | [`0016`](../adr/0016-reply-contract-by-transport.md) | **proposed** (2026-09-12 — grill → to-spec; P0 stream 直出正文 + 持久化门 + 渲染单入口; P1 渲染加固独立 ticket; P2 LlmGuard 容错提取) |
-| **Knowledge graph RDB** | [`021-knowledge-graph-rdb.md`](./021-knowledge-graph-rdb.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015`](./015-knowledge-model-decomposition-v2.md) | **implemented on feature branch** (2026-09-17 — 空 `kg_edge`、统一关系写入、accepted 边图谱查询、RAG demo 预留表) |
+| **Chat streaming render** | [`021-chat-streaming-incremental-rendering.md`](./021-chat-streaming-incremental-rendering.md) | [`0017`](../adr/0017-renderer-scheduler-budget-baseline.md) | **proposed + ticket-0 evidence complete** (2026-09-13 — 增量渲染 / RendererScheduler / 预算冻结；执行记录 [`execution/ticket-0-*`](./execution/)） |
 | **022 / multi-device UI** | [`022-multi-device-ui-adaptation.md`](./022-multi-device-ui-adaptation.md) | (implicit; research + codebase-design) | **ready; implementation deferred** (2026-09-08) |
 | **Agent run timeline** | [`023-agent-run-timeline-foundation.md`](./023-agent-run-timeline-foundation.md) | [`0015`](../adr/0015-structured-stream-events.md) | **foundation implemented; workflow emission pending** (2026-09-21) |
 | **NoteDetail render performance** | [`024-note-detail-render-performance.md`](./024-note-detail-render-performance.md) | [`0017`](../adr/0017-renderer-scheduler-budget-baseline.md) · [`021`](./021-chat-streaming-incremental-rendering.md) | **in progress** (2026-09-28 — #182/#185 evidence landed; #189 emulator A/B keeps WebKeepAlive default-off; #188 blocked by #187 + target-device evidence) |
+| **Knowledge graph RDB** | [`026-knowledge-graph-rdb.md`](./026-knowledge-graph-rdb.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015`](./015-knowledge-model-decomposition-v2.md) | **implemented on feature branch** (2026-09-17 — 空 `kg_edge`、统一关系写入、accepted 边图谱查询、RAG demo 预留表) |
+| **Note review answer** | [`027-note-review-answer.md`](./027-note-review-answer.md) | [`0018`](../adr/0018-note-evidence-provenance.md) | **spec + test plan merged** (2026-09-26 — 可追溯复习回答 / 来源版本 / 反馈快照；测试方案已并入 §测试方案） |
+
+## Execution bundles
+
+`docs/specs/execution/` holds the execution record for a spec or ticket: `spec.md`（冻结范围）、`plan.md`（实施计划）、`tasks.md`（勾选任务）、`verification-record.md` / `verification-report.md`（证据）、`raw/`（原始测量数据）。设计决策仍写在编号 spec 里；这里只记录“怎么改的、验到哪一步”。索引见 [`execution/index.md`](./execution/index.md)。
 
 ## P0 tickets without spec
 

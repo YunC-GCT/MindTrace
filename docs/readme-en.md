@@ -85,7 +85,7 @@ Workflows run on-device on HarmonyOS; model inference is provided by the configu
    Quick mode prioritizes on-device text recognition. Formula recognition or server-side fallback requires starting the companion OCR service:
 
    ```powershell
-   .\start_ocr_server.bat
+   .\start-ocr-server.bat
    ```
 
    The service script targets Windows and requires Python 3.10+. Fill the address shown after startup into the app's OCR settings, for example:

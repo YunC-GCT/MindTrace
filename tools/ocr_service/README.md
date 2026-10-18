@@ -17,7 +17,7 @@ The first run may download OCR/model dependencies and can take several minutes.
 From the project root:
 
 ```bat
-start_ocr_server.bat
+start-ocr-server.bat
 ```
 
 Or from this directory:

@@ -123,7 +123,7 @@ MindTrace 的 chat 流式回复目前在 SSE 期间主要以轻量 `Text` 展示
   - `perCreateWorkMs` = 每个 Web 工作单元从创建（进入 Web 渲染决策）到首次真实高度回传应用的实测耗时样本集。
   - `maxWebCreatesPerFrame = clamp(floor(32 / median(perCreateWorkMs)), 1, 4)`
   - `maxWebWorkMsPerFrame = clamp(round(p75(perCreateWorkMs)), 1, 16)`
-  - 数值状态（post-code-review corrected evidence）：基于 `spec/ticket-0-6-chat-render-fixtures-budgets/raw/` 中 A/B/C/C′ 4×20 JSONL 原始行，直接 `webWorkDurationSamplesMs` 样本 `n=16`，median=150ms，p75=426ms → `maxWebCreatesPerFrame=1`、`maxWebWorkMsPerFrame=16`。percentile 用 nearest-rank（`ceil(p/100 * n)`），clamp 上下界为冻结常量。证据基线交付状态为 `PASS_WITH_EMULATOR_PERFORMANCE_FOLLOW_UP`；`T_finishToStable` p95: B=554ms、C=2649ms、C′=687ms > 500ms，且 B 连续长帧 13/20，均作为 DevEco 模拟器上的性能跟进项记录，不否定本 ticket 的证据交付。任何最终数值修改需新设备证据。
+  - 数值状态（post-code-review corrected evidence）：基于 `docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/raw/` 中 A/B/C/C′ 4×20 JSONL 原始行，直接 `webWorkDurationSamplesMs` 样本 `n=16`，median=150ms，p75=426ms → `maxWebCreatesPerFrame=1`、`maxWebWorkMsPerFrame=16`。percentile 用 nearest-rank（`ceil(p/100 * n)`），clamp 上下界为冻结常量。证据基线交付状态为 `PASS_WITH_EMULATOR_PERFORMANCE_FOLLOW_UP`；`T_finishToStable` p95: B=554ms、C=2649ms、C′=687ms > 500ms，且 B 连续长帧 13/20，均作为 DevEco 模拟器上的性能跟进项记录，不否定本 ticket 的证据交付。任何最终数值修改需新设备证据。
 - `RenderTick` 是通用、浮窗实例级的 50ms 节拍源，唯一常量为 `TICK_MS = 50`，使用 `setInterval`。
 - RenderTick 按需启动：第一个 pending 事件入队时启动计时器，不同步执行；tick 触发后派发本 tick pending，检查 pending 为空后暂停。暂停保留实例、引用和订阅，下一次入队复用；`aboutToDisappear` 才是 dispose，清空 pending、断开订阅、释放 timer，dispose 后入队为 no-op 或开发态断言。
 - `show=false` 只暂停 RenderTick，不销毁 Document；停止前先按订阅者有效性 flush pending。若 List 已销毁，只更新 Document 状态，不回调失效组件。

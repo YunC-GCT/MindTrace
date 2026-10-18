@@ -19,7 +19,7 @@ MindTrace is a **HarmonyOS math learning assistant** for the **鸿蒙高校创�
 
 - 5 modules (1 HAP + 4 HSP): `entry`, `common`, `agents`, `skill`, `cardservice`
 - AI pipeline: photo → OCR → classify → structure → persist
-- Custom ArkTS lint engine (34 rules, 70 tests)
+- Custom ArkTS lint engine (34 rules; test count grows — read the summary line)
 - Architecture: 4 layers + 5 modules (see `AGENTS.md`)
 
 ### Read in this order
@@ -62,10 +62,10 @@ If all three pass, you're set up correctly.
 ### 3. Run the tests (5 min)
 
 ```bash
-# 111 unit tests across the project
-node --test scripts/arkts-lint/tests/*.test.mjs          # 70 tests
-node --test scripts/naming-lint/tests/*.test.mjs         # 23 tests (8 helpers + 15 config)
-node --test scripts/link-check/tests/link-parser.test.mjs # 18 tests
+# full suites (counts move; read each summary line)
+node --test scripts/arkts-lint/tests/*.test.mjs          # 707 tests as of 2026-10-18
+node --test scripts/naming-lint/tests/*.test.mjs        # 23 tests
+node --test scripts/link-check/tests/*.test.mjs         # 33 tests
 ```
 
 ---

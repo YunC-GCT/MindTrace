@@ -7,7 +7,7 @@
 //   docs/specs/016-llm-settings-redesign.md §公共接口变更 (ApiKeyVault)
 //   docs/adr/0014-asset-store-kit-migration.md
 //   docs/agents/security.md (凭据存储描述,待 PR1 同步更新)
-//   docs/agents/tickets/llm-settings/pr1-asset-store-kit-upgrade.md
+//   docs/legacy/mindtrace/handoffs/llm-settings/pr1-asset-store-kit-upgrade.md
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

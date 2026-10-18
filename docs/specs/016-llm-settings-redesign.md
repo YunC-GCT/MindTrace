@@ -78,7 +78,7 @@ export interface ProviderConfig {
 }
 
 export const PROVIDERS: ProviderConfig[] = [
-  // 2026-09 时点一手信源调研结果(详见 docs/agents/llm-settings-scope-2026-09-06.md §附录 C 调研报告)
+  // 2026-09 时点一手信源调研结果(详见 docs/legacy/mindtrace/handoffs/llm-settings-scope-2026-09-06.md §附录 C 调研报告)
   {
     id: 'deepseek',
     vendorName: 'DeepSeek',

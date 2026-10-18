@@ -4,7 +4,7 @@
 >
 > **Scope:** All files — docs (`.md`), code (`.ts`/`.tsx`/`.py`/`.mjs`/`.json`/`.json5`/`.yml`), configs, and directories.
 >
-> **Version:** 1.1 (last updated 2026-09-02)
+> **Version:** 1.2 (last updated 2026-10-18)
 
 ---
 
@@ -38,6 +38,7 @@ This spec follows [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH)
 |---|---|---|
 | 1.0 | 2026-09-02 | Initial spec with 9 sections (universal, top-level, docs, code branches, commits, forbidden) |
 | 1.1 | 2026-09-02 | Added §2.1 top-level whitelist, expanded §5 branches, expanded §6 commits, added §7 test files, added §8 file headers, added §9 generated files, added §10 env files, added §11 logs/temp, expanded §12 forbidden, added §13 validation, added §14 when to update, bumped version 1.0 → 1.1 |
+| 1.2 | 2026-10-18 | Added §3.9 execution bundles (`docs/specs/execution/{slug}/`), defined `docs/plans/` retirement, made the ADR/spec/research prefix rule apply to direct children only, required an `index.md` in every doc directory |
 
 ---
 
@@ -96,6 +97,8 @@ If a file is not in the whitelist, it must be in a subdirectory (`docs/`, `scrip
 | ADR index | `docs/adr/` | `index.md` |
 | Spec (implementation spec) | `docs/specs/` | `NNN-{topic-slug}.md` (3-digit seq) |
 | Spec index | `docs/specs/` | `index.md` |
+| Execution record | `docs/specs/execution/{slug}/` | `spec.md` / `plan.md` / `tasks.md` / `verification-record.md` |
+| Architecture snapshot | `docs/architecture/` | `{scope}-{YYYY-MM-DD}.md` |
 | Style / coding standard | `docs/style/` | `{scope}-{topic}.md` |
 | Research note | `docs/research/` | `{topic-slug}-{YYYY-MM-DD}.md` |
 | Agent workflow pointer docs | `docs/agents/` | `{topic-slug}.md` |
@@ -139,6 +142,19 @@ If a file is not in the whitelist, it must be in a subdirectory (`docs/`, `scrip
 - Frozen subdirectory: old project's docs go here, no new docs added.
 - The `project` name identifies the project (e.g., `mindtrace`).
 - Subdirs preserve the original structure (`docs/legacy/mindtrace/adr/`, `…/specs/`, `…/research/`).
+
+### 3.9 Execution bundles — `docs/specs/execution/{slug}/`
+
+- One directory per spec/ticket execution, named `{slug}` in kebab-case; reuse the design spec's `NNN-slug` when one exists (`execution/019-reasoning-process-display-p0/`).
+- Fixed file vocabulary: `spec.md`, `plan.md`, `tasks.md`, `verification-record.md`, `verification-report.md`, `delivery-checklist.md`, `review-report.md`, plus `raw/` for original measurements. Do not invent new filenames.
+- The prefix rule in §3.2/§3.3 applies to files **directly** inside `docs/adr/`, `docs/specs/`, and `docs/research/` only. Files inside an execution bundle are not numbered specs.
+- Design changes go back to `docs/specs/NNN-*.md` or an ADR; the bundle records execution, never redesigns.
+- `raw/` may be read by tests. Moving a bundle requires updating every path reference in the same commit (see ADR-0017 and `scripts/arkts-lint/tests/chat-render-benchmark-gate.test.mjs`).
+- Completed bundles are kept as evidence, not deleted. Mark supersession in the bundle and in `execution/index.md`.
+
+**`docs/plans/` is retired.** One-off plans now live inside the matching execution bundle (`execution/{slug}/plan.md`). New plans must not create a separate `docs/plans/` directory.
+
+**Every doc directory has an `index.md`.** This applies to `docs/agents/`, `docs/architecture/`, `docs/style/`, `docs/specs/execution/`, and any new directory under `docs/`. `README.md` is only allowed for tooling directories (`scripts/*`).
 
 ## 4. Code Files
 

@@ -308,7 +308,7 @@ Concept Theorem Formula Proof Comp Fallback
 | `docs/specs/020-reply-body-contract.md:68, 123, 147` | "NoteDetailOverlay 家族已全走 MDR,无需动";公式拆分 FSR/MDR/MathTextRenderer 三套 |
 | `docs/specs/021-chat-streaming-incremental-rendering.md:45-46, 53, 59-63` | chat 与 NoteDetail L1/L3 隔离;NoteDetail 不在本 spec 切换,继续用 `MarkdownRenderer`/`FormulaSplitRenderer` |
 | `docs/specs/022-multi-device-ui-adaptation.md:13, 49 (US21)` | 笔记详情在 XS/SM 全屏、MD+ 限宽侧面板;ready/implementation deferred |
-| `docs/specs/021-knowledge-graph-rdb.md:125` | `prerequisites/related` 仍保留在 `KnowledgeUnit` 及 revision 表中,**供旧详情页面兼容** |
+| `docs/specs/026-knowledge-graph-rdb.md:125` | `prerequisites/related` 仍保留在 `KnowledgeUnit` 及 revision 表中,**供旧详情页面兼容** |
 | `docs/research/frontend-component-audit-2026-09-06.md:114-126` | 22 文件结构最深组合树;renderers/ 策略分派;**float 本地组件无层级规则(spec 012 真空)** |
 | `docs/research/frontend-ui-design-inventory-2026-09-06.md:557-689` | 22 文件逐件三维档案(令牌/布局/动效) |
 | `docs/research/frontend-flow-walkthrough-2026-09-06.md:101-130` | 路径 4:P4.1-P4.4 路径级问题;NoteDetailOverlay 是**少数正确用 `@StorageProp('statusBarHeight')` 响应**的两个浮层之一 |
@@ -917,7 +917,7 @@ DetailRenderModel 暴露给六类 renderer(Concept/Theorem/Formula/Proof/Computa
 | `docs/specs/022-multi-device-ui-adaptation.md` | §Problem Statement L13, User Story #21 L49, §Responsive product rules L101 | 多端 UI 适配 spec,P2,2026-09-08 ready/implementation deferred | 笔记详情在 XS/SM 全屏、MD+ 改限宽侧面板;Phone 假定当前固定,需拆窗宽断点状态。User Story #21: "笔记详情在手机全屏、宽屏侧面板显示" |
 | `docs/specs/020-reply-body-contract.md` | L68, L123, L147 | Reply Body 契约 spec | **NoteDetailOverlay 家族已全走 MarkdownRenderer,无需动**;公式拆分实现分 FSR / MarkdownParser / MathTextRenderer 三套 |
 | `docs/specs/021-chat-streaming-incremental-rendering.md` | L20-21, L45-46, L53, L59-63, L153-155, L236, L251, L266, L277, L304 | chat 流式增量渲染 spec | **NoteDetail 继续用旧 `MarkdownRenderer`/`FormulaSplitRenderer`**;chat/NoteDetail L1/L3 隔离,L2 ArkWeb 引擎预热共享 |
-| `docs/specs/021-knowledge-graph-rdb.md` | L125 | 知识图谱 RDB spec | `prerequisites/related` 仍保留在 `KnowledgeUnit` 及 revision 表中,**供旧详情页面兼容**;不再是新关系写入或生产图谱读取的事实源 |
+| `docs/specs/026-knowledge-graph-rdb.md` | L125 | 知识图谱 RDB spec | `prerequisites/related` 仍保留在 `KnowledgeUnit` 及 revision 表中,**供旧详情页面兼容**;不再是新关系写入或生产图谱读取的事实源 |
 | `docs/research/frontend-component-audit-2026-09-06.md` | §6 L114-126, §7 L137, L140 | 组件分层审计 | NoteDetailOverlay = 22 文件,结构最深组合树;renderers/ 六件按 5 种 NoteType 策略分派;**float 本地组件无层级规则(spec 012 真空)** |
 | `docs/research/frontend-ui-design-inventory-2026-09-06.md` | §overlays/NoteDetailOverlay L557-689, L83, L193 | 96 件 UI 设计/布局/动效档案 | 22 文件逐件三维档案(令牌/布局/动效);OVERLAY_MASK_SOLID 遮罩;共 7 类 renderer,每类 ~280 行 |
 | `docs/research/frontend-flow-walkthrough-2026-09-06.md` | 路径 4 L101-130, 横切 A L143-144, 横切 C L166-173 | 用户路径走查 | 入口三处:HomeRecentNotes/ReviewGraphView/NotesList;P4.1-P4.4 四个路径级问题;**NoteDetailOverlay 是少数正确用 `@StorageProp('statusBarHeight')` 响应的两个浮层之一** |
@@ -935,7 +935,7 @@ DetailRenderModel 暴露给六类 renderer(Concept/Theorem/Formula/Proof/Computa
 | `docs/research/frontend-interaction-states-2026-09-06.md` | L10, L20, L121 | 交互态调研 | 5 态失衡;CameraOverlay 是少数有 loading/disabled 态的浮层,NoteDetailOverlay 没有 |
 | `docs/agents/demo-script-2026-09-06.md` | §2 步 5 L31 | 复赛演示脚本 | 步 5:打开笔记详情 → 验证 MM-MD-v1 渲染(独立公式 `$$` 单独成行,字段分区);**叙事:结构化输出经协议校验,不合格直接报错不落库** |
 | `docs/agents/smoke-test.md` | §1 步 6 L12 | 手动 smoke test 矩阵 | 步 6:**笔记详情浮层打开/关闭,期望浮层无残留** |
-| `docs/agents/backend-migration-handoff.md` | L112, L171 | 后端迁移 handoff | 1880 行 ReviewGraphView 拆 5 文件计划中含 `NoteDetailPanel`;`overlays/` = AgentFloatWindow / CameraOverlay / NoteDetailOverlay |
+| `docs/legacy/mindtrace/handoffs/backend-migration-handoff.md` | L112, L171 | 后端迁移 handoff | 1880 行 ReviewGraphView 拆 5 文件计划中含 `NoteDetailPanel`;`overlays/` = AgentFloatWindow / CameraOverlay / NoteDetailOverlay |
 | `docs/legacy/mindtrace/architecture/audit-2026-09-01.md` | L67 | 完整审计 | ✅ AgentFloatWindow/CameraOverlay/NoteDetailOverlay 三大浮层都在 OK |
 | `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` | L71, L87, L90, L977, L1013 | 完整审计(L876 行) | NoteDetailOverlay 25 文件 / NoteDetailOverlay.ets 516 行 / DetailRenderModel 449 行;LOC top 7 第 4 位(deep-dive §F4.1) |
 | `docs/legacy/mindtrace/architecture/deep-dive-2026-09-01.md` | File 4 §F4.1-F4.9 L365-468, §Cross-file L849-853 | 7 个最大文件深度审计 | **§F4.1 (P0) mockShare shipped in production:L555-557 仅 toast "分享功能暂未开放"**;F4.2 saveEdit 5 步混杂(VM 逻辑进 UI);F4.3 5 个 @Watch 触发同一 watcher;F4.4 parseTags 分隔符不全;F4.5/F4.6 category/tag 重叠;F4.7 DiscardConfirm 嵌套布局;F4.8 bumpNotesVersion 三处写;F4.9 SOURCE_CAMERA 常量 |

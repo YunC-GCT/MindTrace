@@ -1,6 +1,6 @@
 // scripts/arkts-lint/tests/chat-render-benchmark-gate.test.mjs
 //
-// Issue #124 / spec/ticket-0-6-chat-render-fixtures-budgets:
+// Issue #124 / docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets:
 //   Regression gate for the chat render benchmark seam: production boundary
 //   (no StreamingReplyDocument / RendererScheduler / RenderTick), MathTextRenderer
 //   render logic preservation, harness page lifecycle state, and the ADR-0017 +
@@ -124,7 +124,7 @@ test('ADR-0017 and spec 021 §6 carry budget identifiers, derivation rule, and c
   }
   assert.match(adr, /ADR-0017/);
   assert.match(adr, /MatePad Pro 13/);
-  assert.match(adr, /spec\/ticket-0-6-chat-render-fixtures-budgets\/raw/);
+  assert.match(adr, /docs\/specs\/execution\/ticket-0-6-chat-render-fixtures-budgets\/raw/);
   assert.match(adr, /raw rows/);
   assert.match(adr, /webWorkDurationSamplesMs/);
   assert.match(adr, /Cold\/warm/);
@@ -137,7 +137,7 @@ test('ADR-0017 and spec 021 §6 carry budget identifiers, derivation rule, and c
 test('corrected raw JSONL evidence is committed and has 20 rows per fixture', () => {
   const fixtureIds = ['A', 'B', 'C', 'C_P'];
   for (const fixtureId of fixtureIds) {
-    const rawPath = resolve(root, 'spec/ticket-0-6-chat-render-fixtures-budgets/raw', fixtureId + '.jsonl');
+    const rawPath = resolve(root, 'docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/raw', fixtureId + '.jsonl');
     const lines = readFileSync(rawPath, 'utf8').trim().split('\n').filter(Boolean);
     assert.equal(lines.length, 20, fixtureId + ' raw row count');
     const first = JSON.parse(lines[0]);

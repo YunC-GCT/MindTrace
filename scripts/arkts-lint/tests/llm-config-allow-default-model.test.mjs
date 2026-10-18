@@ -13,8 +13,8 @@
 // 一手信源:
 //   docs/specs/016-llm-settings-redesign.md §背景 (P0 bug)
 //   docs/specs/009-llm-config-throw-on-silent-override.md (ticket #9 修复精神)
-//   docs/agents/llm-settings-scope-2026-09-06.md §附录 D (真实根因诊断)
-//   docs/agents/tickets/llm-settings/pr0-fix-pro-model.md
+//   docs/legacy/mindtrace/handoffs/llm-settings-scope-2026-09-06.md §附录 D (真实根因诊断)
+//   docs/legacy/mindtrace/handoffs/llm-settings/pr0-fix-pro-model.md
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

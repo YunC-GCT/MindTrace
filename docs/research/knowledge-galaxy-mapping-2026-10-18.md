@@ -22,7 +22,7 @@
 | 关系事实源 | 生产图谱读取 kg_edge 中 accepted 的关系 | 不恢复旧数组为第二事实源；不把 pending 推荐画成已确认关系 |
 | 当前原生布局 | 按节点索引计算角度、半径及深度 | 后续改为稳定身份驱动的分组布局，不能依赖查询顺序 |
 
-依据：[领域词汇表](../../CONTEXT.md)、[图谱关系存储规范](../specs/021-knowledge-graph-rdb.md)、[当前投影代码](../../entry/src/main/ets/pages/Review/GalaxyGraphProjection.ets)。
+依据：[领域词汇表](../../CONTEXT.md)、[图谱关系存储规范](../specs/026-knowledge-graph-rdb.md)、[当前投影代码](../../entry/src/main/ets/pages/Review/GalaxyGraphProjection.ets)。
 
 ## 2. 知识对象与天体映射
 

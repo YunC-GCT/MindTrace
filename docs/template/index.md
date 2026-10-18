@@ -9,6 +9,7 @@
 | [ADR template](./adr-template.md) | Recording a hard-to-reverse design decision | `docs/adr/NNNN-{slug}.md` |
 | [Spec template](./spec-template.md) | Implementing a ticket from an ADR (TDD plan) | `docs/specs/NNN-{slug}.md` |
 | [Research template](./research-template.md) | Investigating a question against primary sources | `docs/research/{slug}-{YYYY-MM-DD}.md` |
+| [Agent workflow template](./agent-workflow-template.md) | Writing a workflow / pointer doc under `docs/agents/` | `docs/agents/{topic-slug}.md` |
 
 ## Conventions
 
