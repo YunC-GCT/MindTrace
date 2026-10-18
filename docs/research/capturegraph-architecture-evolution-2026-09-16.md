@@ -1,103 +1,126 @@
-# CaptureGraph Agent Workflow 架构 —演进 / 现状 / Drift
+# CaptureGraph Agent Workflow 架构 — 演进 / 现状 / Drift
 
 > **2026-10-18 修复说明**: 本文件在 2026-09-16 由多份文档合并生成时发生 UTF-8 截断（受损字符丢失第三字节）。1,482 个受损字符已按字节前缀、仓库语料和上下文逐字重建；少数虚词/术语属于上下文推断，不是字节级还原。ASCII 路径、代码标识与行号未受影响；原始字节见 git 历史 `8df4c86`。
 
 > **Date**: 2026-09-16
-> **Scope**: MindTrace 后端 agent workflow 的 (a) 演进历史 + 当前架构 + drift; (b) **工具层** 完整拓扑 (ToolRegistry / ToolLoop / wire / MCP); (c) **10 个agent / workflow 的设计模式判定* (ReAct / Reflexion / Plan-Execute / Router / Pipeline / Pure function 等。> **方式**: 不复制粘贴 按章节重组 引用回到原文 + 代码行号。Drift 节并列"doc vs code" 已核实 / 仍未核实。> **Author note**: 全部论断以`path:LINE` 引用或指向docs/ 子目录。
+> **Scope**: MindTrace 后端 agent workflow 的 (a) 演进历史 + 当前架构 + drift; (b) **工具层** 完整拓扑 (ToolRegistry / ToolLoop / wire / MCP); (c) **10 个 agent / workflow 的设计模式判定** (ReAct / Reflexion / Plan-Execute / Router / Pipeline / Pure function 等）。
+> **方式**: 不复制粘贴 按章节重组 引用回到原文 + 代码行号。Drift 节并列"doc vs code" 已核实 / 仍未核实。
+> **Author note**: 全部论断以`path:LINE` 引用或指向 docs/ 子目录。
+
 ---
 
 ## 1. 一句话定位 + 范围
 
-MindTrace 后端 agent workflow 是一套*正在持续完善的agent 工作流框架*, 当前代表 ArkTS 自研的`StateGraph<State, Step>` 内核为底座 承载 **4 个生产workflow**: CaptureGraph / ToolCallingWorkflow / ConversationWorkflow / SkillIntentWorkflow。*LangGraph 是当前所借用的设计模型参考* (Node / Edge / State / conditional edge / START/END 等词汇, 不是运行时依赖—评估过的 Python sidecar LangGraph 路径未采纳(见§3.2), 当前自研 88 LOC 内核。*项目的长期目标*是把 §10 drift 14 项+ §5.6 RAG 4 模式 + §3.4 三维度合并成完整的agent 工作流框架(生产可用 / UI 可驱动/ 检索可扩展 / 决策可监督。
+MindTrace 后端 agent workflow 是一套*正在持续完善的 agent 工作流框架*, 当前代表 ArkTS 自研的`StateGraph<State, Step>` 内核为底座，承载 **4 个生产 workflow**: CaptureGraph / ToolCallingWorkflow / ConversationWorkflow / SkillIntentWorkflow。*LangGraph 是当前所借用的设计模型参考* (Node / Edge / State / conditional edge / START/END 等词汇, 不是运行时依赖 — 评估过的 Python sidecar LangGraph 路径未采纳（见 §3.2）, 当前自研 88 LOC 内核。*项目的长期目标*是把 §10 drift 14 项 + §5.6 RAG 4 模式 + §3.4 三维度合并成完整的 agent 工作流框架（生产可用 / UI 可驱动/ 检索可扩展 / 决策可监督）)。
+
 ### 1.1 本文档合并了什么
+
 | 来源 | 章节 |
-|---|---|
+| --- | --- |
 | `agent-framework-comparison-2026-09-02.md` (legacy) | §3.1 基线 (pre-D2 评估) |
-| `langgraph-migration-2026-09-02.md` (legacy) | §3.2 评估过的另一条路径(Python sidecar, 未采纳 |
+| `langgraph-migration-2026-09-02.md` (legacy) | §3.2 评估过的另一条路径（Python sidecar，未采纳） |
 | `capturegraph-processing-chain-2026-09-16.md` (legacy) | §4 当前架构 + §5 笔记生成 + §6 兄弟 workflow |
 | `d2-capturegraph-teaching-2026-09-05.md` (agents/) | Appendix B 实施链路 (历史) |
-| `capturegraph-tool-layer-and-patterns-2026-09-16.md` (legacy, 2026-09-16 当日 earlier) | §7 Tool 层+ §8 设计模式 |
+| `capturegraph-tool-layer-and-patterns-2026-09-16.md` （legacy，2026-09-16 当日 earlier） | §7 Tool 层+ §8 设计模式 |
 
 ### 1.2 不在本文档范围(正交)
 
-- **`docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md`** —工具层/ 小艺 skill 调度设计 (与CaptureGraph 处理链无关 见§7.8 引用入统一工具面结论)。- **`docs/research/langgraph-mapping-verification-2026-09-06.md`** —LangGraph 概念 →鸿蒙 Kit API 核查 (不涉及CaptureGraph 处理链 §10.3 引其 API 24 vs 26 边界结论)。- **`docs/specs/011 / 014 / 015 / 018`** —实施规范, 本文不复制spec 内容, 引用其章节。
+- **`docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md`** — 工具层/ 小艺 skill 调度设计 (与 CaptureGraph 处理链无关，见 §7.8 引用入统一工具面结论)。
+- **`docs/research/langgraph-mapping-verification-2026-09-06.md`** — LangGraph 概念 → 鸿蒙 Kit API 核查（不涉及 CaptureGraph 处理链，§10.3 引其 API 24 vs 26 边界结论）。
+- **`docs/specs/011 / 014 / 015 / 018`** — 实施规范, 本文不复制 spec 内容, 引用其章节。
+
 ### 1.3 阅读路径
 
-接后端新人(30 分钟): §1 →§3 (当前取向与趋向 →§4 (图机制 →§5 (笔记生成) →§7 (工具) →§8 (模式)。余 / §9 / §10 / §11 按需。Appendix A/B 仅维护历史查询用。
+接后端新人(30 分钟): §1 → §3（当前取向与趋向）→ §4（图机制）→ §5（笔记生成）→ §7（工具）→ §8（模式）。其余 / §9 / §10 / §11 按需。Appendix A/B 仅维护历史查询用。
+
 ---
 
 ## 2. 时间线
+
 ```
 2026-08           初始实现: Dispatcher (159 LOC) + TypeClassifier + KnowledgeModel (929 LOC god class) + LlmClient (3 methods)
 2026-09-01        审计发现 #3/#4/#5/#7 = P0 refactor (Dispatcher 单入口/ LlmClient 合并 / KnowledgeModel 拆分)
-2026-09-02        research ① pre-D2 基线评估 (legacy) —当时 Dispatcher + TypeClassifier + 929 LOC KnowledgeModel god class 同步链                  research ① 评估过的另一条路径(legacy) —Python sidecar LangGraph 3-5 人周提案; 三条具体原因未采纳(§3.2)
-2026-09-05        ADR-0008 拍板: 当前取向 = 借LangGraph 设计词汇 + ArkTS 自研 StateGraph 运行时(§3.3); 长期目标 = 完整稳定 agent 工作流框架(§3.4)
+2026-09-02        research ① pre-D2 基线评估 (legacy) — 当时 Dispatcher + TypeClassifier + 929 LOC KnowledgeModel god class 同步链
+                  research ① 评估过的另一条路径 (legacy) — Python sidecar LangGraph 3-5 人周提案; 三条具体原因未采纳 (§3.2)
+2026-09-05        ADR-0008 拍板: 当前取向 = 借 LangGraph 设计词汇 + ArkTS 自研 StateGraph 运行时(§3.3); 长期目标 = 完整稳定 agent 工作流框架(§3.4)
                   spec 011 (CaptureGraph ArkTS refactor) 起草
-2026-09-05~09-08  D2 实施 (12 commit: 050349e →8b52f9a) —详见 Appendix B
-2026-09-06        research ① LangGraph 概念 →鸿蒙 Kit API 逐行核查 (修正 API 24 vs 26)
+2026-09-05~09-08  D2 实施 (12 commit: 050349e → 8b52f9a) — 详见 Appendix B
+2026-09-06        research ① LangGraph 概念 → 鸿蒙 Kit API 逐行核查 (修正 API 24 vs 26)
                   research ① 工具层/ skill 调度调研, 复核 ADR-0008
 2026-09-09        spec 014 (tool-calling-protocol) + spec 015 (KnowledgeModel 拆分) + spec 018 (4 workflow 共享 kernel)
 2026-09-10        spec 018 落地验收: Hypium 3/3, ArkTS lint 83/83
 2026-09-16        research ①(capturegraph-processing-chain) + research ①(tool layer + patterns)
                   本文档 合并 5 份旧 research + teaching →当前权威
+
 ```
 
 ---
 
-## 3. 决策 —当前取向与趋向 ：LangGraph 设计模式, 趋向完整稳定的agent 工作流框架
+## 3. 决策 — 当前取向与趋向：LangGraph 设计模式，趋向完整稳定的 agent 工作流框架
+
 ### 3.1 基线 (2026-09-02)
 
-来源: research ①(legacy) —`docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`（原文已清理）
+来源: research ①（legacy）— `docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`（原文已清理）
 
 | 组件 | LOC | 公共 API |
-|---|---|---|
-| Dispatcher (`agents/src/main/ets/core/Dispatcher.ets`) | 159 | `analyze / dispatch / routeDispatch` 3 个|
+| --- | --- | --- |
+| Dispatcher (`agents/src/main/ets/core/Dispatcher.ets`) | 159 | `analyze / dispatch / routeDispatch` 3 个 |
 | TypeClassifier | 363 | `classify / recognizeText` |
 | KnowledgeModel | 929 (god class) | `structure` |
-| LlmClient | ~500 | `call / callStream / callSseTokens` 3 个|
+| LlmClient | ~500 | `call / callStream / callSseTokens` 3 个 |
 
-数据流 `AiService.capture →Dispatcher.dispatch →TypeClassifier.recognizeText (→LlmClient.callStream) →KnowledgeModel.structure (→LlmClient.call) →DispatchResult`。*同步 / 线性/ 无状态机 / 无checkpoint / 无中文/ 无条件路由*。与 LangGraph 概念匹配 0/12。
-### 3.2 评估过的另一条路径—Python sidecar LangGraph (2026-09-02, 未采纳
+数据流 `AiService.capture →Dispatcher.dispatch →TypeClassifier.recognizeText (→LlmClient.callStream) →KnowledgeModel.structure (→LlmClient.call) →DispatchResult`。*同步 / 线性/ 无状态机 / 无 checkpoint / 无中文/ 无条件路由*。与 LangGraph 概念匹配 0/12。
 
-来源: research ①(legacy) —`docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`（原文已清理）
+### 3.2 评估过的另一条路径 — Python sidecar LangGraph (2026-09-02, 未采纳)
 
-提案: Python HTTP 边车用LangGraph, ArkTS 前端 `POST /dispatch` 调用。估算**3-5 人周** (1 工程师4-6 周, 渐进 4 阶段。
-**未采纳的三条具体原因** (见ADR-0008):
-1. LangGraph 1.4.14 主入口强制依赖`node:async_hooks`; `/web` 入口虽避开但重度依赖`@langchain/core` + `zod` 动态类型栈, ArkTS strict (`any` 禁/ 动态属性访问禁) 无法集成。2. 全网零鸿蒙/ ArkTS 运行案例 (GitHub `gh search "langgraph arkts/harmonyos"` 0 结果, 2026-09-06)。3. LangGraph 1.x 把条件路由收敛为 `Command({goto})` + `Send` fan-out, `addConditionalEdges` 已废 —本项目CaptureGraph 的conditional edge 词汇与上游方向一致 **设计采纳本身已对齐**。
+来源: research ①（legacy）— `docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`（原文已清理）
+
+提案: Python HTTP 边车用 LangGraph, ArkTS 前端 `POST /dispatch` 调用。估算**3-5 人周** (1 工程师 4-6 周, 渐进 4 阶段)。
+**未采纳的三条具体原因** (见 ADR-0008):
+1. LangGraph 1.4.14 主入口强制依赖`node:async_hooks`; `/web` 入口虽避开但重度依赖`@langchain/core` + `zod` 动态类型栈, ArkTS strict (`any` 禁/ 动态属性访问禁) 无法集成。
+2. 全网零鸿蒙/ ArkTS 运行案例 (GitHub `gh search "langgraph arkts/harmonyos"` 0 结果, 2026-09-06)。
+3. LangGraph 1.x 把条件路由收敛为 `Command({goto})` + `Send` fan-out, `addConditionalEdges` 已废 — 本项目 CaptureGraph 的 conditional edge 词汇与上游方向一致 **设计采纳本身已对齐**。
 **采纳的设计模式** (零运行时依赖):
-- `BaseCheckpointSaver` 5 方法接口 (`getTuple / list / put / putWrites / deleteThread`) —未来若做"复习会话恢复 / Order 断点续跑", 在`agents/graph/` 定义 5 方法接口 + RDB 实现, 不必引框架。- `interrupt(payload)` 异常 + 重放 —TruthCheck 失败即短路即此模式(本项目ADR-0008 §Consequences)。- `Command/goto` 条件路由 —CaptureGraph 用`addConditionalEdge` 实现对齐此形状。
+- `BaseCheckpointSaver` 5 方法接口 (`getTuple / list / put / putWrites / deleteThread`) — 未来若做"复习会话恢复 / Order 断点续跑", 在`agents/graph/` 定义 5 方法接口 + RDB 实现, 不必引框架。
+- `interrupt(payload)` 异常 + 重放 — TruthCheck 失败即短路即此模式(本项目 ADR-0008 §Consequences)。
+- `Command/goto` 条件路由 — CaptureGraph 用`addConditionalEdge` 实现对齐此形状。
+
 ### 3.3 当前取向 (ADR-0008 + spec 011/014/015/018)
 
 来源: [`docs/adr/0008-capturegraph-self-built-runtime.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/adr/0008-capturegraph-self-built-runtime.md) · [`docs/specs/018-agent-workflow-architecture.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/specs/018-agent-workflow-architecture.md)
 
-> "We **adopted LangGraph as the project's primary Agent workflow architecture design root** —its model and vocabulary (Node, Edge, State, conditional edges, START/END, addNode / addEdge / addConditionalEdge / run) are canonical for every Agent workflow that requires orchestration."
+> "We **adopted LangGraph as the project's primary Agent workflow architecture design root** — its model and vocabulary (Node, Edge, State, conditional edges, START/END, addNode / addEdge / addConditionalEdge / run) are canonical for every Agent workflow that requires orchestration."
 
-**LangGraph = 当前借用的设计模型*, Runtime = `common/src/main/ets/workflow/StateGraph.ets` (88 LOC, §4.1)。
-> **当前定位**: MindTrace 的agent workflow 框架**正在持续完善**中。LangGraph 是当前所借用的设计参考(Node / Edge / State / conditional edge / START/END 等词汇, 但框架*不止于LangGraph 词汇** —实际承载 4 个生产workflow + 工具层+ 笔记生成 + 真值检查+ 持久化缝 + 6 项决策一致性+ 10 项 agent 设计模式判定。这是一套*自研的完整agent 工作流框架*, LangGraph 只是当前阶段的词汇参考。
-### 3.4 趋向 / 未来路径 —完整稳定的agent 工作流框架
-当前框架**骨架稳定**, 但**血肉仍在补** (§10 drift 是当前与"完整稳定"目标的差距清单。按本节 §3 现状 + §10 drift + §5.6 RAG 路径, 趋向目标拆为 3 个维度
+**LangGraph = 当前借用的设计模型**, Runtime = `common/src/main/ets/workflow/StateGraph.ets` (88 LOC, §4.1)。
+> **当前定位**: MindTrace 的 agent workflow 框架**正在持续完善**中。LangGraph 是当前所借用的设计参考(Node / Edge / State / conditional edge / START/END 等词汇, 但框架**不止于 LangGraph 词汇** — 实际承载 4 个生产 workflow + 工具层+ 笔记生成 + 真值检查+ 持久化缝 + 6 项决策一致性+ 10 项 agent 设计模式判定。这是一套*自研的完整 agent 工作流框架*, LangGraph 只是当前阶段的词汇参考)。
 
-**A. 词汇面—扩展设计模式覆盖** (短期):
-- 当前已识别8 种模式(ReAct / Reflexion / Plan-and-Execute / Router / Single-shot / Multi-turn / Pure function / Pipeline) (§8.1)
-- 趋向: 向Multi-agent 协作 / Hierarchical Agent (Supervisor) / Human-in-the-Loop (per ADR-0008 §Consequences) / Streaming Agent 等- 参考 LangGraph 1.x 演进的`Command` / `Send` fan-out / interrupt 重放 (research ①§3 采纳的设计模式 §10.1 已部分实现
+### 3.4 趋向 / 未来路径 — 完整稳定的 agent 工作流框架
 
-**B. 工具层—工具循环落地 + 事件化* (复赛后第一优先):
-- ToolLoop 与ConversationWorkflow (见§10.2 H1/H2) —当前 spec 018 §1.44 / §1.74 把ToolLoop 定为稳定入口, 但生产零消费
-- SSE tool_call/tool_result emit (见§10.2 S3) —UI 过程展示拿不到工具调用中间状态- ToolLoop 事件出口 (见§10.2 S4)
-- 工具层事件化 = 框架对UI 的完整契约"
+当前框架**骨架稳定**, 但**血肉仍在补** (§10 drift 是当前与"完整稳定"目标的差距清单。按本节 §3 现状 + §10 drift + §5.6 RAG 路径, 趋向目标拆为 3 个维度)
 
-**C. 接入层—检索+ 决策辅助** (中长期:
-- RAG 引入 (智慧化数据检索API 20+ / vectorStore API 18+, research ①§1) 作为工具层扩展(§5.6)
-- 写类工具开放(P2, ToolRegistry 写工具 —当前 P1 只读
-- 多LLM provider 路由 (qwen / deepseek / 自建 / 兜底) —当前 spec 020 reply contract by transport 是开放
-**趋同目标**: 把§10 drift 14 项+ §5.6 RAG 4 模式 + §3.4 三维度= **完整的agent 工作流框架* (生产可用、UI 可驱动、检索可扩展、决策可监督)。这是项目的中长期愿景 **不是某次复赛或决赛的终点**。
+**A. 词汇面 — 扩展设计模式覆盖** (短期):
+- 当前已识别 8 种模式(ReAct / Reflexion / Plan-and-Execute / Router / Single-shot / Multi-turn / Pure function / Pipeline) (§8.1)
+- 趋向: 向 Multi-agent 协作 / Hierarchical Agent (Supervisor) / Human-in-the-Loop (per ADR-0008 §Consequences) / Streaming Agent 等- 参考 LangGraph 1.x 演进的`Command` / `Send` fan-out / interrupt 重放 (research ①§3 采纳的设计模式 §10.1 已部分实现)
+
+**B. 工具层 — 工具循环落地 + 事件化** (复赛后第一优先):
+- ToolLoop 与 ConversationWorkflow (见 §10.2 H1/H2) — 当前 spec 018 §1.44 / §1.74 把 ToolLoop 定为稳定入口, 但生产零消费
+- SSE tool_call/tool_result emit (见 §10.2 S3) — UI 过程展示拿不到工具调用中间状态
+- ToolLoop 事件出口 (见 §10.2 S4)
+- 工具层事件化 = 框架对 UI 的完整契约"
+
+**C. 接入层 — 检索+ 决策辅助** (中长期:)
+- RAG 引入 (智慧化数据检索 API 20+ / vectorStore API 18+, research ①§1) 作为工具层扩展(§5.6)
+- 写类工具开放(P2, ToolRegistry 写工具 — 当前 P1 只读)
+- 多 LLM provider 路由 (qwen / deepseek / 自建 / 兜底) — 当前 spec 020 reply contract by transport 是开放
+**趋同目标**: 把 §10 drift 14 项 + §5.6 RAG 4 模式 + §3.4 三维度= **完整的 agent 工作流框架** (生产可用、UI 可驱动、检索可扩展、决策可监督)。这是项目的中长期愿景 **不是某次复赛或决赛的终点**。
+
 ---
 
 
-
 ---
 
-## 4. 当前架构 —CaptureGraph 处理链
+## 4. 当前架构 — CaptureGraph 处理链
+
 ### 4.1 共享内核: `StateGraph<State, Step>` (88 LOC)
 
 文件: [`common/src/main/ets/workflow/StateGraph.ets:1-88`](../../common/src/main/ets/workflow/StateGraph.ets)
@@ -111,32 +134,37 @@ MindTrace 后端 agent workflow 是一套*正在持续完善的agent 工作流�
 
 `StateGraph<State, Step extends string>` (`:19`):
 - 构造(`:28-32`): `(startStep: Step, endStep: Step, haltWhen?: StateGraphHalt<State>)`
-- `addNode(step, node)` (`:34-39`) —拒START/END/重名; 抛`INVALID_GRAPH`
-- `addEdge(from, to)` (`:41-46`) —拒from=END/已有边- `addConditionalEdge(from, route)` (`:48-53`) —同addEdge 限制
+- `addNode(step, node)` (`:34-39`) — 拒 START/END/重名; 抛`INVALID_GRAPH`
+- `addEdge(from, to)` (`:41-46`) — 拒 from=END/已有边- `addConditionalEdge(from, route)` (`:48-53`) — 同 addEdge 限制
 - `run(initialState, maxNodeRuns = 128)` (`:55-75`):
   1. 读`nodeRuns`, 读`maxNodeRuns` 超`MAX_NODE_RUNS` (`:60-62`)
-  2. 取node; 缺抛 `INVALID_GRAPH` (`:63-66`)
+  2. 取 node; 缺抛 `INVALID_GRAPH` (`:63-66`)
   3. `state = await node(state)` (`:67`)
-  4. `haltWhen(state)` 真→立即返回 (`:69-71`)
+  4. `haltWhen(state)` 真 → 立即返回 (`:69-71`)
   5. `next(from, state)` 优先 conditional edge, 回退 plain edge; 都没 →`INVALID_GRAPH` (`:77-87`)
 
 **重要性质**:
-- **State 对内核不透明** —内核不复制字段 每个节点自己 forward (`copyAgentState` 见§4.3)
-- **`haltWhen` 是early-exit 谓词** —仅CaptureGraph 使用 (`CaptureGraph.ets:23` 谓词 `state.error !== undefined`), 其他 workflow 用plain edge 到END
+- **State 对内核不透明** — 内核不复制字段 每个节点自己 forward (`copyAgentState` 见 §4.3)
+- **`haltWhen` 是 early-exit 谓词** — 仅 CaptureGraph 使用 (`CaptureGraph.ets:23` 谓词 `state.error !== undefined`), 其他 workflow 用 plain edge 到 END
 
 ### 4.2 CaptureGraph 节点行
+
 文件: [`agents/src/main/ets/graph/CaptureGraph.ets:1-99`](../../agents/src/main/ets/graph/CaptureGraph.ets) · 拓扑见[`Dispatcher.ets:1497-1531`](../../agents/src/main/ets/core/Dispatcher.ets) `buildGraph` 装配
 
 | 节点 | file:line | 输入 | 输出 | 出边 | 条件谓词 | LLM 调用 |
-|---|---|---|---|---|---|---|
-| `capture` (OcrNode) | [`OcrNode.ets:8-27`](../../agents/src/main/ets/graph/nodes/OcrNode.ets) | `payload` | `captureText` | plain →`classify` | —| 不直调 用`TypeClassifier.recognizeText` →`OcrTool.recognize` (`TypeClassifier.ets:140-148`) |
-| `classify` (ClassifyNode) | [`ClassifyNode.ets:8-15`](../../agents/src/main/ets/graph/nodes/ClassifyNode.ets) | `captureText` | `classification` | conditional →`structure` / `END` | `input.analysisOnly ? 'END' : 'structure'` (`Dispatcher.ets:1525`) | `TypeClassifier.classifyText` →`LlmGuard.callJsonWithRetry` (`:224-229`); LLM 失败 →rule fallback (`:123-133`) |
-| `structure` (StructureNode) | [`StructureNode.ets:7-65`](../../agents/src/main/ets/graph/nodes/StructureNode.ets) | `captureText`, `classification?`, `generationRequest?` | `knowledgeUnit`, `draft?`, `standardResult?` | plain →`truth_check` | —; `STANDARD_GATE_FAILED` 短路 (`:17-31`) for `route==='standard'` | `KnowledgeModel.structure*` 多种形态→`LlmClient.call({responseFormat})` 间接 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `capture` (OcrNode) | [`OcrNode.ets:8-27`](../../agents/src/main/ets/graph/nodes/OcrNode.ets) | `payload` | `captureText` | plain →`classify` | — | 不直调 用`TypeClassifier.recognizeText` →`OcrTool.recognize` (`TypeClassifier.ets:140-148`) |
+| `classify` (ClassifyNode) | [`ClassifyNode.ets:8-15`](../../agents/src/main/ets/graph/nodes/ClassifyNode.ets) | `captureText` | `classification` | conditional →`structure` / `END` | `input.analysisOnly ? 'END' : 'structure'` (`Dispatcher.ets:1525`) | `TypeClassifier.classifyText` →`LlmGuard.callJsonWithRetry` (`:224-229`); LLM 失败 → rule fallback (`:123-133`) |
+| `structure` (StructureNode) | [`StructureNode.ets:7-65`](../../agents/src/main/ets/graph/nodes/StructureNode.ets) | `captureText`, `classification?`, `generationRequest?` | `knowledgeUnit`, `draft?`, `standardResult?` | plain →`truth_check` | —; `STANDARD_GATE_FAILED` 短路 (`:17-31`) for `route==='standard'` | `KnowledgeModel.structure*` 多种形态 → `LlmClient.call({responseFormat})` 间接 |
 | `truth_check` (TruthCheckNode) | [`TruthCheckNode.ets:7-38`](../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets) | `captureText`, `knowledgeUnit?`, `generationRequest?`, `preparedCandidate?` | `truthCheck`, `error?` | conditional →`persist` / `END` | `input.persist ? 'persist' : 'END'` (`Dispatcher.ets:1528`) | 不调; 用`TruthCheckService.check(truthInput)` |
 | `persist` (PersistNode) | [`PersistNode.ets:7-84`](../../agents/src/main/ets/graph/nodes/PersistNode.ets) | `knowledgeUnit`, `persist`, `preparedCandidate?` | `commitResult?`, `error?` | plain →`END` | —; `!input.persist` 时no-op return (`:10-12`) | 不调; `dao.insert` (`:80`) / `dao.insertWithCommitKey` (`:75`) / `dao.updateWithCommitKey` (`:38`) |
 
 **等/ 错误语义**:
-- **`haltWhen`** (`CaptureGraph.ets:23`) —任一节点抛`state.error` 即停, `run()` 重写 `currentStep='END'` (`:58-59`)。ADR-0008 "AI 失败时CaptureGraphError 短路, 无fallback KU" 的实现。- **Per-node try/catch** (`CaptureGraph.ets:30-36`) —节点内异常转 `CaptureGraphError{kind:'NODE_ERROR', retriable:false}`, 与inner per-node 错误共用同一 `haltWhen` 门。- **TruthCheck 短路**: 失败时`TruthCheckNode` 双写 `state.truthCheck={passed:false,...}` + `state.error={kind:'TRUTH_CHECK_ERROR', step:'truth_check', retriable:false}` (`:27-34`)。- **未注入DAO**: 用stub `persist` 返回 `PERSIST_DAO_REQUIRED` (`:1508-1521`)。`buildPreparedGraph` 同样 (`:1413-1425`)。
+- **`haltWhen`** (`CaptureGraph.ets:23`) — 任一节点抛`state.error` 即停, `run()` 重写 `currentStep='END'` (`:58-59`)。ADR-0008 "AI 失败时 CaptureGraphError 短路, 无 fallback KU" 的实现。
+- **Per-node try/catch** (`CaptureGraph.ets:30-36`) — 节点内异常转 `CaptureGraphError{kind:'NODE_ERROR', retriable:false}`, 与 inner per-node 错误共用同一 `haltWhen` 门。
+- **TruthCheck 短路**: 失败时`TruthCheckNode` 双写 `state.truthCheck={passed:false,...}` + `state.error={kind:'TRUTH_CHECK_ERROR', step:'truth_check', retriable:false}` (`:27-34`)。
+- **未注入 DAO**: 用 stub `persist` 返回 `PERSIST_DAO_REQUIRED` (`:1508-1521`)。`buildPreparedGraph` 同样 (`:1413-1425`)。
+
 ### 4.3 AgentState / CaptureStep / CaptureNode 契约
 
 文件: [`agents/src/main/ets/graph/AgentState.ets:1-98`](../../agents/src/main/ets/graph/AgentState.ets)
@@ -168,6 +196,7 @@ interface AgentState {                                                         /
 type CaptureNode = (state: AgentState) => Promise<{ state: AgentState }>;      // :57
 
 // copyAgentState (:59-98): 逐字段if-defined 复制, 保证 channel 不丢
+
 ```
 
 ### 4.4 Dispatcher 契约 —`dispatch(req, options)`
@@ -175,8 +204,8 @@ type CaptureNode = (state: AgentState) => Promise<{ state: AgentState }>;      /
 文件: [`agents/src/main/ets/core/Dispatcher.ets:68-188`](../../agents/src/main/ets/core/Dispatcher.ets)
 
 **唯一公共方法**: `async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult>` (`:98-100`)。
-| `req.*` 字段 | 分支 | file:line | 持久化行为|
-|---|---|---|---|
+| `req.*` 字段 | 分支 | file:line | 持久化行为 |
+| --- | --- | --- | --- |
 | `req.preparedCandidate !== undefined` | `dispatchPreparedCandidate` | `:1316-1406` | `updateExisting===true` →`updateWithCommitKey`; 有`commitKey` →`insertWithCommitKey`; 无commit →`dao.insert` |
 | `req.generation` + `mode === 'regenerate'` | `dispatchIncrementalGeneration` | `:190-304` | 不调 persist |
 | `req.generation` + `mode !== 'regenerate'` | `dispatchGeneration` | `:332-573` | `route==='standard'` 走`KnowledgeModel.structureStandardDraft` + repair; `route==='deep'` 走`structureDeepDraft` + repair; `route==='light'` 走`buildGenerationGraph` |
@@ -186,47 +215,49 @@ type CaptureNode = (state: AgentState) => Promise<{ state: AgentState }>;      /
 
 ### 4.5 KnowledgeModel (spec 015 拆分)
 
-文件: [`agents/src/main/ets/agents/KnowledgeModel.ets`](../../agents/src/main/ets/agents/KnowledgeModel.ets) (≈54 LOC, 拆分前878)
+文件: [`agents/src/main/ets/agents/KnowledgeModel.ets`](../../agents/src/main/ets/agents/KnowledgeModel.ets) (≈54 LOC, 拆分前 878)
 
-| 关注点(拆分前 | 新归属| file:line |
-|---|---|---|
+| 关注点(拆分前) | 新归属 | file:line |
+| --- | --- | --- |
 | prompt 构造+ `KNOWLEDGE_*` 常量 | `PromptBuilder` | [`PromptBuilder.ets:9-58`](../../agents/src/main/ets/agents/PromptBuilder.ets) |
 | 4 项校验+ `patchIntegralDx` | `TruthCheckService` | [`TruthCheckService.ets:30-283`](../../agents/src/main/ets/agents/TruthCheckService.ets) |
-| 编排 (`structure*` / `repair*` / `draftToKnowledgeUnit`) | **`KnowledgeModel`** (保留者 | `:114-511, 1100-1117` |
+| 编排 (`structure*` / `repair*` / `draftToKnowledgeUnit`) | **`KnowledgeModel`** (保留者) | `:114-511, 1100-1117` |
 
-**spec 018 ownership 更新**: `TruthCheckService` 生产调用权收敛到 TruthCheckNode; `KnowledgeModel` 不再调TruthCheck。验证 `TruthCheckService` 由`TruthCheckNode.ets:5,13` import。
+**spec 018 ownership 更新**: `TruthCheckService` 生产调用权收敛到 TruthCheckNode; `KnowledgeModel` 不再调 TruthCheck。验证 `TruthCheckService` 由`TruthCheckNode.ets:5,13` import。
 `KnowledgeModel` 拥有: `callAi` (`:122-155`) · `structureLightDraft` (`:186-233`) · `structureStandardDraft` / `repairStandardDraft` (`:235-287`) · `structureDeepDraft` / `repairDeepDraft` (`:289-451`) · `repairIncrementalSections` (`:453-511`) · `draftToKnowledgeUnit` (`:1100-1117`)。
 LLM 用 `this.llm` (`:102-106`), 类型 `LlmCaller` (re-export of `LlmClient.call` from [`LlmGuard.ets:5-7`](../../common/src/main/ets/llm/LlmGuard.ets))。默认`new LlmClient()`。
+
 ### 4.6 TruthCheck 节点短路力学
 
 文件: [`agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7-38`](../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets) · 4 项校验([`TruthCheckService.ets:42-113`](../../agents/src/main/ets/agents/TruthCheckService.ets)):
 1. **bracePair** (`:115-154`) —`{`/`}` 深度, 自动闭合
-2. **divisionByZero** (`:156-165`) —子串 `/0`
-3. **equationCheck** (`:166-188`) —矛盾恒等式+ `≠` + 平凡等式
-4. **latexSyntax** (`:189-282`) —brace + `\left/\right` parity + typo fix + `patchIntegralDx`
+2. **divisionByZero** (`:156-165`) — 子串 `/0`
+3. **equationCheck** (`:166-188`) — 矛盾恒等式+ `≠` + 平凡等式
+4. **latexSyntax** (`:189-282`) — brace + `\left/\right` parity + typo fix + `patchIntegralDx`
 
 **短路力学**:
 1. `truthFlag === false` →`state.error = { kind:'TRUTH_CHECK_ERROR', step:'truth_check', retriable:false }` (`:27-34`)
 2. CaptureGraph `haltWhen` 即停 (`StateGraph.ets:69-71`)
-3. `CaptureGraph.run` 终态化 `currentStep='END'` →返回错误 state
+3. `CaptureGraph.run` 终态化 `currentStep='END'` → 返回错误 state
 4. `dispatchRequest` 构造`DispatchResult { success:false, errorMessage, ... }` (`Dispatcher.ets:124-140`)
 5. **Capture pipeline**: 抛`'处理失败: ' + errorMessage` (`AiService.ets:455-458`)
-6. **Generation evaluation 循环** (`Dispatcher.evaluateStandardCandidate`, `:937-960`): truth-check 错误**非致命** —记`TRUTH_CHECK_ERROR` issue (severity `hard`), repair 继续到`best.hardIssueCount === 0` (`:666-669`)
+6. **Generation evaluation 循环** (`Dispatcher.evaluateStandardCandidate`, `:937-960`): truth-check 错误**非致命** — 记`TRUTH_CHECK_ERROR` issue (severity `hard`), repair 继续到`best.hardIssueCount === 0` (`:666-669`)
 
-**无fallback KU**: ADR-0008 §Consequences + spec 011 §9 双锁定。`KnowledgeModel.ets:142-155` 显式 throw, `StructureNode` (`:54-62`) 映射 `CaptureGraphError{kind:'STRUCTURE_ERROR'}`, 不构造fallback 对象。
+**无 fallback KU**: ADR-0008 §Consequences + spec 011 §9 双锁定。`KnowledgeModel.ets:142-155` 显式 throw, `StructureNode` (`:54-62`) 映射 `CaptureGraphError{kind:'STRUCTURE_ERROR'}`, 不构造 fallback 对象。
+
 ### 4.7 LlmClient 调用层(JSON vs SSE)
 
 文件: [`common/src/main/ets/llm/LlmClient.ets`](../../common/src/main/ets/llm/LlmClient.ets) + [`LlmGuard.ets`](../../common/src/main/ets/llm/LlmGuard.ets)
 
 两路径
-- **JSON**: `callJsonInternal` (`LlmClient.ets:74-167`) —返回 `LlmCallResult { text, toolCalls?, usage? }`
-- **SSE**: `callStreamInternal` (`:216-402`) —emit `StreamEvent[]`
+- **JSON**: `callJsonInternal` (`LlmClient.ets:74-167`) — 返回 `LlmCallResult { text, toolCalls?, usage? }`
+- **SSE**: `callStreamInternal` (`:216-402`) — emit `StreamEvent[]`
 
-路由在公共`call()` (`:60-70`): `request.stream===true` 走SSE (要求 `onDelta`); 否则 JSON。
+路由在公共`call()` (`:60-70`): `request.stream===true` 走 SSE (要求 `onDelta`); 否则 JSON。
 调用方矩阵
 
-| 调用方| 路径 | 预算 / 温度 |
-|---|---|---|
+| 调用方 | 路径 | 预算 / 温度 |
+| --- | --- | --- |
 | `TypeClassifier.callClassifier` | JSON via `LlmGuard.callJsonWithRetry` | `maxTokens=800, timeoutMs=120000, temp=0.1` |
 | `KnowledgeModel.callAi` | JSON via `LlmGuard.callJsonWithRetry` | `maxTokens=KNOWLEDGE_MAX_TOKENS=12000` |
 | `KnowledgeModel.structureLightDraft` | JSON via `this.llm.call({responseFormat})` | `maxTokens = budgetedRequestTokens(request, 1200)` |
@@ -238,39 +269,46 @@ LLM 用 `this.llm` (`:102-106`), 类型 `LlmCaller` (re-export of `LlmClient.cal
 | `ToolCallingWorkflow.CallModelNode` | JSON with `tools=[...]`, `tool_choice='auto'` | `maxSteps=DEFAULT_MAX_STEPS=4` (见§6.4) |
 
 `max_tokens` 默认: `LlmConfig.DEFAULT_MAX_TOKENS` (`LlmClient.ets:84-85`)。DeepSeek `enableThinking=true`: body 抑制 `temperature`, 用`reasoning_effort='high'` (`:97-118`)。
-**30s 首字节SSE fallback** (`LlmClient.ets:310-318`): 传输层恢复 不是第二后端; reject `LlmError('LLM stream no data', 'STREAM_FAILED')`, `ReplyService.stream` catch 调`complete()` (spec 018 §7 允许)。
+**30s 首字节 SSE fallback** (`LlmClient.ets:310-318`): 传输层恢复 不是第二后端; reject `LlmError('LLM stream no data', 'STREAM_FAILED')`, `ReplyService.stream` catch 调`complete()` (spec 018 §7 允许)。
+
 ### 4.8 持久化缝 —`NoteDaoAdapter`
 
 `agents` 侧契约 [`agents/src/main/ets/models/NoteDaoInterface.ets`](../../agents/src/main/ets/models/NoteDaoInterface.ets) (`insert / insertWithCommitKey? / update? / updateWithCommitKey?`).
-`entry` 侧适配: [`entry/src/main/ets/adapters/NoteDaoAdapter.ets`](../../entry/src/main/ets/adapters/NoteDaoAdapter.ets) (约4 个方法。
+`entry` 侧适配: [`entry/src/main/ets/adapters/NoteDaoAdapter.ets`](../../entry/src/main/ets/adapters/NoteDaoAdapter.ets) (约 4 个方法)。
 调用矩阵:
 
 | 路径 | DAO 方法 | 写入 |
-|---|---|---|
+| --- | --- | --- |
 | CaptureGraph `persist` 节点 (有preparedCandidate) | `dao.insert(unit)` (`PersistNode.ets:80`) | 写KU (source='capture_graph') |
 | CaptureGraph `persist` 节点 (preparedCandidate, 带`commitKey`) | `dao.insertWithCommitKey(unit, commit)` (`:62-78`) | 写unit 带`commitKey`; 按`commitKey` 幂等 |
 | CaptureGraph `persist` 节点 (`updateExisting===true`, `commitKey`, `expectedVersion`) | `dao.updateWithCommitKey(unit, expectedVersion, commit)` (`:24-51`) | 乐观锁 否则 `VERSION_CONFLICT` |
-| Dispatcher `dispatchPreparedCandidate` (persist 时 | `repository.saveCommitResult(commit)` (`Dispatcher.ets:1397`) | generation RDB commit-result |
-| Dispatcher `dispatchGeneration` (preflight) | `repository.saveRun / saveCheckpoint / appendLifecycleLog` | generation 元数据|
+| Dispatcher `dispatchPreparedCandidate` (persist 时) | `repository.saveCommitResult(commit)` (`Dispatcher.ets:1397`) | generation RDB commit-result |
+| Dispatcher `dispatchGeneration` (preflight) | `repository.saveRun / saveCheckpoint / appendLifecycleLog` | generation 元数据 |
 
 **幂等性**:
-- `preparedCandidate` 走 `dispatchPreparedCandidate` invoke graph **先** 查 `existingCommit` by `commitKey` (`Dispatcher.ets:1329-1340`)。命中即停 重复 `confirmDraft` 安全。- `NoteDaoAdapter.insert` 自身**按** `(noteId)` 幂等 —幂等保证靠**checkpoint 键* (`commitKey`) + **order 键** (`preparedCandidate.candidateHash`)。- `updateWithCommitKey` 带`expectedVersion` 见 `AiService.ets:374-376` 把`VERSION_CONFLICT` 转为 re-plan 路径。
+- `preparedCandidate` 走 `dispatchPreparedCandidate` invoke graph **先** 查 `existingCommit` by `commitKey` (`Dispatcher.ets:1329-1340`)。命中即停 重复 `confirmDraft` 安全。
+- `NoteDaoAdapter.insert` 自身**按** `(noteId)` 幂等 — 幂等保证靠**checkpoint 键** (`commitKey`) + **order 键** (`preparedCandidate.candidateHash`)。
+- `updateWithCommitKey` 带`expectedVersion` 见 `AiService.ets:374-376` 把`VERSION_CONFLICT` 转为 re-plan 路径。
+
 ---
 
 ## 5. 笔记生成完整调度链
-> **本节与§4 关系**: §4 = Capture pipeline (image/file →KU); **§5 = 生成 pipeline** (text instruction + sources →draft →confirm →KU 入库)。两者都走`Dispatcher.dispatch` 单入口 但图形态不同(§4.2 CaptureGraph vs §5.2 三种生成路由)。**入库路径** 走§4 走`PersistNode` 直写, 走§5 走`PreparedCandidate` + commit key + version conflict 乐观锁。
+
+> **本节与 §4 关系**: §4 = Capture pipeline (image/file → KU); **§5 = 生成 pipeline** (text instruction + sources → draft → confirm → KU 入库)。两者都走`Dispatcher.dispatch` 单入口 但图形态不同(§4.2 CaptureGraph vs §5.2 三种生成路由)。**入库路径** 走 §4 走`PersistNode` 直写, 走 §5 走`PreparedCandidate` + commit key + version conflict 乐观锁。
+
 ### 5.1 入口与三模式
 
-笔记生成由`ConversationWorkflow` 主导, 通过 `IntentClassifier` ([`entry/src/main/ets/services/IntentClassifier.ets:14`](../../entry/src/main/ets/services/IntentClassifier.ets) 类型 `'note_generation' | 'chat'`) 分流到AiService:
+笔记生成由`ConversationWorkflow` 主导, 通过 `IntentClassifier` ([`entry/src/main/ets/services/IntentClassifier.ets:14`](../../entry/src/main/ets/services/IntentClassifier.ets) 类型 `'note_generation' | 'chat'`) 分流到 AiService:
 
-| 入口 | IntentClassifier 决策 | AiService 方法 | Dispatcher 分支 | 用途|
-|---|---|---|---|---|
-| 用户文字消息 | `note_generation` | `generateNoteDraftWithSources` (`:124-198`) | `dispatchGeneration` (create) | 从对话OCR 材料生成新笔记|
+| 入口 | IntentClassifier 决策 | AiService 方法 | Dispatcher 分支 | 用途 |
+| --- | --- | --- | --- | --- |
+| 用户文字消息 | `note_generation` | `generateNoteDraftWithSources` (`:124-198`) | `dispatchGeneration` (create) | 从对话OCR 材料生成新笔记 |
 | 用户在草稿页点重新生成" | (UI 触发) | `regenerateNoteDraft` (`:200-256`) | `dispatchIncrementalGeneration` | 增量更新已有笔记 |
-| 用户在草稿页点确认入库" | (UI 触发) | `confirmDraft` (`:352-386`) | `dispatchPreparedCandidate` | 草稿 →KU 持久化|
+| 用户在草稿页点确认入库" | (UI 触发) | `confirmDraft` (`:352-386`) | `dispatchPreparedCandidate` | 草稿 → KU 持久化 |
 
 `IntentClassifier` 关键词前置(`hasExplicitRegenerationIntent / hasExplicitNoteGenerationIntent`, `:34-35`) + 远程 LLM 兜底 + LlmGuard 校验重试 (`:59, 75-76`)。
-### 5.2 模式 1: create —草稿生成 (Plan-and-Execute + Reflexion)
+
+### 5.2 模式 1: create — 草稿生成 (Plan-and-Execute + Reflexion)
 
 **入口**: `AiService.generateNoteDraftWithSources` (`AiService.ets:124-198`)
 
@@ -300,10 +338,12 @@ AiService.generateNoteDraftWithSources
      (runId, checkpointId, candidateHash, candidate: KnowledgeUnit,
       result, sourceCount, softIssueCount, sourceIds, pendingSourceIds,
       incrementalManifest, expectedVersion, incrementalInstruction)
+
 ```
 
 **route 选择** ([`Dispatcher.ets:339`](../../agents/src/main/ets/core/Dispatcher.ets)): `selectGenerationRoute(bundle, instruction)` 按源材料量+ 指令复杂度决定。
-#### 5.2.1 standard route —Plan-and-Execute + Reflexion
+
+#### 5.2.1 standard route — Plan-and-Execute + Reflexion
 
 `Dispatcher.dispatchStandardGeneration` (`Dispatcher.ets:575-751`):
 
@@ -323,11 +363,13 @@ dispatchStandardGeneration
   ─  ├─ 取best (hardIssueCount 最少的轮次)
   ├─ best.hardIssueCount > 0 ? 失败 →返{success:false, errorMessage}
   └─ saveRun(status='completed') (:433) + 返{success:true, data, generation}
+
 ```
 
-**Plan-and-Execute 核心**: outline + evidence + draft 三产物**独立** LLM 生成 + **独立 verifier** (非self-judge), 这是"标准高的关键设计之一 (§5.5)。
-**Reflexion 核心**: 失败 →修复 →验证 →直至 `hardIssueCount === 0`; **supported 证据冻结**, 只替换contradicted —避免无限修复循环。
-#### 5.2.2 deep route —顺序深生成+ ledger
+**Plan-and-Execute 核心**: outline + evidence + draft 三产物**独立** LLM 生成 + **独立 verifier** (非 self-judge), 这是"标准高的关键设计之一 (§5.5)。
+**Reflexion 核心**: 失败 → 修复 → 验证 → 直至 `hardIssueCount === 0`; **supported 证据冻结**, 只替换 contradicted — 避免无限修复循环。
+
+#### 5.2.2 deep route — 顺序深生成+ ledger
 
 `Dispatcher.dispatchDeepGeneration` (`Dispatcher.ets:753-923`):
 
@@ -344,10 +386,13 @@ dispatchDeepGeneration
   ─    targets = issue.sectionId  (不重做整个draft)
   ─  ├─ saveCheckpoint (:825)
   └─ saveRun(completed) + 返success
+
 ```
 
-**ledger** = 跨section 共享的事实公式/术语表 保证深生成时跨section 一致性(e.g. 同名公式在多个section 不被重定义。
-### 5.3 模式 2: regenerate —增量重生成
+**ledger** = 跨 section 共享的事实公式/术语表 保证深生成时跨 section 一致性(e.g. 同名公式在多个 section 不被重定义)。
+
+### 5.3 模式 2: regenerate — 增量重生成
+
 **入口**: `AiService.regenerateNoteDraft` (`AiService.ets:200-256`)
 
 ```
@@ -362,10 +407,12 @@ AiService.regenerateNoteDraft
   ─    —只改 incrementalManifest 标出的section, 不动其它
   ├─ saveCheckpoint (:283)
   └─ 返{ success, data, generation: { incrementalManifest, incrementalDiff, ... } }
+
 ```
 
-**关键设计**: `incrementalManifest` (在create 阶段就生成 标出"哪些 section 用到新源", regenerate 只对这些 section 做局部修复 其它 section 完全不动 —避免"用户改了一句话, LLM 重写整篇"。
-### 5.4 模式 3: confirm —草稿确认 →入库
+**关键设计**: `incrementalManifest` (在 create 阶段就生成 标出"哪些 section 用到新源", regenerate 只对这些 section 做局部修复 其它 section 完全不动 — 避免"用户改了一句话, LLM 重写整篇")。
+
+### 5.4 模式 3: confirm — 草稿确认 → 入库
 
 **入口**: `AiService.confirmDraft` (`AiService.ets:352-386`)
 
@@ -401,80 +448,97 @@ AiService.confirmDraft
   ─    (KnowledgeUnitWriteService.ets:63, 131) →错→  ─    翻译为DispatchResult.errorCode='VERSION_CONFLICT'
   ─  └─ saveCommitResult(commit) →generationRepository (:1397)
        —NoteGenerationCommitResult 写generation RDB; 按commitKey 幂等
+
 ```
 
 **AiService 错误处理** (`AiService.ets:374-376`):
+
 ```ts
 if (!result.success || result.data === undefined) {
   const prefix = result.errorCode === 'VERSION_CONFLICT' ? 'VERSION_CONFLICT: ' : '';
   throw new Error(prefix + (result.errorMessage ?? '笔记确认失败'));
 }
+
 ```
-→VERSION_CONFLICT 触发 UI 重规划路径(ConversationWorkflow.replan)。
+
+→ VERSION_CONFLICT 触发 UI 重规划路径(ConversationWorkflow.replan)。
 **成功后清理** (`AiService.ets:378-384`):
+
 ```ts
 if (event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0) {
   await new AgentMemoryService(this.requireContext()).markPendingMaterialsUsed(event.pendingSourceIds);
 }
+
 ```
-→标记 pending OCR 材料为已用 避免被其它run 重复引用。
-### 5.5 设计标准为何高—5 个证据
-笔记生成是MindTrace 的**核心产品能力** (用户主要使用), 当前设计有意拔高标准, 5 个证据
 
-| # | 设计点| 标准为何高| 引用 |
-|---|---|---|---|
+→ 标记 pending OCR 材料为已用 避免被其它 run 重复引用。
+
+### 5.5 设计标准为何高 — 5 个证据
+
+笔记生成是 MindTrace 的**核心产品能力** (用户主要使用), 当前设计有意拔高标准, 5 个证据
+
+| # | 设计点 | 标准为何高 | 引用 |
+| --- | --- | --- | --- |
 | 1 | **Pre-flight validation** | 生成前必检 4 项hard issue (MISSING_SOURCE / INSTRUCTION / USER_FACT / SOURCE_BUDGET_EXCEEDED + deep outline 验证), 任何一项不过直接返 failure, 不浪费LLM 算力 | `Dispatcher.ets:360-397` |
-| 2 | **Plan-and-Execute (3 产物独立生成)** | outline + evidence + draft 三份独立 LLM 调用, 而非"一次LLM 写完整篇"。**关键**: independent verifier **不是 self-judge**, 是独立LLM 调用, 避免模型偏向自己的输出| `KnowledgeModel.ets:691-720, 722-783` |
-| 3 | **Reflexion repair loop, 修到 hardIssueCount=0** | 不止一次生成 而是 verify→repair→re-verify 循环; supported 证据冻结 (`KnowledgeModel.ets:871-941`) 避免无限循环; 终止条件 = 0 hard issue | `Dispatcher.ets:666-669` |
-| 4 | **Commit key + 乐观锁+ 版本冲突** | 草稿→入库用 `runId:checkpointId:candidateHash` 三元组commitKey 幂等; `expectedVersion` 乐观锁防并发改写; VERSION_CONFLICT 不静默覆盖 显式抛错触发重规则| `AiService.ets:361, 365` + `KnowledgeUnitWriteService.ets:63, 131` |
-| 5 | **Incremental manifest 局部更新* | regenerate 只动 incrementalManifest 标出的section, 其它 section 完全冻结 —避免"小改触发大改", 保护用户对未改部分的信任 | `KnowledgeModel.ets:453-511` + `AiService.ets:251` |
+| 2 | **Plan-and-Execute (3 产物独立生成)** | outline + evidence + draft 三份独立 LLM 调用, 而非"一次LLM 写完整篇"。**关键**: independent verifier **不是 self-judge**, 是独立LLM 调用, 避免模型偏向自己的输出 | `KnowledgeModel.ets:691-720, 722-783` |
+| 3 | **Reflexion repair loop, 修到 hardIssueCount=0** | 不止一次生成 而是 verify→ repair→ re-verify 循环; supported 证据冻结 (`KnowledgeModel.ets:871-941`) 避免无限循环; 终止条件 = 0 hard issue | `Dispatcher.ets:666-669` |
+| 4 | **Commit key + 乐观锁+ 版本冲突** | 草稿 → 入库用 `runId:checkpointId:candidateHash` 三元组commitKey 幂等; `expectedVersion` 乐观锁防并发改写; VERSION_CONFLICT 不静默覆盖 显式抛错触发重规则 | `AiService.ets:361, 365` + `KnowledgeUnitWriteService.ets:63, 131` |
+| 5 | **Incremental manifest 局部更新** | regenerate 只动 incrementalManifest 标出的section, 其它 section 完全冻结 — 避免"小改触发大改", 保护用户对未改部分的信任 | `KnowledgeModel.ets:453-511` + `AiService.ets:251` |
 
-> **附加**: 真值检查(`TruthCheckService`) 在confirm 阶段**仍然有效** (§5.4 第6 节 `buildPreparedGraph` 的truth_check 节点) —即使用户编辑的draft, 4 项数学校验仍生效。
+> **附加**: 真值检查(`TruthCheckService`) 在 confirm 阶段**仍然有效** (§5.4 第 6 节 `buildPreparedGraph` 的 truth_check 节点) — 即使用户编辑的 draft, 4 项数学校验仍生效。
+
 ### 5.6 未来 RAG 引入后的模式考虑 (brief)
 
-当前笔记生成标准高的代价 = **算力消耗大** (standard route 多LLM 调用 + repair 循环) + **延迟高** (深生成耗秒级。若后续引入 RAG (e.g. **智慧化数据检索**, API 20+, 见research ①§1 表第 3 行 作为工具层扩展 可考虑以下模式方向 (本文档不展开, 仅做指针):
+当前笔记生成标准高的代价 = **算力消耗大** (standard route 多 LLM 调用 + repair 循环) + **延迟高** (深生成耗秒级。若后续引入 RAG (e.g. **智慧化数据检索**, API 20+, 见 research ①§1 表第 3 行 作为工具层扩展 可考虑以下模式方向 (本文档不展开, 仅做指针):))
 
-| 候选模式| 适用场景 | 备注 |
-|---|---|---|
-| **StreamingRAG** | 用户对话流中实时注入相关检索片段| 需要LlmClient SSE 路径表`tool_call/tool_result` emit (§10.2 S3 drift) |
-| **Multi-stepRAG** | 复杂笔记先生成查询计划→多轮检索→拼装 | 与Plan-and-Execute 兼容, 可在 outline 阶段前加 retrieval plan 节点 |
-| **ToolCall-RAG** | `SearchNote` 工具正式接入笔记生成 (而非走skill 层 | 直接触§10.2 H1/H2 (ToolLoop 发ConversationWorkflow) |
+| 候选模式 | 适用场景 | 备注 |
+| --- | --- | --- |
+| **StreamingRAG** | 用户对话流中实时注入相关检索片段 | 需要LlmClient SSE 路径表`tool_call/tool_result` emit (§10.2 S3 drift) |
+| **Multi-stepRAG** | 复杂笔记先生成查询计划 → 多轮检索 → 拼装 | 与Plan-and-Execute 兼容, 可在 outline 阶段前加 retrieval plan 节点 |
+| **ToolCall-RAG** | `SearchNote` 工具正式接入笔记生成 (而非走skill 层) | 直接触§10.2 H1/H2 (ToolLoop 发ConversationWorkflow) |
 | **Verification-gated RAG** | 检索片段作为evidence, 仍走 independent verifier + Reflexion | **保标准不降**: RAG 只是新增 source 类型, verification gate 不变 |
 
-> **重要约束 (未来 PR 应保留**: RAG 引入**不得**降低 §5.5 五项标准 (pre-flight / 3-product Plan-and-Execute / Reflexion / commit key+版本 / incremental)。检索是新增 source 维度, **不是**用来取代 verification 的捷径。
-具体设计在`docs/specs/` 出独立ticket (建议命名 `0X-note-generation-rag-*.md`), 不在本文档展开。
+> **重要约束 (未来 PR 应保留**: RAG 引入**不得**降低 §5.5 五项标准 (pre-flight / 3-product Plan-and-Execute / Reflexion / commit key+版本 / incremental)。检索是新增 source 维度, **不是**用来取代 verification 的捷径)。
+具体设计在`docs/specs/` 出独立 ticket (建议命名 `0X-note-generation-rag-*.md`), 不在本文档展开。
+
 ---
 
 ## 6. 兄弟 Workflow (共用 StateGraph 内核)
 
 ### 5.1 概述
 
-| Workflow | 模块 | State / Step | 主要节点 / 边|
-|---|---|---|---|
-| `CaptureGraph` | `agents/graph/` | `AgentState` / `CaptureStep` (7 步 | 见§4 |
+| Workflow | 模块 | State / Step | 主要节点 / 边 |
+| --- | --- | --- | --- |
+| `CaptureGraph` | `agents/graph/` | `AgentState` / `CaptureStep` (7 步) | 见§4 |
 | `ToolCallingWorkflow` | `common/workflow/tool-calling/` | `ToolCallingState` / `ToolCallingStep` | `CallModelNode` + `ExecuteToolsNode` 循环, `maxSteps=4` (ReAct, §6.4) |
 | `ConversationWorkflow` | `entry/workflows/conversation/` | `ConversationState` / `ConversationStep` | 9 节点 + 6 条件边 多轮 chat + Router (§5.3) |
-| `SkillIntentWorkflow` | `skill/workflows/intent/` | `SkillIntentState` / `SkillIntentStep` | route →`execute_search` \| `unsupported` (Router) |
+| `SkillIntentWorkflow` | `skill/workflows/intent/` | `SkillIntentState` / `SkillIntentStep` | route → `execute_search` \| `unsupported` (Router) |
 
 ### 5.2 Dispatcher 装配的3 个graph 形态
-| Graph | 形状 | 用途| file:line |
-|---|---|---|---|
+
+| Graph | 形状 | 用途 | file:line |
+| --- | --- | --- | --- |
 | `buildGraph` | `START →capture →classify →(analysisOnly?END:structure) →truth_check →(persist?persist:END) →END` | 默认 Capture pipeline | `Dispatcher.ets:1497-1531` |
 | `buildPreparedGraph` | `START →truth_check →(persist?persist:END) →END` | preparedCandidate 提交 | `Dispatcher.ets:1408-1430` |
-| `buildGenerationGraph` | `START →structure →truth_check →END` (不persist 带 | light route generation | `Dispatcher.ets:1432-1442` |
+| `buildGenerationGraph` | `START →structure →truth_check →END` (不persist 带) | light route generation | `Dispatcher.ets:1432-1442` |
 
 ### 5.3 ConversationWorkflow state
 
 [`ConversationState.ets:49-60`](../../entry/src/main/ets/workflows/conversation/ConversationState.ets): 字段 `request / sessionId / currentStep / intent? / memoryContext? / learnerProfileContext? / draftRunId? / draftCheckpointId? / draftCandidateHash? / draftStatus?`。无 spec 018 §4 禁项 (UIAbilityContext / ArkUI / callback / DAO / LlmClient / ToolRegistry)。`ConversationWorkflow` 类持 `ConversationWorkflowCallbacks` (构造注入 `:32`), **不在 state**。
 流式 delta: `ConversationWorkflowCallbacks` 提供 `appendAiMsg(id, event)` + `addAiMsgEmpty()`。`handleStreamReply` (`ConversationWorkflow.ets:317-371`) 对`StreamEvent` 直接调。
+
 ### 5.4 ToolCallingWorkflow State 字段
 
-[`ToolCallingState.ets:10-19`](../../common/src/main/ets/workflow/tool-calling/ToolCallingState.ets): `messages / definitions / maxSteps / stepCount / currentStep / lastResult? / toolCalls? / callOptions?`。全字段对齐 spec 018 §3。详细ReAct 拓扑见§6.4。
+[`ToolCallingState.ets:10-19`](../../common/src/main/ets/workflow/tool-calling/ToolCallingState.ets): `messages / definitions / maxSteps / stepCount / currentStep / lastResult? / toolCalls? / callOptions?`。全字段对齐 spec 018 §3。详细 ReAct 拓扑见 §6.4。
+
 ### 5.5 SkillIntentWorkflow 与SearchNote 接通
-[`SkillIntentWorkflow.ets:68-70`](../../skill/src/main/ets/workflows/intent/SkillIntentWorkflow.ets): 若`target==='search_note'` 走`execute_search`; 其他走`unsupported` 返回 `{ok:false, content:'Unsupported skill intent: '+action, errorKind:'UNSUPPORTED_INTENT'}`. 验证 spec 018 §"skill 与SearchNote 接通。
+
+[`SkillIntentWorkflow.ets:68-70`](../../skill/src/main/ets/workflows/intent/SkillIntentWorkflow.ets): 若`target==='search_note'` 走`execute_search`; 其他走`unsupported` 返回 `{ok:false, content:'Unsupported skill intent: '+action, errorKind:'UNSUPPORTED_INTENT'}`. 验证 spec 018 §"skill 与 SearchNote 接通。
+
 ---
 
 ## 7. Tool 层架构
+
 > **本节引用路径** (top): `common/src/main/ets/tools/ToolRegistry.ets`, `common/src/main/ets/tools/ToolCatalog.ets`, `common/src/main/ets/tools/NoteQueryTools.ets`, `common/src/main/ets/tools/ToolLoop.ets`, `common/src/main/ets/workflow/tool-calling/*`, `common/src/main/ets/llm/LlmTypes.ets`, `agents/src/main/ets/mcp/tools/OcrTool.ets`, `skill/src/main/ets/skillability/SkillAbility.ets`
 > **spec**: [`docs/specs/014-tool-calling-protocol.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/specs/014-tool-calling-protocol.md) · **ADR**: [`0010-mcp-tools-semantics.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/adr/0010-mcp-tools-semantics.md), [`0012-tool-calling-protocol.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/adr/0012-tool-calling-protocol.md)
 
@@ -482,24 +546,36 @@ if (event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0) {
 
 ```
 LLM provider (DeepSeek / Qwen, OpenAI 兼容)
-  ─wire: tools / tool_choice / tool_calls
-  ▶LlmClient.call (唯一入口, LlmClient.ets:60-70)
-  ├─ callJsonInternal (74-167)  —body.tools (106-108); LlmResponseParser.extractToolCalls (46-55)
-  └─ callStreamInternal (216-402) —parseStreamEventsFromSseData (497)  ⚠️ 暂不 emit tool_call/tool_result
-                                          ─Tool-calling workflow (common/workflow/tool-calling/)                ─  ToolLoop.run (ToolLoop.ets:21-24)                                  ─    └─▶ToolCallingWorkflow.run (ToolCallingWorkflow.ets:22-45)     ─          └─▶StateGraph (maxSteps*3+4)                             ─                ├─ call_model (CallModelNode.ets:12-35) tools=defs, tool_choice='auto'
-                ├─ execute_tools (ExecuteToolsNode.ets:12-50) registry.execute →ToolResult
-                └─ max_steps_error →LlmError 'TOOL_LOOP_MAX_STEPS'
-                                          ─                                          ▶                       common/src/main/ets/tools/
-                         ToolRegistry + ToolCatalog + NoteQueryTools (P1: note_query / note_get / review_due_query)
+  └─ wire: tools / tool_choice / tool_calls
+      └─ LlmClient.call (唯一入口, LlmClient.ets:60-70)
+          ├─ callJsonInternal (74-167)
+          │    ├─ body.tools (106-108)
+          │    └─ LlmResponseParser.extractToolCalls (46-55)
+          └─ callStreamInternal (216-402)
+               └─ parseStreamEventsFromSseData (497)  ⚠️ 暂不 emit tool_call/tool_result
+
+Tool-calling workflow (common/workflow/tool-calling/)
+  └─ ToolLoop.run (ToolLoop.ets:21-24)
+      └─ ToolCallingWorkflow.run (ToolCallingWorkflow.ets:22-45)
+          └─ StateGraph (maxSteps*3+4)
+              ├─ call_model (CallModelNode.ets:12-35) tools=defs, tool_choice='auto'
+              ├─ execute_tools (ExecuteToolsNode.ets:12-50) registry.execute → ToolResult
+              └─ max_steps_error → LlmError 'TOOL_LOOP_MAX_STEPS'
+
+工具实现 (common/src/main/ets/tools/)
+  └─ ToolRegistry + ToolCatalog + NoteQueryTools
+       (P1: note_query / note_get / review_due_query)
 
 两条工具调用通路:
-  ①MCP 风格 (OcrTool): agents/src/main/ets/mcp/tools/OcrTool.ets —不实现AgentTool, 不进 ToolRegistry
-     →TypeClassifier.extractText (140-148) 同步调new OcrTool().recognize(imageUri)
-  ①ToolRegistry 风格: ToolCatalog.createReadOnlyRegistry() →SkillAbility.handleWant
-     →SkillIntentWorkflow.run →registry.execute('note_query', argsJson) (SkillIntentWorkflow.ets:38)
+  ① MCP 风格 (OcrTool): agents/src/main/ets/mcp/tools/OcrTool.ets
+     — 不实现 AgentTool, 不进 ToolRegistry
+     → TypeClassifier.extractText (140-148) 同步调 new OcrTool().recognize(imageUri)
+  ② ToolRegistry 风格: ToolCatalog.createReadOnlyRegistry() → SkillAbility.handleWant
+     → SkillIntentWorkflow.run → registry.execute('note_query', argsJson) (SkillIntentWorkflow.ets:38)
+
 ```
 
-### 6.2 ToolRegistry —注册中心 (spec 014 / ADR-0012)
+### 6.2 ToolRegistry — 注册中心 (spec 014 / ADR-0012)
 
 文件: [`common/src/main/ets/tools/ToolRegistry.ets:1-77`](../../common/src/main/ets/tools/ToolRegistry.ets) (77 LOC)
 
@@ -521,20 +597,23 @@ export class ToolRegistry {
   listDefinitions(): LlmToolDefinition[];           // :46-54 →{type:'function', function:{name,description,parameters}}
   execute(name: string, argsJson: string): Promise<ToolResult>;  // :57-76 容错执行
 }
+
 ```
 
 **关键设计**:
-- **容错执行** (`:57-76`): 未知工具名→`{ok:false, content:'unknown tool: '+name}`; JSON.parse 失败 →`{ok:false, content:'invalid tool arguments...'}`; 不抛异常 —LLM 可能幻觉出未注册名。- **注册时校验命名** (`:35-37`): 不合法`^[a-z][a-z0-9_]{0,63}$` 抛`LlmError(kind='TOOL_REGISTRY_ERROR')`, 防发送后被OpenAI 端点拒绝。
-**生产消费方** (4 个:
+- **容错执行** (`:57-76`): 未知工具名 → `{ok:false, content:'unknown tool: '+name}`; JSON.parse 失败 →`{ok:false, content:'invalid tool arguments...'}`; 不抛异常 — LLM 可能幻觉出未注册名。
+- **注册时校验命名** (`:35-37`): 不合法`^[a-z][a-z0-9_]{0,63}$` 抛`LlmError(kind='TOOL_REGISTRY_ERROR')`, 防发送后被 OpenAI 端点拒绝。
+**生产消费方** (4 个:)
 
-| 调用方| file:line | 用途|
-|---|---|---|
+| 调用方 | file:line | 用途 |
+| --- | --- | --- |
 | `ToolCallingWorkflow` | `ToolCallingWorkflow.ets:3, 12, 16-20` | 构造时注入, `buildGraph` 初始化`definitions` (`:31`) |
 | `ExecuteToolsNode` | `ExecuteToolsNode.ets:2, 6, 8, 24` | 构造时注入, `run` 按`call.function.name` 执行 |
 | `SkillAbility` | `SkillAbility.ets:2, 27` | 通过 `ToolCatalog.createReadOnlyRegistry()` 取得, 转发给SkillIntentWorkflow |
 | `SkillIntentWorkflow` | `SkillIntentWorkflow.ets:1, 5, 7, 38` | 注入后*按*按`'note_query'` 直接 `registry.execute` (`:38`), 不走 LLM |
 
-> **DRIFT 提示**: spec 018 §1 (`:44`) 把Tool-calling 入口 = `ToolLoop.run`; **全仓生产代码时ToolLoop 调用** (`grep "new ToolLoop"` 仅命中测试`LlmToolCalling.test.ets:128,148,164,185` 与构建缓存。*唯一真实工具消费方是 skill/ 的SearchNote**。详见§9.2 #1。
+> **DRIFT 提示**: spec 018 §1 (`:44`) 把 Tool-calling 入口 = `ToolLoop.run`; **全仓生产代码时 ToolLoop 调用** (`grep "new ToolLoop"` 仅命中测试`LlmToolCalling.test.ets:128,148,164,185` 与构建缓存。**唯一真实工具消费方是 skill/ 的 SearchNote**。详见 §9.2 #1)。
+
 ### 6.3 ToolCatalog + NoteQueryTools (P1 只读工具)
 
 **ToolCatalog** [`common/src/main/ets/tools/ToolCatalog.ets:1-27`](../../common/src/main/ets/tools/ToolCatalog.ets) (27 LOC):
@@ -549,6 +628,7 @@ export class ToolCatalog {
     return registry;
   }
 }
+
 ```
 
 - 静态工厂而非构造器 (`:19` 注释明示 "便于 ArkTS Hypium seam 测试注入", spec 014:11-13)
@@ -556,9 +636,9 @@ export class ToolCatalog {
 
 **NoteQueryTools** [`common/src/main/ets/tools/NoteQueryTools.ets:1-253`](../../common/src/main/ets/tools/NoteQueryTools.ets) (253 LOC, 3 工具):
 
-| 工具类| file:line | name | 描述 | 关键 SQL/查询 |
-|---|---|---|---|---|
-| `NoteQueryTool` | `:50-126` | `note_query` | subject / review_status / keyword 过滤, 上限 20 条| `contains('title', kw) or contains('content', kw)` (`:89-94`) |
+| 工具类 | file:line | name | 描述 | 关键 SQL/查询 |
+| --- | --- | --- | --- | --- |
+| `NoteQueryTool` | `:50-126` | `note_query` | subject / review_status / keyword 过滤, 上限 20 条 | `contains('title', kw) or contains('content', kw)` (`:89-94`) |
 | `NoteGetTool` | `:129-193` | `note_get` | 按id 取单条+ 完整 content | `equalTo('id', id)` + 全字段SELECT (`:157`) |
 | `ReviewDueQueryTool` | `:196-247` | `review_due_query` | 按ReviewStatus 聚合计数 | `SELECT review_status, COUNT(*) GROUP BY review_status` (`:232`) |
 
@@ -568,13 +648,16 @@ export class ToolCatalog {
 export function createReadOnlyNoteTools(): AgentTool[] {
   return [new NoteQueryTool(), new NoteGetTool(), new ReviewDueQueryTool()];
 }
+
 ```
 
 **Schema 归属警示** (`:5-6`): `knowledge_unit` 表结构由 `entry/src/main/ets/database/NoteDao.ets` 声明, 本文件**只读直查**; 两端漂移时以 NoteDao 为准修这里(ADR-0012 §Consequences)。
-**错误处理统一形状**: 所有工具`ok:false, content:'store not ready'` 当`DatabaseHelper.getStore() === null` (`:72-76, 149-153, 218-222`); 写入生`entry` 组合根负责init。
-### 6.4 ToolLoop + ToolCallingWorkflow —ReAct
+**错误处理统一形状**: 所有工具`ok:false, content:'store not ready'` 当`DatabaseHelper.getStore() === null` (`:72-76, 149-153, 218-222`); 写入生`entry` 组合根负责 init。
+
+### 6.4 ToolLoop + ToolCallingWorkflow — ReAct
 
 **ToolLoop** [`common/src/main/ets/tools/ToolLoop.ets:1-25`](../../common/src/main/ets/tools/ToolLoop.ets) (25 LOC 薄壳): 内部完全委托给`ToolCallingWorkflow`。
+
 ```ts
 // :14-24
 export class ToolLoop {
@@ -583,9 +666,11 @@ export class ToolLoop {
     return await new ToolCallingWorkflow(this.llm, registry).run(messages, options);   // :22-23
   }
 }
+
 ```
 
-- **公开稳定入口** (spec 018 §3 "ToolLoop 是workflow, 不是 Tool, 也不是单一Node") —但*生产消费方为零* (见§10.2 #1)。- 注释 `ToolLoop.ets:6` 明说 "仅JSON 路径 (SSE 流式工具循环不在 spec 014)"。
+- **公开稳定入口** (spec 018 §3 "ToolLoop 是 workflow, 不是 Tool, 也不是单一 Node") — 但*生产消费方为零* (见 §10.2 #1)。
+- 注释 `ToolLoop.ets:6` 明说 "仅 JSON 路径 (SSE 流式工具循环不在 spec 014)"。
 **ToolCallingWorkflow** [`common/src/main/ets/workflow/tool-calling/ToolCallingWorkflow.ets:1-69`](../../common/src/main/ets/workflow/tool-calling/ToolCallingWorkflow.ets):
 
 ```ts
@@ -606,6 +691,7 @@ async run(messages, options?): Promise<LlmCallResult> {
   if (finalState.lastResult === undefined) throw new LlmError('...', 'EMPTY_RESPONSE');   // :42
   return finalState.lastResult;                                            // :44
 }
+
 ```
 
 **State shape** [`ToolCallingState.ets:10-19`](../../common/src/main/ets/workflow/tool-calling/ToolCallingState.ets):
@@ -620,23 +706,24 @@ interface ToolCallingState {
   lastResult?: LlmCallResult;
   toolCalls?: LlmToolCall[];
 }
+
 ```
 
-**图拓扑(3 节点 + 4 边** `ToolCallingWorkflow.ets:47-68`:
+**图拓扑(3 节点 + 4 边** `ToolCallingWorkflow.ets:47-68`:)
 
-| 节点 / 边| file:line | 行为 |
-|---|---|---|
+| 节点 / 边 | file:line | 行为 |
+| --- | --- | --- |
 | `START →call_model` | `:56` | 必走 |
 | `call_model` | `:50` | 调LLM, 取`result.toolCalls` 入state |
-| `call_model →execute_tools` (cond) | `:57-62` | `toolCalls` 非空 →`execute_tools`; 否→`END` |
+| `call_model →execute_tools` (cond) | `:57-62` | `toolCalls` 非空 →`execute_tools`; 否 → `END` |
 | `execute_tools` | `:51-52` | 追加 `assistant(tool_calls, content:'')` + 逐call `registry.execute` + `tool(tool_call_id, content)` 消息 |
 | `execute_tools →call_model` 或`max_steps_error` (cond) | `:63-65` | `stepCount >= maxSteps` →`max_steps_error`; 否则回`call_model` |
 | `max_steps_error` | `:53-55` | 抛`LlmError(kind='TOOL_LOOP_MAX_STEPS')` |
 
-**`stopWhen` 语义**: 终止由两个谓词+ 上限组成 —①`toolCalls` 为空 (LLM 决策 "无需工具") →自然 END; ①`stepCount >= maxSteps` →抛错 (ReAct 失控防护)。
+**`stopWhen` 语义**: 终止由两个谓词+ 上限组成 —①`toolCalls` 为空 (LLM 决策 "无需工具") → 自然 END; ①`stepCount >= maxSteps` → 抛错 (ReAct 失控防护)。
 **节点实现**:
 - `CallModelNode` (`CallModelNode.ets:12-35`): `request.tools = definitions; request.tool_choice = 'auto'`; 调`LlmCaller.call`; `stepCount+1`; `toolCalls = result.toolCalls ?? []`
-- `ExecuteToolsNode` (`ExecuteToolsNode.ets:12-50`): 逐call `registry.execute(call.function.name, call.function.arguments)` + push `tool(tool_call_id, content)` 消息; **不增 stepCount** (CallModelNode 已增)
+- `ExecuteToolsNode` (`ExecuteToolsNode.ets:12-50`): 逐 call `registry.execute(call.function.name, call.function.arguments)` + push `tool(tool_call_id, content)` 消息; **不增 stepCount** (CallModelNode 已增)
 
 ### 6.5 Wire 协议 (spec 014 / ADR-0012)
 
@@ -680,9 +767,10 @@ interface LlmCallRequest {
 
 // :85-86 —新增错误种类
 type LlmErrorKind = ... | 'TOOL_LOOP_MAX_STEPS' | 'TOOL_REGISTRY_ERROR';
+
 ```
 
-**响应侧—`extractToolCalls`** [`LlmResponseParser.ets:46-55`](../../common/src/main/ets/llm/LlmResponseParser.ets):
+**响应侧 — `extractToolCalls`** [`LlmResponseParser.ets:46-55`](../../common/src/main/ets/llm/LlmResponseParser.ets):
 
 ```ts
 // :46-55
@@ -693,14 +781,17 @@ private static extractToolCalls(parsed: LlmResponse): LlmToolCall[] {
       || message.tool_calls === undefined || message.tool_calls === null) return [];
   return message.tool_calls;
 }
+
 ```
 
-**关键设计**: **不依赖`finish_reason`** (spec 014 §1.51 行注释。OpenAI 兼容端点在该字段上行为有差异 (有些回`'tool_calls'`, 有些回`'stop'` 但`message.tool_calls` 非空), 一律以 `message.tool_calls` 非空为准。
-### 6.6 LlmClient →LLM provider 接线
+**关键设计**: **不依赖`finish_reason`** (spec 014 §1.51 行注释。OpenAI 兼容端点在该字段上行为有差异 (有些回`'tool_calls'`, 有些回`'stop'` 但`message.tool_calls` 非空), 一律以 `message.tool_calls` 非空为准)。
+
+### 6.6 LlmClient → LLM provider 接线
 
 文件: [`common/src/main/ets/llm/LlmClient.ets:60-167`](../../common/src/main/ets/llm/LlmClient.ets)
 
 **唯一公共入口 `call`** (`:60-70`):
+
 ```ts
 public async call(request: LlmCallRequest): Promise<LlmCallResult> {
   if (request.stream === true) {
@@ -710,16 +801,19 @@ public async call(request: LlmCallRequest): Promise<LlmCallResult> {
   }
   return await this.callJsonInternal(request);
 }
+
 ```
 
 **JSON 路径透传 `tools` / `tool_choice`** (`:106-111`):
+
 ```ts
 if (request.tools !== undefined) body.tools = request.tools;       // :107
 if (request.tool_choice !== undefined) body.tool_choice = request.tool_choice;   // :110
+
 ```
 
-**SSE 流式路径 —tool_call/tool_result 事件占位但未 emit**:
-`parseStreamEventsFromSseData` (`LlmClient.ets:497-522`) 当前只emit `thinking` 和`text`, tool_call / tool_result 路径未实现
+**SSE 流式路径 — tool_call/tool_result 事件占位但未 emit**:
+`parseStreamEventsFromSseData` (`LlmClient.ets:497-522`) 当前只 emit `thinking` 和`text`, tool_call / tool_result 路径未实现
 
 ```ts
 // :506-515
@@ -729,29 +823,32 @@ const content: string = delta.content ?? '';
 if (content.length > 0) { /* emit text */ }
 // tool_calls / tool_result 不在当前 emit 范围 —spec 014 §"Out of scope" 明确
 //   "流式 (SSE) 工具循环" 不在 scope
+
 ```
 
-→结论: **SSE + 工具循环 = 空白**, 当前 ToolLoop 仅走 JSON 路径 (`ToolLoop.ets:6` 注释 + `CallModelNode.ets:21` 调`LlmCaller.call` 非流式。
-### 6.7 MCP (OcrTool) vs ToolRegistry —双工具面 (ADR-0010)
+→ 结论: **SSE + 工具循环 = 空白**, 当前 ToolLoop 仅走 JSON 路径 (`ToolLoop.ets:6` 注释 + `CallModelNode.ets:21` 调`LlmCaller.call` 非流式)。
+
+### 6.7 MCP (OcrTool) vs ToolRegistry — 双工具面 (ADR-0010)
 
 文件: [`agents/src/main/ets/mcp/tools/OcrTool.ets:1-427`](../../agents/src/main/ets/mcp/tools/OcrTool.ets)
 
 | 维度 | ToolRegistry tools | OcrTool (MCP) |
-|---|---|---|
+| --- | --- | --- |
 | 实现 AgentTool | ✓4 件套 (`ToolRegistry.ets:17-22`) | ✓同4 件套, 直接 `class OcrTool` (`OcrTool.ets:52`) |
-| 注册进ToolRegistry | ✓via `ToolCatalog.createReadOnlyRegistry()` | ✓不注册|
-| 调用方| LLM 通过 tool_calls JSON 走ReAct 循环 | TypeClassifier 同步 `new OcrTool().recognize(imageUri)` (`TypeClassifier.ets:140, 146`) |
+| 注册进ToolRegistry | ✓via `ToolCatalog.createReadOnlyRegistry()` | ✓不注册 |
+| 调用方 | LLM 通过 tool_calls JSON 走ReAct 循环 | TypeClassifier 同步 `new OcrTool().recognize(imageUri)` (`TypeClassifier.ets:140, 146`) |
 | 命名空间 | `common/src/main/ets/tools/` | `agents/src/main/ets/mcp/tools/` |
 | ADR 依据 | ADR-0012 | ADR-0010 |
 
 **OcrTool 接口** (`OcrTool.ets:52-109`):
-- `recognizeBytes(imageBytes, fileName?)` (`:60-62`) —识别字节
-- `recognizeBytesWithEndpoint(...)` (`:64-96`) —测试 seam
-- `recognize(imageUri)` (`:98-109`) —Capture 流水线的高层接口, 抛错而非 `ok:false`
-- `recognizeImage(imageUri)` (`:111-174`) —完整 OCR 流程 (本地 CoreVisionKit + server fallback)
+- `recognizeBytes(imageBytes, fileName?)` (`:60-62`) — 识别字节
+- `recognizeBytesWithEndpoint(...)` (`:64-96`) — 测试 seam
+- `recognize(imageUri)` (`:98-109`) — Capture 流水线的高层接口, 抛错而非 `ok:false`
+- `recognizeImage(imageUri)` (`:111-174`) — 完整 OCR 流程 (本地 CoreVisionKit + server fallback)
 
-**为什么单独存在** (ADR-0010 §Consequences): ToolRegistry 把LLM 当工具调 (LLM 决策), OcrTool 在Capture 流水线当"流水线工具但 **不是 LLM 选择的工具*。
-### 6.8 skill 侧复用(唯一生产消费方
+**为什么单独存在** (ADR-0010 §Consequences): ToolRegistry 把 LLM 当工具调 (LLM 决策), OcrTool 在 Capture 流水线当"流水线工具但 **不是 LLM 选择的工具**。
+
+### 6.8 skill 侧复用（唯一生产消费方）
 
 文件: [`skill/src/main/ets/skillability/SkillAbility.ets:1-48`](../../skill/src/main/ets/skillability/SkillAbility.ets)
 
@@ -766,17 +863,20 @@ private async handleWant(want: Want): Promise<void> {
   result = await new SkillIntentWorkflow(registry).run(request);            // :28
   // 包成 Want + abilityResult 给platform (小艺): :36-46
 }
+
 ```
 
-**Tool →LLM 路径**: `SkillAbility.handleWant →IntentRouter.fromWant (Want →typed request) →ToolCatalog.createReadOnlyRegistry →SkillIntentWorkflow.run →execute_search 节点直接 registry.execute('note_query', argsJson) →terminateSelfWithResult`
+**Tool → LLM 路径**: `SkillAbility.handleWant →IntentRouter.fromWant (Want →typed request) →ToolCatalog.createReadOnlyRegistry →SkillIntentWorkflow.run →execute_search 节点直接 registry.execute('note_query', argsJson) →terminateSelfWithResult`
 
-**注意**: skill 路径**不走 LLM** (非tool_call 决策), 是平台Want 直连单工具执行(复用 research ①§2.3 结论)。这与ToolCallingWorkflow 的ReAct 循环是两个**完全独立**的通路。
+**注意**: skill 路径**不走 LLM** (非 tool_call 决策), 是平台 Want 直连单工具执行(复用 research ①§2.3 结论)。这与 ToolCallingWorkflow 的 ReAct 循环是两个**完全独立**的通路。
+
 ### 6.9 工具面拓扑总结图
-| 层| 模块 | file:line | 公开方法 | 谁调用|
-|---|---|---|---|---|
+
+| 层 | 模块 | file:line | 公开方法 | 谁调用 |
+| --- | --- | --- | --- | --- |
 | `ToolRegistry` | common | `tools/ToolRegistry.ets:27-76` | `register / has / listDefinitions / execute` | ToolCallingWorkflow, ExecuteToolsNode, SkillAbility |
 | `ToolCatalog` | common | `tools/ToolCatalog.ets:18-26` | `static createReadOnlyRegistry()` | SkillAbility.handleWant (`:27`) |
-| `ToolLoop` | common | `tools/ToolLoop.ets:14-24` | `run(messages, registry, options?)` | **零生产调用** (仅测试 |
+| `ToolLoop` | common | `tools/ToolLoop.ets:14-24` | `run(messages, registry, options?)` | **零生产调用** (仅测试) |
 | `NoteQueryTool` / `NoteGetTool` / `ReviewDueQueryTool` | common | `tools/NoteQueryTools.ets:50-247` | `execute(args)` | ToolCatalog.createReadOnlyRegistry (`:21`) |
 | `OcrTool` (MCP) | agents | `mcp/tools/OcrTool.ets:52-426` | `recognize / recognizeBytes / recognizeImage` | TypeClassifier.extractText (`:140-148`) |
 | `CallModelNode` | common | `workflow/tool-calling/nodes/CallModelNode.ets:5-44` | `run(state)` | ToolCallingWorkflow.buildGraph (`:50`) |
@@ -788,47 +888,47 @@ private async handleWant(want: Want): Promise<void> {
 
 ## 8. Per-agent 设计模式
 
-### 7.1 模式标签词典 (8 条
+### 7.1 模式标签词典（8 条）
 
-| 标签 | 核心特征 | MindTrace 中典型代表|
-|---|---|---|
+| 标签 | 核心特征 | MindTrace 中典型代表 |
+| --- | --- | --- |
 | **ReAct** | 思考↔工具交错循环, 终止由LLM 决策 + 上限 | ToolCallingWorkflow (§8.8) |
-| **Reflexion** | 校验失败→修复→重试, 自我批评驱动 | KnowledgeModel.repair* (§8.3) |
-| **Plan-and-Execute** | 计划→子任务→执行| KnowledgeModel.structureStandardDraft |
-| **Router / Classifier** | 输入路由到固定分支| SkillIntentWorkflow (§8.10); ConversationWorkflow (kind/intent 分流) |
-| **Single-shot LLM call** | 一次LLM 调用, 无循环 无记忆| TypeClassifier.classifyText (§8.2) |
+| **Reflexion** | 校验失败 → 修复 → 重试, 自我批评驱动 | KnowledgeModel.repair (§8.3) |
+| **Plan-and-Execute** | 计划 → 子任务 → 执行 | KnowledgeModel.structureStandardDraft |
+| **Router / Classifier** | 输入路由到固定分支 | SkillIntentWorkflow (§8.10); ConversationWorkflow (kind/intent 分流) |
+| **Single-shot LLM call** | 一次LLM 调用, 无循环 无记忆 | TypeClassifier.classifyText (§8.2) |
 | **Multi-turn chat with state** | 记忆 + 流式 + 意图切换 | ConversationWorkflow (§8.9) |
 | **Pure function** | 无LLM, 无状态机 | TruthCheckService (§8.4); PromptBuilder (§8.5); OcrTool (§8.6) |
 | **Pipeline / DAG orchestration** | 静态节点+ 条件边+ haltWhen | CaptureGraph (§8.7) |
 
-### 7.2 TypeClassifier —Single-shot LLM + Pure function fallback
+### 7.2 TypeClassifier — Single-shot LLM + Pure function fallback
 
-**Pattern**: Single-shot LLM call (主路径 + Pure function fallback (rule-based)
+**Pattern**: Single-shot LLM call (主路径 + Pure function fallback (rule-based))
 **位置**: [`TypeClassifier.ets:1-363`](../../agents/src/main/ets/agents/TypeClassifier.ets)
 
 - 公开 3 入口 (`classify / recognizeText / classifyText`), 内部统一走`callClassifier` (`:212-231`) 单次 LLM 调用
-- LLM 失败显式 catch (`:123-133`) 落到 `ruleFallback` (`:292-299`) —5 类题 + 6 学科的关键词匹配 (`CATEGORY_RULES / SUBJECT_RULES :41-56`), 不调 LLM
+- LLM 失败显式 catch (`:123-133`) 落到 `ruleFallback` (`:292-299`) — 5 类题 + 6 学科的关键词匹配 (`CATEGORY_RULES / SUBJECT_RULES :41-56`), 不调 LLM
 - `recognizeText` 是**同步工具调用**而非 LLM tool_call: image/file payload 调`OcrTool.recognize` (`TypeClassifier.ets:140, 146`)
 
-**Loop**: 无内循环 (LlmGuard `callJsonWithRetry` 最多`DEFAULT_MAX_RETRIES=2` 次 做JSON 校验重试)
+**Loop**: 无内循环 (LlmGuard `callJsonWithRetry` 最多`DEFAULT_MAX_RETRIES=2` 次 做 JSON 校验重试)
 **Tool**: 同步调`OcrTool.recognize`; LLM 走`LlmGuard.callJsonWithRetry` (`:224-229`), 预算 `maxTokens=800, timeoutMs=120000, temp=0.1` (`:18-20`)
 
-### 7.3 KnowledgeModel —Plan-and-Execute + Reflexion
+### 7.3 KnowledgeModel — Plan-and-Execute + Reflexion
 
-**Pattern**: Plan-and-Execute (`structureStandardDraft` outline→evidence→draft) + Reflexion (外层 Dispatcher 调`repairStandardDraft` / `repairDeepDraft` / `repairIncrementalSections`)
+**Pattern**: Plan-and-Execute (`structureStandardDraft` outline→ evidence→ draft) + Reflexion (外层 Dispatcher 调`repairStandardDraft` / `repairDeepDraft` / `repairIncrementalSections`)
 **位置**: [`KnowledgeModel.ets:1-1252`](../../agents/src/main/ets/agents/KnowledgeModel.ets) (split 后~554 LOC)
 
-- `structureStandardDraft` (`:235-258`) 三阶段 ①`callStandardArtifacts` outline+evidence+draft (`:691-720`); ①`normalizeStandardResult` 归一化(`:785-844`); ①`callIndependentVerifier` 独立验证 (`:722-783`) →①`applyVerification` (`:846-869`) —典型 **Plan-and-Execute** (Planner 生成 3 份产物+ Executor 验证)
-- `repairStandardDraft` (`:260-287`) **Reflexion**: verification 失败 →`callEvidenceRepair` 修复 →再verify →`mergeVerifiedEvidence` (`:871-941`) 保留 `supported` 证据冻结, 只替换contradicted。形成验证-修复-再验证循环, 但循环在 Dispatcher 编排层(`Dispatcher.dispatchStandardGeneration`, `Dispatcher.ets:585-751`), 修到 `best.hardIssueCount === 0` (`:666-669`)
-- `repairDeepDraft` (`:375-451`): 同样 Reflexion 风格, 限定 `targets = issue.sectionId`, 不重做整个draft
+- `structureStandardDraft` (`:235-258`) 三阶段 ①`callStandardArtifacts` outline+evidence+draft (`:691-720`); ①`normalizeStandardResult` 归一化(`:785-844`); ①`callIndependentVerifier` 独立验证 (`:722-783`) →①`applyVerification` (`:846-869`) — 典型 **Plan-and-Execute** (Planner 生成 3 份产物+ Executor 验证)
+- `repairStandardDraft` (`:260-287`) **Reflexion**: verification 失败 →`callEvidenceRepair` 修复 → 再 verify →`mergeVerifiedEvidence` (`:871-941`) 保留 `supported` 证据冻结, 只替换 contradicted。形成验证-修复-再验证循环, 但循环在 Dispatcher 编排层(`Dispatcher.dispatchStandardGeneration`, `Dispatcher.ets:585-751`), 修到 `best.hardIssueCount === 0` (`:666-669`)
+- `repairDeepDraft` (`:375-451`): 同样 Reflexion 风格, 限定 `targets = issue.sectionId`, 不重做整个 draft
 - `structureDeepDraft` (`:289-373`): 顺次 `callDeepSectionDraft` 每个 outlineSection, 维护共享 `ledger` (`formulas / terminology / conclusions :306, 559-581`)
 
-**Loop**: KnowledgeModel 自身**无内循环** —它的 repair 方法是被循环调用的纯转换; 真正 Reflexion 循环在`Dispatcher.dispatchStandardGeneration`
-**Tool**: **不调 AgentTool**; 通过 `LlmCaller` 多次调LLM (`callStandardArtifacts / callIndependentVerifier / callDeepSectionDraft / callEvidenceRepair / callAi`)。预算`KNOWLEDGE_MAX_TOKENS=12000`, `KNOWLEDGE_TIMEOUT_MS=300000` (`PromptBuilder.ets:10-11`)
+**Loop**: KnowledgeModel 自身**无内循环** — 它的 repair 方法是被循环调用的纯转换; 真正 Reflexion 循环在`Dispatcher.dispatchStandardGeneration`
+**Tool**: **不调 AgentTool**; 通过 `LlmCaller` 多次调 LLM (`callStandardArtifacts / callIndependentVerifier / callDeepSectionDraft / callEvidenceRepair / callAi`)。预算`KNOWLEDGE_MAX_TOKENS=12000`, `KNOWLEDGE_TIMEOUT_MS=300000` (`PromptBuilder.ets:10-11`)
 
-### 7.4 TruthCheckService —Pure function
+### 7.4 TruthCheckService — Pure function
 
-**Pattern**: Pure function (4 项数学校验 纯文本→文本+`truthFlag`)
+**Pattern**: Pure function (4 项数学校验 纯文本 → 文本+`truthFlag`)
 **位置**: [`TruthCheckService.ets:1-283`](../../agents/src/main/ets/agents/TruthCheckService.ets)
 
 - 公开面`check(input) →MvpTruthCheckResult` (`:32-34`); 4 检查 `checkBracePairing` (`:115-154`) + `checkDivisionByZero` (`:156-165`) + `checkEquation` (`:166-188`) + `checkLatexInternal` (`:189-231`)
@@ -836,7 +936,8 @@ private async handleWant(want: Want): Promise<void> {
 - 返回值`{truthFlag, details, correctedText}`, `TruthCheckNode` 映射或`{passed, flags, message}` (`TruthCheckNode.ets:20-24`)
 
 **Loop**: 无**Tool**: 无
-### 7.5 PromptBuilder —Pure function (Builder 不算 GoF 模式)
+
+### 7.5 PromptBuilder — Pure function (Builder 不算 GoF 模式)
 
 **Pattern**: Pure function (类只封装常量 + 单方法 命名上像 Builder 但行为是函数)
 **位置**: [`PromptBuilder.ets:1-58`](../../agents/src/main/ets/agents/PromptBuilder.ets)
@@ -845,48 +946,49 @@ private async handleWant(want: Want): Promise<void> {
 - 持有 7 个常量(`KNOWLEDGE_INPUT_LIMIT` 见 `:9-15`), 全部 `export const`, KnowledgeModel `KnowledgeModel.ets:88-96` import 作为 budget - 与 GoF Builder 模式差异: **非**分步构造复杂对象(无 setter 链 / 无 Director), 而是一次性返回字符串
 
 **Loop**: 无**Tool**: 无
-### 7.6 OcrTool —Pure function (HTTP/SDK wrapper)
 
-**Pattern**: Pure function (无状态工具类, 单一职责 = 图片 →文本)
+### 7.6 OcrTool — Pure function (HTTP/SDK wrapper)
+
+**Pattern**: Pure function (无状态工具类, 单一职责 = 图片 → 文本)
 **位置**: [`OcrTool.ets:1-427`](../../agents/src/main/ets/mcp/tools/OcrTool.ets)
 
 - 公开 3 入口 (`recognizeBytes / recognizeBytesWithEndpoint / recognize / recognizeImage :60-174`), 内部混合 CoreVisionKit 本地文本 (`textRecognition.recognizeText`, `:191-197`) + 本地 OCR 服务 fallback (`:267-278`)
 - `recognize` (`:98-109`) 抛错 (抛`ok:false`), 因为它是 TypeClassifier 的**同步依赖**而非 AgentTool
-- **不实现AgentTool, 不进 ToolRegistry** (ADR-0010)
+- **不实现 AgentTool, 不进 ToolRegistry** (ADR-0010)
 
-**Loop**: `recognizeBytesWithEndpoint` 重试 2 次(`:74-88`), `requestFormulaWithRetry` 重试 2 次(`:256-263`), `requestCombinedWithRetry` 重试 2 次(`:268-276`) —都是**传输层重试**, 不是 ReAct/Reflexion
-**Tool**: 调LLM
+**Loop**: `recognizeBytesWithEndpoint` 重试 2 次(`:74-88`), `requestFormulaWithRetry` 重试 2 次(`:256-263`), `requestCombinedWithRetry` 重试 2 次(`:268-276`) — 都是**传输层重试**, 不是 ReAct/Reflexion
+**Tool**: 调 LLM
 
-### 7.7 CaptureGraph —Pipeline / DAG orchestration
+### 7.7 CaptureGraph — Pipeline / DAG orchestration
 
 **Pattern**: Pipeline / DAG orchestration (StateGraph 风格, 条件路由 + haltWhen)
 **位置**: [`CaptureGraph.ets:1-99`](../../agents/src/main/ets/graph/CaptureGraph.ets)
 
 - `CaptureGraph extends StateGraph<AgentState, CaptureStep>` 薄包装(`:17-25`); `haltWhen` = `state.error !== undefined` (`:23`)
 - 5 节点, 拓扑由`Dispatcher.buildGraph` 完成, 详见 §4.2
-- `addNode` 用try/catch (`:30-36`) 异常 →`CaptureGraphError{kind:'NODE_ERROR'}`; `run` 终态化 `currentStep='END'` (`:58`)
-- **不是** ReAct: 节点不基于LLM 决策递归, 是**线性+ 条件分支**的静态图; 终止条件由`haltWhen` 和`addConditionalEdge` 路由函数 (`Dispatcher.ets:1524-1528`) 静态决定
-**Loop**: **无内循环** —CaptureGraph 是单 pass DAG; 外层 `dispatchStandardGeneration` 的repair 循环时反复invoke `buildGenerationGraph`, 这是 §7.3 的Reflexion 循环, 不是 CaptureGraph 自身
-**Tool**: **不直接调 AgentTool**; 节点通过注入 `TypeClassifier / KnowledgeModel / TruthCheckService / NoteDaoInterface` 调LLM 和DB
+- `addNode` 用 try/catch (`:30-36`) 异常 →`CaptureGraphError{kind:'NODE_ERROR'}`; `run` 终态化 `currentStep='END'` (`:58`)
+- **不是** ReAct: 节点不基于 LLM 决策递归, 是**线性+ 条件分支**的静态图; 终止条件由`haltWhen` 和`addConditionalEdge` 路由函数 (`Dispatcher.ets:1524-1528`) 静态决定
+**Loop**: **无内循环** — CaptureGraph 是单 pass DAG; 外层 `dispatchStandardGeneration` 的 repair 循环时反复 invoke `buildGenerationGraph`, 这是 §7.3 的 Reflexion 循环, 不是 CaptureGraph 自身
+**Tool**: **不直接调 AgentTool**; 节点通过注入 `TypeClassifier / KnowledgeModel / TruthCheckService / NoteDaoInterface` 调 LLM 和 DB
 
-### 7.8 ToolCallingWorkflow —ReAct
+### 7.8 ToolCallingWorkflow — ReAct
 
 **Pattern**: **ReAct** (Reasoning + Acting 交错, `CallModelNode` →`ExecuteToolsNode` 循环, LLM 决策 `toolCalls` 是否终止)
 **位置**: [`ToolCallingWorkflow.ets:1-69`](../../common/src/main/ets/workflow/tool-calling/ToolCallingWorkflow.ets)
 
 - 循环结构 (`:56-66`): `START →call_model →(toolCalls 为 END : execute_tools) →(stepCount>=maxSteps ? max_steps_error : call_model) →END`
-- LLM 决策循环终止 (`:57-62` `toolCalls.length === 0` →END); 失控防护 `stepCount >= maxSteps` (`:63-65`) 抛`TOOL_LOOP_MAX_STEPS`
-- 每轮: `CallModelNode.run` 调LLM with `tools=[...], tool_choice='auto'` (`CallModelNode.ets:14-17`); `ExecuteToolsNode.run` 逐个 `registry.execute` + 回喂 OpenAI 格式 (`ExecuteToolsNode.ets:17-31`) —教科书ReAct 形状
-- **与Plan-and-Execute 区别**: 无独立plan 阶段; LLM 在每轮inline 决策
+- LLM 决策循环终止 (`:57-62` `toolCalls.length === 0` → END); 失控防护 `stepCount >= maxSteps` (`:63-65`) 抛`TOOL_LOOP_MAX_STEPS`
+- 每轮: `CallModelNode.run` 调 LLM with `tools=[...], tool_choice='auto'` (`CallModelNode.ets:14-17`); `ExecuteToolsNode.run` 逐个 `registry.execute` + 回喂 OpenAI 格式 (`ExecuteToolsNode.ets:17-31`) — 教科书 ReAct 形状
+- **与 Plan-and-Execute 区别**: 无独立 plan 阶段; LLM 在每轮 inline 决策
 
 **Loop**:
-- 默认 `maxSteps=4` (`:9`), `maxSteps*3+4` 给StateGraph 余地 (`:40`)
-- 终止: ①`toolCalls` 空→END; ①`maxSteps` 触顶 →抛错; ①未知工具/法JSON →`ok:false` 回喂, **不**终止 (`ToolRegistry.ets:57-76` 容错) —让模型自恢复 (`LlmToolCalling.test.ets:175-191`)
+- 默认 `maxSteps=4` (`:9`), `maxSteps*3+4` 给 StateGraph 余地 (`:40`)
+- 终止: ①`toolCalls` 空 → END; ①`maxSteps` 触顶 → 抛错; ①未知工具/法 JSON →`ok:false` 回喂, **不**终止 (`ToolRegistry.ets:57-76` 容错) — 让模型自恢复 (`LlmToolCalling.test.ets:175-191`)
 
 **Tool**: LLM via `LlmCaller.call` (CallModelNode `:21`); AgentTool via `ToolRegistry.execute` (ExecuteToolsNode `:24`); 协议 OpenAI 兼容, JSON 路径 (`ToolLoop.ets:6` 注释)
-**生产消费方**: **无** (见§10.2 #1)
+**生产消费方**: **无** (见 §10.2 #1)
 
-### 7.9 ConversationWorkflow —Multi-turn chat with state + Router
+### 7.9 ConversationWorkflow — Multi-turn chat with state + Router
 
 **Pattern**: Multi-turn chat with state (记忆 + 流式 + 意图路由) + Router / Classifier (kind/intent/responseMode 三层)
 **位置**: [`ConversationWorkflow.ets:1-664`](../../entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets)
@@ -897,221 +999,227 @@ private async handleWant(want: Want): Promise<void> {
   - `classify_intent →(note_generation?note_reply : load_reply_context)`
   - `load_reply_context →save_reply_input →(stream?stream_reply : complete_reply)`
 - 多轮: `AgentMemoryService.saveMessage / getContextForReply / getContextForNoteGeneration` (`:524-578`) + `learnerProfileContext` + `summarizeSessionIfNeeded` (`:588-594`)
-- **不是** ReAct: 节点执行**确定** (每个节点调什么服务是写死的 非LLM 决策); 没有 tool_call 决策循环
+- **不是** ReAct: 节点执行**确定** (每个节点调什么服务是写死的 非 LLM 决策); 没有 tool_call 决策循环
 
 **Loop**: 无内循环 (单次 run 是单 pass DAG); conversation 是多轮(外部多次 run)
-**Tool**: **不直接调 AgentTool / ToolRegistry** (`ConversationWorkflow.ets:1-22` 无import); 通过 `ReplyService` 调LLM, 通过 `AiService` 调CaptureGraph 生成笔记
+**Tool**: **不直接调 AgentTool / ToolRegistry** (`ConversationWorkflow.ets:1-22` 无 import); 通过 `ReplyService` 调 LLM, 通过 `AiService` 调 CaptureGraph 生成笔记
 
-### 7.10 SkillIntentWorkflow —Router / Classifier
+### 7.10 SkillIntentWorkflow — Router / Classifier
 
 **Pattern**: Router / Classifier (单层 action 路由, 不调 LLM)
 **位置**: [`SkillIntentWorkflow.ets:1-86`](../../skill/src/main/ets/workflows/intent/SkillIntentWorkflow.ets)
 
 - 4 节点 + 3 边(`:29-74`): `START →route_action →(target==='search_note' ? execute_search : unsupported) →END`
-- 单层 Router: `state.request.target` 决定 execute_search 或unsupported (`:68-70`)
+- 单层 Router: `state.request.target` 决定 execute_search 或 unsupported (`:68-70`)
 - **execute_search 不是 LLM tool_call**: 是直接`registry.execute('note_query', argsJson)` (`:38`)
-- **unsupported** 返回 `{ok:false, content:'Unsupported skill intent: '+action, errorKind:'UNSUPPORTED_INTENT'}` (`:58-62`), 对应 ADR-0011 "其余 6 个action 明确 unsupported"
+- **unsupported** 返回 `{ok:false, content:'Unsupported skill intent: '+action, errorKind:'UNSUPPORTED_INTENT'}` (`:58-62`), 对应 ADR-0011 "其余 6 个 action 明确 unsupported"
 
-**Loop**: 无循环**Tool**: **直接调AgentTool** (`:38`); 不调 LLM; 仅`'note_query'` 接通
-### 7.11 ReplyService —Adapter (Stream + JSON fallback)
+**Loop**: 无循环**Tool**: **直接调 AgentTool** (`:38`); 不调 LLM; 仅`'note_query'` 接通
 
-**Pattern**: Adapter pattern (封装 LLM 调用的transport 选择: SSE 优先 + JSON 回退)
+### 7.11 ReplyService — Adapter (Stream + JSON fallback)
+
+**Pattern**: Adapter pattern (封装 LLM 调用的 transport 选择: SSE 优先 + JSON 回退)
 **位置**: [`ReplyService.ets:1-227`](../../entry/src/main/ets/services/ReplyService.ets)
 
-- 公开 2 入口: `complete(context)` (`:49-51` 调`guardedComplete` JSON) + `stream(context, sink)` (`:68-146` 走SSE + JSON fallback)
-- `stream` 内部 retry 1 次(`:81-113` while loop, `streamAttempts < 2`), 首字节超时或 NETWORK_ERROR 才重试 仍失败→`fallback()` (`:153-164`) 调`guardedComplete`
-- 这是 **transport-level retry + fallback**, 不是 Reflexion (无自我批评/ 无修复规则
-- 不实现`StreamEvent` 的`tool_call / tool_result` emit (与§7.6 一致—当前 SSE 不传工具循环)
+- 公开 2 入口: `complete(context)` (`:49-51` 调`guardedComplete` JSON) + `stream(context, sink)` (`:68-146` 走 SSE + JSON fallback)
+- `stream` 内部 retry 1 次(`:81-113` while loop, `streamAttempts < 2`), 首字节超时或 NETWORK_ERROR 才重试 仍失败 → `fallback()` (`:153-164`) 调`guardedComplete`
+- 这是 **transport-level retry + fallback**, 不是 Reflexion (无自我批评/ 无修复规则)
+- 不实现`StreamEvent` 的`tool_call / tool_result` emit (与 §7.6 一致 — 当前 SSE 不传工具循环)
 
-**Loop**: `stream` 内retry `streamAttempts < 2` (`:81`); `fallback` 仅当 `shouldUseFallback(content)` = `content.trim().length === 0` (`:114, 166-168`) 或catch 非transport error (`:138-145`)
+**Loop**: `stream` 内 retry `streamAttempts < 2` (`:81`); `fallback` 仅当 `shouldUseFallback(content)` = `content.trim().length === 0` (`:114, 166-168`) 或 catch 非 transport error (`:138-145`)
 **Tool**: 不调 AgentTool; 调`LlmClient.call({stream:true, onDelta})` (`:83-100`) + `LlmGuard.callJsonWithRetry` (`:54-62`). 预算 `CHAT_REPLY_MAX_TOKENS=12000` (`:31`)
 
 ### 7.12 模式矩阵
 
 | # | Agent / Workflow | Pattern | Has loop? | Max iter | Tool seam | State channels |
-|---|---|---|---|---|---|---|
-| 1 | `TypeClassifier` | Single-shot LLM + Pure function fallback | 内无 (LlmGuard JSON 重试 ≤) | n/a | 同步 `OcrTool.recognize` (`:140, 146`); LLM `LlmGuard.callJsonWithRetry` (`:224-229`) | 无|
-| 2 | `KnowledgeModel` | Plan-and-Execute + Reflexion (外层 Dispatcher 循环) | 内无 (靠Dispatcher 标准/深度 repair) | n/a | `LlmCaller.call` + `LlmGuard.callJsonWithRetry` (`:144-150`); 不调 AgentTool | 无(函数内 |
-| 3 | `TruthCheckService` | Pure function | 无| n/a | 无| 无|
-| 4 | `PromptBuilder` | Pure function (类惯用语) | 无| n/a | 无| 无|
-| 5 | `OcrTool` | Pure function (HTTP/SDK wrapper) | 传输层重试≤ (`:74, 256, 268`) | 2 | 无(不实现AgentTool) | 无|
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `TypeClassifier` | Single-shot LLM + Pure function fallback | 内无 (LlmGuard JSON 重试 ≤) | n/a | 同步 `OcrTool.recognize` (`:140, 146`); LLM `LlmGuard.callJsonWithRetry` (`:224-229`) | 无 |
+| 2 | `KnowledgeModel` | Plan-and-Execute + Reflexion (外层 Dispatcher 循环) | 内无 (靠Dispatcher 标准/深度 repair) | n/a | `LlmCaller.call` + `LlmGuard.callJsonWithRetry` (`:144-150`); 不调 AgentTool | 无(函数内) |
+| 3 | `TruthCheckService` | Pure function | 无 | n/a | 无 | 无 |
+| 4 | `PromptBuilder` | Pure function (类惯用语) | 无 | n/a | 无 | 无 |
+| 5 | `OcrTool` | Pure function (HTTP/SDK wrapper) | 传输层重试≤ (`:74, 256, 268`) | 2 | 无(不实现AgentTool) | 无 |
 | 6 | `CaptureGraph` | Pipeline / DAG orchestration | 无(单pass DAG; haltWhen) | n/a | 不直调 节点调LLM/DB/OCR | `AgentState` 13 字段 |
 | 7 | `ToolCallingWorkflow` | **ReAct** | ✓显式循环 | `DEFAULT_MAX_STEPS=4` (`:9`) | `ToolRegistry.execute` (`:24`) + `LlmCaller.call` (`:21`) | `ToolCallingState` 8 字段 |
-| 8 | `ConversationWorkflow` | Multi-turn chat with state + Router | 内无 (外多轮 | n/a | 不调 AgentTool; LLM `ReplyService` (`:297, 337`) | `ConversationState` 9 字段 |
-| 9 | `SkillIntentWorkflow` | Router / Classifier | 无| n/a | `ToolRegistry.execute('note_query', ...)` (`:38`); 不调 LLM | `SkillIntentState` 3 字段 |
+| 8 | `ConversationWorkflow` | Multi-turn chat with state + Router | 内无 (外多轮) | n/a | 不调 AgentTool; LLM `ReplyService` (`:297, 337`) | `ConversationState` 9 字段 |
+| 9 | `SkillIntentWorkflow` | Router / Classifier | 无 | n/a | `ToolRegistry.execute('note_query', ...)` (`:38`); 不调 LLM | `SkillIntentState` 3 字段 |
 | 10 | `ReplyService` | Adapter (Stream + JSON fallback) | retry ≤ (`:81`) | 2 | 不调 AgentTool; 调`LlmClient.call` + `LlmGuard.callJsonWithRetry` | 局部流式累积(`:73, 94`) |
 
 **模式分布**: 4 Pure function (TruthCheckService / PromptBuilder / OcrTool) + 2 Single-shot (TypeClassifier / ReplyService) + 1 ReAct (ToolCallingWorkflow) + 1 Plan-and-Execute+Reflexion (KnowledgeModel) + 1 Pipeline (CaptureGraph) + 1 Router (SkillIntentWorkflow) + 1 Multi-turn chat + Router (ConversationWorkflow)
 
-**Loop 分布**: 仅3 个有显式循环 (ToolCallingWorkflow=4 iter; ReplyService=2 iter; OcrTool=2 iter 传输重试), 其余 7 个无内循环
-**Tool 调用分布**: 5 个不调AgentTool (TypeClassifier 走OcrTool MCP / KnowledgeModel 走LlmCaller / CaptureGraph 节点调sub-services / ConversationWorkflow 走AiService+ReplyService / ReplyService 走LlmClient); 2 个直接调 (SkillIntentWorkflow →`note_query`; ToolCallingWorkflow →通用 ToolRegistry); 1 个同步工具(TypeClassifier →OcrTool MCP)
+**Loop 分布**: 仅 3 个有显式循环 (ToolCallingWorkflow=4 iter; ReplyService=2 iter; OcrTool=2 iter 传输重试), 其余 7 个无内循环
+**Tool 调用分布**: 5 个不调 AgentTool (TypeClassifier 走 OcrTool MCP / KnowledgeModel 走 LlmCaller / CaptureGraph 节点调 sub-services / ConversationWorkflow 走 AiService+ReplyService / ReplyService 走 LlmClient); 2 个直接调 (SkillIntentWorkflow →`note_query`; ToolCallingWorkflow → 通用 ToolRegistry); 1 个同步工具(TypeClassifier → OcrTool MCP)
 
 ---
 
 ## 9. 决策一致性核查
+
 每条 = 当年出处 + 现状对照 + 结论。
 | # | 决策 | 当年出处 | 现状 | 结论 |
-|---|---|---|---|---|
-| 1 | 不用 LangGraph 运行时 自建 StateGraph | ADR-0008 / research ①结论 | §3 + §4.1 | ✓|
-| 2 | 单dispatch 入口 | ADR-0003 / research ①§Implications | §4.4 (`Dispatcher.ets:98`) | ✓|
-| 3 | KnowledgeModel 拆为 PromptBuilder / StructureService / TruthCheckService | ADR-0006 / spec 015 | §4.5 + §8.3-8.5 | ✓|
-| 4 | LlmClient 合并为`call()` 双路径| ADR-0004 | §4.7 (`LlmClient.ets:60-70`) | ✓|
-| 5 | 失败不生成fallback KU | ADR-0008 §Consequences / spec 011 §9 | §4.6 (`KnowledgeModel.ets:142-155`) | ✓|
-| 6 | StateGraph 不含 Checkpoint / Subgraph / HITL / Reducer / 并行 | spec 018 §"Out of Scope" | §4.1 (无对应类型 | ✓|
-| 7 | tool-calling State 必含 messages / stepCount / maxSteps / lastResult / toolCalls | spec 018 §3 | §7.4 (`ToolCallingState.ets:10-19`) | ✓|
-| 8 | Conversation State 不含 UIAbilityContext / ArkUI / callback / DAO / LlmClient / ToolRegistry | spec 018 §4 | §6.3 (`ConversationState.ets:49-60`) | ✓|
-| 9 | Conversation 流式 delta 走注入的 event sink | spec 018 §4 | §6.3 (`ConversationWorkflow.ets:317-371`) | ✓|
-| 10 | skill `SearchNote` 是唯一 wired action, 其余 unsupported | spec 018 / ADR-0011 | §8.10 (`SkillIntentWorkflow.ets:68-70`) | ✓|
-| 11 | ToolRegistry 落`common/` (不落 entry) | ADR-0012 §Chosen 1 | §7.2 (`ToolRegistry.ets:1`) | ✓|
-| 12 | P1 只读工具先于写工具| ADR-0012 §Chosen 3 | §7.3 (`ToolCatalog` 只装配readonly) | ✓|
-| 13 | OcrTool 不进 ToolRegistry, 按MCP 语义 | ADR-0010 | §7.7 (`OcrTool.ets:52` 非AgentTool 4 件套) | ✓|
-| 14 | OpenAI 兼容 wire 协议 (tools/tool_choice/tool_calls), 不依赖finish_reason | spec 014 §1.51 / ADR-0012 | §7.5 (`LlmResponseParser.ets:46-55`) | ✓|
-| 15 | ToolRegistry 容错执行 (未知工具/坏JSON →ok:false, 不抛) | spec 014 §2 | §7.2 (`ToolRegistry.ets:57-76`) | ✓|
-| 16 | ToolLoop 仅JSON 路径 (SSE 工具循环不在 scope) | spec 014 §3 + `ToolLoop.ets:6` 注释 | §7.6 | ✓|
+| --- | --- | --- | --- | --- |
+| 1 | 不用 LangGraph 运行时 自建 StateGraph | ADR-0008 / research ①结论 | §3 + §4.1 | ✓ |
+| 2 | 单dispatch 入口 | ADR-0003 / research ①§Implications | §4.4 (`Dispatcher.ets:98`) | ✓ |
+| 3 | KnowledgeModel 拆为 PromptBuilder / StructureService / TruthCheckService | ADR-0006 / spec 015 | §4.5 + §8.3-8.5 | ✓ |
+| 4 | LlmClient 合并为`call()` 双路径 | ADR-0004 | §4.7 (`LlmClient.ets:60-70`) | ✓ |
+| 5 | 失败不生成fallback KU | ADR-0008 §Consequences / spec 011 §9 | §4.6 (`KnowledgeModel.ets:142-155`) | ✓ |
+| 6 | StateGraph 不含 Checkpoint / Subgraph / HITL / Reducer / 并行 | spec 018 §"Out of Scope" | §4.1 (无对应类型) | ✓ |
+| 7 | tool-calling State 必含 messages / stepCount / maxSteps / lastResult / toolCalls | spec 018 §3 | §7.4 (`ToolCallingState.ets:10-19`) | ✓ |
+| 8 | Conversation State 不含 UIAbilityContext / ArkUI / callback / DAO / LlmClient / ToolRegistry | spec 018 §4 | §6.3 (`ConversationState.ets:49-60`) | ✓ |
+| 9 | Conversation 流式 delta 走注入的 event sink | spec 018 §4 | §6.3 (`ConversationWorkflow.ets:317-371`) | ✓ |
+| 10 | skill `SearchNote` 是唯一 wired action, 其余 unsupported | spec 018 / ADR-0011 | §8.10 (`SkillIntentWorkflow.ets:68-70`) | ✓ |
+| 11 | ToolRegistry 落`common/` (不落 entry) | ADR-0012 §Chosen 1 | §7.2 (`ToolRegistry.ets:1`) | ✓ |
+| 12 | P1 只读工具先于写工具 | ADR-0012 §Chosen 3 | §7.3 (`ToolCatalog` 只装配readonly) | ✓ |
+| 13 | OcrTool 不进 ToolRegistry, 按MCP 语义 | ADR-0010 | §7.7 (`OcrTool.ets:52` 非AgentTool 4 件套) | ✓ |
+| 14 | OpenAI 兼容 wire 协议 (tools/tool_choice/tool_calls), 不依赖finish_reason | spec 014 §1.51 / ADR-0012 | §7.5 (`LlmResponseParser.ets:46-55`) | ✓ |
+| 15 | ToolRegistry 容错执行 (未知工具/坏JSON → ok:false, 不抛) | spec 014 §2 | §7.2 (`ToolRegistry.ets:57-76`) | ✓ |
+| 16 | ToolLoop 仅JSON 路径 (SSE 工具循环不在 scope) | spec 014 §3 + `ToolLoop.ets:6` 注释 | §7.6 | ✓ |
 
-**16/16 一致**。余0 drift 都是实现细节 vs 措辞精度, 不与决策矩阵冲突。
+**16/16 一致**。余 0 drift 都是实现细节 vs 措辞精度, 不与决策矩阵冲突。
+
 ---
 
 ## 10. Drift 与开放项
 
-按§4-§8 当前实现对照 spec 011/014/015/018 / ADR-0008/0010/0011/0012 列出。
-### 10.1 硬drift (与§9 决策红线, 仍建议修复
+按 §4-§8 当前实现对照 spec 011/014/015/018 / ADR-0008/0010/0011/0012 列出。
+
+### 10.1 硬 drift（与 §9 决策红线，仍建议修复）
 
 | # | drift | 引用 | 修复 |
-|---|---|---|---|
-| 1 | spec 018 §6 措辞过时 (Conversation / SkillIntent 已生产化, 文档仍称 "subsequently reuse kernel") | `docs/specs/018-agent-workflow-architecture.md:85-89` | doc 侧|
-| 2 | Dispatcher 实际构建 3 种graph 形态 spec 018 §2 只暗示未明列 | `Dispatcher.ets:1408, 1432, 1497` + §6.2 | doc 侧|
-| 3 | spec 011 §"Implementation Decisions 2" 未明列`analysisOnly →END` 早退边| `Dispatcher.ets:1525` + §4.2 | doc 侧|
+| --- | --- | --- | --- |
+| 1 | spec 018 §6 措辞过时 (Conversation / SkillIntent 已生产化, 文档仍称 "subsequently reuse kernel") | `docs/specs/018-agent-workflow-architecture.md:85-89` | doc 侧 |
+| 2 | Dispatcher 实际构建 3 种graph 形态 spec 018 §2 只暗示未明列 | `Dispatcher.ets:1408, 1432, 1497` + §6.2 | doc 侧 |
+| 3 | spec 011 §"Implementation Decisions 2" 未明列`analysisOnly →END` 早退边 | `Dispatcher.ets:1525` + §4.2 | doc 侧 |
 | 4 | `CaptureGraphError.cause?: Object` 改为 `unknown` (ArkTS 严格类型收紧) | `AgentState.ets:30` + §4.3 | code (P3) |
-| 5 | spec 018 §"验收" 待勾 "Hypium + 真机验收" 一项| spec:137 | test/QA |
-| 6 | research ①§6.5: `docs/agents/api-version.md` 文档漂移 (声称 compileSdk=9, 实际 6.1.1(24)) | `api-version.md` 全文 | doc (P2, **动态做** —随SDK 时间线同步改) |
-| 7 | research ①§6.6: `harmonyos-kits-survey-2026-09-05.md §2` AIEngine / `@hms.ai.llm` 表述失实 | kits-survey §2 | doc (**动态做** —标存疑持续更新 |
+| 5 | spec 018 §"验收" 待勾 "Hypium + 真机验收" 一项 | spec:137 | test/QA |
+| 6 | research ①§6.5: `docs/agents/api-version.md` 文档漂移 (声称 compileSdk=9, 实际 6.1.1(24)) | `api-version.md` 全文 | doc (P2, **动态做** — 随SDK 时间线同步改) |
+| 7 | research ①§6.6: `harmonyos-kits-survey-2026-09-05.md §2` AIEngine / `@hms.ai.llm` 表述失实 | kits-survey §2 | doc (**动态做** — 标存疑持续更新) |
 | 8 | `analyze()` 与`routeDispatch()` wrapper 已标"待删", D2 教学日志 §8 tickets #13/#14/#17 实施情况 | `d2-capturegraph-teaching-2026-09-05.md:208-211` | issue tracker 核销 |
-| 9 | **ToolRegistry schema 漂移风险未消除*。`NoteQueryTools.ets:5-6` 文件头注释说 "以NoteDao 为准修这里, 但无 CI 守门; `knowledge_unit` 17 列在 NoteQueryTools (`:97, 157`) 与entry NoteDao 同时声明 | `NoteQueryTools.ets:5-6` + §7.3 | **动态做** —NoteDao 改时同步对齐 + 加AST 守门 |
+| 9 | **ToolRegistry schema 漂移风险未消除**。`NoteQueryTools.ets:5-6` 文件头注释说 "以NoteDao 为准修这里, 但无 CI 守门; `knowledge_unit` 17 列在 NoteQueryTools (`:97, 157`) 与entry NoteDao 同时声明 | `NoteQueryTools.ets:5-6` + §7.3 | **动态做** — NoteDao 改时同步对齐 + 加AST 守门 |
 
-### 10.2 软drift (与§9 决策矩阵潜在冲突, 需处置)
+### 10.2 软 drift（与 §9 决策矩阵潜在冲突，需处置）
 
 | # | drift | 引用 | 修复方向 |
-|---|---|---|---|
-| **H1** | **ToolLoop / ToolCallingWorkflow 零生产消费方**。spec 018:44 把ToolLoop 的Tool-calling 稳定入口, 但全仓`new ToolLoop` 仅命中`LlmToolCalling.test.ets:128,148,164,185` + 构建缓存; **没有任何生产代码调它**。`ConversationWorkflow` 不接 (spec 018:74 "工具循环只调用ToolLoop" 未落地 | spec 018:44, 74; 实测 grep 见§7.2 见| **待做 (§10.5 包装方式 MCP vs Kit/Tool 调研后**: 把ToolCallingWorkflow 接ConversationWorkflow (答复/笔记生成); 或改 spec 018 §1 表格降级 ToolLoop 为"infrastructure, not yet wired" |
-| **H2** | **ConversationWorkflow 不接 ToolLoop**。`ConversationWorkflow.ets:1-22` import 列表无`ToolRegistry / ToolLoop`, spec 018:74 写"工具循环只调用ToolLoop; 不得复制两者逻辑", 当前 reply_service 仍是 `LlmClient.call` 直调 | spec 018:74; `ConversationWorkflow.ets:1-22` | **待做 (§10.5 包装方式调研后**: 把ToolLoop 接ConversationWorkflow.handleCompleteReply/handleStreamReply; ToolCall 决策由LLM 在对话内 inline 做|
-| **S3** | **SSE + 工具循环 = 空白**。`StreamEvent` 类型有 4 值全定义 (`LlmTypes.ets:129`, 但 `parseStreamEventsFromSseData` (`LlmClient.ets:497-522`) 只 emit `thinking / text`, 不 emit `tool_call / tool_result`; `ToolLoop.ets:6` 注释明说 "SSE 流式工具循环不在 spec 014" | `LlmTypes.ets:129`, `LlmClient.ets:497-522`, `ToolLoop.ets:6` | **待做 (§10.5 调研后**: 走 spec 014 extension / 或 spec; 在 `parseStreamEventsFromSseData` 的 delta 上处理 `tool_calls` 并 emit `tool_call` 事件 |
-| **S4** | **ToolLoop 零事件出口*。`run()` 只返回最终`LlmCallResult` (`ToolCallingWorkflow.ets:41-44`), 中间 tool_call/tool_result 不对外发事件, 无法驱动 UI 过程展示 | `ToolCallingWorkflow.ets:22-45` | **待做 (§10.5 调研后**: 加`ToolLoopOptions.sink?: (event: StreamEvent) => void`, ExecuteToolsNode.emit tool_call/tool_result |
-| **S5** | **P1 只读工具未在 entry/agents 注入**。`SkillAbility.ets:27` 唯一生产消费方 `entry/src/main/ets/` 全文 grep `ToolRegistry / ToolLoop / ToolCatalog` 无任何match (见§7.2 略. spec 014 §"P1 首批工具" 明确 "已落地 但应用方只在 skill | `agents/src/main/ets/Index.ets` + `entry/src/main/ets` grep | **待做 (§10.5 调研后**: spec 014 后增加"应用方wiring" 章节; 或在 EntryAbility 启动时`ToolCatalog.createReadOnlyRegistry()` 缓存 |
+| --- | --- | --- | --- |
+| **H1** | **ToolLoop / ToolCallingWorkflow 零生产消费方**。spec 018:44 把ToolLoop 的Tool-calling 稳定入口, 但全仓`new ToolLoop` 仅命中`LlmToolCalling.test.ets:128,148,164,185` + 构建缓存; **没有任何生产代码调它**。`ConversationWorkflow` 不接 (spec 018:74 "工具循环只调用ToolLoop" 未落地) | spec 018:44, 74; 实测 grep 见§7.2 见 | **待做 (§10.5 包装方式 MCP vs Kit/Tool 调研后**: 把ToolCallingWorkflow 接ConversationWorkflow (答复/笔记生成); 或改 spec 018 §1 表格降级 ToolLoop 为"infrastructure, not yet wired") |
+| **H2** | **ConversationWorkflow 不接 ToolLoop**。`ConversationWorkflow.ets:1-22` import 列表无`ToolRegistry / ToolLoop`, spec 018:74 写"工具循环只调用ToolLoop; 不得复制两者逻辑", 当前 reply_service 仍是 `LlmClient.call` 直调 | spec 018:74; `ConversationWorkflow.ets:1-22` | **待做 (§10.5 包装方式调研后**: 把ToolLoop 接ConversationWorkflow.handleCompleteReply/handleStreamReply; ToolCall 决策由LLM 在对话内 inline 做) |
+| **S3** | **SSE + 工具循环 = 空白**。`StreamEvent` 类型有 4 值全定义 (`LlmTypes.ets:129`, 但 `parseStreamEventsFromSseData` (`LlmClient.ets:497-522`) 只 emit `thinking / text`, 不 emit `tool_call / tool_result`; `ToolLoop.ets:6` 注释明说 "SSE 流式工具循环不在 spec 014") | `LlmTypes.ets:129`, `LlmClient.ets:497-522`, `ToolLoop.ets:6` | **待做 (§10.5 调研后**: 走 spec 014 extension / 或 spec; 在 `parseStreamEventsFromSseData` 的 delta 上处理 `tool_calls` 并 emit `tool_call` 事件) |
+| **S4** | **ToolLoop 零事件出口**。`run()` 只返回最终`LlmCallResult` (`ToolCallingWorkflow.ets:41-44`), 中间 tool_call/tool_result 不对外发事件, 无法驱动 UI 过程展示 | `ToolCallingWorkflow.ets:22-45` | **待做 (§10.5 调研后**: 加`ToolLoopOptions.sink?: (event: StreamEvent) => void`, ExecuteToolsNode.emit tool_call/tool_result) |
+| **S5** | **P1 只读工具未在 entry/agents 注入**。`SkillAbility.ets:27` 唯一生产消费方 `entry/src/main/ets/` 全文 grep `ToolRegistry / ToolLoop / ToolCatalog` 无任何match (见§7.2 略. spec 014 §"P1 首批工具" 明确 "已落地 但应用方只在 skill) | `agents/src/main/ets/Index.ets` + `entry/src/main/ets` grep | **待做 (§10.5 调研后**: spec 014 后增加"应用方wiring" 章节; 或在 EntryAbility 启动时`ToolCatalog.createReadOnlyRegistry()` 缓存) |
 
 ### 10.5 用户决策矩阵 (2026-09-16 当面裁决)
 
-与user 当面裁决 (§10.2 H1/H2/S3/S4/S5 + research ①§6 排除项+ spec 015 P3 + spec 011/018 措辞修正 + spec 014 schema CI), 11 项处置如下
+与 user 当面裁决 (§10.2 H1/H2/S3/S4/S5 + research ①§6 排除项+ spec 015 P3 + spec 011/018 措辞修正 + spec 014 schema CI), 11 项处置如下
 
-| # | 项| 裁决 | 处置方式 |
-|---|---|---|---|
+| # | 项 | 裁决 | 处置方式 |
+| --- | --- | --- | --- |
 | 1 | PushKit (隐私 + 运营成本) | **不做** | 排除, 不入任何 spec/plan |
-| 2 | 端云同步 (API 23+, AGC + 真机 + 中国大陆) | **待定, 依据具体情况** | 复赛后视用户增长与AGC 开通成本评估|
-| 3 | FunctionComponent 拉起小艺智能体(AGC 限制) | **待定, 依据具体情况** | 同#2, 复赛后视演示形态需要|
+| 2 | 端云同步 (API 23+, AGC + 真机 + 中国大陆) | **待定, 依据具体情况** | 复赛后视用户增长与AGC 开通成本评估 |
+| 3 | FunctionComponent 拉起小艺智能体(AGC 限制) | **待定, 依据具体情况** | 同#2, 复赛后视演示形态需要 |
 | 4 | 端侧 LLM (API 24 手机端无) | **不做, 不留痕迹** | capturegraph doc 中不存 research ①/ harmonyos-kits-survey 作为外部事实记录保留 |
-| 5 | ToolLoop 接ConversationWorkflow (H1) | **需要做** | §10.6 包装方式 MCP vs Kit/Tool 调研后实施|
+| 5 | ToolLoop 接ConversationWorkflow (H1) | **需要做** | §10.6 包装方式 MCP vs Kit/Tool 调研后实施 |
 | 6 | SSE tool_call/tool_result emit + ToolLoop 事件出口 (S3/S4) | **需要做** | 同#5, 同一 ticket 联动 |
-| 7 | P1 工具在entry/agents 注入 (S5) | **需要做** | 同#5, ToolLoop 落地后自然接通|
+| 7 | P1 工具在entry/agents 注入 (S5) | **需要做** | 同#5, ToolLoop 落地后自然接通 |
 | 8 | NoteQueryTools 写工具(P2) | **需要做** | 同#5, 统一写入 gate 已完成 工具本体待包装方式定后开 |
 | 9 | `CaptureGraphError.cause?: Object →unknown` (spec 015 P3) | **动态做** | 随下次ArkTS 类型收紧或大改`AgentState.ets` 时同步修改+ 测试断言同步更新 |
 | 10 | spec 018 §6 / §1.74 措辞修正 + spec 011 "Implementation Decisions 2" `analysisOnly→END` 明列 | **动态做** | 随代码改动同步更新doc, 复赛 / 决赛前最后一次doc 校对一起做 |
 | 11 | ToolRegistry schema CI 守门 (NoteQueryTools vs NoteDao) | **动态做** | NoteDao 改时同步对齐 + 加AST 守门测试 |
 
-### 10.6 包装方式调研 —MCP vs Direct Tool (background agent 2026-09-16 完成)
+### 10.6 包装方式调研 — MCP vs Direct Tool (background agent 2026-09-16 完成)
 
-**调研来源**: ``docs/research/tool-packaging-mcp-path-2026-09-16.md``（原文已清理） (legacy) + ``docs/research/tool-packaging-direct-kit-path-2026-09-16.md``（原文已清理） (legacy)
+**调研来源**: `docs/research/tool-packaging-mcp-path-2026-09-16.md`（原文已清理） (legacy) + `docs/research/tool-packaging-direct-kit-path-2026-09-16.md`（原文已清理） (legacy)
 
 #### 10.6.1 两种路径的本质区分
+
 | 维度 | **MCP 路径** (`mcp/tools/OcrTool.ets` 模式, ADR-0010) | **Direct Tool 路径** (`common/tools/` ToolRegistry, ADR-0012 / spec 014) |
-|---|---|---|
+| --- | --- | --- |
 | **实现 contract** | 普通class, 公开业务方法 (`recognize / recognizeBytes / recognizeImage`) | `implements AgentTool` 4 件套 (`name` + `description` + `parameters` JSON Schema + `execute(args)`) |
-| **命名规则** | 无强制(类名 / 方法名自由 | 严于 OpenAI wire: `^[a-z][a-z0-9_]{0,63}$` |
+| **命名规则** | 无强制(类名 / 方法名自由) | 严于 OpenAI wire: `^[a-z][a-z0-9_]{0,63}$` |
 | **失败形状** | **抛错** (e.g. `OcrTool.recognize` `OcrTool.ets:101, 106` throw) | **不抛**: 返回 `{ok:false, content:'...'}` (ToolRegistry `ToolRegistry.ets:57-76` 容错执行) |
 | **调用方** | 同步直调 (e.g. `TypeClassifier.ets:140-148` `new OcrTool().recognize`) | LLM 按`tool_calls` JSON 决策, 走ReAct 循环 |
-| **是否进ToolRegistry** | **否** (ADR-0010 + CONTEXT.md:111 显式排除) | **是** —ToolCatalog.createReadOnlyRegistry() 装配 |
+| **是否进ToolRegistry** | **否** (ADR-0010 + CONTEXT.md:111 显式排除) | **是** — ToolCatalog.createReadOnlyRegistry() 装配 |
 | **命名空间** | `agents/src/main/ets/mcp/tools/` | `common/src/main/ets/tools/` |
-| **协议层** | 无标准协议 调用方直调| OpenAI 兼容 wire (`tools` / `tool_choice` / `tool_calls` 见`LlmTypes.ets:32-33, 224`) |
+| **协议层** | 无标准协议 调用方直调 | OpenAI 兼容 wire (`tools` / `tool_choice` / `tool_calls` 见`LlmTypes.ets:32-33, 224`) |
 
 **核心判据**:
-- **调用方是 LLM 还是代码?** LLM 决策 →Direct Tool; 代码同步调→MCP
-- **失败形状抛错还是容错?** 抛错 →MCP (调用方try/catch 已知失败形状); 容错 →Direct Tool (LLM 需按`ok:false.content` 自恢复
-- **需不需要外部系统暴露** 需要MCP server (小艺开放平台 research ①§4) →MCP; 若app 内LLM 调→Direct Tool
+- **调用方是 LLM 还是代码?** LLM 决策 → Direct Tool; 代码同步调 → MCP
+- **失败形状抛错还是容错?** 抛错 → MCP (调用方 try/catch 已知失败形状); 容错 → Direct Tool (LLM 需按`ok:false.content` 自恢复)
+- **需不需要外部系统暴露** 需要 MCP server (小艺开放平台 research ①§4) → MCP; 若 app 内 LLM 调 → Direct Tool
 
-#### 10.6.2 #5-#8 决策点(两项 agent 一致推荐
+#### 10.6.2 #5-#8 决策点（两项 agent 一致推荐）
 
-| # | drift | **推荐路径** | 理由 (两agent 一致 |
-|---|---|---|---|
+| # | drift | **推荐路径** | 理由 (两agent 一致) |
+| --- | --- | --- | --- |
 | **#5 H1** | ToolLoop 接ConversationWorkflow | **Direct Tool** | `ToolLoop.run` 带`ToolRegistry` 参数; MCP-style `throw` 会*破坏 ReAct 自恢复* (`ToolRegistry.ets:57-76` 容错设计) |
 | **#6 S3** | SSE `tool_call` / `tool_result` emit | **Direct Tool** | 事件描述 `tool_calls.name` (AgentTool 词汇); MCP-style 工具**不发 `tool_calls`** |
 | **#6 S4** | ToolLoop 事件出口 (`ToolLoopOptions.sink`) | **Direct Tool** | 扩展 `LlmClient.ets:497-522` `parseStreamEventsFromSseData` + 加sink; 非MCP 替代方案 |
 | **#7 S5** | P1 只读工具在entry/agents 注入 | **Direct Tool** | `NoteQueryTools.ets:50-247` 已是 ToolRegistry 形态 直接 `ToolCatalog.createReadOnlyRegistry()` 在`EntryAbility.onCreate` 装配 |
-| **#8 P2** | NoteQueryTools 写工具(`note_create / note_update / note_delete`) | **Direct Tool** (由`WriteToolFacade` 注入 `entry/KnowledgeUnitWriteService`, 复用 `NoteDaoAdapter` 验证门 | 统一写入 gate 要求**单一边界**走`ToolRegistry.execute`; spec 014:134 / ADR-0012:13 写工具是 P2 路径; MCP 路径无法承载 entry 侧写入门 |
+| **#8 P2** | NoteQueryTools 写工具(`note_create / note_update / note_delete`) | **Direct Tool** (由`WriteToolFacade` 注入 `entry/KnowledgeUnitWriteService`, 复用 `NoteDaoAdapter` 验证门) | 统一写入 gate 要求**单一边界**走`ToolRegistry.execute`; spec 014:134 / ADR-0012:13 写工具是 P2 路径; MCP 路径无法承载 entry 侧写入门 |
 
-**结论**: **5 项全部Direct Tool** —MCP 路径**保留给未来的 pipeline 工具** (同步预处理 音频→文本/ 视频→文本/ CoreVisionKit 其它形态, **不**用来承载 LLM 工具循环。
+**结论**: **5 项全部 Direct Tool** — MCP 路径**保留给未来的 pipeline 工具** (同步预处理 音频 → 文本/ 视频 → 文本/ CoreVisionKit 其它形态, **不**用来承载 LLM 工具循环)。
+
 #### 10.6.3 MCP 路径保留场景 (当前 + 未来)
 
-- **当前**: `OcrTool` (`mcp/tools/OcrTool.ets`, ADR-0010 唯一实例) —Capture pipeline 同步 OCR, 抛错, 不经 LLM 决策
+- **当前**: `OcrTool` (`mcp/tools/OcrTool.ets`, ADR-0010 唯一实例) — Capture pipeline 同步 OCR, 抛错, 不经 LLM 决策
 - **未来候选** (任何**同步 + 抛错 + 代码直调**的预处理工具):
-  - **音频→文本** (ASR via CoreSpeechKit 或自研
-  - **视频→关键帧** (VideoKit / MediaKit)
+  - **音频 → 文本** (ASR via CoreSpeechKit 或自研)
+  - **视频 → 关键帧** (VideoKit / MediaKit)
   - **图片增强 / 去噪** (ImageKit)
   - **公式识别 fallback** (MathPix / 二次 OCR)
-- **判定**: 工具**早于** LLM 介入 capture pipeline + 抛错形状合适try/catch →MCP; 工具**晚于** LLM 决策 / 由LLM 调→Direct Tool
+- **判定**: 工具**早于** LLM 介入 capture pipeline + 抛错形状合适 try/catch → MCP; 工具**晚于** LLM 决策 / 由 LLM 调 → Direct Tool
 
-#### 10.6.4 软drift (Direct Tool agent 检出 5 项
+#### 10.6.4 软 drift（Direct Tool agent 检出 5 项）
 
 | # | drift | 引用 | 修复 |
-|---|---|---|---|
-| **D1** | `LlmCallResult.toolCalls` 在JSON 路径填充, SSE 路径只靠 sink 透传 | `LlmClient.ets:74-167, 216-402` | 加`tool_calls` 累积字段; 或保证sink 是唯一通道 (UI 接收方合并 |
+| --- | --- | --- | --- |
+| **D1** | `LlmCallResult.toolCalls` 在JSON 路径填充, SSE 路径只靠 sink 透传 | `LlmClient.ets:74-167, 216-402` | 加`tool_calls` 累积字段; 或保证sink 是唯一通道 (UI 接收方合并) |
 | **D2** | `LlmCallOptions` 无`tools` 字段 —`ReplyService.complete` 走`LlmGuard.callJsonWithRetry` 都**没有 tools 通路** | `LlmGuard.ets:37-66` + `ReplyService.ets:54-62` | `LlmCallOptions` 加`tools?: LlmToolDefinition[]` + `LlmGuard.callJsonWithRetry` 透传 |
 | **D3** | `validateChatAnswerJson` 假设 JSON response shape, **不支持tool-loop chat** | (待定位 grep `validateChatAnswerJson`) | chat 走tool-loop 时走不同 validate 路径, 或放宽schema |
-| **D4** | `TextIntent` 词汇缺`'chat_with_tools'` | `IntentClassifier.ets:14` | 加新 intent 值(若分类器能识别"用户想用工具" 的语义差异 |
-| **D5** | NoteDao →NoteQueryTools schema drift 为dynamic-only —P2 写工具会**加剧** 风险 | `NoteDaoAdapter.ets` + `NoteQueryTools.ets` | §10.1 #9 CI 守门必须在P2 写工具前落地 |
+| **D4** | `TextIntent` 词汇缺`'chat_with_tools'` | `IntentClassifier.ets:14` | 加新 intent 值(若分类器能识别"用户想用工具" 的语义差异) |
+| **D5** | NoteDao → NoteQueryTools schema drift 为dynamic-only — P2 写工具会**加剧** 风险 | `NoteDaoAdapter.ets` + `NoteQueryTools.ets` | §10.1 #9 CI 守门必须在P2 写工具前落地 |
 
 #### 10.6.5 实施顺序 (复赛后第一优先 ticket)
 
 按依赖关系
-1. **#7 S5** (最简): `EntryAbility.onCreate` 调`ToolCatalog.createReadOnlyRegistry()` 缓存; `ReplyService` 构造注入(1-2 行改动 —这步**立刻** 给ToolLoop 加1 个生产消费方 (但暂未在 ConversationWorkflow 调用)
-2. **#6 D2 + S4**: `LlmCallOptions.tools` + `ToolLoopOptions.sink` (前置 D2 才能给ReplyService 传tools)
+1. **#7 S5** (最简): `EntryAbility.onCreate` 调`ToolCatalog.createReadOnlyRegistry()` 缓存; `ReplyService` 构造注入(1-2 行改动 — 这步**立刻** 给 ToolLoop 加 1 个生产消费方 (但暂未在 ConversationWorkflow 调用))
+2. **#6 D2 + S4**: `LlmCallOptions.tools` + `ToolLoopOptions.sink` (前置 D2 才能给 ReplyService 传 tools)
 3. **#5 H1 + H2**: ConversationWorkflow 加`tool_call_reply` 节点 + `ReplyService.stream/complete` 接`ToolLoop.run` (主线改动, 需 Hypium 全绿)
-4. **#6 S3**: SSE `parseStreamEventsFromSseData` 补emit `tool_call` / `tool_result` (依赖 D1 + ToolLoop sink)
+4. **#6 S3**: SSE `parseStreamEventsFromSseData` 补 emit `tool_call` / `tool_result` (依赖 D1 + ToolLoop sink)
 5. **#8 P2**: 写工具(依赖 §10.1 #9 CI 守门先行落地)
 
-**推论**: #5/#6/#7 是**一个ticket** (ToolLoop 落地 + 工具层事件化); #8 是**另一个ticket** (写工具 加CI 守门)。
+**推论**: #5/#6/#7 是**一个 ticket** (ToolLoop 落地 + 工具层事件化); #8 是**另一个 ticket** (写工具 加 CI 守门)。
 
 
-### 10.3 已核实/ 不可改(见research ①表
+### 10.3 已核实 / 不可改（见 research ① 表）
 
-| # | 项| 来源 |
-|---|---|---|
+| # | 项 | 来源 |
+| --- | --- | --- |
 | A | AgentExtensionAbility / A2A / `createA2AServer` / `agentConstant` = API 26 (roadmap), 不在 API 24 | research ①第25/48/49 |
 | B | `@InsightIntent{Link, Page, Function, Form, Entry}` 五类 (非"三类 @Intent") | research ①第8 |
-| C | 工作流条件分支" = 选择器节点+ 变量组件 (无独立节点 | research ①第37 |
+| C | 工作流条件分支" = 选择器节点+ 变量组件 (无独立节点) | research ①第37 |
 | D | CodeGenie 提示词库起始 6.1.0 Beta2 (非6.0.2 Release) | research ①第2 |
 | E | OcrTool 不进 ToolRegistry (符合 ADR-0010 + CONTEXT.md:111) | `OcrTool.ets:52` + `ToolCatalog.ets:19-26` |
 | F | ToolRegistry 在`common/` (符合 ADR-0012 §Chosen 1) | `common/src/main/ets/tools/ToolRegistry.ets:1`; `common/Index.ets:210` |
 | G | P1 只读工具先于写工具(符合 ADR-0012 §Chosen 3 "写工具赛后) | spec 014 §4 + ADR-0012 |
 | H | skill 的SearchNote 接通 其余 UNSUPPORTED_INTENT | `SkillIntentWorkflow.ets:57-66` + ADR-0011 |
 
-### 9.4 仍未核实
+### 10.4 仍未核实
 
-| # | 项| 来源 |
-|---|---|---|
+| # | 项 | 来源 |
+| --- | --- | --- |
 | α | Intents Kit 真机白名单流程(仅第三方论坛提`hagservice@huawei.com`) | research ①§8 |
-| β | `@langchain/langgraph/web` 能否在ArkTS 引擎稳定性(无官方声明/ 无社区案例 | research ①§8 |
+| β | `@langchain/langgraph/web` 能否在ArkTS 引擎稳定性(无官方声明/ 无社区案例) | research ①§8 |
 | γ | localChatModel / RAG 或AGC 权益申请入口 | research ①§8 |
 | δ | Cloud Foundation Kit 云数据库模块起始 API | research ①§8 |
-| ε | 7 个skill intent action 语义, 队员确认状态| ADR-0011 §Open item + CONTEXT.md:119 |
+| ε | 7 个skill intent action 语义, 队员确认状态 | ADR-0011 §Open item + CONTEXT.md:119 |
 
 ---
 
 ## 11. 词汇 (与CONTEXT.md 对齐)
 
-| 词| 含义 | 引用 |
-|---|---|---|
-| **agent** | 4-way 消歧: MindTrace (app) / agents/ (HSP) / `Agent*` (用户面service class) / sub-agent (私有协作者 | CONTEXT.md:168-177 |
+| 词 | 含义 | 引用 |
+| --- | --- | --- |
+| **agent** | 4-way 消歧: MindTrace (app) / agents/ (HSP) / `Agent*` (用户面service class) / sub-agent (私有协作者) | CONTEXT.md:168-177 |
 | **CaptureGraph** | ArkTS 原生 LangGraph 风格 workflow; 不是架构全名 | CONTEXT.md:85 |
-| **Order** | capture →classify →structure →truth_check →persist pipeline; 代码层是 `currentStep` + `CaptureStep` | CONTEXT.md:23 |
+| **Order** | capture → classify → structure → truth_check → persist pipeline; 代码层是 `currentStep` + `CaptureStep` | CONTEXT.md:23 |
 | **Dispatcher** | `dispatch(req, options)` 唯一公共入口; sub-agents 私有 | CONTEXT.md:81 + `Dispatcher.ets:98-100` |
 | **DispatchOptions** | `analysisOnly / persist / includeRawText / dao` (+ spec 015/v2 加的 `generationRepository / knowledgeModel` DI) | CONTEXT.md:94 + `Dispatcher.ets:68-75` |
 | **NoteDaoAdapter** | entry 侧适配 `agents/NoteDaoInterface`, 唯一实现 | CONTEXT.md:101 |
@@ -1122,50 +1230,50 @@ private async handleWant(want: Want): Promise<void> {
 | **截断处理** | 流式 `finish_reason === 'length'` 发final text event 加`\n\n + TRUNCATION_MARKER` | CONTEXT.md:131 + `LlmClient.ets:517-520` |
 | **小艺 skill** | skill/ HSP, 7 个declared action 中`SearchNote` wired | CONTEXT.md:119 + `SkillAbility.ets:24-28` |
 | **AgentTool** | 工具注册契约: `{name, description, parameters, execute(args)}`, 命名 `^[a-z][a-z0-9_]{0,63}$` | `ToolRegistry.ets:17-22, 25` |
-| **ToolResult** | `{ok: boolean, content: string}` —ReAct 工具回喂格式 | `ToolRegistry.ets:11-14` |
+| **ToolResult** | `{ok: boolean, content: string}` — ReAct 工具回喂格式 | `ToolRegistry.ets:11-14` |
 | **ReAct** | 思考↔工具交错循环, 终止由LLM 决策 + `maxSteps` 上限 | ToolCallingWorkflow + §8.8 |
-| **Reflexion** | 校验失败→修复→重试, 自我批评驱动 | KnowledgeModel.repair* + §8.3 |
-| **Plan-and-Execute** | 计划→子任务→执行| KnowledgeModel.structureStandardDraft |
+| **Reflexion** | 校验失败 → 修复 → 重试, 自我批评驱动 | KnowledgeModel.repair + §8.3 |
+| **Plan-and-Execute** | 计划 → 子任务 → 执行 | KnowledgeModel.structureStandardDraft |
 
 ---
 
 ## 12. 来源
 
-### 11.1 合并自(见research / teaching, 留为决策历史)
+### 12.1 合并自（见 research / teaching，留为决策历史）
 
 | 文件 | 路径 |
-|---|---|
-| ①baseline | `docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`（原文已清理） |
-| ①Python sidecar proposal (not adopted, 见§3.2) | `docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`（原文已清理） |
-| ①full chain map | `docs/legacy/mindtrace/research/capturegraph-processing-chain-2026-09-16.md`（原文已清理） |
-| ①tool layer + patterns | `docs/legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md`（原文已清理） |
+| --- | --- |
+| ① baseline | `docs/legacy/mindtrace/research/agent-framework-comparison-2026-09-02.md`（原文已清理） |
+| ① Python sidecar proposal (not adopted, 见 §3.2) | `docs/legacy/mindtrace/research/langgraph-migration-2026-09-02.md`（原文已清理） |
+| ① full chain map | `docs/legacy/mindtrace/research/capturegraph-processing-chain-2026-09-16.md`（原文已清理） |
+| ① tool layer + patterns | `docs/legacy/mindtrace/research/capturegraph-tool-layer-and-patterns-2026-09-16.md`（原文已清理） |
 | D2 实施日志 | [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/agents/d2-capturegraph-teaching-2026-09-05.md) |
 
-### 11.2 权威规范 (spec / ADR)
+### 12.2 权威规范（spec / ADR）
 
 - [`docs/adr/0003 / 0004 / 0006 / 0008 / 0010 / 0011 / 0012`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/adr/)
 - [`docs/specs/011-capturegraph-arkts-refactor`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/specs/011-capturegraph-arkts-refactor.md) · [`014-tool-calling-protocol`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/specs/014-tool-calling-protocol.md) · [`015-knowledge-model-decomposition-v2`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/specs/015-knowledge-model-decomposition-v2.md) · [`018-agent-workflow-architecture`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/specs/018-agent-workflow-architecture.md)
 
-### 11.3 正交 (被本文档排除, 单独引用)
+### 12.3 正交（被本文档排除，单独引用）
 
-- [`docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md) —工具层/ skill 调度, **与本文档无关**
-- [`docs/research/langgraph-mapping-verification-2026-09-06.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/research/langgraph-mapping-verification-2026-09-06.md) —LangGraph 概念 →鸿蒙 Kit API 核查, **不涉及CaptureGraph 处理链*
+- [`docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md) — 工具层/ skill 调度, **与本文档无关**
+- [`docs/research/langgraph-mapping-verification-2026-09-06.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/research/langgraph-mapping-verification-2026-09-06.md) — LangGraph 概念 → 鸿蒙 Kit API 核查, **不涉及 CaptureGraph 处理链**
 
-### 11.4 代码引用 ()
+### 12.4 代码引用
 
-| 文件 | 行区间|
-|---|---|
+| 文件 | 行区间 |
+| --- | --- |
 | `common/src/main/ets/workflow/StateGraph.ets` | 1-88 |
 | `common/src/main/ets/workflow/tool-calling/{ToolCallingWorkflow,ToolCallingState,nodes/{CallModelNode,ExecuteToolsNode}}.ets` | 1-69 / 1-45 / 1-51 |
 | `common/src/main/ets/tools/{ToolRegistry,ToolCatalog,ToolLoop,NoteQueryTools}.ets` | 1-77 / 1-27 / 1-25 / 1-253 |
 | `common/src/main/ets/llm/{LlmClient,LlmGuard,LlmTypes,LlmResponseParser}.ets` | 60-522 / 5-66 / 13-225 / 26-55 |
 | `agents/src/main/ets/graph/{CaptureGraph,AgentState,nodes/*.ets}.ets` | 1-99 / 1-98 / 17-84 |
-| `agents/src/main/ets/core/Dispatcher.ets` | 68-1531 (关键段已逐节标 |
-| `agents/src/main/ets/agents/{KnowledgeModel,TruthCheckService,PromptBuilder,TypeClassifier}.ets` | 关键段已逐节标|
+| `agents/src/main/ets/core/Dispatcher.ets` | 68-1531 (关键段已逐节标) |
+| `agents/src/main/ets/agents/{KnowledgeModel,TruthCheckService,PromptBuilder,TypeClassifier}.ets` | 关键段已逐节标 |
 | `agents/src/main/ets/mcp/tools/OcrTool.ets` | 1-427 |
-| `agents/src/main/ets/models/NoteDaoInterface.ets` | 全文 (略 |
-| `entry/src/main/ets/services/{AiService,AgentChatService,ReplyService}.ets` | 关键段已逐节标|
-| `entry/src/main/ets/workflows/conversation/{ConversationWorkflow,ConversationState,ConversationTypes}.ets` | 32-371 (关键段 |
+| `agents/src/main/ets/models/NoteDaoInterface.ets` | 全文 (略) |
+| `entry/src/main/ets/services/{AiService,AgentChatService,ReplyService}.ets` | 关键段已逐节标 |
+| `entry/src/main/ets/workflows/conversation/{ConversationWorkflow,ConversationState,ConversationTypes}.ets` | 32-371 (关键段) |
 | `entry/src/main/ets/adapters/NoteDaoAdapter.ets` | 15-74 |
 | `skill/src/main/ets/{skillability/SkillAbility.ets,workflows/intent/{SkillIntentWorkflow,IntentRouter}.ets}` | 1-48 / 1-86 |
 | `CONTEXT.md` | 23, 81, 85, 91, 94, 101, 111, 119, 123, 127, 131, 168-177 |
@@ -1174,14 +1282,14 @@ private async handleWant(want: Want): Promise<void> {
 
 ## Appendix A. 维护说明
 
-- **本文档** 是CaptureGraph 处理链+ 工具层+ 设计模式的**唯一权威研究**; 另5 份已按`docs/legacy/mindtrace/research/` (其中 d2-capturegraph-teaching 留在 docs/agents/ 不移 —是教学日志不是research)
+- **本文档** 是 CaptureGraph 处理链+ 工具层+ 设计模式的**唯一权威研究**; 另 5 份已按`docs/legacy/mindtrace/research/` (其中 d2-capturegraph-teaching 留在 docs/agents/ 不移 — 是教学日志不是 research)
 - **更新触发**:
-  - CaptureGraph / Dispatcher / KnowledgeModel / ToolRegistry 任一重大变更 →在`docs/research/` 开方dated 调研, 把本文档核"see also"
-  - spec 011 / 014 / 015 / 018 修订 →先看 §9 决策矩阵是否仍成立  - 新工作流接入 (当前 4 个 Capture / ToolCalling / Conversation / SkillIntent) →§6 补充 + §8 加模式+ §9 加决策项
-  - 新agent 加入 →§8 加一节 §8.12 加一行 §10.2 H1/H2 (ToolLoop / ToolLoop wiring) 重评
+  - CaptureGraph / Dispatcher / KnowledgeModel / ToolRegistry 任一重大变更 → 在`docs/research/` 开方 dated 调研, 把本文档核"see also"
+  - spec 011 / 014 / 015 / 018 修订 → 先看 §9 决策矩阵是否仍成立  - 新工作流接入 (当前 4 个 Capture / ToolCalling / Conversation / SkillIntent) →§6 补充 + §8 加模式+ §9 加决策项
+  - 新 agent 加入 →§8 加一节 §8.12 加一行 §10.2 H1/H2 (ToolLoop / ToolLoop wiring) 重评
   - **笔记生成重大变更** (route 算法 / verification 策略 / incremental 粒度) →§5 同步更新; 引入 RAG 时按 §5.6 约束
 - **drift 推进**:
-  - §10.2 H1/H2 各开 P1 ticket (ToolLoop 接ConversationWorkflow 是复赛后路径)
+  - §10.2 H1/H2 各开 P1 ticket (ToolLoop 接 ConversationWorkflow 是复赛后路径)
   - §10.2 S3-S5 + §10.1 9 条按优先级排序- **未核实(α/β/γ/δ/ε)**: 不主动开 ticket, 等外部信息(AGC 权益 / 鸿蒙 7 文档 / 队员确认) 落地后核
 - **附录历史**: Appendix B 仅作 git archaeology 但 不影响新人阅读 若内容过期 加"see also" 而非删除
 
@@ -1189,12 +1297,14 @@ private async handleWant(want: Want): Promise<void> {
 
 ## Appendix B. 实施链路 (D2 历史, 2026-09-05 ~ 09-08)
 
-来源: [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/agents/d2-capturegraph-teaching-2026-09-05.md) (教学日志完整版
+来源: [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](https://github.com/YunC-GCT/MindTrace/blob/develop/docs/agents/d2-capturegraph-teaching-2026-09-05.md) (教学日志完整版)
 
 ### B.1 D2 范围与边界
+
 **摘要**: ArkTS 轻量 CaptureGraph 运行时+ AgentState/CaptureNode 契约 + KnowledgeModel 拆为 PromptBuilder / StructureService / TruthCheckService 与 façade + Dispatcher 装配 CaptureGraph + 唯一入口 `dispatch(req, opts?)` + LlmErrorKind 与`NORMALIZE_KEYWORD_REJECTED` + 文档允许 hvigor CLI 作为合法 build 入口。
 **不做**: 产品能力增量 / Python LangGraph / Checkpoint / HITL / Subgraph / AI 自修复循环。
-### B.2 Commit 清单(按时间顺序 12 个
+
+### B.2 Commit 清单（按时间顺序 12 个）
 
 ```
 050349e docs(research): add HarmonyOS Kit survey
@@ -1214,17 +1324,18 @@ b068df5 test(agents): use PersistTracker to verify persist node runs
 e944c0a test(agents): replace assertUndefined with assertEqual/assertTrue (Hypium compat)
 7fca898 test(agents): drop flaky error undefined check; rely on tracker and currentStep
 8b52f9a test(agents): use module-level tracker and captureText assertion for persist
+
 ```
 
-### B.3 关键踩坑 (本节是教学日志§6 的精简)
+### B.3 关键踩坑 (本节是教学日志 §6 的精简)
 
-| 问| 根因 | 对策 |
-|---|---|---|
-| `LlmErrorKind` 联合类型遗漏 | `LlmConfig.ets` 有`'NORMALIZE_KEYWORD_REJECTED'`, 联合里没有| enum-like 联合类型修改后grep 所有`throw new LlmError(...)` 站点 |
+| 问 | 根因 | 对策 |
+| --- | --- | --- |
+| `LlmErrorKind` 联合类型遗漏 | `LlmConfig.ets` 有`'NORMALIZE_KEYWORD_REJECTED'`, 联合里没有 | enum-like 联合类型修改后grep 所有`throw new LlmError(...)` 站点 |
 | `agents/Index.ets` 未导出新类型 | `entry` `import { NoteDaoInterface, KnowledgeUnitExt } from 'agents'` 失败 | 新增跨模块接口后**必须**同步 `Index.ets` |
-| Hypium `assertUndefined()` 不支持| Hypium 1.0.25 链式 `.assertUndefined()` 报`actualValue is [object Object]` | 用`assertEqual(undefined)` 或`assertTrue(undefined)` |
+| Hypium `assertUndefined()` 不支持 | Hypium 1.0.25 链式 `.assertUndefined()` 报`actualValue is [object Object]` | 用`assertEqual(undefined)` 或`assertTrue(undefined)` |
 | `tracker.ran` 断言闭包捕获失败 | TS 编译路径弱化内层 `const` 捕获 | 副作用状态提到模块级 `const moduleTracker` |
-| hvigor CLI daemon 环境继承 | IDE 外终端首次跑 daemon 时空环境, 无SDK/Java 路径, daemon 一旦启动后续改环境不生效| 每次新会话`export DEVECO_SDK_HOME / JAVA_HOME / PATH`, 改完 `hvigorw --stop-daemon` |
+| hvigor CLI daemon 环境继承 | IDE 外终端首次跑 daemon 时空环境, 无SDK/Java 路径, daemon 一旦启动后续改环境不生效 | 每次新会话`export DEVECO_SDK_HOME / JAVA_HOME / PATH`, 改完 `hvigorw --stop-daemon` |
 | PR base 选错 | 第一次用 `--base main`, 违反 AGENTS.md 红线 6 | 默认 base = `develop` |
 | `assembleHap -p module=...` 与`assembleApp` 区别 | `assembleHap` 可叠加`-p module=agents`; `assembleApp` **不能**叠加 | Hypium 走`:agents:default@UnitTestArkTS`, 只能 DevEco GUI 触发 |
 
