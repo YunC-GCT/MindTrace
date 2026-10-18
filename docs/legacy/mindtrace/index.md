@@ -13,7 +13,7 @@
 | [`plans/`](./plans/) | Note-generation origin design (see status note below) | 1 md |
 | [`handoffs/`](./handoffs/) | One-off session handoffs / execution traces, frozen 2026-10-18 | 14 files (10 + 4 in `llm-settings/`) |
 
-Total: 22 files.
+Total: 22 content files (each subdirectory also carries an `index.md`).
 
 ## 2026-10-18 purge — what was removed and why
 

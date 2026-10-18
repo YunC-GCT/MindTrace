@@ -914,6 +914,8 @@ DetailRenderModel 暴露给六类 renderer(Concept/Theorem/Formula/Proof/Computa
 
 #### 1. 相关文档清单(35 行)
 
+> 说明：下表引用的一部分路径（`plans/w3/`、`architecture/audit-2026-09-01.*`）已于 2026-10-18 清理，只保留为历史定位与证据行号；文件本身不在仓库中，见 [`docs/legacy/mindtrace/index.md`](../legacy/mindtrace/index.md) 的删除映射。
+
 | 文件 | 段落定位 | 摘要 | 关键观点 |
 |---|---|---|---|
 | `docs/specs/022-multi-device-ui-adaptation.md` | §Problem Statement L13, User Story #21 L49, §Responsive product rules L101 | 多端 UI 适配 spec,P2,2026-09-08 ready/implementation deferred | 笔记详情在 XS/SM 全屏、MD+ 改限宽侧面板;Phone 假定当前固定,需拆窗宽断点状态。User Story #21: "笔记详情在手机全屏、宽屏侧面板显示" |
