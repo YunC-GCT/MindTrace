@@ -79,7 +79,11 @@ AGENTS.md
 ## 4. 自动检查
 
 ```bash
-# 文档可达性 + 目录索引覆盖 + 编号唯一性
+# 一条命令：文档 + 代码边界 + lint（agent 交付前必跑）
+node scripts/agent-gate/index.mjs          # 当前改动集
+node scripts/agent-gate/index.mjs --all    # 全仓
+
+# 文档结构单项
 node scripts/doc-trace/index.mjs
 
 # 链接 + 命名
@@ -87,7 +91,7 @@ node scripts/link-check/index.mjs
 node scripts/naming-lint/index.mjs
 ```
 
-`doc-trace` 检查的是**结构**，不判断技术结论；技术冲突仍需人 / agent 读 ADR 与 spec。
+`agent-gate` 会跑 `.ets` 卫生（BOM / 文件头 / 模块边界）、`arkts-lint`、`naming-lint`、`link-check` 与 `doc-trace`。`doc-trace` 检查的是**结构**，不判断技术结论；技术冲突仍需人 / agent 读 ADR 与 spec。
 
 ---
 

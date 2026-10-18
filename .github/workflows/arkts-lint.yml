@@ -74,6 +74,28 @@ jobs:
       - name: Run AST lint (must exit 0)
         run: node scripts/arkts-lint/index.mjs --quiet
 
+  agent-gate:
+    name: Agent handoff gate (whole repo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: scripts/arkts-lint/package.json
+
+      - name: Install dependencies
+        working-directory: scripts/arkts-lint
+        run: npm ci
+
+      - name: Run agent-gate (must exit 0)
+        run: node scripts/agent-gate/index.mjs --all
+
   lint-regex:
     name: Lint (v1 regex, reference)
     runs-on: ubuntu-latest

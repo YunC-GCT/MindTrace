@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
 const MODULE_DIRS = ['entry', 'common', 'agents', 'skill', 'cardservice'];
-const SKIP_DIRS = new Set(['node_modules', 'oh_modules', 'build', '.hvigor', '.git', '.idea', '.cache']);
+const SKIP_DIRS = new Set(['node_modules', 'oh_modules', 'build', '.hvigor', '.git', '.idea', '.cache', '.test', '.preview', '.cxx', '.gradle']);
 
 // ---------------------------------------------------------------------------
 // pure helpers (exported for tests)
@@ -140,7 +140,7 @@ function runNode(script, args = []) {
   }
 }
 
-function checkEts(files) {
+function checkEts(files, all = false) {
   const errors = [];
   const warnings = [];
   for (const rel of files) {
@@ -150,7 +150,7 @@ function checkEts(files) {
     try { buffer = readFileSync(abs); } catch { continue; }
     if (hasBom(buffer)) errors.push(`${rel}: UTF-8 BOM detected (must be BOM-less)`);
     const text = buffer.toString('utf8');
-    if (!hasFileHeader(text)) warnings.push(`${rel}: missing 路径:/职责: file header`);
+    if (!all && !hasFileHeader(text)) warnings.push(`${rel}: missing 路径:/职责: file header`);
     for (const v of boundaryViolations(rel, text)) errors.push(`${rel}: ${v}`);
   }
   return { errors, warnings };
@@ -168,7 +168,7 @@ function main() {
   const changedEts = files.filter((f) => f.endsWith('.ets'));
 
   const checks = [];
-  const ets = checkEts(changedEts);
+  const ets = checkEts(changedEts, all);
   checks.push({
     name: 'ets-hygiene',
     status: ets.errors.length > 0 ? 'FAIL' : (ets.warnings.length > 0 ? 'WARN' : 'PASS'),
@@ -210,6 +210,7 @@ function main() {
   const result = {
     ok: failed.length === 0,
     root: REPO_ROOT,
+    scope: all ? 'all' : 'changed',
     changed: files.length,
     etsChanged: changedEts.length,
     checks,
@@ -218,7 +219,7 @@ function main() {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    console.log(`agent-gate — ${files.length} changed file(s), ${changedEts.length} .ets`);
+    console.log(`agent-gate — ${files.length} ${all ? 'scanned' : 'changed'} file(s), ${changedEts.length} .ets`);
     for (const c of checks) {
       console.log(`  [${c.status}] ${c.name}${c.detail ? ` — ${c.detail}` : ''}`);
       for (const e of c.errors) console.log(`      error: ${e}`);
