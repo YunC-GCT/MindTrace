@@ -610,9 +610,9 @@ export class ToolRegistry {
 | `ToolCallingWorkflow` | `ToolCallingWorkflow.ets:3, 12, 16-20` | 构造时注入, `buildGraph` 初始化`definitions` (`:31`) |
 | `ExecuteToolsNode` | `ExecuteToolsNode.ets:2, 6, 8, 24` | 构造时注入, `run` 按`call.function.name` 执行 |
 | `SkillAbility` | `SkillAbility.ets:2, 27` | 通过 `ToolCatalog.createReadOnlyRegistry()` 取得, 转发给SkillIntentWorkflow |
-| `SkillIntentWorkflow` | `SkillIntentWorkflow.ets:1, 5, 7, 38` | 注入后*按*按`'note_query'` 直接 `registry.execute` (`:38`), 不走 LLM |
+| `SkillIntentWorkflow` | `SkillIntentWorkflow.ets:1, 5, 7, 38` | 注入后按 `'note_query'` 直接 `registry.execute` (`:38`), 不走 LLM |
 
-> **DRIFT 提示**: spec 018 §1 (`:44`) 把 Tool-calling 入口 = `ToolLoop.run`; **全仓生产代码时 ToolLoop 调用** (`grep "new ToolLoop"` 仅命中测试`LlmToolCalling.test.ets:128,148,164,185` 与构建缓存。**唯一真实工具消费方是 skill/ 的 SearchNote**。详见 §9.2 #1)。
+> **DRIFT 提示**: spec 018 §1 (`:44`) 把 Tool-calling 入口 = `ToolLoop.run`; **全仓生产代码时 ToolLoop 调用** (`grep "new ToolLoop"` 仅命中测试`LlmToolCalling.test.ets:128,148,164,185` 与构建缓存。**唯一真实工具消费方是 skill/ 的 SearchNote**。详见 §10.2 #1）。
 
 ### 7.3 ToolCatalog + NoteQueryTools（P1 只读工具）
 
