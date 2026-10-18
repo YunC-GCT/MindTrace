@@ -1,6 +1,6 @@
 # Ticket 021 — Knowledge Graph 独立边表与 RAG 存储预留
 
-> **Status**: implemented on `feature/knowledge-graph-rdb` (2026-09-17)
+> **Status**: implemented (merged to `develop`, 2026-09-17; branch `feature/knowledge-graph-rdb`)
 > **Source**: [`../adr/0006-knowledge-model-decomposition-plan.md`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md)
 > **Files affected**: `common/src/main/ets/DatabaseHelper.ets`, `common/src/main/ets/Index.ets`, `common/src/main/ets/models/KnowledgeGraphModels.ets`, `entry/src/main/ets/database/NoteDao.ets`, `entry/src/main/ets/database/KnowledgeRelationDao.ets`, `entry/src/main/ets/database/RagEmbeddingDao.ets`, `entry/src/main/ets/services/KnowledgeRelationService.ets`, `entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets`
 > **Test files**: `scripts/arkts-lint/tests/knowledge-graph-rdb.test.mjs`

@@ -11,7 +11,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **#3** | [`003-knowledge-model-decomposition.md`](./003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | **superseded** by [`015`](./015-knowledge-model-decomposition-v2.md) (2026-09-06; ADR-0006 amended) |
 | **#4** | [`004-dispatcher-single-entry.md`](./004-dispatcher-single-entry.md) | [`0003`](../adr/0003-dispatcher-single-entry-design.md) | **implemented** (D2, 2026-09-05) |
 | **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | **implemented** (2026-09-06) |
-| **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | **terminal shape superseded by 018** — IntentClassifier/ChatStatusMachine retained; ConversationWorkflow owns orchestration; AgentChatService 76 LOC facade |
+| **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | **terminal shape superseded by 018** — IntentClassifier/ChatStatusMachine retained; ConversationWorkflow owns orchestration; AgentChatService 约 70 LOC facade |
 | **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | **implemented** (TDD) |
 | **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | **reverted** (2026-09-06, [ADR-0010](../adr/0010-mcp-tools-semantics.md) — OcrTool 是 MCP 工具, `mcp/` 保留) |
 | **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |
@@ -20,7 +20,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **F1 / 体检 2026-09-06** | [`014-tool-calling-protocol.md`](./014-tool-calling-protocol.md) | [`0012`](../adr/0012-tool-calling-protocol.md) | **implemented** (2026-09-06 — 协议/ToolRegistry/ToolLoop + P1 只读工具 note_query/note_get/review_due_query) |
 | **#3 / v2** | [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) (amended) | **done** (PR1-PR3, 2026-09-06 — 三协作服务拆出, KnowledgeModel 保留为编排 agent) |
 | **LLM settings redesign** | [`016-llm-settings-redesign.md`](./016-llm-settings-redesign.md) | [`0013`](../adr/0013-llm-provider-presets.md) · [`0014`](../adr/0014-asset-store-kit-migration.md) | **draft** (2026-09-06 — 供应商预设 + api key 分供应商存储 + 设置页重构；执行记录在 `docs/legacy/mindtrace/handoffs/llm-settings/`) |
-| **PR2-T2 cleanup** | [`017-llm-settings-cleanup.md`](./017-llm-settings-cleanup.md) | (implicit, spec 016 后续;承接 ticket #9) | **draft** (2026-09-08 — grill → to-spec;L4+L5+L6 1 ticket 3 sub-tasks;PR2) |
+| **PR2-T2 cleanup** | [`017-llm-settings-cleanup.md`](./017-llm-settings-cleanup.md) | (implicit, spec 016 后续;承接 ticket #9) | **implemented** (2026-09-08 — L1–L6 六个 sub-tasks 完成) |
 | **Agent workflow architecture** | [`018-agent-workflow-architecture.md`](./018-agent-workflow-architecture.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) (scope clarified) | **implemented, device acceptance pending** (2026-09-10 — shared StateGraph + Capture/ToolCalling/Conversation/Skill workflows; single backend) |
 | **Reasoning display P0** | [`019-reasoning-process-display-p0.md`](./019-reasoning-process-display-p0.md) | [`0015`](../adr/0015-structured-stream-events.md) | **proposed** (2026-09-11 — StreamEvent 协议 + enableThinking 供给 + 双区块；执行记录 [`execution/019-reasoning-process-display-p0/`](./execution/019-reasoning-process-display-p0/)） |
 | **Reply body contract** | [`020-reply-body-contract.md`](./020-reply-body-contract.md) | [`0016`](../adr/0016-reply-contract-by-transport.md) | **proposed** (2026-09-12 — grill → to-spec; P0 stream 直出正文 + 持久化门 + 渲染单入口; P1 渲染加固独立 ticket; P2 LlmGuard 容错提取) |
@@ -28,7 +28,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **022 / multi-device UI** | [`022-multi-device-ui-adaptation.md`](./022-multi-device-ui-adaptation.md) | (implicit; research + codebase-design) | **ready; implementation deferred** (2026-09-08) |
 | **Agent run timeline** | [`023-agent-run-timeline-foundation.md`](./023-agent-run-timeline-foundation.md) | [`0015`](../adr/0015-structured-stream-events.md) | **foundation implemented; workflow emission pending** (2026-09-21) |
 | **NoteDetail render performance** | [`024-note-detail-render-performance.md`](./024-note-detail-render-performance.md) | [`0017`](../adr/0017-renderer-scheduler-budget-baseline.md) · [`021`](./021-chat-streaming-incremental-rendering.md) | **in progress** (2026-09-28 — #182/#185 evidence landed; #189 emulator A/B keeps WebKeepAlive default-off; #188 blocked by #187 + target-device evidence) |
-| **Knowledge graph RDB** | [`026-knowledge-graph-rdb.md`](./026-knowledge-graph-rdb.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015`](./015-knowledge-model-decomposition-v2.md) | **implemented on feature branch** (2026-09-17 — 空 `kg_edge`、统一关系写入、accepted 边图谱查询、RAG demo 预留表) |
+| **Knowledge graph RDB** | [`026-knowledge-graph-rdb.md`](./026-knowledge-graph-rdb.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015`](./015-knowledge-model-decomposition-v2.md) | **implemented (merged to develop)** (2026-09-17 — 空 `kg_edge`、统一关系写入、accepted 边图谱查询、RAG demo 预留表) |
 | **Note review answer** | [`027-note-review-answer.md`](./027-note-review-answer.md) | [`0018`](../adr/0018-note-evidence-provenance.md) | **spec + test plan merged** (2026-09-26 — 可追溯复习回答 / 来源版本 / 反馈快照；测试方案已并入 §测试方案） |
 
 ## Execution bundles
@@ -57,7 +57,7 @@ After all of these, the architecture matches ADR intent:
 - ✅ Dispatcher has 1 public method
 - ✅ LlmClient has 1 public method (call + adapters)
 - ✅ KnowledgeModel slimmed to orchestrating agent + 3 collaborator services (spec 015)
-- ✅ AgentChatService is a 76 LOC UI facade; ConversationWorkflow owns orchestration
+- ✅ AgentChatService is a ~70 LOC UI facade; ConversationWorkflow owns orchestration
 - 🚫 `mcp/` stays — ADR-0005 superseded by [ADR-0010](../adr/0010-mcp-tools-semantics.md); `tools/` reserved for CRUD tools
 
 ## How to read a spec

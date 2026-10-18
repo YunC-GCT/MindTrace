@@ -1,5 +1,6 @@
 # Agent 可用工具清单 (agent-tools inventory) — 2026-09-06
 
+> **Status**: frozen snapshot (2026-09-06). 文中的工具数量、测试数量、skill TODO 状态只代表扫描时点，不是当前指引；现行状态见 `AGENTS.md`、`docs/specs/018-agent-workflow-architecture.md` 与 `docs/architecture/index.md`。
 > **体检性质**: 全仓只读清点, 不修改任何业务代码。本文件是本次体检唯一的仓库写入。
 > **扫描时点**: `develop@fcd1f11` (与 origin/develop 同步)。驱动技能: improve-codebase-architecture; 口径对齐 [CONTEXT.md](../../CONTEXT.md) (「MCP 工具 (mcp/)」「Kit Facade (contract)」「NoteDaoAdapter」「sub-agent」) 与 [ADR-0010](../adr/0010-mcp-tools-semantics.md)、[ADR-0009](../adr/0009-kit-facade-injection-boundary.md)。
 > **可视化报告**: HTML 版生成于本机临时目录 (不入 git, 见 [html-in-docs 决策树](../style/html-in-docs.md))。

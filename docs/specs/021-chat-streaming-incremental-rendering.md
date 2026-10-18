@@ -1,6 +1,6 @@
 ﻿# 021 — Chat 流式增量 Markdown/LaTeX 渲染与持久化降载
 
-> **Status**: proposed + ticket-0 evidence complete (2026-09-13 grill session; §6 defaults frozen from corrected #124 raw evidence; emulator performance follow-up recorded)
+> **Status**: implemented in develop; device acceptance pending (2026-10-18 — RendererScheduler / RenderTick / StreamingReplyDocument landed 2026-09-18/19; #118 closed; §6 defaults frozen from corrected #124 raw evidence; emulator performance follow-up recorded)
 > **Source**: [chat Markdown/LaTeX render research](../research/chat-markdown-latex-render-jank-2026-09-13.md) · code fact verification · grill decisions Q1–Q35
 > **Related**: [spec 019](./019-reasoning-process-display-p0.md) · [spec 020](./020-reply-body-contract.md) · [ADR-0015](../adr/0015-structured-stream-events.md) · [ADR-0016](../adr/0016-reply-contract-by-transport.md)
 > **Official API evidence**: `API参考/ArkUI_方舟UI框架/UI开发_ArkTS声明式开发范式/使用文本/属性字符串_StyledString_MutableStyledString/arkts-styled-string` · `API参考/ArkUI_方舟UI框架/ArkTS组件/文本与输入/属性字符串/ts-universal-styled-string` · `API参考/ArkTS_方舟编程语言/ArkTS_API/ohos_taskpool_启动任务池_/js-apis-taskpool` · `API参考/Core_File_Kit_文件基础服务/ArkTS_API/ohos_file_fs_文件管理_/js-apis-file-fs`

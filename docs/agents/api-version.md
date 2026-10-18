@@ -22,7 +22,7 @@
 | Lint 引擎 | 规则数 | Baseline | 详细 |
 |---|---|---|---|
 | v1 (regex) | 25 规则 | 0 errors / 285 warnings | [`scripts/audit-arkts-strict.mjs`](../../scripts/audit-arkts-strict.mjs) |
-| v0.3 AST (推荐) | **34 规则 + 63 单元测试** | 0 errors / **253 warnings** (90 个是 fix 后的真问题,对应 audit §4.9/§4.10 god-class) | [`scripts/arkts-lint/`](../../scripts/arkts-lint/) + CI |
+| v0.3 AST (推荐) | **34 规则**；`npm --prefix scripts/arkts-lint test` 329 项全绿（2026-10-18）；全量 `node --test` 707 项（15 项既有失败基线） | 2026-09-01 基线：0 errors / 253 warnings（90 个真问题） | [`scripts/arkts-lint/`](../../scripts/arkts-lint/) + CI |
 
 CI 已接入: [`.github/workflows/arkts-lint.yml`](../../.github/workflows/arkts-lint.yml)
 

@@ -1,6 +1,6 @@
 # Ticket #3 — KnowledgeModel decomposition into 3 services
 
-> **Status**: spec for review (Phase 3)
+> **Status**: superseded by [spec 015](./015-knowledge-model-decomposition-v2.md) (2026-09-06; ADR-0006 amended)
 > **Source ADR**: [`../adr/0006-knowledge-model-decomposition-plan.md`](../adr/0006-knowledge-model-decomposition-plan.md)
 > **Files affected**: `agents/src/main/ets/agents/KnowledgeModel.ets` (split into 3 files); `agents/src/main/ets/agents/TypeClassifier.ets` (consumer, unchanged interface); `agents/src/main/ets/core/Dispatcher.ets` (orchestrator, calls the 3 services)
 > **Test files**: new `agents/src/test/StructureService.test.ets` (Hypium), `agents/src/test/TruthCheckService.test.ets` (Hypium), `agents/src/test/PromptBuilder.test.ets` (Hypium)

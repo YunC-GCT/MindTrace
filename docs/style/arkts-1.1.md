@@ -458,7 +458,7 @@ grep -rEn '^\s+(rotate|translate|opacity|scale|backgroundColor)\s*[:=]' --includ
 6. **一个鸿蒙应用只能有一个 `type:entry` 模块**: 其他 HAP 用 `type:feature`
 7. **obfuscation-rules.txt 必须存在**: 即使 `enable:false` 也要有文件
 8. **新 .ets 文件必须用 Write 工具创建**: 避免 PowerShell 5.1/7 中文编码陷阱
-9. **`agents/mcp/tools/` 是命名误导**: 项目未运行 MCP server (audit §4.8), 计划改名 `tools/`
+9. **`agents/mcp/tools/` 保留 MCP 语义**: 项目未运行 MCP server，但 `OcrTool` 是队员按 MCP 工具语义改造的，`mcp/` 保留；增删查改类工具放 `agents/src/main/ets/tools/`（ADR-0010，2026-09-06 改名已撤销）
 
 ---
 
