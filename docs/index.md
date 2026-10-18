@@ -5,6 +5,7 @@
 ## Quick start
 
 - **First time here?** Read [`AGENTS.md`](../AGENTS.md) (agent entry point) → [`CONTEXT.md`](../CONTEXT.md) (project glossary) → this file.
+- **English overview?** [`docs/readme-en.md`](./readme-en.md).
 - **Need a coding rule?** [`docs/style/naming-conventions.md`](./style/naming-conventions.md) is the single source of truth.
 - **Need to lint the repo?** [`scripts/naming-lint/`](../scripts/naming-lint/) (read `README.md` first).
 - **Looking at historical content?** [`docs/legacy/`](./legacy/) (frozen, do not add to).
@@ -14,6 +15,7 @@
 ```
 docs/
 ├── index.md                # This file
+├── readme-en.md            # English README
 ├── onboarding.md           # 5/30-min onboarding path for new agents + humans
 ├── style/                  # Coding rules, naming conventions, ArkTS strict
 ├── adr/                    # Architecture Decision Records (why we did X)
@@ -26,11 +28,10 @@ docs/
 └── legacy/                 # Frozen project docs (older, archived — see docs/legacy/index.md)
     └── mindtrace/          # MindTrace (HarmonyOS ArkTS)
         ├── architecture/   # Audit + deep-dive from 2026-09-01 (21 findings)
-        ├── api/            # API contract
         ├── competition/    # Hackathon submission docs (鸿蒙高校创新赛 semifinal)
-        ├── handoffs/       # One-off session handoffs and execution traces (frozen 2026-10-18)
-        ├── plans/          # W3 / W4 era design plans
-        └── research/       # Superseded research (merged into active research)
+        ├── handoffs/       # One-off session handoffs (frozen 2026-10-18)
+        │   └── llm-settings/  # LLM settings / AssetStoreKit migration PR notes
+        └── plans/          # Pre-spec design plans (frozen)
 ```
 
 ## By purpose
@@ -96,11 +97,12 @@ Every doc directory has an `index.md` (NOT `README.md`) that:
 - Explains the directory's purpose
 - Links to the canonical template
 
-Currently:
+Currently (every directory, including execution bundles and legacy subdirectories):
 - `docs/index.md` — this file
 - `docs/adr/index.md`
 - `docs/specs/index.md`
 - `docs/specs/execution/index.md`
+- `docs/specs/execution/{bundle}/index.md` — one per bundle
 - `docs/research/index.md`
 - `docs/architecture/index.md`
 - `docs/agents/index.md`
@@ -109,9 +111,10 @@ Currently:
 - `docs/template/index.md`
 - `docs/legacy/index.md`
 - `docs/legacy/mindtrace/index.md`
+- `docs/legacy/mindtrace/{architecture,competition,plans,handoffs}/index.md`
 - `scripts/*/README.md` (tooling uses README.md per ecosystem convention)
 
-If you add a new doc directory, also add an `index.md` for it.
+If you add a new doc directory — including a new execution bundle — also add an `index.md` for it.
 
 ## How this index stays current
 
@@ -120,4 +123,4 @@ If you add a new doc directory, also add an `index.md` for it.
 - When the project structure changes, update §"Top-level layout"
 - Updates go via a `docs(index):` commit; bump this file's `Last updated` timestamp
 
-Last updated: 2026-10-18 (corpus normalization: execution bundles under `docs/specs/execution/`, new architecture/agents/style indexes, one-off handoffs frozen into `docs/legacy/mindtrace/handoffs/`)
+Last updated: 2026-10-18 (corpus normalization: execution bundles under `docs/specs/execution/`, execution/legacy indexes completed, one-off handoffs frozen into `docs/legacy/mindtrace/handoffs/`, every doc directory now has an `index.md`)
