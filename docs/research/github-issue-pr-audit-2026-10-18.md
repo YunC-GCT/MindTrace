@@ -3,6 +3,8 @@
 > 快照来源：`gh issue list --state all`（105 条）+ `gh pr list --state all`（112 条），仓库 `YunC-GCT/MindTrace`。
 > 这是一次**状态对账**，不改变任何技术结论；处置建议在 §5。
 
+> **执行后状态（同日）**：open 36 / closed 69。本轮关闭 37 个 issue（16 个已完成 + 10 个失效 spec + 11 个核验通过），#62 转 `ready-for-human`；PR #216 仍待 review。原始快照与处置依据保留在下方。
+
 ## 1. 总览
 
 | 项 | 数量 |
@@ -175,3 +177,14 @@ gh pr list --repo YunC-GCT/MindTrace --state all --limit 300 \
 - spec 覆盖状态以 [`docs/specs/index.md`](../specs/index.md) 为准；本文件只对账 GitHub 状态。
 - 已删除的 spec / research 路径见 [`docs/legacy/mindtrace/index.md`](../legacy/mindtrace/index.md) 与 [`docs/research/index.md`](./index.md) 的 “Superseded / removed”。
 - 仓库的 issue/PR 操作约定见 [`docs/agents/issue-tracker.md`](../agents/issue-tracker.md)。
+
+## 8. 本轮已执行（2026-10-18）
+
+| 组 | 关闭数 | Issue | 依据 |
+|---|---|---|---|
+| A · 已完成 | 16 | #145/#146/#147/#151/#153/#164/#165/#173/#174/#177/#178（#179）· #183/#184/#186/#187（#193）· #190（#194） | 合并 PR 的 closing keyword |
+| B · 核验通过 | 11 | #96–#104 · #115 · #118 | 代码 + 测试均在 develop（见各 issue 关闭评论） |
+| C · 失效 spec | 10 | #63–#72 | spec 016 前端稿 2026-09-07 已 revert |
+| 标签修正 | — | #62 | `needs-triage` → `ready-for-human`，保留 P0 |
+
+**未动**：#105（真机全链路验收）、#11（Wayfinder map，评论明确保持 OPEN）、#73/#74（P3 产品决策）、#209–#217（跟随 PR #216）。
