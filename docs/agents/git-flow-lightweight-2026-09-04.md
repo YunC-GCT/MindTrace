@@ -146,7 +146,7 @@ https://github.com/YunC-GCT/MindTrace/compare/develop...main?expand=1
 
 ### 3.6 通知团队
 
-打开 `.scratch/team-announcement.md`(本地草稿)→ 复制 → 发到3 人消息群。
+在 3 人消息群发一条发布公告（本地起草，不入库），至少包含：版本号与发布日期、本次包含的 PR / 主要变更、升级注意（数据库迁移、配置变更）、回滚方式（revert 或重新发版）。
 
 ---
 
