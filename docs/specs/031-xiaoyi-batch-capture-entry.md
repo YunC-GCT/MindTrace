@@ -110,7 +110,19 @@ static async pick(context: common.UIAbilityContext, maxCount: number = 1): Promi
 **实测该社区方案**：在 task 的 `artifacts[].parts[]` 里追加 `{type:'uiExtensionCard', payload:{...}}` 后，
 小艺**连文本气泡都不再渲染**（响应 600 字节被整条丢弃），扩展进程也没有被拉起 → 该格式不被当前客户端接受。
 
-**当前判断**：端A2A 的 UI 扩展触发条件没有公开契约，继续试错成本高、不可预期。P1 改走文字引导 + 应用内入口。
+### 4.8 补查：触发方式找到了，但依赖 API 26
+
+后续从《端A2A协议技术规范》相关文档确认：
+
+- **Part 没有 `type` 字段**，合法字段是 `text / raw / url / data / mediaType / filename / metadata`；卡片指令放在 **`data`** 里
+- 小艺收到 `data` 中的 `uiExtensionCard` 指令后拉起 `AgentUIExtensionAbility`，payload 经 `ability.want.params.payload` 透传
+- Part / Artifact / TaskArtifactParam 与 `createA2AServer` 都来自 **`@kit.AgentFrameworkKit`，起始版本 API 26**
+
+**本机约束**：DevEco SDK 与本机 OS 都是 **API 24**（`6.1.0.135`）。我们没有 AgentFrameworkKit 的 Part 类型，只能手写 JSON；实测在 task 的 `artifacts[].parts[]` 里追加带 `data` 的第二个 part 后，**整条响应不再渲染**（`ok:false`）。回滚后文本回复恢复（`ok:true`）。
+
+**结论**：A 路线阻塞于 **API 26 SDK + 官方 A2A Server**，不是靠猜 JSON 能解决的。需要：升级 SDK 到 API 26 → 用 `createA2AServer` 构造 Part/Artifact → 再验证卡片。
+
+**当前判断**：P1 先走文字引导 + 应用内入口；A 记为 ⛔ 阻塞（依赖 API 26）。
 
 ## 5. 分票
 
