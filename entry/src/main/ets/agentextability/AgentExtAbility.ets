@@ -140,8 +140,8 @@ function extractText(message: RpcMessage | undefined): string {
   const parts: Array<RpcPart> = message.parts;
   for (let i = 0; i < parts.length; i++) {
     const part: RpcPart = parts[i];
-    const isText: boolean = part.kind === 'text' || part.type === 'text';
-    if (isText && typeof part.text === 'string') {
+    // proto-JSON 的 parts 只有 mediaType + text，没有 kind/type；有 text 就当文本收
+    if (typeof part.text === 'string' && part.text.length > 0) {
       chunks.push(part.text);
     }
   }
@@ -185,7 +185,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       const query: string = extractText(message);
       const taskId: string = message?.taskId ?? message?.messageId ?? nextId('task');
       const contextId: string = message?.contextId ?? DEFAULT_CONTEXT_ID;
-      hilog.info(DOMAIN, TAG, 'method=%{public}s taskId=%{public}s', method, taskId);
+      hilog.info(DOMAIN, TAG, 'method=%{public}s taskId=%{public}s query=%{public}s', method, taskId, query);
       this.runAndReply(proxy, id, taskId, contextId, query);
       return;
     }
