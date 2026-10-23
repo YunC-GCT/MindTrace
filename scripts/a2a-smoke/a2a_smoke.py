@@ -28,6 +28,17 @@ DEFAULT_AGENT = "MindTrace 数学笔记助手"
 YIXIAO_BUNDLE = "com.huawei.hmos.vassistant"
 YIXIAO_ABILITY = "VoiceAbility"
 
+# 气泡里混入的界面噪声：时间戳、「内容由 AI 生成」等，不算回复正文字数
+REPLY_NOISE_PATTERNS = (
+    re.compile(r"\[\d{4}[-/]\d{1,2}[-/]\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?\]"),
+    re.compile(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?"),
+    re.compile(r"内容\s*由\s*AI\s*生成[，,。.!！]?", re.IGNORECASE),
+    re.compile(r"AI\s*生成[，,。.!！]?", re.IGNORECASE),
+    re.compile(r"^\s*\d{1,2}:\d{2}\s*$", re.MULTILINE),
+    # 相对时间标签（「刚刚」「3分钟前」「12秒前」）同样不是回复正文
+    re.compile(r"^\s*(刚刚|\d+\s*(秒|分钟|小时|天)前)\s*$", re.MULTILINE),
+)
+
 
 class Hdc:
     def __init__(self, path: str):
@@ -236,7 +247,7 @@ def send_message(hdc, text):
     return True
 
 
-def wait_reply(hdc, before, sent="", timeout=20.0):
+def wait_reply(hdc, before, sent="", timeout=45.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(2)
@@ -247,6 +258,14 @@ def wait_reply(hdc, before, sent="", timeout=20.0):
         if fresh:
             return fresh
     return []
+
+
+def clean_reply_text(text):
+    """去掉时间戳 / 「内容由 AI 生成」等界面噪声，返回用于判截断的正文。"""
+    cleaned = text or ""
+    for pattern in REPLY_NOISE_PATTERNS:
+        cleaned = pattern.sub("", cleaned)
+    return cleaned.strip()
 
 
 def hilog_tail(hdc, tag, lines=6):
@@ -261,7 +280,20 @@ def main():
     ap.add_argument("--text", default="把相册里的数学题整理成笔记")
     ap.add_argument("--tag", default="MindTraceA2A", help="hilog 关键字")
     ap.add_argument("--no-restart", action="store_true", help="不重启小艺")
-    ap.add_argument("--timeout", type=float, default=20.0)
+    ap.add_argument(
+        "--wait-seconds",
+        "--timeout",
+        dest="wait_seconds",
+        type=float,
+        default=45.0,
+        help="轮询等待回复的秒数（默认 45；--timeout 为向后兼容别名）",
+    )
+    ap.add_argument(
+        "--min-reply-chars",
+        type=int,
+        default=20,
+        help="回复清洗后的最少字数，低于该值判定疑似截断（默认 20）",
+    )
     args = ap.parse_args()
 
     hdc = Hdc(args.hdc)
@@ -287,14 +319,23 @@ def main():
         before = {n["text"] for n in walk(dump_layout(hdc))}
         send_message(hdc, args.text)
         time.sleep(2)
-        reply = wait_reply(hdc, before, sent=args.text, timeout=args.timeout)
+        reply = wait_reply(hdc, before, sent=args.text, timeout=args.wait_seconds)
         result["reply"] = reply
         # 最长的那条通常是 agent 气泡正文
         result["reply_text"] = max(reply, key=len) if reply else ""
-        result["ok"] = bool(reply)
+        cleaned_reply = clean_reply_text(result["reply_text"])
+        result["reply_chars"] = len(cleaned_reply)
+        errors = []
+        if not reply:
+            errors.append("没有拿到回复")
+        if result["reply_chars"] < args.min_reply_chars:
+            errors.append(f"回复疑似被截断：{result['reply_chars']} 字")
+        if errors:
+            result["errors"] = errors
+        result["ok"] = bool(reply) and result["reply_chars"] >= args.min_reply_chars
         result["hilog"] = hilog_tail(hdc, args.tag)
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0 if reply else 1
+        return 0 if result["ok"] else 1
     except Exception as e:
         result["error"] = str(e)
         try:

@@ -8,7 +8,7 @@
  *       再发 artifactUpdate；小艺在这种序列下只渲染开头一两个词。历史实测「单帧 result.task
  *       一次给全 artifacts + COMPLETED」能完整渲染长文本，故回到手写。
  * 依赖: @kit.AbilityKit、@kit.PerformanceAnalysisKit、common.LlmConfig、
- *       ./services/ReplyService、./services/IntentClassifier
+ *       ./services/ReplyService、./services/IntentClassifier、./TaskSnapshot
  *
  * 进程约束（重要）: 扩展跑在独立进程 <bundle>:agent，模块加载失败表现为 exit 254 /
  *   Reason:SyntaxError 且 onCreate 一行日志都打不出来（错误发生在 import 图求值阶段）。
@@ -20,13 +20,14 @@
  *     -> 解析失败：回一条错误快照（不崩）
  *     -> query 为空：回「没收到问题内容」
  *     -> 异步：等配置（≤4s）-> isConfigured -> ReplyService.complete（≤60s）
- *     -> sendAnswer(taskId, text)：单帧 task 快照，artifacts 内是完整文本
+ *     -> sendAnswer(taskId, text)：buildTaskSnapshot 拼单帧 task 快照，artifacts 内是完整文本
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LlmConfig } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
+import { buildTaskSnapshot } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
 /** 回复链路兜底超时：判配置 + 调模型整段限时 */
@@ -244,15 +245,11 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   /**
    * 单帧 result.task 快照：一次给全 artifacts + TASK_STATE_COMPLETED。
    * 不拆 statusUpdate / artifactUpdate —— 小艺对增量帧只渲染开头几个词。
-   * JSON.stringify(text) 负责换行/引号转义，整串拼好后一次 sendData。
+   * 报文拼装由 TaskSnapshot.buildTaskSnapshot（纯函数）负责，这里只选 taskId 并发送。
    */
   private sendAnswer(taskId: string, text: string): void {
     const finalTaskId: string = taskId.length > 0 ? taskId : 'task-' + Date.now().toString();
-    const payload: string = '{"jsonrpc":"2.0","id":"' + this.lastRequestId
-      + '","result":{"task":{"id":"' + finalTaskId
-      + '","contextId":"mindtrace-context","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"artifactId":"'
-      + finalTaskId + '-artifact","parts":[{"text":' + JSON.stringify(text)
-      + ',"mediaType":"text/plain"}]}]}}}';
+    const payload: string = buildTaskSnapshot(this.lastRequestId, finalTaskId, text);
     if (this.hostProxy === null) {
       hilog.error(DOMAIN, TAG, 'hostProxy 为空，无法发送 task 快照');
       return;
