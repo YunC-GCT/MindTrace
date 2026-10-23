@@ -124,6 +124,16 @@ static async pick(context: common.UIAbilityContext, maxCount: number = 1): Promi
 
 **当前判断**：P1 先走文字引导 + 应用内入口；A 记为 ⛔ 阻塞（依赖 API 26）。
 
+### 4.9 API 26 落地结果（2026-10-24）
+
+- 安装 DevEco Studio 26.0.0（`sdk 26.0.0 (API 26)`），项目 `targetSdkVersion: "26.0.0"`、`compatibleSdkVersion: "6.1.1(24)"`，构建通过
+- `AgentExtAbility` 改用 `createA2AServer` + `Server.onMessage / addArtifact / updateStatus`
+- 真机（HarmonyOS 7.0.0.111，API 26）验证：小艺收到文本回复；日志 `method=Execute`，三帧 `sendData`
+- **卡片仍未拉起**：`Part.data = { type:'uiExtensionCard', payload:{...} }` 时小艺日志把它归为 `A2aUnknownMsg` 转发云端，`AgentUIExtensionAbility` 未启动；把 `payload` 改成 JSON 字符串同样无效
+- 待确认：`data` 里指令的准确 schema（字段名 / 是否嵌 `metadata` / 专用 mediaType），需要官方规范或华为支持答复
+
+**结论**：文本链路已在官方 SDK 上跑通；卡片只差指令 schema 这一项。
+
 ## 5. 分票
 
 | # | 票 | 验收 |
