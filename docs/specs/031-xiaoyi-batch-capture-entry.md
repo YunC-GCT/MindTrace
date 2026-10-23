@@ -79,6 +79,23 @@ static async pick(context: common.UIAbilityContext, maxCount: number = 1): Promi
 
 未命中 → 保持现有静态计划回复（不改变 P0 行为）。
 
+### 4.5 UI 扩展注册形态（SDK / 运行时源码确认）
+
+- 类型值：`module.json5` → `extensionAbilities[].type = "agentUI"`（`toolchains/modulecheck/module.json` 枚举里存在）
+- 类：`AgentUIExtensionAbility` 是 `UIExtensionAbility` 的空子类（`@ohos.app.agent.AgentUIExtensionAbility.d.ts`），生命周期全部来自父类
+- 页面：`onSessionCreate(want, session)` → `session.loadContent('pages/<卡片页>')`
+- 与 `AgentExtensionAbility` **同进程**运行（官方文档约束）
+- `services/abilitymgr/resource/ams_extension_config.json` 里 `agentUI` 只登记了锁屏策略，没有额外 metadata 要求
+
+### 4.6 实测：小艺不会自动拉起 `agentUI` 扩展（2026-10-23）
+
+- 扩展已注册成功：`bm dump` 可见 `extensionTypeName: agentUI`、`name: AgentUIExtAbility`
+- 构建、装机均通过
+- 但真机发消息后：**小艺侧无任何 `agentUI` / `UIExtension` 日志，扩展进程未被启动**
+- `AgentHostProxy` 只有 `sendData` / `authorize`，没有“请求显示 UI”的方法
+- `AgentCard.d.ts` 里没有 UI 相关字段
+- 结论：**触发条件在闭源的小艺客户端里**，公开 SDK 与文档都查不到
+
 ## 5. 分票
 
 | # | 票 | 验收 |
