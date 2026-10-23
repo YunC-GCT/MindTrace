@@ -162,6 +162,7 @@
 | **一键构建 HSP→断言→HAP (改了 `common` 必须走这条)** | `node scripts/build-hsp-hap.mjs` |
 | CLI 构建 HSP (独立构建第 1 步; 改了 `common` 必跑) | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=common@default assembleHsp --no-daemon --no-incremental` |
 | HSP 新鲜度自检 (独立构建第 2 步; 退出码 0 = 新鲜) | `node scripts/hsp-freshness/index.mjs` |
+| **装机时安装 HSP (只装 HAP 会留下旧 HSP)** | `hdc install -r common/build/default/outputs/default/common-default-signed.hsp`，再装 `entry-default-signed.hap`；否则设备仍跑旧共享包，运行期 `SyntaxError` |
 | CLI 构建 HAP (独立构建第 3 步) | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=entry@default assembleHap --no-daemon` |
 | 装机 | `hdc install -r entry/build/default/outputs/default/entry-default-signed.hap` |
 | 端A2A 真机冒烟 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (`ok` / `reply_text` / `hilog`) |
