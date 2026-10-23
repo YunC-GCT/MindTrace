@@ -3,7 +3,7 @@
  *
  * 路径: entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets
  * 职责: 编排 text/image/regenerate 三种 ConversationRequest,经 classify_intent → load_reply_context → save_reply_input → (stream_reply|complete_reply|image_reply|note_reply|regenerate_reply) → END
- * 依赖: common (KnowledgeUnit/ClassificationResult/LlmConfig/LlmError/Logger/StateGraph/LlmErrorBodyFormatter); ../services (AiService/AgentMemoryService/IntentClassifier/ReplyService)
+ * 依赖: common (KnowledgeUnit/ClassificationResult/LlmConfig/LlmError/Logger/StateGraph/LlmErrorBodyFormatter); ../services (AiService/AgentMemoryService/IntentClassifier/ReplyService/StreamErrorText)
  *
  * 数据流:
  *   AgentFloatWindow.realReply → workflow.run(request) → buildGraph (条件边分发) → ReplyService.complete/stream (LLM 调用) → updateAiMsg(ConversationMessageEvent) → ChatMsg 更新 → finishAiMsg → safeSaveAssistantMessage (持久化)
@@ -41,6 +41,7 @@ import {
 } from './ConversationState';
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
 import { StreamReplyResult } from '../../services/ReplyService';
+import { streamErrorText } from '../../services/StreamErrorText';
 import {
   NoteDraftReadyEvent,
   NoteContextClarification,
@@ -75,6 +76,9 @@ import {
 } from './ConversationWorkflowPorts';
 
 const workflowLog: Logger = new Logger('ConversationWorkflow');
+
+/** 触发 recoverStreamReply 的路径: empty=流正常但内容为空; interrupted=有部分内容后断流; throw=stream 抛异常 */
+type StreamRecoveryReason = 'empty' | 'interrupted' | 'throw';
 
 interface RegenerationInstruction {
   noteId: string;
@@ -523,24 +527,60 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const msgId: number = this.cbs.addAiMsgEmpty(ref, this.originFor(ref));
       this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createImageRecognitionReplyContext(result, userText);
-      const streamResult: StreamReplyResult = await this.replyService.stream(
-        replyContext,
-        (event: StreamEvent): void => {
-          const messageEvent: ConversationMessageEvent = { kind: 'stream', event: event };
-          this.cbs.updateAiMsg(ref, msgId, messageEvent);
-        },
-        this.cancellationToken(ref),
-      );
-      if (streamResult.usedFallback) {
+      const streamStartedAt: number = Date.now();
+      let firstChunkMs: number = -1;
+      let streamedChars: number = 0;
+      let displayedText: string = '';
+      let streamResult: StreamReplyResult | undefined = undefined;
+      try {
+        streamResult = await this.replyService.stream(
+          replyContext,
+          (event: StreamEvent): void => {
+            if (event.type === 'text') {
+              if (event.delta.length > 0 && firstChunkMs < 0) {
+                firstChunkMs = Date.now() - streamStartedAt;
+              }
+              streamedChars += event.delta.length;
+              displayedText += event.delta;
+            }
+            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: event };
+            this.cbs.updateAiMsg(ref, msgId, messageEvent);
+          },
+          this.cancellationToken(ref),
+        );
+      } catch (e) {
+        const streamTotalMs: number = Date.now() - streamStartedAt;
+        console.warn('[StreamTiming] firstChunkMs=' + firstChunkMs.toString()
+          + ' totalMs=' + streamTotalMs.toString()
+          + ' chars=' + streamedChars.toString()
+          + ' usedFallback=false error=true');
+        await this.recoverStreamReply(ref, msgId, replyContext, displayedText, undefined, 'throw');
+        return;
+      }
+      if (streamResult === undefined) {
+        throw new Error('STREAM_RESULT_MISSING');
+      }
+      const displayContent: string = this.replyService.normalize(streamResult.content);
+      // 空正文与 interrupted 同等对待: 流正常结束但没有可展示内容时也必须走一次重取
+      const emptyContent: boolean = displayContent.trim().length === 0;
+      const errorMarked: boolean = streamResult.interrupted || emptyContent;
+      const streamTotalMs: number = Date.now() - streamStartedAt;
+      console.info('[StreamTiming] firstChunkMs=' + firstChunkMs.toString()
+        + ' totalMs=' + streamTotalMs.toString()
+        + ' chars=' + streamResult.content.length.toString()
+        + ' usedFallback=' + streamResult.usedFallback.toString()
+        + ' error=' + errorMarked.toString());
+      if (streamResult.usedFallback && !emptyContent) {
         await this.appendAssistantReply(ref, streamResult.content, msgId);
         this.setStep(ref, 'completed');
         return;
       }
-      const displayContent: string = this.replyService.normalize(streamResult.content);
       const normalizedEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayContent };
       this.cbs.updateAiMsg(ref, msgId, normalizedEvent);
-      if (streamResult.interrupted) {
-        throw new Error('STREAM_INTERRUPTED');
+      if (errorMarked) {
+        const reason: StreamRecoveryReason = emptyContent ? 'empty' : 'interrupted';
+        await this.recoverStreamReply(ref, msgId, replyContext, displayContent, undefined, reason);
+        return;
       }
       this.cbs.finishAiMsg(ref, msgId, 'completed');
       await this.safeSaveAssistantMessage(ref, displayContent, msgId);
@@ -724,45 +764,94 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
       const citationFilter: NoteEvidenceStreamFilter = this.getEvidenceService().createStreamFilter(evidence);
-      const streamResult: StreamReplyResult = await this.replyService.stream(
-        replyContext,
-        (event: StreamEvent): void => {
-          if (event.type !== 'text') {
-            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: event };
-            this.cbs.updateAiMsg(ref, msgId, messageEvent);
-            return;
-          }
-          const safeText: string = citationFilter.push(event.delta);
-          if (safeText.length > 0) {
-            const safeEvent: StreamEvent = { type: 'text', delta: safeText };
-            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: safeEvent };
-            this.cbs.updateAiMsg(ref, msgId, messageEvent);
-          }
-        },
-        this.cancellationToken(ref),
-      );
+      const streamStartedAt: number = Date.now();
+      let firstChunkMs: number = -1;
+      let streamedChars: number = 0;
+      let displayedText: string = '';
+      let streamResult: StreamReplyResult | undefined = undefined;
+      try {
+        streamResult = await this.replyService.stream(
+          replyContext,
+          (event: StreamEvent): void => {
+            if (event.type !== 'text') {
+              const messageEvent: ConversationMessageEvent = { kind: 'stream', event: event };
+              this.cbs.updateAiMsg(ref, msgId, messageEvent);
+              return;
+            }
+            if (event.delta.length > 0 && firstChunkMs < 0) {
+              firstChunkMs = Date.now() - streamStartedAt;
+            }
+            streamedChars += event.delta.length;
+            const safeText: string = citationFilter.push(event.delta);
+            if (safeText.length > 0) {
+              displayedText += safeText;
+              const safeEvent: StreamEvent = { type: 'text', delta: safeText };
+              const messageEvent: ConversationMessageEvent = { kind: 'stream', event: safeEvent };
+              this.cbs.updateAiMsg(ref, msgId, messageEvent);
+            }
+          },
+          this.cancellationToken(ref),
+        );
+      } catch (e) {
+        const streamTotalMs: number = Date.now() - streamStartedAt;
+        const interruptedTail: string = citationFilter.flush();
+        if (interruptedTail.length > 0) {
+          displayedText += interruptedTail;
+          const interruptedTailEvent: StreamEvent = { type: 'text', delta: interruptedTail };
+          const interruptedTailMessage: ConversationMessageEvent = { kind: 'stream', event: interruptedTailEvent };
+          this.cbs.updateAiMsg(ref, msgId, interruptedTailMessage);
+        }
+        console.warn('[StreamTiming] firstChunkMs=' + firstChunkMs.toString()
+          + ' totalMs=' + streamTotalMs.toString()
+          + ' chars=' + streamedChars.toString()
+          + ' usedFallback=false error=true');
+        const recovered: boolean = await this.recoverStreamReply(ref, msgId, replyContext, displayedText, evidence, 'throw');
+        if (recovered) {
+          await this.safeUpdateLearnerProfileIfNeeded(ref);
+          await this.safeSummarizeIfNeeded(ref);
+        }
+        return;
+      }
+      if (streamResult === undefined) {
+        throw new Error('STREAM_RESULT_MISSING');
+      }
       const citationTail: string = citationFilter.flush();
       if (citationTail.length > 0) {
         const tailEvent: StreamEvent = { type: 'text', delta: citationTail };
         const messageEvent: ConversationMessageEvent = { kind: 'stream', event: tailEvent };
         this.cbs.updateAiMsg(ref, msgId, messageEvent);
       }
-      if (streamResult.usedFallback) {
-        await this.appendAssistantReply(ref, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
-        return;
-      }
       const displayAnswer: string = evidence === undefined
         ? this.replyService.normalize(streamResult.content)
         : this.replyService.normalize(
           this.getEvidenceService().sanitizeAnswer(evidence, streamResult.content),
         );
+      // 空正文与 interrupted 同等对待: 流正常结束但没有可展示内容时也必须走一次重取
+      const emptyAnswer: boolean = displayAnswer.trim().length === 0;
+      const errorMarked: boolean = streamResult.interrupted || emptyAnswer;
+      const streamTotalMs: number = Date.now() - streamStartedAt;
+      console.info('[StreamTiming] firstChunkMs=' + firstChunkMs.toString()
+        + ' totalMs=' + streamTotalMs.toString()
+        + ' chars=' + streamResult.content.length.toString()
+        + ' usedFallback=' + streamResult.usedFallback.toString()
+        + ' error=' + errorMarked.toString());
+      if (streamResult.usedFallback && !emptyAnswer) {
+        await this.appendAssistantReply(ref, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
+        return;
+      }
       const normalizedEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayAnswer };
       this.cbs.updateAiMsg(ref, msgId, normalizedEvent);
-      if (streamResult.interrupted) {
-        throw new Error('STREAM_INTERRUPTED');
-      } else {
-        this.setStep(ref, 'completed');
+      if (errorMarked) {
+        // reason: empty=流正常返回但内容为空; interrupted=有部分内容后断流; throw=stream 抛异常
+        const reason: StreamRecoveryReason = emptyAnswer ? 'empty' : 'interrupted';
+        const recovered: boolean = await this.recoverStreamReply(ref, msgId, replyContext, displayAnswer, evidence, reason);
+        if (recovered) {
+          await this.safeUpdateLearnerProfileIfNeeded(ref);
+          await this.safeSummarizeIfNeeded(ref);
+        }
+        return;
       }
+      this.setStep(ref, 'completed');
       const sources: string = this.evidenceFooter(evidence);
       if (sources.length > 0) {
         const sourcesEvent: StreamEvent = { type: 'text', delta: '\n\n' + sources };
@@ -1139,6 +1228,62 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     }
   }
 
+  /**
+   * 断流后自动降级重取一次: 保留已得内容, 成功替换并标注重连; 失败保留部分内容并追加中文错误。
+   * reason 区分触发路径 (empty / interrupted / throw), 真机日志用它区分"空回复"与"真断流"。
+   */
+  private async recoverStreamReply(
+    ref: ConversationRunRef,
+    msgId: number,
+    replyContext: ReplyContext,
+    partialContent: string,
+    evidence: NoteEvidenceContext | undefined,
+    reason: StreamRecoveryReason,
+  ): Promise<boolean> {
+    this.ensureNotCancelled(ref);
+    const token: CancellationToken | undefined = this.cancellationToken(ref);
+    let reconnected: string = '';
+    try {
+      reconnected = await this.replyService.complete(replyContext, token);
+    } catch (e) {
+      const rawMessage: string = LlmErrorBodyFormatter.redactSensitiveText(
+        ConversationWorkflow.rawErrorMessage(e),
+      );
+      const code: number = ConversationWorkflow.errorCode(e);
+      const errorText: string = streamErrorText(code, rawMessage);
+      const normalizedPartial: string = this.replyService.normalize(partialContent);
+      const failureContent: string = (normalizedPartial.length > 0 ? normalizedPartial + '\n\n' : '')
+        + errorText + '\n\n（连接中断，可重试）';
+      const failureEvent: ConversationMessageEvent = { kind: 'replace-content', content: failureContent };
+      this.cbs.updateAiMsg(ref, msgId, failureEvent);
+      const outcome: ChatMessageOutcome = ConversationWorkflow.failureOutcome(e);
+      console.warn('[StreamRecovery] reconnect_failed reason=' + reason + ' error=' + errorText);
+      this.finishRunFailure(ref, e, outcome);
+      return false;
+    }
+    const recovered: string = this.replyService.normalize(this.applyEvidenceToAnswer(evidence, reconnected));
+    if (recovered.trim().length === 0) {
+      // 重连请求本身成功但正文仍为空: 按失败处理, 不能让用户看到空回复 + （已重连）
+      const emptyText: string = '模型未返回内容，请重试';
+      const normalizedPartial: string = this.replyService.normalize(partialContent);
+      const failureContent: string = (normalizedPartial.length > 0 ? normalizedPartial + '\n\n' : '')
+        + emptyText + '\n\n（连接中断，可重试）';
+      const emptyEvent: ConversationMessageEvent = { kind: 'replace-content', content: failureContent };
+      this.cbs.updateAiMsg(ref, msgId, emptyEvent);
+      this.cbs.finishAiMsg(ref, msgId, 'interrupted');
+      console.warn('[StreamRecovery] reconnect_failed reason=' + reason + ' error=' + emptyText);
+      return false;
+    }
+    const displayContent: string = recovered + '\n\n（已重连）';
+    this.setStep(ref, 'completed');
+    const recoveredEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayContent };
+    this.cbs.updateAiMsg(ref, msgId, recoveredEvent);
+    this.cbs.finishAiMsg(ref, msgId, 'completed');
+    await this.safeSaveAssistantMessage(ref, displayContent, msgId);
+    console.info('[StreamRecovery] reconnect_ok reason=' + reason + ' chars=' + displayContent.length.toString());
+    return true;
+  }
+
   private cancellationToken(ref: ConversationRunRef): CancellationToken | undefined {
     return this.cancellationTokens.get(ref.runId);
   }
@@ -1329,6 +1474,25 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       }
     }
     return false;
+  }
+
+  private static rawErrorMessage(error: Object): string {
+    const message: string = ConversationWorkflow.errorMessage(error);
+    if (error instanceof LlmError) {
+      return error.kind + ' ' + message;
+    }
+    return message;
+  }
+
+  private static errorCode(error: Object): number {
+    const message: string = ConversationWorkflow.errorMessage(error);
+    const codes: string[] = ['401', '403', '429', '500', '501', '502', '503', '504'];
+    for (const code of codes) {
+      if (message.indexOf(code) >= 0) {
+        return Number(code);
+      }
+    }
+    return 0;
   }
 
   private static errorMessage(e: Object): string {
