@@ -40,9 +40,13 @@ export default class AgentUIExtAbility extends AgentUIExtensionAbility {
   onSessionCreate(want: Want, session: UIExtensionContentSession): void {
     hilog.info(DOMAIN, TAG, 'onSessionCreate: 加载半屏卡片 %{public}s', CARD_PAGE);
     try {
-      // 把 session 交给页面，页面「取消」/「开始选图」后据此 terminateSelf。
+      // 小艺按 A2A 约定把卡片数据放在 ability.want.params.payload（JSON 字符串）
+      const raw: string = (want.parameters?.['ability.want.params.payload'] as string) ?? '';
+      hilog.info(DOMAIN, TAG, 'onSessionCreate payload %{public}d 字节', raw.length);
+      // 把 session 与 payload 交给页面，页面「取消」/「开始选图」后据此 terminateSelf。
       const storage: LocalStorage = new LocalStorage();
       storage.setOrCreate(SESSION_KEY, session);
+      storage.setOrCreate('cardPayload', raw);
       session.loadContent(CARD_PAGE, storage);
     } catch (error) {
       hilog.error(DOMAIN, TAG, 'loadContent 失败: %{public}s', (error as Error).message);

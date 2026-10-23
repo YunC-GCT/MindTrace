@@ -96,6 +96,22 @@ static async pick(context: common.UIAbilityContext, maxCount: number = 1): Promi
 - `AgentCard.d.ts` 里没有 UI 相关字段
 - 结论：**触发条件在闭源的小艺客户端里**，公开 SDK 与文档都查不到
 
+### 4.7 资料调研结果（2026-10-23）
+
+| 来源 | 结论 |
+|---|---|
+| 官方 `openharmony/docs` | 只有 1 页 API 存根（1781 字节），没有触发方式 |
+| `toolchains/modulecheck/module.json` | 确认 `type: "agentUI"` 合法 |
+| `ams_extension_config.json` | 只登记锁屏策略，无 metadata 要求 |
+| `AgentHostProxy.d.ts` | 只有 `sendData` / `authorize`，无显示 UI 的方法 |
+| `AgentCard.d.ts` | 无任何 UI 字段 |
+| 全网代码检索 `uiExtensionCard` / `ability.want.params.payload` | **只在 1 篇社区文章里出现**，官方仓库与其他实现零命中 |
+
+**实测该社区方案**：在 task 的 `artifacts[].parts[]` 里追加 `{type:'uiExtensionCard', payload:{...}}` 后，
+小艺**连文本气泡都不再渲染**（响应 600 字节被整条丢弃），扩展进程也没有被拉起 → 该格式不被当前客户端接受。
+
+**当前判断**：端A2A 的 UI 扩展触发条件没有公开契约，继续试错成本高、不可预期。P1 改走文字引导 + 应用内入口。
+
 ## 5. 分票
 
 | # | 票 | 验收 |
