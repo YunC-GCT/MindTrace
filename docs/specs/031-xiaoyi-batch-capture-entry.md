@@ -130,7 +130,22 @@ static async pick(context: common.UIAbilityContext, maxCount: number = 1): Promi
 - `AgentExtAbility` 改用 `createA2AServer` + `Server.onMessage / addArtifact / updateStatus`
 - 真机（HarmonyOS 7.0.0.111，API 26）验证：小艺收到文本回复；日志 `method=Execute`，三帧 `sendData`
 - **卡片仍未拉起**：`Part.data = { type:'uiExtensionCard', payload:{...} }` 时小艺日志把它归为 `A2aUnknownMsg` 转发云端，`AgentUIExtensionAbility` 未启动；把 `payload` 改成 JSON 字符串同样无效
-- 待确认：`data` 里指令的准确 schema（字段名 / 是否嵌 `metadata` / 专用 mediaType），需要官方规范或华为支持答复
+- **指令 schema 已确认**（2026-10-24）：A2A v1 用字段名做判别器，正确写法是
+
+```json
+"data": { "uiExtensionCard": { "payload": { ... } } }
+```
+
+  加上这层后，小艺日志立刻从 `A2aUnknownMsg` 变成真正去加载组件：
+
+```
+AgentUIExtensionComponent:load UIExtensionComponent failed:
+{"code":1011,"name":"start_ability_fail",
+ "message":"Start ui extension ability failed, please check the want of UIextensionAbility."}
+```
+
+- **当前卡点**：小艺拼出来的 Want 指向了错误的 Ability，UI 扩展起不来。尝试用 `module.json5` 的 `process` 字段让两个扩展同进程，但该字段被 schema 拒绝（`^[:][0-9a-zA-Z_]+$` 与其它约束冲突），已回滚
+- 下一步：查 `ability_runtime` 里 agentUI 的启动路径，确认 Want 里 `bundleName/moduleName/abilityName` 的来源（大概率要平台 AgentCard 单独声明 UI ability）
 
 **结论**：文本链路已在官方 SDK 上跑通；卡片只差指令 schema 这一项。
 

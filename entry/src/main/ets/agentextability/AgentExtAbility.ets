@@ -35,9 +35,12 @@ interface CardPayload {
   action: string;
 }
 
+interface UiCardBody {
+  payload: CardPayload;
+}
+
 interface UiCardDirective {
-  type: string;
-  payload: string;
+  uiExtensionCard: UiCardBody;
 }
 
 export default class AgentExtAbility extends AgentExtensionAbility {
@@ -96,8 +99,8 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       query: query,
       action: 'batch_capture',
     };
-    // 小艺按字符串透传到 ability.want.params.payload，这里序列化后传
-    const directive: UiCardDirective = { type: 'uiExtensionCard', payload: JSON.stringify(payload) };
+    // A2A v1 用字段名做判别器：data.uiExtensionCard.payload
+    const directive: UiCardDirective = { uiExtensionCard: { payload: payload } };
     const cardPart: Part = {
       mediaType: 'application/json',
       data: directive,
