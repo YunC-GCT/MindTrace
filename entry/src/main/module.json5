@@ -79,6 +79,12 @@
             "resource": "$profile:agent_config"
           }
         ]
+      },
+      {
+        "name": "AgentUIExtAbility",
+        "srcEntry": "./ets/agentextability/AgentUIExtAbility.ets",
+        "type": "agentUI",
+        "exported": true
       }
     ]
   }
