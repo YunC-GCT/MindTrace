@@ -14,7 +14,8 @@
  *   - 使用显式请求、响应和代理接口，避免 any / unknown。
  *   - JSON.parse() 结果通过显式类型断言进入协议模型。
  */
-import { AgentExtensionAbility, common } from '@kit.AbilityKit';
+import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { StateGraph } from 'common';
 
 const TASK_SEND_METHOD: string = 'tasks/send';
@@ -100,8 +101,24 @@ export async function handleTask(query: string): Promise<string> {
   return '收到：' + state.query + '\n计划：\n' + state.steps.join('\n');
 }
 
+const DOMAIN: number = 0xA2A0;
+const TAG: string = 'MindTraceA2A';
+
 export default class AgentExtAbility extends AgentExtensionAbility {
+  onCreate(want: Want): void {
+    hilog.info(DOMAIN, TAG, 'onCreate: 扩展被拉起');
+  }
+
+  onConnect(want: Want, proxy: common.AgentHostProxy): void {
+    hilog.info(DOMAIN, TAG, 'onConnect: 小艺已连接');
+  }
+
+  onDisconnect(want: Want, proxy: common.AgentHostProxy): void {
+    hilog.info(DOMAIN, TAG, 'onDisconnect');
+  }
+
   onData(proxy: common.AgentHostProxy, data: string): void {
+    hilog.info(DOMAIN, TAG, 'onData 收到 %{public}d 字节: %{public}s', data.length, data.substring(0, 300));
     let request: A2ATaskSendRequest;
     try {
       request = JSON.parse(data) as A2ATaskSendRequest;
@@ -121,10 +138,13 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     }
 
     const task: A2ATask = request.params.task;
+    hilog.info(DOMAIN, TAG, 'query=%{public}s', task.query);
     handleTask(task.query)
       .then((text: string): void => {
         const response: A2ATaskSendResponse = this.buildResponse(task, text);
-        proxy.sendData(JSON.stringify(response));
+        const payload: string = JSON.stringify(response);
+        hilog.info(DOMAIN, TAG, 'sendData %{public}d 字节', payload.length);
+        proxy.sendData(payload);
       })
       .catch((): void => {
         this.sendError(proxy, 'task_failed');
@@ -147,6 +167,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   }
 
   private sendError(proxy: common.AgentHostProxy, error: string): void {
+    hilog.warn(DOMAIN, TAG, 'sendError: %{public}s', error);
     const response: A2AErrorResponse = { error: error };
     proxy.sendData(JSON.stringify(response));
   }
