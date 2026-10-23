@@ -24,10 +24,18 @@ import {
   TaskStatus,
 } from '@kit.AgentFrameworkKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { LlmConfig } from 'common';
+import { ReplyContext } from '../services/IntentClassifier';
+import { ReplyService } from '../services/ReplyService';
+import { IntentClassifier } from '../services/IntentClassifier';
 
 const TAG: string = 'MindTraceA2A';
+
+/** 扩展进程内的模型配置初始化（只做一次），handleRequest 前必须等它 */
+let configReady: Promise<void> | null = null;
 const DOMAIN: number = 0xA2A0;
 
+// 与本应用聊天一致的回复链路：LlmGuard → LlmClient → 远程/用户配置模型
 interface CardPayload {
   title: string;
   description: string;
@@ -51,6 +59,23 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   onCreate(want: Want): void {
     hilog.info(DOMAIN, TAG, 'onCreate: 扩展被拉起，初始化 A2A Server');
+    // 扩展进程独立于 UI 进程，模型配置必须在这里重新初始化，否则会用默认 endpoint
+    configReady = LlmConfig.getInstance().init(this.context)
+      .then((): void => {
+        const cfg: LlmConfig = LlmConfig.getInstance();
+        const keys: Record<string, string> = cfg.getAllVendorApiKeys();
+        let keyCount: number = 0;
+        for (const k of Object.keys(keys)) {
+          if (keys[k].length > 0) {
+            keyCount += 1;
+          }
+        }
+        hilog.info(DOMAIN, TAG, 'LlmConfig 就绪 vendor=%{public}s model=%{public}s keys=%{public}d',
+          cfg.getVendorId(), cfg.getModel(), keyCount);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'LlmConfig 初始化失败: %{public}s', e.message);
+      });
     try {
       this.server = createA2AServer(this.context.agentCard, (method: string, ctx: RequestContext): void => {
         this.handleRequest(method, ctx);
@@ -91,46 +116,59 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     hilog.info(DOMAIN, TAG, 'method=%{public}s taskId=%{public}s query=%{public}s',
       method, taskId ?? 'none', query);
 
-    const textPart: Part = {
-      text: '已打开整理入口：请在浮窗里选图，最多 20 张。',
-      mediaType: 'text/plain',
-    };
+    if (taskId === undefined) {
+      hilog.warn(DOMAIN, TAG, 'taskId 为空，跳过回复');
+      return;
+    }
+    if (query.length === 0) {
+      this.sendAnswer(taskId, '没收到问题内容，再说一次？');
+      return;
+    }
 
-    const payload: CardPayload = {
-      title: '整理数学题',
-      description: '从相册选择题目图片，自动生成笔记',
-      query: query,
-      action: 'batch_capture',
+    // 真模型回答：与小艺对话同一条链路（LlmGuard → LlmClient）
+    const replyContext: ReplyContext = {
+      memoryContext: '',
+      learnerProfileContext: '',
+      userContent: query,
+      evidenceContext: '',
     };
-    // A2A v1 用字段名做判别器：data.uiExtensionCard.payload
-    const directive: UiCardDirective = {
-      uiExtensionCard: {
-        bundleName: 'com.example.mindtrace',
-        moduleName: 'entry',
-        abilityName: 'AgentUIExtAbility',
-        payload: payload,
-      },
-    };
-    const cardPart: Part = {
-      mediaType: 'application/json',
-      data: directive,
-    };
+    // 扩展进程里 preferences 可能迟迟不返回，最多等 4 秒，避免整个回复挂死
+    const fallback: Promise<void> = new Promise<void>((resolve: (v: void) => void): void => {
+      setTimeout((): void => {
+        resolve();
+      }, 4000);
+    });
+    const ready: Promise<void> = configReady !== null
+      ? Promise.race([configReady, fallback])
+      : fallback;
+    ready.then((): Promise<string> => {
+      // 扩展进程里网络/配置都可能挂住，25 秒内没结果就回兜底，避免小艺一直空转
+      const timeout: Promise<string> = new Promise<string>((resolve: (v: string) => void): void => {
+        setTimeout((): void => {
+          resolve('模型响应超时，稍后再试。');
+        }, 25000);
+      });
+      return Promise.race([new ReplyService(new IntentClassifier()).complete(replyContext), timeout]);
+    })
+      .then((answer: string): void => {
+        const text: string = answer.length > 0 ? answer : '模型没有返回内容，换个问法试试。';
+        hilog.info(DOMAIN, TAG, 'LLM 回答 %{public}d 字', text.length);
+        this.sendAnswer(taskId, text);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'LLM 调用失败: %{public}s', e.message);
+        this.sendAnswer(taskId, '模型暂时不可用：' + e.message);
+      });
+  }
 
-    // 卡片 part 暂不发送：小艺会为它死循环重试 start_ability_fail，导致对话一直转圈
-    const artifact: TaskArtifactParam = {
-      parts: [textPart],
-      lastChunk: true,
-    };
-
+  private sendAnswer(taskId: string, text: string): void {
+    const textPart: Part = { text: text, mediaType: 'text/plain' };
+    const artifact: TaskArtifactParam = { parts: [textPart], lastChunk: true };
     try {
-      if (taskId !== undefined) {
-        this.server?.addArtifact(taskId, artifact);
-        const status: TaskStatus = { state: TaskState.COMPLETED };
-        this.server?.updateStatus(taskId, status);
-        hilog.info(DOMAIN, TAG, 'artifact sent, task completed');
-      } else {
-        hilog.warn(DOMAIN, TAG, 'taskId 为空，跳过 artifact');
-      }
+      this.server?.addArtifact(taskId, artifact);
+      const status: TaskStatus = { state: TaskState.COMPLETED };
+      this.server?.updateStatus(taskId, status);
+      hilog.info(DOMAIN, TAG, 'artifact sent, task completed');
     } catch (error) {
       hilog.error(DOMAIN, TAG, '发送 artifact 失败: %{public}s', (error as Error).message);
     }
