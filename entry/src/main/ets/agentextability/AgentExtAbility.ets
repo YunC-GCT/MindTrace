@@ -27,6 +27,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LlmConfig } from 'common';
 import { ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
+import { ModelRouter, RoutedReply } from '../services/ModelRouter';
 import { IntentClassifier } from '../services/IntentClassifier';
 
 const TAG: string = 'MindTraceA2A';
@@ -141,18 +142,25 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     const ready: Promise<void> = configReady !== null
       ? Promise.race([configReady, fallback])
       : fallback;
-    ready.then((): Promise<string> => {
+    ready.then((): Promise<RoutedReply> => {
       // 扩展进程里网络/配置都可能挂住，25 秒内没结果就回兜底，避免小艺一直空转
-      const timeout: Promise<string> = new Promise<string>((resolve: (v: string) => void): void => {
+      const router: ModelRouter = new ModelRouter(this.context.filesDir,
+        new ReplyService(new IntentClassifier()));
+      const timeout: Promise<RoutedReply> = new Promise<RoutedReply>((resolve: (v: RoutedReply) => void): void => {
         setTimeout((): void => {
-          resolve('模型响应超时，稍后再试。');
+          resolve({ text: '模型响应超时，稍后再试。', source: 'none', degraded: true, reason: 'timeout' });
         }, 25000);
       });
-      return Promise.race([new ReplyService(new IntentClassifier()).complete(replyContext), timeout]);
+      return Promise.race([router.answer(replyContext), timeout]);
     })
-      .then((answer: string): void => {
-        const text: string = answer.length > 0 ? answer : '模型没有返回内容，换个问法试试。';
-        hilog.info(DOMAIN, TAG, 'LLM 回答 %{public}d 字', text.length);
+      .then((routed: RoutedReply): void => {
+        let text: string = routed.text.length > 0 ? routed.text : '模型没有返回内容，换个问法试试。';
+        if (routed.degraded) {
+          // 硬规则：回退必须标注「已降级」，不能静默换模型
+          text += '\n\n（已降级：' + routed.reason + '）';
+        }
+        hilog.info(DOMAIN, TAG, '回答 %{public}d 字 source=%{public}s degraded=%{public}s',
+          text.length, routed.source, routed.degraded ? 'true' : 'false');
         this.sendAnswer(taskId, text);
       })
       .catch((e: Error): void => {

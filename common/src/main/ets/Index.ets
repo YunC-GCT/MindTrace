@@ -223,6 +223,8 @@ export {
 //   ApiKeyVault: 凭据 vault (@kit.AssetStoreKit, 兼容读取旧 preferences key)
 //   providers:  5 厂商预设(DeepSeek / Tongyi / GLM / Kimi / Doubao) + findProvider 工厂
 export { LlmConfig, DEFAULT_ENABLE_THINKING, DEFAULT_CONTEXT_WINDOW_TOKENS } from './llm/LlmConfig';
+export { OnDeviceLlm, ON_DEVICE_MODEL_DIR, ON_DEVICE_MODEL_FILE } from './llm/OnDeviceLlm';
+export type { OnDeviceAvailability, OnDeviceReply } from './llm/OnDeviceLlm';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
 export { CancellationToken } from './llm/CancellationToken';
