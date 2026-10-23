@@ -159,12 +159,16 @@
 | 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (数量以输出为准, 全绿即可) |
 | 跑 v0.3 lint 扫描 | `node scripts/arkts-lint/index.mjs --quiet` |
 | **交付前跑总 gate** | `node scripts/agent-gate/index.mjs`（改动集）/ `--all`（全仓）/ `--json`（机器读） |
-| **CLI 构建 HSP (改了 `common` 必跑, 先 `common` 再 `entry`)** | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=common@default assembleHsp --no-daemon --no-incremental`, 完成后再跑下一行 HAP。**改了 `common` 必须重建 HSP, 否则运行期 SyntaxError** (HSP 产物旧、HAP 引用新符号); 自检: `node scripts/hsp-freshness.mjs` |
-| CLI 构建 HAP | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=entry@default assembleHap --no-daemon` |
+| **一键构建 HSP→断言→HAP (改了 `common` 必须走这条)** | `node scripts/build-hsp-hap.mjs` |
+| CLI 构建 HSP (独立构建第 1 步; 改了 `common` 必跑) | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=common@default assembleHsp --no-daemon --no-incremental` |
+| HSP 新鲜度自检 (独立构建第 2 步; 退出码 0 = 新鲜) | `node scripts/hsp-freshness/index.mjs` |
+| CLI 构建 HAP (独立构建第 3 步) | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=entry@default assembleHap --no-daemon` |
 | 装机 | `hdc install -r entry/build/default/outputs/default/entry-default-signed.hap` |
 | 端A2A 真机冒烟 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (`ok` / `reply_text` / `hilog`) |
 | 创建新 module | `cp common/oh-package.json5 <new>/oh-package.json5` (必须含 `main` 字段) |
 | 验 .ets 无 BOM | PowerShell: `[System.IO.File]::ReadAllBytes(path)[0..2]` (应为 `0x69 0x6D 0x70`) |
+
+**独立构建顺序**: HSP → 新鲜度自检 → HAP；改了 `common` 不重建 HSP，运行期会因 HSP 产物旧于源码报 `SyntaxError`。
 
 ---
 
