@@ -144,6 +144,7 @@ AgentUIExtensionComponent:load UIExtensionComponent failed:
  "message":"Start ui extension ability failed, please check the want of UIextensionAbility."}
 ```
 
+- **回复渲染：必须单帧 task 快照（2026-10-24 深夜实测）**。`createA2AServer` 会先自动发 `TASK_STATE_SUBMITTED`（带 history），再发 `artifactUpdate` 增量帧；小艺在这种序列下只渲染开头一两个词（实测「已」「好」「当前」），即使报文里带着 200+ 字。改回**手写 JSON-RPC 单帧 `result.task`**（artifacts + `TASK_STATE_COMPLETED` 一次给全）后完整渲染 263 字。结论：SDK 的流式封装与本客户端的渲染器不兼容
 - **A2A 真模型链路稳定性（2026-10-24 深夜）**：`LLM 返回 47 字，耗时 1254 ms`；此前几次「模型响应超时」是模型端临时变慢，兜底超时已从 25s 提到 60s
 - **教训：扩展进程不要引入应用层重依赖**。把 `ModelRouter` 导进 `AgentExtAbility` 会让扩展在 onCreate 之前就以 `exit 254 / Reason:SyntaxError` 死掉；同理，把 `ModelRouter` 接进 `ConversationWorkflowPorts` 会让 App 主进程同样崩。路由接线已回退，`ModelRouter` 暂留未接
 - **A2A 已接入真模型**（2026-10-24）：`AgentExtAbility` 不再返回固定文案，改走 `ReplyService → LlmGuard → LlmClient`；冷启动实测 3.5 秒返回 355 字真实回答

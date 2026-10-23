@@ -1,12 +1,14 @@
 /**
- * AgentExtAbility.ets - 端 A2A Agent 扩展入口（API 26 / AgentFrameworkKit）
+ * AgentExtAbility.ets - 端 A2A Agent 扩展入口（手写 JSON-RPC 2.0 单帧快照）
  *
  * 路径: entry/src/main/ets/agentextability/AgentExtAbility.ets
- * 职责: 用 @kit.AgentFrameworkKit 的 createA2AServer 承载端A2A 协议：
- *       小艺消息 -> Server.onMessage -> onData 回调 -> addArtifact(文本)
- *       -> updateStatus(COMPLETED)
- * 依赖: @kit.AbilityKit、@kit.AgentFrameworkKit、@kit.PerformanceAnalysisKit、
- *       common.LlmConfig、./services/ReplyService、./services/IntentClassifier
+ * 职责: 接收小艺的 SendStreamingMessage，自己手写 JSON-RPC 请求解析与应答
+ *       -> ReplyService 取回答 -> 经 hostProxy.sendData 回一条 result.task 快照。
+ * 为什么手写: SDK 的自动应答封装会先发一帧 TASK_STATE_SUBMITTED（带 history），
+ *       再发 artifactUpdate；小艺在这种序列下只渲染开头一两个词。历史实测「单帧 result.task
+ *       一次给全 artifacts + COMPLETED」能完整渲染长文本，故回到手写。
+ * 依赖: @kit.AbilityKit、@kit.PerformanceAnalysisKit、common.LlmConfig、
+ *       ./services/ReplyService、./services/IntentClassifier
  *
  * 进程约束（重要）: 扩展跑在独立进程 <bundle>:agent，模块加载失败表现为 exit 254 /
  *   Reason:SyntaxError 且 onCreate 一行日志都打不出来（错误发生在 import 图求值阶段）。
@@ -14,27 +16,17 @@
  *   （ConversationWorkflowPorts）使用。
  *
  * 数据流:
- *   onData(proxy, data) -> server.onMessage(data, sender=proxy.sendData)
- *     -> onDataCallback(method, ctx) -> getUserInput() -> 组装 Part[]
- *     -> isConfigured()=false -> 直接回「端侧模型未就绪」文案（不调模型）
- *     -> isConfigured()=true  -> new ReplyService().complete -> addArtifact(taskId, 文本)
- *     -> server.updateStatus(taskId, { state: COMPLETED })
+ *   onData(proxy, data) -> JSON.parse 取 id / params.message.parts[] 第一段 string text
+ *     -> 解析失败：回一条错误快照（不崩）
+ *     -> query 为空：回「没收到问题内容」
+ *     -> 异步：等配置（≤4s）-> isConfigured -> ReplyService.complete（≤60s）
+ *     -> sendAnswer(taskId, text)：单帧 task 快照，artifacts 内是完整文本
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
-import {
-  createA2AServer,
-  Part,
-  RequestContext,
-  Server,
-  TaskArtifactParam,
-  TaskState,
-  TaskStatus,
-} from '@kit.AgentFrameworkKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LlmConfig } from 'common';
-import { ReplyContext } from '../services/IntentClassifier';
+import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
-import { IntentClassifier } from '../services/IntentClassifier';
 
 const TAG: string = 'MindTraceA2A';
 /** 回复链路兜底超时：判配置 + 调模型整段限时 */
@@ -44,34 +36,43 @@ const REPLY_TIMEOUT_MS: number = 60000;
 const MODEL_NOT_READY: string =
   '端侧模型未就绪（model file not found），请先在 MindTrace 设置里配置模型';
 
-/** 扩展进程内的模型配置初始化（只做一次），handleRequest 前必须等它 */
+/** 请求解析失败时的错误快照文案：宁可回一句错，也不要让扩展崩掉 */
+const PARSE_ERROR: string = '请求解析失败，请重试。';
+
+/** 扩展进程内的模型配置初始化（只做一次），handleQuery 前必须等它 */
 let configReady: Promise<void> | null = null;
 const DOMAIN: number = 0xA2A0;
 
-// 与本应用聊天一致的回复链路：LlmGuard → LlmClient → 远程/用户配置模型
-interface CardPayload {
-  title: string;
-  description: string;
-  query: string;
-  action: string;
+// 小艺发来的 JSON-RPC 请求（proto-JSON）：parts 只有 mediaType + text，没有 kind/type
+interface A2ATextSegment {
+  mediaType?: string;
+  text?: string;
 }
 
-interface UiCardBody {
-  bundleName: string;
-  moduleName: string;
-  abilityName: string;
-  payload: CardPayload;
+interface A2AMessage {
+  parts?: A2ATextSegment[];
 }
 
-interface UiCardDirective {
-  uiExtensionCard: UiCardBody;
+interface A2AParams {
+  message?: A2AMessage;
+  /** 请求若带 task id，优先用它回填快照，保证 artifactId 稳定 */
+  taskId?: string;
+}
+
+interface A2ARequest {
+  id?: string | number;
+  params?: A2AParams;
 }
 
 export default class AgentExtAbility extends AgentExtensionAbility {
-  private server: Server | null = null;
+  /** onData 收到的宿主代理，最终 task 快照直接由它发出 */
+  private hostProxy: common.AgentHostProxy | null = null;
+  /** 当前请求的 jsonrpc id：回复快照必须回填同一个 id，否则小艺不认这一帧 */
+  private lastRequestId: string = '';
 
   onCreate(want: Want): void {
-    hilog.info(DOMAIN, TAG, 'onCreate: 扩展被拉起，初始化 A2A Server');
+    const abilityName: string = want.abilityName ?? 'unknown';
+    hilog.info(DOMAIN, TAG, 'onCreate: 扩展被拉起 ability=%{public}s（手写单帧快照模式）', abilityName);
     // 扩展进程独立于 UI 进程，模型配置必须在这里重新初始化，否则会用默认 endpoint
     configReady = LlmConfig.getInstance().init(this.context)
       .then((): void => {
@@ -89,56 +90,98 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'LlmConfig 初始化失败: %{public}s', e.message);
       });
-    try {
-      this.server = createA2AServer(this.context.agentCard, (method: string, ctx: RequestContext): void => {
-        this.handleRequest(method, ctx);
-      }, want);
-      this.server.start();
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, 'createA2AServer 失败: %{public}s', (error as Error).message);
-    }
   }
 
   onData(proxy: common.AgentHostProxy, data: string): void {
     hilog.info(DOMAIN, TAG, 'onData 收到 %{public}d 字节', data.length);
-    if (this.server === null) {
-      hilog.error(DOMAIN, TAG, 'server 未初始化，忽略本次请求');
+    this.hostProxy = proxy;
+
+    // 解析失败（JSON 非法 / 顶层不是对象）统一回错误快照，绝不让异常冒出去
+    const request: A2ARequest | null = this.parseRequest(data);
+    if (request === null) {
+      this.lastRequestId = '';
+      this.sendAnswer('', PARSE_ERROR);
       return;
     }
-    try {
-      this.server.onMessage(data, (payload: string): void => {
-        hilog.info(DOMAIN, TAG, 'sendData %{public}d 字节', payload.length);
-        proxy.sendData(payload);
-      });
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, 'onMessage 失败: %{public}s', (error as Error).message);
-    }
-  }
 
-  onDestroy(): void {
-    if (this.server !== null) {
-      this.server.stop();
-      this.server = null;
-    }
-    hilog.info(DOMAIN, TAG, 'onDestroy');
-  }
+    this.lastRequestId = this.readRequestId(request.id);
+    const query: string = this.readQuery(request);
+    const taskId: string = this.readTaskId(request);
+    hilog.info(DOMAIN, TAG, 'id=%{public}s taskId=%{public}s query=%{public}s',
+      this.lastRequestId, taskId.length > 0 ? taskId : 'none', query);
 
-  private handleRequest(method: string, ctx: RequestContext): void {
-    const query: string = ctx.getUserInput();
-    const taskId: string | undefined = ctx.getTaskId();
-    hilog.info(DOMAIN, TAG, 'method=%{public}s taskId=%{public}s query=%{public}s',
-      method, taskId ?? 'none', query);
-
-    if (taskId === undefined) {
-      hilog.warn(DOMAIN, TAG, 'taskId 为空，跳过回复');
-      return;
-    }
     if (query.length === 0) {
       this.sendAnswer(taskId, '没收到问题内容，再说一次？');
       return;
     }
+    // onData 必须立刻返回：模型链路异步跑，结果回来再自己发快照
+    this.handleQuery(taskId, query);
+  }
 
-    // 真模型回答：与小艺对话同一条链路（LlmGuard → LlmClient）
+  /** 手写解析：JSON.parse 失败或结果为 null 都返回 null，由 onData 回错误快照 */
+  private parseRequest(data: string): A2ARequest | null {
+    try {
+      return JSON.parse(data) as A2ARequest;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, '请求 JSON 解析失败: %{public}s', (e as Error).message);
+      return null;
+    }
+  }
+
+  onDestroy(): void {
+    this.hostProxy = null;
+    hilog.info(DOMAIN, TAG, 'onDestroy');
+  }
+
+  /** jsonrpc id 可能是字符串或数字，统一转成字符串供回填 */
+  private readRequestId(id: string | number | undefined): string {
+    if (typeof id === 'string') {
+      return id as string;
+    }
+    if (typeof id === 'number') {
+      return (id as number).toString();
+    }
+    return '';
+  }
+
+  /** 小艺的 parts 只有 mediaType + text：取第一个 text 为 string 的 part */
+  private readQuery(request: A2ARequest): string {
+    const params: A2AParams | undefined = request.params;
+    if (params === undefined) {
+      return '';
+    }
+    const message: A2AMessage | undefined = params.message;
+    if (message === undefined) {
+      return '';
+    }
+    const parts: A2ATextSegment[] | undefined = message.parts;
+    if (parts === undefined) {
+      return '';
+    }
+    for (const part of parts) {
+      const text: string | undefined = part.text;
+      if (text !== undefined && typeof text === 'string') {
+        return text as string;
+      }
+    }
+    return '';
+  }
+
+  /** 请求里带 task id 就用它（保证 artifactId 稳定），没带则由 sendAnswer 生成 */
+  private readTaskId(request: A2ARequest): string {
+    const params: A2AParams | undefined = request.params;
+    if (params === undefined) {
+      return '';
+    }
+    const tid: string | undefined = params.taskId;
+    if (tid !== undefined && tid.length > 0) {
+      return tid;
+    }
+    return '';
+  }
+
+  /** 异步跑模型：先等配置（最多 4 秒），再整段限时 60 秒 */
+  private handleQuery(taskId: string, query: string): void {
     const replyContext: ReplyContext = {
       memoryContext: '',
       learnerProfileContext: '',
@@ -148,6 +191,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     // 扩展进程里 preferences 可能迟迟不返回，最多等 4 秒，避免整个回复挂死
     const fallback: Promise<void> = new Promise<void>((resolve: (v: void) => void): void => {
       setTimeout((): void => {
+        hilog.warn(DOMAIN, TAG, 'LlmConfig 等待超时 4000 ms，按当前配置继续');
         resolve();
       }, 4000);
     });
@@ -197,16 +241,28 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     return text;
   }
 
+  /**
+   * 单帧 result.task 快照：一次给全 artifacts + TASK_STATE_COMPLETED。
+   * 不拆 statusUpdate / artifactUpdate —— 小艺对增量帧只渲染开头几个词。
+   * JSON.stringify(text) 负责换行/引号转义，整串拼好后一次 sendData。
+   */
   private sendAnswer(taskId: string, text: string): void {
-    const textPart: Part = { text: text, mediaType: 'text/plain' };
-    const artifact: TaskArtifactParam = { parts: [textPart], lastChunk: true };
+    const finalTaskId: string = taskId.length > 0 ? taskId : 'task-' + Date.now().toString();
+    const payload: string = '{"jsonrpc":"2.0","id":"' + this.lastRequestId
+      + '","result":{"task":{"id":"' + finalTaskId
+      + '","contextId":"mindtrace-context","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"artifactId":"'
+      + finalTaskId + '-artifact","parts":[{"text":' + JSON.stringify(text)
+      + ',"mediaType":"text/plain"}]}]}}}';
+    if (this.hostProxy === null) {
+      hilog.error(DOMAIN, TAG, 'hostProxy 为空，无法发送 task 快照');
+      return;
+    }
     try {
-      this.server?.addArtifact(taskId, artifact);
-      const status: TaskStatus = { state: TaskState.COMPLETED };
-      this.server?.updateStatus(taskId, status);
-      hilog.info(DOMAIN, TAG, 'artifact sent, task completed');
+      this.hostProxy.sendData(payload);
+      hilog.info(DOMAIN, TAG, 'task snapshot sent %{public}d 字节, task=%{public}s completed',
+        payload.length, finalTaskId);
     } catch (error) {
-      hilog.error(DOMAIN, TAG, '发送 artifact 失败: %{public}s', (error as Error).message);
+      hilog.error(DOMAIN, TAG, '发送 task 快照失败: %{public}s', (error as Error).message);
     }
   }
 }
