@@ -6,15 +6,16 @@
  * 依赖: @kit.AbilityKit (AgentExtensionAbility)
  *
  * 数据流:
- *   AgentHostProxy.onData() -> handleTask() -> AgentHostProxy.sendData()
+ *   AgentHostProxy.onData() -> handleTask() -> StateGraph(plan) -> AgentHostProxy.sendData()
  *
- * 当前实现只返回固定 echo；后续由 handleTask() 接入 StateGraph。
+ * 当前只跑一个 plan 节点（静态三步计划），后续把 plan 换成真实编排。
  *
  * ArkTS 1.1 strict 适配:
  *   - 使用显式请求、响应和代理接口，避免 any / unknown。
  *   - JSON.parse() 结果通过显式类型断言进入协议模型。
  */
 import { AgentExtensionAbility, common } from '@kit.AbilityKit';
+import { StateGraph } from 'common';
 
 const TASK_SEND_METHOD: string = 'tasks/send';
 const DEFAULT_CONTEXT_ID: string = 'mindtrace-context';
@@ -57,14 +58,46 @@ function isTaskSendRequest(request: A2ATaskSendRequest): boolean {
   return request.method === TASK_SEND_METHOD && typeof task.query === 'string';
 }
 
+type PlanStep = 'start' | 'plan' | 'done';
+
+interface PlanState {
+  query: string;
+  steps: string[];
+}
+
 /**
- * A2A 业务处理入口，下一轮接入 common/src/main/ets/workflow/StateGraph.ets。
+ * 最小图：start -> plan -> done。
+ * plan 目前产出静态三步，接入批量生成后替换成真实编排。
+ */
+function buildPlanGraph(): StateGraph<PlanState, PlanStep> {
+  const graph: StateGraph<PlanState, PlanStep> = new StateGraph<PlanState, PlanStep>('start', 'done');
+  graph.addNode('plan', async (state: PlanState): Promise<PlanState> => {
+    const steps: string[] = [
+      '1. 从相册选图（Picker，最多 20 张）',
+      '2. 逐张 OCR，抽取题干与知识点',
+      '3. 生成结构化笔记，预览确认后写入本地库',
+    ];
+    const next: PlanState = { query: state.query, steps: steps };
+    return next;
+  });
+  graph.addEdge('start', 'plan');
+  graph.addEdge('plan', 'done');
+  return graph;
+}
+
+/**
+ * A2A 业务处理入口：把 query 交给图执行，返回可读的计划文本。
  *
  * @param query 用户输入
- * @returns 当前阶段的固定 echo 文本
+ * @returns 计划文本
  */
 export async function handleTask(query: string): Promise<string> {
-  return 'Echo: ' + query;
+  const trimmed: string = query.trim();
+  if (trimmed.length === 0) {
+    return '没有收到内容，请再说一次要整理的题目范围。';
+  }
+  const state: PlanState = await buildPlanGraph().run({ query: trimmed, steps: [] });
+  return '收到：' + state.query + '\n计划：\n' + state.steps.join('\n');
 }
 
 export default class AgentExtAbility extends AgentExtensionAbility {
