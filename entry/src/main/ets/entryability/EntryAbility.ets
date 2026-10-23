@@ -13,8 +13,6 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { LlmConfig, OcrConfig, DatabaseHelper } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
-import { BackgroundTaskFacadeImpl } from '../kit/BackgroundTaskFacadeImpl';
-import { getBackgroundTaskFacade } from '../kit/BackgroundTaskFacadeImpl';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
@@ -64,10 +62,6 @@ export default class EntryAbility extends UIAbility {
       });
     // F3 最小闭环 (spec 013 / ADR-0009): ReminderFacade 实现在组合根构造并注入
     AppStorage.setOrCreate<ReminderFacadeImpl>('reminderFacade', new ReminderFacadeImpl(this.context));
-    AppStorage.setOrCreate<BackgroundTaskFacadeImpl>(
-      'backgroundTaskFacade',
-      new BackgroundTaskFacadeImpl(),
-    );
     AppStorage.setOrCreate<FormCardFacadeImpl>('formCardFacade', new FormCardFacadeImpl(this.context));
     // ticket-0.3 (#121): 应用级 filesDir 缝 — 组合根解析一次,发布纯字符串 seam(无 UI 上下文)
     const chatFilesDirSeam = ChatFilesDirSeam.fromApplicationContext(this.context.getApplicationContext());
@@ -81,11 +75,6 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    const facade = getBackgroundTaskFacade();
-    if (facade !== null) {
-      facade.finish('review_sync');
-      facade.finish('note_backup');
-    }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
@@ -137,24 +126,13 @@ export default class EntryAbility extends UIAbility {
     ChatSessionManager.flushActive().catch((e: Error) => {
       hilog.warn(DOMAIN, 'testTag', 'Chat history flush failed: %{public}s', e.message);
     });
-    this.refreshCardSnapshotInBackground().catch((e: Error) => {
-      hilog.warn(DOMAIN, 'testTag', 'Background card refresh failed: %{public}s', e.message);
+    this.refreshCardSnapshot().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'testTag', 'Card refresh failed: %{public}s', e.message);
     });
   }
 
-  private async refreshCardSnapshotInBackground(): Promise<void> {
-    const facade = getBackgroundTaskFacade();
-    if (facade === null) {
-      return;
-    }
-    const granted: boolean = await facade.requestOneShot('review_sync');
-    if (!granted) {
-      return;
-    }
-    try {
-      await CardSnapshotService.refresh(this.context);
-    } finally {
-      facade.finish('review_sync');
-    }
+  // v1 不做复习同步/备份，卡片快照改为退到后台时直接刷新，不再申请后台任务
+  private async refreshCardSnapshot(): Promise<void> {
+    await CardSnapshotService.refresh(this.context);
   }
 }
