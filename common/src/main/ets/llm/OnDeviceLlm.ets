@@ -2,16 +2,19 @@
  * OnDeviceLlm.ets — 端侧生成式模型的接入点与可用性判定
  *
  * 路径: common/src/main/ets/llm/OnDeviceLlm.ets
- * 职责: 定义端侧推理的统一契约；当前实现为「未就绪」占位，
- *       只有沙箱内存在可用的 MindSpore Lite 模型文件时才视为可用。
- * 依赖: @ohos.file.fs (可用性探测)
+ * 职责: 定义端侧推理的统一契约；v1 不内置端侧模型，可用性恒为不可用。
+ * 依赖: 无（纯 ArkTS，不访问文件系统）
+ *
+ * v1 决策:
+ *   v1 不内置端侧模型，文件检查留到接入 `.ms` 模型时再实现。
+ *   因此这里不做磁盘探测，checkAvailability() 恒定返回不可用，由 ModelRouter 走降级；
+ *   同时移除了对 @ohos.file.fs 的静态导入，避免启动期在 common HSP 内解析文件系统模块。
  *
  * 背景（2026-10-24 核实）:
  *   HarmonyOS API 26 未开放系统级生成式模型 API，SDK 中无 generateText / chatCompletion；
  *   唯一可用的端侧推理运行时是 @ohos.ai.mindSporeLite，需要自带 .ms 模型与配套 tokenizer。
- *   因此这里只判断「模型文件是否就位」，就位前一律视为不可用，由 ModelRouter 走降级。
+ *   就位前一律视为不可用。
  */
-import fs from '@ohos.file.fs';
 
 export interface OnDeviceReply {
   text: string;
@@ -34,17 +37,16 @@ export class OnDeviceLlm {
     this.modelPath = filesDir + '/' + ON_DEVICE_MODEL_DIR + '/' + ON_DEVICE_MODEL_FILE;
   }
 
-  /** 端侧是否可用：只认「模型文件存在」这一个事实，不做虚假承诺 */
+  /**
+   * 端侧是否可用。v1 不内置端侧模型，不访问磁盘，恒为不可用；
+   * 文件检查留到接入 `.ms` 模型时再实现。
+   */
   checkAvailability(): OnDeviceAvailability {
-    try {
-      const exists: boolean = fs.accessSync(this.modelPath);
-      if (exists) {
-        return { available: true, reason: 'model present', modelPath: this.modelPath };
-      }
-      return { available: false, reason: 'model file not found', modelPath: this.modelPath };
-    } catch (e) {
-      return { available: false, reason: 'access failed: ' + (e as Error).message, modelPath: this.modelPath };
-    }
+    return {
+      available: false,
+      reason: 'on-device model is not provisioned in this build',
+      modelPath: this.modelPath,
+    };
   }
 
   /**

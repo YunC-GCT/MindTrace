@@ -144,6 +144,8 @@ AgentUIExtensionComponent:load UIExtensionComponent failed:
  "message":"Start ui extension ability failed, please check the want of UIextensionAbility."}
 ```
 
+- **A2A 真模型链路稳定性（2026-10-24 深夜）**：`LLM 返回 47 字，耗时 1254 ms`；此前几次「模型响应超时」是模型端临时变慢，兜底超时已从 25s 提到 60s
+- **教训：扩展进程不要引入应用层重依赖**。把 `ModelRouter` 导进 `AgentExtAbility` 会让扩展在 onCreate 之前就以 `exit 254 / Reason:SyntaxError` 死掉；同理，把 `ModelRouter` 接进 `ConversationWorkflowPorts` 会让 App 主进程同样崩。路由接线已回退，`ModelRouter` 暂留未接
 - **A2A 已接入真模型**（2026-10-24）：`AgentExtAbility` 不再返回固定文案，改走 `ReplyService → LlmGuard → LlmClient`；冷启动实测 3.5 秒返回 355 字真实回答
 - 排障教训：早期的「配置初始化挂起 / 请求不返回」是**热进程仍在跑旧代码**造成的假象，冷启动（`aa force-stop`）后即恢复正常；验收 A2A 改动必须先杀进程
 - **当前卡点**：小艺拼出来的 Want 指向了错误的 Ability，UI 扩展起不来。尝试用 `module.json5` 的 `process` 字段让两个扩展同进程，但该字段被 schema 拒绝（`^[:][0-9a-zA-Z_]+$` 与其它约束冲突），已回滚
