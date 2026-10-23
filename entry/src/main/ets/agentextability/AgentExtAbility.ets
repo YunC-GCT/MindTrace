@@ -36,6 +36,9 @@ interface CardPayload {
 }
 
 interface UiCardBody {
+  bundleName: string;
+  moduleName: string;
+  abilityName: string;
   payload: CardPayload;
 }
 
@@ -100,14 +103,22 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       action: 'batch_capture',
     };
     // A2A v1 用字段名做判别器：data.uiExtensionCard.payload
-    const directive: UiCardDirective = { uiExtensionCard: { payload: payload } };
+    const directive: UiCardDirective = {
+      uiExtensionCard: {
+        bundleName: 'com.example.mindtrace',
+        moduleName: 'entry',
+        abilityName: 'AgentUIExtAbility',
+        payload: payload,
+      },
+    };
     const cardPart: Part = {
       mediaType: 'application/json',
       data: directive,
     };
 
+    // 卡片 part 暂不发送：小艺会为它死循环重试 start_ability_fail，导致对话一直转圈
     const artifact: TaskArtifactParam = {
-      parts: [textPart, cardPart],
+      parts: [textPart],
       lastChunk: true,
     };
 
