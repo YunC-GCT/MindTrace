@@ -49,6 +49,9 @@
       "category": "education",
       "type": "APP",
       "appInfo": {
+        "bundleName": "com.example.mindtrace",
+        "moduleName": "entry",
+        "abilityName": "AgentExtAbility",
         "deviceTypes": [
           "phone",
           "tablet"
