@@ -92,6 +92,23 @@ interface ArtifactUpdateResult {
   artifactUpdate: ArtifactUpdateBody;
 }
 
+interface TaskBody {
+  id: string;
+  contextId: string;
+  status: StatusBody;
+  artifacts: Array<ArtifactBody>;
+}
+
+interface TaskResult {
+  task: TaskBody;
+}
+
+interface TaskResponse {
+  jsonrpc: string;
+  id: string;
+  result: TaskResult;
+}
+
 interface StatusResponse {
   jsonrpc: string;
   id: string;
@@ -236,52 +253,14 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       .then((text: string): void => {
         const part: ResultPart = { text: text, mediaType: 'text/plain' };
         const artifact: ArtifactBody = { artifactId: taskId + '-artifact', parts: [part] };
-
-        // 1) 受理：TASK_STATE_WORKING
-        const working: StatusResponse = {
-          jsonrpc: '2.0',
-          id: rpcId,
-          result: {
-            statusUpdate: {
-              taskId: taskId,
-              contextId: contextId,
-              status: { state: 'TASK_STATE_WORKING' },
-              final: false,
-            },
-          },
+        const task: TaskBody = {
+          id: taskId,
+          contextId: contextId,
+          status: { state: 'TASK_STATE_COMPLETED' },
+          artifacts: [artifact],
         };
-        this.send(proxy, JSON.stringify(working));
-
-        // 2) 产物：正文塞进 artifact.parts
-        const artifactEvent: ArtifactResponse = {
-          jsonrpc: '2.0',
-          id: rpcId,
-          result: {
-            artifactUpdate: {
-              taskId: taskId,
-              contextId: contextId,
-              artifact: artifact,
-              append: false,
-              lastChunk: true,
-            },
-          },
-        };
-        this.send(proxy, JSON.stringify(artifactEvent));
-
-        // 3) 收尾：TASK_STATE_COMPLETED + final，结束这一轮流
-        const done: StatusResponse = {
-          jsonrpc: '2.0',
-          id: rpcId,
-          result: {
-            statusUpdate: {
-              taskId: taskId,
-              contextId: contextId,
-              status: { state: 'TASK_STATE_COMPLETED' },
-              final: true,
-            },
-          },
-        };
-        this.send(proxy, JSON.stringify(done));
+        const response: TaskResponse = { jsonrpc: '2.0', id: rpcId, result: { task: task } };
+        this.send(proxy, JSON.stringify(response));
       })
       .catch((): void => {
         this.sendError(proxy, rpcId, -32603, 'task_failed');
