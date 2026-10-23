@@ -10,6 +10,7 @@ import { ActionBar } from "./ActionBar"
 import { VendorPicker } from "./VendorPicker"
 import { OcrConfigSection } from "./OcrConfigSection"
 import { OnDeviceModelSection } from "./OnDeviceModelSection"
+import { XiaoyiEntrySection } from "./XiaoyiEntrySection"
 import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
 
 // PR2-T2 P3: 添加新供应商 modal 4 字段 cfg
@@ -253,6 +254,9 @@ struct AiSettingsPage {
             available: this.onDeviceAvailable,
             statusText: this.onDeviceStatus,
           })
+
+          // issue #225: 应用内「问小艺」入口（不可用时只显示提示行）
+          XiaoyiEntrySection()
 
           Blank().height(40)
         }
