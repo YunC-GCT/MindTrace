@@ -42,6 +42,7 @@ export struct PlusActionSheet {
 
   onCamera?: () => void = (): void => {};
   onAlbum?: () => void = (): void => {};
+  onAlbumLongPress?: () => void = (): void => {};
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
@@ -79,6 +80,7 @@ export struct PlusActionSheet {
         },
       })
       AlbumAction({
+          onLongPress: this.onAlbumLongPress,
         onTap: (): void => {
           this.showPopup = false;
           if (this.onAlbum) {

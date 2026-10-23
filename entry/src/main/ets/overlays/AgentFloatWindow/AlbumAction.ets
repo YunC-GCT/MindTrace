@@ -23,6 +23,7 @@ import {
 @Component
 export struct AlbumAction {
   onTap?: () => void = (): void => {};
+  onLongPress?: () => void = (): void => {};
 
   build() {
     Column() {
@@ -41,6 +42,14 @@ export struct AlbumAction {
       if (this.onTap) {
         this.onTap();
       }
-    });
+    })
+    .gesture(
+      LongPressGesture({ repeat: false, duration: 500 })
+        .onAction((): void => {
+          if (this.onLongPress) {
+            this.onLongPress();
+          }
+        })
+    );
   }
 }

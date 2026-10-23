@@ -112,6 +112,7 @@ export struct AgentFloatWindow {
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
   @State panelVisible: boolean = false;
   @State generatedDraft: NoteDraftReadyEvent | null = null;
+  @State batchUris: string[] = [];
   @State sourceOverlayVisible: boolean = false;
   @State sourceOverlayLoading: boolean = false;
   @State sourceOverlayCitation: NoteEvidenceCitation | null = null;
@@ -856,6 +857,22 @@ export struct AgentFloatWindow {
     this.sm.flush(this.sessions).catch((): void => {});
   };
 
+  // + 弹窗 → 相册长按: 批量选图（spec 031 P2，最多 20 张）
+  private onAlbumBatchAction = (): void => {
+    AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext, 20)
+      .then((uris: string[]): void => {
+        if (uris.length === 0) {
+          return;
+        }
+        this.batchUris = uris;
+        this.showToast('已选择 ' + uris.length + ' 张，待整理');
+        console.info('[BatchCapture] picked=' + uris.length);
+      })
+      .catch((e: Error): void => {
+        this.showToast('选图失败：' + e.message);
+      });
+  };
+
   // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
   private showToast(message: string): void {
     try {
@@ -1042,6 +1059,7 @@ export struct AgentFloatWindow {
             modelName: ModelSelector.currentLabel(),
             onCamera: this.onCameraAction,
             onAlbum: this.onAlbumAction,
+            onAlbumLongPress: this.onAlbumBatchAction,
             onStop: (): void => { this.stopStreaming(); },
           });
         }
