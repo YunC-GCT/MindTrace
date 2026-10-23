@@ -53,8 +53,7 @@
       "appInfo": {
         "deviceTypes": [
           "phone",
-          "tablet",
-          "2in1"
+          "tablet"
         ],
         "minAppVersion": "1.0.0"
       }
