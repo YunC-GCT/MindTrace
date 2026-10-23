@@ -39,6 +39,8 @@
 | [`knowledge-galaxy-mapping-2026-10-18.md`](./knowledge-galaxy-mapping-2026-10-18.md) | 2026-10-18 | 知识星系映射规范表：知识结构 → 三维星系，产品确认与实现对齐 | active (映射契约) |
 | [`github-issue-pr-audit-2026-10-18.md`](./github-issue-pr-audit-2026-10-18.md) | 2026-10-18 | GitHub issue / PR 状态对账：已完成未关闭、失效 spec 引用、PR #216 review 阻塞 | active (运维对账) |
 | [`docs-traceability-audit-2026-10-18.md`](./docs-traceability-audit-2026-10-18.md) | 2026-10-18 | 文档规范 / 设计冲突 / 可追溯性 / ArkTS-AI coding 可用性审计（9 处冲突修正 + doc-trace 守门） | active (审计结论) |
+| [`a2a-module-loading-2026-10-24.md`](./a2a-module-loading-2026-10-24.md) | 2026-10-24 | 端A2A 扩展进程在模块加载阶段 `SyntaxError` 的成因与跨包/类型导入规则 | active (排障依据) |
+| [`on-device-llm-2026-10-24.md`](./on-device-llm-2026-10-24.md) | 2026-10-24 | API 26 端侧生成式模型能力盘点：MindSpore Lite 与 Data Augmentation Kit 的真实边界 | active (选型依据) |
 
 临时原料 [`_positioning-facts-2026-09-04.md`](./_positioning-facts-2026-09-04.md)（下划线前缀）按约定不入正式索引，供 `project-positioning-2026-09-04.md` 溯源。
 
