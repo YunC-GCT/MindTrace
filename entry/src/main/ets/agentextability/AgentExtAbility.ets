@@ -2,61 +2,96 @@
  * AgentExtAbility.ets - 端 A2A Agent 扩展入口
  *
  * 路径: entry/src/main/ets/agentextability/AgentExtAbility.ets
- * 职责: 接收小艺端 A2A tasks/send 请求，并返回最小 Artifact 响应。
- * 依赖: @kit.AbilityKit (AgentExtensionAbility)
+ * 职责: 接收小艺端 A2A 的 JSON-RPC 2.0 请求（SendStreamingMessage / tasks/send），
+ *       交给 handleTask() 执行，并用同一请求的 id 回一条 JSON-RPC 响应。
+ * 依赖: @kit.AbilityKit (AgentExtensionAbility)、common (StateGraph)
  *
  * 数据流:
- *   AgentHostProxy.onData() -> handleTask() -> StateGraph(plan) -> AgentHostProxy.sendData()
+ *   onData(jsonrpc) -> handleTask(query) -> StateGraph(plan) -> 组装 task 结果 -> sendData(jsonrpc)
  *
  * 当前只跑一个 plan 节点（静态三步计划），后续把 plan 换成真实编排。
- *
- * ArkTS 1.1 strict 适配:
- *   - 使用显式请求、响应和代理接口，避免 any / unknown。
- *   - JSON.parse() 结果通过显式类型断言进入协议模型。
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { StateGraph } from 'common';
 
-const TASK_SEND_METHOD: string = 'tasks/send';
-const DEFAULT_CONTEXT_ID: string = 'mindtrace-context';
-const DEFAULT_TASK_ID: string = 'mindtrace-task';
+const TAG: string = 'MindTraceA2A';
+const DOMAIN: number = 0xA2A0;
 
-interface A2ATask {
+const METHOD_STREAM: string = 'SendStreamingMessage';
+const METHOD_MESSAGE_SEND: string = 'SendMessage';
+const METHOD_TASK_SEND: string = 'tasks/send';
+const DEFAULT_CONTEXT_ID: string = 'mindtrace-context';
+
+interface RpcPart {
+  kind?: string;
+  type?: string;
+  text?: string;
+}
+
+interface RpcMessage {
+  messageId?: string;
+  contextId?: string;
+  taskId?: string;
+  role?: string;
+  parts?: Array<RpcPart>;
+}
+
+interface RpcTask {
   id?: string;
   contextId?: string;
-  query: string;
+  query?: string;
 }
 
-interface A2ATaskSendParams {
-  task: A2ATask;
+interface RpcParams {
+  message?: RpcMessage;
+  task?: RpcTask;
 }
 
-interface A2ATaskSendRequest {
-  method: string;
-  params: A2ATaskSendParams;
+interface RpcRequest {
+  jsonrpc?: string;
+  id?: string;
+  method?: string;
+  params?: RpcParams;
 }
 
-interface A2AArtifactPart {
-  type: string;
+interface ResultPart {
+  kind: string;
   text: string;
 }
 
-interface A2ATaskSendResponse {
-  contextId: string;
-  taskId: string;
+interface ResultArtifact {
   artifactId: string;
-  parts: Array<A2AArtifactPart>;
+  parts: Array<ResultPart>;
 }
 
-interface A2AErrorResponse {
-  error: string;
+interface ResultStatus {
+  state: string;
 }
 
-function isTaskSendRequest(request: A2ATaskSendRequest): boolean {
-  const params: A2ATaskSendParams = request.params;
-  const task: A2ATask = params.task;
-  return request.method === TASK_SEND_METHOD && typeof task.query === 'string';
+interface ResultTask {
+  kind: string;
+  id: string;
+  contextId: string;
+  status: ResultStatus;
+  artifacts: Array<ResultArtifact>;
+}
+
+interface RpcResponse {
+  jsonrpc: string;
+  id: string;
+  result: ResultTask;
+}
+
+interface RpcErrorBody {
+  code: number;
+  message: string;
+}
+
+interface RpcErrorResponse {
+  jsonrpc: string;
+  id: string;
+  error: RpcErrorBody;
 }
 
 type PlanStep = 'start' | 'plan' | 'done';
@@ -101,8 +136,26 @@ export async function handleTask(query: string): Promise<string> {
   return '收到：' + state.query + '\n计划：\n' + state.steps.join('\n');
 }
 
-const DOMAIN: number = 0xA2A0;
-const TAG: string = 'MindTraceA2A';
+/** 从 message.parts 里拼出纯文本，兼容 kind=text 与 type=text 两种写法。 */
+function extractText(message: RpcMessage | undefined): string {
+  if (message === undefined || message.parts === undefined) {
+    return '';
+  }
+  const chunks: string[] = [];
+  const parts: Array<RpcPart> = message.parts;
+  for (let i = 0; i < parts.length; i++) {
+    const part: RpcPart = parts[i];
+    const isText: boolean = part.kind === 'text' || part.type === 'text';
+    if (isText && typeof part.text === 'string') {
+      chunks.push(part.text);
+    }
+  }
+  return chunks.join('\n').trim();
+}
+
+function nextId(prefix: string): string {
+  return prefix + '-' + Date.now().toString();
+}
 
 export default class AgentExtAbility extends AgentExtensionAbility {
   onCreate(want: Want): void {
@@ -118,57 +171,71 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   }
 
   onData(proxy: common.AgentHostProxy, data: string): void {
-    hilog.info(DOMAIN, TAG, 'onData 收到 %{public}d 字节: %{public}s', data.length, data.substring(0, 300));
-    let request: A2ATaskSendRequest;
+    hilog.info(DOMAIN, TAG, 'onData 收到 %{public}d 字节: %{public}s', data.length, data.substring(0, 1500));
+
+    let request: RpcRequest;
     try {
-      request = JSON.parse(data) as A2ATaskSendRequest;
+      request = JSON.parse(data) as RpcRequest;
     } catch (error) {
-      this.sendError(proxy, 'invalid_request');
+      this.sendError(proxy, '', -32700, 'parse_error');
       return;
     }
 
-    if (request.method !== TASK_SEND_METHOD) {
-      this.sendError(proxy, 'unsupported_method');
+    const id: string = request.id ?? '';
+    const method: string = request.method ?? '';
+    const params: RpcParams = request.params ?? {};
+
+    if (method === METHOD_STREAM || method === METHOD_MESSAGE_SEND) {
+      const message: RpcMessage | undefined = params.message;
+      const query: string = extractText(message);
+      const taskId: string = message?.taskId ?? message?.messageId ?? nextId('task');
+      const contextId: string = message?.contextId ?? DEFAULT_CONTEXT_ID;
+      hilog.info(DOMAIN, TAG, 'method=%{public}s taskId=%{public}s', method, taskId);
+      this.runAndReply(proxy, id, taskId, contextId, query);
       return;
     }
 
-    if (!isTaskSendRequest(request)) {
-      this.sendError(proxy, 'invalid_task');
+    if (method === METHOD_TASK_SEND) {
+      const task: RpcTask | undefined = params.task;
+      const query: string = task?.query ?? '';
+      const taskId: string = task?.id ?? nextId('task');
+      const contextId: string = task?.contextId ?? DEFAULT_CONTEXT_ID;
+      hilog.info(DOMAIN, TAG, 'method=tasks/send taskId=%{public}s', taskId);
+      this.runAndReply(proxy, id, taskId, contextId, query);
       return;
     }
 
-    const task: A2ATask = request.params.task;
-    hilog.info(DOMAIN, TAG, 'query=%{public}s', task.query);
-    handleTask(task.query)
+    hilog.warn(DOMAIN, TAG, 'unsupported method=%{public}s', method);
+    this.sendError(proxy, id, -32601, 'unsupported_method: ' + method);
+  }
+
+  private runAndReply(proxy: common.AgentHostProxy, rpcId: string, taskId: string,
+    contextId: string, query: string): void {
+    handleTask(query)
       .then((text: string): void => {
-        const response: A2ATaskSendResponse = this.buildResponse(task, text);
+        const part: ResultPart = { kind: 'text', text: text };
+        const artifact: ResultArtifact = { artifactId: taskId + '-artifact', parts: [part] };
+        const result: ResultTask = {
+          kind: 'task',
+          id: taskId,
+          contextId: contextId,
+          status: { state: 'completed' },
+          artifacts: [artifact],
+        };
+        const response: RpcResponse = { jsonrpc: '2.0', id: rpcId, result: result };
         const payload: string = JSON.stringify(response);
         hilog.info(DOMAIN, TAG, 'sendData %{public}d 字节', payload.length);
         proxy.sendData(payload);
       })
       .catch((): void => {
-        this.sendError(proxy, 'task_failed');
+        this.sendError(proxy, rpcId, -32603, 'task_failed');
       });
   }
 
-  private buildResponse(task: A2ATask, text: string): A2ATaskSendResponse {
-    const taskId: string = task.id ?? DEFAULT_TASK_ID;
-    const contextId: string = task.contextId ?? DEFAULT_CONTEXT_ID;
-    const part: A2AArtifactPart = {
-      type: 'text',
-      text: text,
-    };
-    return {
-      contextId: contextId,
-      taskId: taskId,
-      artifactId: taskId + '-artifact',
-      parts: [part],
-    };
-  }
-
-  private sendError(proxy: common.AgentHostProxy, error: string): void {
-    hilog.warn(DOMAIN, TAG, 'sendError: %{public}s', error);
-    const response: A2AErrorResponse = { error: error };
+  private sendError(proxy: common.AgentHostProxy, rpcId: string, code: number, message: string): void {
+    hilog.warn(DOMAIN, TAG, 'sendError code=%{public}d msg=%{public}s', code, message);
+    const body: RpcErrorBody = { code: code, message: message };
+    const response: RpcErrorResponse = { jsonrpc: '2.0', id: rpcId, error: body };
     proxy.sendData(JSON.stringify(response));
   }
 }
