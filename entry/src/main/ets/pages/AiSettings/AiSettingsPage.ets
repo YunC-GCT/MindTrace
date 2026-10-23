@@ -2,7 +2,7 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_SM, F_XS, W_SEMIBOLD, S_2, S_4, OnDeviceLlm } from "common"
+import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_SM, F_XS, W_SEMIBOLD, S_2, S_4, LocalChatProvider } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
@@ -35,16 +35,20 @@ struct AiSettingsPage {
       this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.OFFSET)
     } catch (_e) {}
     this.reload()
-    // issue #221: 与 ModelRouter 同源,只用 filesDir 探测,不触发端侧推理
+    // issue #221 修订: 端侧就绪以系统问答模型 init() 结果为准(不再看模型文件)
+    this.onDeviceStatus = '检测中…'
     try {
-      const filesDir: string = getContext(this).filesDir
-      const availability = new OnDeviceLlm(filesDir).checkAvailability()
-      this.onDeviceAvailable = availability.available
-      // 就绪时不展示原因;未就绪时把原因作为状态文案
-      this.onDeviceStatus = availability.available ? '' : availability.reason
+      const provider: LocalChatProvider = new LocalChatProvider()
+      provider.init().then((ready: boolean): void => {
+        this.onDeviceAvailable = ready
+        this.onDeviceStatus = ready ? '' : '系统端侧问答模型初始化失败（设备不支持或模型未就绪）'
+      }).catch((e: Error): void => {
+        this.onDeviceAvailable = false
+        this.onDeviceStatus = '端侧状态读取失败：' + e.message
+      })
     } catch (_e) {
       this.onDeviceAvailable = false
-      this.onDeviceStatus = '端侧模型状态读取失败'
+      this.onDeviceStatus = '端侧状态读取失败'
     }
   }
 

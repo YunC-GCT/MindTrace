@@ -1,5 +1,12 @@
 # HarmonyOS API 26 端侧生成式大模型：官方可用能力与真实限制
 
+> **⚠️ 更正（2026-10-24 深夜）**：本报告 §1 的「不存在系统级端侧生成式 API」结论**是错的**。
+> 漏检了 `@hms.data.localChatModel`（Data Augmentation Kit，`@kit.DataAugmentationKit` 导出，since API 20）：
+> `init(): Promise<boolean>` + `chat({questionId, content}, {isStream}, cb: AsyncCallback<Answer>)`，
+> `Answer = {questionId, content, isFinished}`，原生支持流式（`isFinished=false` 为增量帧）。
+> 原因是检索只按 `LLM` / `generateText` 等字面量匹配，而该模块名为 *localChatModel*、文档措辞是 "on-device Q&A model"。
+> **保留原文作为检索方法的反面教材**；实现以 localChatModel 为准，见 spec 032 §4.2 修订。
+
 > 调研日期：2026-10-24 · 目标工程：`D:/HMgent/MindTrace`（Stage 模型 / targetSdk 26）
 > 取证环境：DevEco Studio 26 自带 SDK `C:/Program Files/Huawei/DevEco Studio/sdk/default`，`sdk-pkg.json` → `apiVersion: "26"`、`version: "26.0.0.105"`、`releaseType: Release`〔S1〕
 > 来源优先级：本机 SDK `.d.ts`（最权威） > OpenHarmony 文档仓库（`gh api` 读 master） > developer.huawei.com 官方文档 > MindSpore 官方文档。**未使用任何第三方博客作为结论依据**（§7 单列了社区流传但查无实据的说法）。

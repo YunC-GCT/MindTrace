@@ -3,7 +3,7 @@
  *
  * Path: entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets
  * Responsibility: Keep LLM, OCR, and Capture effects behind testable workflow seams.
- * Dependencies: AiService; IntentClassifier; ReplyService; ModelRouter; common contracts.
+ * Dependencies: AiService; IntentClassifier; ReplyService; ModelRouter; LocalChatProvider; common contracts.
  *
  * Data flow:
  *   Workflow request -> typed port -> external service -> typed domain result.
@@ -13,6 +13,7 @@ import {
   CancellationToken,
   ClassificationResult,
   LlmConfig,
+  LocalChatProvider,
   Logger,
   NoteDraftReadyEvent,
   NoteGenerationRoute,
@@ -309,7 +310,14 @@ export class ConversationWorkflowPorts {
   ): ConversationWorkflowPorts {
     const classifier: IntentClassifier = new IntentClassifier();
     const replyService: ReplyService = new ReplyService(classifier);
-    const router: ModelRouter = new ModelRouter(context.filesDir, replyService);
+    const localChat: LocalChatProvider = new LocalChatProvider();
+    // 不阻塞 production()：init 失败由 provider 内部记录并返回 false，router 继续走云端/报错
+    localChat.init().then((ready: boolean): void => {
+      replyPortLog.info('localChat init result=' + ready.toString());
+    }).catch((e: Error): void => {
+      replyPortLog.error('localChat init crashed: ' + e.message);
+    });
+    const router: ModelRouter = new ModelRouter(context.filesDir, replyService, localChat);
     return new ConversationWorkflowPorts(
       new ConversationIntentAdapter(classifier),
       new ConversationReplyAdapter(replyService, router),

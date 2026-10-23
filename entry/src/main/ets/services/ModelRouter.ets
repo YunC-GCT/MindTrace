@@ -3,12 +3,13 @@
  *
  * 路径: entry/src/main/ets/services/ModelRouter.ets
  * 职责: 按硬规则决定这一轮由谁回答
- *       1) 用户配置了模型 -> 用配置的模型（这是显式例外，不算降级）
- *       2) 未配置 -> 端侧；端侧不可用则明确报错，不静默走别的
- *       3) 端侧就绪但推理失败，且用户配置了模型 -> 云端 + 标记「已降级」
- * 依赖: OnDeviceLlm、ReplyService、LlmConfig
+ *       1) 系统端侧问答模型已就绪 -> 端侧，不降级
+ *       2) 端侧未就绪、用户配置了模型 -> 用配置的模型（这是显式例外，不算降级）
+ *       3) 端侧推理失败、且用户配置了模型 -> 云端 + 标记「已降级」
+ *       4) 端侧未就绪且没有配置 -> 明确报错，不静默走别的
+ * 依赖: LlmConfig、LocalChatProvider、ReplyService
  */
-import { LlmConfig, OnDeviceLlm } from 'common';
+import { LlmConfig, LocalChatProvider } from 'common';
 import type { ReplyContext } from './IntentClassifier';
 import type { ReplyService } from './ReplyService';
 
@@ -20,45 +21,48 @@ export interface RoutedReply {
 }
 
 export class ModelRouter {
+  /** 保留构造签名兼容旧调用；端侧可用性已改由 LocalChatProvider.isReady() 判定 */
   private readonly filesDir: string;
   private readonly replyService: ReplyService;
+  private readonly localChat?: LocalChatProvider;
 
-  constructor(filesDir: string, replyService: ReplyService) {
+  constructor(filesDir: string, replyService: ReplyService, localChat?: LocalChatProvider) {
     this.filesDir = filesDir;
     this.replyService = replyService;
+    this.localChat = localChat;
   }
 
   async answer(context: ReplyContext): Promise<RoutedReply> {
-    const onDevice: OnDeviceLlm = new OnDeviceLlm(this.filesDir);
-    // 不写显式类型标注：该类型来自 HSP，跨包 type-only 引用会在链接期找不到导出
-    const availability = onDevice.checkAvailability();
     const configured: boolean = await LlmConfig.getInstance().isConfigured();
+    const localChat: LocalChatProvider | undefined = this.localChat;
 
-    // 1) 显式例外：用户自己配了模型，就用它，不属于降级
-    if (configured) {
-      if (availability.available) {
-        try {
-          const reply = await onDevice.generate(context.userContent);
-          return { text: reply.text, source: 'on_device', degraded: false, reason: 'on-device model' };
-        } catch (e) {
+    // 1) 端侧就绪：优先端侧
+    if (localChat !== undefined && localChat.isReady()) {
+      try {
+        const text: string = await localChat.ask(context.userContent);
+        return { text: text, source: 'on_device', degraded: false, reason: 'local chat model' };
+      } catch (e) {
+        const detail: string = (e as Error).message;
+        if (configured) {
           const text: string = await this.replyService.complete(context);
           return {
             text: text,
             source: 'remote',
             degraded: true,
-            reason: 'on-device inference failed: ' + (e as Error).message,
+            reason: 'local chat failed: ' + detail,
           };
         }
+        throw new Error('端侧模型推理失败（' + detail + '），且没有配置云端模型；请到设置里配置模型');
       }
+    }
+
+    // 2) 显式例外：用户自己配了模型，就用它，不属于降级
+    if (configured) {
       const text: string = await this.replyService.complete(context);
       return { text: text, source: 'remote', degraded: false, reason: 'user-configured model' };
     }
 
-    // 2) 未配置：只应走端侧；端侧不可用就说清楚，不偷偷调云端
-    if (availability.available) {
-      const reply = await onDevice.generate(context.userContent);
-      return { text: reply.text, source: 'on_device', degraded: false, reason: 'on-device model' };
-    }
-    throw new Error('端侧模型未就绪（' + availability.reason + '），且没有配置云端模型；请到设置里配置模型');
+    // 3) 都没配：明确报错，不偷偷调云端
+    throw new Error('端侧模型未就绪（local chat model unavailable），且没有配置云端模型；请到设置里配置模型');
   }
 }

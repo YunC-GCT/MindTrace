@@ -57,6 +57,6 @@ test('production() wires one ReplyService into both ModelRouter and the reply ad
   const productionStart = source.indexOf('static production(');
   assert.ok(productionStart >= 0);
   const productionBody = source.slice(productionStart);
-  assert.match(productionBody, /new ModelRouter\(context\.filesDir, replyService\)/);
+  assert.match(productionBody, /new ModelRouter\(context\.filesDir, replyService/);
   assert.match(productionBody, /new ConversationReplyAdapter\(replyService, router\)/);
 });
