@@ -2,13 +2,14 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_SM, F_XS, W_SEMIBOLD, S_2, S_4 } from "common"
+import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_SM, F_XS, W_SEMIBOLD, S_2, S_4, OnDeviceLlm } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
 import { ActionBar } from "./ActionBar"
 import { VendorPicker } from "./VendorPicker"
 import { OcrConfigSection } from "./OcrConfigSection"
+import { OnDeviceModelSection } from "./OnDeviceModelSection"
 import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
 
 // PR2-T2 P3: 添加新供应商 modal 4 字段 cfg
@@ -25,12 +26,26 @@ interface AddCustomVendorCfg {
 struct AiSettingsPage {
   @StorageProp("statusBarHeight") sbh: number = 0
   @State vm: AiSettingsViewModel = new AiSettingsViewModel()
+  // issue #221: 端侧能力位(只读可观测)
+  @State onDeviceAvailable: boolean = false
+  @State onDeviceStatus: string = ''
 
   aboutToAppear(): void {
     try {
       this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.OFFSET)
     } catch (_e) {}
     this.reload()
+    // issue #221: 与 ModelRouter 同源,只用 filesDir 探测,不触发端侧推理
+    try {
+      const filesDir: string = getContext(this).filesDir
+      const availability = new OnDeviceLlm(filesDir).checkAvailability()
+      this.onDeviceAvailable = availability.available
+      // 就绪时不展示原因;未就绪时把原因作为状态文案
+      this.onDeviceStatus = availability.available ? '' : availability.reason
+    } catch (_e) {
+      this.onDeviceAvailable = false
+      this.onDeviceStatus = '端侧模型状态读取失败'
+    }
   }
 
   aboutToDisappear(): void {
@@ -228,6 +243,11 @@ struct AiSettingsPage {
                 } catch (_e) {}
               })
             },
+          })
+
+          OnDeviceModelSection({
+            available: this.onDeviceAvailable,
+            statusText: this.onDeviceStatus,
           })
 
           Blank().height(40)
