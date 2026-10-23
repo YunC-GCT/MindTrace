@@ -144,6 +144,8 @@ AgentUIExtensionComponent:load UIExtensionComponent failed:
  "message":"Start ui extension ability failed, please check the want of UIextensionAbility."}
 ```
 
+- **A2A 已接入真模型**（2026-10-24）：`AgentExtAbility` 不再返回固定文案，改走 `ReplyService → LlmGuard → LlmClient`；冷启动实测 3.5 秒返回 355 字真实回答
+- 排障教训：早期的「配置初始化挂起 / 请求不返回」是**热进程仍在跑旧代码**造成的假象，冷启动（`aa force-stop`）后即恢复正常；验收 A2A 改动必须先杀进程
 - **当前卡点**：小艺拼出来的 Want 指向了错误的 Ability，UI 扩展起不来。尝试用 `module.json5` 的 `process` 字段让两个扩展同进程，但该字段被 schema 拒绝（`^[:][0-9a-zA-Z_]+$` 与其它约束冲突），已回滚
 - **副作用（已修）**：只要对话里存在这张加载失败的卡片，小艺就会以约 12 次/秒的频率重试 `start_ability_fail`，表现为回复区一直转圈；杀掉小艺后归零。当前改为**只发文本**，新对话不再触发
 - 已验证：把 AgentCard 的 `abilityName` 指向 `AgentUIExtAbility` 后 A2A 文本链路仍正常（连接走 metadata，不靠该字段），但 UI 扩展仍起不来；在 `uiExtensionCard` 里显式带 `bundleName/moduleName/abilityName` 也无效
