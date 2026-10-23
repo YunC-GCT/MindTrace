@@ -19,7 +19,7 @@
 |---|---|---|---|---|
 | **P0 协议接入** | 小艺能调起 `AgentExtensionAbility` 并拿到回复 | ✅ | 真机小艺发消息后出现 agent 气泡 | `python scripts/a2a_smoke.py --text "整理数学题"` 返回 `ok: true`；hilog 出现 `onCreate → onConnect → onData → sendData` |
 | **P1 意图与入口** | 从对话进入应用选图 | ⬜ | 小艺说话后应用被拉起且停在选图态 | 真机录屏 |
-| **P2 批量选图** | Picker 多选，最多 20 张，复制进沙箱 | ⬜ | 选 20 张不崩、URI 全部可读 | 真机 + 日志 URI 计数 |
+| **P2 批量选图** | Picker 多选，最多 20 张，复制进沙箱 | 🟡 | 选 20 张不崩、URI 全部可读 | `AlbumPickerLauncher.pick(ctx, 20)` 已实现，长按「+ → 相册」触发；待真机点选验收 |
 | **P3 真实编排** | `handleTask` 接 `OcrNode → StructureNode → PersistNode` | ⬜ | 生成的笔记杀掉应用重启后仍在 | RDB 查询 + 列表截图 |
 | **P4 结果回执** | 对话/卡片报「本次整理 N 条」 | ⬜ | 小艺里能问到刚生成的条数 | `a2a_smoke.py` 的 `reply_text` |
 | **P5 合规落地** | AI 标识 + 导出元数据 | ⬜ | 导出的文件带 `AI生成 / MindTrace / mindtrace-note-agent` | 导出样本文件 |
