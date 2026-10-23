@@ -70,7 +70,7 @@
 | 3 | 请求了端侧但端侧不可用、且配置了云端 | 云端 | **必须**追加「已降级：<原因>」 |
 | 4 | 都没有 | 明确错误文案 | 无答案，不伪造 |
 
-- 「端侧就绪」= `localChatModel.init()` 返回 true（系统端侧问答模型就绪）。**2026-10-24 修订**：不再是「模型文件存在」，也不再恒为 false——API 20 起系统自带该模型，`@hms.data.localChatModel` 同时支持 `isStream` 增量返回。
+- 「端侧就绪」= `localChatModel.init()` 返回 true。**门槛（2026-10-24 查证）**：仅 PC/2in1 设备类型、仅企业开发者可申请、首次使用会下载 Qwen2.5-7B-Instruct；真机 tablet（MRO-W00）实测 `init()` 返回 false，日志 `LocalChatModel::InitLocalModel local model launch failed`。**2026-10-24 修订**：不再是「模型文件存在」，也不再恒为 false——API 20 起系统自带该模型，`@hms.data.localChatModel` 同时支持 `isStream` 增量返回。
 - 端侧不可用时按上表降级；降级原因必须来自真实错误码（1021900001/0002/0003/0004）。
 - 降级文案与端 A2A、应用内聊天保持一致，避免两处观感不同。
 
