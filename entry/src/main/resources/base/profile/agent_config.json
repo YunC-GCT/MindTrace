@@ -3,27 +3,61 @@
     {
       "agentId": "mindtrace-note-agent",
       "name": "MindTrace 数学笔记助手",
-      "description": "把相册里的数学题批量整理成结构化笔记：识别题目文字、抽取知识点、写入本地知识库。所有识别与生成在设备本地完成，图片和笔记不上传云端。",
-      "version": "1.0.0",
-      "iconUrl": "",
+      "description": "把相册里的数学题批量整理成结构化笔记：识别题目文字、抽取知识点、写入本地知识库。识别与生成都在设备本地完成，图片和笔记不上传云端。",
       "provider": {
         "organization": "MindTrace",
-        "url": ""
+        "url": "https://github.com/YunC-GCT/MindTrace"
       },
-      "documentationUrl": "",
+      "version": "1.0.0",
+      "documentationUrl": "https://github.com/YunC-GCT/MindTrace/blob/main/README.md",
       "capabilities": {
-        "streaming": true,
-        "pushNotifications": false
+        "streaming": false,
+        "pushNotifications": false,
+        "stateTransitionHistory": false,
+        "extendedAgentCard": false,
+        "extension": "mindtrace_v1"
       },
-      "credentials": "",
       "defaultInputModes": [
-        "text/plain",
-        "application/json"
+        "text/plain"
       ],
       "defaultOutputModes": [
-        "text/plain",
-        "application/json"
-      ]
+        "text/plain"
+      ],
+      "skills": [
+        {
+          "id": "batch-math-notes",
+          "name": "批量整理数学题",
+          "description": "从相册选择数学题图片，识别题目文字与公式，抽取知识点并生成结构化笔记，写入设备本地知识库。",
+          "tags": [
+            "数学",
+            "笔记",
+            "OCR",
+            "知识库"
+          ],
+          "examples": [
+            "把相册里这周的数学题整理成笔记",
+            "帮我识别这几张图里的题目"
+          ],
+          "inputModes": [
+            "text/plain"
+          ],
+          "outputModes": [
+            "text/plain"
+          ]
+        }
+      ],
+      "iconUrl": "https://raw.githubusercontent.com/YunC-GCT/MindTrace/main/AppScope/resources/base/media/foreground.png",
+      "category": "education",
+      "type": "APP",
+      "extension": "mindtrace_v1",
+      "appInfo": {
+        "deviceTypes": [
+          "phone",
+          "tablet",
+          "2in1"
+        ],
+        "minAppVersion": "1.0.0"
+      }
     }
   ]
 }
