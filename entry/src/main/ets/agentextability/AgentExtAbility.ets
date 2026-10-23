@@ -60,22 +60,48 @@ interface ResultPart {
   mediaType: string;
 }
 
-interface ResultMessage {
-  messageId: string;
-  role: string;
-  parts: Array<ResultPart>;
-  contextId: string;
+interface StatusBody {
+  state: string;
+}
+
+interface StatusUpdateBody {
   taskId: string;
+  contextId: string;
+  status: StatusBody;
+  final: boolean;
 }
 
-interface StreamResult {
-  message: ResultMessage;
+interface StatusUpdateResult {
+  statusUpdate: StatusUpdateBody;
 }
 
-interface RpcResponse {
+interface ArtifactBody {
+  artifactId: string;
+  parts: Array<ResultPart>;
+}
+
+interface ArtifactUpdateBody {
+  taskId: string;
+  contextId: string;
+  artifact: ArtifactBody;
+  append: boolean;
+  lastChunk: boolean;
+}
+
+interface ArtifactUpdateResult {
+  artifactUpdate: ArtifactUpdateBody;
+}
+
+interface StatusResponse {
   jsonrpc: string;
   id: string;
-  result: StreamResult;
+  result: StatusUpdateResult;
+}
+
+interface ArtifactResponse {
+  jsonrpc: string;
+  id: string;
+  result: ArtifactUpdateResult;
 }
 
 interface RpcErrorBody {
@@ -209,22 +235,62 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     handleTask(query)
       .then((text: string): void => {
         const part: ResultPart = { text: text, mediaType: 'text/plain' };
-        const message: ResultMessage = {
-          messageId: nextId('msg'),
-          role: 'ROLE_AGENT',
-          parts: [part],
-          contextId: contextId,
-          taskId: taskId,
+        const artifact: ArtifactBody = { artifactId: taskId + '-artifact', parts: [part] };
+
+        // 1) 受理：TASK_STATE_WORKING
+        const working: StatusResponse = {
+          jsonrpc: '2.0',
+          id: rpcId,
+          result: {
+            statusUpdate: {
+              taskId: taskId,
+              contextId: contextId,
+              status: { state: 'TASK_STATE_WORKING' },
+              final: false,
+            },
+          },
         };
-        const result: StreamResult = { message: message };
-        const response: RpcResponse = { jsonrpc: '2.0', id: rpcId, result: result };
-        const payload: string = JSON.stringify(response);
-        hilog.info(DOMAIN, TAG, 'sendData %{public}d 字节', payload.length);
-        proxy.sendData(payload);
+        this.send(proxy, JSON.stringify(working));
+
+        // 2) 产物：正文塞进 artifact.parts
+        const artifactEvent: ArtifactResponse = {
+          jsonrpc: '2.0',
+          id: rpcId,
+          result: {
+            artifactUpdate: {
+              taskId: taskId,
+              contextId: contextId,
+              artifact: artifact,
+              append: false,
+              lastChunk: true,
+            },
+          },
+        };
+        this.send(proxy, JSON.stringify(artifactEvent));
+
+        // 3) 收尾：TASK_STATE_COMPLETED + final，结束这一轮流
+        const done: StatusResponse = {
+          jsonrpc: '2.0',
+          id: rpcId,
+          result: {
+            statusUpdate: {
+              taskId: taskId,
+              contextId: contextId,
+              status: { state: 'TASK_STATE_COMPLETED' },
+              final: true,
+            },
+          },
+        };
+        this.send(proxy, JSON.stringify(done));
       })
       .catch((): void => {
         this.sendError(proxy, rpcId, -32603, 'task_failed');
       });
+  }
+
+  private send(proxy: common.AgentHostProxy, payload: string): void {
+    hilog.info(DOMAIN, TAG, 'sendData %{public}d 字节: %{public}s', payload.length, payload.substring(0, 300));
+    proxy.sendData(payload);
   }
 
   private sendError(proxy: common.AgentHostProxy, rpcId: string, code: number, message: string): void {
