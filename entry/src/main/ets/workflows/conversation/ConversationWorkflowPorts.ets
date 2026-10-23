@@ -3,7 +3,7 @@
  *
  * Path: entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets
  * Responsibility: Keep LLM, OCR, and Capture effects behind testable workflow seams.
- * Dependencies: AiService; IntentClassifier; ReplyService; common contracts.
+ * Dependencies: AiService; IntentClassifier; ReplyService; ModelRouter; common contracts.
  *
  * Data flow:
  *   Workflow request -> typed port -> external service -> typed domain result.
@@ -13,6 +13,7 @@ import {
   CancellationToken,
   ClassificationResult,
   LlmConfig,
+  Logger,
   NoteDraftReadyEvent,
   NoteGenerationRoute,
   NoteGenerationProgressSink,
@@ -25,6 +26,10 @@ import { AiService } from '../../services/AiService';
 import { IntentClassifier, ReplyContext, TextIntent } from '../../services/IntentClassifier';
 import { ReplyEventSink, ReplyService, StreamReplyResult } from '../../services/ReplyService';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { ModelRouter } from '../../services/ModelRouter';
+import type { RoutedReply } from '../../services/ModelRouter';
+
+const replyPortLog: Logger = new Logger('ConversationReplyPort');
 
 export interface IConversationIntentPort {
   classify(userText: string): Promise<TextIntent>;
@@ -36,6 +41,7 @@ export interface IConversationIntentPort {
 export interface IConversationReplyPort {
   isConfigured(): Promise<boolean>;
   complete(context: ReplyContext, token?: CancellationToken): Promise<string>;
+  completeRouted(context: ReplyContext, token?: CancellationToken): Promise<RoutedReply>;
   stream(context: ReplyContext, sink: ReplyEventSink, token?: CancellationToken): Promise<StreamReplyResult>;
   normalize(content: string): string;
 }
@@ -122,13 +128,31 @@ class ConversationIntentAdapter implements IConversationIntentPort {
 
 class ConversationReplyAdapter implements IConversationReplyPort {
   private readonly reply: ReplyService;
+  private readonly router: ModelRouter;
 
-  constructor(reply: ReplyService) { this.reply = reply; }
+  constructor(reply: ReplyService, router: ModelRouter) {
+    this.reply = reply;
+    this.router = router;
+  }
 
   async isConfigured(): Promise<boolean> { return await LlmConfig.getInstance().isConfigured(); }
 
+  async completeRouted(context: ReplyContext, token?: CancellationToken): Promise<RoutedReply> {
+    token?.throwIfCancelled();
+    const routed: RoutedReply = await this.router.answer(context);
+    replyPortLog.info('source=' + routed.source
+      + ' degraded=' + routed.degraded.toString()
+      + ' reason=' + routed.reason
+      + ' chars=' + routed.text.length.toString());
+    return routed;
+  }
+
   async complete(context: ReplyContext, token?: CancellationToken): Promise<string> {
-    return await this.reply.complete(context, token);
+    const routed: RoutedReply = await this.completeRouted(context, token);
+    if (routed.degraded) {
+      return routed.text + '\n\n（已降级：' + routed.reason + '）';
+    }
+    return routed.text;
   }
 
   async stream(
@@ -284,9 +308,11 @@ export class ConversationWorkflowPorts {
     noteRoute?: IConversationNoteRoutePort,
   ): ConversationWorkflowPorts {
     const classifier: IntentClassifier = new IntentClassifier();
+    const replyService: ReplyService = new ReplyService(classifier);
+    const router: ModelRouter = new ModelRouter(context.filesDir, replyService);
     return new ConversationWorkflowPorts(
       new ConversationIntentAdapter(classifier),
-      new ConversationReplyAdapter(new ReplyService(classifier)),
+      new ConversationReplyAdapter(replyService, router),
       new ConversationCaptureAdapter(context),
       noteRoute,
     );

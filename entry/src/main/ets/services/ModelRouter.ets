@@ -9,15 +9,12 @@
  * 依赖: OnDeviceLlm、ReplyService、LlmConfig
  */
 import { LlmConfig, OnDeviceLlm } from 'common';
-import type { OnDeviceAvailability } from 'common';
 import type { ReplyContext } from './IntentClassifier';
 import type { ReplyService } from './ReplyService';
 
-export type ModelSource = 'on_device' | 'remote' | 'none';
-
 export interface RoutedReply {
   text: string;
-  source: ModelSource;
+  source: 'on_device' | 'remote' | 'none';
   degraded: boolean;
   reason: string;
 }
@@ -33,7 +30,8 @@ export class ModelRouter {
 
   async answer(context: ReplyContext): Promise<RoutedReply> {
     const onDevice: OnDeviceLlm = new OnDeviceLlm(this.filesDir);
-    const availability: OnDeviceAvailability = onDevice.checkAvailability();
+    // 不写显式类型标注：该类型来自 HSP，跨包 type-only 引用会在链接期找不到导出
+    const availability = onDevice.checkAvailability();
     const configured: boolean = await LlmConfig.getInstance().isConfigured();
 
     // 1) 显式例外：用户自己配了模型，就用它，不属于降级

@@ -21,6 +21,7 @@ import {
   SourceFragment,
 } from 'common';
 import { ConversationWorkflow } from '../main/ets/workflows/conversation/ConversationWorkflow';
+import type { RoutedReply } from '../main/ets/services/ModelRouter';
 import {
   ConversationRequest,
   ConversationProgressStep,
@@ -107,6 +108,11 @@ class FailingReplyPort implements IConversationReplyPort {
   constructor(route: string) { this.route = route; }
 
   async isConfigured(): Promise<boolean> { return true; }
+  // 接口新增的结构化返回：测试替身按同一条路由策略返回，降级标注意图与生产实现一致
+  async completeRouted(context: ReplyContext, token?: CancellationToken): Promise<RoutedReply> {
+    const text: string = await this.complete(context, token);
+    return { text: text, source: 'remote', degraded: false, reason: 'test double' };
+  }
   async complete(_context: ReplyContext, _token?: CancellationToken): Promise<string> {
     if (this.route === 'complete') { throw new Error('COMPLETE_FAILED'); }
     return 'ok';
