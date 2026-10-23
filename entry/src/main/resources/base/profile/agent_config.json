@@ -14,8 +14,7 @@
         "streaming": false,
         "pushNotifications": false,
         "stateTransitionHistory": false,
-        "extendedAgentCard": false,
-        "extension": "mindtrace_v1"
+        "extendedAgentCard": false
       },
       "defaultInputModes": [
         "text/plain"
@@ -49,7 +48,6 @@
       "iconUrl": "https://raw.githubusercontent.com/YunC-GCT/MindTrace/main/AppScope/resources/base/media/foreground.png",
       "category": "education",
       "type": "APP",
-      "extension": "mindtrace_v1",
       "appInfo": {
         "deviceTypes": [
           "phone",
