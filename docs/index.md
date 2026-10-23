@@ -41,6 +41,7 @@ docs/
 | **Record a hard-to-reverse design decision** | `docs/adr/` — create `NNNN-{slug}.md` from [`docs/template/adr-template.md`](./template/adr-template.md) |
 | **Write the design spec for a ticket** | `docs/specs/` — create `NNN-{slug}.md` from [`docs/template/spec-template.md`](./template/spec-template.md) |
 | **Record how a ticket was executed / verified** | `docs/specs/execution/{slug}/` — see [`execution/index.md`](./specs/execution/index.md) |
+| **知道当前做到哪一阶段 / 怎么验收** | [`agents/phase-tracker.md`](./agents/phase-tracker.md) — P0–P6 状态、DoD、证据命令 |
 | **Investigate a question (e.g. "should we use X?")** | `docs/research/` — `{topic-slug}-{YYYY-MM-DD}.md` from [`docs/template/research-template.md`](./template/research-template.md) |
 | **Describe how the current system is wired** | `docs/architecture/` — `{scope}-{YYYY-MM-DD}.md` |
 | **Set a coding rule** | `docs/style/naming-conventions.md` (the canonical spec) |
@@ -49,6 +50,9 @@ docs/
 | **Find an API contract** | `common/src/main/ets/models/` + `CONTEXT.md`（当前类型与术语契约） |
 | **Look up a workflow (issue tracking, triage)** | `docs/agents/` — see [`agents/index.md`](./agents/index.md) |
 | **Find an old session's decision trail** | `docs/legacy/mindtrace/handoffs/` (frozen; not current guidance) |
+| **Understand the v1 layered architecture** | [`system-architecture-layered.md`](./system-architecture-layered.md) — 五层设计、能力选型、验收清单、小艺开放平台落地路径 |
+| **See the earlier design draft** | [`system-architecture-redesign.md`](./system-architecture-redesign.md) — 旧稿，已被 v5 取代，仅留历史 |
+| **Read the external architecture review** | [`codex-architecture-review.md`](./codex-architecture-review.md) — Codex 高推理评审，v5 据此修正 |
 | **Create a new doc** | Pick a template from `docs/template/`, then run `node scripts/naming-lint/index.mjs` to verify the name conforms |
 
 ## By audience

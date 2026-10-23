@@ -30,6 +30,7 @@
 | [`git-flow-lightweight-2026-09-04.md`](./git-flow-lightweight-2026-09-04.md) | 3 人团队 Git Flow 手册（分支 / PR / 发版 / worktree 隔离） |
 | [`issue-tracker.md`](./issue-tracker.md) | GitHub Issues（`gh` CLI）使用方式与模板 |
 | [`naming-exceptions.md`](./naming-exceptions.md) | 命名规范的例外清单与审批方式 |
+| [`phase-tracker.md`](./phase-tracker.md) | **阶段进度与验收唯一口径**（P0–P6 状态、DoD、证据命令） |
 | [`security.md`](./security.md) | secrets / 签名 / 凭据存储红线 |
 | [`smoke-test.md`](./smoke-test.md) | 8 步人工冒烟矩阵 |
 | [`triage-labels.md`](./triage-labels.md) | 5 个 triage 标签的语义与流转 |

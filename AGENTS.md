@@ -1,10 +1,10 @@
 # MindTrace — AGENTS.md
 
-> **鸿蒙高校创新赛 · 复赛项目** — HarmonyOS 数学学习助手 (拍照 / OCR / AI 分类 / 知识结构化 / 复习 全链)
+> **鸿蒙高校创新赛 · 复赛项目 → v1 端A2A 交付** — HarmonyOS 数学学习助手 (拍照 / OCR / 知识结构化 / 端侧 Agent)
 > 5 module: `entry` (HAP) + `common` / `agents` / `skill` / `cardservice` (4 HSP)
-> **DevEco Studio 与 hvigor CLI 均为合法开发入口** (Windows 中文路径允许使用 hvigor CLI, 但需注意路径与字符编码)
-> 主分支: `main` + `develop` · 最新版本: v1.0 (2026-09-05 release) · 最后审计: 2026-09-01
-> 项目: **MindTrace** (GitHub 仓库 `YunC-GCT/MindTrace`; MindTrace 是项目昵称; 本地目录名因机器而异, 文档一律用相对路径)
+> **DevEco Studio 与 hvigor CLI 均为合法开发入口**; CLI 构建 + `hdc` 装机已跑通, AI 可自行验证
+> 当前主线: **v1 端A2A 接入小艺** (复赛版本冻结, 不再加功能) · 进度与验收口径见 [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md)
+> 项目: **MindTrace** (GitHub 仓库 `YunC-GCT/MindTrace`; 本地目录名因机器而异, 文档一律用相对路径)
 
 ---
 
@@ -25,6 +25,9 @@
 | 复赛演示脚本 / 赛前检查 | [`docs/agents/demo-script-2026-09-06.md`](./docs/agents/demo-script-2026-09-06.md) |
 | 排查 build / 编码陷阱 | [`docs/agents/file-header-template.md`](./docs/agents/file-header-template.md) §"创建新文件" |
 | 做 Agent workflow / CaptureGraph / ToolLoop / Conversation / skill 重构 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) → [`docs/adr/0008-capturegraph-self-built-runtime.md`](./docs/adr/0008-capturegraph-self-built-runtime.md) → [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](./docs/agents/d2-capturegraph-teaching-2026-09-05.md) |
+| 接 / 改小艺端A2A | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (P0 验收口径) → `entry/src/main/ets/agentextability/AgentExtAbility.ets` → `entry/src/main/resources/base/profile/agent_config.json` |
+| 查当前做到哪一阶段 / 怎么验收 | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (唯一进度口径, P0–P6 + DoD) |
+| 真机验证 A2A 链路 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (自动起小艺 → 进智能体 → 发送 → 比对回复) |
 | 推进 agent 能力级工作 (工具层 / 调用协议 / 拆分) | [`docs/agents/patterns/capability-to-implementation.md`](./docs/agents/patterns/capability-to-implementation.md) (skill 链路) + [`docs/architecture/agent-tool-chain-2026-09-06.md`](./docs/architecture/agent-tool-chain-2026-09-06.md) (派发链总览) |
 | 接手后端架构迁移 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) (当前权威状态) → [`docs/legacy/mindtrace/handoffs/backend-migration-handoff.md`](./docs/legacy/mindtrace/handoffs/backend-migration-handoff.md) (历史推进背景) |
 | 改 entry UI 设计/动效/token | 先读 [`docs/research/frontend-component-audit-2026-09-06.md`](./docs/research/frontend-component-audit-2026-09-06.md) (分层裁决 + C1-C6 候选) → 设计/动效细节 [`docs/research/frontend-ui-design-inventory-2026-09-06.md`](./docs/research/frontend-ui-design-inventory-2026-09-06.md) (96 件三维档案: 令牌/布局/动效) |
@@ -67,6 +70,8 @@
 6. **不进 `main`** — 所有改动 commit 到 `feature/*` / `bugfix/*` 分支, 通过 PR 合入 `develop`,user 手动 review + merge。详见 [`docs/agents/git-conventions.md`](./docs/agents/git-conventions.md) §"分支工作流"
 7. **多 session 并行必须隔离** — ≥2 个 session 同时开发时, 每个 session 用 `git worktree add` 独立工作区(或严格串行: 一个 session 的 commit+push 完成前另一个不做任何 git 写操作); **禁止**在共用 clone 里互相切分支或把他人未完成改动带进自己的 PR; 各分支照常 PR 合入 `develop` 同步。详见团队手册 §11
 8. **code review 必须暂停** — 进入 `/code-review` 阶段后立即停止，等待 user 明确确认；确认前不得继续 staging、commit、push 或其他后续操作。
+9. **端A2A 配置三件事** — 改 `agent_config.json` 后必须：① 平台重新导入 AgentCard ② 重新发真机测试 ③ 重启小艺。缺一条小艺仍读旧卡，表现为 `extension ability not exist` 或发了不回。
+10. **不虚报可用** — 端A2A 的改动没跑过 `scripts/a2a-smoke/a2a_smoke.py` 且拿到 `ok: true`，不得写成“已通 / 可用 / 完成”。
 
 ---
 
@@ -82,6 +87,8 @@
 6. **设计变更先落文档**：改架构 / 协议 / 数据模型前，先看 ADR 与 spec；新的不可逆决策写 ADR，不把决定藏在代码里。
 7. **只改该改的**：不顺手重构无关文件，不整段覆盖 user 的手工编辑；历史文档（`docs/legacy/`）只读。
 8. **报告事实**：命令失败就贴失败输出；不要用“应该”“大概”代替验证结果。
+9. **协议以 SDK 为准**：端A2A 报文格式查 `@ohos.app.agent.AgentExtensionAbility.d.ts` 与 `application/AgentCard.d.ts`，不凭记忆或旧文档写字段名（`kind` 在 A2A v1.0 已删除，`parts` 只有 `mediaType` + `text`）。
+10. **交付附烟雾结果**：动了 A2A 链路，回复里贴 `a2a_smoke.py` 的 `ok` 与 `reply_text`，以及 `RESULT: PASS`。
 
 ---
 
@@ -105,15 +112,15 @@
 4. 5 Tab 流畅 / 知识星系无 "示例:*" 假学科 (ticket #16 已修)
 5. 源码: `agents/` (AI 业务) + `scripts/arkts-lint/` (工程亮点) + `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` (21 个 finding 的架构审计)
 
-### 状态 (per audit 2026-09-01 · D2-D4 进度 2026-09-06)
+### 当前阶段 (v1 端A2A)
 
-✅ 已修: **#15** ArkTS 铁律 (规约错误) · **#9** LlmConfig 静默覆盖 (TDD) · **#16** fixture data 泄漏 (TDD)
-✅ 已处置: **#10** mcp→tools 改名撤销 — OcrTool 是队员改造的 MCP 工具, `mcp/` 保留, `tools/` 留给增删查改类工具 ([ADR-0010](./docs/adr/0010-mcp-tools-semantics.md))
-✅ 已落地: **Agent workflow 架构** (spec [`018`](./docs/specs/018-agent-workflow-architecture.md), 2026-09-10) — LangGraph 作为整体设计根, ArkTS 原生 `StateGraph` 统一承载 Capture / ToolCalling / Conversation / SkillIntent 四个领域 workflow; 单后端、无新旧双轨 · **Capture** — Dispatcher `dispatch(req, options)` 唯一入口, analysis-only 与持久化条件边, State channel/source 保留, TruthCheck 失败短路, KnowledgeUnit 原样写入 · **Conversation** — `AgentChatService` 约 70 LOC UI facade, `ConversationWorkflow` 唯一编排 · **D4 P0** — Reminder/BackgroundTask/FormCard 三 Kit adapter 真实接线, Form 固定 mock 删除 · **Skill** — SearchNote 复用唯一 `note_query`, 其余 action 明确 unsupported
-🟡 待验/待扩: spec 018 的 Hypium/真机验收 · 小艺其余 6 action 语义确认 · 写类 AgentTool (统一写入 gate 已完成, 工具本体未开放) · **#1** doc expiry 持续清理
+| 阶段 | 状态 | 说明 |
+|---|---|---|
+| **P0 协议接入** | ✅ | 小艺可调起 `AgentExtAbility` 并渲染回复；验收命令 `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` 返回 `ok: true` |
+| **P1–P5** | ⬜ | 选图入口 / 批量 Picker / 真实编排 / 结果回执 / 合规标识，逐项验收口径见 phase-tracker |
+| **P6 上架** | 🟡 | 已提交审核；通过前只有白名单账号能调起 |
 
-详细: [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md) §7 + [`docs/specs/`](./docs/specs/)
-
+复赛版本的 audit 修复（#15 / #9 / #16 / #10、spec 018 等）保留在 git history 与 `docs/legacy/`。**新功能一律按 P1–P5 推进，不再回顾赛。**
 ---
 
 ## 关键架构 (30 秒读懂)
@@ -125,6 +132,7 @@
 | Business Service | `entry/services/` | 编排, **不持 UI 引用** |
 | **AI Agent (亮点)** | `agents/` | `Dispatcher` (主) + `TypeClassifier` / `KnowledgeModel` (子) |
 | Agent Workflows | `common/workflow/`, `agents/graph/`, `entry/workflows/`, `skill/workflows/` | 共享 StateGraph 内核 + 各领域 State/Node/Edge |
+| **端A2A 入口** | `entry/agentextability/` | 小艺 JSON-RPC 2.0 接入：`onData` → `handleTask` → 回 `task` 快照 |
 | Data + Infra | `common/` | `LlmClient` / `LlmGuard` / `ContentProtocol` / RDB 单例 |
 
 **关键 seam**: `ConversationWorkflow → AiService.captureText → Dispatcher.dispatch → CaptureGraph → KnowledgeModel.structure → TruthCheckNode → NoteDaoAdapter`; LLM 统一走 `LlmClient.call`, 工具统一走 `ToolCatalog/ToolRegistry`, 全部 Markdown 走 `ContentProtocol` (MM-MD-v1)
@@ -149,6 +157,9 @@
 | 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (数量以输出为准, 全绿即可) |
 | 跑 v0.3 lint 扫描 | `node scripts/arkts-lint/index.mjs --quiet` |
 | **交付前跑总 gate** | `node scripts/agent-gate/index.mjs`（改动集）/ `--all`（全仓）/ `--json`（机器读） |
+| CLI 构建 HAP | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=entry@default assembleHap --no-daemon` |
+| 装机 | `hdc install -r entry/build/default/outputs/default/entry-default-signed.hap` |
+| 端A2A 真机冒烟 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (`ok` / `reply_text` / `hilog`) |
 | 创建新 module | `cp common/oh-package.json5 <new>/oh-package.json5` (必须含 `main` 字段) |
 | 验 .ets 无 BOM | PowerShell: `[System.IO.File]::ReadAllBytes(path)[0..2]` (应为 `0x69 0x6D 0x70`) |
 
@@ -163,4 +174,5 @@
 | **Ticket specs** | 依 ADR 写的设计 spec (22 个) + 执行记录 | [`docs/specs/`](./docs/specs/) · [`docs/specs/execution/`](./docs/specs/execution/) |
 | **Issue tracker** | GitHub Issues on `YunC-GCT/MindTrace`, via `gh` CLI | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) |
 | **Triage labels** | 5 标签: `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix` | [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
+| **端A2A 接入 / 排障** | 小艺调起 `AgentExtensionAbility` 的完整流程与坑 (服务名称=abilityName、proto-JSON、单条 task 快照) | Hermes skill `harmonyos-xiaoyi-a2a` + [`scripts/a2a-smoke/`](./scripts/a2a-smoke/) |
 | **TDD / domain-modeling** | 按需调 skill, 不强制 | (内置 skill) |
