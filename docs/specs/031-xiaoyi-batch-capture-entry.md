@@ -145,6 +145,8 @@ AgentUIExtensionComponent:load UIExtensionComponent failed:
 ```
 
 - **当前卡点**：小艺拼出来的 Want 指向了错误的 Ability，UI 扩展起不来。尝试用 `module.json5` 的 `process` 字段让两个扩展同进程，但该字段被 schema 拒绝（`^[:][0-9a-zA-Z_]+$` 与其它约束冲突），已回滚
+- **副作用（已修）**：只要对话里存在这张加载失败的卡片，小艺就会以约 12 次/秒的频率重试 `start_ability_fail`，表现为回复区一直转圈；杀掉小艺后归零。当前改为**只发文本**，新对话不再触发
+- 已验证：把 AgentCard 的 `abilityName` 指向 `AgentUIExtAbility` 后 A2A 文本链路仍正常（连接走 metadata，不靠该字段），但 UI 扩展仍起不来；在 `uiExtensionCard` 里显式带 `bundleName/moduleName/abilityName` 也无效
 - 下一步：查 `ability_runtime` 里 agentUI 的启动路径，确认 Want 里 `bundleName/moduleName/abilityName` 的来源（大概率要平台 AgentCard 单独声明 UI ability）
 
 **结论**：文本链路已在官方 SDK 上跑通；卡片只差指令 schema 这一项。
