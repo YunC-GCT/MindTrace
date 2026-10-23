@@ -67,6 +67,18 @@
             "resource": "$profile:backup_config"
           }
         ],
+      },
+      {
+        "name": "AgentExtAbility",
+        "srcEntry": "./ets/agentextability/AgentExtAbility.ets",
+        "type": "agent",
+        "exported": true,
+        "metadata": [
+          {
+            "name": "ohos.extension.agent",
+            "resource": "$profile:agent_config"
+          }
+        ]
       }
     ]
   }
