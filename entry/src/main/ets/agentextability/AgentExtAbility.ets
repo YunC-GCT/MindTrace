@@ -56,31 +56,26 @@ interface RpcRequest {
 }
 
 interface ResultPart {
-  kind: string;
   text: string;
+  mediaType: string;
 }
 
-interface ResultArtifact {
-  artifactId: string;
+interface ResultMessage {
+  messageId: string;
+  role: string;
   parts: Array<ResultPart>;
-}
-
-interface ResultStatus {
-  state: string;
-}
-
-interface ResultTask {
-  kind: string;
-  id: string;
   contextId: string;
-  status: ResultStatus;
-  artifacts: Array<ResultArtifact>;
+  taskId: string;
+}
+
+interface StreamResult {
+  message: ResultMessage;
 }
 
 interface RpcResponse {
   jsonrpc: string;
   id: string;
-  result: ResultTask;
+  result: StreamResult;
 }
 
 interface RpcErrorBody {
@@ -213,15 +208,15 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     contextId: string, query: string): void {
     handleTask(query)
       .then((text: string): void => {
-        const part: ResultPart = { kind: 'text', text: text };
-        const artifact: ResultArtifact = { artifactId: taskId + '-artifact', parts: [part] };
-        const result: ResultTask = {
-          kind: 'task',
-          id: taskId,
+        const part: ResultPart = { text: text, mediaType: 'text/plain' };
+        const message: ResultMessage = {
+          messageId: nextId('msg'),
+          role: 'ROLE_AGENT',
+          parts: [part],
           contextId: contextId,
-          status: { state: 'completed' },
-          artifacts: [artifact],
+          taskId: taskId,
         };
+        const result: StreamResult = { message: message };
         const response: RpcResponse = { jsonrpc: '2.0', id: rpcId, result: result };
         const payload: string = JSON.stringify(response);
         hilog.info(DOMAIN, TAG, 'sendData %{public}d 字节', payload.length);
