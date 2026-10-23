@@ -3,7 +3,7 @@
  *
  * 路径: entry/src/main/ets/services/KnowledgeUnitWriteServiceFactory.ets
  * 职责: 用唯一 NoteDao 和写后副作用构造 KnowledgeUnitWriteService
- * 依赖: DatabaseHelper, NoteDao, KnowledgeUnitPostCommitEffects
+ * 依赖: DatabaseHelper, NoteDao, KnowledgeUnitPostCommitEffects, KnowledgeUnitChapterEdgeEffect
  *
  * 数据流:
  *   entry caller → factory → configured KnowledgeUnitWriteService
@@ -17,6 +17,7 @@ import {
   KnowledgeUnitCardRefreshEffect,
   KnowledgeUnitNotesChangedEffect,
 } from './KnowledgeUnitPostCommitEffects';
+import { KnowledgeUnitChapterEdgeEffect } from './KnowledgeUnitChapterEdgeEffect';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
 
 export class KnowledgeUnitWriteServiceFactory {
@@ -26,6 +27,8 @@ export class KnowledgeUnitWriteServiceFactory {
     const effects: KnowledgeUnitPostCommitEffect[] = [
       new KnowledgeUnitNotesChangedEffect(),
       new KnowledgeUnitCardRefreshEffect(context),
+      // createOnly: 只在新笔记首次落库后补同章节边，编辑已有笔记不重复补。
+      new KnowledgeUnitChapterEdgeEffect(store),
     ];
     return new KnowledgeUnitWriteService(new NoteDao(store), effects);
   }

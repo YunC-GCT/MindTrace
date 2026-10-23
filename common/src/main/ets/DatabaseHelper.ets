@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 13;
+const DB_SCHEMA_VERSION: number = 14;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS knowledge_unit (
   chapter TEXT NOT NULL DEFAULT "",
   difficulty INTEGER NOT NULL DEFAULT 1,
   source TEXT NOT NULL DEFAULT "",
+  source_image_id TEXT NOT NULL DEFAULT "",
+  source_region TEXT NOT NULL DEFAULT "",
+  ocr_confidence REAL NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   review_status TEXT NOT NULL DEFAULT "new",
@@ -265,6 +268,12 @@ const SQL_MIGRATE_KNOWLEDGE_CATEGORY: string =
   "ALTER TABLE knowledge_unit ADD COLUMN category TEXT NOT NULL DEFAULT \"\"";
 const SQL_MIGRATE_KNOWLEDGE_CHAPTER: string =
   "ALTER TABLE knowledge_unit ADD COLUMN chapter TEXT NOT NULL DEFAULT \"\"";
+const SQL_MIGRATE_KNOWLEDGE_SOURCE_IMAGE_ID: string =
+  "ALTER TABLE knowledge_unit ADD COLUMN source_image_id TEXT NOT NULL DEFAULT \"\"";
+const SQL_MIGRATE_KNOWLEDGE_SOURCE_REGION: string =
+  "ALTER TABLE knowledge_unit ADD COLUMN source_region TEXT NOT NULL DEFAULT \"\"";
+const SQL_MIGRATE_KNOWLEDGE_OCR_CONFIDENCE: string =
+  "ALTER TABLE knowledge_unit ADD COLUMN ocr_confidence REAL NOT NULL DEFAULT 0";
 const SQL_MIGRATE_GENERATION_SOURCE_IDS: string =
   "ALTER TABLE note_generation_run ADD COLUMN source_ids TEXT NOT NULL DEFAULT '[]'";
 const SQL_MIGRATE_GENERATION_SOURCE_SUMMARY: string =
@@ -407,6 +416,18 @@ export class DatabaseHelper {
     const hasChapter: boolean = await DatabaseHelper.hasColumn(store, "knowledge_unit", "chapter");
     if (!hasChapter) {
       await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_KNOWLEDGE_CHAPTER);
+    }
+    const hasSourceImageId: boolean = await DatabaseHelper.hasColumn(store, "knowledge_unit", "source_image_id");
+    if (!hasSourceImageId) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_KNOWLEDGE_SOURCE_IMAGE_ID);
+    }
+    const hasSourceRegion: boolean = await DatabaseHelper.hasColumn(store, "knowledge_unit", "source_region");
+    if (!hasSourceRegion) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_KNOWLEDGE_SOURCE_REGION);
+    }
+    const hasOcrConfidence: boolean = await DatabaseHelper.hasColumn(store, "knowledge_unit", "ocr_confidence");
+    if (!hasOcrConfidence) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_KNOWLEDGE_OCR_CONFIDENCE);
     }
     const hasSourceIds: boolean = await DatabaseHelper.hasColumn(store, "note_generation_run", "source_ids");
     if (!hasSourceIds) {
