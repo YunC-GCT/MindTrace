@@ -159,6 +159,7 @@
 | 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (数量以输出为准, 全绿即可) |
 | 跑 v0.3 lint 扫描 | `node scripts/arkts-lint/index.mjs --quiet` |
 | **交付前跑总 gate** | `node scripts/agent-gate/index.mjs`（改动集）/ `--all`（全仓）/ `--json`（机器读） |
+| **CLI 构建 HSP (改了 `common` 必跑, 先 `common` 再 `entry`)** | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=common@default assembleHsp --no-daemon --no-incremental`, 完成后再跑下一行 HAP。**改了 `common` 必须重建 HSP, 否则运行期 SyntaxError** (HSP 产物旧、HAP 引用新符号); 自检: `node scripts/hsp-freshness.mjs` |
 | CLI 构建 HAP | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=entry@default assembleHap --no-daemon` |
 | 装机 | `hdc install -r entry/build/default/outputs/default/entry-default-signed.hap` |
 | 端A2A 真机冒烟 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (`ok` / `reply_text` / `hilog`) |
