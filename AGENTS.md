@@ -104,7 +104,9 @@
 | **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 · `npm --prefix scripts/arkts-lint test` 329 项全绿 · 全量 `node --test scripts/arkts-lint/tests/*.test.mjs` 707 项（15 项为既有失败基线）· **CI 已接入** |
 | **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 18 ADR + 22 设计 spec + 执行记录目录, 设计透明度高 |
 
-### 演示路径 (5 分钟 walk-through)
+### 演示路径 (5 分钟 walk-through · 复赛版)
+
+> **v1 已 Kit 化**：端A2A 走系统 Core Vision Kit + 端侧模型，不再启动外部 OCR 服务。以下步骤仅作复赛历史参考；v1 的验收以 [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) 为准。
 
 1. 启动 OCR 服务 (运行 `tools/ocr_service/start.bat`, 端口 8000; 详见 tools/ocr_service/README.md)
 2. DevEco Studio `Run → Run 'entry'` (真机/模拟器)
