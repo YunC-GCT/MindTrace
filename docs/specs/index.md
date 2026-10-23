@@ -30,6 +30,8 @@ an ADR (`docs/adr/`) and follows the same template.
 | **NoteDetail render performance** | [`024-note-detail-render-performance.md`](./024-note-detail-render-performance.md) | [`0017`](../adr/0017-renderer-scheduler-budget-baseline.md) · [`021`](./021-chat-streaming-incremental-rendering.md) | **in progress** (2026-09-28 — #182/#185 evidence landed; #189 emulator A/B keeps WebKeepAlive default-off; #188 blocked by #187 + target-device evidence) |
 | **Knowledge graph RDB** | [`026-knowledge-graph-rdb.md`](./026-knowledge-graph-rdb.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015`](./015-knowledge-model-decomposition-v2.md) | **implemented (merged to develop)** (2026-09-17 — 空 `kg_edge`、统一关系写入、accepted 边图谱查询、RAG demo 预留表) |
 | **Note review answer** | [`027-note-review-answer.md`](./027-note-review-answer.md) | [`0018`](../adr/0018-note-evidence-provenance.md) | **spec + test plan merged** (2026-09-26 — 可追溯复习回答 / 来源版本 / 反馈快照；测试方案已并入 §测试方案） |
+| **v1 端A2A** | [`031-xiaoyi-batch-capture-entry.md`](./031-xiaoyi-batch-capture-entry.md) | (spec-driven, 端A2A 协议在 [skill]) | **in progress** (2026-10-23 — P1 半屏浮窗入口 / P2 多选 / P3 落库；T5 异步取消除外) |
+| **模型网关 + 端A2A 运行时** | [`032-model-gateway-and-a2a-runtime.md`](./032-model-gateway-and-a2a-runtime.md) | (spec-driven，依据两份 research) | **proposed** (2026-10-24 — 构建顺序 / 单帧快照契约 / 端侧能力位) |
 
 ## Execution bundles
 
