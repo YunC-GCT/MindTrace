@@ -873,6 +873,36 @@ export struct AgentFloatWindow {
       });
   };
 
+  // 批量整理：多选 → 逐张走 AiService.capture（识别 + 结构化 + 落库）
+  private onBatchAction = (): void => {
+    const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    AlbumPickerLauncher.pick(ctx, 20)
+      .then(async (uris: string[]): Promise<void> => {
+        if (uris.length === 0) {
+          return;
+        }
+        const service: AiService = new AiService(ctx);
+        let done: number = 0;
+        let failed: number = 0;
+        for (let i = 0; i < uris.length; i++) {
+          this.showToast('正在整理 ' + (i + 1).toString() + '/' + uris.length.toString());
+          try {
+            await service.capture(uris[i]);
+            done += 1;
+          } catch (error) {
+            failed += 1;
+            console.warn('[BatchCapture] failed at ' + (i + 1).toString() + ': ' + (error as Error).message);
+          }
+        }
+        this.batchUris = [];
+        this.showToast('批量完成：成功 ' + done.toString() + ' 条，失败 ' + failed.toString() + ' 条');
+        console.info('[BatchCapture] done=' + done.toString() + ' failed=' + failed.toString());
+      })
+      .catch((e: Error): void => {
+        this.showToast('批量整理失败：' + e.message);
+      });
+  };
+
   // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
   private showToast(message: string): void {
     try {
@@ -1060,6 +1090,7 @@ export struct AgentFloatWindow {
             onCamera: this.onCameraAction,
             onAlbum: this.onAlbumAction,
             onAlbumLongPress: this.onAlbumBatchAction,
+            onBatch: this.onBatchAction,
             onStop: (): void => { this.stopStreaming(); },
           });
         }
