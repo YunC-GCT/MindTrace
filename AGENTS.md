@@ -177,4 +177,5 @@
 | **Issue tracker** | GitHub Issues on `YunC-GCT/MindTrace`, via `gh` CLI | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) |
 | **Triage labels** | 5 标签: `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix` | [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
 | **端A2A 接入 / 排障** | 小艺调起 `AgentExtensionAbility` 的完整流程与坑 (服务名称=abilityName、proto-JSON、单条 task 快照) | Hermes skill `harmonyos-xiaoyi-a2a` + [`scripts/a2a-smoke/`](./scripts/a2a-smoke/) |
+| **其它 AI 工具入口** | `CLAUDE.md` / `.github/copilot-instructions.md` / `.cursor/rules/mindtrace.mdc` 都只是指针，规则只维护在 `AGENTS.md` | 本文 |
 | **TDD / domain-modeling** | 按需调 skill, 不强制 | (内置 skill) |

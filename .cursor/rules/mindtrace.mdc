@@ -1,0 +1,19 @@
+---
+description: MindTrace 仓库规则入口（指向 AGENTS.md）
+globs: ["**/*.ets", "docs/**", "AGENTS.md", "scripts/**"]
+alwaysApply: true
+---
+
+权威规则在 [`AGENTS.md`](../../AGENTS.md)，本文件只做路由，不复制规则。
+
+必读顺序：
+
+1. `AGENTS.md` — 红线、编码契约、指针表
+2. `docs/agents/phase-tracker.md` — 当前阶段与验收口径（P0–P6 + DoD）
+3. `CONTEXT.md` — 项目词表
+
+三条硬约束：
+
+- 不 `git push`，只本地 commit，等 user 明确指示
+- 改完 `.ets` 必跑 `node scripts/agent-gate/index.mjs`，交付贴 `RESULT`
+- 改 `agent_config.json` → 重新导入平台 + 重发真机测试 + 重启小艺（三步缺一不可）
