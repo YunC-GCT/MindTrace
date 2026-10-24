@@ -50,6 +50,10 @@ export function boundaryViolations(relPath, text) {
       if (spec.startsWith('entry/')) {
         out.push(`agents must not import entry (${spec})`);
       }
+      // L2 编排层不得直接依赖 L3 的 Kit 实现（spec 033 / #227）
+      if (spec === '@kit.CoreVisionKit' || spec === '@kit.ImageKit') {
+        out.push(`agents must not import ${spec} — 走 OcrRecognizer 端口`);
+      }
     }
   }
 

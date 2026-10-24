@@ -121,6 +121,7 @@ A2A 的 LLM 调用永不返回：日志停在「LLM 调用开始」，60s 超时
 | 步 | 动作 | 判据 |
 |---|---|---|
 | S1 | 落 `process-boundary` 检查并接 gate | ✅ 已落：6 入口 / 378 文件可达；4 条回归测试（含 barrel 传染、`export type` 不误报、`loadContent` 入图） |
+| S1.5 | **OCR 端口化**（#227）：`agents` 零 vision Kit，`OcrRecognizer` 契约在 `common`、实现在 `entry` | ✅ `agents` 无 `@kit.CoreVisionKit`/`@kit.ImageKit`；gate `--all` PASS；真机冷启动正常 |
 | S2 | spike：`LocalChatProvider` 改**动态 import** Kit，回迁 `common` | HSP 打包支持动态 import；小艺仍 1.5s 返回 |
 | S3 | 若 S2 不可行：拆 `capabilities` HSP（只被 `entry` 依赖） | `:agent` 的依赖树里不含 `capabilities` |
 | S4 | 红线 + phase tracker 记账 | AGENTS 红线 11 升级为「先登记、再进 barrel」 |

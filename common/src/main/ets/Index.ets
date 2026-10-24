@@ -1,4 +1,6 @@
 // common HSP - public API 入口
+// 路径: common/src/main/ets/Index.ets
+// 职责: 对外导出 common 的全部公共 API (值导出 + 类型导出)。
 // W1 块 3: 暴露 Agent 业务所需的最小子集(Dispatcher 侧)
 
 // ========== 设计 Token (颜色 / 尺寸 / 字号) ==========
@@ -280,6 +282,11 @@ export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
 //   OcrConfig:  单例, preferences 持久化 endpoint + enabled, 真机部署改 IP
 export { OcrConfig } from './ocr/OcrConfig';
+
+// ========== OCR 能力端口 (issue #227 / spec 033) ==========
+//   契约零 @kit 依赖; 实现在 entry (Kit 只允许在 UI 进程加载), 不进任何 barrel。
+export { OcrRecognizerRegistry } from './capability/ocr/OcrRecognizer';
+export type { OcrRecognizer, OcrTextResult } from './capability/ocr/OcrRecognizer';
 
 // ========== 数据库 (持久化存储) ==========
 export { DatabaseHelper } from './DatabaseHelper';

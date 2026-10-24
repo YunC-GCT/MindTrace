@@ -1,9 +1,11 @@
 // ============================================================================
 //  entryability/EntryAbility.ets — 应用入口
 //  ----------------------------------------------------------------------------
+//  路径: entry/src/main/ets/entryability/EntryAbility.ets
 //  职责: 解析默认关闭的 NoteDetail benchmark + ArkWeb 启动期预热 + 初始化服务 + 加载首页。
 //  依赖: NoteDetailBenchmarkLaunch, WebKeepAliveExperiment, ArkWebWarmupService,
-//       LlmConfig, OcrConfig, DatabaseHelper, Kit facades, ChatFilesDirSeam, ChatSessionManager。
+//       LlmConfig, OcrConfig, OcrRecognizerRegistry, CoreVisionOcrRecognizer,
+//       DatabaseHelper, Kit facades, ChatFilesDirSeam, ChatSessionManager。
 //  沉浸式状态栏: app 内容延伸到 status bar 下方, status bar 背景透明。
 //  视觉效果: 系统时间/电量/信号/wifi 浮在 app 内容上, 与 app 无缝衔接。
 //  ============================================================================
@@ -11,8 +13,9 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { LlmConfig, OcrConfig, DatabaseHelper } from 'common';
+import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
+import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
@@ -46,6 +49,8 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
+    // issue #227: OCR 端口实现在 entry 侧注册 — Kit 只在本进程加载, agents 只依赖 common 契约
+    OcrRecognizerRegistry.install(new CoreVisionOcrRecognizer());
     // 初始化 LLM 配置(持久化 API key/endpoint/model)
     LlmConfig.getInstance().init(this.context).catch((e: Error) => {
       hilog.error(DOMAIN, 'testTag', 'LlmConfig init failed: %{public}s', e.message);

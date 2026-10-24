@@ -42,6 +42,8 @@ export const RESTRICTED = {
   '@kit.AgentFrameworkKit': ['main'],
   '@ohos.web.webview': ['main'],
   '@kit.FormKit': ['main', 'form'], // main 用 formProvider.updateForm 推快照，卡片宿主也要
+  '@kit.CoreVisionKit': ['main'],   // OCR 适配层在 entry（Process: main only）
+  '@kit.ImageKit': ['main'],
   '@ohos.file.picker': ['main'],
   '@kit.CameraKit': ['main'],
 };
