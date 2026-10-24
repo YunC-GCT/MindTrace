@@ -5,9 +5,10 @@
  * Why: a HAP-only build can ship against an old `common` HSP and die at runtime
  * with `SyntaxError`. This wrapper makes the correct order the default:
  *
- *   [1/3] assembleHsp(common)  刷新产物
- *   [2/3] checkHspFreshness()  产物必须严格晚于 common/src 且含 OnDeviceLlm
- *   [3/3] assembleHap(entry)   只有断言通过才构建 HAP
+ *   [1/4] assembleHsp(common)       刷新产物
+ *   [2/4] checkHspFreshness()       产物必须严格晚于 common/src 且含 OnDeviceLlm
+ *   [3/4] assembleHap(entry)        只有断言通过才构建 HAP
+ *   [4/4] assembleHap(cardservice)  卡片宿主是独立 HAP，漏构建=桌面图标在但卡片加载不出
  *
  * hvigorw resolution order:
  *   1. $env:HVIGORW (path to hvigorw.js)
@@ -85,10 +86,10 @@ export function main(env = process.env) {
     return 1;
   }
 
-  console.log('[1/3] 构建 HSP：module=common@default assembleHsp');
+  console.log('[1/4] 构建 HSP：module=common@default assembleHsp');
   if (!runHvigor(hvigorw, ['-p', 'module=common@default', 'assembleHsp'])) return 1;
 
-  console.log('[2/3] 校验 HSP 新鲜度：common/src 必须早于产物，且产物含 OnDeviceLlm');
+  console.log('[2/4] 校验 HSP 新鲜度：common/src 必须早于产物，且产物含 OnDeviceLlm');
   const freshness = checkHspFreshness();
   if (!freshness.ok) {
     console.error(`  断言失败（${freshness.code}）：${freshness.message}`);
@@ -97,10 +98,13 @@ export function main(env = process.env) {
   }
   console.log(`  ${freshness.message}`);
 
-  console.log('[3/3] 构建 HAP：module=entry@default assembleHap');
+  console.log('[3/4] 构建 HAP：module=entry@default assembleHap');
   if (!runHvigor(hvigorw, ['-p', 'module=entry@default', 'assembleHap'])) return 1;
 
-  console.log('完成：HSP 与 HAP 均已构建');
+  console.log('[4/4] 构建卡片 HAP：module=cardservice@default assembleHap');
+  if (!runHvigor(hvigorw, ['-p', 'module=cardservice@default', 'assembleHap'])) return 1;
+
+  console.log('完成：HSP、entry HAP、cardservice HAP 均已构建');
   return 0;
 }
 
