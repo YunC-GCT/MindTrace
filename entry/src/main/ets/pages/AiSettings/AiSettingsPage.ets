@@ -14,6 +14,8 @@ import { OnDeviceModelSection } from "./OnDeviceModelSection"
 import { XiaoyiEntrySection } from "./XiaoyiEntrySection"
 import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
 import { DebugFaults } from "../../services/DebugFaults"
+import { DebugCaptureRunner } from "../../services/DebugCaptureRunner"
+import { common } from "@kit.AbilityKit"
 import type { DebugFault } from "../../services/DebugFaults"
 
 // PR2-T2 P3: 添加新供应商 modal 4 字段 cfg
@@ -334,6 +336,22 @@ struct AiSettingsPage {
               }
               .width('100%')
               .margin({ top: 6 })
+              Text('调试：批量链路自检（2 张样例题）')
+                .fontSize(F_XS)
+                .fontColor(TEXT_3)
+                .width('100%')
+                .margin({ top: 10 })
+                .onClick((): void => {
+                  const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+                  promptAction.showToast({ message: '自检开始，看 [E2E] 日志', duration: 1500 });
+                  DebugCaptureRunner.run(ctx)
+                    .then((summary: string): void => {
+                      promptAction.showToast({ message: '自检完成 ' + summary, duration: 2500 });
+                    })
+                    .catch((e: Error): void => {
+                      promptAction.showToast({ message: '自检失败 ' + e.message, duration: 2500 });
+                    });
+                })
             }
             .width('100%')
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
