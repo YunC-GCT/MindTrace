@@ -30,8 +30,8 @@ test('XiaoyiEntrySection 渲染 FunctionComponent({', () => {
   assert.match(sectionSrc, /FunctionComponent\s*\(\s*\{/, 'must render FunctionComponent({ ... })');
 });
 
-test('XiaoyiEntrySection 声明 AGENT_ID = mindtrace-note-agent', () => {
-  assert.match(sectionSrc, /AGENT_ID[^=]*=\s*'mindtrace-note-agent'/, 'AGENT_ID must be mindtrace-note-agent');
+test('XiaoyiEntrySection 使用平台生成的 AgentID（agent 前缀）', () => {
+  assert.match(sectionSrc, /AGENT_ID[^=]*=\s*'agent[0-9a-f]{32}'/, 'AGENT_ID must be the platform-generated agent id');
 });
 
 test('XiaoyiEntrySection 说明文案：回答不会写入本地笔记', () => {

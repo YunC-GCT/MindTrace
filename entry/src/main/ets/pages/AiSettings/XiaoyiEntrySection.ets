@@ -30,10 +30,11 @@ import { common } from '@kit.AbilityKit'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { BG_CARD, TEXT, TEXT_3, TEXT_4, R_LG, F_SM, F_XS, W_SEMIBOLD } from 'common'
 
-// issue #225: 小艺开放平台智能体 ID（与端A2A 的 agentId 对齐）。
+// issue #225: 小艺开放平台**生成**的 AgentID（控制台 AgentCard 里的「AgentID」）。
+// 注意区分：`mindtrace-note-agent` 是应用内 AgentID/端A2A 的 agentId，FunctionComponent 不认它。
 // 若真机返回 1022400010（参数错误）或 isAgentSupport=false，
 // 替换为小艺开放平台生成的智能体 ID。
-const AGENT_ID: string = 'mindtrace-note-agent'
+const AGENT_ID: string = 'agent115047efa204480bbea4f8f67db34033'
 
 // 错误码 → 中文提示。未知码保留原始码，便于真机排查。
 function errorHint(code: number): string {
