@@ -1,5 +1,7 @@
 // MindTrace - LLM HTTP 客户端(OpenAI 兼容协议)
 // 位置: common/src/main/ets/llm/LlmClient.ets
+// 路径: common/src/main/ets/llm/LlmClient.ets
+// 职责: JSON/SSE 两条 transport; 请求 model/max_tokens/thinking 由模型清单推导
 // 责任: Z (Mavis)
 // 创建: 2026-07-14 — 主 Agent 业务 LLM 调用基础设施
 //
@@ -34,7 +36,10 @@ import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { LlmConfig } from './LlmConfig';
-import { ModelCapability, resolveModelCapability } from './ModelCapabilities';
+import { ModelCapability, resolveCapabilities } from './ModelCapabilities';
+import { resolveModel } from './model-resolver';
+import type { ResolvedModel } from './model-resolver';
+import type { ModelListing } from './model-catalog';
 import { LlmErrorBodyFormatter } from './LlmErrorBodyFormatter';
 import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
 import { Logger } from '../utils/logger';
@@ -91,16 +96,20 @@ export class LlmClient {
     }
 
     // 2. 构造请求体(request 字段优先, 默认从 LlmConfig)
-    const model: string = this.pickStr(request.model, this.config.getModel());
+    // 2026-10-25: 先按 catalog/alias 解析成规范 ID, 再按 listing 能力推导参数。
+    const vendorId: string = this.config.getVendorId();
+    const requestedModel: string = this.pickStr(request.model, this.config.getModel());
+    const resolved: ResolvedModel = resolveModel(vendorId, requestedModel);
+    const model: string = resolved.canonicalId.length > 0 ? resolved.canonicalId : requestedModel;
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
-    const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
+    const requestedMaxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
+    const maxTokens: number = this.boundMaxTokens(requestedMaxTokens, resolved.listing);
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
     // issue #226: 思考字段不再按「流式/非流式」一刀切, 而是按模型能力决定。
     //   toggle      — 默认关闭, request.enableThinking 显式 true 才开;
     //   always_on   — 强制开启, 绝不写 disabled;
     //   unsupported — 一个思考字段都不写, 沿用服务端默认。
-    const capability: ModelCapability = resolveModelCapability(
-      this.config.getVendorId(), model);
+    const capability: ModelCapability = resolveCapabilities(resolved.listing);
 
     const body: LlmRequestBody = {
       model: model,
@@ -108,9 +117,9 @@ export class LlmClient {
       max_tokens: maxTokens,
       stream: false,
     };
-    const thinking: ThinkingFieldsResult = this.buildThinkingFields(body, capability, request);
+    const thinking: ThinkingFieldsResult = this.buildThinkingFields(body, capability, request, vendorId);
     // DeepSeek 思考模式不支持 temperature, 仅在本次未开启思考时设置。
-    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
+    const isDeepSeek: boolean = vendorId === 'deepseek';
     if (!isDeepSeek || !thinking.enabled) {
       body.temperature = temperature;
     }
@@ -129,7 +138,7 @@ export class LlmClient {
     // 3. 发 HTTP POST
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
     const effortText: string = thinking.effort.length > 0 ? thinking.effort : 'none';
-    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' thinking=' + capability.thinking + ' effort=' + effortText + ' stream=false');
+    console.info('[LlmClient] request vendor=' + vendorId + ' model=' + model + ' thinking=' + capability.thinking + ' effort=' + effortText + ' stream=false');
     const httpRequest = http.createHttp();
     let response: http.HttpResponse;
     const removeCancellation: (() => void) | undefined = request.cancellationToken?.onCancel((): void => {
@@ -197,24 +206,36 @@ export class LlmClient {
     return v;
   }
 
+  // max_tokens = min(task_need, listing.maxOutputTokens)。
+  // listing 未知 (null / 容量字段缺失=0) 时保持现有行为, 不把请求打挂。
+  private boundMaxTokens(requested: number, listing: ModelListing | null): number {
+    if (listing === null || listing.maxOutputTokens <= 0) {
+      return requested;
+    }
+    return Math.min(requested, listing.maxOutputTokens);
+  }
+
   // issue #226: 流式与非流式共用的思考字段构造。
   //   toggle      — request.enableThinking 显式 true 才开; 开了才写 reasoning_effort;
   //                 关了按厂商写 thinking:{type:'disabled'} (DeepSeek) / enable_thinking:false (Qwen)。
-  //   always_on   — 强制开启, 绝不写 disabled; reasoning_effort 取 request.reasoningEffort ?? 'medium'。
+  //   always_on   — 强制开启, 绝不写 disabled; reasoning_effort 取 listing 默认档 / 'medium'。
   //   unsupported — 一个字段都不写。
   private buildThinkingFields(
     body: LlmRequestBody,
     capability: ModelCapability,
     request: LlmCallRequest,
+    vendorId: string,
   ): ThinkingFieldsResult {
-    const modelLower: string = body.model.trim().toLowerCase();
-    const isDeepSeek: boolean = modelLower.indexOf('deepseek') >= 0;
-    const isQwen: boolean = modelLower.indexOf('qwen') >= 0;
+    // 厂商字段名由 L1 provider 路由决定; 不再从模型名子串猜协议族群。
+    const isDeepSeek: boolean = vendorId === 'deepseek';
+    const isQwen: boolean = vendorId === 'tongyi';
 
     if (capability.thinking === 'toggle') {
       const enableThinking: boolean = request.enableThinking === true;
       if (enableThinking) {
-        const effort: string = this.pickEffort(capability, request.reasoningEffort, 'high');
+        const fallbackEffort: string = capability.defaultEffort.length > 0
+          ? capability.defaultEffort : 'high';
+        const effort: string = this.pickEffort(capability, request.reasoningEffort, fallbackEffort);
         if (effort.length > 0) {
           body.reasoning_effort = effort;
         }
@@ -241,7 +262,9 @@ export class LlmClient {
 
     if (capability.thinking === 'always_on') {
       // 推理模型常开: 不写 thinking 开关字段, 只把推理强度显式化。
-      const effort: string = this.pickEffort(capability, request.reasoningEffort, 'medium');
+      const fallbackEffort: string = capability.defaultEffort.length > 0
+        ? capability.defaultEffort : 'medium';
+      const effort: string = this.pickEffort(capability, request.reasoningEffort, fallbackEffort);
       if (effort.length > 0) {
         body.reasoning_effort = effort;
       }
@@ -323,15 +346,18 @@ export class LlmClient {
     }
 
     // 2. 构造请求体
-    const model: string = this.pickStr(request.model, this.config.getModel());
+    const vendorId: string = this.config.getVendorId();
+    const requestedModel: string = this.pickStr(request.model, this.config.getModel());
+    const resolved: ResolvedModel = resolveModel(vendorId, requestedModel);
+    const model: string = resolved.canonicalId.length > 0 ? resolved.canonicalId : requestedModel;
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
-    const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
+    const requestedMaxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
+    const maxTokens: number = this.boundMaxTokens(requestedMaxTokens, resolved.listing);
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
     // issue #226: 昨天「流式默认关思考」的收敛 —— 只有可开关 (toggle) 的模型才默认关;
     // always_on 模型不能被写成 disabled, unsupported 不写任何思考字段。
     // 首字节变慢由下面的看门狗按能力分档补偿, 不再靠粗暴关闭思考。
-    const capability: ModelCapability = resolveModelCapability(
-      this.config.getVendorId(), model);
+    const capability: ModelCapability = resolveCapabilities(resolved.listing);
 
     const body: LlmRequestBody = {
       model: model,
@@ -340,10 +366,10 @@ export class LlmClient {
       stream: true,
     };
 
-    const thinking: ThinkingFieldsResult = this.buildThinkingFields(body, capability, request);
+    const thinking: ThinkingFieldsResult = this.buildThinkingFields(body, capability, request, vendorId);
 
     // DeepSeek 思考模式不支持 temperature, 仅在本次未开启思考时设置。
-    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
+    const isDeepSeek: boolean = vendorId === 'deepseek';
     if (!isDeepSeek || !thinking.enabled) {
       body.temperature = temperature;
     }
@@ -358,7 +384,7 @@ export class LlmClient {
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
     const llmLog: Logger = new Logger('LlmClient');
     const effortText: string = thinking.effort.length > 0 ? thinking.effort : 'none';
-    llmLog.info('request vendor=' + this.config.getVendorId() + ' model=' + model
+    llmLog.info('request vendor=' + vendorId + ' model=' + model
       + ' thinking=' + capability.thinking + ' effort=' + effortText + ' stream=true');
     const httpRequest = http.createHttp();
 

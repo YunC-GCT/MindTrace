@@ -1,12 +1,13 @@
 // scripts/model-capabilities/tests/model-capabilities.test.mjs
-// issue #226: 按模型能力适配「思考模式」—— 结构断言
+// issue #226 + Phase 1 模型适配: 「思考/图像能力」改为读 ModelListing, 不再看模型名子串。
 // 运行: node --test scripts/model-capabilities/tests/model-capabilities.test.mjs
 //
 // 断言范围:
-//   1. ModelCapabilities.ets 声明三种 mode + resolveModelCapability
-//   2. LlmClient.ets 的 always_on 分支不写 disabled
-//   3. LlmClient.ets 的看门狗按能力分档 (30000 / 60000)
-//   4. LlmClient.ets 的请求日志带 thinking= 与 effort= 字段
+//   1. ModelCapabilities.ets 声明三种 mode + resolveCapabilities(listing) + 兼容入口
+//   2. 能力字段只来自 listing.effort / listing.inputModalities
+//   3. LlmClient.ets 的 always_on 分支不写 disabled
+//   4. LlmClient.ets 的看门狗按能力分档 (30000 / 60000)
+//   5. LlmClient.ets 的请求日志带 thinking= 与 effort= 字段
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,33 +29,39 @@ test('ModelCapabilities declares the three thinking modes', () => {
   );
 });
 
-test('ModelCapabilities declares ModelCapability with thinking + efforts', () => {
+test('ModelCapabilities declares ModelCapability with thinking / efforts / defaultEffort / supportsImage', () => {
   assert.match(capabilities, /export interface ModelCapability \{/);
   assert.match(capabilities, /thinking: ThinkingMode;/);
   assert.match(capabilities, /efforts: string\[\];/);
+  assert.match(capabilities, /defaultEffort: string;/);
+  assert.match(capabilities, /supportsImage: boolean;/);
 });
 
-test('ModelCapabilities exports resolveModelCapability(vendorId, model)', () => {
+test('ModelCapabilities exports resolveCapabilities(listing) and the compatibility entry', () => {
+  assert.match(
+    capabilities,
+    /export function resolveCapabilities\(listing: ModelListing \| null\): ModelCapability/,
+  );
   assert.match(
     capabilities,
     /export function resolveModelCapability\(vendorId: string, model: string\): ModelCapability/,
   );
   assert.match(capabilities, /thinking: 'toggle'/);
-  assert.match(capabilities, /thinking: 'always_on'/);
   assert.match(capabilities, /thinking: 'unsupported'/);
 });
 
-test('resolver covers deepseek / qwen / o1-o3-reasoner / unknown', () => {
-  // deepseek: toggle + 三档 effort
-  assert.match(capabilities, /indexOf\('deepseek'\)/);
-  // qwen: toggle, efforts 为空
-  assert.match(capabilities, /indexOf\('qwen'\)/);
-  // o1 / o3 / reasoner: always_on
-  assert.match(capabilities, /startsWith\('o1'\)/);
-  assert.match(capabilities, /startsWith\('o3'\)/);
-  assert.match(capabilities, /indexOf\('reasoner'\)/);
-  // 三档 effort 字面量
-  assert.match(capabilities, /\['low', 'medium', 'high'\]/);
+test('capabilities derive from listing fields, not model-name substrings', () => {
+  assert.match(capabilities, /listing\.effort\.supportedLevels/);
+  assert.match(capabilities, /listing\.effort\.defaultLevel/);
+  assert.match(capabilities, /listing\.inputModalities\.indexOf\('image'\)/);
+
+  // 旧实现按模型名猜族群; Phase 1 删除这些分支。
+  assert.doesNotMatch(capabilities, /indexOf\('deepseek'\)/);
+  assert.doesNotMatch(capabilities, /indexOf\('qwen'\)/);
+  assert.doesNotMatch(capabilities, /startsWith\('o1'\)/);
+  assert.doesNotMatch(capabilities, /startsWith\('o3'\)/);
+  assert.doesNotMatch(capabilities, /indexOf\('reasoner'\)/);
+  assert.doesNotMatch(capabilities, /\['low', 'medium', 'high'\]/);
 });
 
 test('LlmClient always_on branch never writes disabled', () => {
@@ -79,7 +86,9 @@ test('LlmClient logs thinking mode and effort on both transports', () => {
   assert.ok(effortLogs.length >= 2, 'both transports must log effort=<value|none>');
 });
 
-test('common Index exports the capability resolver and types', () => {
+test('common Index exports the capability resolvers and types', () => {
   assert.match(commonIndex, /resolveModelCapability/);
+  assert.match(commonIndex, /resolveCapabilities/);
+  assert.match(commonIndex, /supportsImageInput/);
   assert.match(commonIndex, /ThinkingMode/);
 });

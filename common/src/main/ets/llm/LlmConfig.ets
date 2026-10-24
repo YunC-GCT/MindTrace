@@ -1,4 +1,6 @@
 // MindTrace - LLM 配置管理(单例 + preferences 持久化 + 运行时读写)
+// 路径: common/src/main/ets/llm/LlmConfig.ets
+// 职责: LLM 配置读写 + schema 迁移 + vendor/model 解析(catalog → alias)
 // 创建: 2026-07-14
 // PR1 2026-09-07: apiKey 凭据升级到 AssetStoreKit(委托 ApiKeyVault)
 // PR2-T1 2026-09-07: 加 vendorId / customVendorConfig 字段(getEndpoint/getModel 按 vendorId 解析)
@@ -8,8 +10,15 @@ import { ApiKeyVault } from '../security/ApiKeyVault';
 import { LlmConfigInitResult, LlmError } from './LlmTypes';
 import { DEFAULT_VENDOR_ID, findProvider } from './providers';
 import type { CustomVendorConfig } from './providers';
+import { getProviderCatalog } from './model-catalog';
+import type { ProviderCatalog } from './model-catalog';
+import { resolveModel } from './model-resolver';
+import type { ResolvedModel } from './model-resolver';
 
 const STORE_NAME = 'llm_config';
+const KEY_SCHEMA_VERSION = 'schema_version';
+const KEY_REQUESTED_ALIAS = 'requested_alias';
+const SCHEMA_VERSION: number = 2;
 const KEY_ENDPOINT = 'endpoint';
 const KEY_MODEL = 'model';
 const KEY_TEMPERATURE = 'temperature';
@@ -47,6 +56,9 @@ export class LlmConfig {
   // 运行时缓存
   private cachedEndpoint: string = DEFAULT_ENDPOINT;
   private cachedModel: string = DEFAULT_MODEL;
+  // 2026-10-25: 区分「用户显式写过 model」与「缺省没写过」。
+  // 迁移会把 legacy model 归一化成规范 ID, 但 getModel() 不能因此被 catalog 默认盖掉 (计划 §5.3)。
+  private cachedModelExplicit: boolean = false;
   private cachedTemperature: number = DEFAULT_TEMPERATURE;
   private cachedMaxTokens: number = DEFAULT_MAX_TOKENS;
   private cachedTimeoutMs: number = DEFAULT_TIMEOUT_MS;
@@ -62,6 +74,8 @@ export class LlmConfig {
   private cachedVendorApiKeys: Record<string, string> = {};
   private cachedActiveVendorModels: Record<string, string> = {};
   private cachedModelContextWindows: Record<string, number> = {};
+  // 迁移保护: 旧 model_context_windows JSON 解析失败时, 不覆盖 raw key。
+  private cachedModelContextWindowsParsed: boolean = true;
 
   private constructor() {}
 
@@ -89,10 +103,11 @@ export class LlmConfig {
 
   private async loadAll(): Promise<void> {
     const s = this.store!;
-    const ep: string = await s.get(KEY_ENDPOINT, '') as string;
-    this.cachedEndpoint = this.normalizeEndpoint(ep);
-    const md: string = await s.get(KEY_MODEL, '') as string;
-    this.cachedModel = this.normalizeModel(md);
+    // 先读完 raw, 再做 schema 迁移, 最后 normalizeEndpoint/normalizeModel。
+    // 迁移必须发生在 normalizeModel 之前 (计划 §5.2), 否则旧别名先被归一化,
+    // 无法保留 requested_alias / 无法区分"用户显式选择"与"缺省"。
+    const rawEndpoint: string = await s.get(KEY_ENDPOINT, '') as string;
+    const rawModel: string = await s.get(KEY_MODEL, '') as string;
     const tp: number = await s.get(KEY_TEMPERATURE, -1) as number;
     if (tp >= 0) { this.cachedTemperature = tp; }
     const mt: number = await s.get(KEY_MAX_TOKENS, -1) as number;
@@ -156,10 +171,120 @@ export class LlmConfig {
       try {
         const parsed: Record<string, number> = JSON.parse(contextWindowsJson);
         this.cachedModelContextWindows = parsed ?? {};
+        this.cachedModelContextWindowsParsed = true;
       } catch (_e) {
         this.cachedModelContextWindows = {};
+        this.cachedModelContextWindowsParsed = false;
+        console.error('[LlmConfig] LLM_CONFIG_MIGRATION_FAILED context_windows JSON parse error; raw key kept');
       }
     }
+    const migratedModel: string = await this.migrateIfNeeded(rawModel);
+    this.cachedEndpoint = this.normalizeEndpoint(rawEndpoint);
+    this.cachedModelExplicit = rawModel.trim().length > 0;
+    this.cachedModel = this.normalizeModel(migratedModel);
+  }
+
+  // ===== Schema 迁移 (2026-10-25, v2) =====
+  // 幂等: schema_version >= 2 时直接返回, 不写任何 key。
+  // 失败: 保留 raw key, 记录 LLM_CONFIG_MIGRATION_FAILED, 回退到内置 catalog 默认。
+  private async migrateIfNeeded(rawModel: string): Promise<string> {
+    const s = this.store!;
+    let version: number = 0;
+    try {
+      version = await s.get(KEY_SCHEMA_VERSION, 0) as number;
+    } catch (_e) {
+      version = 0;
+    }
+    if (version >= SCHEMA_VERSION) {
+      return rawModel;
+    }
+    try {
+      return await this.migrateToSchemaV2(rawModel);
+    } catch (e) {
+      console.error('[LlmConfig] LLM_CONFIG_MIGRATION_FAILED '
+        + ((e as Error).message ?? String(e)));
+      return rawModel;
+    }
+  }
+
+  private async migrateToSchemaV2(rawModel: string): Promise<string> {
+    const vendorId: string = this.cachedVendorId;
+    const explicitModel: string = this.getExplicitModelId(vendorId, rawModel);
+    let effectiveModel: string = rawModel.trim();
+    if (explicitModel.length > 0) {
+      // 规则 1/3: 非空 active/vendor 选择优先, 绝不被 catalog 默认覆盖。
+      effectiveModel = explicitModel;
+    } else if (effectiveModel.length === 0) {
+      // 规则 3: model 为空 → provider catalog 默认。
+      const defaultCatalog: ProviderCatalog | null = getProviderCatalog(vendorId);
+      if (defaultCatalog !== null && defaultCatalog.defaultModelId.length > 0) {
+        effectiveModel = defaultCatalog.defaultModelId;
+      } else {
+        const provider = findProvider(vendorId);
+        effectiveModel = provider !== null ? provider.defaultModel : DEFAULT_MODEL;
+      }
+    }
+
+    const resolved: ResolvedModel = resolveModel(vendorId, effectiveModel);
+    let canonicalId: string = resolved.canonicalId;
+    if (canonicalId.length === 0) {
+      canonicalId = effectiveModel.length > 0 ? effectiveModel : DEFAULT_MODEL;
+    }
+    if (resolved.reason === 'MODEL_ID_UNRESOLVED') {
+      console.warn('[LlmConfig] MODEL_ID_UNRESOLVED model=' + effectiveModel
+        + ' vendor=' + vendorId + ' (kept as-is)');
+    }
+
+    // 规则 4: 已有 context window 一律保留(含旧用户覆盖的 65536);
+    // 只为 catalog 中尚无 key 的模型补初始值。
+    let contextWindowsChanged: boolean = false;
+    const catalog: ProviderCatalog | null = getProviderCatalog(vendorId);
+    if (catalog !== null && this.cachedModelContextWindowsParsed) {
+      for (const listing of catalog.models) {
+        if (listing.contextWindow <= 0) {
+          continue;
+        }
+        const key: string = LlmConfig.contextWindowKey(vendorId, listing.id);
+        if (this.cachedModelContextWindows[key] === undefined) {
+          this.cachedModelContextWindows[key] = LlmConfig.normalizeContextWindow(listing.contextWindow);
+          contextWindowsChanged = true;
+        }
+      }
+    }
+
+    const s = this.store!;
+    await s.put(KEY_MODEL, canonicalId);
+    if (resolved.reason.startsWith('ALIAS_RESOLVED:') && resolved.requestedId.length > 0) {
+      // 规则 2: 别名 → 规范 ID, 同时保留可逆的 requested_alias。
+      await s.put(KEY_REQUESTED_ALIAS, resolved.requestedId);
+    } else {
+      // 非别名迁移不保留旧 requested_alias, 避免误导后续审计。
+      await s.delete(KEY_REQUESTED_ALIAS);
+    }
+    if (contextWindowsChanged) {
+      await s.put(KEY_MODEL_CONTEXT_WINDOWS, JSON.stringify(this.cachedModelContextWindows));
+    }
+    await s.put(KEY_SCHEMA_VERSION, SCHEMA_VERSION);
+    await s.flush();
+    return canonicalId;
+  }
+
+  // 规则 1: active_vendor_models 非空, 或 vendor_models 含当前 ID → 显式选择。
+  // rawModel 为空但 vendor_models 非空时, 也保留第一条用户模型, 不写 catalog 默认。
+  private getExplicitModelId(vendorId: string, rawModel: string): string {
+    const active: string | undefined = this.cachedActiveVendorModels[vendorId];
+    if (active !== undefined && active.trim().length > 0) {
+      return active.trim();
+    }
+    const models: string[] | undefined = this.cachedVendorModels[vendorId];
+    if (models === undefined || models.length === 0) {
+      return '';
+    }
+    const trimmedRaw: string = rawModel.trim();
+    if (trimmedRaw.length > 0) {
+      return models.indexOf(trimmedRaw) >= 0 ? trimmedRaw : '';
+    }
+    return models[0].trim();
   }
 
   // ===== API Key (PR1: 委托 ApiKeyVault, 不再用明文 preferences) =====
@@ -228,8 +353,13 @@ export class LlmConfig {
     const value: number | undefined = this.cachedModelContextWindows[
       LlmConfig.contextWindowKey(resolvedVendor, resolvedModel)
     ]
-    if (value === undefined) { return DEFAULT_CONTEXT_WINDOW_TOKENS }
-    return LlmConfig.normalizeContextWindow(value)
+    if (value !== undefined) { return LlmConfig.normalizeContextWindow(value) }
+    // 没有落盘 key 时不再直接回 65536: 先读 catalog 的 contextWindow。
+    const resolved: ResolvedModel = resolveModel(resolvedVendor, resolvedModel)
+    if (resolved.listing !== null && resolved.listing.contextWindow > 0) {
+      return LlmConfig.normalizeContextWindow(resolved.listing.contextWindow)
+    }
+    return DEFAULT_CONTEXT_WINDOW_TOKENS
   }
 
   public async setContextWindowTokens(vendorId: string, model: string, value: number): Promise<void> {
@@ -238,6 +368,7 @@ export class LlmConfig {
     if (vendorId.length === 0 || normalizedModel.length === 0) { return }
     const key: string = LlmConfig.contextWindowKey(vendorId, normalizedModel)
     this.cachedModelContextWindows[key] = LlmConfig.normalizeContextWindow(value)
+    this.cachedModelContextWindowsParsed = true
     const s = this.store!
     await s.put(KEY_MODEL_CONTEXT_WINDOWS, JSON.stringify(this.cachedModelContextWindows))
     await s.flush()
@@ -286,7 +417,7 @@ export class LlmConfig {
     if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
       const activeModel: string | undefined = this.cachedActiveVendorModels[this.cachedVendorId];
       if (activeModel !== undefined && activeModel.trim().length > 0) {
-        return activeModel;
+        return this.normalizeModelForVendor(activeModel, this.cachedVendorId);
       }
       // PR2-T2 L1: 优先查 customVendors[] 匹配 id
       const cv: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId)
@@ -296,12 +427,23 @@ export class LlmConfig {
     }
     const activeModel: string | undefined = this.cachedActiveVendorModels[this.cachedVendorId];
     if (activeModel !== undefined && activeModel.trim().length > 0) {
-      return activeModel;
+      return this.normalizeModelForVendor(activeModel, this.cachedVendorId);
     }
     // PR2-T2 L2: 优先查 vendorModels[vendorId][0](用户加的 model)
     const userModels: string[] | undefined = this.cachedVendorModels[this.cachedVendorId];
     if (userModels !== undefined && userModels.length > 0) {
-      return userModels[0];
+      return this.normalizeModelForVendor(userModels[0], this.cachedVendorId);
+    }
+    // L2.5: legacy KEY_MODEL 是用户显式写过的 (含迁移前的旧别名) → 必须胜过 catalog 默认。
+    // 没写过时 cachedModelExplicit=false, 继续走 catalog 默认, 这样提供商换默认值能生效。
+    if (this.cachedModelExplicit && this.cachedModel.length > 0) {
+      return this.cachedModel;
+    }
+    // L2: provider 默认模型改由内置 catalog 提供 (providers.ets 的字段保留给其它 vendor)。
+    // 运行时优先级: active → userModels → 显式 legacy model → catalog 默认。
+    const catalog: ProviderCatalog | null = getProviderCatalog(this.cachedVendorId);
+    if (catalog !== null && catalog.defaultModelId.length > 0) {
+      return catalog.defaultModelId;
     }
     const p = findProvider(this.cachedVendorId);
     if (p !== null) { return p.defaultModel; }
@@ -311,6 +453,7 @@ export class LlmConfig {
   public async setModel(v: string): Promise<void> {
     this.requireInited();
     this.cachedModel = this.normalizeModel(v);
+    this.cachedModelExplicit = v.trim().length > 0;
     await this.store!.put(KEY_MODEL, this.cachedModel);
     await this.store!.flush();
   }
@@ -504,6 +647,7 @@ export class LlmConfig {
     this.requireInited();
     this.cachedEndpoint = DEFAULT_ENDPOINT;
     this.cachedModel = DEFAULT_MODEL;
+    this.cachedModelExplicit = false;
     this.cachedTemperature = DEFAULT_TEMPERATURE;
     this.cachedMaxTokens = DEFAULT_MAX_TOKENS;
     this.cachedTimeoutMs = DEFAULT_TIMEOUT_MS;
@@ -518,6 +662,7 @@ export class LlmConfig {
     this.cachedVendorApiKeys = {};
     this.cachedActiveVendorModels = {};
     this.cachedModelContextWindows = {};
+    this.cachedModelContextWindowsParsed = true;
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
@@ -526,6 +671,8 @@ export class LlmConfig {
     await s.put(KEY_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
     await s.put(KEY_ENABLE_THINKING, DEFAULT_ENABLE_THINKING);
     await s.put(KEY_VENDOR_ID, 'deepseek');
+    await s.put(KEY_SCHEMA_VERSION, SCHEMA_VERSION);
+    await s.delete(KEY_REQUESTED_ALIAS);
     await s.delete(KEY_CUSTOM_VENDOR);
     await s.delete(KEY_CUSTOM_VENDORS);
     await s.delete(KEY_VENDOR_MODELS);
@@ -606,40 +753,20 @@ export class LlmConfig {
     return this.normalizeModelForVendor(v, this.cachedVendorId);
   }
 
-  // PR2-T2 集成修复 (2026-09-08): reserved keywords 检查仅在 DeepSeek vendor 下生效
-  // 原因: 5 vendor 引入后,其他 vendor 的合法模型名含 'flash' / 'r1' / 数字版本等子串
-  //       (例: qwen-flash, glm-4-flash, kimi-r1, qwen3-max, kimi-k2.6)。
-  //       Vendor-agnostic 检查会错误拒绝这些合法名,破坏 LLM 链路。
-  // ticket #9 原意 (DeepSeek 模型命名空间) 通过 vendorId === 'deepseek' 限定保留。
+  // 2026-10-25 模型适配 (计划 §2.3): 删除旧的三个字符串相等白名单,
+  // 以及 v3/flash/r1 子串抛 NORMALIZE_KEYWORD_REJECTED 的路径。
+  // 现在统一走 catalog ID → alias 解析; 未知 ID 保留原值并记 diagnostic, 不再静默拒绝。
   private normalizeModelForVendor(v: string, vendorId: string): string {
-    const t: string = v.trim();
-    if (t.length === 0) {
-      return DEFAULT_MODEL;
-    }
-    if (vendorId === 'deepseek') {
-      const lower: string = t.toLowerCase();
-      if (this.isAllowedDeepSeekModel(lower)) {
-        return t;
-      }
-      if (
-        lower.indexOf('v3') >= 0 ||
-        lower.indexOf('flash') >= 0 ||
-        lower.indexOf('r1') >= 0
-      ) {
-        throw new LlmError(
-          `LlmConfig.normalizeModel: input "${v}" matches a reserved keyword; ` +
-          `DEFAULT_MODEL is enforced for DeepSeek. Reserved keywords: v3, flash, r1. ` +
-          `(DEFAULT_MODEL itself is allowed — see ticket PR0 fix 2026-09-06.)`,
-          'NORMALIZE_KEYWORD_REJECTED'
-        );
+    const resolved: ResolvedModel = resolveModel(vendorId, v);
+    if (resolved.reason === 'MODEL_ID_UNRESOLVED') {
+      // 其它 vendor 的 catalog 仍为空 (能力待 discovery/人工补齐), 未知 ID 是预期状态,
+      // 不在每次 getModel() 时刷日志; DeepSeek 有清单, 未知 ID 才是真 diagnostic。
+      const catalog: ProviderCatalog | null = getProviderCatalog(vendorId);
+      if (catalog !== null && catalog.models.length > 0) {
+        console.warn('[LlmConfig] MODEL_ID_UNRESOLVED model=' + v.trim()
+          + ' vendor=' + vendorId + ' (kept as-is)');
       }
     }
-    return t;
-  }
-
-  private isAllowedDeepSeekModel(model: string): boolean {
-    return model === 'deepseek-v4-flash'
-      || model === 'deepseek-v4-pro'
-      || model === 'deepseek-v4-flash-vision-exp';
+    return resolved.canonicalId.length > 0 ? resolved.canonicalId : DEFAULT_MODEL;
   }
 }

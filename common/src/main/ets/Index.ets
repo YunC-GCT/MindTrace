@@ -233,8 +233,15 @@ export type { OnDeviceAvailability, OnDeviceReply } from './llm/OnDeviceLlm';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
 // issue #226: 思考模式按模型能力适配 — toggle / always_on / unsupported
-export { resolveModelCapability } from './llm/ModelCapabilities';
+// 2026-10-25 模型适配分层: catalog → resolver → capabilities / discovery
+export { resolveModelCapability, resolveCapabilities, supportsImageInput } from './llm/ModelCapabilities';
 export type { ModelCapability, ThinkingMode } from './llm/ModelCapabilities';
+export { getProviderCatalog, getCatalogDefaultListing } from './llm/model-catalog';
+export type { ModelEffortInfo, ModelListing, ProviderCatalog } from './llm/model-catalog';
+export { resolveModel } from './llm/model-resolver';
+export type { ResolvedModel } from './llm/model-resolver';
+export { discoverModels } from './llm/model-discovery';
+export type { DiscoveryResult } from './llm/model-discovery';
 export { CancellationToken } from './llm/CancellationToken';
 export { LlmGuard } from './llm/LlmGuard';
 export { JSON_ONLY_RULES, LATEX_GENERATION_RULES, buildGuardRetryMessage } from './llm/LlmOutputRules';
