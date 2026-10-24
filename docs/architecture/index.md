@@ -20,6 +20,14 @@
 |---|---|---|
 | [`agent-application-architecture-design-2026-10-20.md`](./agent-application-architecture-design-2026-10-20.md) | 2026-10-20 | 应用 / Agent / 信息流目标态：Dispatcher 主 Agent、子图、自研 LangGraph 风格内核 |
 
+## Reviews (external reviewers)
+
+> 外部评审留档；结论已被吸收进 [`system-architecture-layered.md`](../system-architecture-layered.md) 的 §14 修正记录。
+
+| File | Date | 内容 |
+|---|---|---|
+| [`codex-architecture-review-2026-10-23.md`](./codex-architecture-review-2026-10-23.md) | 2026-10-23 | Codex 对 v5 分层架构的评审（Kit 边界、Agent workflow、落地风险） |
+
 ## 命名与维护
 
 - 文件名：`{scope}-{YYYY-MM-DD}.md`（见 `docs/style/naming-conventions.md` §3.6）

@@ -7,6 +7,8 @@
  */
 import { DifficultyLevel, KnowledgeRelation, KnowledgeUnit, ReviewStatus } from 'common';
 const WRONG_NOTE_TYPE: string = "错题";
+// 演示数据默认开启（2026-10-24 产品确认）：全新安装首次进笔记/星系页写入 11 条样例，
+// 之后靠 preferences 标记不再导入。不要按「测试代码」移除，这是有意的演示数据。
 export const ENABLE_GALAXY_PREVIEW_UNITS: boolean = true;
 const PREVIEW_UNIT_PREFIX: string = "galaxy_preview_"
 
