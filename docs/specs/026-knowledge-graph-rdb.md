@@ -4,6 +4,19 @@
 > **Source**: [`../adr/0006-knowledge-model-decomposition-plan.md`](../adr/0006-knowledge-model-decomposition-plan.md) · [`015-knowledge-model-decomposition-v2.md`](./015-knowledge-model-decomposition-v2.md)
 > **Files affected**: `common/src/main/ets/DatabaseHelper.ets`, `common/src/main/ets/Index.ets`, `common/src/main/ets/models/KnowledgeGraphModels.ets`, `entry/src/main/ets/database/NoteDao.ets`, `entry/src/main/ets/database/KnowledgeRelationDao.ets`, `entry/src/main/ets/database/RagEmbeddingDao.ets`, `entry/src/main/ets/services/KnowledgeRelationService.ets`, `entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets`
 > **Test files**: `scripts/arkts-lint/tests/knowledge-graph-rdb.test.mjs`
+> **Related**: [统一 KnowledgeUnit 写入](./execution/097-knowledge-unit-write-service/spec.md)
+> **Code**: `entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets`
+> **Verified by**: `node --test scripts/arkts-lint/tests/knowledge-graph-rdb.test.mjs` · `node scripts/agent-gate/index.mjs`
+
+## 测试笔记入库补充（2026-10-18，in progress）
+
+- 按用户要求，将原星系的 11 条内存占位笔记一次性导入 RDB；固定 ID 和公式正文保持不变。开关迁至 `GalaxyPreviewData.ets`，只控制首次导入，不向列表或详情注入内存数据。
+- Notes 与 Galaxy 首次加载等待同一个 `GalaxyPreviewSeedService.ensureSeeded(context)`；笔记写入走 `KnowledgeUnitWriteServiceFactory`，保留事务 revision 和缓存失效通知。
+- 已存在的 ID 不覆盖；已有 revision 但当前笔记不存在视为用户已删除，不自动补回。并发加载共享一个 Promise，失败允许重试。
+- 仅初始化这些测试笔记的关系，存入 `kg_edge`；只写两端仍存在的关系，不覆盖已有关系（包括 rejected）。不是旧用户笔记数组的批量迁移。
+- 成功后保存独立 preferences 完成标记，后续启动不重新导入关系；关闭开关不会删除已入库的数据。原占位 ID 的删除限制移除，编辑/删除与普通笔记一致。
+- 验证覆盖：11 条正文与固定 ID、重复/并发导入、保留编辑与删除、失败恢复、有效关系入库、两页仅从 RDB 读取；真机点击笔记详情并重启复验。
+- 本地验证（2026-10-18，尚未合并）：`node --test scripts/arkts-lint/tests/galaxy-preview-seed.test.mjs scripts/arkts-lint/tests/knowledge-galaxy-fixture-flag.test.mjs scripts/arkts-lint/tests/graph-expansion-accepted.test.mjs scripts/arkts-lint/tests/knowledge-unit-write-service.test.mjs` 30/30；curated `npm --prefix scripts/arkts-lint test` 329/329；`node scripts/agent-gate/index.mjs` RESULT: PASS；签名 assembleHap 成功并覆盖安装。USB 真机笔记页显示数学分析 7 条、线性代数 4 条，已打开“泰勒展开符号错题”正文；强制停止并重启应用后仍显示 11 条，无重复。编辑/删除保护与中断恢复由存储边界测试验证，未删除真机用户数据。
 
 ## Why this ticket
 

@@ -75,3 +75,6 @@ docs/research/*.html
 docs/architecture/*.html
 # Device-test copies generated from agents/common src/test; never ship in production.
 /entry/src/ohosTest/ets/generated-knowledge-tests/
+
+# archify 生成的架构图（本地产物）
+.archify/
