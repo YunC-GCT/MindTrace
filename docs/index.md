@@ -17,6 +17,7 @@ docs/
 ├── index.md                # This file
 ├── readme-en.md            # English README
 ├── onboarding.md           # 5/30-min onboarding path for new agents + humans
+├── plans/                  # Implementation plans pending formal spec
 ├── style/                  # Coding rules, naming conventions, ArkTS strict
 ├── adr/                    # Architecture Decision Records (why we did X)
 ├── specs/                  # Design specs (what + how)
@@ -40,6 +41,7 @@ docs/
 |---|---|
 | **Record a hard-to-reverse design decision** | `docs/adr/` — create `NNNN-{slug}.md` from [`docs/template/adr-template.md`](./template/adr-template.md) |
 | **Write the design spec for a ticket** | `docs/specs/` — create `NNN-{slug}.md` from [`docs/template/spec-template.md`](./template/spec-template.md) |
+| **Read an implementation design plan** | [`plans/`](./plans/index.md) — implementation designs pending formal spec |
 | **Record how a ticket was executed / verified** | `docs/specs/execution/{slug}/` — see [`execution/index.md`](./specs/execution/index.md) |
 | **看 v1 端A2A 的设计** | [`specs/031-xiaoyi-batch-capture-entry.md`](./specs/031-xiaoyi-batch-capture-entry.md) — 小艺唤起批量整理（浮窗 / 多选 / 落库） |
 | **知道当前做到哪一阶段 / 怎么验收** | [`agents/phase-tracker.md`](./agents/phase-tracker.md) — P0–P6 状态、DoD、证据命令 |
