@@ -26,6 +26,7 @@
 import fileIo from '@ohos.file.fs';
 import { MessageEvents, taskpool, worker } from '@kit.ArkTS';
 import { preferences } from '@kit.ArkData';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   ChatMsg,
   ChatSession,
@@ -47,9 +48,13 @@ import {
   CHAT_HISTORY_V1_SCHEMA_VERSION,
 } from './ChatHistorySchema';
 import { ConversationRunIdPolicy, SessionIdPolicy } from './ConversationIdentity';
+import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
+import { getChatHistoryClearControl } from './ChatHistoryClearControl';
 export { CHAT_HISTORY_SCHEMA_VERSION } from './ChatHistorySchema';
 
 export const STREAM_SAVE_THROTTLE_MS: number = 500;
+const CHAT_CLEAR_LOG_DOMAIN: number = 0xA2A0;
+const CHAT_CLEAR_LOG_TAG: string = 'ChatHistoryClear';
 
 export type AtomicWriteStage = 'PREPARE' | 'WRITE' | 'COMMIT' | 'VERIFY';
 export type PersistenceTransport = 'taskpool' | 'worker';
@@ -60,6 +65,7 @@ export interface ChatHistorySnapshot {
   schemaVersion: number;
   sessions: ChatSession[];
   migratedFrom?: string;
+  historyEpoch?: number;
 }
 
 export interface ChatHistoryMessageWire {
@@ -101,6 +107,7 @@ export interface ChatHistorySnapshotWire {
   schemaVersion: number;
   sessions: ChatHistorySessionWire[];
   migratedFrom?: string;
+  historyEpoch?: number;
 }
 
 export interface ChatHistoryLoadResult {
@@ -127,7 +134,12 @@ export interface IdleSaveResult extends ChatHistorySaveResult {
 
 export interface ChatHistoryStorePort {
   readSnapshot(path: string): Promise<string>;
-  writeSnapshot(path: string, sessions: ChatSession[], migratedFrom: string | undefined): Promise<ChatHistorySaveResult>;
+  writeSnapshot(
+    path: string,
+    sessions: ChatSession[],
+    migratedFrom: string | undefined,
+    historyEpoch?: number,
+  ): Promise<ChatHistorySaveResult>;
   fileExists(path: string): Promise<boolean>;
 }
 
@@ -159,6 +171,8 @@ interface WorkerWriteRequest {
   path: string;
   sessions: ChatSession[];
   migratedFrom?: string;
+  // Worker 协议当前不消费该字段；TaskPool 路径用它写入快照 historyEpoch。
+  historyEpoch?: number;
 }
 
 const WORKER_SCRIPT: string = 'entry/ets/workers/ChatPersistenceWorker.ets';
@@ -174,6 +188,13 @@ const MAX_RUN_PART_COUNT: number = 5000;
 const MAX_RUN_PART_IDENTITY_LENGTH: number = 256;
 
 function defaultSessions(): ChatSession[] { return []; }
+
+function normalizeHistoryEpoch(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    return 0;
+  }
+  return value;
+}
 
 function decodeDiagnostic(stage: string, code: string, path: string): string {
   return 'stage=' + stage + ';code=' + code + ';path=' + path;
@@ -570,6 +591,8 @@ function decodeChatHistorySnapshotV1(snapshot: ChatHistorySnapshotWire): ChatHis
   const validated: ChatHistorySnapshot = {
     schemaVersion: CHAT_HISTORY_V1_SCHEMA_VERSION,
     sessions: copyChatSessionsForPersistence(validation.sessions),
+    // 旧快照没有 historyEpoch：按 0 处理，不视为损坏。
+    historyEpoch: normalizeHistoryEpoch(snapshot.historyEpoch),
   };
   if (snapshot.migratedFrom === 'preferences') {
     validated.migratedFrom = 'preferences';
@@ -631,6 +654,7 @@ export async function writeChatHistorySnapshotTask(
   path: string,
   sessions: ChatSession[],
   migratedFrom: string,
+  historyEpoch: number,
 ): Promise<AtomicWriteTaskResult> {
   let stage: AtomicWriteStage = 'PREPARE';
   const schemaVersion: number = CHAT_HISTORY_SCHEMA_VERSION;
@@ -639,6 +663,8 @@ export async function writeChatHistorySnapshotTask(
     const snapshot: ChatHistorySnapshot = {
       schemaVersion: schemaVersion,
       sessions: sessions,
+      historyEpoch: (typeof historyEpoch === 'number' && Number.isSafeInteger(historyEpoch) && historyEpoch >= 0)
+        ? historyEpoch : 0,
     };
     if (migratedFrom.length > 0) {
       snapshot.migratedFrom = migratedFrom;
@@ -726,18 +752,20 @@ class FileChatHistoryStore implements ChatHistoryStorePort {
     path: string,
     sessions: ChatSession[],
     migratedFrom: string | undefined,
+    historyEpoch: number = 0,
   ): Promise<ChatHistorySaveResult> {
     try {
       const metadata: string = migratedFrom ?? '';
-      const task: taskpool.GenericsTask<[string, ChatSession[], string], AtomicWriteTaskResult> =
-        new taskpool.GenericsTask<[string, ChatSession[], string], AtomicWriteTaskResult>(
+      const task: taskpool.GenericsTask<[string, ChatSession[], string, number], AtomicWriteTaskResult> =
+        new taskpool.GenericsTask<[string, ChatSession[], string, number], AtomicWriteTaskResult>(
           writeChatHistorySnapshotTask,
           path,
           sessions,
           metadata,
+          historyEpoch,
         );
       const result: AtomicWriteTaskResult = await taskpool.execute<
-        [string, ChatSession[], string],
+        [string, ChatSession[], string, number],
         AtomicWriteTaskResult
       >(task);
       const taskpoolResult: ChatHistorySaveResult = {
@@ -751,7 +779,10 @@ class FileChatHistoryStore implements ChatHistoryStorePort {
       if (taskpoolResult.success) {
         return taskpoolResult;
       }
-      return combineFallbackResult(taskpoolResult, await runWorkerWrite(path, sessions, migratedFrom));
+      return combineFallbackResult(
+        taskpoolResult,
+        await runWorkerWrite(path, sessions, migratedFrom, historyEpoch),
+      );
     } catch (error) {
       const taskpoolFailure: ChatHistorySaveResult = {
         success: false,
@@ -761,7 +792,10 @@ class FileChatHistoryStore implements ChatHistoryStorePort {
         retryable: true,
         diagnostic: 'transport=taskpool; ' + diagnostic('PREPARE', 'error=taskpool-exception; ' + errorToken(error)),
       };
-      return combineFallbackResult(taskpoolFailure, await runWorkerWrite(path, sessions, migratedFrom));
+      return combineFallbackResult(
+        taskpoolFailure,
+        await runWorkerWrite(path, sessions, migratedFrom, historyEpoch),
+      );
     }
   }
 
@@ -792,6 +826,7 @@ async function runWorkerWrite(
   path: string,
   sessions: ChatSession[],
   migratedFrom: string | undefined,
+  historyEpoch: number,
 ): Promise<ChatHistorySaveResult> {
   return await new Promise<ChatHistorySaveResult>((resolve: (value: ChatHistorySaveResult) => void): void => {
     let workerInstance: worker.ThreadWorker | undefined;
@@ -862,6 +897,7 @@ async function runWorkerWrite(
         kind: 'write',
         path: path,
         sessions: sessions,
+        historyEpoch: historyEpoch,
       };
       if (migratedFrom !== undefined) {
         request.migratedFrom = migratedFrom;
@@ -886,6 +922,7 @@ export class ChatHistoryPersistence {
   private readonly snapshotPath: string;
   private pending: ChatSession[] | undefined;
   private pendingMigratedFrom: string | undefined;
+  private pendingHistoryEpoch: number = 0;
   private writeInFlight: boolean = false;
   private forcePending: boolean = false;
   private timerId: number | undefined;
@@ -893,6 +930,7 @@ export class ChatHistoryPersistence {
   private lastFailure: string = '';
   private lastFailedSessions: ChatSession[] | undefined;
   private lastFailedMigratedFrom: string | undefined;
+  private lastFailedHistoryEpoch: number = 0;
   private pendingMigrationFrom: string | undefined;
   private waiters: SaveWaiter[] = [];
   private flushWaiters: SaveWaiter[] = [];
@@ -927,6 +965,18 @@ export class ChatHistoryPersistence {
             sessions: defaultSessions(),
             state: 'corrupt',
             diagnostic: 'state=corrupt; source=file; fallback=memory; ' + decoded.diagnostic,
+          };
+        }
+        const snapshotEpoch: number = normalizeHistoryEpoch(decoded.snapshot.historyEpoch);
+        const clearControl: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+        if (clearControl !== undefined && clearControl.isSnapshotBlocked(snapshotEpoch)) {
+          hilog.debug(CHAT_CLEAR_LOG_DOMAIN, CHAT_CLEAR_LOG_TAG,
+            'code=CHAT_HISTORY_SNAPSHOT_BLOCKED epoch=%{public}d', snapshotEpoch);
+          return {
+            sessions: defaultSessions(),
+            state: 'blocked',
+            diagnostic: 'state=blocked; source=file; code=CHAT_HISTORY_SNAPSHOT_BLOCKED; epoch='
+              + snapshotEpoch.toString(),
           };
         }
         return {
@@ -977,6 +1027,7 @@ export class ChatHistoryPersistence {
     }
     this.pending = copyChatSessionsForPersistence(sessions);
     this.pendingMigratedFrom = this.pendingMigrationFrom;
+    this.pendingHistoryEpoch = ChatHistoryPersistence.currentHistoryEpoch();
     if (force) {
       this.forcePending = true;
       this.clearTimer();
@@ -1034,6 +1085,7 @@ export class ChatHistoryPersistence {
     if (this.lastFailedSessions !== undefined && this.pending === undefined) {
       this.pending = copyChatSessionsForPersistence(this.lastFailedSessions);
       this.pendingMigratedFrom = this.lastFailedMigratedFrom;
+      this.pendingHistoryEpoch = this.lastFailedHistoryEpoch;
     }
     this.forcePending = true;
     this.clearTimer();
@@ -1054,17 +1106,19 @@ export class ChatHistoryPersistence {
     }
     const sessions: ChatSession[] = this.pending;
     const metadata: string | undefined = this.pendingMigratedFrom;
+    const historyEpoch: number = this.pendingHistoryEpoch;
     const currentWaiters: SaveWaiter[] = this.waiters;
     this.pending = undefined;
     this.pendingMigratedFrom = undefined;
+    this.pendingHistoryEpoch = 0;
     this.waiters = [];
     this.writeInFlight = true;
     const force: boolean = this.forcePending;
     this.forcePending = false;
-    this.store.writeSnapshot(this.snapshotPath, sessions, metadata).then(
+    this.store.writeSnapshot(this.snapshotPath, sessions, metadata, historyEpoch).then(
       (result: ChatHistorySaveResult): void => {
         this.writeInFlight = false;
-        const reported: ChatHistorySaveResult = this.recordResult(result, sessions, metadata);
+        const reported: ChatHistorySaveResult = this.recordResult(result, sessions, metadata, historyEpoch);
         for (const waiter of currentWaiters) {
           waiter.resolve(reported);
         }
@@ -1087,7 +1141,7 @@ export class ChatHistoryPersistence {
         diagnostic: diagnostic('WRITE', 'error=' + errorToken(error)),
       };
       this.writeInFlight = false;
-      const reported: ChatHistorySaveResult = this.recordResult(failed, sessions, metadata);
+      const reported: ChatHistorySaveResult = this.recordResult(failed, sessions, metadata, historyEpoch);
       for (const waiter of currentWaiters) {
         waiter.resolve(reported);
       }
@@ -1121,12 +1175,14 @@ export class ChatHistoryPersistence {
     result: ChatHistorySaveResult,
     sessions: ChatSession[],
     metadata: string | undefined,
+    historyEpoch: number,
   ): ChatHistorySaveResult {
     if (result.success) {
       this.consecutiveFailures = 0;
       this.lastFailure = '';
       this.lastFailedSessions = undefined;
       this.lastFailedMigratedFrom = undefined;
+      this.lastFailedHistoryEpoch = 0;
       if (metadata !== undefined && metadata === this.pendingMigrationFrom) {
         this.pendingMigrationFrom = undefined;
       }
@@ -1135,6 +1191,7 @@ export class ChatHistoryPersistence {
     this.consecutiveFailures += 1;
     this.lastFailedSessions = sessions;
     this.lastFailedMigratedFrom = metadata;
+    this.lastFailedHistoryEpoch = historyEpoch;
     const recovery: string = this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES ? '; recovery=required' : '';
     this.lastFailure = result.diagnostic + recovery;
     return {
@@ -1151,6 +1208,18 @@ export class ChatHistoryPersistence {
     if (this.timerId !== undefined) {
       clearTimeout(this.timerId);
       this.timerId = undefined;
+    }
+  }
+
+  private static currentHistoryEpoch(): number {
+    const control: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+    if (control === undefined) {
+      return 0;
+    }
+    try {
+      return normalizeHistoryEpoch(control.getState().historyEpoch);
+    } catch (error) {
+      return 0;
     }
   }
 

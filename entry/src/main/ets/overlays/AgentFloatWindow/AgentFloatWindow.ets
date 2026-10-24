@@ -12,8 +12,11 @@ import {
   F_MD, W_SEMIBOLD,
   OVERLAY_MASK, SCREEN_H,
   DUR_FAST, DUR_BASE,
+  DatabaseHelper,
 } from 'common';
 import { common } from '@kit.AbilityKit';
+import { relationalStore } from '@kit.ArkData';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import window from '@ohos.window';
 import { AgentChatService, AgentChatCallbacks } from '../../services/AgentChatService';
 import { getChatFilesDirSeam } from '../../services/ChatFilesDirSeam';
@@ -74,6 +77,13 @@ import {
 import { ConversationSessionSnapshot } from '../../models/ConversationSnapshotModels';
 import { IConversationNoteRoutePort } from '../../workflows/conversation/ConversationWorkflowPorts';
 import { ChatHistorySaveResult } from '../../services/ChatHistoryPersistence';
+import { ChatHistoryClearControl, getChatHistoryClearControl } from '../../services/ChatHistoryClearControl';
+import {
+  ChatHistoryClearCoordinator,
+  ChatHistoryClearDeps,
+  ChatHistoryClearResult,
+} from '../../services/ChatHistoryClearCoordinator';
+import { CardSnapshotService } from '../../services/CardSnapshotService';
 
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
@@ -127,6 +137,7 @@ export struct AgentFloatWindow {
   private service: AgentChatService | null = null;
   private sourceResolver: NoteReviewSourceService = new NoteReviewSourceService();
   private deletionCoordinator: SessionDeletionCoordinator | null = null;
+  private clearCoordinator: ChatHistoryClearCoordinator | null = null;
   private draftRecovery: DraftRecoveryService | null = null;
   private feedbackRequestCounter: number = 0;
   private feedbackRequestTokenByMessage: Map<number, number> = new Map<number, number>();
@@ -379,6 +390,11 @@ export struct AgentFloatWindow {
         await service.cancelSessionRun(sessionId);
       },
     );
+    const clearControl: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+    const clearStore: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (clearControl !== undefined && clearStore !== null) {
+      this.clearCoordinator = this.buildClearCoordinator(clearStore, clearControl);
+    }
     // Development reset: s1 was the old bootstrap conversation and must not
     // be promoted to a real history item after the lazy-session migration.
     const loadedSessions: ChatSession[] = ss.filter((session: ChatSession): boolean => session.id !== 's1');
@@ -849,6 +865,67 @@ export struct AgentFloatWindow {
     }
   }
 
+  private onRequestClearAll(): void {
+    SessionsPanelController.requestClearAll(
+      this.getUIContext().getPromptAction(),
+      (): void => { this.clearAllHistory().catch((): void => {}); },
+      (): void => { this.showToast('无法打开清空确认，请稍后重试'); }
+    );
+  }
+
+  private buildClearCoordinator(
+    store: relationalStore.RdbStore,
+    control: ChatHistoryClearControl
+  ): ChatHistoryClearCoordinator {
+    const clearDeps: ChatHistoryClearDeps = {
+      store: store,
+      quiesce: async (): Promise<void> => {
+        // 与 aboutToDisappear 一致：先取消全部 in-flight run，再留出收敛窗口。
+        this.service?.cancelAllRuns();
+        await new Promise<void>((resolve: () => void) => {
+          setTimeout(resolve, 50);
+        });
+      },
+      flushSnapshot: async (sessions: ChatSession[]): Promise<ChatHistorySaveResult> => this.sm.flush(sessions),
+      refreshCards: async (): Promise<void> => {
+        await CardSnapshotService.refresh(getContext(this) as common.UIAbilityContext);
+      },
+    };
+    return new ChatHistoryClearCoordinator(clearDeps, control);
+  }
+
+  private async clearAllHistory(): Promise<void> {
+    // 按需构造：浮窗加载时 DatabaseHelper.init 可能还没跑完 ensureSchema，此处再取一次。
+    if (this.clearCoordinator === null) {
+      const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      const control: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+      if (store === null || control === undefined) {
+        hilog.error(0xA2A0, 'ChatHistoryClear', 'code=CHAT_HISTORY_CLEAR_UNAVAILABLE store=%{public}s control=%{public}s',
+          String(store === null), String(control === undefined));
+        this.showToast('数据库未就绪，请稍后重试');
+        return;
+      }
+      this.clearCoordinator = this.buildClearCoordinator(store, control);
+    }
+    const result: ChatHistoryClearResult = await this.clearCoordinator.clearAll();
+    if (!result.success) {
+      console.warn('[ChatHistoryClear] stage=' + result.stage + '; ' + result.diagnostic);
+      this.showToast('清空失败，历史未完成清理，请稍后重试');
+      return;
+    }
+    for (const session of this.sessions) {
+      this.inputVm.removeSession(session.id);
+    }
+    this.sessions = [];
+    this.messages = [];
+    this.activeSid = '';
+    this.activeSessionTitle = '新对话';
+    this.generatedDraft = null;
+    this.generatedDraftSessionId = '';
+    this.panelVisible = false;
+    this.showToast('对话历史已清空');
+  }
+
   // ===== 交互逻辑 (输入面板已迁出至 AgentInputViewModel; 模型显示已迁出至 ModelSelector; 会话创建已迁出至 SessionCreator; 相机/相册已迁出至 CameraKitLauncher / AlbumPickerLauncher) =====
 
   private stopStreaming = (): void => {
@@ -1067,6 +1144,7 @@ export struct AgentFloatWindow {
               activeSid: this.activeSid,
               onSelect: (sid: string): void => { this.onSelectSession(sid); },
               onRequestDelete: (sid: string): void => { this.onRequestSessionDelete(sid); },
+              onRequestClearAll: (): void => { this.onRequestClearAll(); },
             })
               .position({ x: S_3 + S_4, y: PANEL_MASK_TOP + S_2 })
               .markAnchor({ x: 0, y: 0 })

@@ -29,6 +29,7 @@ interface ChatWorkerRequest {
   path: string;
   sessions: ChatSession[];
   migratedFrom?: string;
+  historyEpoch?: number;
 }
 
 interface ChatWorkerResponse {
@@ -45,6 +46,7 @@ interface ChatWorkerSnapshot {
   schemaVersion: number;
   sessions: ChatSession[];
   migratedFrom?: string;
+  historyEpoch: number;
 }
 
 const workerPort: ThreadWorkerGlobalScope = worker.workerPort;
@@ -107,6 +109,11 @@ workerPort.onmessage = async (event: MessageEvents): Promise<void> => {
       // The production service sends a persistence snapshot. Copy again at
       // this boundary so UI-only reasoningExpanded can never reach disk.
       sessions: copyChatSessionsForPersistence(request.sessions),
+      // Clearing coordination compares this epoch against the live control
+      // state; an absent/invalid value falls back to 0 (legacy snapshot).
+      historyEpoch: (typeof request.historyEpoch === 'number'
+        && Number.isSafeInteger(request.historyEpoch)
+        && request.historyEpoch >= 0) ? request.historyEpoch : 0,
     };
     if (request.migratedFrom !== undefined && request.migratedFrom.length > 0) {
       snapshot.migratedFrom = request.migratedFrom;

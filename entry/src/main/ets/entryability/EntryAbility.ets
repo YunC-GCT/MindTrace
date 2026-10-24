@@ -22,6 +22,7 @@ import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
 import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFilesDirSeam';
 import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';
 import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
+import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
 import {
   NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
   NoteDetailBenchmarkLaunchConfig,
@@ -59,6 +60,12 @@ export default class EntryAbility extends UIAbility {
     OcrConfig.getInstance().init(this.context).catch((e: Error) => {
       hilog.error(DOMAIN, 'testTag', 'OcrConfig init failed: %{public}s', e.message);
     });
+    // 清空对话历史控制状态: 同步打开 Preferences, 失败降级且不阻断启动
+    try {
+      new ChatHistoryClearControl().init(this.context);
+    } catch (e) {
+      hilog.error(DOMAIN, 'testTag', 'ChatHistoryClearControl init failed: %{public}s', JSON.stringify(e));
+    }
     // 初始化数据库
     DatabaseHelper.init(this.context)
       .then((): Promise<void> => CardSnapshotService.refresh(this.context))

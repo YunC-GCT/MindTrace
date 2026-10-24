@@ -12,11 +12,14 @@
  *   - Explicit loops and message types keep the projection deterministic and testable.
  */
 import { common } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   ChatProjectionWriter,
   ConversationMessageSnapshot,
   ConversationSessionSnapshot,
 } from '../models/ConversationSnapshotModels';
+import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
+import { getChatHistoryClearControl } from './ChatHistoryClearControl';
 import { AgentMemoryService } from './AgentMemoryService';
 
 export interface ChatProjectionResult {
@@ -39,6 +42,15 @@ export class ChatContextProjectionService {
   }
 
   async reconcile(sessions: ConversationSessionSnapshot[]): Promise<ChatProjectionResult> {
+    const clearControl: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+    if (clearControl !== undefined && clearControl.getState().clearState === 'pending') {
+      hilog.debug(0xA2A0, 'ChatHistoryClear', 'code=CHAT_HISTORY_PROJECTION_SKIPPED reason=clear-in-progress');
+      return {
+        projected: 0,
+        failures: 0,
+        diagnostic: 'code=CHAT_HISTORY_PROJECTION_SKIPPED; reason=clear-in-progress',
+      };
+    }
     let projected: number = 0;
     let failures: number = 0;
     for (const session of sessions) {
