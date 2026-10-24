@@ -213,6 +213,9 @@ export interface LlmCallRequest {
   timeoutMs?: number;
   responseFormat?: LlmResponseFormat;
   enableThinking?: boolean;
+  // issue #226: 可调推理强度 (low/medium/high); 仅对 efforts 非空的模型能力生效,
+  // 缺省时 always_on 取 'medium', toggle 取 'high' (保持既有行为)。
+  reasoningEffort?: string;
   tools?: LlmToolDefinition[];    // 透传 (spec 014)
   tool_choice?: string;           // 透传, Phase 1 仅 'auto' | 'none'
   cancellationToken?: CancellationToken;

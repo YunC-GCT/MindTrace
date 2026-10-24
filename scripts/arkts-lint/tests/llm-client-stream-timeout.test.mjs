@@ -9,23 +9,29 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
 const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 
-test('LlmClient.callStreamInternal firstByteTimer must be a sane guard (5s..30s)', () => {
-  const firstByteMatch = llmClient.match(/firstByteTimer[\s\S]*?setTimeout[\s\S]*?,\s*(\d+)\s*\)/);
-  assert.ok(firstByteMatch !== null, 'firstByteTimer setTimeout call must exist');
-  const ms = parseInt(firstByteMatch[1], 10);
-  // 15s 是当前取值：太长会让用户干等，太短会误降级；上限锁 30s 防回退成大值
-  assert.ok(ms >= 5000 && ms <= 30000, `firstByteTimer must be within 5000..30000ms, got ${ms}ms`);
+test('LlmClient.callStreamInternal firstByteTimer tiers by thinking capability', () => {
+  // issue #226: 关闭思考 / unsupported → 30s；开启思考 / always_on → 60s。
+  // 旧规则「上限锁 30s」只对可关闭思考的模型成立，always_on 模型不能靠关思考换首字节。
+  assert.match(
+    llmClient,
+    /const firstByteWatchdogMs: number = thinkingActive \? 60000 : 30000;/,
+    'first-byte watchdog must pick 60000ms for thinking, 30000ms otherwise',
+  );
+  assert.match(
+    llmClient,
+    /firstByteTimer = setTimeout\([\s\S]*?firstByteWatchdogMs\s*\)/,
+    'firstByteTimer must use the capability-tiered value',
+  );
 });
 
 test('ReplyService reply paths inherit enableThinking from LlmClient config', () => {
   assert.doesNotMatch(replyService, /enableThinking\s*:\s*false/);
 });
 
-test('LlmClient maps enableThinking to the Qwen HTTP switch on both transports', () => {
+test('LlmClient maps enableThinking to the Qwen HTTP switch through the shared builder', () => {
   const qwenSwitches = llmClient.match(/enable_thinking/g) ?? [];
-  assert.ok(qwenSwitches.length >= 2, 'JSON and SSE request bodies must both carry enable_thinking');
+  assert.ok(qwenSwitches.length >= 2, 'the shared thinking builder must carry enable_thinking');
   assert.match(llmClient, /body\.enable_thinking\s*=\s*enableThinking/);
-  assert.match(llmClient, /bodyObj\[.enable_thinking.\]\s*=\s*enableThinking/);
   assert.doesNotMatch(llmClient, /chat_template_kwargs/);
 });
 

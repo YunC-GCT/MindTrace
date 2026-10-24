@@ -229,6 +229,9 @@ export { LocalChatProvider } from './llm/LocalChatProvider';
 export type { OnDeviceAvailability, OnDeviceReply } from './llm/OnDeviceLlm';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
+// issue #226: 思考模式按模型能力适配 — toggle / always_on / unsupported
+export { resolveModelCapability } from './llm/ModelCapabilities';
+export type { ModelCapability, ThinkingMode } from './llm/ModelCapabilities';
 export { CancellationToken } from './llm/CancellationToken';
 export { LlmGuard } from './llm/LlmGuard';
 export { JSON_ONLY_RULES, LATEX_GENERATION_RULES, buildGuardRetryMessage } from './llm/LlmOutputRules';

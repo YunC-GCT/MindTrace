@@ -34,6 +34,7 @@ import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { LlmConfig } from './LlmConfig';
+import { ModelCapability, resolveModelCapability } from './ModelCapabilities';
 import { LlmErrorBodyFormatter } from './LlmErrorBodyFormatter';
 import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
 import { Logger } from '../utils/logger';
@@ -50,6 +51,14 @@ import {
   LlmCallResult,
   LlmError,
 } from './LlmTypes';
+
+// buildThinkingFields 的解析结果:
+//   enabled — 本次请求最终是否处于思考模式 (供首字节看门狗分档)
+//   effort  — 实际写入的推理强度; 空串表示本次没有该字段
+interface ThinkingFieldsResult {
+  enabled: boolean;
+  effort: string;
+}
 
 export class LlmClient {
   private config: LlmConfig;
@@ -86,15 +95,12 @@ export class LlmClient {
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
     const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
-    // 非流式调用默认关闭 thinking (2026-09-19): 非流式路径不回传 reasoning_content,
-    // thinking 只会烧 max_tokens 预算 (deepseek reasoning_effort=high 实测 512/800/6000
-    // 预算全被思维链耗尽, finish_reason=length 截断)。需要思考的流式聊天走 requestInStream;
-    // 显式传 enableThinking 的调用方不受此默认影响。
-    const enableThinking: boolean = request.enableThinking !== undefined
-      ? request.enableThinking
-      : false;
-    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
-    const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
+    // issue #226: 思考字段不再按「流式/非流式」一刀切, 而是按模型能力决定。
+    //   toggle      — 默认关闭, request.enableThinking 显式 true 才开;
+    //   always_on   — 强制开启, 绝不写 disabled;
+    //   unsupported — 一个思考字段都不写, 沿用服务端默认。
+    const capability: ModelCapability = resolveModelCapability(
+      this.config.getVendorId(), model);
 
     const body: LlmRequestBody = {
       model: model,
@@ -102,7 +108,10 @@ export class LlmClient {
       max_tokens: maxTokens,
       stream: false,
     };
-    if (!isDeepSeek || !enableThinking) {
+    const thinking: ThinkingFieldsResult = this.buildThinkingFields(body, capability, request);
+    // DeepSeek 思考模式不支持 temperature, 仅在本次未开启思考时设置。
+    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
+    if (!isDeepSeek || !thinking.enabled) {
       body.temperature = temperature;
     }
     // response_format is the single transport seam for provider-declared
@@ -116,20 +125,11 @@ export class LlmClient {
     if (request.tool_choice !== undefined) {
       body.tool_choice = request.tool_choice;
     }
-    if (isDeepSeek) {
-      const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
-      body.thinking = thinkingCfg;
-      if (enableThinking) {
-        body.reasoning_effort = 'high';
-      }
-    }
-    if (isQwen) {
-      body.enable_thinking = enableThinking;
-    }
 
     // 3. 发 HTTP POST
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
-    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' stream=false');
+    const effortText: string = thinking.effort.length > 0 ? thinking.effort : 'none';
+    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' thinking=' + capability.thinking + ' effort=' + effortText + ' stream=false');
     const httpRequest = http.createHttp();
     let response: http.HttpResponse;
     const removeCancellation: (() => void) | undefined = request.cancellationToken?.onCancel((): void => {
@@ -197,6 +197,82 @@ export class LlmClient {
     return v;
   }
 
+  // issue #226: 流式与非流式共用的思考字段构造。
+  //   toggle      — request.enableThinking 显式 true 才开; 开了才写 reasoning_effort;
+  //                 关了按厂商写 thinking:{type:'disabled'} (DeepSeek) / enable_thinking:false (Qwen)。
+  //   always_on   — 强制开启, 绝不写 disabled; reasoning_effort 取 request.reasoningEffort ?? 'medium'。
+  //   unsupported — 一个字段都不写。
+  private buildThinkingFields(
+    body: LlmRequestBody,
+    capability: ModelCapability,
+    request: LlmCallRequest,
+  ): ThinkingFieldsResult {
+    const modelLower: string = body.model.trim().toLowerCase();
+    const isDeepSeek: boolean = modelLower.indexOf('deepseek') >= 0;
+    const isQwen: boolean = modelLower.indexOf('qwen') >= 0;
+
+    if (capability.thinking === 'toggle') {
+      const enableThinking: boolean = request.enableThinking === true;
+      if (enableThinking) {
+        const effort: string = this.pickEffort(capability, request.reasoningEffort, 'high');
+        if (effort.length > 0) {
+          body.reasoning_effort = effort;
+        }
+        if (isDeepSeek) {
+          const thinkingCfg: LlmThinkingConfig = { type: 'enabled' };
+          body.thinking = thinkingCfg;
+        }
+        if (isQwen) {
+          body.enable_thinking = enableThinking;
+        }
+        const onResult: ThinkingFieldsResult = { enabled: true, effort: effort };
+        return onResult;
+      }
+      if (isDeepSeek) {
+        const thinkingCfg: LlmThinkingConfig = { type: 'disabled' };
+        body.thinking = thinkingCfg;
+      }
+      if (isQwen) {
+        body.enable_thinking = enableThinking;
+      }
+      const offResult: ThinkingFieldsResult = { enabled: false, effort: '' };
+      return offResult;
+    }
+
+    if (capability.thinking === 'always_on') {
+      // 推理模型常开: 不写 thinking 开关字段, 只把推理强度显式化。
+      const effort: string = this.pickEffort(capability, request.reasoningEffort, 'medium');
+      if (effort.length > 0) {
+        body.reasoning_effort = effort;
+      }
+      const forcedResult: ThinkingFieldsResult = { enabled: true, effort: effort };
+      return forcedResult;
+    }
+
+    // unsupported: 不表态, 服务端默认即最终行为。
+    const noneResult: ThinkingFieldsResult = { enabled: false, effort: '' };
+    return noneResult;
+  }
+
+  // 请求里的推理强度合法且受支持才采用, 否则回落到该能力的默认档。
+  private pickEffort(
+    capability: ModelCapability,
+    requested: string | undefined,
+    fallback: string,
+  ): string {
+    const efforts: string[] = capability.efforts;
+    if (efforts.length === 0) {
+      return '';
+    }
+    if (requested !== undefined && efforts.indexOf(requested) >= 0) {
+      return requested;
+    }
+    if (efforts.indexOf(fallback) >= 0) {
+      return fallback;
+    }
+    return efforts[0];
+  }
+
   private streamCallbackCode(data: number | undefined): string {
     if (data === undefined || data === null) {
       return 'undefined';
@@ -251,56 +327,39 @@ export class LlmClient {
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
     const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
-    // 流式调用默认关闭 thinking (2026-09-19): 聊天场景首字节优先 —— 思考模式下
-    // 首 token 要等整段思维链生成完才下发 (真机实测 firstChunkMs 8.1s, 最坏 15s+
-    // 被看门狗掐成 chars=0)。默认值改为 false 与非流式路径 (callJsonInternal) 对齐;
-    // 思考模式留给显式需要推理的调用方 —— 仅 request.enableThinking 显式传 true 时才开。
-    const enableThinking: boolean = request.enableThinking !== undefined
-      ? request.enableThinking
-      : false;
-    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
-    const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
+    // issue #226: 昨天「流式默认关思考」的收敛 —— 只有可开关 (toggle) 的模型才默认关;
+    // always_on 模型不能被写成 disabled, unsupported 不写任何思考字段。
+    // 首字节变慢由下面的看门狗按能力分档补偿, 不再靠粗暴关闭思考。
+    const capability: ModelCapability = resolveModelCapability(
+      this.config.getVendorId(), model);
 
-    // 构造 body (Record 避免 redacted 匹配问题)
-    const bodyObj: Record<string, Object> = {
+    const body: LlmRequestBody = {
+      model: model,
+      messages: request.messages,
+      max_tokens: maxTokens,
+      stream: true,
     };
 
-    // 手动设置字段以避免 redacted 字段匹配
-    bodyObj['model'] = model;
-    bodyObj['messages'] = request.messages as Object;
-    bodyObj['stream'] = true;
-    bodyObj['max_tokens'] = maxTokens;
+    const thinking: ThinkingFieldsResult = this.buildThinkingFields(body, capability, request);
 
-    // DeepSeek 思考模式不支持 temperature,仅在非思考模式下设置
-    if (!isDeepSeek || !enableThinking) {
-      bodyObj['temperature'] = temperature;
-    }
-
-    if (isDeepSeek) {
-      // 保留 disabled 分支: 默认 enableThinking=false 时显式下发 thinking:{type:'disabled'},
-      // 避免服务端沿用账号默认开启思考而把首字节再次拖后。
-      const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
-      bodyObj['thinking'] = thinkingCfg as Object;
-      if (enableThinking) {
-        bodyObj['reasoning_effort'] = 'high';
-      }
-    }
-
-    if (isQwen) {
-      bodyObj['enable_thinking'] = enableThinking;
+    // DeepSeek 思考模式不支持 temperature, 仅在本次未开启思考时设置。
+    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
+    if (!isDeepSeek || !thinking.enabled) {
+      body.temperature = temperature;
     }
 
     if (request.responseFormat !== undefined) {
-      bodyObj['response_format'] = request.responseFormat as Object;
+      body.response_format = request.responseFormat;
     }
 
-    const bodyJson: string = JSON.stringify(bodyObj);
+    const bodyJson: string = JSON.stringify(body);
 
     // 3. 创建 HttpRequest 并发起流式请求
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
     const llmLog: Logger = new Logger('LlmClient');
+    const effortText: string = thinking.effort.length > 0 ? thinking.effort : 'none';
     llmLog.info('request vendor=' + this.config.getVendorId() + ' model=' + model
-      + ' thinking=' + enableThinking.toString() + ' qwen=' + isQwen.toString() + ' stream=true');
+      + ' thinking=' + capability.thinking + ' effort=' + effortText + ' stream=true');
     const httpRequest = http.createHttp();
 
     return new Promise<void>((resolve: (value: void) => void, reject: (reason: Error) => void): void => {
@@ -341,19 +400,22 @@ export class LlmClient {
         }
       }, timeoutMs);
 
-      // 首字节看门狗: 15 秒内没有任何 dataReceive 就降级重取。
-      // deepseek-v4-pro 思考模式在 thinking_content 阶段可能 10-20 秒才发第一个 chunk,
-      // 15s 是首字节可诊断性与等待成本的折中; 真机靠首条数据日志判断数据到底有没有到。
+      // 首字节看门狗按能力分档 (issue #226):
+      //   toggle 本次关闭 / unsupported → 30s (首字节本就该快);
+      //   toggle 本次开启 / always_on  → 60s (思维链先于首个可见 token 生成)。
+      const thinkingActive: boolean = capability.thinking === 'always_on'
+        || (capability.thinking === 'toggle' && thinking.enabled);
+      const firstByteWatchdogMs: number = thinkingActive ? 60000 : 30000;
       firstByteTimer = setTimeout((): void => {
         if (!streamEnded && !dataReceived) {
           streamEnded = true;
           clearTimeout(timer);
           removeCancellation?.();
           httpRequest.destroy();
-          console.warn('[LlmClient] no first byte within 15s');
+          console.warn('[LlmClient] no first byte within ' + firstByteWatchdogMs.toString() + 'ms');
           reject(new LlmError('LLM stream no data', 'STREAM_FAILED') as Error);
         }
-      }, 30000);
+      }, firstByteWatchdogMs);
 
       removeCancellation = request.cancellationToken?.onCancel((): void => {
         if (streamEnded) {
