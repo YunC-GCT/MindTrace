@@ -71,6 +71,7 @@
 7. **多 session 并行必须隔离** — ≥2 个 session 同时开发时, 每个 session 用 `git worktree add` 独立工作区(或严格串行: 一个 session 的 commit+push 完成前另一个不做任何 git 写操作); **禁止**在共用 clone 里互相切分支或把他人未完成改动带进自己的 PR; 各分支照常 PR 合入 `develop` 同步。详见团队手册 §11
 8. **code review 必须暂停** — 进入 `/code-review` 阶段后立即停止，等待 user 明确确认；确认前不得继续 staging、commit、push 或其他后续操作。
 9. **端A2A 配置三件事** — 改 `agent_config.json` 后必须：① 平台重新导入 AgentCard ② 重新发真机测试 ③ 重启小艺。缺一条小艺仍读旧卡，表现为 `extension ability not exist` 或发了不回。
+10. **两种 AgentID 不是一回事** — 小艺开放平台**生成**的 `AgentID`（形如 `agent` + 32 位十六进制）用于应用内 `FunctionComponent` 拉起智能体；`agent_config.json` 里的 `agentId`（如 `mindtrace-note-agent`）只是端A2A 的应用内标识。填错时 `isAgentSupport()` 恒为 false，入口永远显示「暂不支持」。
 10. **不虚报可用** — 端A2A 的改动没跑过 `scripts/a2a-smoke/a2a_smoke.py` 且拿到 `ok: true`，不得写成“已通 / 可用 / 完成”。
 
 ---
