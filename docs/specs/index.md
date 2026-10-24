@@ -32,6 +32,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **Note review answer** | [`027-note-review-answer.md`](./027-note-review-answer.md) | [`0018`](../adr/0018-note-evidence-provenance.md) | **spec + test plan merged** (2026-09-26 — 可追溯复习回答 / 来源版本 / 反馈快照；测试方案已并入 §测试方案） |
 | **v1 端A2A** | [`031-xiaoyi-batch-capture-entry.md`](./031-xiaoyi-batch-capture-entry.md) | (spec-driven, 端A2A 协议在 [skill]) | **in progress** (2026-10-23 — P1 半屏浮窗入口 / P2 多选 / P3 落库；T5 异步取消除外) |
 | **模型网关 + 端A2A 运行时** | [`032-model-gateway-and-a2a-runtime.md`](./032-model-gateway-and-a2a-runtime.md) | (spec-driven，依据两份 research) | **proposed** (2026-10-24 — 构建顺序 / 单帧快照契约 / 端侧能力位) |
+| **进程边界** | [`033-process-boundaries.md`](./033-process-boundaries.md) | (spec-driven，依据 2026-10-24 事故) | **proposed** (2026-10-24 — 进程 × 模块可见性矩阵、受限 Kit 清单、barrel 传染检查) |
 
 ## Execution bundles
 

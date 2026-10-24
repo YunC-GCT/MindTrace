@@ -2,6 +2,7 @@
 
 > 本目录存放**某一时点的架构快照**：链路总览、工具清单、迁移基线、窗口布局策略。
 > 与 `docs/research/` 的区别：research 是调研过程与证据，architecture 是对当前实现的稳定描述。
+> `Design proposals` 区是例外：描述目标态设计，不代表当前实现。
 
 | File | Date | 内容 |
 |---|---|---|
@@ -10,6 +11,14 @@
 | [`langgraph-migration-baseline-2026-09-09.md`](./langgraph-migration-baseline-2026-09-09.md) | 2026-09-09 | LangGraph 迁移前基线 |
 | [`langgraph-terminology-map-2026-09-09.md`](./langgraph-terminology-map-2026-09-09.md) | 2026-09-09 | LangGraph 术语 ↔ 本项目命名对照 |
 | [`window-layout-strategy-2026-09-08.md`](./window-layout-strategy-2026-09-08.md) | 2026-09-08 | 窗口 / 浮层布局策略 |
+
+## Design proposals (target state)
+
+> 目标态设计提案，不代表当前实现；用于评审 / 交接给外部 Agent。
+
+| File | Date | 内容 |
+|---|---|---|
+| [`agent-application-architecture-design-2026-10-20.md`](./agent-application-architecture-design-2026-10-20.md) | 2026-10-20 | 应用 / Agent / 信息流目标态：Dispatcher 主 Agent、子图、自研 LangGraph 风格内核 |
 
 ## 命名与维护
 
