@@ -40,12 +40,13 @@ test('zooming past the old label cutoff fades gradually and retains a faint node
   assert.ok(project(130).alpha > 0);
 });
 
-test('offscreen endpoints stay on their viewport bearing and retain a fading connection', () => {
+test('offscreen endpoints retain world projection so dragging cannot bend a relation towards a screen edge', () => {
   const center = projectViewportNode(200, 300, 40, 40, 400, 600, 14);
   const outside = projectViewportNode(800, 450, 40, 40, 400, 600, 14);
-  assert.equal(outside.x, 384);
-  assert.equal(outside.y, 346);
-  assert.equal(outside.edgeGlow, 1);
+  assert.equal(outside.x, 800);
+  assert.equal(outside.y, 450);
+  assert.equal(outside.radius, 14);
+  assert.equal(outside.edgeGlow, 0);
   assert.equal(outside.labelAlpha, 0);
   assert.ok(outside.alpha > 0 && outside.alpha < center.alpha);
   assert.ok(relationSegment(center, outside));

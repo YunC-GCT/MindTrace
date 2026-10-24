@@ -16,9 +16,9 @@ async function loadSelection() {
   return import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 }
 
-test('renderer selection prefers native then web, and stops at an explicit error without 2D', async () => {
+test('temporary renderer policy uses web even on native-capable devices and never falls back to 2D', async () => {
   const { chooseInitialGalaxyRenderer, nextGalaxyRendererMode } = await loadSelection();
-  assert.equal(chooseInitialGalaxyRenderer(true), 'native');
+  assert.equal(chooseInitialGalaxyRenderer(true), 'web');
   assert.equal(nextGalaxyRendererMode('native', 'native_failure'), 'web');
   assert.equal(nextGalaxyRendererMode('web', 'web_failure'), 'unavailable');
 });
