@@ -195,6 +195,7 @@ function main() {
     ['naming-lint', 'scripts/naming-lint/index.mjs'],
     ['link-check', 'scripts/link-check/index.mjs'],
     ['doc-trace', 'scripts/doc-trace/index.mjs'],
+    ['process-boundary', 'scripts/process-boundary/check.mjs'],
   ]) {
     const r = runNode(script);
     checks.push({
