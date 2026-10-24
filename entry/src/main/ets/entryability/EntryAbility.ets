@@ -13,9 +13,11 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry } from 'common';
+import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
+import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
+import { DebugCaptureRunner } from '../services/DebugCaptureRunner';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
@@ -52,6 +54,8 @@ export default class EntryAbility extends UIAbility {
     }
     // issue #227: OCR 端口实现在 entry 侧注册 — Kit 只在本进程加载, agents 只依赖 common 契约
     OcrRecognizerRegistry.install(new CoreVisionOcrRecognizer());
+    // 文搜图端口实现同样在 entry 注册: textSearchImage 属 Core Vision Kit, 只能在 UI 进程加载
+    ImageSearchIndexRegistry.install(new CoreVisionImageSearchIndex());
     // 初始化 LLM 配置(持久化 API key/endpoint/model)
     LlmConfig.getInstance().init(this.context).catch((e: Error) => {
       hilog.error(DOMAIN, 'testTag', 'LlmConfig init failed: %{public}s', e.message);
@@ -84,6 +88,31 @@ export default class EntryAbility extends UIAbility {
       hilog.warn(DOMAIN, 'testTag', '%{public}s', chatFilesDirSeam.diagnostic);
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+  }
+
+  /**
+   * 启动参数 e2e=true 时自动跑一次批量链路自检。
+   * 给真机脚本用：`aa start ... --ps e2e true`，省去连点标题再滑到底找按钮的 UI 路径。
+   */
+  private runE2eIfRequested(): void {
+    const flag: Object | undefined = this.launchWant?.parameters?.['e2e'];
+    if (flag === undefined) {
+      return;
+    }
+    const mode: string = flag.toString();
+    hilog.info(0xE2E0, 'E2E', '%{public}s', 'launch-param e2e=' + mode + ', 触发自检');
+    if (mode === 'search') {
+      DebugCaptureRunner.runSearchProbe().catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', '检索探针异常: ' + e.message);
+      });
+      return;
+    }
+    if (mode !== 'true') {
+      return;
+    }
+    DebugCaptureRunner.run(this.context).catch((e: Error) => {
+      hilog.error(0xE2E0, 'E2E', '%{public}s', '批量自检异常: ' + e.message);
+    });
   }
 
   onDestroy(): void {
@@ -128,6 +157,8 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      // 自检依赖窗口/OCR 就绪，必须等内容加载完成再跑（onCreate 阶段跑会卡在 Dispatcher）
+      setTimeout((): void => this.runE2eIfRequested(), 1200);
     });
   }
 

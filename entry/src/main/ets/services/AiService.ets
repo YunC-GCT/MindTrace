@@ -26,6 +26,7 @@ import {
   DispatchPayload,
   DispatchResult,
   Logger,
+  ImageSearchIndexRegistry,
   NoteDraftReadyEvent,
   NoteGenerationRequest,
   NoteGenerationRoute,
@@ -81,11 +82,32 @@ export class AiService {
     log.info('capture 图片已准备,本地路径=' + resolved.localPath);
 
     // 2) 走整链
-    return this.processAndPersist({
+    const unit: KnowledgeUnit = await this.processAndPersist({
       kind: 'image',
       imageUri: resolved.localPath,
       userText: userText,
     });
+
+    // 3) 落库后再建文搜图索引：索引失败不影响笔记本身，只记日志
+    await this.indexForSearch(resolved.localPath, unit.id);
+    return unit;
+  }
+
+  /** 把已落库的图片写进 textSearchImage 索引；端口未安装时静默跳过。 */
+  private async indexForSearch(localPath: string, unitId: string): Promise<void> {
+    if (!ImageSearchIndexRegistry.isInstalled()) {
+      log.warn('capture 跳过文搜图索引: 端口未安装');
+      return;
+    }
+    const startedAt: number = Date.now();
+    try {
+      const ok: boolean = await ImageSearchIndexRegistry.require().insert(localPath);
+      log.info('capture 建索引 unitId=' + unitId + ' ok=' + (ok ? '1' : '0')
+        + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (e) {
+      const err: Error = e as Error;
+      log.warn('capture 建索引失败 unitId=' + unitId + ' err=' + err.message);
+    }
   }
 
   // 图片识别入口: 只 OCR + 分类，返回识别内容，不生成笔记、不入库

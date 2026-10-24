@@ -288,6 +288,8 @@ export { OcrConfig } from './ocr/OcrConfig';
 //   契约零 @kit 依赖; 实现在 entry (Kit 只允许在 UI 进程加载), 不进任何 barrel。
 export { OcrRecognizerRegistry } from './capability/ocr/OcrRecognizer';
 export type { OcrRecognizer, OcrTextResult } from './capability/ocr/OcrRecognizer';
+export { ImageSearchIndexRegistry } from './capability/imagesearch/ImageSearchIndex';
+export type { ImageSearchIndex, ImageSearchHit } from './capability/imagesearch/ImageSearchIndex';
 
 // ========== 数据库 (持久化存储) ==========
 export { DatabaseHelper } from './DatabaseHelper';

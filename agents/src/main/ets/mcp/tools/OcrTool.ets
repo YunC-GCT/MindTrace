@@ -60,6 +60,11 @@ interface OcrUploadFile {
  * - The local OCR service is used as fallback text OCR and formula OCR.
  * - A partial result still succeeds when either text or formula recognition works.
  */
+// v1 决定：OCR 全量走 Core Vision Kit，自研 OCR 服务不接线。
+// 下面的 HTTP 兜底代码保留为 MCP 接口的一部分（v2 再接），运行时由这个开关关闭：
+// 关掉后 recognizeImage 只调 Kit，Kit 出不来就直接失败，不再等本地服务。
+const SERVER_FALLBACK_ENABLED: boolean = false;
+
 export class OcrTool {
   private formulaEndpoint: string;
 
@@ -136,7 +141,8 @@ export class OcrTool {
       textError = this.errorText(e as OcrError);
     }
 
-    if (textError.length > 0 || mode !== 'text') {
+    // v1: 自研 OCR/公式服务不接（SERVER_FALLBACK_ENABLED=false），只认 Kit 结果
+    if (SERVER_FALLBACK_ENABLED && (textError.length > 0 || mode !== 'text')) {
       try {
         const response: CombinedOcrResponse = await this.requestCombinedWithRetry(filePath, mode);
         if (response.success) {

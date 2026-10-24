@@ -78,3 +78,4 @@ docs/architecture/*.html
 
 # archify 生成的架构图（本地产物）
 .archify/
+.e2e-run.log
