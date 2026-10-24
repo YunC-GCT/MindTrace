@@ -54,6 +54,7 @@ import {
   segmentSourceBundle,
   buildDeepOutline,
   validateDeepOutline,
+  captureProvenanceFromFragments,
 } from 'common';
 import type { DispatchPayload, CancellationToken } from 'common';
 import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
@@ -925,7 +926,11 @@ export class Dispatcher {
     requirement: NoteGenerationRequirement,
     model: KnowledgeModel,
   ): Promise<GenerationCandidateEvaluation> {
-    const candidate: KnowledgeUnit = model.draftToKnowledgeUnit(result.draft, 'note_generation');
+    const candidate: KnowledgeUnit = model.draftToKnowledgeUnit(
+      result.draft,
+      'note_generation',
+      captureProvenanceFromFragments(bundle.fragments),
+    );
     const issues: NoteGenerationIssue[] = [];
     for (const issue of result.verification.issues) {
       issues.push(issue);

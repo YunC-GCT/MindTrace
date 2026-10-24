@@ -29,7 +29,7 @@ export type { KnowledgeUnitExt, StructuredField, AiRawResponse } from './models/
 // 持久化接口 (D2 Ticket #5: entry 通过该接口注入 NoteDao 实现)
 export type { NoteDaoInterface, NoteCommitResult } from './models/NoteDaoInterface';
 
-// 重新导出 DispatchPayload 类型(定义在 common/models/CaptureChain.ets)
-//   UI 端 (entry/) 可以 `import type { DispatchPayload } from 'agents'`
+// 重新导出 DispatchPayload / CaptureProvenance 类型(定义在 common/models/CaptureChain.ets)
+//   UI 端 (entry/) 可以 `import type { DispatchPayload, CaptureProvenance } from 'agents'`
 //   也可以从 'common' 拿,两种都行
-export type { DispatchPayload } from 'common';
+export type { CaptureProvenance, DispatchPayload } from 'common';
