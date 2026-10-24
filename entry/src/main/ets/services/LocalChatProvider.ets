@@ -1,7 +1,10 @@
 /**
  * LocalChatProvider.ets — 系统端侧问答模型（Data Augmentation Kit）适配层
  *
- * 路径: common/src/main/ets/llm/LocalChatProvider.ets
+ * 路径: entry/src/main/ets/services/LocalChatProvider.ets
+ * 归属: entry（UI 进程专用）。不可放进 common barrel —— 否则 AgentExtAbility 仅 import LlmConfig
+ *       也会把 @kit.DataAugmentationKit 拉进扩展进程，该 Kit 限 PC/2in1 + 企业资质，初始化失败会
+ *       拖垮扩展进程的网络栈（proxy SendRequest failed 201 / http handover manager init fail）。
  * 职责: 封装 localChatModel.init() / chat()，把回调式结果收敛为完整文本（非流式）或增量回调（流式）
  * 依赖: @kit.DataAugmentationKit (localChatModel), @kit.BasicServicesKit (AsyncCallback/BusinessError), ../utils/logger
  *
@@ -24,7 +27,7 @@
  */
 import { AsyncCallback, BusinessError } from '@kit.BasicServicesKit';
 import { localChatModel } from '@kit.DataAugmentationKit';
-import { Logger } from '../utils/logger';
+import { Logger } from 'common';
 
 const localChatLog: Logger = new Logger('LocalChatProvider');
 

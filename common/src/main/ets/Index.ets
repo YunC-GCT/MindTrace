@@ -224,8 +224,8 @@ export {
 //   providers:  5 厂商预设(DeepSeek / Tongyi / GLM / Kimi / Doubao) + findProvider 工厂
 export { LlmConfig, DEFAULT_ENABLE_THINKING, DEFAULT_CONTEXT_WINDOW_TOKENS } from './llm/LlmConfig';
 export { OnDeviceLlm, ON_DEVICE_MODEL_DIR, ON_DEVICE_MODEL_FILE } from './llm/OnDeviceLlm';
-// LocalChatProvider: 系统端侧问答模型 (@hms.data.localChatModel) 适配层
-export { LocalChatProvider } from './llm/LocalChatProvider';
+// LocalChatProvider 已迁至 entry/services：@kit.DataAugmentationKit 只允许在 UI 进程加载，
+// 不能经 barrel 进入 AgentExtAbility 所在的扩展进程。
 export type { OnDeviceAvailability, OnDeviceReply } from './llm/OnDeviceLlm';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';

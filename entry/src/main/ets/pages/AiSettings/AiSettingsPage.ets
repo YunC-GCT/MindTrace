@@ -2,7 +2,8 @@
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_CARD, BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_MD, F_SM, F_XS, W_SEMIBOLD, R_LG, R_MD, S_2, S_4, LocalChatProvider } from "common"
+import { BG_CARD, BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_MD, F_SM, F_XS, W_SEMIBOLD, R_LG, R_MD, S_2, S_4 } from "common"
+import { LocalChatProvider } from "../../services/LocalChatProvider"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
