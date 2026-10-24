@@ -9,11 +9,12 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
 const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 
-test('LlmClient.callStreamInternal firstByteTimer must be >= 30000ms', () => {
+test('LlmClient.callStreamInternal firstByteTimer must be a sane guard (5s..30s)', () => {
   const firstByteMatch = llmClient.match(/firstByteTimer[\s\S]*?setTimeout[\s\S]*?,\s*(\d+)\s*\)/);
   assert.ok(firstByteMatch !== null, 'firstByteTimer setTimeout call must exist');
   const ms = parseInt(firstByteMatch[1], 10);
-  assert.ok(ms >= 30000, `firstByteTimer must be >= 30000ms, got ${ms}ms`);
+  // 15s 是当前取值：太长会让用户干等，太短会误降级；上限锁 30s 防回退成大值
+  assert.ok(ms >= 5000 && ms <= 30000, `firstByteTimer must be within 5000..30000ms, got ${ms}ms`);
 });
 
 test('ReplyService reply paths inherit enableThinking from LlmClient config', () => {

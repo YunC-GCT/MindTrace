@@ -30,6 +30,7 @@ import { IntentClassifier, ReplyContext } from './IntentClassifier';
 
 const replyLog: Logger = new Logger('ReplyService');
 const CHAT_REPLY_MAX_TOKENS: number = 12000;
+const STREAM_FAILURE_THRESHOLD: number = 2;
 
 export interface StreamReplyResult {
   content: string;
@@ -42,6 +43,9 @@ export type ReplyEventSink = (event: StreamEvent) => void;
 export class ReplyService {
   private readonly intentClassifier: IntentClassifier;
   private readonly contentProtocol: ContentProtocol = new ContentProtocol();
+  // 进程内流式熔断: 连续传输层失败达到阈值后, 本进程后续 stream() 跳过 SSE 直接走非流式 fallback。
+  private static streamTransportFailures: number = 0;
+  private static streamDisabled: boolean = false;
 
   constructor(intentClassifier: IntentClassifier) {
     this.intentClassifier = intentClassifier;
@@ -53,6 +57,15 @@ export class ReplyService {
 
   private async guardedComplete(context: ReplyContext, label: string, cancellationToken?: CancellationToken): Promise<string> {
     cancellationToken?.throwIfCancelled();
+    const userContentLen: number = context.userContent.length;
+    const memoryLen: number = context.memoryContext.length;
+    const evidenceLen: number = context.evidenceContext.length;
+    replyLog.info('[ReplyCtx] userContentLen=' + userContentLen.toString()
+      + ' memoryLen=' + memoryLen.toString()
+      + ' evidenceLen=' + evidenceLen.toString());
+    if (userContentLen === 0) {
+      replyLog.warn('[ReplyCtx] WARN empty userContent');
+    }
     const guarded: LlmGuardJsonResult = await new LlmGuard().callJsonWithRetry(
       this.intentClassifier.buildReplyMessages(context),
       {
@@ -74,6 +87,10 @@ export class ReplyService {
     cancellationToken?: CancellationToken,
   ): Promise<StreamReplyResult> {
     cancellationToken?.throwIfCancelled();
+    if (ReplyService.streamDisabled) {
+      replyLog.warn('[StreamCircuit] open, skip SSE');
+      return await this.fallback(context, cancellationToken);
+    }
     const client: LlmClient = new LlmClient();
     let content: string = '';
     let receivedEvent: boolean = false;
@@ -85,6 +102,8 @@ export class ReplyService {
     try {
       while (streamAttempts < 2) {
         try {
+          // 聊天首字节优先: 不传 enableThinking, 走 LlmClient 流式默认 false (关闭思考)。
+          // 思考模式只留给显式传 enableThinking: true 的推理型调用方。
           await client.call({
             messages: this.intentClassifier.buildStreamingReplyMessages(context),
             stream: true,
@@ -105,6 +124,9 @@ export class ReplyService {
             timeoutMs: 120000,
             cancellationToken: cancellationToken,
           });
+          if (receivedEvent) {
+            ReplyService.resetTransportFailures();
+          }
           break;
         } catch (e) {
           if (streamAttempts === 0 && !receivedEvent && ReplyService.isNetworkError(e)) {
@@ -122,6 +144,9 @@ export class ReplyService {
         }
       }
       if (this.shouldUseFallback(content)) {
+        if (!receivedEvent) {
+          ReplyService.recordTransportFailure();
+        }
         replyLog.warn('stream empty, using fallback');
         cancellationToken?.throwIfCancelled();
         return await this.fallback(context, cancellationToken);
@@ -138,6 +163,9 @@ export class ReplyService {
       return success;
     } catch (e) {
       cancellationToken?.throwIfCancelled();
+      if (receivedEvent) {
+        ReplyService.resetTransportFailures();
+      }
       if (receivedEvent && !this.shouldUseFallback(content)) {
         const interrupted: StreamReplyResult = {
           content: this.normalize(content),
@@ -148,6 +176,7 @@ export class ReplyService {
         return interrupted;
       }
       if (ReplyService.isTransportError(e)) {
+        ReplyService.recordTransportFailure();
         if (e instanceof LlmError) {
           throw new LlmError(e.message, e.kind);
         }
@@ -198,6 +227,27 @@ export class ReplyService {
       return e.kind === 'NETWORK_ERROR' || e.kind === 'TIMEOUT' || e.kind === 'STREAM_FAILED';
     }
     return false;
+  }
+
+  /** CLOSED → OPEN: 连续传输层失败达到阈值后熔断, 本进程不再发起 SSE。 */
+  private static recordTransportFailure(): void {
+    ReplyService.streamTransportFailures += 1;
+    if (ReplyService.streamTransportFailures >= STREAM_FAILURE_THRESHOLD && !ReplyService.streamDisabled) {
+      ReplyService.streamDisabled = true;
+      replyLog.warn('[StreamCircuit] open consecutive=' + ReplyService.streamTransportFailures.toString()
+        + ' threshold=' + STREAM_FAILURE_THRESHOLD.toString());
+      return;
+    }
+    replyLog.warn('[StreamCircuit] transport failure consecutive=' + ReplyService.streamTransportFailures.toString());
+  }
+
+  /** 收到至少 1 个 SSE chunk 即视为传输恢复, 连续失败计数清零 (OPEN 状态不因本次调用关闭)。 */
+  private static resetTransportFailures(): void {
+    if (ReplyService.streamTransportFailures > 0) {
+      replyLog.info('[StreamCircuit] sse chunk received, failure count reset from '
+        + ReplyService.streamTransportFailures.toString() + ' to 0');
+    }
+    ReplyService.streamTransportFailures = 0;
   }
 
   private validateChatAnswerJson(json: Record<string, Object>): LlmGuardValidationResult {

@@ -1203,6 +1203,27 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     return text.substring(0, limit) + '\n...';
   }
 
+  /**
+   * 重连结果是否只是兜底/检索状态文案, 而不是模型对用户问题的回答。
+   *
+   * 局限: IConversationReplyPort.complete() 只回 string, 没有 usedFallback 标记,
+   * 这里只能按文本特征识别。判断必须在 applyEvidenceToAnswer 之前做 —— 正常回答
+   * 追加的证据来源块本身就以“笔记检索：”开头, 之后再判断会把成功重连误判成兜底。
+   */
+  private static matchesFallbackShape(text: string): boolean {
+    const probe: string = text.trim();
+    if (probe.length === 0) {
+      return false;
+    }
+    if (probe.indexOf('我是 MindTrace AI 数学助手') >= 0) {
+      return true;
+    }
+    if (probe.indexOf('笔记检索：') >= 0) {
+      return true;
+    }
+    return false;
+  }
+
   private setStep(ref: ConversationRunRef, step: ConversationProgressStep): void {
     this.ensureNotCancelled(ref);
     this.cbs.onProgress(ref, step);
@@ -1242,6 +1263,16 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   ): Promise<boolean> {
     this.ensureNotCancelled(ref);
     const token: CancellationToken | undefined = this.cancellationToken(ref);
+    const recoverUserContentLen: number = replyContext.userContent.length;
+    const recoverMemoryLen: number = replyContext.memoryContext.length;
+    const recoverEvidenceLen: number = replyContext.evidenceContext.length;
+    workflowLog.info('[ReplyCtx] userContentLen=' + recoverUserContentLen.toString()
+      + ' memoryLen=' + recoverMemoryLen.toString()
+      + ' evidenceLen=' + recoverEvidenceLen.toString()
+      + ' via=recover');
+    if (recoverUserContentLen === 0) {
+      workflowLog.warn('[ReplyCtx] WARN empty userContent via=recover');
+    }
     let reconnected: string = '';
     try {
       reconnected = await this.replyService.complete(replyContext, token);
@@ -1259,6 +1290,19 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const outcome: ChatMessageOutcome = ConversationWorkflow.failureOutcome(e);
       console.warn('[StreamRecovery] reconnect_failed reason=' + reason + ' error=' + errorText);
       this.finishRunFailure(ref, e, outcome);
+      return false;
+    }
+    const reconnectedNormalized: string = this.replyService.normalize(reconnected);
+    if (ConversationWorkflow.matchesFallbackShape(reconnectedNormalized)) {
+      // 重连拿到的不是回答, 而是兜底文案: 不能当正常回答展示, 更不能标（已重连）
+      const normalizedPartial: string = this.replyService.normalize(partialContent);
+      const displayContent: string = (normalizedPartial.length > 0 ? normalizedPartial + '\n\n' : '')
+        + reconnectedNormalized + '\n\n（模型未返回内容，可重试）';
+      const fallbackEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayContent };
+      this.cbs.updateAiMsg(ref, msgId, fallbackEvent);
+      this.cbs.finishAiMsg(ref, msgId, 'interrupted');
+      console.warn('[StreamRecovery] reconnect_fallback_not_answer reason=' + reason
+        + ' chars=' + reconnectedNormalized.length.toString());
       return false;
     }
     const recovered: string = this.replyService.normalize(this.applyEvidenceToAnswer(evidence, reconnected));

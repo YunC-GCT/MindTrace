@@ -32,6 +32,7 @@
 
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { LlmConfig } from './LlmConfig';
 import { LlmErrorBodyFormatter } from './LlmErrorBodyFormatter';
 import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
@@ -203,6 +204,14 @@ export class LlmClient {
     return data.toString();
   }
 
+  // catch 到的值不一定是 Error(可能是 null/string), 统一转成可打印文本, 自身绝不抛
+  private static describeError(e: Object): string {
+    if (e instanceof Error) {
+      return e.message;
+    }
+    return String(e);
+  }
+
   private resolveEndpointUrl(baseUrl: string): string {
     const endpoint: string = baseUrl.trim();
     if (endpoint.length === 0) {
@@ -242,9 +251,13 @@ export class LlmClient {
     const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
     const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
+    // 流式调用默认关闭 thinking (2026-09-19): 聊天场景首字节优先 —— 思考模式下
+    // 首 token 要等整段思维链生成完才下发 (真机实测 firstChunkMs 8.1s, 最坏 15s+
+    // 被看门狗掐成 chars=0)。默认值改为 false 与非流式路径 (callJsonInternal) 对齐;
+    // 思考模式留给显式需要推理的调用方 —— 仅 request.enableThinking 显式传 true 时才开。
     const enableThinking: boolean = request.enableThinking !== undefined
       ? request.enableThinking
-      : this.config.getEnableThinking();
+      : false;
     const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
     const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
 
@@ -264,6 +277,8 @@ export class LlmClient {
     }
 
     if (isDeepSeek) {
+      // 保留 disabled 分支: 默认 enableThinking=false 时显式下发 thinking:{type:'disabled'},
+      // 避免服务端沿用账号默认开启思考而把首字节再次拖后。
       const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
       bodyObj['thinking'] = thinkingCfg as Object;
       if (enableThinking) {
@@ -326,15 +341,16 @@ export class LlmClient {
         }
       }, timeoutMs);
 
-      // 首字节超时: 30 秒内无数据则降级(2026-09-07 PR1j: deepseek-v4-pro 思考模式
-      // thinking_content 阶段可能 10-20 秒才发出第一个 chunk,8 秒不够)
+      // 首字节看门狗: 15 秒内没有任何 dataReceive 就降级重取。
+      // deepseek-v4-pro 思考模式在 thinking_content 阶段可能 10-20 秒才发第一个 chunk,
+      // 15s 是首字节可诊断性与等待成本的折中; 真机靠首条数据日志判断数据到底有没有到。
       firstByteTimer = setTimeout((): void => {
         if (!streamEnded && !dataReceived) {
           streamEnded = true;
           clearTimeout(timer);
           removeCancellation?.();
           httpRequest.destroy();
-          console.warn('[LlmClient] no data received within 30s, triggering fallback');
+          console.warn('[LlmClient] no first byte within 15s');
           reject(new LlmError('LLM stream no data', 'STREAM_FAILED') as Error);
         }
       }, 30000);
@@ -351,28 +367,48 @@ export class LlmClient {
       });
 
       // 订阅流式数据事件
+      // 真机: dataReceive 回调里任何未捕获异常都会被服务端翻译成
+      // "Failed to write the received data to the disk or application code=undefined",
+      // 整条流当场报废。所以这里必须吞掉全部异常, 只打日志。
       httpRequest.on('dataReceive', (chunk: ArrayBuffer): void => {
-        if (streamEnded) { return; }
-        dataReceived = true;
-        clearTimeout(firstByteTimer);
         try {
+          if (streamEnded) { return; }
+          dataReceived = true;
+          clearTimeout(firstByteTimer);
+          const chunkBytes: number = chunk.byteLength;
           const text: string = LlmClient.arrayBufferToString(chunk);
           chunkCount += 1;
-          receivedBytes += text.length;
+          receivedBytes += chunkBytes;
+          if (chunkCount === 1) {
+            const rawPreview: string = text.substring(0, 120);
+            const redactedPreview: string = LlmErrorBodyFormatter
+              .redactSensitiveText(rawPreview)
+              .replace(/\r?\n/g, '\\n');
+            llmLog.info('first data bytes=' + chunkBytes.toString()
+              + ' chars=' + text.length.toString()
+              + ' preview=' + redactedPreview);
+          }
           sseLineBuffer += text;
           sseLineBuffer = this.processSseBuffer(sseLineBuffer, trackedEventSink);
         } catch (e) {
-          if (request.cancellationToken?.isCancelled() === true) {
-            if (!streamEnded) {
-              streamEnded = true;
-              clearTimeout(timer);
-              clearTimeout(firstByteTimer);
-              httpRequest.destroy();
-              reject(new Error('CONVERSATION_CANCELLED'));
+          console.warn('[LlmClient] dataReceive error: ' + LlmClient.describeError(e));
+          try {
+            if (request.cancellationToken?.isCancelled() === true) {
+              if (!streamEnded) {
+                streamEnded = true;
+                clearTimeout(timer);
+                clearTimeout(firstByteTimer);
+                removeCancellation?.();
+                httpRequest.destroy();
+                reject(new Error('CONVERSATION_CANCELLED'));
+              }
+              return;
             }
-            return;
+          } catch (cancelError) {
+            // 取消状态读取/清理本身失败也不能向上抛, 否则同样毁掉整条流
+            console.warn('[LlmClient] dataReceive cancel cleanup error: '
+              + LlmClient.describeError(cancelError));
           }
-          console.warn('[LlmClient] dataReceive error: ' + ((e as Error).message ?? String(e)));
         }
       });
 
@@ -408,15 +444,20 @@ export class LlmClient {
         method: http.RequestMethod.POST,
         header: {
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
           'Authorization': 'Bearer ' + apiKey,
         },
         extraData: bodyJson,
         connectTimeout: timeoutMs,
         readTimeout: timeoutMs,
       }, (err: Error, data: number | undefined): void => {
-        llmLog.info('requestInStream cb err=' + (err ? err.message : 'null') + ' code=' + this.streamCallbackCode(data));
+        const errCode: number | undefined = err ? (err as BusinessError).code : undefined;
+        llmLog.info('requestInStream cb err=' + (err ? err.message : 'null')
+          + ' errCode=' + this.streamCallbackCode(errCode)
+          + ' code=' + this.streamCallbackCode(data));
         if (err) {
-          console.error('[LlmClient] stream err: ' + err.message);
+          console.error('[LlmClient] stream err: ' + err.message
+            + ' errCode=' + this.streamCallbackCode(errCode));
           if (!streamEnded) {
             streamEnded = true;
             clearTimeout(timer);
