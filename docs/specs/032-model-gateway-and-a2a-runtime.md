@@ -78,7 +78,7 @@
 
 - 现有 `IConversationReplyPort.complete()` 的签名不动（调用方多）。
 - 新增结构化返回：`completeRouted(context): Promise<RoutedReply>`，`RoutedReply = { text, source, degraded, reason }`；`complete()` 保持返回字符串，内部委托 `completeRouted`。
-- `stream()` 在 v1 **不参与路由**（端侧无流式能力），行为保持现状并在 spec 里写明——不假装它已统一。
+- `stream()` **也参与路由**（2026-10-24 修订）：端侧就绪时用 `localChatModel` 的 `isStream` 增量喂气泡，否则走云端 SSE；两条路径都打 `[StreamRoute] source=on_device|remote`。原 v1 曾规定「流式不路由」，因端侧流式能力已确认存在而作废。
 
 ### 5. 观测（P1）
 

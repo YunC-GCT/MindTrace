@@ -23,6 +23,7 @@ import {
   SourceBundle,
   NoteTopicCandidate,
 } from 'common';
+import type { StreamEvent } from 'common';
 import { AiService } from '../../services/AiService';
 import { IntentClassifier, ReplyContext, TextIntent } from '../../services/IntentClassifier';
 import { ReplyEventSink, ReplyService, StreamReplyResult } from '../../services/ReplyService';
@@ -130,10 +131,16 @@ class ConversationIntentAdapter implements IConversationIntentPort {
 class ConversationReplyAdapter implements IConversationReplyPort {
   private readonly reply: ReplyService;
   private readonly router: ModelRouter;
+  private localChat?: LocalChatProvider;
 
   constructor(reply: ReplyService, router: ModelRouter) {
     this.reply = reply;
     this.router = router;
+  }
+
+  /** production() 注入与 ModelRouter 共享的同一个 LocalChatProvider，避免二次 init 与状态分叉。 */
+  attachLocalChat(localChat: LocalChatProvider): void {
+    this.localChat = localChat;
   }
 
   async isConfigured(): Promise<boolean> { return await LlmConfig.getInstance().isConfigured(); }
@@ -161,6 +168,41 @@ class ConversationReplyAdapter implements IConversationReplyPort {
     sink: ReplyEventSink,
     token?: CancellationToken,
   ): Promise<StreamReplyResult> {
+    token?.throwIfCancelled();
+    const localChat: LocalChatProvider | undefined = this.localChat;
+
+    // 端侧就绪优先：真流式回调直接转成 text delta；失败不在本层兜底，
+    // 交给 ConversationWorkflow.recoverStreamReply 统一 fallback + 标注。
+    if (localChat !== undefined && localChat.isReady()) {
+      const startedAt: number = Date.now();
+      let cancelled: boolean = false;
+      replyPortLog.info('[StreamRoute] source=on_device');
+      const content: string = await localChat.askStream(
+        context.userContent,
+        (chunk: string, _finished: boolean): void => {
+          if (cancelled || chunk.length === 0) {
+            return;
+          }
+          if (token !== undefined && token.isCancelled()) {
+            cancelled = true;
+            return;
+          }
+          const textEvent: StreamEvent = { type: 'text', delta: chunk };
+          sink(textEvent);
+        },
+      );
+      token?.throwIfCancelled();
+      replyPortLog.info('[StreamRoute] source=on_device chars=' + content.length.toString()
+        + ' elapsedMs=' + (Date.now() - startedAt).toString());
+      const onDeviceResult: StreamReplyResult = {
+        content: content,
+        interrupted: false,
+        usedFallback: false,
+      };
+      return onDeviceResult;
+    }
+
+    replyPortLog.info('[StreamRoute] source=remote');
     return await this.reply.stream(context, sink, token);
   }
 
@@ -318,9 +360,12 @@ export class ConversationWorkflowPorts {
       replyPortLog.error('localChat init crashed: ' + e.message);
     });
     const router: ModelRouter = new ModelRouter(context.filesDir, replyService, localChat);
+    // 保持既有构造签名不变；流式路由复用同一个 localChat 实例
+    const replyAdapter: ConversationReplyAdapter = new ConversationReplyAdapter(replyService, router);
+    replyAdapter.attachLocalChat(localChat);
     return new ConversationWorkflowPorts(
       new ConversationIntentAdapter(classifier),
-      new ConversationReplyAdapter(replyService, router),
+      replyAdapter,
       new ConversationCaptureAdapter(context),
       noteRoute,
     );
