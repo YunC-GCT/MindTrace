@@ -50,9 +50,31 @@ export function boundaryViolations(relPath, text) {
       if (spec.startsWith('entry/')) {
         out.push(`agents must not import entry (${spec})`);
       }
-      // L2 编排层不得直接依赖 L3 的 Kit 实现（spec 033 / #227）
-      if (spec === '@kit.CoreVisionKit' || spec === '@kit.ImageKit') {
-        out.push(`agents must not import ${spec} — 走 OcrRecognizer 端口`);
+      // L2 编排层只依赖端口：平台能力一律走 common 契约（spec 033 / #227 / #228）
+      if ((spec.startsWith('@kit.') || spec.startsWith('@ohos.')) && spec !== '@kit.NetworkKit') {
+        out.push(`agents may only @kit.NetworkKit, got ${spec} — 走端口，不要直接依赖能力 Kit`);
+      }
+    }
+  }
+
+  // L3/L4 不许反向依赖上层（#228）
+  if (p.startsWith('common/')) {
+    for (const spec of imports) {
+      if (spec === 'agents' || spec.startsWith('agents/')) {
+        out.push(`common must not import agents (${spec}) — 下层不许依赖编排层`);
+      }
+      if (spec === 'entry' || spec.startsWith('entry/')) {
+        out.push(`common must not import entry (${spec}) — 下层不许依赖应用层`);
+      }
+    }
+  }
+
+  // 数据层不许反向依赖 UI（#228）
+  if (/^entry\/src\/main\/ets\/database\//.test(p)) {
+    for (const spec of imports) {
+      const ui = /(\.\.?\/)?(pages|overlays|viewmodels)\//.exec(spec);
+      if (ui) {
+        out.push(`database must not import ${ui[2]} (${spec}) — 数据层不反向依赖 UI，通过 service 访问`);
       }
     }
   }
