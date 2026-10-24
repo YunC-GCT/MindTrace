@@ -1,7 +1,7 @@
 /**
  * LocalChatProvider.ets — 系统端侧问答模型（Data Augmentation Kit）适配层
  *
- * 路径: entry/src/main/ets/services/LocalChatProvider.ets
+ * 路径: common/src/main/ets/llm/LocalChatProvider.ets
  * 归属: entry（UI 进程专用）。不可放进 common barrel —— 否则 AgentExtAbility 仅 import LlmConfig
  *       也会把 @kit.DataAugmentationKit 拉进扩展进程，该 Kit 限 PC/2in1 + 企业资质，初始化失败会
  *       拖垮扩展进程的网络栈（proxy SendRequest failed 201 / http handover manager init fail）。
@@ -26,8 +26,22 @@
  *   - 对象字面量先声明 localChatModel.QuestionInfo / Config 类型
  */
 import { AsyncCallback, BusinessError } from '@kit.BasicServicesKit';
-import { localChatModel } from '@kit.DataAugmentationKit';
-import { Logger } from 'common';
+import type { localChatModel } from '@kit.DataAugmentationKit';
+import { Logger } from '../utils/logger';
+
+/**
+ * 受限 Kit 懒加载（spec 033 §6 S2）。
+ * @kit.DataAugmentationKit 只在 main 进程可用；静态 import 会让 common barrel 在扩展进程里
+ * 也求值它，导致 :agent 的网络栈初始化失败（2026-10-24 A2A 挂死）。改成运行时 import()。
+ */
+let kitNamespace: ESObject | null = null;
+
+async function requireLocalChatKit(): Promise<ESObject> {
+  if (kitNamespace === null) {
+    kitNamespace = await import('@kit.DataAugmentationKit') as ESObject;
+  }
+  return kitNamespace;
+}
 
 const localChatLog: Logger = new Logger('LocalChatProvider');
 
@@ -63,7 +77,8 @@ export class LocalChatProvider {
     }
     const startedAt: number = Date.now();
     try {
-      const ok: boolean = await localChatModel.init();
+      const ns: ESObject = await requireLocalChatKit();
+      const ok: boolean = await ns.localChatModel.init() as boolean;
       this.initialized = ok;
       const elapsed: number = Date.now() - startedAt;
       if (ok) {
@@ -102,6 +117,7 @@ export class LocalChatProvider {
       isStream: false,
     };
     const startedAt: number = Date.now();
+    const ns: ESObject = await requireLocalChatKit();
 
     return await new Promise<string>((resolve: (value: string) => void,
       reject: (reason: Error) => void): void => {
@@ -142,7 +158,7 @@ export class LocalChatProvider {
           }
         };
 
-      localChatModel.chat(info, config, onAnswer).catch((e: BusinessError): void => {
+      ns.localChatModel.chat(info, config, onAnswer).catch((e: BusinessError): void => {
         if (settled) {
           return;
         }
@@ -186,6 +202,7 @@ export class LocalChatProvider {
       isStream: true,
     };
     const startedAt: number = Date.now();
+    const ns: ESObject = await requireLocalChatKit();
 
     return await new Promise<string>((resolve: (value: string) => void,
       reject: (reason: Error) => void): void => {
@@ -233,7 +250,7 @@ export class LocalChatProvider {
           }
         };
 
-      localChatModel.chat(info, config, onAnswer).catch((e: BusinessError): void => {
+      ns.localChatModel.chat(info, config, onAnswer).catch((e: BusinessError): void => {
         if (settled) {
           return;
         }

@@ -9,11 +9,11 @@
  *   Workflow request -> typed port -> external service -> typed domain result.
  */
 import { common } from '@kit.AbilityKit';
-import { LocalChatProvider } from '../../services/LocalChatProvider';
 import {
   CancellationToken,
   ClassificationResult,
   LlmConfig,
+  LocalChatProvider,
   Logger,
   NoteDraftReadyEvent,
   NoteGenerationRoute,

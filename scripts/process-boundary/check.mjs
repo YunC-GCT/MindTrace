@@ -63,16 +63,27 @@ const RE_TYPE_EXPORT = /^\s*export\s+type\s*\{/;
 const stripComments = (text) =>
   text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
-/** 抽出所有会触发模块求值的说明符（静态 import / 值 re-export / 动态 import） */
+/**
+ * 抽出模块说明符，并区分两类边：
+ *   static — 加载期就求值（静态 import / 值 re-export），越界即事故；
+ *   lazy   — 运行时才 import()，加载期不触碰，只在真正调用该路径时求值。
+ * 这个区分是 spec 033 §6 S2 的前提：懒加载让 barrel 在扩展进程里安全求值。
+ */
 export function parseImports(rawText) {
   const text = stripComments(rawText);
-  const out = [];
-  for (const m of text.matchAll(/import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g)) out.push(m[1]);
-  for (const m of text.matchAll(/export\s+(?:type\s+)?[^'"]*?\s+from\s+['"]([^'"]+)['"]/g)) {
-    if (!RE_TYPE_EXPORT.test(m[0])) out.push(m[1]);
+  const seen = new Map();
+  for (const m of text.matchAll(/import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g)) {
+    // import type 在运行时被擦除，不构成加载边
+    if (/^import\s+type\b/.test(m[0])) continue;
+    seen.set(m[1], 'static');
   }
-  for (const m of text.matchAll(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) out.push(m[1]);
-  return [...new Set(out)];
+  for (const m of text.matchAll(/export\s+(?:type\s+)?[^'"]*?\s+from\s+['"]([^'"]+)['"]/g)) {
+    if (!RE_TYPE_EXPORT.test(m[0]) && !seen.has(m[1])) seen.set(m[1], 'static');
+  }
+  for (const m of text.matchAll(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    if (!seen.has(m[1])) seen.set(m[1], 'lazy');
+  }
+  return [...seen.entries()].map(([spec, kind]) => ({ spec, kind }));
 }
 
 /** 运行时加载的页面：loadContent('pages/X') / pushUrl({ url: 'pages/X' }) */
@@ -138,30 +149,34 @@ export function walkGraph(root, entries) {
   const unresolved = [];
 
   while (queue.length > 0) {
-    const { file, chain, process } = queue.shift();
+    const { file, chain, process, lazy } = queue.shift();
+    // 懒边传播：一旦这条链是运行时 import()，后续命中都只算警告
     const abs = join(root, file);
-    if (!existsSync(abs) || seen.has(`${file}|${process}`)) continue;
-    seen.add(`${file}|${process}`);
+    // 静态可达与懒可达要分开记：同一文件经静态边到达时，违规更严重
+    const key = `${file}|${process}|${lazy ? 1 : 0}`;
+    if (!existsSync(abs) || seen.has(key)) continue;
+    seen.add(key);
 
     const text = readFileSync(abs, 'utf8');
     const specs = parseImports(text);
 
-    for (const spec of specs) {
+    for (const { spec, kind } of specs) {
+      const lazy = kind === 'lazy';
       const mod = BARRELS[spec];
       if (mod) {
         const barrelText = readFileSync(join(root, mod), 'utf8');
         for (const target of parseBarrelExports(barrelText)) {
           const resolved = resolveSpec(root, mod, target);
-          if (resolved) queue.push({ file: resolved, chain: [...chain, `${spec} → ${target}`], process });
+          if (resolved) queue.push({ file: resolved, chain: [...chain, `${spec} → ${target}`], process, lazy });
         }
         continue;
       }
       const rel = resolveSpec(root, file, spec);
       if (rel) {
-        queue.push({ file: rel, chain: [...chain, rel], process });
+        queue.push({ file: rel, chain: [...chain, rel], process, lazy });
       } else if (spec.startsWith('@') || spec.includes('/')) {
         const allowed = RESTRICTED[spec];
-        if (allowed && !allowed.includes(process)) hits.push({ kit: spec, chain, process });
+        if (allowed && !allowed.includes(process)) hits.push({ kit: spec, chain, process, lazy });
       }
     }
 
@@ -177,12 +192,12 @@ export function walkGraph(root, entries) {
     }
 
     // R3：扩展入口不得 import ui-only/
-    if (chain.length > 0 && /agentextability\//.test(file) && specs.some((s) => s.includes('ui-only'))) {
+    if (chain.length > 0 && /agentextability\//.test(file) && specs.some((s) => s.spec.includes('ui-only'))) {
       hits.push({ kit: 'ui-only (R3)', chain, process });
     }
   }
 
-  return { hits, files: [...seen].map((s) => s.split('|')[0]), unresolved };
+  return { hits, files: [...new Set([...seen].map((s) => s.split('|')[0]))], unresolved };
 }
 
 export function discoverEntries(root) {
@@ -202,7 +217,8 @@ export function discoverEntries(root) {
 export function runCheck(root = DEFAULT_ROOT) {
   const entries = discoverEntries(root);
   const graph = walkGraph(root, entries);
-  return { entries, graph, ok: graph.hits.length === 0 && graph.unresolved.length === 0 };
+  const blocking = graph.hits.filter((h) => !h.lazy);
+  return { entries, graph, blocking, ok: blocking.length === 0 && graph.unresolved.length === 0 };
 }
 
 function main() {
@@ -215,13 +231,18 @@ function main() {
     process.exit(ok ? 0 : 1);
   }
 
+  const warnings = graph.hits.filter((h) => h.lazy);
   if (ok) {
     console.log(`[PASS] process-boundary — ${entries.length} 入口 / ${graph.files.length} 个文件可达，受限能力未越界`);
+    for (const w of warnings) {
+      console.log(`  [WARN] 懒加载：${w.process} 进程运行到该路径时会加载 ${w.kit}`);
+      console.log(`    链：${w.chain.join(' → ')}`);
+    }
     return;
   }
 
   console.log('[FAIL] process-boundary');
-  for (const hit of graph.hits) {
+  for (const hit of graph.hits.filter((h) => !h.lazy)) {
     console.log(`  入口进程 ${hit.process} 可达受限能力 ${hit.kit}`);
     console.log(`    链：${hit.chain.join(' → ')}`);
     const allowed = RESTRICTED[hit.kit];

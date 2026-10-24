@@ -102,7 +102,8 @@ A2A 的 LLM 调用永不返回：日志停在「LLM 调用开始」，60s 超时
    - `x` 为 `common` / `agents` → 展开 `Index.ets` 的 re-export 目标，**但 `export type` 跳过**（运行时被擦除，17 条类型导出不能算加载）；
    - `x` 以 `.` 开头 → 相对路径解析成工程内文件，继续遍历；
    - `x` 以 `@` 开头 → 查 §4 清单。
-3. **运行时页面加载也要进图**：`windowStage.loadContent('pages/X')`、`session.loadContent(...)`、`router` 的 `url: 'pages/X'`，按模块的 `src/main/ets` 根解析（`AgentUIExtAbility → pages/AgentUiCard → common` 就是这条路径漏掉的那一环）。解析失败直接失败关闭。
+3. **两类边分开算**：静态 `import` / 值 re-export / `loadContent` 是**加载期**边，越界即失败；`import()` 动态加载是**懒边**，加载期不求值，只报 `[WARN] 懒加载：<进程> 运行到该路径时会加载 <kit>`。`import type` 与 `export type` 一样在运行时被擦除，不构成边。
+4. **运行时页面加载也要进图**：`windowStage.loadContent('pages/X')`、`session.loadContent(...)`、`router` 的 `url: 'pages/X'`，按模块的 `src/main/ets` 根解析（`AgentUIExtAbility → pages/AgentUiCard → common` 就是这条路径漏掉的那一环）。解析失败直接失败关闭。
 3. 命中清单但进程不在白名单 → 失败，打印**完整路径链**：
 
 ```
@@ -122,7 +123,7 @@ A2A 的 LLM 调用永不返回：日志停在「LLM 调用开始」，60s 超时
 |---|---|---|
 | S1 | 落 `process-boundary` 检查并接 gate | ✅ 已落：6 入口 / 378 文件可达；4 条回归测试（含 barrel 传染、`export type` 不误报、`loadContent` 入图） |
 | S1.5 | **OCR 端口化**（#227）：`agents` 零 vision Kit，`OcrRecognizer` 契约在 `common`、实现在 `entry` | ✅ `agents` 无 `@kit.CoreVisionKit`/`@kit.ImageKit`；gate `--all` PASS；真机冷启动正常 |
-| S2 | spike：`LocalChatProvider` 改**动态 import** Kit，回迁 `common` | HSP 打包支持动态 import；小艺仍 1.5s 返回 |
+| S2 | 动态 import 回迁 `LocalChatProvider` 到 `common` | ✅ 构建通过；小艺真机 **1347ms / 54 字**；`process-boundary` 只剩一条 `[WARN] 懒加载`，无加载期越界 |
 | S3 | 若 S2 不可行：拆 `capabilities` HSP（只被 `entry` 依赖） | `:agent` 的依赖树里不含 `capabilities` |
 | S4 | 红线 + phase tracker 记账 | AGENTS 红线 11 升级为「先登记、再进 barrel」 |
 

@@ -9,8 +9,7 @@
  *       4) 端侧未就绪且没有配置 -> 明确报错，不静默走别的
  * 依赖: LlmConfig、LocalChatProvider、ReplyService
  */
-import { LlmConfig } from 'common';
-import { LocalChatProvider } from './LocalChatProvider';
+import { LlmConfig, LocalChatProvider } from 'common';
 import type { ReplyContext } from './IntentClassifier';
 import type { ReplyService } from './ReplyService';
 

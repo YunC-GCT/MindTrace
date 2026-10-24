@@ -89,6 +89,39 @@ test('loadContent 页面要进可达图', () => {
   assert.ok(graph.hits.some((h) => h.kit === '@kit.DataAugmentationKit' && h.process === 'agentUI'));
 });
 
+test('动态 import 只算警告：懒加载不构成加载期越界', () => {
+  const root = fixture({
+    'entry/src/main/module.json5': AGENT_MANIFEST,
+    'entry/src/main/ets/entryability/EntryAbility.ets': `import { P } from 'common';\n`,
+    'entry/src/main/ets/agentextability/AgentExtAbility.ets': `import { P } from 'common';\n`,
+    'common/oh-package.json5': '{ "name": "common", "main": "./src/main/ets/Index.ets" }',
+    'common/src/main/ets/Index.ets': `export { P } from './llm/P';\n`,
+    'common/src/main/ets/llm/P.ets':
+      `let ns: ESObject | null = null;\nasync function k(): Promise<ESObject> {\n  if (ns === null) { ns = await import('@kit.DataAugmentationKit') as ESObject; }\n  return ns;\n}\nexport class P {}\n`,
+  });
+
+  const { ok, graph } = runCheck(root);
+  assert.equal(ok, true, '懒加载不应让 gate 失败');
+  const hit = graph.hits.find((h) => h.kit === '@kit.DataAugmentationKit');
+  assert.ok(hit, '仍要报出来，供人确认该路径不会被扩展调用');
+  assert.equal(hit.lazy, true);
+});
+
+test('import type 不是加载边（运行时被擦除）', () => {
+  const root = fixture({
+    'entry/src/main/module.json5': AGENT_MANIFEST,
+    'entry/src/main/ets/entryability/EntryAbility.ets': `import type { T } from 'common';\n`,
+    'entry/src/main/ets/agentextability/AgentExtAbility.ets': `import type { T } from 'common';\n`,
+    'common/oh-package.json5': '{ "name": "common", "main": "./src/main/ets/Index.ets" }',
+    'common/src/main/ets/Index.ets': `export { kitHolder } from './llm/kitHolder';\n`,
+    'common/src/main/ets/llm/kitHolder.ets': `import { localChatModel } from '@kit.DataAugmentationKit';\nexport const kitHolder = localChatModel;\n`,
+  });
+
+  const { ok, graph } = runCheck(root);
+  assert.equal(ok, true);
+  assert.equal(graph.hits.length, 0, '类型导入不该把 Kit 拉进图');
+});
+
 test('卡片宿主进程允许 FormKit，main 进程也允许（推快照）', () => {
   const root = fixture({
     'entry/src/main/module.json5': AGENT_MANIFEST.replace(
