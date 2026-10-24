@@ -4,9 +4,14 @@
  * 职责：管理 API Key、端点、模型、OCR 配置的读写与连接测试。
  * 依赖：LlmConfig、OcrConfig、LlmClient、OcrTool
  */
-import { LlmClient, LlmConfig, OcrConfig } from "common"
-import type { CustomVendorConfig, ProviderConfig } from "common"
-import { PROVIDERS } from "common"
+import {
+  LlmClient, LlmConfig, OcrConfig, PROVIDERS,
+  discoverModels, getProviderCatalog, resolveModel,
+} from "common"
+import type {
+  CustomVendorConfig, DiscoveryResult, ModelEffortInfo, ModelListing,
+  ProviderConfig, ProviderCatalog, ResolvedModel,
+} from "common"
 import { OcrTool } from "agents"
 import type { OcrRecognitionResult } from "agents"
 
@@ -308,6 +313,121 @@ export class AiSettingsViewModel {
 
   selectVendor(id: string): void {
     this.vendorId = id
+  }
+
+  // ===== 2026-10-25 Phase 1.5: 设置页模型清单(先选提供商, 再列该提供商的模型) =====
+  // 只读投影, 不写 preferences:
+  //   - catalog 有内置清单(deepseek) → 直接返回 catalog listing(displayName/contextWindow)
+  //   - catalog 为空(tongyi/glm/kimi/doubao/custom) → 把 vendor_models 解析成 listing
+  getModelsForVendor(vendorId: string): ModelListing[] {
+    const id: string = vendorId.trim()
+    if (id.length === 0) { return [] }
+    const catalog: ProviderCatalog | null = getProviderCatalog(id)
+    if (catalog !== null && catalog.models.length > 0) {
+      return catalog.models.slice(0)
+    }
+    const saved: string[] | undefined = this.vendorModels[id]
+    let models: string[] = saved !== undefined
+      ? saved
+      : LlmConfig.getInstance().getVendorModels(id)
+    if (models.length === 0) {
+      // custom vendor 可能只有入口配置里的首个模型, 尚无 vendor_models
+      for (const v of this.customVendors) {
+        if (v.id === id && v.model.trim().length > 0) {
+          models = [v.model]
+          break
+        }
+      }
+    }
+    return this.toUserListings(id, models)
+  }
+
+  private toUserListings(vendorId: string, models: string[]): ModelListing[] {
+    const out: ModelListing[] = []
+    for (const raw of models) {
+      const modelId: string = raw.trim()
+      if (modelId.length === 0) { continue }
+      if (this.containsListingId(out, modelId)) { continue }
+      const resolved: ResolvedModel = resolveModel(vendorId, modelId)
+      if (resolved.listing !== null) {
+        out.push(resolved.listing)
+        continue
+      }
+      const windowValue: number | undefined = this.modelContextWindows[vendorId + '::' + modelId]
+      const effort: ModelEffortInfo = { supportedLevels: [], defaultLevel: '' }
+      const listing: ModelListing = {
+        id: modelId,
+        displayName: modelId,
+        providerId: vendorId,
+        contextWindow: windowValue !== undefined ? windowValue : 0,
+        maxOutputTokens: 0,
+        inputModalities: [],
+        effort: effort,
+        source: 'user',
+      }
+      out.push(listing)
+    }
+    return out
+  }
+
+  private containsListingId(listings: ModelListing[], id: string): boolean {
+    for (const listing of listings) {
+      if (listing.id === id) { return true }
+    }
+    return false
+  }
+
+  // 拉取候选: 用设置页草稿/已保存的 per-vendor key(不回退全局 vault,
+  // 避免把一个厂商的 key 发到另一个厂商的 endpoint)。
+  // 只返回 DiscoveryResult, 不落盘 — 落盘只能由用户点 chip 触发 commitVendorModel。
+  refreshModels(vendorId: string): Promise<DiscoveryResult> {
+    const id: string = vendorId.trim()
+    const endpoint: string = this.endpointForVendor(id)
+    const draftKey: string | undefined = this.vendorApiKeys[id]
+    const apiKey: string = draftKey !== undefined ? draftKey : ''
+    return discoverModels(id, endpoint, apiKey, 15000)
+  }
+
+  // 用户显式点击「未保存」chip 才写 preferences; 同步刷新内存镜像供 UI 高亮。
+  async commitVendorModel(vendorId: string, model: string, contextWindow: number): Promise<boolean> {
+    const id: string = vendorId.trim()
+    const modelId: string = model.trim()
+    if (id.length === 0 || modelId.length === 0) { return false }
+    try {
+      const llm: LlmConfig = LlmConfig.getInstance()
+      // 先把当前 vendor 已知模型补齐, 避免只落盘候选时把 seed 默认模型挤掉
+      const known: string[] | undefined = this.vendorModels[id]
+      const baseModels: string[] = known !== undefined ? known : llm.getVendorModels(id)
+      for (const m of baseModels) {
+        await llm.addVendorModel(id, m)
+      }
+      await llm.addVendorModel(id, modelId)
+      await llm.setActiveVendorModel(id, modelId)
+      if (contextWindow > 0) {
+        await llm.setContextWindowTokens(id, modelId, contextWindow)
+      }
+      for (const m of baseModels) {
+        this.addVendorModel(id, m)
+      }
+      this.addVendorModel(id, modelId)
+      this.selectVendorModel(id, modelId)
+      if (contextWindow > 0) {
+        this.setModelContextWindow(id, modelId, contextWindow)
+      }
+      return true
+    } catch (_e) {
+      return false
+    }
+  }
+
+  private endpointForVendor(vendorId: string): string {
+    for (const p of PROVIDERS) {
+      if (p.id === vendorId) { return p.baseUrl }
+    }
+    for (const v of this.customVendors) {
+      if (v.id === vendorId) { return v.baseUrl }
+    }
+    return ''
   }
 
   selectVendorModel(vendorId: string, model: string): void {

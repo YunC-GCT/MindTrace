@@ -1,9 +1,19 @@
+/**
+ * FileName: AiSettingsPage.ets — AI 设置页外壳
+ *
+ * 路径: entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets
+ * 职责: 组织 AI 服务 / 服务厂商 / OCR / 端侧模型 / 小艺入口各 section;
+ *       把 ViewModel 状态与 VendorPicker 回调接线。
+ * 依赖: AiSettingsViewModel、各 section 组件、common tokens
+ */
+
 // ============================================================================
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
 import { BG_CARD, BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_MD, F_SM, F_XS, W_SEMIBOLD, R_LG, R_MD, S_2, S_4 } from "common"
 import { LocalChatProvider } from "common"
+import type { DiscoveryResult, ModelListing } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
@@ -275,6 +285,16 @@ struct AiSettingsPage {
             },
             onSaveEdit: (_vendorId: string): void => {
               this.saveLlm()
+            },
+            // 2026-10-25 Phase 1.5: 模型 chip 走 catalog, discovery 只回候选
+            onGetModels: (vendorId: string): ModelListing[] => {
+              return this.vm.getModelsForVendor(vendorId)
+            },
+            onDiscoverModels: (vendorId: string): Promise<DiscoveryResult> => {
+              return this.vm.refreshModels(vendorId)
+            },
+            onCommitModel: (vendorId: string, model: string, contextWindow: number): Promise<boolean> => {
+              return this.vm.commitVendorModel(vendorId, model, contextWindow)
             },
           })
 
