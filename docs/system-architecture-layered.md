@@ -173,34 +173,35 @@ Agent **不许直接碰 RDB**，否则复习、搜索、导出每加一个场景
 
 ### 4.2 模型网关（端侧优先，回退必须标注）
 
-**现状核实（2026-10-24，API 26）**
+**as-built（2026-10-24）**
 
-原本设想的「鸿蒙系统自带端侧大模型」没有公开接口，逐条核实结果：
+```
+ModelRouter                      入口：一次回答只能选一条路
+ ├─ LocalChatProvider            系统端侧对话模型 localChatModel（PC/2in1），isReady() 判定
+ └─ ReplyService → LlmGuard → LlmClient   用户配置的云端模型（DeepSeek / Qwen / …）
+```
 
-| 候选 | 实际能力 | 能否直接生成文本 |
+| 场景 | 走哪条 | 气泡尾部 |
 |---|---|---|
-| SDK 全量检索 `generateText` / `chatCompletion` | 不存在 | ❌ |
-| Data Augmentation Kit（`@hms.data.rag` / `@hms.data.knowledgeProcessor`） | RAG 框架，`ChatLLM` 是**抽象类，要应用自己实现** | ❌（模型仍要自己提供） |
-| MindSpore Lite（`@ohos.ai.mindSporeLite`） | 通用推理运行时，`loadModelFromFile/Buffer/Fd` | ⚠️ 需自带 `.ms` 模型 + tokenizer |
-| 小艺 / 系统助手模型 | 无对外 API | ❌ |
+| 端侧就绪 | `LocalChatProvider.ask()` | 无标记，`source=on_device` |
+| 端侧未就绪 / 推理失败，但配了云端 | `ReplyService.complete()` | `（已降级：<原因>）` |
+| 两条都不可用 | 抛错 | 明确中文原因，不返回假内容 |
 
-**因此实现为「路由 + 降级」，模型本体可插拔：**
+**流式与非流式同一套路由**：`ConversationReplyAdapter.complete()` 与 `.stream()` 都先问路由；流式在端侧走 `askStream` 增量，否则走云端 SSE。两条路径都打 `[StreamRoute] source=on_device|remote`，真机一眼可查。
 
-```
-ModelRouter
- ├─ OnDeviceLlm     端侧：沙箱 models/mindtrace-lite.ms 存在才可用（当前未就绪）
- └─ ReplyService    用户配置模型：LlmGuard → LlmClient（DeepSeek 等）
-```
+**思考模式按模型能力下发（不是一刀切）**
 
-三条硬规则（代码已落实）：
+| 能力 | 判定 | 关闭 | 开启 | 首字节看门狗 |
+|---|---|---|---|---|
+| `toggle` | DeepSeek / Qwen | `thinking:{type:'disabled'}` / `enable_thinking:false` | `enabled` + `reasoning_effort` | 关 30s / 开 60s |
+| `always_on` | o1/o3/reasoner 类 | 不存在「关」 | 强制开启，`effort` 默认 `medium` | 60s |
+| `unsupported` | 未知模型 | 一个思考字段都不写 | 同左 | 30s |
 
-1. 端侧就绪 → 走端侧，`degraded=false`
-2. 端侧不可用 → 走用户配置模型，回答尾部**必须**带 `（已降级：<原因>）`，不允许静默换模型
-3. 两者都不可用 → 抛明确错误，不返回假内容
+聊天默认走 `toggle` 的关闭档：真机首字 741–1357 ms；开着思考时首字 8–30 s，会被看门狗误判成断流。
 
-**当前交付状态**：仓库内没有 `.ms` 模型文件，`OnDeviceLlm` 判定不可用，所有回答走云端并在末尾标注「已降级」。模型文件放进 `files/models/mindtrace-lite.ms` 并实现 `OnDeviceLlm.generate` 的推理循环后，路由会自动切回端侧，无需改调用方。
+**边界（踩过的坑）**：`LocalChatProvider` 只允许放在 `entry`，**不能经 `common` barrel 导出**。`@kit.DataAugmentationKit` 限 PC/2in1 + 企业资质，一旦被带进 `AgentExtAbility` 所在的扩展进程，会让网络栈初始化失败（`proxy SendRequest failed 201` / `http handover manager init fail`），A2A 的 LLM 调用永不返回。
 
-**为什么要这么切**：端侧模型是「能力位」而不是「开关位」——真正落地需要模型选型、量化、tokenizer、采样策略四件事，属于独立迭代；把它做成可插拔接口，既保证默认路径有明确行为（降级可见），又不会让主链路被它阻塞。
+**为什么端侧是「能力位」不是「开关位」**：真正落地需要模型选型、量化、tokenizer、采样策略四件事，属独立迭代；做成可插拔接口后，默认路径行为明确（降级可见），主链路不被阻塞。
 
 ### 4.3 RAG
 

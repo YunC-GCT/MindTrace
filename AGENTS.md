@@ -73,6 +73,7 @@
 9. **端A2A 配置三件事** — 改 `agent_config.json` 后必须：① 平台重新导入 AgentCard ② 重新发真机测试 ③ 重启小艺。缺一条小艺仍读旧卡，表现为 `extension ability not exist` 或发了不回。
 10. **两种 AgentID 不是一回事** — 小艺开放平台**生成**的 `AgentID`（形如 `agent` + 32 位十六进制）用于应用内 `FunctionComponent` 拉起智能体；`agent_config.json` 里的 `agentId`（如 `mindtrace-note-agent`）只是端A2A 的应用内标识。填错时 `isAgentSupport()` 恒为 false，入口永远显示「暂不支持」。
 10. **不虚报可用** — 端A2A 的改动没跑过 `scripts/a2a-smoke/a2a_smoke.py` 且拿到 `ok: true`，不得写成“已通 / 可用 / 完成”。
+11. **受限 Kit 不得经 `common` barrel 导出** — `@kit.DataAugmentationKit`（`localChatModel`）只允许在 `entry` 的 UI 进程加载。经 barrel 导出后，`AgentExtAbility` 仅 import `LlmConfig` 也会把该 Kit 带进扩展进程，导致网络栈初始化失败（`proxy SendRequest failed 201`）、A2A 的 LLM 调用永不返回。新 Kit 进 `common` 前先确认它在扩展进程里能安全求值。
 
 ---
 
