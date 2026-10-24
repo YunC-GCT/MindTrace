@@ -16,6 +16,8 @@ import {
 } from '../models/AgentMemoryModels';
 import { WritePathValidator } from './WritePathValidator';
 import { SessionIdPolicy } from './ConversationIdentity';
+import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
+import { getChatHistoryClearControl } from './ChatHistoryClearControl';
 import type { ChatProjectionWriter } from '../models/ConversationSnapshotModels';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
 import { NoteContextValidityReviewer } from './NoteContextValidityReviewer';
@@ -40,6 +42,12 @@ export class AgentMemoryService implements ChatProjectionWriter {
   }
 
   async saveMessage(request: ChatMessageWriteRequest): Promise<void> {
+    const clearControl: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+    if (clearControl !== undefined && clearControl.getState().clearState === 'pending') {
+      // 清空进行中：拒绝迟到写入，避免把旧会话重新投影回 chat_message
+      console.warn('[AgentMemoryService] code=CHAT_HISTORY_WRITE_REJECTED reason=clear-in-progress');
+      throw new Error('CHAT_HISTORY_CLEAR_IN_PROGRESS');
+    }
     SessionIdPolicy.requireValid(request.sessionId);
     const text: string = request.content.trim();
     if (text.length === 0) {

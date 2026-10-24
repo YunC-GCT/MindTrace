@@ -106,6 +106,7 @@ Currently (every directory, including execution bundles and legacy subdirectorie
 - [`docs/index.md`](./index.md) — this file
 - [`docs/adr/index.md`](./adr/index.md)
 - [`docs/specs/index.md`](./specs/index.md)
+- [`docs/plans/index.md`](./plans/index.md)
 - [`docs/specs/execution/index.md`](./specs/execution/index.md)
 - [`docs/specs/execution/{bundle}/index.md`](./specs/execution/) — one per bundle
 - [`docs/research/index.md`](./research/index.md)
