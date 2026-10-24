@@ -27,6 +27,8 @@ import type {
   CancellationToken,
 } from 'common';
 import { IntentClassifier, ReplyContext } from './IntentClassifier';
+import { DebugFaults } from './DebugFaults';
+import type { DebugFault } from './DebugFaults';
 
 const replyLog: Logger = new Logger('ReplyService');
 const CHAT_REPLY_MAX_TOKENS: number = 12000;
@@ -87,9 +89,11 @@ export class ReplyService {
     cancellationToken?: CancellationToken,
   ): Promise<StreamReplyResult> {
     cancellationToken?.throwIfCancelled();
+    // #224 调试注入: 首次调用懒加载档位; 'none' 时下面所有返回原样透传。
+    await DebugFaults.load();
     if (ReplyService.streamDisabled) {
       replyLog.warn('[StreamCircuit] open, skip SSE');
-      return await this.fallback(context, cancellationToken);
+      return this.applyDebugFault(await this.fallback(context, cancellationToken));
     }
     const client: LlmClient = new LlmClient();
     let content: string = '';
@@ -149,7 +153,7 @@ export class ReplyService {
         }
         replyLog.warn('stream empty, using fallback');
         cancellationToken?.throwIfCancelled();
-        return await this.fallback(context, cancellationToken);
+        return this.applyDebugFault(await this.fallback(context, cancellationToken));
       }
       const success: StreamReplyResult = {
         content: this.normalize(content),
@@ -160,7 +164,7 @@ export class ReplyService {
         + ' thinkingChars=' + thinkingChars.toString()
         + ' textEvents=' + textEvents.toString()
         + ' textChars=' + textChars.toString());
-      return success;
+      return this.applyDebugFault(success);
     } catch (e) {
       cancellationToken?.throwIfCancelled();
       if (receivedEvent) {
@@ -173,7 +177,7 @@ export class ReplyService {
           usedFallback: false,
         };
         replyLog.warn('stream interrupted after chars=' + content.length.toString());
-        return interrupted;
+        return this.applyDebugFault(interrupted);
       }
       if (ReplyService.isTransportError(e)) {
         ReplyService.recordTransportFailure();
@@ -186,8 +190,38 @@ export class ReplyService {
         throw new Error(JSON.stringify(e));
       }
       cancellationToken?.throwIfCancelled();
-      return await this.fallback(context, cancellationToken);
+      return this.applyDebugFault(await this.fallback(context, cancellationToken));
     }
+  }
+
+  /**
+   * #224 调试故障注入（只在 stream() 最终返回前调用，默认 'none' 时原样返回）。
+   * - empty: content 置空 + interrupted=false → ConversationWorkflow 走 reason=empty 恢复；
+   * - interrupted: content 保留 + interrupted=true → 走 reason=interrupted 恢复；
+   * - none: 返回原对象，生产行为不变。
+   */
+  private applyDebugFault(result: StreamReplyResult): StreamReplyResult {
+    const fault: DebugFault = DebugFaults.current();
+    if (fault === 'empty') {
+      replyLog.warn('[DebugFault] injected=empty');
+      const injected: StreamReplyResult = {
+        content: '',
+        interrupted: false,
+        usedFallback: result.usedFallback,
+      };
+      return injected;
+    }
+    if (fault === 'interrupted') {
+      replyLog.warn('[DebugFault] injected=interrupted');
+      const injected: StreamReplyResult = {
+        content: result.content,
+        interrupted: true,
+        // 强制走恢复分支: ConversationWorkflow 在 usedFallback && !empty 时会提前返回。
+        usedFallback: false,
+      };
+      return injected;
+    }
+    return result;
   }
 
   normalize(content: string): string {
