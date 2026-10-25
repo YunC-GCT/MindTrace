@@ -23,7 +23,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, delimiter, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkHspFreshness } from './hsp-freshness/index.mjs';
 
@@ -54,12 +54,37 @@ export function resolveHvigorw(env = process.env) {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
+/**
+ * Point the child process at the JDK bundled with DevEco Studio.
+ *
+ * hvigor packages the HSP with an external `java`; when the shell PATH still
+ * holds a deleted IDE, spawn fails with `spawn java ENOENT` even though the
+ * build itself is fine. Deriving jbr from hvigorw keeps the script working
+ * after an IDE is uninstalled or moved.
+ *
+ * @param {string} hvigorw absolute path to hvigorw.js
+ * @param {Record<string, string | undefined>} env
+ * @returns {Record<string, string | undefined>}
+ */
+export function withBundledJbr(hvigorw, env = process.env) {
+  const jbr = resolve(dirname(hvigorw), '..', '..', '..', 'jbr');
+  const javaName = process.platform === 'win32' ? 'java.exe' : 'java';
+  if (!existsSync(resolve(jbr, 'bin', javaName))) return env;
+  const pathKey = Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH';
+  return {
+    ...env,
+    JAVA_HOME: jbr,
+    [pathKey]: `${resolve(jbr, 'bin')}${delimiter}${env[pathKey] ?? ''}`,
+  };
+}
+
 /** Run one hvigor task; true when the process exits 0. */
 function runHvigor(hvigorw, taskArgs) {
   console.log(`  $ node ${hvigorw} ${[...BASE_ARGS, ...taskArgs].join(' ')}`);
   const result = spawnSync(process.execPath, [hvigorw, ...BASE_ARGS, ...taskArgs], {
     cwd: REPO_ROOT,
     stdio: 'inherit',
+    env: withBundledJbr(hvigorw),
   });
 
   if (result.error) {
