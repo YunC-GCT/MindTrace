@@ -1,6 +1,6 @@
 # 034 文搜图检索的线程隔离（修复 #230）
 
-Status: accepted（2026-10-25）
+Status: implemented（2026-10-25，真机两轮 PASS）
 Refs: #230、#227（OCR 端口化）、033（进程边界）
 
 ## 1. 现象与既有证据
@@ -90,7 +90,28 @@ scope.onmessage = async (e: MessageEvents): Promise<void> => {
 - 负向：把 Worker 超时改成 50ms 跑一轮，必须看到 `degraded` 且**主线程仍在打日志**（证明没冻）。
 - 单测：`scripts/image-search-port/tests/` 增加「adapter 不直接 import Kit」与「超时返回降级而非抛出」两条断言。
 
-## 8. 风险与回退
+## 8. 实测结果（2026-10-25，MRO-W00）
+
+S1 探针（Worker 内直调 Kit）：
+
+```
+probe=worker q=一元二次方程 ok=true count=5 ms=2264
+probe=worker q=平方根       ok=true count=5 ms=15
+stage=worker-probe ok=true
+```
+
+方案 B 落地后（检索经常驻 Worker，自检同一轮连查两次——正是当初卡死的场景）：
+
+```
+stage=search q=一元二次方程 hits=5 ms=61
+stage=search q=平方根       hits=5 ms=30
+stage=done ok=2 failed=0 totalMs=87860     → PASS
+--no-install 复跑：54ms / 20ms，两条 hits=5  → PASS
+```
+
+结论：Kit 在 Worker 线程可用；主线程不再被检索阻塞。未做的验证：把超时压到 50ms 观察 `degraded` 日志（需要改常量重构建，v1 不做）。
+
+## 9. 风险与回退
 
 - Worker 内 Kit 不可用 → 立即回退到「自检单次检索」，#230 保持 open，另开 D 方案票。
 - Worker 常驻内存开销 → 空闲 60s 自动 `terminate()`。
