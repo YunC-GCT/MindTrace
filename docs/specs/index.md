@@ -1,4 +1,4 @@
-﻿# Specs index
+# Specs index
 
 This directory holds **implementation specs** for the P0/P1 tickets identified in the
 2026-09-01 audit ([`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](../legacy/mindtrace/architecture/audit-full-2026-09-01.md)). Each spec is derived from
@@ -33,6 +33,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **v1 端A2A** | [`031-xiaoyi-batch-capture-entry.md`](./031-xiaoyi-batch-capture-entry.md) | (spec-driven, 端A2A 协议在 [skill]) | **in progress** (2026-10-23 — P1 半屏浮窗入口 / P2 多选 / P3 落库；T5 异步取消除外) |
 | **模型网关 + 端A2A 运行时** | [`032-model-gateway-and-a2a-runtime.md`](./032-model-gateway-and-a2a-runtime.md) | (spec-driven，依据两份 research) | **proposed** (2026-10-24 — 构建顺序 / 单帧快照契约 / 端侧能力位) |
 | **进程边界** | [`033-process-boundaries.md`](./033-process-boundaries.md) | (spec-driven，依据 2026-10-24 事故) | **proposed** (2026-10-24 — 进程 × 模块可见性矩阵、受限 Kit 清单、barrel 传染检查) |
+| **#230 文搜图线程隔离** | [`034-image-search-isolation.md`](./034-image-search-isolation.md) | (spec-driven，依据 2026-10-25 真机阻塞实测) | **S1 Worker 探针 implemented; device acceptance pending** (2026-10-25 — 先验证 Kit 能否在 Worker 里工作，结论出来前不接生产路径) |
 
 ## Execution bundles
 

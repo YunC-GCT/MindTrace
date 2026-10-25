@@ -18,6 +18,7 @@ import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
 import { DebugCaptureRunner } from '../services/DebugCaptureRunner';
+import { ImageSearchWorkerProbe } from '../services/ImageSearchWorkerProbe';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
@@ -93,8 +94,9 @@ export default class EntryAbility extends UIAbility {
   /**
    * 启动参数 e2e=true 时自动跑一次批量链路自检。
    * 给真机脚本用：`aa start ... --ps e2e true`，省去连点标题再滑到底找按钮的 UI 路径。
+   * e2e=search 只跑检索探针；e2e=worker 跑 S1 Worker 可用性探针。
    */
-  private runE2eIfRequested(): void {
+  private async runE2eIfRequested(): Promise<void> {
     const flag: Object | undefined = this.launchWant?.parameters?.['e2e'];
     if (flag === undefined) {
       return;
@@ -105,6 +107,17 @@ export default class EntryAbility extends UIAbility {
       DebugCaptureRunner.runSearchProbe().catch((e: Error) => {
         hilog.error(0xE2E0, 'E2E', '%{public}s', '检索探针异常: ' + e.message);
       });
+      return;
+    }
+    if (mode === 'worker') {
+      try {
+        const ok: boolean = await ImageSearchWorkerProbe.run();
+        hilog.info(0xE2E0, 'E2E', '%{public}s',
+          'stage=worker-probe ok=' + (ok ? 'true' : 'false'));
+      } catch (error) {
+        const e: Error = error as Error;
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'stage=worker-probe ok=false err=' + e.message);
+      }
       return;
     }
     if (mode !== 'true') {
@@ -158,7 +171,11 @@ export default class EntryAbility extends UIAbility {
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
       // 自检依赖窗口/OCR 就绪，必须等内容加载完成再跑（onCreate 阶段跑会卡在 Dispatcher）
-      setTimeout((): void => this.runE2eIfRequested(), 1200);
+      setTimeout((): void => {
+        this.runE2eIfRequested().catch((e: Error) => {
+          hilog.error(0xE2E0, 'E2E', '%{public}s', '自检异常: ' + e.message);
+        });
+      }, 1200);
     });
   }
 

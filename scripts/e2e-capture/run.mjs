@@ -3,18 +3,20 @@
 //  scripts/e2e-capture/run.mjs — 批量链路真机自检器
 //  ----------------------------------------------------------------------------
 //  路径: scripts/e2e-capture/run.mjs
-//  职责: 一条命令完成「装 HSP/HAP → 带 e2e=true 启动 → 边跑边筛日志 → 判定结果」，
+//  职责: 一条命令完成「装 HSP/HAP → 带 e2e 模式启动 → 边跑边筛日志 → 判定结果」，
 //        省掉手工 hdc 往复和 hilog 抓取，机器等的时间一半以上都耗在那上面。
 //  依赖: hdc（DevEco SDK 自带）, 真机已连且解锁
-//  数据流: hdc install → aa start --ps e2e true → hdc shell hilog (stream)
-//          → 只保留 E2E/ImageSearch/Card 日志 → 读到 stage=done 或超时 → 汇总 → 退出码
+//  数据流: hdc install → aa start --ps e2e <mode> → hdc shell hilog (stream)
+//          → 只保留 E2E/ImageSearch/Card 日志 → 读到 stage=done / stage=worker-probe 或超时 → 汇总 → 退出码
 //  用法:
-//    node scripts/e2e-capture/run.mjs                 # 装 HSP+HAP 再跑
+//    node scripts/e2e-capture/run.mjs                 # 装 HSP+HAP 再跑完整批量链路
 //    node scripts/e2e-capture/run.mjs --no-install    # 只跑，已装好时用
 //    node scripts/e2e-capture/run.mjs --with-card     # 连 cardservice 一起装
+//    node scripts/e2e-capture/run.mjs --mode worker   # Worker 可用性探针（S1）
 //    node scripts/e2e-capture/run.mjs --timeout 180   # 放宽等 done 的时间（秒）
 //    HDC=/path/to/hdc node scripts/e2e-capture/run.mjs
-//  退出码: 0 = 两图都成功且每条检索都有命中；1 = 有失败或超时（原始日志路径会打印）
+//  退出码: 0 = 批量链路两图都成功且检索有命中 / Worker 探针两条都成功；
+//          1 = 有失败或超时（原始日志路径会打印）
 // ============================================================================
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -38,7 +40,8 @@ const optValue = (name, fallback) => {
 
 // 单张 capture 实测 6.9s ~ 68.5s（模型调用波动大），默认给足 300s
 const TIMEOUT_S = Number(optValue('--timeout', '300'));
-// e2e 启动参数：true = 跑完整批量链路；search = 只跑检索探针（每条 20s 上限）
+// e2e 启动参数：true = 跑完整批量链路；search = 只跑检索探针（每条 20s 上限）；
+// worker = S1 探针，验证 Core Vision Kit 能否在 Worker 里工作（两条各 10s 上限）
 const MODE = optValue('--mode', 'true');
 const INSTALL = !hasFlag('--no-install');
 const WITH_CARD = hasFlag('--with-card');
@@ -57,6 +60,7 @@ const rawLines = [];
 const e2eLines = [];
 const searchLines = [];
 const probeLines = [];
+const workerProbeLines = [];
 
 function hdc(args, { timeout = 240000, quiet = true } = {}) {
   // stdio 必须显式给 pipe+ignore：后台/非 tty 运行时 hdc 会读到 "stdin is not a tty" 直接失败
@@ -154,6 +158,14 @@ const onLine = (line) => {
       finish(0);
     }
   }
+  if (/probe=worker/.test(line)) {
+    workerProbeLines.push(line);
+  }
+  // Worker 探针的终态是 stage=worker-probe（两条 probe 行之后才打），不能提前收流
+  if (MODE === 'worker' && /stage=worker-probe/.test(line)) {
+    done = true;
+    finish(0);
+  }
   if (/stage=done/.test(line)) {
     done = true;
     finish(0);
@@ -191,7 +203,8 @@ step(`started ${BUNDLE} with e2e=${MODE}, 等结束信号（上限 ${TIMEOUT_S}s
 setTimeout(() => {
   if (!done) {
     timedOut = true;
-    console.error(`\n超时 ${TIMEOUT_S}s 未出现 stage=done`);
+    const signal = MODE === 'worker' ? 'stage=worker-probe（Worker 可用性探针）' : 'stage=done';
+    console.error(`\n超时 ${TIMEOUT_S}s 未出现 ${signal}`);
     finish(1);
   }
 }, TIMEOUT_S * 1000);
@@ -215,28 +228,47 @@ function printSummary() {
     }).filter(Boolean);
   const noHit = hits.filter((h) => h.hits === 0);
   const cardPushed = lines.some((l) => l.includes('stage=card refresh=1'));
+  const workerProbes = lines.filter((l) => l.includes('probe=worker') && !l.includes(' error='));
+  const workerStage = /stage=worker-probe ok=(true|false)/.exec(rawLines.join('\n'));
 
   console.log('\n================ 结果 ================');
-  console.log(`抓取     : 成功 ${okCount}，失败 ${failedCount}，总耗时 ${totalMs}ms` +
-    (captures.length < okCount ? `（日志收到 ${captures.length} 行 capture，中间行被 hilog 丢了）` : ''));
-  console.log(`检索     : ${hits.length} 条` + (hits.length > 0
-    ? `（${hits.map((h) => `${h.q}=${h.hits}`).join(', ')}）` : '（没有 search 日志）'));
-  if (probeLines.length > 0) {
-    console.log(`探针     : ${probeLines.length} 条`);
-    for (const line of probeLines) {
+  if (MODE === 'worker') {
+    console.log(`Worker   : ${workerProbes.length} 条 probe=worker（Worker 可用性探针）`);
+    for (const line of workerProbes) {
       console.log('           ' + line.replace(/^.*E2E: /, ''));
     }
+    console.log(`探针结论 : ${workerStage ? 'stage=worker-probe ok=' + workerStage[1] : '未收到 stage=worker-probe'}（Worker 可用性探针）`);
+  } else {
+    console.log(`抓取     : 成功 ${okCount}，失败 ${failedCount}，总耗时 ${totalMs}ms` +
+      (captures.length < okCount ? `（日志收到 ${captures.length} 行 capture，中间行被 hilog 丢了）` : ''));
+    console.log(`检索     : ${hits.length} 条` + (hits.length > 0
+      ? `（${hits.map((h) => `${h.q}=${h.hits}`).join(', ')}）` : '（没有 search 日志）'));
+    if (probeLines.length > 0) {
+      console.log(`探针     : ${probeLines.length} 条`);
+      for (const line of probeLines) {
+        console.log('           ' + line.replace(/^.*E2E: /, ''));
+      }
+    }
+    console.log(`卡片     : ${cardPushed ? '已刷新' : '未刷新'}`);
   }
-  console.log(`卡片     : ${cardPushed ? '已刷新' : '未刷新'}`);
   const probeOk = probeLines.length === 2 && probeLines.every((l) => /hits=[1-9]/.test(l));
+  const workerProbesOk = workerProbes.length === 2 && workerProbes.every((l) => /ok=true/.test(l));
+  const workerTimedOut = rawLines.some((l) => l.includes('probe=worker') && l.includes('timeout'));
   const verdict = !timedOut && (MODE === 'search'
     ? probeOk
-    : doneMatch !== null && okCount === 2 && failedCount === 0 && hits.length >= 1 && noHit.length === 0);
+    : MODE === 'worker'
+      ? workerProbesOk && workerStage !== null && workerStage[1] === 'true' && !workerTimedOut
+      : doneMatch !== null && okCount === 2 && failedCount === 0 && hits.length >= 1 && noHit.length === 0);
   console.log(`判定     : ${verdict ? 'PASS' : 'FAIL'}`);
   console.log(`原始日志 : ${logFile}`);
   if (!verdict) {
-    console.log('排查提示 : 缺 search 日志说明 search() 未返回——先看是否有 [ImageSearch] init ok；');
-    console.log('           有 init 无 search 则 textSearchImage.search 阻塞，需查 Kit 对 query 的要求。');
+    if (MODE === 'worker') {
+      console.log('排查提示 : Worker 可用性探针失败——两条都 timeout 说明 Kit 在 Worker 线程内不可用/加载即崩；');
+      console.log('           probe 行 ok=false 时看紧随其后的 error 行。');
+    } else {
+      console.log('排查提示 : 缺 search 日志说明 search() 未返回——先看是否有 [ImageSearch] init ok；');
+      console.log('           有 init 无 search 则 textSearchImage.search 阻塞，需查 Kit 对 query 的要求。');
+    }
   }
   return verdict;
 }
