@@ -195,6 +195,9 @@ function finish(code) {
 
 // ---- 3) 触发自检 -----------------------------------------------------------
 const started = hdc(['shell', 'aa', 'start', '-a', ABILITY, '-b', BUNDLE, '-m', MODULE, '--ps', 'e2e', MODE]);
+if (/locked|10106102|unlock screen failed/i.test(started)) {
+  fail('平板处于锁屏，应用起不来（真机提示：锁屏时无法自动解锁）\n→ 请先解锁平板并停在桌面，再重跑本脚本');
+}
 if (!/successfully/i.test(started)) {
   fail(`启动失败：${started.trim().split('\n').slice(-2).join(' | ')}\n（真机提示开发者模式时，先在设置里打开开发者选项）`);
 }
