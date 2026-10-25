@@ -32,7 +32,28 @@ import type { DebugFault } from './DebugFaults';
 
 const replyLog: Logger = new Logger('ReplyService');
 const CHAT_REPLY_MAX_TOKENS: number = 12000;
+const CHAT_REPLY_TIMEOUT_MS: number = 120000;
+const CHAT_REPLY_MAX_RETRIES: number = 2;
 const STREAM_FAILURE_THRESHOLD: number = 2;
+
+/**
+ * 单次 complete 调用的预算覆盖（只影响本次调用，不改 LlmGuard/LlmClient 默认值）。
+ * A2A 走 25 s / 0 retry / 4096 output；App 内聊天继续用 CHAT_REPLY_POLICY。
+ */
+export interface LlmCallPolicy {
+  maxTokens: number;
+  timeoutMs: number;
+  maxRetries: number;
+  /** 可选：本次调用的模型覆盖（A2A 显式降级到 catalog 默认时使用）。 */
+  model?: string;
+}
+
+/** App 内聊天默认策略：120000 ms / 2 retry 保持不变（计划 §4.2 末段）。 */
+export const CHAT_REPLY_POLICY: LlmCallPolicy = {
+  maxTokens: CHAT_REPLY_MAX_TOKENS,
+  timeoutMs: CHAT_REPLY_TIMEOUT_MS,
+  maxRetries: CHAT_REPLY_MAX_RETRIES,
+};
 
 export interface StreamReplyResult {
   content: string;
@@ -53,26 +74,41 @@ export class ReplyService {
     this.intentClassifier = intentClassifier;
   }
 
-  async complete(context: ReplyContext, cancellationToken?: CancellationToken): Promise<string> {
-    return await this.guardedComplete(context, 'chat answer', cancellationToken);
+  async complete(
+    context: ReplyContext,
+    cancellationToken?: CancellationToken,
+    policy?: LlmCallPolicy,
+  ): Promise<string> {
+    return await this.guardedComplete(context, 'chat answer', cancellationToken, policy);
   }
 
-  private async guardedComplete(context: ReplyContext, label: string, cancellationToken?: CancellationToken): Promise<string> {
+  private async guardedComplete(
+    context: ReplyContext,
+    label: string,
+    cancellationToken?: CancellationToken,
+    policy?: LlmCallPolicy,
+  ): Promise<string> {
     cancellationToken?.throwIfCancelled();
+    const effectivePolicy: LlmCallPolicy = policy !== undefined ? policy : CHAT_REPLY_POLICY;
     const userContentLen: number = context.userContent.length;
     const memoryLen: number = context.memoryContext.length;
     const evidenceLen: number = context.evidenceContext.length;
     replyLog.info('[ReplyCtx] userContentLen=' + userContentLen.toString()
       + ' memoryLen=' + memoryLen.toString()
-      + ' evidenceLen=' + evidenceLen.toString());
+      + ' evidenceLen=' + evidenceLen.toString()
+      + ' timeoutMs=' + effectivePolicy.timeoutMs.toString()
+      + ' maxRetries=' + effectivePolicy.maxRetries.toString()
+      + ' maxTokens=' + effectivePolicy.maxTokens.toString());
     if (userContentLen === 0) {
       replyLog.warn('[ReplyCtx] WARN empty userContent');
     }
     const guarded: LlmGuardJsonResult = await new LlmGuard().callJsonWithRetry(
       this.intentClassifier.buildReplyMessages(context),
       {
-        maxTokens: CHAT_REPLY_MAX_TOKENS,
-        timeoutMs: 120000,
+        maxTokens: effectivePolicy.maxTokens,
+        timeoutMs: effectivePolicy.timeoutMs,
+        maxRetries: effectivePolicy.maxRetries,
+        model: effectivePolicy.model,
         label: label,
         cancellationToken: cancellationToken,
       },
@@ -80,6 +116,7 @@ export class ReplyService {
     );
     const answerValue: Object | undefined = guarded.json['answer'];
     const answer: string = typeof answerValue === 'string' ? answerValue : '';
+    replyLog.info('complete attempts=' + guarded.attempts.toString());
     return this.normalize(answer);
   }
 
@@ -125,7 +162,7 @@ export class ReplyService {
               sink(event);
             },
             maxTokens: CHAT_REPLY_MAX_TOKENS,
-            timeoutMs: 120000,
+            timeoutMs: CHAT_REPLY_TIMEOUT_MS,
             cancellationToken: cancellationToken,
           });
           if (receivedEvent) {

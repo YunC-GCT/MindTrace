@@ -40,6 +40,7 @@ export interface LlmGuardJsonExtractionResult {
 export type LlmJsonValidator = (json: Record<string, Object>) => LlmGuardValidationResult;
 
 export interface LlmGuardJsonOptions extends LlmCallOptions {
+  /** 本次调用的额外重试次数；缺省保持 2（App 内聊天），A2A 显式传 0。 */
   maxRetries?: number;
   label?: string;
 }
@@ -67,6 +68,8 @@ export class LlmGuard {
     let attempt: number = 0;
 
     while (attempt <= maxRetries) {
+      // 同一个 token 贯穿 guard/client：deadline 取消后立刻停止，不再发起下一次尝试。
+      options.cancellationToken?.throwIfCancelled();
       const callResult: LlmCallResult = await this.client.call(this.toCallRequest(guardedMessages, options));
       raw = callResult.text ?? '';
       const parsed: LlmGuardJsonResult = this.parseAndValidate(raw, attempt + 1, validator);

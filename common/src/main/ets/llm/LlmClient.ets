@@ -94,6 +94,8 @@ export class LlmClient {
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }
+    // await 期间可能已到 A2A deadline：不要再创建一条注定要销毁的 HTTP 请求。
+    request.cancellationToken?.throwIfCancelled();
 
     // 2. 构造请求体(request 字段优先, 默认从 LlmConfig)
     // 2026-10-25: 先按 catalog/alias 解析成规范 ID, 再按 listing 能力推导参数。
@@ -142,6 +144,7 @@ export class LlmClient {
     const httpRequest = http.createHttp();
     let response: http.HttpResponse;
     const removeCancellation: (() => void) | undefined = request.cancellationToken?.onCancel((): void => {
+      // A2A deadline: 同一个 token 取消时真正中止底层 HTTP，而不是只让外层 Promise.race 超时。
       httpRequest.destroy();
     });
     try {
@@ -344,6 +347,8 @@ export class LlmClient {
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }
+    // 同 JSON 路径：取消后不再发起流式请求。
+    request.cancellationToken?.throwIfCancelled();
 
     // 2. 构造请求体
     const vendorId: string = this.config.getVendorId();
