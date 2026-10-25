@@ -372,6 +372,16 @@ export class LlmConfig {
   // ===== PR2-T1: Vendor 解析 =====
   public getVendorId(): string { return this.cachedVendorId; }
 
+  // #232: 导出 provenance 用的只读标识；只读不写，不改变配置逻辑。
+  // 未初始化（或 vendor/model 解析为空）视为未配置，返回 'unknown'。
+  public modelLabel(): string {
+    if (!this.inited) { return 'unknown' }
+    const vendor: string = this.cachedVendorId.trim()
+    const model: string = this.getModel().trim()
+    if (vendor.length === 0 || model.length === 0) { return 'unknown' }
+    return vendor + '/' + model
+  }
+
   public supportsStrictStructuredOutput(): boolean {
     if (LlmConfig.isCustomVendor(this.cachedVendorId)) {
       const custom: CustomVendorConfig | null = this.findCustomVendor(this.cachedVendorId);

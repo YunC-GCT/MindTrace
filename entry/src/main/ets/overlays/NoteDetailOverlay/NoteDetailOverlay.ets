@@ -18,10 +18,12 @@ import {
   normalizeNoteType,
   ContentExcerptBuilder,
   NOTE_SUMMARY_MAX_LENGTH,
+  LlmConfig,
 } from 'common'
 import { promptAction } from '@kit.ArkUI'
 import { common } from '@kit.AbilityKit'
 import { NoteEditService } from '../../services/NoteEditService'
+import { NoteMarkdownExporter } from '../../services/NoteMarkdownExport'
 import { NoteDetailMeta } from './NoteDetailMeta'
 import { NoteDetailBody } from './NoteDetailBody'
 import { NoteActionBar } from './NoteActionBar'
@@ -208,7 +210,9 @@ export struct NoteDetailOverlay {
           NoteActionBar({
             onDelete: (): void => this.confirmDelete(),
             onEdit: (): void => this.startEdit(),
-            onShare: (): void => this.mockShare(),
+            onShare: (): void => {
+              this.exportNote().then((): void => {}).catch((_e: Error): void => {})
+            },
           })
         }
       }
@@ -661,8 +665,26 @@ export struct NoteDetailOverlay {
     this.renderSession.activate(buildDetailRenderSessionKey(this.note, this.effectiveUnit()))
   }
 
-  private mockShare = (): void => {
-    promptAction.showToast({ message: '分享功能暂未开放', duration: 1500 })
+  private exportNote = async (): Promise<void> => {
+    const current: KnowledgeUnit | null = this.effectiveUnit()
+    if (current === null) {
+      promptAction.showToast({ message: '笔记仍在加载', duration: 1200 })
+      return
+    }
+    try {
+      const uri: string = await NoteMarkdownExporter.save(
+        getContext(this) as common.UIAbilityContext,
+        current,
+        LlmConfig.getInstance().modelLabel(),
+      )
+      if (uri.length === 0) {
+        return
+      }
+      promptAction.showToast({ message: '已导出到所选目录', duration: 1500 })
+    } catch (e) {
+      const message: string = (e as Error).message ?? String(e)
+      promptAction.showToast({ message: '导出失败：' + message, duration: 1800 })
+    }
   }
 
   private confirmDelete = (): void => {

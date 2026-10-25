@@ -21,6 +21,7 @@ import {
   glassSurfaceColor,
 } from 'common'
 import { MathTextRenderer } from '../../shared/atoms/MathTextRenderer'
+import { ChipTag } from './ChipTag'
 import { NoteDetailRenderMetrics } from '../../services/NoteDetailRenderMetrics'
 import {
   DetailRenderSession,
@@ -90,6 +91,14 @@ export struct NoteDetailMeta {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
         .margin({ top: S_4 })
+
+      if (this.unit !== null && this.unit.source !== 'manual') {
+        Row() {
+          ChipTag({ label: 'AI 生成', variant: 'chip' })
+        }
+        .width('100%')
+        .margin({ top: S_2 })
+      }
 
       if (this.subtitleText().length > 0) {
         if (CONTENT_PROTOCOL.hasFormulaSyntax(this.subtitleText())) {
