@@ -22,6 +22,11 @@
  *     discovery 结果只作候选(标记「未保存」), 用户点 chip 才走 onCommitModel 落盘
  *   - 发现失败显示 errorCode 对应中文提示, 不静默吞掉
  *
+ * 2026-10-25 收尾(本轮):
+ *   - chip 带来源标签: 内置清单 / 发现所得 / 手动输入(ModelListing.source)
+ *   - resolveModel 的 usable/reason 上 chip: 不可用置灰 + 中文原因; degraded 只给弱提示
+ *   - 选中不可用模型时保存按钮拦住并显示原因, 不静默保存
+ *
  * PR2-T2 ticket #83 follow-up (2026-09-08): 重写为 draft pattern
  *   - @State apiKeyInput + @State localModels(本地 draft,不在 onChange 立即 push 到 parent)
  *   - 取消 真正 discard,保存 真正 commit
@@ -42,6 +47,8 @@ import { PROVIDERS, getProviderCatalog } from 'common';
 import type {
   CustomVendorConfig, DiscoveryResult, ModelEffortInfo, ModelListing, ProviderCatalog, ProviderConfig,
 } from 'common';
+import { ModelSelector } from '../../services/ModelSelector';
+import type { ModelAvailability } from '../../services/ModelSelector';
 import {
   MINT, MINT_BORDER, BG_CARD, BG_DARK, TEXT, TEXT_2, TEXT_3, TEXT_4, BORDER,
   F_XS, F_SM, F_MD, W_NORMAL, W_MEDIUM, W_SEMIBOLD,
@@ -107,6 +114,8 @@ export struct VendorPicker {
   @State discoveryError: string = '';
   @State discoveryNotice: string = '';
   @State savingModelId: string = '';
+  // 2026-10-25: 保存被不可用模型拦住时, 在保存按钮下方显示中文原因
+  @State saveBlockedReason: string = '';
   // 请求序号: collapse / 切 vendor 后旧响应不得覆盖新状态
   private discoverySeq: number = 0;
 
@@ -180,6 +189,7 @@ export struct VendorPicker {
     this.discoveryError = ''
     this.discoveryNotice = ''
     this.savingModelId = ''
+    this.saveBlockedReason = ''
   }
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 取消 — discard local drafts, collapse panel
@@ -201,11 +211,21 @@ export struct VendorPicker {
     this.discoveryError = ''
     this.discoveryNotice = ''
     this.savingModelId = ''
+    this.saveBlockedReason = ''
   }
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 保存 — commit drafts 到 parent + 触发 save
   saveEdit = (vendorId: string): void => {
     const pendingModel: string = this.newModelInput.trim()
+    const activeCandidate: string = pendingModel.length > 0 ? pendingModel : this.localActiveModel
+    // 2026-10-25: 不可用模型拦住保存 — 不写 parent, 不落盘, 直接给出中文原因
+    const availability: ModelAvailability = this.availabilityOf(
+      vendorId, activeCandidate, this.draftSourceOf(activeCandidate))
+    if (!availability.usable) {
+      this.saveBlockedReason = availability.hint.length > 0 ? availability.hint : '模型不可用'
+      return
+    }
+    this.saveBlockedReason = ''
     if (pendingModel.length > 0) {
       if (!this.localModels.includes(pendingModel)) {
         this.localModels = [...this.localModels, pendingModel]
@@ -257,6 +277,37 @@ export struct VendorPicker {
     return catalog !== null && catalog.models.length > 0
   }
 
+  // 2026-10-25: chip / 保存按钮共用一份可用性判定(来自 ModelSelector / resolveModel)
+  private availabilityOf = (vendorId: string, modelId: string, source: string): ModelAvailability =>
+    ModelSelector.availabilityOf(vendorId, modelId, source)
+
+  private availabilityForChip = (vendorId: string, listing: ModelListing): ModelAvailability =>
+    ModelSelector.availabilityFor(vendorId, listing)
+
+  private chipUsable = (vendorId: string, listing: ModelListing): boolean =>
+    this.availabilityForChip(vendorId, listing).usable
+
+  private chipHint = (vendorId: string, listing: ModelListing): string =>
+    this.availabilityForChip(vendorId, listing).hint
+
+  private draftSourceOf = (modelId: string): string => {
+    for (const listing of this.modelListings) {
+      if (listing.id === modelId) { return listing.source }
+    }
+    return 'user'
+  }
+
+  // 输入框里还没回车的新模型, 保存时也会被 attachDraftModel 设为 active — 拦截要一起算
+  private pendingActiveModel = (): string => {
+    const pending: string = this.newModelInput.trim()
+    return pending.length > 0 ? pending : this.localActiveModel
+  }
+
+  private saveWouldBlock = (vendorId: string): boolean => {
+    const modelId: string = this.pendingActiveModel()
+    return !this.availabilityOf(vendorId, modelId, this.draftSourceOf(modelId)).usable
+  }
+
   // token 数 → 只读副标题, 不在 UI 里推导能力
   private formatContextWindow = (tokens: number): string => {
     if (tokens >= 1000000) {
@@ -279,6 +330,7 @@ export struct VendorPicker {
   private selectCatalogModel = (vendorId: string, listing: ModelListing): void => {
     const m: string = listing.id
     this.localActiveModel = m
+    this.saveBlockedReason = ''
     this.localContextWindow = listing.contextWindow > 0
       ? listing.contextWindow.toString()
       : this.contextWindowFor(vendorId, m).toString()
@@ -303,6 +355,7 @@ export struct VendorPicker {
       this.modelListings = [...this.modelListings, listing]
     }
     this.localActiveModel = t
+    this.saveBlockedReason = ''
     this.localContextWindow = this.contextWindowFor(vendorId, t).toString()
   }
 
@@ -311,6 +364,7 @@ export struct VendorPicker {
       (listing: ModelListing): boolean => listing.id !== m
     )
     this.localModels = this.localModels.filter((item: string): boolean => item !== m)
+    this.saveBlockedReason = ''
     if (this.localActiveModel === m) {
       this.localActiveModel = this.localModels.length > 0 ? this.localModels[0] : ''
       this.localContextWindow = this.localActiveModel.length > 0
@@ -397,11 +451,13 @@ export struct VendorPicker {
           maxOutputTokens: listing.maxOutputTokens,
           inputModalities: listing.inputModalities,
           effort: listing.effort,
-          source: 'user',
+          // 2026-10-25: 发现所得的 chip 标 discovery, 让 UI 区分「内置 / 发现 / 手动」
+          source: 'discovery',
         }
         this.modelListings = [...this.modelListings, saved]
       }
       this.localActiveModel = listing.id
+      this.saveBlockedReason = ''
       this.localContextWindow = listing.contextWindow > 0
         ? listing.contextWindow.toString()
         : this.contextWindowFor(vendorId, listing.id).toString()
@@ -663,7 +719,10 @@ export struct VendorPicker {
               .border({ width: 1, color: BORDER })
               .borderRadius(R_SM)
               .padding({ left: S_2 })
-              .onChange((v: string): void => { this.newModelInput = v })
+              .onChange((v: string): void => {
+                this.newModelInput = v
+                this.saveBlockedReason = ''
+              })
               .onSubmit((): void => {
                 const m: string = this.newModelInput.trim()
                 if (m.length > 0) {
@@ -735,12 +794,22 @@ export struct VendorPicker {
               .backgroundColor(MINT)
               .borderRadius(R_SM)
               .margin({ left: S_2 })
+              .opacity(this.saveWouldBlock(itemId) ? 0.55 : 1)
               .onClick((): void => {
                 this.saveEdit(itemId)
               })
           }
           .width('100%')
           .margin({ top: S_2 })
+
+          // 2026-10-25: 不可用模型拦下保存时, 在这里显示中文原因(不落盘)
+          if (this.saveBlockedReason.length > 0) {
+            Text(this.saveBlockedReason)
+              .fontSize(F_XS)
+              .fontColor(ERROR_TEXT)
+              .width('100%')
+              .margin({ top: S_1 })
+          }
         }
         .width('100%')
         .padding(S_3)
@@ -760,7 +829,9 @@ export struct VendorPicker {
         Row() {
           Text(listing.displayName)
             .fontSize(F_XS)
-            .fontColor(this.localActiveModel === listing.id ? BG_DARK : TEXT)
+            .fontColor(this.chipUsable(vendorId, listing)
+              ? (this.localActiveModel === listing.id ? BG_DARK : TEXT)
+              : TEXT_4)
             .fontWeight(W_MEDIUM)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -769,14 +840,33 @@ export struct VendorPicker {
               .fontSize(F_XS)
               .fontColor(MINT)
               .margin({ left: 6 })
+          } else if (ModelSelector.sourceLabel(listing.source).length > 0) {
+            // 2026-10-25: 区分「内置清单 / 发现所得 / 手动输入」
+            Text('· ' + ModelSelector.sourceLabel(listing.source))
+              .fontSize(F_XS)
+              .fontColor(this.localActiveModel === listing.id && this.chipUsable(vendorId, listing)
+                ? BG_DARK : TEXT_4)
+              .margin({ left: 4 })
           }
         }
         .alignItems(VerticalAlign.Center)
         if (listing.contextWindow > 0) {
           Text(this.formatContextWindow(listing.contextWindow))
             .fontSize(F_XS)
-            .fontColor(this.localActiveModel === listing.id ? BG_DARK : TEXT_3)
+            .fontColor(this.localActiveModel === listing.id && this.chipUsable(vendorId, listing)
+              ? BG_DARK : TEXT_3)
             .margin({ top: 2 })
+        }
+        // 2026-10-25: 不可用 → 一行中文原因; degraded → 弱提示「能力未确认」
+        if (this.chipHint(vendorId, listing).length > 0) {
+          Text(this.chipHint(vendorId, listing))
+            .fontSize(F_XS)
+            .fontColor(this.chipUsable(vendorId, listing)
+              ? (this.localActiveModel === listing.id ? BG_DARK : TEXT_3)
+              : ERROR_TEXT)
+            .margin({ top: 2 })
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
       }
       .alignItems(HorizontalAlign.Start)
@@ -788,10 +878,12 @@ export struct VendorPicker {
         }
       })
 
-      if (!unsaved && listing.source === 'user') {
+      // catalog 是内置只读清单; discovery / 手动加入的模型允许删除
+      if (!unsaved && listing.source !== 'catalog') {
         Text('×')
           .fontSize(16)
-          .fontColor(this.localActiveModel === listing.id ? BG_DARK : TEXT_3)
+          .fontColor(this.localActiveModel === listing.id && this.chipUsable(vendorId, listing)
+            ? BG_DARK : TEXT_3)
           .padding({ left: 8 })
           .onClick((): void => {
             this.removeDraftModel(vendorId, listing.id)
@@ -800,10 +892,14 @@ export struct VendorPicker {
     }
     .padding({ left: S_2, right: S_2, top: 6, bottom: 6 })
     .margin({ right: S_2, top: S_2 })
-    .backgroundColor(this.localActiveModel === listing.id ? MINT : BG_DARK)
-    .border({ width: 1, color: this.localActiveModel === listing.id ? MINT : BORDER })
+    .backgroundColor(this.localActiveModel === listing.id && this.chipUsable(vendorId, listing)
+      ? MINT : BG_DARK)
+    .border({
+      width: 1,
+      color: this.localActiveModel === listing.id && this.chipUsable(vendorId, listing) ? MINT : BORDER,
+    })
     .borderRadius(R_SM)
-    .opacity(this.savingModelId === listing.id ? 0.6 : 1)
+    .opacity(!this.chipUsable(vendorId, listing) ? 0.55 : (this.savingModelId === listing.id ? 0.6 : 1))
   }
 
   // PR2-T2 P3: 添加新供应商 modal builder(Stack overlay + 卡片)

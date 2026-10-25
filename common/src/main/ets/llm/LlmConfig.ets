@@ -4,6 +4,8 @@
 // 创建: 2026-07-14
 // PR1 2026-09-07: apiKey 凭据升级到 AssetStoreKit(委托 ApiKeyVault)
 // PR2-T1 2026-09-07: 加 vendorId / customVendorConfig 字段(getEndpoint/getModel 按 vendorId 解析)
+// 2026-10-25: 加 vendor_model_meta 持久化(discovery displayName/contextWindow/模态),
+//             与 vendor_models 同步写、同步删; 老数据缺失该 key 时读取侧回落模型 ID。
 
 import { preferences } from '@kit.ArkData';
 import { ApiKeyVault } from '../security/ApiKeyVault';
@@ -33,6 +35,10 @@ const KEY_CUSTOM_VENDORS = 'custom_vendors';
 // PR2-T2 ticket #83 L2 (2026-09-08): per-vendor models 持久化
 // Record<vendorId, string[]> — 用户在编辑 panel 加的 model,持久到 preferences
 const KEY_VENDOR_MODELS = 'vendor_models';
+// 2026-10-25: per-vendor 模型元信息持久化
+// Record<vendorId, Record<modelId, VendorModelMeta>> — discovery 返回的 displayName /
+// contextWindow / inputModalities / source,与 vendor_models 同步写、同步删。
+const KEY_VENDOR_MODEL_META = 'vendor_model_meta';
 // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key 持久化
 // Record<vendorId, string> — 用户在 vendor 编辑 panel 填的 key
 const KEY_VENDOR_API_KEYS = 'vendor_api_keys';
@@ -47,6 +53,16 @@ const DEFAULT_MAX_TOKENS = 12000;
 const DEFAULT_TIMEOUT_MS = 120000;
 export const DEFAULT_ENABLE_THINKING = true;
 export const DEFAULT_CONTEXT_WINDOW_TOKENS: number = 65536;
+
+// 2026-10-25: 模型元信息 — 只存 discovery / 用户来源里真实拿到的字段, 不在这里推导能力。
+// 持久化结构: { vendorId: { modelId: { displayName, contextWindow, inputModalities, source } } }
+// 读取侧缺失时回落: displayName → model ID; contextWindow → model_context_windows → 0。
+export interface VendorModelMeta {
+  displayName: string;
+  contextWindow: number;
+  inputModalities: string[];
+  source: string;   // 'catalog' | 'discovery' | 'user'
+}
 
 export class LlmConfig {
   private static instance: LlmConfig | null = null;
@@ -70,6 +86,8 @@ export class LlmConfig {
   private cachedCustomVendors: CustomVendorConfig[] = [];
   // PR2-T2 L2 (2026-09-08): per-vendor models Record — 用户编辑 panel 加的 model
   private cachedVendorModels: Record<string, string[]> = {};
+  // 2026-10-25: per-vendor 模型元信息 — 与 cachedVendorModels 同步维护, 不做独立真源
+  private cachedVendorModelMeta: Record<string, Record<string, VendorModelMeta>> = {};
   // PR2-T2 L3 (2026-09-08): per-vendor API Key Record — vendor 编辑 panel 填的 key
   private cachedVendorApiKeys: Record<string, string> = {};
   private cachedActiveVendorModels: Record<string, string> = {};
@@ -145,6 +163,17 @@ export class LlmConfig {
         this.cachedVendorModels = parsed ?? {};
       } catch (_e) {
         this.cachedVendorModels = {};
+      }
+    }
+    // 2026-10-25: vendorModelMeta JSON Record(旧数据没有该 key → 空表, 读取侧回落 ID)
+    const vmmJson: string = await s.get(KEY_VENDOR_MODEL_META, '') as string;
+    if (vmmJson.length > 0) {
+      try {
+        const parsed = JSON.parse(vmmJson) as Record<string, Record<string, VendorModelMeta>>;
+        this.cachedVendorModelMeta = this.sanitizeVendorModelMeta(parsed);
+      } catch (_e) {
+        this.cachedVendorModelMeta = {};
+        console.error('[LlmConfig] LLM_CONFIG_MIGRATION_FAILED vendor_model_meta JSON parse error; raw key kept');
       }
     }
     // PR2-T2 L3: vendorApiKeys JSON Record
@@ -616,29 +645,168 @@ export class LlmConfig {
     return [];
   }
 
-  public async addVendorModel(vendorId: string, model: string): Promise<void> {
+  // ===== 2026-10-25: per-vendor 模型元信息(vendor_model_meta) =====
+  // 读: 缺失(老数据)返回 null, 调用方回落到 model ID, 不抛错、不清空 chip。
+  public getVendorModelMeta(vendorId: string, modelId: string): VendorModelMeta | null {
+    const vendorMeta: Record<string, VendorModelMeta> | undefined = this.cachedVendorModelMeta[vendorId];
+    if (vendorMeta === undefined) { return null; }
+    const meta: VendorModelMeta | undefined = vendorMeta[modelId];
+    if (meta === undefined) { return null; }
+    // defensive copy: 调用方改字段不污染缓存
+    const copy: VendorModelMeta = {
+      displayName: meta.displayName,
+      contextWindow: meta.contextWindow,
+      inputModalities: Array.isArray(meta.inputModalities) ? meta.inputModalities.slice(0) : [],
+      source: meta.source,
+    };
+    return copy;
+  }
+
+  public async setVendorModelMeta(vendorId: string, modelId: string, meta: VendorModelMeta): Promise<void> {
+    this.requireInited();
+    if (vendorId.length === 0 || modelId.length === 0) { return; }
+    this.putVendorModelMetaInMemory(vendorId, modelId, meta);
+    await this.persistVendorModelMeta();
+  }
+
+  // 与 removeVendorModel 同步删: 模型没了, 元信息不能留成僵尸条目
+  public async removeVendorModelMeta(vendorId: string, modelId: string): Promise<void> {
+    this.requireInited();
+    this.dropVendorModelMetaInMemory(vendorId, modelId);
+    await this.persistVendorModelMeta();
+  }
+
+  private putVendorModelMetaInMemory(vendorId: string, modelId: string, meta: VendorModelMeta): void {
+    let vendorMeta: Record<string, VendorModelMeta> | undefined = this.cachedVendorModelMeta[vendorId];
+    if (vendorMeta === undefined) {
+      vendorMeta = {};
+      this.cachedVendorModelMeta[vendorId] = vendorMeta;
+    }
+    const next: VendorModelMeta = {
+      displayName: typeof meta.displayName === 'string' ? meta.displayName : '',
+      // 0 表示 discovery 没给, 保持 0; 不借用 normalizeContextWindow(会把 0 抬到 4096)
+      contextWindow: meta.contextWindow > 0 ? Math.floor(meta.contextWindow) : 0,
+      inputModalities: Array.isArray(meta.inputModalities) ? meta.inputModalities.slice(0) : [],
+      source: typeof meta.source === 'string' && meta.source.length > 0 ? meta.source : 'user',
+    };
+    vendorMeta[modelId] = next;
+  }
+
+  private dropVendorModelMetaInMemory(vendorId: string, modelId: string): void {
+    const vendorMeta: Record<string, VendorModelMeta> | undefined = this.cachedVendorModelMeta[vendorId];
+    if (vendorMeta === undefined) { return; }
+    const nextVendor: Record<string, VendorModelMeta> = {};
+    for (const k of Object.keys(vendorMeta)) {
+      if (k !== modelId) { nextVendor[k] = vendorMeta[k]; }
+    }
+    if (Object.keys(nextVendor).length === 0) {
+      this.cachedVendorModelMeta = this.rebuildRecordWithout<Record<string, VendorModelMeta>>(
+        this.cachedVendorModelMeta, vendorId);
+    } else {
+      this.cachedVendorModelMeta[vendorId] = nextVendor;
+    }
+  }
+
+  private async persistVendorModelMeta(): Promise<void> {
+    await this.writeVendorModelMetaKey();
+    await this.store!.flush();
+  }
+
+  // 只写 key 不 flush — addVendorModel/removeVendorModel 与 vendor_models 共用一次 flush
+  private async writeVendorModelMetaKey(): Promise<void> {
+    const s = this.store!;
+    if (Object.keys(this.cachedVendorModelMeta).length === 0) {
+      await s.delete(KEY_VENDOR_MODEL_META);
+    } else {
+      await s.put(KEY_VENDOR_MODEL_META, JSON.stringify(this.cachedVendorModelMeta));
+    }
+  }
+
+  // 老结构 / 手改 JSON 的防御: 缺字段按 0/空串处理, 不让坏 meta 拖垮 chip 读取
+  private sanitizeVendorModelMeta(
+    raw: Record<string, Record<string, VendorModelMeta>>
+  ): Record<string, Record<string, VendorModelMeta>> {
+    const out: Record<string, Record<string, VendorModelMeta>> = {};
+    // JSON.parse 可能给出数组/字符串/数字等非对象形状, 一律视为无 meta
+    if (raw === null || raw === undefined || typeof raw !== 'object' || Array.isArray(raw)) {
+      return out;
+    }
+    for (const vendorId of Object.keys(raw)) {
+      const vendorMeta: Record<string, VendorModelMeta> | undefined = raw[vendorId];
+      if (vendorMeta === undefined || vendorMeta === null
+        || typeof vendorMeta !== 'object' || Array.isArray(vendorMeta)) {
+        continue;
+      }
+      const nextVendor: Record<string, VendorModelMeta> = {};
+      for (const modelId of Object.keys(vendorMeta)) {
+        const item: VendorModelMeta | undefined = vendorMeta[modelId];
+        if (item === undefined || item === null) { continue; }
+        const displayName: string = typeof item.displayName === 'string' ? item.displayName : '';
+        const contextWindow: number = typeof item.contextWindow === 'number' && item.contextWindow > 0
+          ? Math.floor(item.contextWindow) : 0;
+        const inputModalities: string[] = [];
+        if (Array.isArray(item.inputModalities)) {
+          for (const modality of item.inputModalities) {
+            if (typeof modality === 'string' && modality.length > 0) {
+              inputModalities.push(modality);
+            }
+          }
+        }
+        const source: string = typeof item.source === 'string' && item.source.length > 0
+          ? item.source : 'user';
+        const next: VendorModelMeta = {
+          displayName: displayName,
+          contextWindow: contextWindow,
+          inputModalities: inputModalities,
+          source: source,
+        };
+        nextVendor[modelId] = next;
+      }
+      if (Object.keys(nextVendor).length > 0) { out[vendorId] = nextVendor; }
+    }
+    return out;
+  }
+
+  public async addVendorModel(vendorId: string, model: string, meta?: VendorModelMeta): Promise<void> {
     const t: string = model.trim();
     if (t.length === 0) { return; }
     const existing: string[] = this.cachedVendorModels[vendorId] ?? [];
-    if (existing.indexOf(t) >= 0) { return; }  // 防重
-    this.cachedVendorModels[vendorId] = [...existing, t];
-    const s = this.store!;
-    await s.put(KEY_VENDOR_MODELS, JSON.stringify(this.cachedVendorModels));
-    await s.flush();
+    const already: boolean = existing.indexOf(t) >= 0;
+    if (!already) {
+      this.cachedVendorModels[vendorId] = [...existing, t];
+    }
+    if (meta !== undefined) {
+      // 同一 model ID 重新 discovery 时刷新元信息, 但绝不因缺 meta 清掉已有元信息
+      this.putVendorModelMetaInMemory(vendorId, t, meta);
+    }
+    if (!already || meta !== undefined) {
+      const s = this.store!;
+      await s.put(KEY_VENDOR_MODELS, JSON.stringify(this.cachedVendorModels));
+      if (meta !== undefined) {
+        await this.writeVendorModelMetaKey();
+      }
+      await s.flush();
+    }
   }
 
   public async removeVendorModel(vendorId: string, model: string): Promise<void> {
     const existing: string[] = this.cachedVendorModels[vendorId] ?? [];
     const filtered: string[] = existing.filter((m: string): boolean => m !== model);
-    if (filtered.length === 0) {
+    if (existing.length > 0 && filtered.length === 0) {
       // 空数组 — 删 entry 而非存空数组,简化后续 getVendorModels fallback
       // PR2-T2 ticket #83 T2 (2026-09-08): rebuildRecordWithout helper 替代 inline delete loop
       this.cachedVendorModels = this.rebuildRecordWithout<string[]>(this.cachedVendorModels, vendorId)
-    } else {
+      // vendor 已无模型: 整组元信息一起删, 不留僵尸条目
+      this.cachedVendorModelMeta = this.rebuildRecordWithout<Record<string, VendorModelMeta>>(
+        this.cachedVendorModelMeta, vendorId)
+    } else if (filtered.length > 0) {
       this.cachedVendorModels[vendorId] = filtered;
+      // 2026-10-25: 元信息与 vendor_models 同步删
+      this.dropVendorModelMetaInMemory(vendorId, model);
     }
     const s = this.store!;
     await s.put(KEY_VENDOR_MODELS, JSON.stringify(this.cachedVendorModels));
+    await this.writeVendorModelMetaKey();
     await s.flush();
   }
 
@@ -658,6 +826,8 @@ export class LlmConfig {
     this.cachedCustomVendors = [];
     // PR2-T2 L2: 同时清 vendorModels
     this.cachedVendorModels = {};
+    // 2026-10-25: 同时清模型元信息
+    this.cachedVendorModelMeta = {};
     // PR2-T2 L3: 同时清 vendorApiKeys
     this.cachedVendorApiKeys = {};
     this.cachedActiveVendorModels = {};
@@ -676,6 +846,7 @@ export class LlmConfig {
     await s.delete(KEY_CUSTOM_VENDOR);
     await s.delete(KEY_CUSTOM_VENDORS);
     await s.delete(KEY_VENDOR_MODELS);
+    await s.delete(KEY_VENDOR_MODEL_META);
     await s.delete(KEY_VENDOR_API_KEYS);
     await s.delete(KEY_ACTIVE_VENDOR_MODELS);
     await s.delete(KEY_MODEL_CONTEXT_WINDOWS);

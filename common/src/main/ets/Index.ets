@@ -225,6 +225,8 @@ export {
 //   ApiKeyVault: 凭据 vault (@kit.AssetStoreKit, 兼容读取旧 preferences key)
 //   providers:  5 厂商预设(DeepSeek / Tongyi / GLM / Kimi / Doubao) + findProvider 工厂
 export { LlmConfig, DEFAULT_ENABLE_THINKING, DEFAULT_CONTEXT_WINDOW_TOKENS } from './llm/LlmConfig';
+// 2026-10-25: 模型元信息(displayName/contextWindow/模态/source)的类型出口 — 仅类型, 无运行时依赖
+export type { VendorModelMeta } from './llm/LlmConfig';
 export { OnDeviceLlm, ON_DEVICE_MODEL_DIR, ON_DEVICE_MODEL_FILE } from './llm/OnDeviceLlm';
 // LocalChatProvider：@kit.DataAugmentationKit 改为运行时懒加载，barrel 求值不再触碰受限 Kit
 // （spec 033 §6 S2）。扩展进程即便 import 本 barrel 也不会初始化该 Kit。
