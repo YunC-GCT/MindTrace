@@ -15,7 +15,7 @@
 //    node scripts/e2e-capture/run.mjs --mode worker   # Worker 可用性探针（S1）
 //    node scripts/e2e-capture/run.mjs --timeout 180   # 放宽等 done 的时间（秒）
 //    HDC=/path/to/hdc node scripts/e2e-capture/run.mjs
-//  退出码: 0 = 批量链路两图都成功且检索有命中 / Worker 探针两条都成功；
+//  退出码: 0 = 批量链路两图都成功 / 两条检索都命中且无 degraded / Worker 探针两条都成功；
 //          1 = 有失败或超时（原始日志路径会打印）
 // ============================================================================
 
@@ -221,12 +221,33 @@ function printSummary() {
   const totalMs = doneMatch ? Number(doneMatch[3]) : 0;
   const captures = lines.filter((l) => l.includes('stage=capture'));
   const withSource = captures.filter((l) => /sourceImageId=(?!\(空\))/.test(l)).length;
-  const hits = lines.filter((l) => l.includes('stage=search') && !l.includes('search-start'))
-    .map((l) => {
-      const m = /q=(\S+) hits=(\d+)/.exec(l);
-      return m ? { q: m[1], hits: Number(m[2]) } : null;
-    }).filter(Boolean);
-  const noHit = hits.filter((h) => h.hits === 0);
+  // 每条 query 可能打两行：基础行带 hits/ms，hits=0 时再补一行 degraded=<bool>。
+  // 同一 query 后写的行覆盖先写的行，最终保留 degrade 标记。
+  const searchRecords = new Map();
+  for (const line of lines) {
+    if (!line.includes('stage=search') || line.includes('search-start')) {
+      continue;
+    }
+    const hitMatch = /q=(\S+) hits=(\d+)/.exec(line);
+    if (!hitMatch) {
+      continue;
+    }
+    const degradedMatch = /degraded=(true|false)/.exec(line);
+    const msMatch = /ms=(\d+)/.exec(line);
+    searchRecords.set(hitMatch[1], {
+      q: hitMatch[1],
+      hits: Number(hitMatch[2]),
+      ms: msMatch ? Number(msMatch[1]) : 0,
+      degraded: degradedMatch !== null && degradedMatch[1] === 'true',
+    });
+  }
+  // 默认模式必须覆盖「之前卡死的两条连续检索」，缺一条都不能判 PASS。
+  const expectedQueries = ['一元二次方程', '平方根'];
+  const queryResults = expectedQueries.map((q) => ({ q, record: searchRecords.get(q) ?? null }));
+  const anyDegraded =
+    [...searchRecords.values()].some((r) => r.degraded) ||
+    rawLines.some((l) => l.includes('degraded=true'));
+  const searchesOk = queryResults.every((item) => item.record !== null && item.record.hits > 0);
   const cardPushed = lines.some((l) => l.includes('stage=card refresh=1'));
   const workerProbes = lines.filter((l) => l.includes('probe=worker') && !l.includes(' error='));
   const workerStage = /stage=worker-probe ok=(true|false)/.exec(rawLines.join('\n'));
@@ -241,8 +262,20 @@ function printSummary() {
   } else {
     console.log(`抓取     : 成功 ${okCount}，失败 ${failedCount}，总耗时 ${totalMs}ms` +
       (captures.length < okCount ? `（日志收到 ${captures.length} 行 capture，中间行被 hilog 丢了）` : ''));
-    console.log(`检索     : ${hits.length} 条` + (hits.length > 0
-      ? `（${hits.map((h) => `${h.q}=${h.hits}`).join(', ')}）` : '（没有 search 日志）'));
+    console.log(`检索     : 期望 ${expectedQueries.length} 条（${expectedQueries.join(', ')}）`);
+    for (const item of queryResults) {
+      const r = item.record;
+      if (r === null) {
+        console.log(`           ${item.q}: 未收到 stage=search`);
+      } else {
+        console.log(`           ${item.q}: hits=${r.hits} ms=${r.ms}${r.degraded ? ' degraded=true' : ''}`);
+      }
+    }
+    const extraQueries = [...searchRecords.keys()].filter((q) => !expectedQueries.includes(q));
+    for (const q of extraQueries) {
+      const r = searchRecords.get(q);
+      console.log(`           ${q}: hits=${r.hits} ms=${r.ms}${r.degraded ? ' degraded=true' : ''}`);
+    }
     if (probeLines.length > 0) {
       console.log(`探针     : ${probeLines.length} 条`);
       for (const line of probeLines) {
@@ -258,7 +291,7 @@ function printSummary() {
     ? probeOk
     : MODE === 'worker'
       ? workerProbesOk && workerStage !== null && workerStage[1] === 'true' && !workerTimedOut
-      : doneMatch !== null && okCount === 2 && failedCount === 0 && hits.length >= 1 && noHit.length === 0);
+      : doneMatch !== null && okCount === 2 && failedCount === 0 && searchesOk && !anyDegraded);
   console.log(`判定     : ${verdict ? 'PASS' : 'FAIL'}`);
   console.log(`原始日志 : ${logFile}`);
   if (!verdict) {
@@ -266,8 +299,8 @@ function printSummary() {
       console.log('排查提示 : Worker 可用性探针失败——两条都 timeout 说明 Kit 在 Worker 线程内不可用/加载即崩；');
       console.log('           probe 行 ok=false 时看紧随其后的 error 行。');
     } else {
-      console.log('排查提示 : 缺 search 日志说明 search() 未返回——先看是否有 [ImageSearch] init ok；');
-      console.log('           有 init 无 search 则 textSearchImage.search 阻塞，需查 Kit 对 query 的要求。');
+      console.log('排查提示 : 缺 search 日志 / hits=0 / degraded=true 都算失败——先看 [ImageSearch] worker created 与');
+      console.log('           degraded reason；Worker 已创建但超时说明 Kit 在 Worker 内也卡住，需回看 S1 结论。');
     }
   }
   return verdict;

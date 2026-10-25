@@ -3,7 +3,7 @@
  * 路径: entry/src/main/ets/services/DebugCaptureRunner.ets
  * 职责: 用 rawfile 里的样例题图跑完「取图 → OCR → 结构化 → 落库 → 卡片快照」整链，
  *       每个阶段打一条 [E2E] 日志，失败不中断后续图（与批量入口的语义一致）。
- * 依赖: AiService / CardSnapshotService / ResourceManager / CoreFileKit
+ * 依赖: AiService / CardSnapshotService / CoreVisionImageSearchIndex / ResourceManager / CoreFileKit
  * 数据流: run(ctx) → getRawFileContent('debug/math-N.png') → cacheDir 下的 file:// →
  *        AiService.capture() → CardSnapshotService.refresh() → hilog [E2E]
  */
@@ -15,6 +15,7 @@ import { ImageSearchIndexRegistry } from 'common';
 import type { ImageSearchHit, KnowledgeUnit } from 'common';
 import { AiService } from './AiService';
 import { CardSnapshotService } from './CardSnapshotService';
+import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
 
 const TAG: string = 'E2E';
 const DOMAIN: number = 0xE2E0;
@@ -64,28 +65,28 @@ export class DebugCaptureRunner {
       hilog.error(DOMAIN, TAG, '%{public}s', 'stage=card refresh=0 err=' + e.message);
     }
 
-    // 文搜图：确认落库的图片能被自然语言命中
+    // 文搜图：确认落库的图片能被自然语言命中。
+    // 检索已搬进常驻 Worker（#230），两条连续查询正是之前在主线程序列发出、第二次卡死的场景，必须覆盖。
     if (ImageSearchIndexRegistry.isInstalled()) {
-      // 刚 insert 完立刻 search，Kit 偶发不返回（真机实测）；先等索引落盘，失败再重试一次
-      // 索引写入是异步的：insert 返回后 Kit 还在建，这时 search 会阻塞主线程（真机实测）
+      // 索引写入是异步的：insert 返回后 Kit 还在建，先等索引落盘再查
       await DebugCaptureRunner.sleep(8000);
-      // 只查一次：真机上同进程第二次 search 会在原生层阻塞主线程（连 8s 定时器都不触发），
-      // 这是 Kit 的已知风险，v1 自检只验证「能不能被命中」，不做连续检索。
-      const queries: string[] = ['一元二次方程'];
+      const queries: string[] = ['一元二次方程', '平方根'];
       for (let i = 0; i < queries.length; i++) {
         const query: string = queries[i];
+        const startedAt: number = Date.now();
         try {
           hilog.info(DOMAIN, TAG, '%{public}s', 'stage=search-start q=' + query);
           const hits: ImageSearchHit[] = await DebugCaptureRunner.searchWithRetry(query);
-          let detail: string = '';
-          if (hits.length > 0) {
-            const best: ImageSearchHit = hits[0];
-            const slash: number = best.imagePath.lastIndexOf('/');
-            detail = ' best=' + (slash >= 0 ? best.imagePath.substring(slash + 1) : best.imagePath)
-              + ' sim=' + best.similarity.toString();
-          }
+          const elapsed: number = Date.now() - startedAt;
           hilog.info(DOMAIN, TAG, '%{public}s',
-            'stage=search q=' + query + ' hits=' + hits.length.toString() + detail);
+            'stage=search q=' + query + ' hits=' + hits.length.toString() + ' ms=' + elapsed.toString());
+          if (hits.length === 0) {
+            // 0 命中可能是真没命中，也可能是 Worker 超时/异常降级；分开打给 e2e 判定
+            hilog.warn(DOMAIN, TAG, '%{public}s',
+              'stage=search q=' + query + ' hits=0 degraded='
+                + (DebugCaptureRunner.isSearchDegraded() ? 'true' : 'false')
+                + ' ms=' + elapsed.toString());
+          }
         } catch (error) {
           const e: BusinessError = error as BusinessError;
           hilog.error(DOMAIN, TAG, '%{public}s', 'stage=search q=' + query + ' err=' + e.message);
@@ -124,6 +125,15 @@ export class DebugCaptureRunner {
       hilog.info(DOMAIN, TAG, '%{public}s',
         'probe=search q=' + query + ' ' + outcome + ' ms=' + (Date.now() - startedAt).toString());
     }
+  }
+
+  /** Worker 超时 / 异常会返回空数组而不抛错，degraded 标记由适配器实例提供 */
+  private static isSearchDegraded(): boolean {
+    const index = ImageSearchIndexRegistry.require();
+    if (index instanceof CoreVisionImageSearchIndex) {
+      return index.lastSearchDegraded();
+    }
+    return false;
   }
 
   /** search 失败等 500ms 再试一次：索引刚写入时首次检索可能不返回 */
