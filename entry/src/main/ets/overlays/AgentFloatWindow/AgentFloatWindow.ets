@@ -24,6 +24,7 @@ import { ModelSelector } from '../../services/ModelSelector';
 import { SessionCreator } from '../../services/SessionCreator';
 import { CameraKitLauncher } from '../../services/CameraKitLauncher';
 import { AlbumPickerLauncher } from '../../services/AlbumPickerLauncher';
+import { CaptureReceipt, CaptureReceiptStore } from '../../services/CaptureReceipt';
 import { ChatHeader } from './chat/ChatHeader';
 import { ChatSessionManager } from './chat/ChatSession';
 import {
@@ -970,6 +971,18 @@ export struct AgentFloatWindow {
             failed += 1;
             console.warn('[BatchCapture] failed at ' + (i + 1).toString() + ': ' + (error as Error).message);
           }
+        }
+        const receipt: CaptureReceipt = {
+          done: done,
+          failed: failed,
+          total: uris.length,
+          at: Date.now(),
+          source: 'batch',
+        };
+        try {
+          await CaptureReceiptStore.save(ctx, receipt);
+        } catch (error) {
+          console.warn('[BatchCapture] receipt save failed: ' + (error as Error).message);
         }
         this.batchUris = [];
         this.showToast('批量完成：成功 ' + done.toString() + ' 条，失败 ' + failed.toString() + ' 条');

@@ -26,6 +26,7 @@ import mathRenderFailureStateTest from './MathRenderFailureState.test';
 import detailRenderSessionTest from './DetailRenderSession.test';
 import noteDetailBackPressCoordinatorTest from './NoteDetailBackPressCoordinator.test';
 import chatAutoFollowStateTest from './ChatAutoFollowState.test';
+import captureReceiptTest from './CaptureReceipt.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -56,4 +57,5 @@ export default function testsuite() {
   detailRenderSessionTest();
   noteDetailBackPressCoordinatorTest();
   chatAutoFollowStateTest();
+  captureReceiptTest();
 }
