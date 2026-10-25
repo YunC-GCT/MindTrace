@@ -47,6 +47,7 @@ const INSTALL = !hasFlag('--no-install');
 const WITH_CARD = hasFlag('--with-card');
 const ARTIFACTS = {
   common: 'common/build/default/outputs/default/common-default-signed.hsp',
+  agents: 'agents/build/default/outputs/default/agents-default-signed.hsp',
   entry: 'entry/build/default/outputs/default/entry-default-signed.hap',
   cardservice: 'cardservice/build/default/outputs/default/cardservice-default-signed.hap',
 };
@@ -101,7 +102,7 @@ step(`device: ${targets.split('\n')[0].trim()}`);
 
 // ---- 1) 安装（HSP 必须先于 HAP） -------------------------------------------
 if (INSTALL) {
-  const order = ['common', 'entry'];
+  const order = ['common', 'agents', 'entry'];
   if (WITH_CARD) {
     order.push('cardservice');
   }
@@ -112,7 +113,8 @@ if (INSTALL) {
       fail(`缺构建产物：${ARTIFACTS[name]}\n先跑 node scripts/build-hsp-hap.mjs`);
     }
     const out = hdc(['install', '-r', artifact]);
-    if (!/success|AppMod finish/i.test(out)) {
+    // hdc 无论成败都会打印 "AppMod finish"，只认 successfully，并显式排除 error:
+    if (!/successfully/i.test(out) || /error:/i.test(out)) {
       fail(`安装 ${name} 失败：${out.trim().split('\n').slice(-3).join(' | ')}`);
     }
     step(`installed ${name}`);
