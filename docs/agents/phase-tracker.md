@@ -1,8 +1,10 @@
 # 阶段进度与验收 (phase tracker)
 
-> **唯一进度口径**。代码里做了什么以本表为准；改完功能不同步本表，视为未交付。
+> 唯一进度口径。代码里做了什么以本表为准；改完功能不同步本表，视为未交付。
 >
-> 当前主线：**v1 端A2A 小艺接入**（复赛版本已冻结，不再往 v1 加功能）。
+> 当前主线：**v1 收尾（P3/P4 云端已通）→ v2 `KnowledgeModel` 拆分（#209–#215）**。复赛版本已冻结，不再往 v1 加功能。
+>
+> 2026-10-25 口径修正：P1 的「小艺拉起应用选图」**不在 v1 范围**。小艺侧只能走 A2A 回话，`agentUI` 拉起真机返回 `start_ability_fail`（1011），v1 的入口是应用内 `+ → 批量`。
 
 ## 状态词
 
@@ -18,11 +20,12 @@
 | 阶段 | 目标 | 实现 | 验收标准 | 证据 |
 |---|---|---|---|---|
 | **P0 协议接入** | 小艺能调起 `AgentExtensionAbility` 并拿到回复 | ✅ | 真机小艺发消息后出现 agent 气泡 | `python scripts/a2a_smoke.py --text "整理数学题"` 返回 `ok: true`；hilog 出现 `onCreate → onConnect → onData → sendData` |
-| **P1 意图与入口** | 从对话进入应用选图 | ⬜ | 小艺说话后应用被拉起且停在选图态 | 真机录屏 |
+| **P1 意图与入口** | v1 入口 = 应用内 `+ → 批量`；小艺侧只回话不拉 UI | ✅ | 应用内批量入口可拉起多选 | `AlbumPickerLauncher.pick(ctx, 20)` 真机可拉起多选；小艺拉起 `agentUI` 返回 `start_ability_fail`（1011），已移出 v1 |
 | **P2 批量选图** | Picker 多选，最多 20 张，复制进沙箱 | ✅ | 选 20 张不崩、URI 全部可读 | 「+ → 批量」入口已上线；`pick(ctx, 20)` 真机可拉起多选 |
-| **P3 真实编排** | `handleTask` 接 `OcrNode → StructureNode → PersistNode` | ⬜ | 生成的笔记杀掉应用重启后仍在 | RDB 查询 + 列表截图 |
-| **P4 模型网关** | 端侧优先；端侧不可用则走用户模型并标注「已降级」 | 🟡 | 两种路径都能给出可区分的结果 | `ModelRouter` 已接系统端侧 `localChatModel`（PC/2in1）；本机平板恒走云端并标「已降级」。云端分支真机：App 首字 1357ms、小艺 1492ms。端侧分支待 2in1 |
-| **P4 结果回执** | 对话/卡片报「本次整理 N 条」 | ⬜ | 小艺里能问到刚生成的条数 | `a2a_smoke.py` 的 `reply_text` |
+| **P3 真实编排** | `handleTask` 接 `OcrNode → StructureNode → PersistNode` | ✅ | 生成的笔记杀掉应用重启后仍在 | `node scripts/e2e-capture/run.mjs` → `stage=done ok=2 failed=0 totalMs=87860`，两张图 `insert ok=1`，卡片 `units=20 due=12 new=9` |
+| **P3b 文搜图** | 落库图片建索引，按文字检索命中 | ✅ | 两条 query 各命中 5 张 | `stage=search q=一元二次方程 hits=5 ms=61`、`q=平方根 hits=5 ms=30`（spec 034 §8；Worker 化后不再阻塞主线程） |
+| **P4 模型网关** | 端侧优先；端侧不可用则走用户模型并标注「已降级」 | 🟡 云端 ✅ / 端侧待 2in1 | 两种路径都能给出可区分的结果 | 云端真机：App 首字 741ms（#226 后）、小艺 1347ms / 54 字 / 341 字节快照；端侧 `localChatModel` 限 PC/2in1，待设备验证 |
+| **P4 结果回执** | 对话/卡片报「本次整理 N 条」 | ⬜ | 小艺里能问到刚生成的条数 | `a2a_smoke.py` 的 `reply_text`（当前回复不含条数） |
 | **P5 合规落地** | AI 标识 + 导出元数据 | ⬜ | 导出的文件带 `AI生成 / MindTrace / mindtrace-note-agent` | 导出样本文件 |
 | **P6 上架运营** | 平台审核通过并发布 | 🟡 | 开放平台状态为「已上架」 | 平台截图 |
 
