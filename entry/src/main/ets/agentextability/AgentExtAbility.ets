@@ -8,7 +8,7 @@
  *       再发 artifactUpdate；小艺在这种序列下只渲染开头一两个词。历史实测「单帧 result.task
  *       一次给全 artifacts + COMPLETED」能完整渲染长文本，故回到手写。
  * 依赖: @kit.AbilityKit、@kit.PerformanceAnalysisKit、common.LlmConfig、
- *       ./services/ReplyService、./services/IntentClassifier、./TaskSnapshot
+ *       ./services/ReplyService、./services/IntentClassifier、./services/CaptureReceipt、./TaskSnapshot
  *
  * 进程约束（重要）: 扩展跑在独立进程 <bundle>:agent，模块加载失败表现为 exit 254 /
  *   Reason:SyntaxError 且 onCreate 一行日志都打不出来（错误发生在 import 图求值阶段）。
@@ -19,6 +19,7 @@
  *   onData(proxy, data) -> JSON.parse 取 id / params.message.parts[] 第一段 string text
  *     -> 解析失败：回一条错误快照（不崩）
  *     -> query 为空：回「没收到问题内容」
+ *     -> 回执意图命中：读 last-capture.json -> formatReceipt -> sendAnswer（不等配置、不调模型）
  *     -> 异步：等配置（≤4s）-> isConfigured -> ReplyService.complete（≤60s）
  *     -> sendAnswer(taskId, text)：buildTaskSnapshot 拼单帧 task 快照，artifacts 内是完整文本
  */
@@ -27,6 +28,12 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LlmConfig } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
+import {
+  CaptureReceipt,
+  CaptureReceiptStore,
+  formatReceipt,
+  matchesReceiptIntent,
+} from '../services/CaptureReceipt';
 import { buildTaskSnapshot } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
@@ -182,13 +189,25 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   }
 
   /** 异步跑模型：先等配置（最多 4 秒），再整段限时 60 秒 */
-  private handleQuery(taskId: string, query: string): void {
+  private async handleQuery(taskId: string, query: string): Promise<void> {
     const replyContext: ReplyContext = {
       memoryContext: '',
       learnerProfileContext: '',
       userContent: query,
       evidenceContext: '',
     };
+    // 回执意图本地判定：命中就读落盘事实，不等待 configReady、不调 ReplyService、不判 LlmConfig
+    if (matchesReceiptIntent(query)) {
+      const receipt: CaptureReceipt | null = await CaptureReceiptStore.read(this.context);
+      hilog.info(DOMAIN, TAG,
+        '[Receipt] hit=true receipt=%{public}s done=%{public}d failed=%{public}d total=%{public}d',
+        receipt !== null ? 'true' : 'false',
+        receipt !== null ? receipt.done : 0,
+        receipt !== null ? receipt.failed : 0,
+        receipt !== null ? receipt.total : 0);
+      this.sendAnswer(taskId, formatReceipt(receipt, Date.now()));
+      return;
+    }
     // 扩展进程里 preferences 可能迟迟不返回，最多等 4 秒，避免整个回复挂死
     const fallback: Promise<void> = new Promise<void>((resolve: (v: void) => void): void => {
       setTimeout((): void => {

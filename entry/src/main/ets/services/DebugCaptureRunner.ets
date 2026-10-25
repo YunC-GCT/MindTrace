@@ -3,7 +3,7 @@
  * 路径: entry/src/main/ets/services/DebugCaptureRunner.ets
  * 职责: 用 rawfile 里的样例题图跑完「取图 → OCR → 结构化 → 落库 → 卡片快照」整链，
  *       每个阶段打一条 [E2E] 日志，失败不中断后续图（与批量入口的语义一致）。
- * 依赖: AiService / CardSnapshotService / CoreVisionImageSearchIndex / ResourceManager / CoreFileKit
+ * 依赖: AiService / CardSnapshotService / CoreVisionImageSearchIndex / ResourceManager / CoreFileKit / CaptureReceipt
  * 数据流: run(ctx) → getRawFileContent('debug/math-N.png') → cacheDir 下的 file:// →
  *        AiService.capture() → CardSnapshotService.refresh() → hilog [E2E]
  */
@@ -16,6 +16,7 @@ import type { ImageSearchHit, KnowledgeUnit } from 'common';
 import { AiService } from './AiService';
 import { CardSnapshotService } from './CardSnapshotService';
 import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
+import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
 
 const TAG: string = 'E2E';
 const DOMAIN: number = 0xE2E0;
@@ -54,6 +55,19 @@ export class DebugCaptureRunner {
         hilog.error(DOMAIN, TAG, '%{public}s',
           'stage=capture seq=' + seq + ' ok=0 ms=' + (Date.now() - stageStart).toString() + ' err=' + e.message);
       }
+    }
+
+    const receipt: CaptureReceipt = {
+      done: ok,
+      failed: failed,
+      total: rawPaths.length,
+      at: Date.now(),
+      source: 'debug',
+    };
+    try {
+      await CaptureReceiptStore.save(ctx, receipt);
+    } catch (error) {
+      console.warn('[BatchCapture] receipt save failed: ' + (error as Error).message);
     }
 
     try {

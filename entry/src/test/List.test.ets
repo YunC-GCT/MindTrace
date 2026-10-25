@@ -27,6 +27,7 @@ import detailRenderSessionTest from './DetailRenderSession.test';
 import noteDetailBackPressCoordinatorTest from './NoteDetailBackPressCoordinator.test';
 import chatAutoFollowStateTest from './ChatAutoFollowState.test';
 import noteMarkdownExportTest from './NoteMarkdownExport.test';
+import captureReceiptTest from './CaptureReceipt.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -58,4 +59,5 @@ export default function testsuite() {
   noteDetailBackPressCoordinatorTest();
   chatAutoFollowStateTest();
   noteMarkdownExportTest();
+  captureReceiptTest();
 }
