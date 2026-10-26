@@ -46,7 +46,7 @@
 
 ## 未完成 / 已知问题（下一段优先）
 
-1. **Kimi / GLM / 豆包 没有 catalog listing**（`model-catalog.ets:341-363` 的 `models: []`），所以面板显示「未提供内置清单」、手动输入的 `kimi-k2.6` 挂「能力未确认」chip —— 但同一个面板又出现了按 spec 渲染的「思考模式」开关。两个信号自相矛盾：chip 该读 spec 的 `evidence.status`（`verified`/`partial` → 「字段已核实（默认值未证实）」），而不是只看 listing 是否存在。
+1. **Kimi / GLM / 豆包 没有 catalog listing**（`model-catalog.ets:341-363` 的 `models: []`），所以面板显示「未提供内置清单」、手动输入的 `kimi-k2.6` 挂「能力未确认」chip —— 但同一个面板又出现了按 spec 渲染的「思考模式」开关。两个信号自相矛盾：chip 该读 spec 的 `evidence.status`（`verified`/`partial` → 「字段已核实（默认值未证实）」），而不是只看 listing 是否存在。**（已处理，见文末「接手后进展」）**
 2. **百炼 `thinking_budget` 未建模** —— 第三类控制（思维链限长），和 effort 不是一回事，要不要加待定。
 3. **GLM 只加了 6 个精确 ID**（5.3 / 5.3-flash / 5 / 5.1 / 5.2 / 4.7），`GLM-5.3-FlashX`、`GLM-5-Turbo`、`GLM-4.7-Flash` 等未加，避免编 ID；加之前先核官方 model id 大小写。
 4. **A2A 延迟样本只有 1 条**：`canonicalModel=deepseek-flash / attempts=1 / elapsedMs=1696`。要拍「默认模型切不切 flash」需攒 20 条算 P50/P95。抓取：`hdc hilog | grep --line-buffered -E "A2A_(REPLY_SENT|DEADLINE_EXCEEDED|LLM_TIMEOUT|LLM_FAILED)"`。
@@ -68,3 +68,23 @@ cd scripts/arkts-lint && npm test
 MSYS2_ARG_CONV_EXCL="*" hdc install -r common/build/default/outputs/default/common-default-signed.hsp
 MSYS2_ARG_CONV_EXCL="*" hdc install -r entry/build/default/outputs/default/entry-default-signed.hap
 ```
+
+## 接手后进展（2026-10-26 17:5x，同一 worktree）
+
+**问题 1 已修：能力状态只读 ModelSpec 证据。**
+
+- `common` 新增 `capabilitySignal(spec)` 三态：`verified` / `partial` / `unconfirmed`（无 spec 与 spec 标 `unverified` 归一为 unconfirmed）。清单是否存在不再参与判断。
+- `entry/services/ModelSelector.ets`：chip hint 与保存判定改读 `capabilitySignal`；`partial` 提示「字段已核实（默认值未证实）」；`resolveModel` 已带 spec，`specFor` 不再二次查表。
+- `VendorPicker.ets`：横幅改成「未提供内置清单 · <能力状态>」，不再与思考开关并存自相矛盾。
+- 测试：`model-resolution.test.mjs` 补三态断言；把已存在但未收编的 `model-request-spec` / `model-capabilities` / `llm-model-preference` 三个文件挂进 `npm test`（+27 项）。
+
+**验证（本 worktree，HEAD = `2b32f4a`）**
+
+| 项 | 结果 |
+|---|---|
+| `assembleHsp` / `assembleHap` | 均 BUILD SUCCESSFUL（18s / 41s） |
+| `hsp-freshness` | 退出码 0，产物晚于 `common/src`，`OnDeviceLlm` 命中 5 处 |
+| agent-gate | **PASS**（7 文件 / 4 .ets；arkts-lint errors=0） |
+| `npm test` | **379 项 / 372 通过 / 7 失败**；7 个与 HEAD 前逐条相同（`kg_edge`、`note context`、`note-review ×4`、`dispatcher`），新增 27 项全绿 |
+
+**合并口径（未执行，等 review）**：`develop` 与 `origin/develop` 都是当前 HEAD 的**严格祖先**（`git merge-base --is-ancestor` 成立，ahead/behind = `0 102`），所以合入 develop 是 **fast-forward**，合并树与本 worktree 完全相同 —— 上面这份构建/测试结果直接适用，不存在"合并树编不过"的额外风险。剩下的仍是问题 4（A2A 只 1 条样本）与问题 2/3/5/6/7。
