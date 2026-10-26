@@ -109,6 +109,9 @@ export class ReplyService {
         timeoutMs: effectivePolicy.timeoutMs,
         maxRetries: effectivePolicy.maxRetries,
         model: effectivePolicy.model,
+        // 小艺链路的预算是按「不思考」算的（25s 内层 / 35s deadline）：
+        // ModelSpec 默认值（DeepSeek 官方默认开思考）不能接管这里。
+        enableThinking: false,
         label: label,
         cancellationToken: cancellationToken,
       },
@@ -143,11 +146,13 @@ export class ReplyService {
     try {
       while (streamAttempts < 2) {
         try {
-          // 聊天首字节优先: 不传 enableThinking, 走 LlmClient 流式默认 false (关闭思考)。
-          // 思考模式只留给显式传 enableThinking: true 的推理型调用方。
+          // 聊天首字节优先: 显式关闭思考。不能依赖 LlmClient 的默认值——
+          // 默认值现在来自该型号的 ModelSpec（DeepSeek 官方默认是开启思考），
+          // 不传就会把首字节拖成思考档。思考模式只留给显式传 enableThinking: true 的调用方。
           await client.call({
             messages: this.intentClassifier.buildStreamingReplyMessages(context),
             stream: true,
+            enableThinking: false,
             onDelta: (event: StreamEvent): void => {
               cancellationToken?.throwIfCancelled();
               receivedEvent = true;

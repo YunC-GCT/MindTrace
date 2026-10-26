@@ -24,15 +24,21 @@ test('LlmClient.callStreamInternal firstByteTimer tiers by thinking capability',
   );
 });
 
-test('ReplyService reply paths inherit enableThinking from LlmClient config', () => {
-  assert.doesNotMatch(replyService, /enableThinking\s*:\s*false/);
+test('ReplyService reply paths pin enableThinking to false instead of inheriting config', () => {
+  // 2026-10-26: 默认思考现在来自 ModelSpec（DeepSeek 官方默认开启），
+  // 聊天与小艺两条链路都按「不思考」的时延预算跑，必须显式钉死，不能继承配置。
+  const pinned = (replyService.match(/enableThinking\s*:\s*false/g) ?? []).length;
+  assert.equal(pinned, 2, 'both reply paths (JSON guarded + stream) must pass enableThinking: false');
 });
 
-test('LlmClient maps enableThinking to the Qwen HTTP switch through the shared builder', () => {
-  const qwenSwitches = llmClient.match(/enable_thinking/g) ?? [];
-  assert.ok(qwenSwitches.length >= 2, 'the shared thinking builder must carry enable_thinking');
-  assert.match(llmClient, /body\.enable_thinking\s*=\s*enableThinking/);
+test('LlmClient maps thinking switches through the shared ModelSpec builder', () => {
+  // 2026-10-26: Qwen 的 enable_thinking / DeepSeek 的 thinking.type 都来自
+  // ModelSpec.on/off, LlmClient 不再按 vendor 分支。
+  assert.doesNotMatch(llmClient, /enable_thinking/, 'flat enable_thinking is now a FieldWrite');
+  assert.doesNotMatch(llmClient, /vendorId === 'deepseek'/);
+  assert.doesNotMatch(llmClient, /vendorId === 'tongyi'/);
   assert.doesNotMatch(llmClient, /chat_template_kwargs/);
+  assert.match(llmClient, /planModelRequest\(resolved\.spec, selection\)/);
 });
 
 test('LlmClient requestInStream callback tolerates undefined status data', () => {

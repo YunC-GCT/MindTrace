@@ -20,14 +20,17 @@
  *
  * ArkTS 1.1 strict 适配:
  *   - JSON 先转 Record<string, Object> 再逐字段类型收窄, 不使用 any。
- *   - 所有对象字面量显式标注 ModelListing / ModelEffortInfo。
+ *   - 所有对象字面量显式标注 ModelListing。
+ *
+ * 2026-10-26: discovery 不再产出 effort 元数据。服务端 /models 的 effort 是
+ * 发现信息, 不是请求协议证据; 请求字段只由 model-catalog 的 ModelSpec 推导。
  */
 
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getProviderCatalog } from './model-catalog';
-import type { ModelEffortInfo, ModelListing, ProviderCatalog } from './model-catalog';
+import type { ModelListing, ProviderCatalog } from './model-catalog';
 
 const MAX_DISCOVERY_BYTES: number = 4 * 1024 * 1024;
 const DEFAULT_DISCOVERY_TIMEOUT_MS: number = 10000;
@@ -166,23 +169,6 @@ function pickStringArray(record: Record<string, Object>, keys: string[]): string
   return [];
 }
 
-function buildEffort(record: Record<string, Object>): ModelEffortInfo {
-  const raw: Object | undefined = record['effort'];
-  if (raw === undefined || raw === null || typeof raw !== 'object') {
-    return { supportedLevels: [], defaultLevel: '' };
-  }
-  const effortRecord: Record<string, Object> = raw as Record<string, Object>;
-  const levels: string[] = pickStringArray(effortRecord,
-    ['supported_levels', 'supportedLevels', 'levels']);
-  const defaultLevel: string = pickString(effortRecord,
-    ['default_level', 'defaultLevel', 'default']);
-  const effort: ModelEffortInfo = {
-    supportedLevels: levels,
-    defaultLevel: defaultLevel,
-  };
-  return effort;
-}
-
 function buildListing(providerId: string, record: Record<string, Object>, fallbackId: string): ModelListing | null {
   const declaredId: string = pickString(record, ['id', 'model']);
   const id: string = declaredId.length > 0 ? declaredId : fallbackId.trim();
@@ -207,7 +193,6 @@ function buildListing(providerId: string, record: Record<string, Object>, fallba
   // 官方 /models 直接给能力时就采信; 认不出的字段仍不猜, 留空由解析器按保守处理。
   const inputModalities: string[] = pickStringArray(record,
     ['input_modalities', 'inputModalities', 'modalities']);
-  const effort: ModelEffortInfo = buildEffort(record);
   const listing: ModelListing = {
     id: id,
     displayName: declaredName.length > 0 ? declaredName : id,
@@ -215,7 +200,6 @@ function buildListing(providerId: string, record: Record<string, Object>, fallba
     contextWindow: contextWindow > 0 ? Math.floor(contextWindow) : 0,
     maxOutputTokens: maxOutputTokens > 0 ? Math.floor(maxOutputTokens) : 0,
     inputModalities: inputModalities,
-    effort: effort,
     source: 'discovery',
   };
   return listing;
@@ -263,10 +247,6 @@ function listingsFromRecordMap(providerId: string, modelsRecord: Record<string, 
       // 网关 models{} 也允许 "model-id": "display name" 的形态。
       if (typeof value === 'string') {
         const displayName: string = (value as string).trim();
-        const directEffort: ModelEffortInfo = {
-          supportedLevels: [],
-          defaultLevel: '',
-        };
         const direct: ModelListing = {
           id: key,
           displayName: displayName.length > 0 ? displayName : key,
@@ -274,7 +254,6 @@ function listingsFromRecordMap(providerId: string, modelsRecord: Record<string, 
           contextWindow: 0,
           maxOutputTokens: 0,
           inputModalities: [],
-          effort: directEffort,
           source: 'discovery',
         };
         if (!containsId(listings, direct.id)) {

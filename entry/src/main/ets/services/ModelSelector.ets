@@ -15,10 +15,14 @@
  *   - 可用性以 resolveModel() 为唯一真源; 只在"没有权威内置清单可对照"时降级:
  *       discovery 拿到 / 没有 catalog 的 vendor(通义/GLM/Kimi/豆包/自定义) → usable + degraded(能力未确认),
  *       有 catalog 但 ID 不在其中(如 DeepSeek 手输错 ID) → unusable(unresolved), 保存需拦截。
+ *
+ * 2026-10-26: 把 ModelSpec 的证据状态接进可用性:
+ *   - spec 存在且 evidence.status !== 'unverified' → 能力已确认, 不降级。
+ *   - spec 缺失或 unverified → degraded + 「能力未确认」, 但仍允许保存(不伪装成不支持)。
  */
 
-import { LlmConfig, getProviderCatalog, resolveModel } from 'common';
-import type { ModelListing, ProviderCatalog, ResolvedModel } from 'common';
+import { LlmConfig, getModelSpec, getProviderCatalog, resolveModel } from 'common';
+import type { ModelListing, ModelSpec, ProviderCatalog, ResolvedModel } from 'common';
 
 export interface ModelAvailability {
   usable: boolean;
@@ -61,6 +65,25 @@ export class ModelSelector {
   }
 
   /**
+   * 准确型号的 ModelSpec; 规格只按 (providerId, canonicalId) 查, 不看 vendor 名推导。
+   */
+  static specFor(vendorId: string, modelId: string): ModelSpec | null {
+    const resolved: ResolvedModel = resolveModel(vendorId, modelId);
+    const canonical: string = resolved.canonicalId.length > 0
+      ? resolved.canonicalId : modelId.trim();
+    return getModelSpec(vendorId.trim(), canonical);
+  }
+
+  /**
+   * 请求字段是否有证据: spec 存在且 evidence.status 不是 unverified。
+   * 缺失规格 = 未确认, 不是"不支持"。
+   */
+  static capabilityConfirmed(vendorId: string, modelId: string): boolean {
+    const spec: ModelSpec | null = ModelSelector.specFor(vendorId, modelId);
+    return spec !== null && spec.evidence.status !== 'unverified';
+  }
+
+  /**
    * 可用性判定。source 来自 ModelListing.source('catalog' | 'discovery' | 'user')。
    * 不在这里编造上下文/模态/输出上限 — 只决定"能不能选、要不要提示"。
    */
@@ -69,11 +92,13 @@ export class ModelSelector {
     const requested: string = modelId.trim();
     const resolved: ResolvedModel = resolveModel(provider, requested);
     if (resolved.usable) {
+      const unconfirmed: boolean = !ModelSelector.capabilityConfirmed(provider, resolved.canonicalId);
+      const degraded: boolean = resolved.degraded || unconfirmed;
       const ok: ModelAvailability = {
         usable: true,
-        degraded: resolved.degraded,
-        reasonCode: resolved.degraded ? 'CAPABILITY_UNCONFIRMED' : resolved.reason,
-        hint: resolved.degraded ? ModelSelector.reasonText('CAPABILITY_UNCONFIRMED') : '',
+        degraded: degraded,
+        reasonCode: degraded ? 'CAPABILITY_UNCONFIRMED' : resolved.reason,
+        hint: degraded ? ModelSelector.reasonText('CAPABILITY_UNCONFIRMED') : '',
       };
       return ok;
     }
@@ -119,6 +144,7 @@ export class ModelSelector {
     if (c === 'MODEL_ID_UNRESOLVED') { return '模型 ID 未在已确认清单中'; }
     if (c === 'EMPTY_REQUEST') { return '未填写模型 ID'; }
     if (c === 'CAPABILITY_UNCONFIRMED') { return '能力未确认'; }
+    if (c === 'MODEL_SPEC_INCOMPLETE') { return '模型规格不完整'; }
     if (c.startsWith('ALIAS_RESOLVED:')) { return '旧模型名，已自动映射'; }
     return '模型不可用';
   }

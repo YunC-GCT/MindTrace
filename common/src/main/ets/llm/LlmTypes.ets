@@ -21,16 +21,20 @@ export interface ChatMessage {
 }
 
 // ==================== LlmRequestBody (OpenAI 兼容请求体)====================
+// 运行时 body 由 ModelRequestBuilder 的 FieldWrite 路径写入一个
+// Record<string, Object> (thinking 可能是嵌套对象); 本接口保留为 wire 形状的
+// 类型参考/文档, 字段名与 OpenAI 兼容端点一致。
 export interface LlmRequestBody {
   model: string;
   messages: ChatMessage[];
   temperature?: number;
+  top_p?: number;
   max_tokens: number;
   stream: boolean;
   response_format?: LlmResponseFormat;
   enable_thinking?: boolean;
   thinking?: LlmThinkingConfig;   // DeepSeek 思考模式配置
-  reasoning_effort?: string;      // 思考强度: "high" | "max"
+  reasoning_effort?: string;      // 思考强度: "low" | "high" | "max"
   tools?: LlmToolDefinition[];    // OpenAI 兼容 function-calling (spec 014, 可选 → 向后兼容)
   tool_choice?: string;           // Phase 1 仅 'auto' | 'none'
 }
@@ -84,6 +88,7 @@ export type LlmErrorKind =
   | 'STREAM_FAILED'     // 流式传输中断
   | 'PERSIST_ERROR'     // preferences 读写失败
   | 'NORMALIZE_KEYWORD_REJECTED' // LlmConfig 拒绝保留关键词
+  | 'MODEL_SPEC_INCOMPLETE'     // ModelSpec 必填字段无合法值, 拒绝静默猜默认
   | 'TOOL_LOOP_MAX_STEPS'       // ToolLoop 超过 maxSteps (spec 014)
   | 'TOOL_REGISTRY_ERROR';      // ToolRegistry 重名/命名非法注册 (spec 014)
 
@@ -212,10 +217,13 @@ export interface LlmCallRequest {
   model?: string;
   timeoutMs?: number;
   responseFormat?: LlmResponseFormat;
+  // 思考开关 / 强度: 单次调用覆盖; 未给时用该型号的 ModelPreference,
+  // 再回落到 ModelSpec 的 defaultEnabled / defaultLevel。
   enableThinking?: boolean;
-  // issue #226: 可调推理强度 (low/medium/high); 仅对 efforts 非空的模型能力生效,
-  // 缺省时 always_on 取 'medium', toggle 取 'high' (保持既有行为)。
   reasoningEffort?: string;
+  // top_p: 只在该型号 sampling.topP.support='yes' 且条件成立时下发;
+  // 没有调用方配置时不下发 (避免服务端默认被悄悄改掉)。
+  topP?: number;
   tools?: LlmToolDefinition[];    // 透传 (spec 014)
   tool_choice?: string;           // 透传, Phase 1 仅 'auto' | 'none'
   cancellationToken?: CancellationToken;

@@ -43,9 +43,10 @@
  *   - 仅用 @Prop 与 @State 装饰器(@Entry/@Component 除外)
  */
 
-import { PROVIDERS, getProviderCatalog } from 'common';
+import { PROVIDERS, getProviderCatalog, resolveCapabilities, resolveModel } from 'common';
 import type {
-  CustomVendorConfig, DiscoveryResult, ModelEffortInfo, ModelListing, ProviderCatalog, ProviderConfig,
+  CustomVendorConfig, DiscoveryResult, ModelCapability, ModelListing, ModelPreference,
+  ProviderCatalog, ProviderConfig, ResolvedModel,
 } from 'common';
 import { ModelSelector } from '../../services/ModelSelector';
 import type { ModelAvailability } from '../../services/ModelSelector';
@@ -90,6 +91,8 @@ export struct VendorPicker {
   @Prop activeVendorModels: Record<string, string> = {};
   @Prop modelContextWindows: Record<string, number> = {};
   @Prop customVendors: CustomVendorConfig[] = [];
+  // 2026-10-26: { "vendorId/modelId": {thinking?, effort?} } — 运行偏好, 由 ViewModel 持有
+  @Prop modelPrefs: Record<string, ModelPreference> = {};
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 恢复 click-to-expand
   @State editingVendorId: string | null = null;
@@ -149,6 +152,11 @@ export struct VendorPicker {
     (_v: string, _m: string): void => {};
   onContextWindowChange: (vendorId: string, model: string, value: number) => void =
     (_v: string, _m: string, _value: number): void => {};
+  // 2026-10-26: 按型号运行偏好(思考开关 / 推理强度)
+  onThinkingChange: (vendorId: string, model: string, enabled: boolean) => void =
+    (_v: string, _m: string, _enabled: boolean): void => {};
+  onEffortChange: (vendorId: string, model: string, effort: string) => void =
+    (_v: string, _m: string, _effort: string): void => {};
 
   // PR2-T2 ticket #83 follow-up (2026-09-08): 保存按钮 触发 parent save
   onSaveEdit: (vendorId: string) => void = (_vendorId: string): void => {};
@@ -260,6 +268,41 @@ export struct VendorPicker {
     return value === undefined ? 65536 : value
   }
 
+  // ===== 2026-10-26: 按型号 ModelSpec 控件 =====
+  // capability / preference 都是纯投影; 不在这里写 preferences, 只回传 callback。
+
+  private capabilityOf = (vendorId: string, modelId: string): ModelCapability => {
+    const resolved: ResolvedModel = resolveModel(vendorId, modelId)
+    return resolveCapabilities(resolved.listing, resolved.spec)
+  }
+
+  private preferenceOf = (vendorId: string, modelId: string): ModelPreference => {
+    const pref: ModelPreference | undefined = this.modelPrefs[vendorId + '/' + modelId]
+    if (pref === undefined) {
+      const empty: ModelPreference = {}
+      return empty
+    }
+    return pref
+  }
+
+  private thinkingEnabledOf = (vendorId: string, modelId: string): boolean => {
+    const capability: ModelCapability = this.capabilityOf(vendorId, modelId)
+    if (capability.thinking === 'always_on') { return true }
+    const pref: ModelPreference = this.preferenceOf(vendorId, modelId)
+    if (pref.thinking !== undefined) { return pref.thinking }
+    return capability.defaultThinkingEnabled
+  }
+
+  // 非法/缺失的偏好回落 spec 的合法默认值 (不在 UI 里发明档位)。
+  private effortOf = (vendorId: string, modelId: string): string => {
+    const capability: ModelCapability = this.capabilityOf(vendorId, modelId)
+    const pref: ModelPreference = this.preferenceOf(vendorId, modelId)
+    if (pref.effort !== undefined && capability.efforts.indexOf(pref.effort) >= 0) {
+      return pref.effort
+    }
+    return capability.defaultEffort
+  }
+
   // 优先用 catalog/已保存 listing 的 contextWindow, 避免把 catalog 模型显示成 65536
   private initialContextWindow = (vendorId: string, modelId: string): number => {
     for (const listing of this.modelListings) {
@@ -341,7 +384,6 @@ export struct VendorPicker {
     const t: string = model.trim()
     if (t.length === 0) { return }
     if (!this.containsModelId(this.modelListings, t)) {
-      const effort: ModelEffortInfo = { supportedLevels: [], defaultLevel: '' }
       const listing: ModelListing = {
         id: t,
         displayName: t,
@@ -349,7 +391,6 @@ export struct VendorPicker {
         contextWindow: 0,
         maxOutputTokens: 0,
         inputModalities: [],
-        effort: effort,
         source: 'user',
       }
       this.modelListings = [...this.modelListings, listing]
@@ -450,7 +491,6 @@ export struct VendorPicker {
           contextWindow: listing.contextWindow,
           maxOutputTokens: listing.maxOutputTokens,
           inputModalities: listing.inputModalities,
-          effort: listing.effort,
           // 2026-10-25: 发现所得的 chip 标 discovery, 让 UI 区分「内置 / 发现 / 手动」
           source: 'discovery',
         }
@@ -771,6 +811,13 @@ export struct VendorPicker {
             .padding({ left: S_2 })
             .onChange((v: string): void => { this.localContextWindow = v })
 
+          // 2026-10-26: 按准确型号的 ModelSpec 显示思考/强度控件。
+          // toggle → 开关 + 强度; always_on → 只有强度; unverified → 能力未确认;
+          // unsupported → 两个都不显示。
+          if (this.localActiveModel.length > 0) {
+            this.renderModelSpecControls(itemId, this.localActiveModel)
+          }
+
           // PR2-T2 ticket #83 follow-up (2026-09-08): 取消 / 保存 2 按钮(draft 提交入口)
           Row() {
             Text('取消')
@@ -818,6 +865,86 @@ export struct VendorPicker {
         .margin({ top: 2, bottom: S_2 })
       }
     }
+  }
+
+  // 2026-10-26: 按 ModelSpec 的能力状态渲染控件。
+  // 不把 unverified 伪装成 unsupported: 没证据只显示「能力未确认」, 不显示可调控件。
+  @Builder
+  renderModelSpecControls(vendorId: string, modelId: string) {
+    Column() {
+      if (this.capabilityOf(vendorId, modelId).thinking === 'toggle') {
+        Row() {
+          Text('思考模式')
+            .fontSize(F_XS)
+            .fontColor(TEXT_3)
+            .fontWeight(W_MEDIUM)
+          Blank()
+          Text(this.thinkingEnabledOf(vendorId, modelId) ? '开' : '关')
+            .fontSize(F_XS)
+            .fontColor(this.thinkingEnabledOf(vendorId, modelId) ? BG_DARK : TEXT_2)
+            .fontWeight(W_MEDIUM)
+            .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+            .backgroundColor(this.thinkingEnabledOf(vendorId, modelId) ? MINT : BG_DARK)
+            .border({
+              width: 1,
+              color: this.thinkingEnabledOf(vendorId, modelId) ? MINT : BORDER,
+            })
+            .borderRadius(R_SM)
+            .onClick((): void => {
+              this.onThinkingChange(vendorId, modelId, !this.thinkingEnabledOf(vendorId, modelId))
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .margin({ top: S_3 })
+      } else if (this.capabilityOf(vendorId, modelId).thinking === 'unverified') {
+        Text('能力未确认')
+          .fontSize(F_XS)
+          .fontColor(TEXT_4)
+          .width('100%')
+          .margin({ top: S_3 })
+      }
+
+      // always_on: 不显示开关, 只保留强度; unsupported: 两个都不显示。
+      if (this.capabilityOf(vendorId, modelId).efforts.length > 0) {
+        Text('推理强度')
+          .fontSize(F_XS)
+          .fontColor(TEXT_3)
+          .fontWeight(W_MEDIUM)
+          .width('100%')
+          .margin({ top: S_3, bottom: S_2 })
+        Flex({
+          direction: FlexDirection.Row,
+          wrap: FlexWrap.Wrap,
+          justifyContent: FlexAlign.Start,
+          alignItems: ItemAlign.Center,
+        }) {
+          ForEach(this.capabilityOf(vendorId, modelId).efforts,
+            (level: string): void => {
+              Text(level)
+                .fontSize(F_XS)
+                .fontColor(this.effortOf(vendorId, modelId) === level ? BG_DARK : TEXT_2)
+                .fontWeight(W_MEDIUM)
+                .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                .margin({ right: S_2, top: 2 })
+                .backgroundColor(this.effortOf(vendorId, modelId) === level ? MINT : BG_DARK)
+                .border({
+                  width: 1,
+                  color: this.effortOf(vendorId, modelId) === level ? MINT : BORDER,
+                })
+                .borderRadius(R_SM)
+                .onClick((): void => {
+                  this.onEffortChange(vendorId, modelId, level)
+                })
+            },
+            (level: string): string => vendorId + '::' + modelId + '::effort::' + level
+          )
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 
   // 2026-10-25 Phase 1.5: 单个模型 chip

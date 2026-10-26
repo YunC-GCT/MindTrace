@@ -2,9 +2,10 @@
 //
 // /models 解码回归测试 (Phase 1 模型适配分层):
 //   - 官方 DeepSeek 响应体的真实形状 (2026-10-25 抓取, key 已脱敏):
-//       data[].id / name / context_window / max_output_tokens / input_modalities / effort
+//       data[].id / name / context_window / max_output_tokens / input_modalities
 //   - 网关 (OpenRouter 风格) 形状: context_length + limit.context + top_provider.max_completion_tokens
 //   - 回归点: limit.context 是上下文窗口, 曾经被错映射成 max_output_tokens
+//   - 2026-10-26: discovery 只产出清单, 不再把 /models 的 effort 当请求能力
 //
 // 这个模块只 import HarmonyOS Kit 用于真正发网络; 解析函数是纯逻辑,
 // 因此剥掉 kit import 后可以直接 transpile 执行真实代码。
@@ -78,9 +79,10 @@ test('decodes the official DeepSeek /models payload', () => {
   assert.equal(flash.contextWindow, 1048576);
   assert.equal(flash.maxOutputTokens, 393216);
   assert.deepEqual(flash.inputModalities, ['text', 'image']);
-  assert.deepEqual(flash.effort.supportedLevels, ['low', 'high', 'max']);
-  assert.equal(flash.effort.defaultLevel, 'high');
   assert.equal(flash.source, 'discovery');
+  // 发现结果不能自动变成请求能力: effort / thinking 不属于 Listing。
+  assert.equal(flash.effort, undefined);
+  assert.equal(flash.thinking, undefined);
 
   const pro = listingOf(result, 'deepseek-v4-pro');
   assert.deepEqual(pro.inputModalities, ['text']);
@@ -114,7 +116,7 @@ test('falls back to top_provider.max_completion_tokens for output cap', () => {
   assert.equal(listing.maxOutputTokens, 4096);
   assert.equal(listing.contextWindow, 0);
   assert.deepEqual(listing.inputModalities, []);
-  assert.deepEqual(listing.effort.supportedLevels, []);
+  assert.equal(listing.effort, undefined);
 });
 
 test('accepts a gateway models{} map', () => {

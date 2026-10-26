@@ -260,6 +260,8 @@ struct AiSettingsPage {
             activeVendorModels: this.vm.activeVendorModels,
             modelContextWindows: this.vm.modelContextWindows,
             customVendors: this.vm.customVendors,
+            // 2026-10-26: 按型号运行偏好(thinking / effort)由 ViewModel 持有
+            modelPrefs: this.vm.modelPrefs,
             onSelect: (id: string): void => { this.vm.selectVendor(id) },
             // PR2-T2 P3: modal 确认后回调,把 4 字段 cfg 传给 ViewModel
             // PR2-T2 polish: 返回新 vendorId 用于 NEW badge 跟踪(ticket #81 task A4)
@@ -282,6 +284,12 @@ struct AiSettingsPage {
             },
             onContextWindowChange: (vendorId: string, model: string, value: number): void => {
               this.vm.setModelContextWindow(vendorId, model, value)
+            },
+            onThinkingChange: (vendorId: string, model: string, enabled: boolean): void => {
+              this.vm.setModelThinking(vendorId, model, enabled)
+            },
+            onEffortChange: (vendorId: string, model: string, effort: string): void => {
+              this.vm.setModelEffort(vendorId, model, effort)
             },
             onSaveEdit: (_vendorId: string): void => {
               this.saveLlm()

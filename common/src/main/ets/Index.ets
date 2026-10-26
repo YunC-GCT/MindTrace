@@ -226,7 +226,8 @@ export {
 //   providers:  5 厂商预设(DeepSeek / Tongyi / GLM / Kimi / Doubao) + findProvider 工厂
 export { LlmConfig, DEFAULT_ENABLE_THINKING, DEFAULT_CONTEXT_WINDOW_TOKENS } from './llm/LlmConfig';
 // 2026-10-25: 模型元信息(displayName/contextWindow/模态/source)的类型出口 — 仅类型, 无运行时依赖
-export type { VendorModelMeta } from './llm/LlmConfig';
+// 2026-10-26: 模型选择(active_model)与按型号运行偏好(model_prefs)的类型出口
+export type { ModelActiveSelection, ModelPreference, VendorModelMeta } from './llm/LlmConfig';
 export { OnDeviceLlm, ON_DEVICE_MODEL_DIR, ON_DEVICE_MODEL_FILE } from './llm/OnDeviceLlm';
 // LocalChatProvider：@kit.DataAugmentationKit 改为运行时懒加载，barrel 求值不再触碰受限 Kit
 // （spec 033 §6 S2）。扩展进程即便 import 本 barrel 也不会初始化该 Kit。
@@ -234,12 +235,41 @@ export { LocalChatProvider } from './llm/LocalChatProvider';
 export type { OnDeviceAvailability, OnDeviceReply } from './llm/OnDeviceLlm';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
-// issue #226: 思考模式按模型能力适配 — toggle / always_on / unsupported
-// 2026-10-25 模型适配分层: catalog → resolver → capabilities / discovery
+// issue #226: 思考模式按模型能力适配 — toggle / always_on / unsupported / unverified
+// 2026-10-26 模型规格分层: Listing(可发现清单) / ModelSpec(请求协议) 分开
 export { resolveModelCapability, resolveCapabilities, supportsImageInput } from './llm/ModelCapabilities';
 export type { ModelCapability, ThinkingMode } from './llm/ModelCapabilities';
-export { getProviderCatalog, getCatalogDefaultListing } from './llm/model-catalog';
-export type { ModelEffortInfo, ModelListing, ProviderCatalog } from './llm/model-catalog';
+export {
+  getProviderCatalog,
+  getCatalogDefaultListing,
+  getModelSpec,
+  getBuiltinModelSpecs,
+  isValidModelSpec,
+  modelSpecKey,
+  setModelSpecOverrides,
+} from './llm/model-catalog';
+export type {
+  EffortRequiredWhen,
+  EffortSendWhen,
+  EvidenceStatus,
+  ModelEffortSpec,
+  ModelFieldValue,
+  ModelFieldWrite,
+  ModelListing,
+  ModelRequestSpec,
+  ModelSamplingRule,
+  ModelSamplingSpec,
+  ModelSpec,
+  ModelSpecEvidence,
+  ModelSpecSource,
+  ModelThinkingSpec,
+  ProviderCatalog,
+  SamplingSupport,
+  SamplingWhen,
+  ThinkingControl,
+} from './llm/model-catalog';
+export { applyFieldWrites, boundOutputTokens, planModelRequest, putField } from './llm/ModelRequestBuilder';
+export type { ModelRequestPlan, ModelRequestSelection } from './llm/ModelRequestBuilder';
 export { resolveModel } from './llm/model-resolver';
 export type { ResolvedModel } from './llm/model-resolver';
 export { discoverModels } from './llm/model-discovery';

@@ -3,13 +3,14 @@
  *
  * 路径: common/src/main/ets/llm/model-resolver.ets
  * 职责: 把用户/旧配置里的 model 字符串解析成当前 provider 的规范 ID,
- *       同时返回该 ID 在清单中的能力条目 (listing) 与不可用原因。
- * 依赖: ./model-catalog (内置清单)
+ *       同时返回该 ID 在清单中的 Listing、准确型号的 ModelSpec 与不可用原因。
+ *       清单回答"模型是否存在", 规格回答"请求怎么构造" — 两者不互相推导。
+ * 依赖: ./model-catalog (内置清单 + 规格)
  *
  * 数据流:
- *   LlmConfig.normalizeModel / LlmClient.call
+ *   LlmConfig.normalizeModel / LlmClient.call / ModelSelector
  *     → resolveModel(providerId, requestedId)
- *     → ModelListing + usable/reason → ModelCapabilities / request builder
+ *     → ModelListing + ModelSpec + usable/reason
  *
  * 解析顺序 (不可交换):
  *   1. 空输入        → provider 的 defaultModelId, reason='EMPTY_REQUEST'
@@ -17,21 +18,22 @@
  *   3. 别名命中      → canonicalId=规范 ID, degraded=false, reason='ALIAS_RESOLVED:<原值>'
  *   4. 都不命中      → usable=false, reason='MODEL_ID_UNRESOLVED', canonicalId 保留原值
  *
- * 未知 ID 绝不静默换成另一个型号: 保留 requestedId/canonicalId 和原因, 由调用方
- * 决定展示或回退。degraded 预留给"已确认降级到 catalog 默认"的调用方语义。
+ * 规格查找独立于清单: 清单为空的 vendor (通义/GLM/Kimi/豆包) 仍可能有一份
+ * verified / unverified 的 ModelSpec, 由 spec 自身声明能否构造请求字段。
  *
  * ArkTS 1.1 strict 适配:
- *   - interface + 显式 ModelListing/ProviderCatalog 类型, 不使用 any。
+ *   - interface + 显式 ModelListing/ModelSpec/ProviderCatalog 类型, 不使用 any。
  *   - 别名表用显式 Record<string, string>, 不写裸对象字面量索引。
  */
 
-import { getCatalogDefaultListing, getProviderCatalog } from './model-catalog';
-import type { ModelListing, ProviderCatalog } from './model-catalog';
+import { getCatalogDefaultListing, getModelSpec, getProviderCatalog } from './model-catalog';
+import type { ModelListing, ModelSpec, ProviderCatalog } from './model-catalog';
 
 export interface ResolvedModel {
   requestedId: string;
   canonicalId: string;
   listing: ModelListing | null;
+  spec: ModelSpec | null;
   usable: boolean;
   degraded: boolean;
   reason: string;
@@ -68,6 +70,13 @@ function resolveAlias(providerId: string, requestedId: string): string {
   return canonical !== undefined ? canonical : '';
 }
 
+function resolveSpec(providerId: string, canonicalId: string): ModelSpec | null {
+  if (canonicalId.length === 0) {
+    return null;
+  }
+  return getModelSpec(providerId, canonicalId);
+}
+
 export function resolveModel(providerId: string, requestedId: string): ResolvedModel {
   const provider: string = providerId.trim();
   const requested: string = requestedId.trim();
@@ -81,6 +90,7 @@ export function resolveModel(providerId: string, requestedId: string): ResolvedM
       requestedId: requested,
       canonicalId: defaultId.length > 0 ? defaultId : requested,
       listing: defaultListing,
+      spec: resolveSpec(provider, defaultId),
       usable: defaultListing !== null,
       degraded: false,
       reason: 'EMPTY_REQUEST',
@@ -96,6 +106,7 @@ export function resolveModel(providerId: string, requestedId: string): ResolvedM
         requestedId: requested,
         canonicalId: requested,
         listing: directListing,
+        spec: resolveSpec(provider, requested),
         usable: true,
         degraded: false,
         reason: '',
@@ -112,6 +123,7 @@ export function resolveModel(providerId: string, requestedId: string): ResolvedM
       requestedId: requested,
       canonicalId: canonicalId,
       listing: aliasListing,
+      spec: resolveSpec(provider, canonicalId),
       usable: aliasListing !== null,
       degraded: false,
       reason: 'ALIAS_RESOLVED:' + requested,
@@ -119,11 +131,12 @@ export function resolveModel(providerId: string, requestedId: string): ResolvedM
     return aliasResult;
   }
 
-  // 4. 未知 ID: 保留原值 + 原因, 不静默换型号。
+  // 4. 未知 ID: 保留原值 + 原因, 不静默换型号; 规格仍按准确型号查找。
   const unresolvedResult: ResolvedModel = {
     requestedId: requested,
     canonicalId: requested,
     listing: null,
+    spec: resolveSpec(provider, requested),
     usable: false,
     degraded: false,
     reason: 'MODEL_ID_UNRESOLVED',

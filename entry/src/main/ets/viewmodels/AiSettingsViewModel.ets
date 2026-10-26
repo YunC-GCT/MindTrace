@@ -9,7 +9,7 @@ import {
   discoverModels, getProviderCatalog, resolveModel,
 } from "common"
 import type {
-  CustomVendorConfig, DiscoveryResult, ModelEffortInfo, ModelListing,
+  CustomVendorConfig, DiscoveryResult, ModelListing, ModelPreference,
   ProviderConfig, ProviderCatalog, ResolvedModel, VendorModelMeta,
 } from "common"
 import { OcrTool } from "agents"
@@ -93,6 +93,8 @@ export class AiSettingsViewModel {
     this.vendorApiKeys = llm.getAllVendorApiKeys()
     this.activeVendorModels = llm.getAllActiveVendorModels()
     this.modelContextWindows = llm.getAllModelContextWindows()
+    // 2026-10-26: 按型号运行偏好(thinking / effort), 与选择项分开加载
+    this.modelPrefs = llm.getAllModelPreferences()
 
     try {
       const key: string | null = await llm.getApiKey(this.vendorId)
@@ -331,6 +333,8 @@ export class AiSettingsViewModel {
   vendorApiKeys: Record<string, string> = {}
   activeVendorModels: Record<string, string> = {}
   modelContextWindows: Record<string, number> = {}
+  // 2026-10-26: { "vendorId/modelId": {thinking?, effort?} } — 运行偏好, 不属于 ModelSpec
+  modelPrefs: Record<string, ModelPreference> = {}
 
   // 2026-10-25: 本次会话 discovery 结果的元信息暂存(displayName / contextWindow / 模态)。
   // 只有用户点候选(chip)时才随 vendor_models 一起落盘; 不在这里直接写 preferences。
@@ -387,7 +391,6 @@ export class AiSettingsViewModel {
       const contextWindow: number = metaWindow > 0
         ? metaWindow
         : (windowValue !== undefined ? windowValue : 0)
-      const effort: ModelEffortInfo = { supportedLevels: [], defaultLevel: '' }
       const listing: ModelListing = {
         id: modelId,
         displayName: meta !== null && meta.displayName.length > 0 ? meta.displayName : modelId,
@@ -395,7 +398,6 @@ export class AiSettingsViewModel {
         contextWindow: contextWindow,
         maxOutputTokens: 0,
         inputModalities: meta !== null ? meta.inputModalities : [],
-        effort: effort,
         source: meta !== null && meta.source.length > 0 ? meta.source : 'user',
       }
       out.push(listing)
@@ -532,6 +534,71 @@ export class AiSettingsViewModel {
     this.activeVendorModels = next
   }
 
+  // ===== 2026-10-26: 按型号运行偏好 (thinking / effort) =====
+  // 切模型只改选择项; 开关/强度作为偏好单独存, 立即写 LlmConfig.model_prefs。
+  private modelPreferenceKey(vendorId: string, model: string): string {
+    return vendorId.trim() + '/' + model.trim()
+  }
+
+  getModelPreference(vendorId: string, model: string): ModelPreference {
+    const key: string = this.modelPreferenceKey(vendorId, model)
+    const pref: ModelPreference | undefined = this.modelPrefs[key]
+    if (pref === undefined) {
+      const empty: ModelPreference = {}
+      return empty
+    }
+    const copy: ModelPreference = {}
+    if (pref.thinking !== undefined) { copy.thinking = pref.thinking }
+    if (pref.effort !== undefined) { copy.effort = pref.effort }
+    return copy
+  }
+
+  setModelThinking(vendorId: string, model: string, enabled: boolean): void {
+    const key: string = this.modelPreferenceKey(vendorId, model)
+    const current: ModelPreference | undefined = this.modelPrefs[key]
+    const next: ModelPreference = { thinking: enabled }
+    if (current !== undefined && current.effort !== undefined) {
+      next.effort = current.effort
+    }
+    this.writeModelPreference(key, vendorId, model, next)
+  }
+
+  setModelEffort(vendorId: string, model: string, effort: string): void {
+    const key: string = this.modelPreferenceKey(vendorId, model)
+    const current: ModelPreference | undefined = this.modelPrefs[key]
+    const next: ModelPreference = {}
+    if (current !== undefined && current.thinking !== undefined) {
+      next.thinking = current.thinking
+    }
+    if (effort.trim().length > 0) {
+      next.effort = effort.trim()
+    }
+    this.writeModelPreference(key, vendorId, model, next)
+  }
+
+  private writeModelPreference(
+    key: string, vendorId: string, model: string, pref: ModelPreference,
+  ): void {
+    const nextMap: Record<string, ModelPreference> = {}
+    for (const k of Object.keys(this.modelPrefs)) {
+      nextMap[k] = this.modelPrefs[k]
+    }
+    nextMap[key] = pref
+    this.modelPrefs = nextMap
+    LlmConfig.getInstance().setModelPreference(vendorId.trim(), model.trim(), pref)
+      .catch((_e: Error): void => {})
+  }
+
+  private dropModelPreference(vendorId: string, model: string): void {
+    const key: string = this.modelPreferenceKey(vendorId, model)
+    if (this.modelPrefs[key] === undefined) { return }
+    const next: Record<string, ModelPreference> = {}
+    for (const k of Object.keys(this.modelPrefs)) {
+      if (k !== key) { next[k] = this.modelPrefs[k] }
+    }
+    this.modelPrefs = next
+  }
+
   setModelContextWindow(vendorId: string, model: string, value: number): void {
     if (vendorId.length === 0 || model.trim().length === 0) { return }
     const safeValue: number = value === value ? value : 65536
@@ -603,6 +670,8 @@ export class AiSettingsViewModel {
       const nextModel: string = filtered.length > 0 ? filtered[0] : this.providerDefaultModel(vendorId)
       this.selectVendorModel(vendorId, nextModel)
     }
+    // 删模型时连带清掉该型号的开关/强度偏好
+    this.dropModelPreference(vendorId, model)
   }
 
   // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key UI 动作

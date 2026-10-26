@@ -12,8 +12,8 @@ import { ApiKeyVault } from '../security/ApiKeyVault';
 import { LlmConfigInitResult, LlmError } from './LlmTypes';
 import { DEFAULT_VENDOR_ID, findProvider } from './providers';
 import type { CustomVendorConfig } from './providers';
-import { getProviderCatalog } from './model-catalog';
-import type { ProviderCatalog } from './model-catalog';
+import { getProviderCatalog, isValidModelSpec, modelSpecKey, setModelSpecOverrides } from './model-catalog';
+import type { ModelSpec, ProviderCatalog } from './model-catalog';
 import { resolveModel } from './model-resolver';
 import type { ResolvedModel } from './model-resolver';
 
@@ -44,6 +44,14 @@ const KEY_VENDOR_MODEL_META = 'vendor_model_meta';
 const KEY_VENDOR_API_KEYS = 'vendor_api_keys';
 const KEY_ACTIVE_VENDOR_MODELS = 'active_vendor_models';
 const KEY_MODEL_CONTEXT_WINDOWS = 'model_context_windows';
+// 2026-10-26: 模型选择与运行偏好分开存。
+//   active_model = {vendorId, modelId} — 只记"选了哪个型号"。
+//   model_prefs  = { "vendorId/modelId": {thinking?, effort?} } — 开关/强度是运行偏好,
+//                  按准确型号存, 不写进不可变 ModelSpec, 也不只按 vendor 存。
+//   model_specs  = 可选覆盖层; 缺失/非法项一律回落 model-catalog 内置规格。
+const KEY_MODEL_PREFS = 'model_prefs';
+const KEY_ACTIVE_MODEL = 'active_model';
+const KEY_MODEL_SPECS = 'model_specs';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -62,6 +70,18 @@ export interface VendorModelMeta {
   contextWindow: number;
   inputModalities: string[];
   source: string;   // 'catalog' | 'discovery' | 'user'
+}
+
+// 运行偏好: 用户在某型号上的思考开关 / 推理强度; 不写死进 ModelSpec。
+export interface ModelPreference {
+  thinking?: boolean;
+  effort?: string;
+}
+
+// 当前选择: 只描述"哪个厂商的哪个型号", 不含任何请求字段。
+export interface ModelActiveSelection {
+  vendorId: string;
+  modelId: string;
 }
 
 export class LlmConfig {
@@ -92,6 +112,9 @@ export class LlmConfig {
   private cachedVendorApiKeys: Record<string, string> = {};
   private cachedActiveVendorModels: Record<string, string> = {};
   private cachedModelContextWindows: Record<string, number> = {};
+  // 2026-10-26: 按型号的运行偏好 + 可选的规格覆盖层
+  private cachedModelPrefs: Record<string, ModelPreference> = {};
+  private cachedModelSpecs: Record<string, ModelSpec> = {};
   // 迁移保护: 旧 model_context_windows JSON 解析失败时, 不覆盖 raw key。
   private cachedModelContextWindowsParsed: boolean = true;
 
@@ -207,6 +230,45 @@ export class LlmConfig {
         console.error('[LlmConfig] LLM_CONFIG_MIGRATION_FAILED context_windows JSON parse error; raw key kept');
       }
     }
+    // 2026-10-26: active_model 是新的权威选择键; 老数据没有该 key 时回落到
+    // vendor_id + active_vendor_models 的既有逻辑, 不破坏迁移。
+    const activeModelJson: string = await s.get(KEY_ACTIVE_MODEL, '') as string;
+    if (activeModelJson.length > 0) {
+      try {
+        const parsed: ModelActiveSelection = JSON.parse(activeModelJson) as ModelActiveSelection;
+        if (parsed !== null && typeof parsed.vendorId === 'string' && parsed.vendorId.trim().length > 0
+          && typeof parsed.modelId === 'string' && parsed.modelId.trim().length > 0) {
+          const activeVendor: string = parsed.vendorId.trim();
+          this.cachedVendorId = activeVendor;
+          this.cachedActiveVendorModels[activeVendor] = parsed.modelId.trim();
+        }
+      } catch (_e) {
+        console.warn('[LlmConfig] MODEL_ACTIVE_SELECTION_INVALID active_model JSON parse error; ignored');
+      }
+    }
+    // 2026-10-26: 按型号运行偏好 (thinking / effort)
+    const prefsJson: string = await s.get(KEY_MODEL_PREFS, '') as string;
+    if (prefsJson.length > 0) {
+      try {
+        const parsed: Record<string, ModelPreference> = JSON.parse(prefsJson);
+        this.cachedModelPrefs = this.sanitizeModelPrefs(parsed);
+      } catch (_e) {
+        this.cachedModelPrefs = {};
+        console.warn('[LlmConfig] MODEL_PREFS_INVALID model_prefs JSON parse error; ignored');
+      }
+    }
+    // 2026-10-26: 可选规格覆盖层; 非法/缺失项回落内置 ModelSpec。
+    const specsJson: string = await s.get(KEY_MODEL_SPECS, '') as string;
+    if (specsJson.length > 0) {
+      try {
+        const parsed: Record<string, ModelSpec> = JSON.parse(specsJson);
+        this.cachedModelSpecs = this.sanitizeModelSpecs(parsed);
+      } catch (_e) {
+        this.cachedModelSpecs = {};
+        console.warn('[LlmConfig] MODEL_SPECS_INVALID model_specs JSON parse error; fallback to builtin');
+      }
+    }
+    setModelSpecOverrides(this.cachedModelSpecs);
     const migratedModel: string = await this.migrateIfNeeded(rawModel);
     this.cachedEndpoint = this.normalizeEndpoint(rawEndpoint);
     this.cachedModelExplicit = rawModel.trim().length > 0;
@@ -497,12 +559,190 @@ export class LlmConfig {
 
   public async setActiveVendorModel(vendorId: string, model: string): Promise<void> {
     this.requireInited()
+    const v: string = vendorId.trim()
     const t: string = model.trim()
-    if (vendorId.length === 0 || t.length === 0) { return }
-    this.cachedActiveVendorModels[vendorId] = t
+    if (v.length === 0 || t.length === 0) { return }
+    this.cachedActiveVendorModels[v] = t
     const s = this.store!
     await s.put(KEY_ACTIVE_VENDOR_MODELS, JSON.stringify(this.cachedActiveVendorModels))
+    if (v === this.cachedVendorId) {
+      const active: ModelActiveSelection = { vendorId: v, modelId: t }
+      await s.put(KEY_ACTIVE_MODEL, JSON.stringify(active))
+    }
     await s.flush()
+  }
+
+  // ===== 2026-10-26: 模型选择 + 按型号运行偏好 =====
+
+  // 当前选择只由 vendorId + 当前 model 推导; 响应里不带任何请求字段。
+  public getActiveModel(): ModelActiveSelection {
+    const active: ModelActiveSelection = {
+      vendorId: this.cachedVendorId,
+      modelId: this.getModel(),
+    }
+    return active
+  }
+
+  // 切模型只改选中项: vendor_id / active_vendor_models / active_model 一起写。
+  public async setActiveModel(vendorId: string, modelId: string): Promise<void> {
+    this.requireInited()
+    const v: string = vendorId.trim()
+    const m: string = modelId.trim()
+    if (v.length === 0 || m.length === 0) { return }
+    this.cachedVendorId = v
+    this.cachedActiveVendorModels[v] = m
+    const active: ModelActiveSelection = { vendorId: v, modelId: m }
+    const s = this.store!
+    await s.put(KEY_VENDOR_ID, v)
+    await s.put(KEY_ACTIVE_VENDOR_MODELS, JSON.stringify(this.cachedActiveVendorModels))
+    await s.put(KEY_ACTIVE_MODEL, JSON.stringify(active))
+    await s.flush()
+  }
+
+  public static modelPreferenceKey(vendorId: string, modelId: string): string {
+    return vendorId.trim() + '/' + modelId.trim()
+  }
+
+  // 缺失 = 用户没表态; 调用方回落到 ModelSpec 的 defaultEnabled / defaultLevel。
+  public getModelPreference(vendorId: string, modelId: string): ModelPreference {
+    const key: string = LlmConfig.modelPreferenceKey(vendorId, modelId)
+    const source: ModelPreference | undefined = this.cachedModelPrefs[key]
+    if (source === undefined) {
+      const empty: ModelPreference = {}
+      return empty
+    }
+    const copy: ModelPreference = {}
+    if (source.thinking !== undefined) { copy.thinking = source.thinking }
+    if (source.effort !== undefined) { copy.effort = source.effort }
+    return copy
+  }
+
+  public getAllModelPreferences(): Record<string, ModelPreference> {
+    const snapshot: Record<string, ModelPreference> = {}
+    for (const key of Object.keys(this.cachedModelPrefs)) {
+      const source: ModelPreference = this.cachedModelPrefs[key]
+      const copy: ModelPreference = {}
+      if (source.thinking !== undefined) { copy.thinking = source.thinking }
+      if (source.effort !== undefined) { copy.effort = source.effort }
+      snapshot[key] = copy
+    }
+    return snapshot
+  }
+
+  public async setModelPreference(
+    vendorId: string, modelId: string, preference: ModelPreference,
+  ): Promise<void> {
+    this.requireInited()
+    const v: string = vendorId.trim()
+    const m: string = modelId.trim()
+    if (v.length === 0 || m.length === 0) { return }
+    const key: string = LlmConfig.modelPreferenceKey(v, m)
+    const next: ModelPreference = {}
+    if (preference.thinking !== undefined) { next.thinking = preference.thinking }
+    if (preference.effort !== undefined && preference.effort.trim().length > 0) {
+      next.effort = preference.effort.trim()
+    }
+    if (next.thinking === undefined && next.effort === undefined) {
+      await this.removeModelPreference(v, m)
+      return
+    }
+    this.cachedModelPrefs[key] = next
+    await this.persistModelPrefs()
+  }
+
+  public async removeModelPreference(vendorId: string, modelId: string): Promise<void> {
+    this.requireInited()
+    const key: string = LlmConfig.modelPreferenceKey(vendorId, modelId)
+    if (this.cachedModelPrefs[key] === undefined) { return }
+    this.cachedModelPrefs = this.rebuildRecordWithout<ModelPreference>(this.cachedModelPrefs, key)
+    await this.persistModelPrefs()
+  }
+
+  // 删 vendor / 清空 model 列表时连带清掉该 vendor 的所有型号偏好。
+  public async removeVendorPreferences(vendorId: string): Promise<void> {
+    this.requireInited()
+    const prefix: string = vendorId.trim() + '/'
+    if (prefix.length <= 1) { return }
+    const next: Record<string, ModelPreference> = {}
+    let changed: boolean = false
+    for (const key of Object.keys(this.cachedModelPrefs)) {
+      if (key.startsWith(prefix)) { changed = true; continue }
+      next[key] = this.cachedModelPrefs[key]
+    }
+    if (!changed) { return }
+    this.cachedModelPrefs = next
+    await this.persistModelPrefs()
+  }
+
+  // 可选的规格覆盖层 (持久化 + 校验); 读侧仍以 getModelSpec 为唯一入口。
+  public getModelSpecs(): Record<string, ModelSpec> {
+    const snapshot: Record<string, ModelSpec> = {}
+    for (const key of Object.keys(this.cachedModelSpecs)) {
+      snapshot[key] = this.cachedModelSpecs[key]
+    }
+    return snapshot
+  }
+
+  public async setModelSpecs(specs: ModelSpec[]): Promise<void> {
+    this.requireInited()
+    const next: Record<string, ModelSpec> = {}
+    for (const spec of specs) {
+      if (!isValidModelSpec(spec)) { continue }
+      next[modelSpecKey(spec.providerId, spec.id)] = spec
+    }
+    this.cachedModelSpecs = next
+    setModelSpecOverrides(next)
+    const s = this.store!
+    if (Object.keys(next).length === 0) {
+      await s.delete(KEY_MODEL_SPECS)
+    } else {
+      await s.put(KEY_MODEL_SPECS, JSON.stringify(next))
+    }
+    await s.flush()
+  }
+
+  private async persistModelPrefs(): Promise<void> {
+    const s = this.store!
+    if (Object.keys(this.cachedModelPrefs).length === 0) {
+      await s.delete(KEY_MODEL_PREFS)
+    } else {
+      await s.put(KEY_MODEL_PREFS, JSON.stringify(this.cachedModelPrefs))
+    }
+    await s.flush()
+  }
+
+  private sanitizeModelPrefs(raw: Record<string, ModelPreference>): Record<string, ModelPreference> {
+    const out: Record<string, ModelPreference> = {}
+    if (raw === null || raw === undefined || typeof raw !== 'object' || Array.isArray(raw)) {
+      return out
+    }
+    for (const key of Object.keys(raw)) {
+      const item: ModelPreference | undefined = raw[key]
+      if (item === undefined || item === null || typeof item !== 'object' || Array.isArray(item)) {
+        continue
+      }
+      const pref: ModelPreference = {}
+      if (typeof item.thinking === 'boolean') { pref.thinking = item.thinking }
+      if (typeof item.effort === 'string' && item.effort.trim().length > 0) {
+        pref.effort = item.effort.trim()
+      }
+      if (pref.thinking !== undefined || pref.effort !== undefined) { out[key] = pref }
+    }
+    return out
+  }
+
+  private sanitizeModelSpecs(raw: Record<string, ModelSpec>): Record<string, ModelSpec> {
+    const out: Record<string, ModelSpec> = {}
+    if (raw === null || raw === undefined || typeof raw !== 'object' || Array.isArray(raw)) {
+      return out
+    }
+    for (const key of Object.keys(raw)) {
+      const item: ModelSpec | undefined = raw[key]
+      if (item === undefined || item === null) { continue }
+      if (!isValidModelSpec(item)) { continue }
+      out[key] = item
+    }
+    return out
   }
 
   // ===== Temperature =====
@@ -556,8 +796,12 @@ export class LlmConfig {
   public async setVendorId(id: string): Promise<void> {
     this.requireInited();
     this.cachedVendorId = id;
-    await this.store!.put(KEY_VENDOR_ID, id);
-    await this.store!.flush();
+    const s = this.store!;
+    await s.put(KEY_VENDOR_ID, id);
+    // active_model 与 vendor 选择保持同步; 模型由 getModel() 按新 vendor 解析。
+    const active: ModelActiveSelection = { vendorId: id, modelId: this.getModel() };
+    await s.put(KEY_ACTIVE_MODEL, JSON.stringify(active));
+    await s.flush();
   }
 
   public getCustomVendorConfig(): CustomVendorConfig | null { return this.cachedCustomVendor; }
@@ -808,6 +1052,8 @@ export class LlmConfig {
     await s.put(KEY_VENDOR_MODELS, JSON.stringify(this.cachedVendorModels));
     await this.writeVendorModelMetaKey();
     await s.flush();
+    // 删模型时清理关联的按型号偏好, 不留僵尸条目。
+    await this.removeModelPreference(vendorId, model);
   }
 
   // ===== 恢复默认 =====
@@ -833,6 +1079,11 @@ export class LlmConfig {
     this.cachedActiveVendorModels = {};
     this.cachedModelContextWindows = {};
     this.cachedModelContextWindowsParsed = true;
+    // 2026-10-26: 运行偏好与规格覆盖层一并清空
+    this.cachedModelPrefs = {};
+    this.cachedModelSpecs = {};
+    const noSpecOverrides: Record<string, ModelSpec> = {};
+    setModelSpecOverrides(noSpecOverrides);
     const s = this.store!;
     await s.put(KEY_ENDPOINT, DEFAULT_ENDPOINT);
     await s.put(KEY_MODEL, DEFAULT_MODEL);
@@ -850,6 +1101,9 @@ export class LlmConfig {
     await s.delete(KEY_VENDOR_API_KEYS);
     await s.delete(KEY_ACTIVE_VENDOR_MODELS);
     await s.delete(KEY_MODEL_CONTEXT_WINDOWS);
+    await s.delete(KEY_MODEL_PREFS);
+    await s.delete(KEY_ACTIVE_MODEL);
+    await s.delete(KEY_MODEL_SPECS);
     await s.flush();
   }
 
