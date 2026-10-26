@@ -328,3 +328,26 @@ test('capabilities: thinking comes from spec, image comes from listing', async (
   assert.equal(mod.supportsImageInput(pro), false);
   assert.equal(mod.supportsImageInput(null), false);
 });
+
+// 2026-10-26: chip hint / 规格控件 / 面板横幅都读这一个函数, 不允许各自判 evidence。
+test('capabilitySignal: 三态只认 spec 证据, 缺失规格 = 未确认(不是不支持)', async () => {
+  const mod = await modelModules;
+
+  assert.equal(mod.capabilitySignal(null), 'unconfirmed', '无规格 = 不知道');
+  assert.equal(mod.capabilitySignal(mod.getModelSpec('deepseek', 'deepseek-flash')), 'verified');
+  assert.equal(mod.capabilitySignal(mod.getModelSpec('kimi', 'kimi-k2.6')), 'verified');
+  assert.equal(
+    mod.capabilitySignal(mod.getModelSpec('doubao', 'doubao-seed-1.6')),
+    'partial',
+    '豆包字段已核实但默认值未证实 → partial, 不能算 verified',
+  );
+  assert.equal(
+    mod.capabilitySignal(mod.getModelSpec('tongyi', 'qwen3-max')),
+    'unconfirmed',
+    'spec 存在但标了 unverified 仍是未确认',
+  );
+
+  // 清单为空不影响信号: 同一 vendor 有清单的型号也照样按证据走。
+  assert.equal(mod.getProviderCatalog('kimi').models.length, 0);
+  assert.equal(mod.capabilitySignal(mod.getModelSpec('kimi', 'kimi-k3')), 'verified');
+});
