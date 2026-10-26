@@ -761,6 +761,27 @@ export function modelSpecKey(providerId: string, modelId: string): string {
   return providerId.trim() + '/' + modelId.trim();
 }
 
+// ==================== 能力信号 (chip 与规格控件共用的唯一真源) ====================
+
+// 'verified'     字段已核实, 可放心按规格构造请求
+// 'partial'      字段已核实, 但默认值未证实 (如豆包未明写默认开关)
+// 'unconfirmed'  没有规格, 或规格标了 unverified — 两者都是"不知道", 不是"不支持"
+export type CapabilitySignal = 'verified' | 'partial' | 'unconfirmed';
+
+// 只看规格证据, 不看清单是否存在: 清单为空只代表"没有可发现清单"。
+export function capabilitySignal(spec: ModelSpec | null): CapabilitySignal {
+  if (spec === null) {
+    return 'unconfirmed';
+  }
+  if (spec.evidence.status === 'verified') {
+    return 'verified';
+  }
+  if (spec.evidence.status === 'partial') {
+    return 'partial';
+  }
+  return 'unconfirmed';
+}
+
 export function getProviderCatalog(providerId: string): ProviderCatalog | null {
   const id: string = providerId.trim();
   for (const catalog of PROVIDER_CATALOGS) {

@@ -320,6 +320,14 @@ export struct VendorPicker {
     return catalog !== null && catalog.models.length > 0
   }
 
+  // 2026-10-26: 清单为空只说明"没有可发现清单", 不代表能力未知。
+  // 这里把能力状态按 ModelSpec 证据拼进同一行, 与 chip hint / 规格控件同源。
+  private listingEmptyText = (vendorId: string): string => {
+    const modelId: string = this.localActiveModel.trim()
+    if (modelId.length === 0) { return '未提供内置清单' }
+    return '未提供内置清单 · ' + ModelSelector.capabilityNote(vendorId, modelId)
+  }
+
   // 2026-10-25: chip / 保存按钮共用一份可用性判定(来自 ModelSelector / resolveModel)
   private availabilityOf = (vendorId: string, modelId: string, source: string): ModelAvailability =>
     ModelSelector.availabilityOf(vendorId, modelId, source)
@@ -668,10 +676,11 @@ export struct VendorPicker {
 
           // Phase 1.5: catalog 为空的 vendor 才提供 discovery
           if (!this.hasBuiltinCatalog(itemId)) {
-            Text('未提供内置清单')
+            Text(this.listingEmptyText(itemId))
               .fontSize(F_XS)
               .fontColor(TEXT_4)
               .width('100%')
+              .maxLines(2)
               .margin({ bottom: S_1 })
             Row() {
               if (this.discoveryLoading) {

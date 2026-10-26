@@ -16,13 +16,14 @@
  *       discovery 拿到 / 没有 catalog 的 vendor(通义/GLM/Kimi/豆包/自定义) → usable + degraded(能力未确认),
  *       有 catalog 但 ID 不在其中(如 DeepSeek 手输错 ID) → unusable(unresolved), 保存需拦截。
  *
- * 2026-10-26: 把 ModelSpec 的证据状态接进可用性:
- *   - spec 存在且 evidence.status !== 'unverified' → 能力已确认, 不降级。
- *   - spec 缺失或 unverified → degraded + 「能力未确认」, 但仍允许保存(不伪装成不支持)。
+ * 2026-10-26: 能力信号只认规格证据 (common/capabilitySignal), 与规格控件同源:
+ *   - verified → 不降级; partial → 「字段已核实（默认值未证实）」;
+ *   - 无规格 / unverified → degraded + 「能力未确认」, 但仍允许保存(不伪装成不支持)。
+ *   清单为空只代表"没有可发现清单", 不再被当成"能力未知"。
  */
 
-import { LlmConfig, getModelSpec, getProviderCatalog, resolveModel } from 'common';
-import type { ModelListing, ModelSpec, ProviderCatalog, ResolvedModel } from 'common';
+import { capabilitySignal, LlmConfig, getProviderCatalog, resolveModel } from 'common';
+import type { CapabilitySignal, ModelListing, ModelSpec, ProviderCatalog, ResolvedModel } from 'common';
 
 export interface ModelAvailability {
   usable: boolean;
@@ -66,21 +67,29 @@ export class ModelSelector {
 
   /**
    * 准确型号的 ModelSpec; 规格只按 (providerId, canonicalId) 查, 不看 vendor 名推导。
+   * resolveModel 已经带上 canonicalId + spec, 不再二次查表。
    */
   static specFor(vendorId: string, modelId: string): ModelSpec | null {
-    const resolved: ResolvedModel = resolveModel(vendorId, modelId);
-    const canonical: string = resolved.canonicalId.length > 0
-      ? resolved.canonicalId : modelId.trim();
-    return getModelSpec(vendorId.trim(), canonical);
+    return resolveModel(vendorId.trim(), modelId.trim()).spec;
   }
 
   /**
-   * 请求字段是否有证据: spec 存在且 evidence.status 不是 unverified。
-   * 缺失规格 = 未确认, 不是"不支持"。
+   * 能力信号: 只读规格证据 ('verified' | 'partial' | 'unconfirmed')。
+   * 缺失规格 = 未确认, 不是"不支持"; 清单是否存在不影响这个判断。
    */
-  static capabilityConfirmed(vendorId: string, modelId: string): boolean {
-    const spec: ModelSpec | null = ModelSelector.specFor(vendorId, modelId);
-    return spec !== null && spec.evidence.status !== 'unverified';
+  static capabilitySignalOf(vendorId: string, modelId: string): CapabilitySignal {
+    return capabilitySignal(ModelSelector.specFor(vendorId, modelId));
+  }
+
+  /**
+   * 面板横幅用: 清单为空时补一句能力状态 (空串 = 无需提示)。
+   * 与 chip hint、规格控件同源, 避免"未提供内置清单"和思考开关同时出现。
+   */
+  static capabilityNote(vendorId: string, modelId: string): string {
+    const signal: CapabilitySignal = ModelSelector.capabilitySignalOf(vendorId, modelId);
+    if (signal === 'verified') { return '请求字段已核实'; }
+    if (signal === 'partial') { return '字段已核实，默认值未证实'; }
+    return '能力未确认';
   }
 
   /**
@@ -92,20 +101,32 @@ export class ModelSelector {
     const requested: string = modelId.trim();
     const resolved: ResolvedModel = resolveModel(provider, requested);
     if (resolved.usable) {
-      const unconfirmed: boolean = !ModelSelector.capabilityConfirmed(provider, resolved.canonicalId);
-      const degraded: boolean = resolved.degraded || unconfirmed;
-      const ok: ModelAvailability = {
+      const signal: CapabilitySignal = capabilitySignal(resolved.spec);
+      if (signal !== 'verified') {
+        return ModelSelector.byCapability(signal);
+      }
+      // 字段已核实: 只剩解析层的旧别名映射需要提示, 其余不打扰用户。
+      if (resolved.reason.startsWith('ALIAS_RESOLVED:')) {
+        const alias: ModelAvailability = {
+          usable: true,
+          degraded: true,
+          reasonCode: resolved.reason,
+          hint: ModelSelector.reasonText(resolved.reason),
+        };
+        return alias;
+      }
+      const clean: ModelAvailability = {
         usable: true,
-        degraded: degraded,
-        reasonCode: degraded ? 'CAPABILITY_UNCONFIRMED' : resolved.reason,
-        hint: degraded ? ModelSelector.reasonText('CAPABILITY_UNCONFIRMED') : '',
+        degraded: false,
+        reasonCode: '',
+        hint: '',
       };
-      return ok;
+      return clean;
     }
 
     // discovery 返回的 ID 已被官方 /models 证实存在, 只是能力字段没给全 → 降级可用。
     if (source === 'discovery') {
-      return ModelSelector.unconfirmed();
+      return ModelSelector.byCapability(capabilitySignal(resolved.spec));
     }
 
     // 没有权威内置清单可对照的 vendor(通义/GLM/Kimi/豆包/自定义): ID 无从证伪,
@@ -113,7 +134,7 @@ export class ModelSelector {
     const catalog: ProviderCatalog | null = getProviderCatalog(provider);
     const hasAuthoritativeCatalog: boolean = catalog !== null && catalog.models.length > 0;
     if (!hasAuthoritativeCatalog) {
-      return ModelSelector.unconfirmed();
+      return ModelSelector.byCapability(capabilitySignal(resolved.spec));
     }
 
     const blocked: ModelAvailability = {
@@ -125,12 +146,14 @@ export class ModelSelector {
     return blocked;
   }
 
-  private static unconfirmed(): ModelAvailability {
+  // 能力未确认/部分确认: 仍允许保存(不伪装成不支持), 只降级提示。
+  private static byCapability(signal: CapabilitySignal): ModelAvailability {
+    const code: string = signal === 'partial' ? 'CAPABILITY_PARTIAL' : 'CAPABILITY_UNCONFIRMED';
     const degraded: ModelAvailability = {
       usable: true,
       degraded: true,
-      reasonCode: 'CAPABILITY_UNCONFIRMED',
-      hint: ModelSelector.reasonText('CAPABILITY_UNCONFIRMED'),
+      reasonCode: code,
+      hint: ModelSelector.reasonText(code),
     };
     return degraded;
   }
@@ -144,6 +167,7 @@ export class ModelSelector {
     if (c === 'MODEL_ID_UNRESOLVED') { return '模型 ID 未在已确认清单中'; }
     if (c === 'EMPTY_REQUEST') { return '未填写模型 ID'; }
     if (c === 'CAPABILITY_UNCONFIRMED') { return '能力未确认'; }
+    if (c === 'CAPABILITY_PARTIAL') { return '字段已核实（默认值未证实）'; }
     if (c === 'MODEL_SPEC_INCOMPLETE') { return '模型规格不完整'; }
     if (c.startsWith('ALIAS_RESOLVED:')) { return '旧模型名，已自动映射'; }
     return '模型不可用';

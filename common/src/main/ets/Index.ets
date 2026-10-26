@@ -240,6 +240,7 @@ export { LlmClient } from './llm/LlmClient';
 export { resolveModelCapability, resolveCapabilities, supportsImageInput } from './llm/ModelCapabilities';
 export type { ModelCapability, ThinkingMode } from './llm/ModelCapabilities';
 export {
+  capabilitySignal,
   getProviderCatalog,
   getCatalogDefaultListing,
   getModelSpec,
@@ -249,6 +250,7 @@ export {
   setModelSpecOverrides,
 } from './llm/model-catalog';
 export type {
+  CapabilitySignal,
   EffortRequiredWhen,
   EffortSendWhen,
   EvidenceStatus,
