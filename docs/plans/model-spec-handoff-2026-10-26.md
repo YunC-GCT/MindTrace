@@ -52,7 +52,7 @@
 4. **A2A 延迟样本只有 1 条**：`canonicalModel=deepseek-flash / attempts=1 / elapsedMs=1696`。要拍「默认模型切不切 flash」需攒 20 条算 P50/P95。抓取：`hdc hilog | grep --line-buffered -E "A2A_(REPLY_SENT|DEADLINE_EXCEEDED|LLM_TIMEOUT|LLM_FAILED)"`。
 5. **用户体感「重连之后才出回复」未定性** —— 我们的链路 1.7s，慢在小艺 ASR/调度或连接断链；需要给 Agent 加 `onConnect/onDisconnect` 日志才能分辨。
 6. `ReplyService` 两条链路显式 `enableThinking: false`（聊天与小艺都按不思考的时延预算）；如果以后要「聊天也思考」，得开一个按链路区分的开关，别再依赖默认值。
-7. `build-hsp-hap.mjs` 在本机仍会在非 tty 下挂（`stdin is not a tty`），只能走两步手动构建；P0 032「构建顺序断言」没加。
+7. `build-hsp-hap.mjs` 在本机仍会在非 tty 下挂（`stdin is not a tty`），只能走两步手动构建；P0 032「构建顺序断言」没加。**（已澄清，见文末「接手后进展」——脚本没问题，是我的调用管道有问题）**
 8. 六个提交都还在 worktree，**合并回 develop 后必须在主检出重建验收**（worktree 过不代表合并树能编过）。
 
 ## 常用命令
@@ -82,9 +82,18 @@ MSYS2_ARG_CONV_EXCL="*" hdc install -r entry/build/default/outputs/default/entry
 
 | 项 | 结果 |
 |---|---|
-| `assembleHsp` / `assembleHap` | 均 BUILD SUCCESSFUL（18s / 41s） |
+| `assembleHsp` / `assembleHap` | 均 BUILD SUCCESSFUL（18s / 41s；随后 `build-hsp-hap.mjs` 走完整三步一次跑通，HAP 阶段 31s，退出码 0） |
 | `hsp-freshness` | 退出码 0，产物晚于 `common/src`，`OnDeviceLlm` 命中 5 处 |
 | agent-gate | **PASS**（7 文件 / 4 .ets；arkts-lint errors=0） |
 | `npm test` | **379 项 / 372 通过 / 7 失败**；7 个与 HEAD 前逐条相同（`kg_edge`、`note context`、`note-review ×4`、`dispatcher`），新增 27 项全绿 |
 
 **合并口径（未执行，等 review）**：`develop` 与 `origin/develop` 都是当前 HEAD 的**严格祖先**（`git merge-base --is-ancestor` 成立，ahead/behind = `0 102`），所以合入 develop 是 **fast-forward**，合并树与本 worktree 完全相同 —— 上面这份构建/测试结果直接适用，不存在"合并树编不过"的额外风险。剩下的仍是问题 4（A2A 只 1 条样本）与问题 2/3/5/6/7。
+
+**问题 7 改判：脚本没坏，是调用管道坏了。** 前面两次 `node scripts/build-hsp-hap.mjs` 都只吐 `stdin is not a tty` 且一行构建日志都没有，原因是命令写成了 `... 2>&1 | tail -30`：**后台 + 管道**会命中非 tty 中止，而且管道把退出码换成了 `tail` 的 0，看起来像"脚本静默成功"。用 `node -e "console.log('ok')" 2>&1 | tail -3` 能复现同一行输出，证明与脚本无关。前台直接跑（不接管道）实测正常：
+
+- `[1/3] assembleHsp` → `[2/3] hsp-freshness` → `[3/3] assembleHap`，`BUILD SUCCESSFUL in 31 s 757 ms`，`完成：HSP 与 HAP 均已构建`，退出码 0
+- 后台 + `> log 2>&1`（不接管道）同样可行，前面 18s/41s 那次就是这么跑出来的
+
+所以「只能两步手动构建」不成立，`build-hsp-hap.mjs` 可以当唯一构建入口用；P0 032「构建顺序断言」也就没有额外的阻塞理由。剩下要补的只是别在这个 host 上给构建输出接管道。
+
+顺带一条诚实的记录：本轮先在后台管道里跑了两次脚本都没真正构建，我是靠手动两步拿到构建结果的；后来为了定位原因才做了上面的对照实验。构建结论本身（HSP/HAP SUCCESSFUL）来自真实 hvigor 输出，不受影响。
