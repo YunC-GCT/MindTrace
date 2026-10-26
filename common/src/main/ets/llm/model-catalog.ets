@@ -671,6 +671,45 @@ const KIMI_K3_SPEC: ModelSpec = {
   },
 };
 
+// kimi-k3.1-pro / kimi-k3.1-pro-highspeed: 参数约束与 kimi-k3 完全一致
+// （platform.kimi.com/docs/api/models-overview: "均适用于这两个模型"）。
+// 高速版与标准版同一模型, 仅输出速度不同。
+const KIMI_K31_PRO_SPEC: ModelSpec = {
+  schemaVersion: MODEL_SPEC_SCHEMA_VERSION,
+  id: 'kimi-k3.1-pro',
+  providerId: 'kimi',
+  displayName: 'kimi-k3.1-pro',
+  protocol: OPENAI_CHAT_PROTOCOL,
+  contextWindow: 0,
+  maxOutputTokens: 0,
+  inputModalities: [],
+  evidence: KIMI_EVIDENCE,
+  request: {
+    outputTokenPath: ['max_tokens'],
+    thinking: NESTED_ALWAYS_ON_THINKING,
+    effort: KIMI_K3_EFFORT,
+    sampling: KIMI_FIXED_SAMPLING,
+  },
+};
+
+const KIMI_K31_PRO_HIGHSPEED_SPEC: ModelSpec = {
+  schemaVersion: MODEL_SPEC_SCHEMA_VERSION,
+  id: 'kimi-k3.1-pro-highspeed',
+  providerId: 'kimi',
+  displayName: 'kimi-k3.1-pro-highspeed',
+  protocol: OPENAI_CHAT_PROTOCOL,
+  contextWindow: 0,
+  maxOutputTokens: 0,
+  inputModalities: [],
+  evidence: KIMI_EVIDENCE,
+  request: {
+    outputTokenPath: ['max_tokens'],
+    thinking: NESTED_ALWAYS_ON_THINKING,
+    effort: KIMI_K3_EFFORT,
+    sampling: KIMI_FIXED_SAMPLING,
+  },
+};
+
 // ===== 火山方舟豆包 =====
 // 只对带「深度思考」标签的模型生效; 默认值未明写 → defaultEnabled=true 但 evidence partial。
 const DOUBAO_SEED_16_SPEC: ModelSpec = {
@@ -708,6 +747,8 @@ const BUILTIN_MODEL_SPECS: ModelSpec[] = [
   KIMI_K27_CODE_SPEC,
   KIMI_K27_CODE_HIGHSPEED_SPEC,
   KIMI_K3_SPEC,
+  KIMI_K31_PRO_SPEC,
+  KIMI_K31_PRO_HIGHSPEED_SPEC,
   DOUBAO_SEED_16_SPEC,
 ];
 
