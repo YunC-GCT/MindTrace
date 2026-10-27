@@ -2,7 +2,7 @@
 
 > 本目录存放**某一时点的架构快照**：链路总览、工具清单、迁移基线、窗口布局策略。
 > 与 `docs/research/` 的区别：research 是调研过程与证据，architecture 是对当前实现的稳定描述。
-> `Design proposals` 区是例外：描述目标态设计，不代表当前实现。
+> 目标态设计与外评审结论已并入 [`system-architecture-layered.md`](../system-architecture-layered.md)（§14 修正记录），本目录不再单独保留。
 
 | File | Date | 内容 |
 |---|---|---|
@@ -11,22 +11,6 @@
 | [`langgraph-migration-baseline-2026-09-09.md`](./langgraph-migration-baseline-2026-09-09.md) | 2026-09-09 | LangGraph 迁移前基线 |
 | [`langgraph-terminology-map-2026-09-09.md`](./langgraph-terminology-map-2026-09-09.md) | 2026-09-09 | LangGraph 术语 ↔ 本项目命名对照 |
 | [`window-layout-strategy-2026-09-08.md`](./window-layout-strategy-2026-09-08.md) | 2026-09-08 | 窗口 / 浮层布局策略 |
-
-## Design proposals (target state)
-
-> 目标态设计提案，不代表当前实现；用于评审 / 交接给外部 Agent。
-
-| File | Date | 内容 |
-|---|---|---|
-| [`agent-application-architecture-design-2026-10-20.md`](./agent-application-architecture-design-2026-10-20.md) | 2026-10-20 | 应用 / Agent / 信息流目标态：Dispatcher 主 Agent、子图、自研 LangGraph 风格内核 |
-
-## Reviews (external reviewers)
-
-> 外部评审留档；结论已被吸收进 [`system-architecture-layered.md`](../system-architecture-layered.md) 的 §14 修正记录。
-
-| File | Date | 内容 |
-|---|---|---|
-| [`codex-architecture-review-2026-10-23.md`](./codex-architecture-review-2026-10-23.md) | 2026-10-23 | Codex 对 v5 分层架构的评审（Kit 边界、Agent workflow、落地风险） |
 
 ## 命名与维护
 

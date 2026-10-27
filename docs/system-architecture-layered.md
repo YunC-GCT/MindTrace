@@ -1,4 +1,4 @@
-# MindTrace 分层架构设计（v5 · 经评审修正）
+# MindTrace 分层架构设计（v5 · 经评审修正；§17 为 v7 目标态）
 
 > 五层：L1 入口 → L2 Agent 编排 → L3 能力（MCP / RAG / 模型网关）→ L4 数据 → L5 基础设施。
 > v5 依据 Codex 高推理评审修正三处硬伤：StateGraph 并无 checkpoint/interrupt、文搜图与工程 API 版本冲突、白名单不可信。
@@ -544,3 +544,94 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 - 星系先出两类边：同知识点、相似；前后置留 v2
 - `review_item` 建表但空跑，等 v2 接 SM-2
 - App 只读，唯一写入口是用户动作：改笔记、标记已复习
+
+---
+
+## 17. 目标态（v7）：产品分支的模块与流程
+
+> 本节由 `docs/architecture/agent-application-architecture-design-2026-10-20.md` 收敛而来（原文已删除，历史见 git）。
+> 它描述**目标态**，与 §9「与现状的差距」配对看：前者说要去哪，后者说现在在哪。
+
+### 17.1 分层与模块职责
+
+| 层 | Module | 组件 |
+|---|---|---|
+| 接入 | `entry` / `skill` / `cardservice` | APP、小艺、卡片 |
+| 主 Agent | `agents` | `Dispatcher` 主图（preflight / route / HITL / publish） |
+| 专业 Agent | `agents` | `NoteAgent`、`ReviewAgent`、`MathVideoAgent`（子图） |
+| 框架内核 | `common` | `AgentRuntime`、`StateGraph`、`ToolLoop`、`RunContext`、`EventSink`、`State/Reducer`、`Checkpoint`、`Trace` |
+| 能力 | `common` | MCP Host、RAG Layer、Model Gateway、Data Access |
+| 存储 / 消费 | `entry` / `common` / `cardservice` | App Store（notes / plans / vectors）、Card Snapshot 投影、APP 展示、卡片 |
+
+- **entry**：页面 / 浮窗 / ViewModel / 平台适配（Reminder、BackgroundTask、FormCard、权限、Picker）；App Store 的笔记、计划、视频产物；组合根（RDB、DAO / Port、Dispatcher 装配）。不写 prompt、不跑 Agent 循环、不直接碰 MCP/RAG。
+- **agents**：`Dispatcher` 持主图与顶层状态，负责路由、子图调用、HITL、汇总；子 Agent 各管一段（Note：`classify → structure → verify`；Review：`plan → ask → grade`；Video：`outline → script → render`）。不直接写 RDB、不直接发 HTTP/LLM。
+- **common**：内核 + 能力。`AgentRuntime` 执行图、管取消与事件；`StateGraph` 提供 Node/Edge/conditional edge/`run(maxNodeRuns)`；`ToolLoop` 是 ReAct ToolNode（`maxSteps=4`）；`MCP Host` 管 Tools/OCR/Query 的 schema、发现、执行与权限；`RAG Layer` 管 ingest → retrieve → citation；`Model Gateway` 即 `LlmClient`/`LlmGuard`。
+- **skill**：Want 解析、Intent Router、参数校验、调 `Dispatcher`、呈现结果、深链回 APP 确认；不写业务规则。
+- **cardservice**：只读 `CardSnapshotStore`，不调 Agent、不查库。
+
+### 17.2 Dispatcher 主图与子图
+
+```text
+preflight → route → invoke → verify → HITL → publish
+```
+
+- `preflight` 校验 payload / source / 预算 / 权限；`route` 是条件边；`invoke` 同步调子图拿 artifact；`verify` 做 schema / truth / 业务约束；`HITL` 走预览确认；`publish` 写 App Store。
+- 与现状的关系：现在是 `Dispatcher.dispatch` 的四条固定分支（preparedCandidate / regenerate / generation / capture），目标是把模式判断下沉进 `NoteAgent` 子图，主图只保留「选哪个 Agent、何时确认、何时发布」。
+- 粒度原则：一个 Agent = 一个目标 + 一份上下文 + 一个 run；分类/结构化/校验是 `NoteAgent` 的内部阶段，不再拆成三个 Agent。
+
+| 子图 | 阶段 | 输出 | 可复用 |
+|---|---|---|---|
+| NoteAgent | classify → structure → verify | NoteDraft / KnowledgeUnit | TypeClassifier、KnowledgeModel、TruthCheckService、CaptureGraph |
+| ReviewAgent | plan → ask → grade | StudyPlan / ReviewSession | NoteReviewService（StudyPlan 数据新增） |
+| MathVideoAgent | outline → script → render | VideoArtifact / mp4 | 无（渲染走外部服务） |
+
+### 17.3 内核差距（按优先级）
+
+1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；
+2. **RunContext**：runId / parentRunId / cancel / budget（当前只有 `CancellationToken`）；
+3. **EventSink**：node / tool / token / approval 事件（当前只有 `progressSink`）；
+4. **State / Reducer**：typed channel 取代手写 `copyAgentState`；
+5. **Checkpoint**：保持业务级（草稿 / 确认），要做 runtime checkpoint 需单独 ADR。
+
+### 17.4 端到端信息流
+
+```text
+APP 输入 / 小艺 Want
+  → Dispatcher（preflight / route）
+  → NoteAgent（classify → structure）
+  → 工具 / 模型 / 知识（MCP/OCR · Model · RAG）
+  → Verify → HITL → App Store（notes / plans / vectors）
+  → 卡片（读投影） / APP 展示
+```
+
+分支：Review 走 `plan → ask → grade → StudyPlan → App Store`；Video 走 `outline → script → render → mp4 → App Store`。
+
+产物链：图片 → OCR text/formula → `ClassificationResult` → `KnowledgeUnit`/NoteDraft → verified draft → approval → note/plan/video 行 → embeddings → Card Snapshot。
+
+### 17.5 跨模块契约
+
+| 契约 | 定义 | 实现 / 使用 |
+|---|---|---|
+| `Dispatcher.dispatch`（或 `AgentFacade`） | `agents` | entry / skill 调用 |
+| `NoteReadPort` / `NoteWritePort` | `common` | entry 实现，agents 使用 |
+| `StudyPlanReadPort` / `StudyPlanWritePort` | `common` | entry 实现，ReviewAgent 使用 |
+| `ArtifactStorePort` | `common` | entry 实现，MathVideoAgent 使用 |
+| `CardSnapshotStore` | `common` | entry 写投影，cardservice 只读 |
+| `RunStore` | `common` | agents 写 run/trace，UI 只读 |
+
+依赖方向固定为 `entry / skill / cardservice → agents → common`；`common` 不反依赖业务 module，`cardservice` 不 import `entry`。
+
+### 17.6 迁移顺序
+
+1. ADR：修订 0008 放开 Subgraph（只这一项，Checkpoint/HITL 保持业务级）；
+2. 内核：补 `RunContext` / `EventSink` / Subgraph 调用，`ToolLoop` 接生产链；
+3. 主图：四条分支收进 `NoteAgent` 子图；
+4. 子图：NoteAgent 先复用现成件，再上 ReviewAgent、MathVideoAgent；
+5. 能力层：`OcrTool` 与工具协议收进 `common/mcp`，RAG 从 entry 的 demo 收进 `common/rag`；
+6. 端口与数据：三类 Port 放 common、entry 实现，App Store 仍归笔记/计划；
+7. 前端切换：skill 调 `Dispatcher`，cardservice 只读投影，entry 只留 UI / App Store / 平台适配；
+8. 删旧：同一切片删旧实现，不允许新旧 runtime 并行或长期 feature flag。
+
+### 17.7 尚未拍板
+
+AgentRuntime 归属（common vs agents）、是否新增 `AgentFacade`、Subgraph 实现方式（节点 vs Tool）、Checkpoint 层级、笔记/计划的数据归属、Video 是否端侧只产脚本、ReviewAgent 是否负责出题评分。
