@@ -29,8 +29,8 @@ M = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(M)
 
 TS = re.compile(r"(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})")
-# 桌面上的智能体图标坐标 (1840x2800 屏), 换了设备要重取
-ICON_XY = (327, 448)
+# 桌面智能体图标的图形中心 (1840x2800 屏, 图标页不是第一页时先滑过去), 换设备要重取
+ICON_XY = (324, 442)
 
 
 def ms_of(line):
@@ -49,7 +49,8 @@ def ensure_agent_chat(hdc):
     hdc.shell("uitest uiInput keyEvent Home")
     time.sleep(2.5)
     M.tap(hdc, *ICON_XY)
-    time.sleep(6)
+    # 小艺冷启动要 10s 以上, 太短会 dump 到桌面就误判「进不到会话」
+    time.sleep(12)
     nodes = M.walk(M.dump_layout(hdc))
     return bool(M.find_text(nodes, M.DEFAULT_AGENT)[1])
 
