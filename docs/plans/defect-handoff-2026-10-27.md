@@ -147,3 +147,27 @@ python scripts/a2a-smoke/a2a_smoke.py --text "<问题>" --no-restart --wait-seco
 
 git worktree add -b fix/233-latex-split D:/HMgent/MindTrace-233 HEAD
 ```
+
+## 10. 完成情况（2026-10-27 下午）
+
+三条缺陷均已实现、合并、真机验证（分支 `bugfix/galaxy-web-temporary`）：
+
+| Issue | commit | 改法 | 证据 |
+|---|---|---|---|
+| #233 | `ca3db40`（合并 `b0b08b9`） | `DetailRenderModel.splitReadableLines` 改为围栏感知切分：`$$` 整块保留、块内不 `cleanListPrefix`、不参与步骤编号、未闭合兜底、行内 `$…$` 不切断 | 新增 `note-detail-latex-split.test.mjs` 8/8；真机详情页步骤区 1–8 连续、公式块整块渲染、无裸 `$$` |
+| #235 | `ec1a06e`（合并 `cd350cf`） | `CaptureGraph.addNode` 统一计时 → `DispatchOptions.onNodeTiming` → `AiService` 汇总一条 `CAPTURE_TIMING`；`run.mjs` 打印逐图表格并分 cold/warm | 17 单测；真机 `seq=1` 冷启 21892ms、`seq=2` 热态 22807ms |
+| #234 | `39ac90b`（合并 `8d72a3d`） | A2A 通道 `ReplyStyle='plain_text_math'`（`ReplyStyleRules.ets`），UI 默认 `'markdown'` 逐字不变；`TaskSnapshot` 增 `utf8ByteLength` / `unicodeCharCount`，`A2A_REPLY_SENT` 打计数 | 13 单测；真机同一问句 `ok:true`、56 字、`dollar=0`、`sqrt=1 ge=1`，气泡正常显示 |
+
+补充：`66eeab7` 把 `scripts/a2a-smoke/tests` 与 `scripts/e2e-capture` 纳入 gate 的 `testFiles`，全量单测 776 → 806。
+
+阶段耗时基线（真机，`CAPTURE_TIMING`，单位 ms）：
+
+| seq | sample | resolve | ocr | classify | draft | truthCheck | persist | other | total |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | cold | 4 | 681 | 2599 | 17937 | 0 | 157 | 514 | 21892 |
+| 2 | warm | 1 | 342 | 4993 | 17016 | 0 | 189 | 266 | 22807 |
+
+遗留：
+- #235 目标热态 < 15s **未达成**，瓶颈是 `structure`（draft）16–18s；`truth_check` 恒为 0ms、`visits=1`，需确认该节点是否真的执行。
+- 三条 issue 尚未在 GitHub 回评论 / 关单（等用户确认后执行）。
+
