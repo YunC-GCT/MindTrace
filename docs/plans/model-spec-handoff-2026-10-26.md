@@ -149,3 +149,20 @@ MSYS2_ARG_CONV_EXCL="*" hdc install -r entry/build/default/outputs/default/entry
 - **20 条里 2 条失败**（1695 ms / 7810 ms）：回复正文是 `模型暂时不可用：chat answer validation failed after retry: JSON object extraction failed`。这是采样反复发同一句撞出来的新问题——**失败率 10% 比延迟更值得先修**，且失败时同样会走完 A2A 快照，所以不计入延迟统计。
 - 结论方向：`deepseek-flash` 这条路径的 P50 ≈ 2s，与小艺侧体感「重连才出回复」的超时门槛还有余量；但要拍「默认模型切不切」仍需换模型跑同一份脚本对比（脚本已可复用）。
 
+## A2A 聊天回复的 JSON 提取失败（2/20 → 已修，2026-10-27）
+
+**现象**：20 条样本里 2 条回复正文是「模型暂时不可用：chat answer validation failed after retry: JSON object extraction failed」，耗时 1695 ms / 7810 ms。
+
+**根因**（不是网络、不是超时）：
+- A2A 的 `answerConfigured` 走 `ReplyService.complete` → `LlmGuard.callJsonWithRetry`，要求模型严格回 `{"answer": "..."}`。
+- `LlmGuard` 只接受「恰好一个可解析顶层对象」，模型偶尔回纯文本 / 多个对象 / 被 max_tokens 截断，一律抛错。
+- A2A 侧 `maxRetries = 0`（为了压延迟），所以一次不听话 = 整条回复失败；错误信息里还没有原文，线上只能看到一个笼统的「JSON object extraction failed」。
+
+**修法**（只开在对话回复这一条链路）：
+- `LlmGuardJsonOptions.salvageKey`：最终校验失败时按四类救回 `answer` —— ①```json 围栏里取对象 ②多个对象取第一个带 `answer` 的 ③被截断时按 JSON 转义规则捞回已生成部分 ④完全没有 `{` 就把原文当答案。
+- `ReplyService` 传 `salvageKey: 'answer'`，救回时打 `[ReplyCtx] json salvage mode=<mode> chars=<n> issues=...`，方便日后统计真实发生率。
+- 结构化链路（笔记生成等）**不开** `salvageKey`，半成品仍抛错；错误信息也从 `after retry` 改成 `after N attempt(s)`（A2A 本来就是 0 重试，旧文案会误导排查方向）。
+
+**验证**：`scripts/arkts-lint/tests/llm-guard-salvage.test.mjs` 7 项（直接加载真 `LlmGuard.ets`，假 client 喂坏样本）全绿；`npm test` 388/381/7（7 项仍是既有基线）。真机 43 次连发未再复现该失败（修复前那一批是 2/20），所以**失败率是否真的降到 0 无法证实**，能保证的是同样的坏输入不再整条失败、且降级会留日志。
+
+

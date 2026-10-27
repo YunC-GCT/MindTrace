@@ -16,6 +16,16 @@ export interface LlmGuardJsonResult {
   json: Record<string, Object>;
   attempts: number;
   issues: string[];
+  /** 非 JSON 回复里救回来的字段值；正常 JSON 路径为空串。 */
+  salvaged?: string;
+  /** 救回方式：plain_text / multi_object / truncated。 */
+  salvageMode?: string;
+}
+
+/** 救回结果的内部载体（不对外导出）。 */
+interface LlmGuardSalvage {
+  text: string;
+  mode: string;
 }
 
 export interface LlmGuardJsonCandidate {
@@ -43,6 +53,11 @@ export interface LlmGuardJsonOptions extends LlmCallOptions {
   /** 本次调用的额外重试次数；缺省保持 2（App 内聊天），A2A 显式传 0。 */
   maxRetries?: number;
   label?: string;
+  /**
+   * 允许从"模型没按 JSON 回"的原文里救回这个字段（聊天回复传 'answer'）。
+   * 只给对话回复开：结构化链路（笔记生成等）一旦开，半成品会被当成成品落库。
+   */
+  salvageKey?: string;
 }
 
 const DEFAULT_MAX_RETRIES: number = 2;
@@ -85,7 +100,126 @@ export class LlmGuard {
       attempt += 1;
     }
 
-    throw new Error(label + ' validation failed after retry: ' + issues.join('; '));
+    const salvageKey: string = options.salvageKey !== undefined ? options.salvageKey : '';
+    if (salvageKey.length > 0) {
+      const rescue: LlmGuardSalvage = this.salvageValue(raw, salvageKey);
+      if (rescue.text.length > 0) {
+        const recovered: Record<string, Object> = {};
+        recovered[salvageKey] = rescue.text;
+        return {
+          raw: raw,
+          json: recovered,
+          attempts: attempt + 1,
+          issues: issues,
+          salvaged: rescue.text,
+          salvageMode: rescue.mode,
+        };
+      }
+    }
+    throw new Error(label + ' validation failed after ' + (attempt + 1).toString() + ' attempt(s): ' + issues.join('; '));
+  }
+
+  /**
+   * 模型偶尔不按 JSON 回（纯文本、多个对象、被截断）。对话回复能直接渲染原文，
+   * 所以这里尽力把 answer 捞回来；结构化链路不开 salvageKey 就仍然抛错。
+   */
+  private salvageValue(raw: string, key: string): LlmGuardSalvage {
+    const text: string = LlmGuard.unwrapFence(raw);
+    const candidates: LlmGuardJsonCandidate[] = this.scanJsonObjectCandidates(text);
+    let index: number = 0;
+    while (index < candidates.length) {
+      const candidate: LlmGuardJsonCandidate = candidates[index];
+      index += 1;
+      if (!candidate.parseable || candidate.object === undefined) {
+        continue;
+      }
+      const value: Object | undefined = candidate.object[key];
+      if (typeof value === 'string' && (value as string).trim().length > 0) {
+        const mode: string = candidates.length > 1 ? 'multi_object' : 'object';
+        return { text: value as string, mode: mode };
+      }
+    }
+    const truncated: string = LlmGuard.salvageTruncatedValue(text, key);
+    if (truncated.length > 0) {
+      return { text: truncated, mode: 'truncated' };
+    }
+    if (text.indexOf('{') < 0) {
+      const plain: string = LlmGuard.stripOuterQuotes(text.trim());
+      if (plain.length > 0) {
+        return { text: plain, mode: 'plain_text' };
+      }
+    }
+    return { text: '', mode: 'none' };
+  }
+
+  private static unwrapFence(raw: string): string {
+    const open: number = raw.indexOf('```');
+    if (open < 0) {
+      return raw;
+    }
+    const bodyStart: number = raw.indexOf('\n', open);
+    const close: number = raw.lastIndexOf('```');
+    if (bodyStart < 0 || close <= bodyStart) {
+      return raw.substring(open + 3);
+    }
+    return raw.substring(bodyStart + 1, close);
+  }
+
+  /** 从被截断的 JSON 里捞 "key": "已生成的部分"，转义按 JSON 规则还原。 */
+  private static salvageTruncatedValue(text: string, key: string): string {
+    const marker: string = '\"' + key + '\"';
+    const keyAt: number = text.indexOf(marker);
+    if (keyAt < 0) {
+      return '';
+    }
+    const colon: number = text.indexOf(':', keyAt + marker.length);
+    if (colon < 0) {
+      return '';
+    }
+    const quote: number = text.indexOf('\"', colon + 1);
+    if (quote < 0) {
+      return '';
+    }
+    let out: string = '';
+    let escaping: boolean = false;
+    for (let i: number = quote + 1; i < text.length; i += 1) {
+      const ch: string = text[i];
+      if (escaping) {
+        escaping = false;
+        if (ch === 'n') {
+          out += '\n';
+        } else if (ch === 't') {
+          out += '\t';
+        } else if (ch === 'r') {
+          continue;
+        } else if (ch === 'u') {
+          const code: number = Number.parseInt(text.substring(i + 1, i + 5), 16);
+          if (!Number.isNaN(code)) {
+            out += String.fromCharCode(code);
+            i += 4;
+          }
+        } else {
+          out += ch;
+        }
+        continue;
+      }
+      if (ch === '\\') {
+        escaping = true;
+        continue;
+      }
+      if (ch === '\"') {
+        break;
+      }
+      out += ch;
+    }
+    return out.trim();
+  }
+
+  private static stripOuterQuotes(text: string): string {
+    if (text.length >= 2 && text.startsWith('\"') && text.endsWith('\"')) {
+      return text.substring(1, text.length - 1).trim();
+    }
+    return text;
   }
 
   validateJsonText(raw: string, validator: LlmJsonValidator): LlmGuardJsonResult {

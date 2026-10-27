@@ -113,12 +113,21 @@ export class ReplyService {
         // ModelSpec 默认值（DeepSeek 官方默认开思考）不能接管这里。
         enableThinking: false,
         label: label,
+        // 聊天回复能直接渲染原文：模型偶尔不按 JSON 回（纯文本/多个对象/被截断），
+        // 与其把整条回复变成「模型暂时不可用」，不如把 answer 捞回来。
+        // 只在这一条链路上开；笔记生成等结构化调用不开。
+        salvageKey: 'answer',
         cancellationToken: cancellationToken,
       },
       (json: Record<string, Object>): LlmGuardValidationResult => this.validateChatAnswerJson(json),
     );
     const answerValue: Object | undefined = guarded.json['answer'];
     const answer: string = typeof answerValue === 'string' ? answerValue : '';
+    const salvaged: string = guarded.salvaged !== undefined ? guarded.salvaged : '';
+    if (salvaged.length > 0) {
+      replyLog.warn('[ReplyCtx] json salvage mode=' + (guarded.salvageMode ?? 'unknown')
+        + ' chars=' + salvaged.length.toString() + ' issues=' + guarded.issues.join('; '));
+    }
     replyLog.info('complete attempts=' + guarded.attempts.toString());
     return this.normalize(answer);
   }
