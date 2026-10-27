@@ -14,14 +14,21 @@
 
 ## #238 契约层：六个 Port + adapter + 契约测试
 
-- [ ] `NoteReadPort` / `NoteWritePort`（含 `approvedCheckpointHash`）
-- [ ] `StudyPlanReadPort` / `StudyPlanWritePort`（只承载现有待办语义）
+- [x] `NoteWritePort`（`commitKey` 必填、`expectedVersion` CAS、`approvedCheckpointHash`、`NotePortError`）— 切片 A，`common/src/main/ets/ports/NoteWritePort.ets`
+- [ ] `NoteReadPort`（切片 A 未覆盖，仍待做）
+- [x] `NoteWriteDecisions` 纯判定（insert / update / duplicate / conflict / reject + ADR-0019 错误码）— 切片 A，`common/src/main/ets/ports/NoteWriteDecisions.ets`
+- [x] `StudyPlanReadPort`（只承载现有待办语义；`subject` 现状无列，需由 linked note 派生）— 切片 A
+- [ ] `StudyPlanWritePort`（升级为复习计划前不定义，等 #242 拍板）
 - [ ] `ArtifactStorePort`（artifactId / 媒体类型 / URI / 校验和 / 删除 / 部分失败清理）
-- [ ] `CardSnapshotStore` 补 `schemaVersion` / `updatedAt` / 原子替换 / 可重试
-- [ ] `RunStore`（runId / parentRunId / eventId / 单调 sequence / status+version / checkpoint / 恢复与取消）
+- [x] `CardSnapshotStore` 补 `schemaVersion` / `updatedAt` / 单 key 原子替换 / 失败返回 `false` 可重试 — 切片 A（`CardSnapshotCodec` + `loadResult`）
+- [x] `RunStore` 接口契约（runId / parentRunId / status / checkpoint / committedNoteId / committedVersion / updatedAt）— 切片 A，`common/src/main/ets/ports/RunStore.ets`
+- [ ] **未决：RunStore 生产适配器需单开迁移票** — `parentRunId` / 事件序号 / 五终态落库三项目前**没有存储列**（`DatabaseHelper` 13 张表里没有 `run_event`）；本切片不实现生产适配器、不伪造持久化。
 - [ ] `skill/SkillAbility` 与 `entry/NoteEvidenceService` 去掉直连 RDB，改走 Port（行为不变）
-- [ ] 每 Port 四条契约测试：重复 `commitKey` 只生效一次、`expectedVersion` 落后返回冲突、取消提交前/后语义、投影落后可检测
-- [ ] build 5/5、gate PASS、单测 ≥ 806
+- [x] `NoteWritePort` + `CardSnapshotCodec` 契约测试：`scripts/arkts-lint/tests/v7-note-contracts.test.mjs`
+      （19 条，`node --test` 实测 `pass 19 / fail 0`，覆盖 `decideWrite` 六分支 + codec 往返/版本/bad JSON/缺字段）
+- [ ] 其余 Port（`NoteReadPort` / `StudyPlanWritePort` / `ArtifactStorePort` / `RunStore` 持久化）四条契约测试：重复 `commitKey` 只生效一次、`expectedVersion` 落后返回冲突、取消提交前/后语义、投影落后可检测
+- [x] build 5/5、gate PASS、单测 ≥ 806 —— 编排会话实测：`node scripts/build-hsp-hap.mjs` 全 5 步成功；
+      `node scripts/agent-gate/index.mjs --all` → `RESULT: PASS`（407 `.ets`、212 docs、unit-tests `pass=843 fail=0`）
 
 ## #239 行为基线：四条 dispatch 路径 golden 快照
 

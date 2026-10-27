@@ -378,3 +378,23 @@ export type {
 } from './kit/FormCardFacade';
 export { CardSnapshotBinding } from './kit/FormCardFacade';
 export { CardSnapshotStore } from './kit/CardSnapshotStore';
+export type { CardSnapshotLoadResult } from './kit/CardSnapshotStore';
+
+// ========== v7 契约层切片 A (ADR-0019 / #238) ==========
+//   纯契约 / 纯函数：零 @kit.* 依赖；CardSnapshotStore 的 Preferences 边界保持原样。
+//   StudyPlanItem 与既有 models/StudyPlan 的 UI 类同名，这里改名为 StudyPlanPendingItem 导出。
+export { NotePortError } from './ports/NoteWritePort';
+export type { NoteWriteCommand, NoteWriteOutcome, NoteWritePort } from './ports/NoteWritePort';
+export { decideWrite } from './ports/NoteWriteDecisions';
+export type { NoteSnapshot, WriteDecisionKind, WriteDecision } from './ports/NoteWriteDecisions';
+export {
+  CARD_SNAPSHOT_SCHEMA_VERSION,
+  encodeCardSnapshot,
+  decodeCardSnapshot,
+} from './kit/CardSnapshotCodec';
+export type { CardSnapshotEnvelope, CardSnapshotDecodeResult } from './kit/CardSnapshotCodec';
+export type { RunStatus, RunRecord, RunStorePort } from './ports/RunStore';
+export type {
+  StudyPlanPendingItem,
+  StudyPlanReadPort,
+} from './ports/StudyPlanPorts';
