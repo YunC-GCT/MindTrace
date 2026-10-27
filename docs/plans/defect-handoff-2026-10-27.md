@@ -168,6 +168,6 @@ git worktree add -b fix/233-latex-split D:/HMgent/MindTrace-233 HEAD
 | 2 | warm | 1 | 342 | 4993 | 17016 | 0 | 189 | 266 | 22807 |
 
 遗留：
-- #235 目标热态 < 15s **未达成**，瓶颈是 `structure`（draft）16–18s；`truth_check` 恒为 0ms、`visits=1`，需确认该节点是否真的执行。
+- #235 目标热态 < 15s **未达成**，瓶颈是 `structure`（draft）16–18s；`truth_check` 是本地同步校验（`TruthCheckService.check`，不调模型），0ms 属正常。
 - 三条 issue 尚未在 GitHub 回评论 / 关单（等用户确认后执行）。
 
