@@ -371,3 +371,19 @@ test('glm-4.7-flash: 照抄官方调用示例的 model 名, 不是按显示名�
   // glm-4.7-flashx / glm-5.3-flashx: 文档只有显示名 (GLM-4.7-FlashX), 没有 model 字符串 → 不编 ID。
   assert.equal(mod.getModelSpec('glm', 'glm-4.7-flashx'), null);
 });
+
+test('capabilityHint: 已核实不打扰用户, 其余复用同一句文案', async () => {
+  const mod = await modelModules;
+
+  // chip hint 和面板横幅共用这一份文案, 不许各拼各的。
+  assert.equal(mod.capabilityHint('verified'), '');
+  assert.equal(mod.capabilityHint('partial'), '字段已核实（默认值未证实）');
+  assert.equal(mod.capabilityHint('unconfirmed'), '能力未确认');
+
+  // 真机回归: 清单为空 + 手动输入的 ID, 只要 spec 已核实 → 不许挂"能力未确认"
+  // (曾出现横幅"请求字段已核实"与 chip hint"能力未确认"同时出现)。
+  const kimi = mod.getModelSpec('kimi', 'kimi-k2.6');
+  assert.ok(kimi, 'kimi-k2.6 应有内置规格');
+  assert.equal(mod.capabilitySignal(kimi), 'verified');
+  assert.equal(mod.capabilityHint(mod.capabilitySignal(kimi)), '');
+});

@@ -803,6 +803,18 @@ export function capabilitySignal(spec: ModelSpec | null): CapabilitySignal {
   return 'unconfirmed';
 }
 
+// 能力信号 → 用户可读提示。空串 = 不需要提示 (已核实就不打扰用户)。
+// UI 侧(chip hint / 面板横幅 / 保存拦截)都读这一份, 不许各拼各的文案。
+export function capabilityHint(signal: CapabilitySignal): string {
+  if (signal === 'verified') {
+    return '';
+  }
+  if (signal === 'partial') {
+    return '字段已核实（默认值未证实）';
+  }
+  return '能力未确认';
+}
+
 export function getProviderCatalog(providerId: string): ProviderCatalog | null {
   const id: string = providerId.trim();
   for (const catalog of PROVIDER_CATALOGS) {

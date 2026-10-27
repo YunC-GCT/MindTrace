@@ -22,7 +22,7 @@
  *   清单为空只代表"没有可发现清单", 不再被当成"能力未知"。
  */
 
-import { capabilitySignal, LlmConfig, getProviderCatalog, resolveModel } from 'common';
+import { capabilityHint, capabilitySignal, LlmConfig, getProviderCatalog, resolveModel } from 'common';
 import type { CapabilitySignal, ModelListing, ModelSpec, ProviderCatalog, ResolvedModel } from 'common';
 
 export interface ModelAvailability {
@@ -88,8 +88,7 @@ export class ModelSelector {
   static capabilityNote(vendorId: string, modelId: string): string {
     const signal: CapabilitySignal = ModelSelector.capabilitySignalOf(vendorId, modelId);
     if (signal === 'verified') { return '请求字段已核实'; }
-    if (signal === 'partial') { return '字段已核实，默认值未证实'; }
-    return '能力未确认';
+    return capabilityHint(signal);
   }
 
   /**
@@ -147,13 +146,24 @@ export class ModelSelector {
   }
 
   // 能力未确认/部分确认: 仍允许保存(不伪装成不支持), 只降级提示。
+  // verified 也走这里(无权威清单的 vendor 走这条), 必须原样放行 —— 否则
+  // 清单为空的手动 ID 会一边显示"请求字段已核实"、一边挂"能力未确认"。
   private static byCapability(signal: CapabilitySignal): ModelAvailability {
+    if (signal === 'verified') {
+      const clean: ModelAvailability = {
+        usable: true,
+        degraded: false,
+        reasonCode: '',
+        hint: '',
+      };
+      return clean;
+    }
     const code: string = signal === 'partial' ? 'CAPABILITY_PARTIAL' : 'CAPABILITY_UNCONFIRMED';
     const degraded: ModelAvailability = {
       usable: true,
       degraded: true,
       reasonCode: code,
-      hint: ModelSelector.reasonText(code),
+      hint: capabilityHint(signal),
     };
     return degraded;
   }

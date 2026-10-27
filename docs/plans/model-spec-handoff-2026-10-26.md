@@ -113,3 +113,24 @@ MSYS2_ARG_CONV_EXCL="*" hdc install -r entry/build/default/outputs/default/entry
 测试里把这条口径写成断言：`getModelSpec('glm','glm-4.7-flash')` 有 spec 且 `verified`、`control=toggle`、`off=[{path:['thinking','type'],value:'disabled'}]`；`glm-5-turbo`、`glm-4.7-flashx` 必须为 `null`——防止后来的人"顺手补全"成猜出来的 ID。
 
 **问题 3 之后的验证（含本轮 glm-4.7-flash）**：`npm test` **380 项 / 373 通过 / 7 失败**（仍是那 7 个基线失败）；agent-gate **PASS**；`build-hsp-hap.mjs` 三步跑通，HSP `BUILD SUCCESSFUL in 1 min 53 s`、HAP `46 s 303 ms`，退出码 0。新增的 GLM spec 在 `common` 里，HSP 已按新源码重建（不是旧产物）。
+
+## 真机验收（2026-10-27 10:4x，设备 3XTYD24C16203663）
+
+**先发现的一次装错**：设备上原本跑的不是本分支产物 —— 面板有 chip、却完全没有「获取模型清单」「未提供内置清单」「暂无模型」。核对后确认设备装的是主检出 `D:\HMgent\MindTrace`（当前在 `bugfix/galaxy-web-temporary`，VendorPicker 还是 10-13 版），不是这个 worktree。按 `common.hsp → agents.hsp → skill → cardservice → entry.hap` 顺序重装本分支产物后，新文案才出现。**这提醒一件事：DevEco 里打开的是哪个 checkout，装上去的就是哪份代码；worktree 验收必须自己 `hdc install`。**
+
+**真机抓到的第二个 bug（比交接文档里的第 1 条更隐蔽）**：重装后 Kimi 面板一边显示横幅「未提供内置清单 · **请求字段已核实**」，一边在 chip 下面挂「**能力未确认**」——同一份证据两个结论。根因在 `ModelSelector.availabilityOf`：无权威清单的 vendor 会走到 `byCapability(capabilitySignal(resolved.spec))`，而 `byCapability` 原来只会产"降级"结果，**连 `verified` 也被映射成 `CAPABILITY_UNCONFIRMED`**。修法：
+
+- `common` 新增 `capabilityHint(signal)`：`verified → ''`（不打扰）、`partial → 字段已核实（默认值未证实）`、`unconfirmed → 能力未确认`；`capabilityNote` 与 chip hint 都读它，文案只此一份
+- `byCapability` 对 `verified` 原样返回 clean（`usable=true, degraded=false`），不再降级
+- 测试 +1 项锁住"已验证不得挂能力未确认"
+
+**真机三态对照（修完后，逐条来自 `uitest dumpLayout` 的文本节点）**：
+
+| 供应商 · 模型 | 面板横幅 | chip 第二行 |
+|---|---|---|
+| 月之暗面 Kimi · kimi-k2.6 | 未提供内置清单 · 请求字段已核实 | （无） |
+| 字节豆包 · doubao-seed-1.6 | 未提供内置清单 · 字段已核实（默认值未证实） | 字段已核实（默认值未证实） |
+| 通义千问 · qwen3-max | 未提供内置清单 · 能力未确认 | 能力未确认 |
+| DeepSeek · deepseek-v4-pro | （无横幅，有内置清单） | `· 内置`，另有 思考模式 / 推理强度 |
+
+三处口径一致，Kimi/豆包 都渲染出「思考模式」开关（来自 spec 的 thinking.toggle），说明规格控件与能力信号同源。**问题 1 至此真机收口。**

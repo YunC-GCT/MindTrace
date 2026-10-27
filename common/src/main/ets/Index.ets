@@ -241,6 +241,7 @@ export { resolveModelCapability, resolveCapabilities, supportsImageInput } from 
 export type { ModelCapability, ThinkingMode } from './llm/ModelCapabilities';
 export {
   capabilitySignal,
+  capabilityHint,
   getProviderCatalog,
   getCatalogDefaultListing,
   getModelSpec,
