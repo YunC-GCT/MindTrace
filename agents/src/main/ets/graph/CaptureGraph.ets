@@ -13,10 +13,14 @@ import { StateGraph, StateGraphError, StateGraphNode } from 'common';
 
 type GraphRoute = (state: AgentState) => CaptureStep;
 
+export type NodeTimingSink = (step: CaptureStep, elapsedMs: number) => void;
+
 export class CaptureGraph {
   private readonly graph: StateGraph<AgentState, CaptureStep>;
+  private readonly onNodeTiming?: NodeTimingSink;
 
-  constructor() {
+  constructor(onNodeTiming?: NodeTimingSink) {
+    this.onNodeTiming = onNodeTiming;
     this.graph = new StateGraph<AgentState, CaptureStep>(
       'START',
       'END',
@@ -26,8 +30,10 @@ export class CaptureGraph {
 
   addNode(step: CaptureStep, node: CaptureNode): void {
     const workflowNode: StateGraphNode<AgentState> = async (input: AgentState): Promise<AgentState> => {
-      const nodeInput: AgentState = this.copyState(input, input.persist, step);
+      const startedAt: number = Date.now();
+      let nodeInput: AgentState = input;
       try {
+        nodeInput = this.copyState(input, input.persist, step);
         nodeInput.cancellationToken?.throwIfCancelled();
         const result: CaptureNodeResult = await node(nodeInput);
         result.state.cancellationToken?.throwIfCancelled();
@@ -35,6 +41,10 @@ export class CaptureGraph {
       } catch (e) {
         const message: string = e instanceof Error ? e.message : String(e);
         return this.withError(nodeInput, 'NODE_ERROR', message, step, false);
+      } finally {
+        if (this.onNodeTiming !== undefined) {
+          this.onNodeTiming(step, Date.now() - startedAt);
+        }
       }
     };
     this.graph.addNode(step, workflowNode);

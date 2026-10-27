@@ -59,6 +59,7 @@ import {
 import type { DispatchPayload, CancellationToken } from 'common';
 import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
 import { CaptureGraph } from '../graph/CaptureGraph';
+import type { NodeTimingSink } from '../graph/CaptureGraph';
 import { OcrNodeFactory } from '../graph/nodes/OcrNode';
 import { ClassifyNodeFactory } from '../graph/nodes/ClassifyNode';
 import { StructureNodeFactory } from '../graph/nodes/StructureNode';
@@ -77,6 +78,7 @@ export interface DispatchOptions {
   knowledgeModel?: KnowledgeModel;
   cancellationToken?: CancellationToken;
   progressSink?: NoteGenerationProgressSink;
+  onNodeTiming?: (step: string, elapsedMs: number) => void;
 }
 
 interface GenerationCandidateEvaluation {
@@ -1642,7 +1644,11 @@ export class Dispatcher {
   }
 
   private buildGraph(options: DispatchOptions = {}): CaptureGraph {
-    const graph: CaptureGraph = new CaptureGraph();
+    const sink = options.onNodeTiming;
+    const timing: NodeTimingSink | undefined = sink === undefined
+      ? undefined
+      : (step: CaptureStep, ms: number): void => sink(step, ms);
+    const graph: CaptureGraph = new CaptureGraph(timing);
     const classifier: TypeClassifier = new TypeClassifier(options.cancellationToken);
     const structure: KnowledgeModel = new KnowledgeModel(undefined, options.cancellationToken);
     const truth: TruthCheckService = new TruthCheckService();

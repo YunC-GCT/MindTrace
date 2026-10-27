@@ -7,7 +7,8 @@
 //        省掉手工 hdc 往复和 hilog 抓取，机器等的时间一半以上都耗在那上面。
 //  依赖: hdc（DevEco SDK 自带）, 真机已连且解锁
 //  数据流: hdc install → aa start --ps e2e <mode> → hdc shell hilog (stream)
-//          → 只保留 E2E/ImageSearch/Card 日志 → 读到 stage=done / stage=worker-probe 或超时 → 汇总 → 退出码
+//          → 只保留 E2E/ImageSearch/Card/AICapture 日志 → 读到 stage=done / stage=worker-probe 或超时
+//          → 解析 CAPTURE_TIMING 打印分阶段耗时表 → 汇总 → 退出码
 //  用法:
 //    node scripts/e2e-capture/run.mjs                 # 装 HSP+HAP 再跑完整批量链路
 //    node scripts/e2e-capture/run.mjs --no-install    # 只跑，已装好时用
@@ -16,13 +17,18 @@
 //    node scripts/e2e-capture/run.mjs --timeout 180   # 放宽等 done 的时间（秒）
 //    HDC=/path/to/hdc node scripts/e2e-capture/run.mjs
 //  退出码: 0 = 批量链路两图都成功 / 两条检索都命中且无 degraded / Worker 探针两条都成功；
-//          1 = 有失败或超时（原始日志路径会打印）
+//          1 = 有失败或超时，或有 capture 却没有任何 CAPTURE_TIMING 行（原始日志路径会打印）
 // ============================================================================
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  parseCaptureTiming,
+  summarizeCaptureTimings,
+  formatCaptureTimingTable,
+} from './timing.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const HDC = process.env.HDC ??
@@ -53,7 +59,7 @@ const ARTIFACTS = {
 };
 
 // 只看这几类日志：E2E 阶段 / 文搜图 / 卡片快照 / 卡片推帧 / 应用业务日志里的 OCR 相关
-const KEEP = /A0E2E0|A0C5D0|A0C4D0|A0C4D1|\[AiService\]|\[Dispatcher\]|\[OcrTool\]|Ability onForeground|Ability onBackground/;
+const KEEP = /A0E2E0|A0C5D0|A0C4D0|A0C4D1|\[AiService\]|\[AICapture\]|\[Dispatcher\]|\[OcrTool\]|Ability onForeground|Ability onBackground/;
 
 const logFile = resolve(ROOT, '.e2e-run.log');
 // 全部原始行留在内存：writeStream 的 flush 是异步的，读完立刻解析会丢尾部
@@ -135,7 +141,7 @@ hdc(['shell', 'aa', 'force-stop', BUNDLE]);
 sleepSync(1000);
 
 // 设备端先按 tag 过滤再回传：整机 hilog 每秒几百行，USB 上必丢（实测 270 次 write socket failed）
-const LOG_CMD = 'hilog -T E2E,ImageSearch,CardSnapshot,FormCard,MindTrace';
+const LOG_CMD = 'hilog -T E2E,ImageSearch,CardSnapshot,FormCard,MindTrace,AICapture';
 const stream = spawn(HDC, ['shell', LOG_CMD], { stdio: ['ignore', 'pipe', 'pipe'] });
 let buffer = '';
 let done = false;
@@ -226,6 +232,15 @@ function printSummary() {
   const totalMs = doneMatch ? Number(doneMatch[3]) : 0;
   const captures = lines.filter((l) => l.includes('stage=capture'));
   const withSource = captures.filter((l) => /sourceImageId=(?!\(空\))/.test(l)).length;
+  // 每张图应恰好一条 CAPTURE_TIMING；从原始行解析，避免流式 chunk 切行导致漏统计
+  const timingRecords = [];
+  for (const line of rawLines) {
+    const record = parseCaptureTiming(line);
+    if (record !== undefined) {
+      timingRecords.push(record);
+    }
+  }
+  const timingMissing = captures.length > 0 && timingRecords.length === 0;
   // 每条 query 可能打两行：基础行带 hits/ms，hits=0 时再补一行 degraded=<bool>。
   // 同一 query 后写的行覆盖先写的行，最终保留 degrade 标记。
   const searchRecords = new Map();
@@ -267,6 +282,25 @@ function printSummary() {
   } else {
     console.log(`抓取     : 成功 ${okCount}，失败 ${failedCount}，总耗时 ${totalMs}ms` +
       (captures.length < okCount ? `（日志收到 ${captures.length} 行 capture，中间行被 hilog 丢了）` : ''));
+    if (timingRecords.length > 0) {
+      const timing = summarizeCaptureTimings(timingRecords);
+      console.log('阶段耗时 :');
+      for (const row of formatCaptureTimingTable(timingRecords).split('\n')) {
+        console.log('           ' + row);
+      }
+      if (timing.cold !== null) {
+        console.log(`冷启首张 : seq=1 totalMs=${timing.cold.totalMs}ms`);
+      }
+      if (timing.warm.length > 0) {
+        console.log(`热态样本 : ${timing.warm.length} 张，中位数 ${timing.warmMedianTotalMs}ms，` +
+          `均值 ${timing.warmMeanTotalMs}ms（seq>=2，同进程热态）`);
+      }
+      if (timingRecords.length < captures.length) {
+        console.log(`阶段耗时 : 警告 ${timingRecords.length}/${captures.length} 条 capture 有 timing 行（hilog 可能丢行）`);
+      }
+    } else if (timingMissing) {
+      console.log(`阶段耗时 : FAIL — 收到 ${captures.length} 条 stage=capture，但没有任何 CAPTURE_TIMING 行`);
+    }
     console.log(`检索     : 期望 ${expectedQueries.length} 条（${expectedQueries.join(', ')}）`);
     for (const item of queryResults) {
       const r = item.record;
@@ -296,7 +330,7 @@ function printSummary() {
     ? probeOk
     : MODE === 'worker'
       ? workerProbesOk && workerStage !== null && workerStage[1] === 'true' && !workerTimedOut
-      : doneMatch !== null && okCount === 2 && failedCount === 0 && searchesOk && !anyDegraded);
+      : doneMatch !== null && okCount === 2 && failedCount === 0 && searchesOk && !anyDegraded && !timingMissing);
   console.log(`判定     : ${verdict ? 'PASS' : 'FAIL'}`);
   console.log(`原始日志 : ${logFile}`);
   if (!verdict) {

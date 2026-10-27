@@ -60,8 +60,10 @@ import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
 import type { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
+const captureLog: Logger = new Logger('AICapture');
 export class AiService {
   private static readonly activeClarificationRuns: Set<string> = new Set<string>();
+  private static captureSeq: number = 0;
 
   // UIAbilityContext 引用,capture() 准备图片文件时用
   private context?: common.UIAbilityContext;
@@ -72,25 +74,80 @@ export class AiService {
 
   // 拍照/相册入口:把图片处理成 KnowledgeUnit 并持久化
   async capture(imageUri: string, userText?: string): Promise<KnowledgeUnit> {
+    const startedAt: number = Date.now();
+    const seq: number = ++AiService.captureSeq;
+    let resolveMs: number = 0;
+    let outcome: string = 'ok';
+    const nodeTotals: Map<string, number> = new Map<string, number>();
+    const nodeVisits: Map<string, number> = new Map<string, number>();
+    const onNodeTiming = (step: string, elapsedMs: number): void => {
+      nodeTotals.set(step, (nodeTotals.get(step) ?? 0) + elapsedMs);
+      nodeVisits.set(step, (nodeVisits.get(step) ?? 0) + 1);
+    };
     log.info('capture start, imageUri=' + imageUri);
-    if (this.context === undefined) {
-      throw new Error('AiService.capture 需要 UIAbilityContext 来准备图片文件');
+    try {
+      if (this.context === undefined) {
+        throw new Error('AiService.capture 需要 UIAbilityContext 来准备图片文件');
+      }
+
+      // 1) 把 file:// URI 复制到沙箱(本地路径,OCR/Dao 都能访问)
+      const resolveStartedAt: number = Date.now();
+      const resolved: ResolvedImageFile = await new ImageUriResolver(this.context).resolve(imageUri);
+      resolveMs = Date.now() - resolveStartedAt;
+      log.info('capture 图片已准备,本地路径=' + resolved.localPath);
+
+      // 2) 走整链
+      const unit: KnowledgeUnit = await this.processAndPersist({
+        kind: 'image',
+        imageUri: resolved.localPath,
+        userText: userText,
+      }, onNodeTiming);
+
+      // 3) 落库后再建文搜图索引：索引失败不影响笔记本身，只记日志
+      await this.indexForSearch(resolved.localPath, unit.id);
+      return unit;
+    } catch (error) {
+      outcome = 'error';
+      if (error instanceof Error) {
+        throw new Error(error.message);
+      }
+      throw new Error(String(error));
+    } finally {
+      const totalMs: number = Date.now() - startedAt;
+      captureLog.info(AiService.formatCaptureTiming(seq, outcome, resolveMs, nodeTotals, nodeVisits, totalMs));
     }
+  }
 
-    // 1) 把 file:// URI 复制到沙箱(本地路径,OCR/Dao 都能访问)
-    const resolved: ResolvedImageFile = await new ImageUriResolver(this.context).resolve(imageUri);
-    log.info('capture 图片已准备,本地路径=' + resolved.localPath);
-
-    // 2) 走整链
-    const unit: KnowledgeUnit = await this.processAndPersist({
-      kind: 'image',
-      imageUri: resolved.localPath,
-      userText: userText,
-    });
-
-    // 3) 落库后再建文搜图索引：索引失败不影响笔记本身，只记日志
-    await this.indexForSearch(resolved.localPath, unit.id);
-    return unit;
+  private static formatCaptureTiming(
+    seq: number,
+    outcome: string,
+    resolveMs: number,
+    nodeTotals: Map<string, number>,
+    nodeVisits: Map<string, number>,
+    totalMs: number,
+  ): string {
+    const ocrMs: number = nodeTotals.get('capture') ?? 0;
+    const classifyMs: number = nodeTotals.get('classify') ?? 0;
+    const draftMs: number = nodeTotals.get('structure') ?? 0;
+    const truthCheckMs: number = nodeTotals.get('truth_check') ?? 0;
+    const persistMs: number = nodeTotals.get('persist') ?? 0;
+    const accountedMs: number = resolveMs + ocrMs + classifyMs + draftMs + truthCheckMs + persistMs;
+    const otherMs: number = Math.max(0, totalMs - accountedMs);
+    return 'CAPTURE_TIMING seq=' + seq.toString()
+      + ' outcome=' + outcome
+      + ' resolveMs=' + resolveMs.toString()
+      + ' ocrMs=' + ocrMs.toString()
+      + ' classifyMs=' + classifyMs.toString()
+      + ' draftMs=' + draftMs.toString()
+      + ' truthCheckMs=' + truthCheckMs.toString()
+      + ' persistMs=' + persistMs.toString()
+      + ' otherMs=' + otherMs.toString()
+      + ' totalMs=' + totalMs.toString()
+      + ' visits=capture:' + (nodeVisits.get('capture') ?? 0).toString()
+      + ',classify:' + (nodeVisits.get('classify') ?? 0).toString()
+      + ',structure:' + (nodeVisits.get('structure') ?? 0).toString()
+      + ',truth_check:' + (nodeVisits.get('truth_check') ?? 0).toString()
+      + ',persist:' + (nodeVisits.get('persist') ?? 0).toString();
   }
 
   /** 把已落库的图片写进 textSearchImage 索引；端口未安装时静默跳过。 */
@@ -831,7 +888,10 @@ export class AiService {
   }
 
   // 内部: 调度 -> 校验 -> 入库
-  private async processAndPersist(payload: DispatchPayload): Promise<KnowledgeUnit> {
+  private async processAndPersist(
+    payload: DispatchPayload,
+    onNodeTiming?: (step: string, elapsedMs: number) => void,
+  ): Promise<KnowledgeUnit> {
     // 1) 构造调度请求
     const req: DispatchRequest = { source: 'app', payload };
 
@@ -840,7 +900,11 @@ export class AiService {
 
     // 3) 通过 Dispatcher 公共入口执行整链并显式注入 dao
     const dispatcher: Dispatcher = new Dispatcher();
-    const result: DispatchResult = await dispatcher.dispatch(req, { persist: true, dao: dao });
+    const result: DispatchResult = await dispatcher.dispatch(req, {
+      persist: true,
+      dao: dao,
+      onNodeTiming: onNodeTiming,
+    });
     if (!result.success) {
       throw new Error('处理失败: ' + (result.errorMessage ?? 'Capture workflow failed'));
     }
