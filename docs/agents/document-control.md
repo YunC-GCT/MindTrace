@@ -91,7 +91,7 @@ node scripts/link-check/index.mjs
 node scripts/naming-lint/index.mjs
 ```
 
-`agent-gate` 会跑 `.ets` 卫生（BOM / 文件头 / 模块边界）、`arkts-lint`、`naming-lint`、`link-check` 与 `doc-trace`。`doc-trace` 检查的是**结构**，不判断技术结论；技术冲突仍需人 / agent 读 ADR 与 spec。
+`agent-gate` 会跑 `.ets` 卫生（BOM / 文件头 / 模块边界）、`arkts-lint`、`naming-lint`、`link-check`、`doc-trace`、`process-boundary`，以及**全量单测**（改动集里有 `.ets`/`.mjs`/`.ts`/`.json` 时才跑，约 40 s）。`doc-trace` 检查的是**结构**，不判断技术结论；技术冲突仍需人 / agent 读 ADR 与 spec。
 
 ---
 
