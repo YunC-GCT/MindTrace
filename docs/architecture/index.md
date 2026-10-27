@@ -2,7 +2,8 @@
 
 > 本目录存放**某一时点的架构快照**：链路总览、工具清单、迁移基线、窗口布局策略。
 > 与 `docs/research/` 的区别：research 是调研过程与证据，architecture 是对当前实现的稳定描述。
-> 目标态设计与外评审结论已并入 [`system-architecture-layered.md`](../system-architecture-layered.md)（§14 修正记录），本目录不再单独保留。
+> 目标态设计在 [`system-architecture-layered.md`](../system-architecture-layered.md)（as-built 的 §1–§16 + v7 目标态 §17）；
+> 目标态的外评审结论单独保留在 [`review-v7-2026-10-27.md`](./review-v7-2026-10-27.md)。
 
 | File | Date | 内容 |
 |---|---|---|
@@ -11,6 +12,7 @@
 | [`langgraph-migration-baseline-2026-09-09.md`](./langgraph-migration-baseline-2026-09-09.md) | 2026-09-09 | LangGraph 迁移前基线 |
 | [`langgraph-terminology-map-2026-09-09.md`](./langgraph-terminology-map-2026-09-09.md) | 2026-09-09 | LangGraph 术语 ↔ 本项目命名对照 |
 | [`window-layout-strategy-2026-09-08.md`](./window-layout-strategy-2026-09-08.md) | 2026-09-08 | 窗口 / 浮层布局策略 |
+| [`review-v7-2026-10-27.md`](./review-v7-2026-10-27.md) | 2026-10-27 | v7 目标态外评审：结论「有条件可落地」，端口/运行上下文/迁移顺序的硬依赖与五条落地风险 |
 
 ## 命名与维护
 

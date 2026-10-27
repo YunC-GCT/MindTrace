@@ -54,6 +54,7 @@ docs/
 | **Look up a workflow (issue tracking, triage)** | `docs/agents/` — see [`agents/index.md`](./agents/index.md) |
 | **Find an old session's decision trail** | `docs/legacy/mindtrace/handoffs/` (frozen; not current guidance) |
 | **Understand the v1 layered architecture** | [`system-architecture-layered.md`](./system-architecture-layered.md) — 五层设计、能力选型、验收清单、小艺开放平台落地路径（唯一权威架构文档，含 §14 评审修正与 v7 目标态） |
+| **Read the v7 target-state review** | [`architecture/review-v7-2026-10-27.md`](./architecture/review-v7-2026-10-27.md) — 外评审：有条件可落地、端口与迁移顺序的硬依赖、五条风险 |
 | **Create a new doc** | Pick a template from `docs/template/`, then run `node scripts/naming-lint/index.mjs` to verify the name conforms |
 
 ## By audience
