@@ -48,27 +48,27 @@ test('ADR-0019 (d) step 3 precedes step 4: replay wins even when expectedVersion
   assert.equal(result.code, '', 'idempotent replay must not be reported as a conflict');
 });
 
-test('ADR-0019 (d) step 4: stale expectedVersion is retryable VERSION_CONFLICT', () => {
+test('ADR-0019 (d) step 4: stale expectedVersion is a non-retryable VERSION_CONFLICT', () => {
   const existing = { noteId: 'note-1', version: 4, commitKey: 'commit-old' };
   const result = decideWrite(existing, { commitKey: 'commit-2', expectedVersion: 3 });
   assert.equal(result.kind, 'conflict', 'ADR-0019 (d) step 4: CAS mismatch is a conflict');
   assert.equal(result.code, 'VERSION_CONFLICT', 'ADR-0019 (c) VERSION_CONFLICT');
-  assert.equal(result.retryable, true, '#238 requires VERSION_CONFLICT to be retryable');
+  assert.equal(result.retryable, false, 'ADR-0019 (c): the same expectedVersion cannot succeed on replay');
 });
 
-test('ADR-0019 (d) step 5: approved hash mismatch is retryable APPROVAL_HASH_MISMATCH', () => {
+test('ADR-0019 (d) step 5: approved hash mismatch is a non-retryable APPROVAL_HASH_MISMATCH', () => {
   const existing = { noteId: 'note-1', version: 2, approvedCheckpointHash: 'hash-old' };
   const result = decideWrite(existing, { commitKey: 'commit-2', approvedCheckpointHash: 'hash-new' });
   assert.equal(result.kind, 'reject', 'ADR-0019 (d) step 5: HITL approval hash must match');
   assert.equal(result.code, 'APPROVAL_HASH_MISMATCH', 'ADR-0019 (c) APPROVAL_HASH_MISMATCH');
-  assert.equal(result.retryable, true, '#238 requires APPROVAL_HASH_MISMATCH to be retryable');
+  assert.equal(result.retryable, false, 'ADR-0019 (c): a stale candidate must be re-previewed, not resent');
 });
 
 test('ADR-0019 (d) step 5: approval hash on a missing note is rejected, never inserted', () => {
   const result = decideWrite(null, { commitKey: 'commit-2', approvedCheckpointHash: 'hash-new' });
   assert.equal(result.kind, 'reject', 'ADR-0019 (d) step 5 runs before the insert fallback');
   assert.equal(result.code, 'APPROVAL_HASH_MISMATCH', 'no existing hash can never match a supplied hash');
-  assert.equal(result.retryable, true, '#238 requires APPROVAL_HASH_MISMATCH to be retryable');
+  assert.equal(result.retryable, false, 'ADR-0019 (c): a stale candidate must be re-previewed, not resent');
 });
 
 test('ADR-0019 (d) step 5: matching approved hash does not block an update', () => {

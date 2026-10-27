@@ -75,18 +75,20 @@ export function decideWrite(existing: NoteSnapshot | null, command: NoteWriteCom
     return decision('duplicate', '', 'duplicate commitKey replay; no second write', false);
   }
 
-  // 4. 有 expectedVersion 即 CAS。落后（或超前）都返回可重试冲突。
+  // 4. 有 expectedVersion 即 CAS。落后（或超前）都返回冲突；同一请求重放不会成功，
+  //    所以 retryable=false —— 调用方必须重读最新版本再提交（ADR-0019 (c)）。
   if (existing !== null && expectedVersion !== undefined && existing.version !== expectedVersion) {
     return decision('conflict', 'VERSION_CONFLICT',
-      'version conflict: expected ' + expectedVersion.toString() + ', actual ' + existing.version.toString(), true);
+      'version conflict: expected ' + expectedVersion.toString() + ', actual ' + existing.version.toString(), false);
   }
 
   // 5. 审批哈希有值即必须一致；不一致说明候选已过期。
   //    existing=null 时没有可比较的 approvedCheckpointHash，同样视为不一致：
   //    传了审批哈希却找不到现有 note，不能静默 insert，否则会绕过 HITL 校验。
+  //    重放同一请求只会再次不匹配，故 retryable=false：正确动作是丢弃陈旧候选、重新预览。
   if (approvalRequired && (existing === null || existing.approvedCheckpointHash !== approvalHash)) {
     return decision('reject', 'APPROVAL_HASH_MISMATCH',
-      'approved checkpoint hash does not match the current note', true);
+      'approved checkpoint hash does not match the current note', false);
   }
 
   // 6. 兜底：无现有行插入，有现有行更新。

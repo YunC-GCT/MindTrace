@@ -12,10 +12,9 @@
  *   - commitKey 必填；同一 commitKey 重放必须返回首次 noteId/version（duplicate=true），不产生第二次写入。
  *   - expectedVersion 有值即 CAS；existing.version 不相等时返回 VERSION_CONFLICT。
  *   - approvedCheckpointHash 有值即要求 existing.approvedCheckpointHash 一致，防止绕过 HITL。
- *   - 判定顺序与 retryable 以本切片任务为准：
- *     VERSION_CONFLICT / APPROVAL_HASH_MISMATCH 标为 retryable=true（调用方需重新预览后再提交）。
- *     注: ADR-0019 (c) 错误码表把两者写成 retryable=false，与 #238 判定要求冲突；
- *     本切片刻意按任务要求实现，待 #238 收口时同步 ADR 表。
+ *   - retryable 的语义是「同一请求重放能否成功」，与 ADR-0019 (c) 错误码表一致：
+ *     VERSION_CONFLICT / APPROVAL_HASH_MISMATCH / NOTE_NOT_FOUND / COMMIT_KEY_REQUIRED 全为 false，
+ *     因为正确动作是重读状态或重新预览，而不是原样再发一次。
  *
  * ArkTS 1.1 strict 适配:
  *   - 可选字段用 `?:`，判定侧显式与 undefined 比较，不做解构。
