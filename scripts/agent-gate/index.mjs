@@ -19,7 +19,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -175,6 +175,15 @@ function testFiles() {
     .filter((f) => f.endsWith('.test.mjs'))
     .sort()
     .map((f) => `scripts/arkts-lint/tests/${f}`);
+  // 其他目录下的 node --test 单测也要进 gate，否则新增用例无守门
+  for (const extra of ['scripts/a2a-smoke/tests', 'scripts/e2e-capture']) {
+    const abs = join(REPO_ROOT, extra);
+    if (!existsSync(abs)) continue;
+    readdirSync(abs)
+      .filter((f) => f.endsWith('.test.mjs'))
+      .sort()
+      .forEach((f) => files.push(`${extra}/${f}`));
+  }
   files.push('tools/galaxy3d-preview/scripts/native-scene.test.mjs');
   return files;
 }
