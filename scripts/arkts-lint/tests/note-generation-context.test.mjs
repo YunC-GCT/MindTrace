@@ -178,7 +178,9 @@ test('note context schema migration and repository persistence stay compatible',
   const repository = readRepoFile('entry/src/main/ets/database/NoteGenerationRepository.ets');
   const models = readRepoFile('common/src/main/ets/models/NoteGenerationModels.ets');
 
-  assert.match(database, /const DB_SCHEMA_VERSION: number = 13;/);
+  const version = database.match(/const DB_SCHEMA_VERSION: number = (\d+);/);
+  assert.ok(version, 'DB_SCHEMA_VERSION 应存在');
+  assert.ok(Number(version[1]) >= 13, '上下文迁移来自 schema 13，版本只增不减（当前 ' + version[1] + '）');
   assert.match(database, /clarification_json TEXT NOT NULL DEFAULT ''/);
   assert.match(database, /provenance_ids TEXT NOT NULL DEFAULT '\[\]'/);
   assert.match(database, /context_budget_tokens INTEGER NOT NULL DEFAULT 0/);

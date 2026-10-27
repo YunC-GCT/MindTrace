@@ -1,6 +1,6 @@
 # scripts/arkts-lint/ — ArkTS 1.1 strict lint (AST-based)
 
-> **状态 (2026-10-18)**: **34 规则**；`npm test`（curated suite）**329/329 全绿**；全量 `node --test tests/*.test.mjs` **707 项，692 pass / 15 fail**（15 项为既有失败基线）。下面的 Day 3 表是 2026-09-01 快照，保留作历史对比。
+> **状态 (2026-10-27)**: **34 规则**；`npm test`（curated suite）**388/388 全绿**；全量 `node --test tests/*.test.mjs` **767 项，744 pass / 23 fail**（23 项是未进 CI 的历史断言，多数已被后续 ADR 取代，待逐条裁决）。下面的 Day 3 表是 2026-09-01 快照，保留作历史对比。
 > **目标**: 替代 v1 (regex), 消除 ~80% 误报, 补齐 40+ 规则
 > **关联**: Phase 4 ticket #15
 
