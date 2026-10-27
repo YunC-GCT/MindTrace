@@ -312,6 +312,13 @@ class RequestedSectionsDeepKnowledgeModel extends KnowledgeModel {
     const sourceId: string = request.sources.fragments[0].id;
     const outlineSections: NoteGenerationOutlineSection[] = [];
     const draftSections: NoteDraftSection[] = [];
+    // This fixture must satisfy the instruction as well as preserve its section titles.
+    const contents: string[] = [
+      '定义：函数在一点的极限等于函数值即在该点连续。公式：$\\lim_{x\\to a}f(x)=f(a)$。例子：恒等函数处处连续。',
+      '关系：可导必连续，连续未必可导。公式：$f\'(a)=\\lim_{h\\to0}(f(a+h)-f(a))/h$。例子：绝对值函数在零点连续但不可导。',
+      '定理：闭区间连续且开区间可导时，中间某点导数等于割线斜率。公式：$f\'(c)=(f(b)-f(a))/(b-a)$。例子：恒等函数满足结论。',
+      '误区：不能遗漏闭区间连续与开区间可导条件。自测例子：检查绝对值函数跨零点时的可导性。关键公式使用前先检查适用条件。',
+    ];
     for (let index: number = 0; index < this.receivedSections.length; index += 1) {
       const label: string = this.receivedSections[index];
       const sectionId: string = stableSectionId(index, label);
@@ -328,7 +335,7 @@ class RequestedSectionsDeepKnowledgeModel extends KnowledgeModel {
       draftSections.push({
         id: sectionId,
         label: label,
-        content: label + '：本节覆盖用户指定章节。',
+        content: label + '：' + contents[index],
         sourceIds: [sourceId],
         state: 'generated',
         baseHash: 'hash-' + index.toString(),
@@ -1097,7 +1104,9 @@ export default function dispatcherNoteGenerationTest(): void {
 
       const diagnostics: string = result.generation?.diagnostics ?? '';
       expect(result.success).assertFalse();
-      expect(result.generation?.stopReason).assertEqual('repeated_issue_fingerprint');
+      expect(result.generation?.stopReason).assertEqual('artifact_validation_failed');
+      expect(result.generation?.progress?.round).assertEqual(0);
+      expect(model.calls).assertEqual(1);
       expect(diagnostics.includes('DEEP_SECTION_DUPLICATE_CONTENT')).assertTrue();
       expect(diagnostics.includes('DEEP_SYMBOL_DRIFT')).assertTrue();
       expect(diagnostics.includes('DEEP_REFERENCE_INVALID')).assertTrue();

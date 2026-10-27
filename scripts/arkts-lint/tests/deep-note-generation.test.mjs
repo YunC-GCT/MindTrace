@@ -8,7 +8,7 @@ const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'u
 
 test('Issue 103 wires a real deep route through Dispatcher and KnowledgeModel', () => {
   const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
-  const model = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+  const model = read('agents/src/main/ets/agents/DeepDraftComposer.ets')
   const contracts = read('common/src/main/ets/models/NoteGenerationModels.ets')
 
   assert.match(dispatcher, /route === 'deep'/)
@@ -17,6 +17,8 @@ test('Issue 103 wires a real deep route through Dispatcher and KnowledgeModel', 
   assert.doesNotMatch(dispatcher, /repairDeepDraft/)
   assert.match(dispatcher, /deepMergeIssues/)
   assert.doesNotMatch(dispatcher, /DEEP_ROUTE_UNSUPPORTED/)
+  const facade = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+  assert.match(facade, /this\.deepDraftComposer\.compose\(request, progressSink\)/)
   assert.match(model, /segmentSourceBundle/)
   assert.match(model, /callDeepSectionDraft/)
   assert.match(model, /shared ledger/)
@@ -26,7 +28,7 @@ test('Issue 103 wires a real deep route through Dispatcher and KnowledgeModel', 
 
 test('Issue 103 deep source selection is semantic, not arbitrary truncation', () => {
   const models = read('common/src/main/ets/models/NoteGenerationModels.ets')
-  const knowledgeModel = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+  const knowledgeModel = read('agents/src/main/ets/agents/DeepDraftComposer.ets')
 
   assert.match(models, /boundary: 'message' \| 'ocr_page' \| 'heading'/)
   assert.match(models, /formula_block/)
@@ -37,7 +39,7 @@ test('Issue 103 deep source selection is semantic, not arbitrary truncation', ()
 
 test('deep generation reports real section and verification activity', () => {
   const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
-  const model = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+  const model = read('agents/src/main/ets/agents/DeepDraftComposer.ets')
 
   assert.match(model, /progressSink\?: NoteGenerationProgressSink/)
   assert.match(model, /activity: 'write_section'/)
@@ -46,12 +48,12 @@ test('deep generation reports real section and verification activity', () => {
   assert.match(model, /activity: 'check_accuracy'/)
   assert.doesNotMatch(dispatcher, /repairDeepDraft/)
   assert.match(dispatcher, /structureDeepDraft\(budgetedRequest, options\.progressSink\)/)
-  assert.match(model, /callIndependentVerifier\(/)
-  assert.match(model, /evidenceStatuses/)
+  assert.match(model, /this\.verifier\.verify\(/)
+  assert.match(read('agents/src/main/ets/agents/NoteDraftVerifier.ets'), /evidenceStatuses/)
 })
 
 test('deep evidence never fabricates an empty source anchor when an excerpt cannot be located', () => {
-  const model = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+  const model = read('agents/src/main/ets/agents/DeepDraftComposer.ets')
 
   assert.match(model, /if \(located >= 0\) \{[\s\S]*?refs\.push\(/)
   assert.doesNotMatch(model, /refs\.push\(\{[\s\S]*?excerpt:\s*''/)

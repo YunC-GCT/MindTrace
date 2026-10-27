@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from '@ohos/hypium';
 import { common } from '@kit.AbilityKit';
+import { abilityDelegatorRegistry } from '@kit.TestKit';
 import {
   CancellationToken,
   ClassificationResult,
@@ -41,6 +42,7 @@ import { ReplyContext, TextIntent } from '../main/ets/services/IntentClassifier'
 import { ReplyEventSink, StreamReplyResult } from '../main/ets/services/ReplyService';
 
 class RecordingWorkflowCallbacks implements ConversationWorkflowCallbacks {
+  context?: common.UIAbilityContext;
   errors: string[] = [];
   addedAnswers: string[] = [];
   terminalOutcomes: ChatMessageOutcome[] = [];
@@ -64,7 +66,8 @@ class RecordingWorkflowCallbacks implements ConversationWorkflowCallbacks {
     this.terminalOutcomes.push(outcome ?? 'completed');
   }
   getUserMessageId(_ref: ConversationRunRef): number { return 1; }
-  async commitHistory(_ref: ConversationRunRef): Promise<boolean> { return true; }
+  // Keep fixture messages out of the real device's persistent conversation history.
+  async commitHistory(_ref: ConversationRunRef): Promise<boolean> { return false; }
   reportDiagnostic(_ref: ConversationRunRef, _diagnostic: string): void {}
   onStart(_ref: ConversationRunRef): void {}
   onProgress(_ref: ConversationRunRef, _step: ConversationProgressStep): void {}
@@ -75,8 +78,11 @@ class RecordingWorkflowCallbacks implements ConversationWorkflowCallbacks {
   isCurrentRun(_ref: ConversationRunRef): boolean { return true; }
   getCancellationToken(_ref: ConversationRunRef): CancellationToken | undefined { return this.token; }
   registerCancellationHook(_ref: ConversationRunRef, _hook: () => void): () => void { return noopHook; }
-  getContext(): common.UIAbilityContext { throw new Error('WORKFLOW_PORTS_MUST_BE_INJECTED'); }
-  getConversationText(_ref: ConversationRunRef, _excludeLatestUser: boolean): string { return 'test material'; }
+  getContext(): common.UIAbilityContext {
+    if (this.context !== undefined) { return this.context; }
+    throw new Error('WORKFLOW_PORTS_MUST_BE_INJECTED');
+  }
+  getConversationText(_ref: ConversationRunRef, _excludeLatestUser: boolean): string { return ''; }
   onDraftReady(_ref: ConversationRunRef, _event: NoteDraftReadyEvent): void {}
 }
 
@@ -92,7 +98,7 @@ class FixedIntentPort implements IConversationIntentPort {
     return this.intent;
   }
   classifyLocalIntent(_userText: string): TextIntent | undefined { return undefined; }
-  inlineNoteMaterial(_userText: string): string { return 'test material'; }
+  inlineNoteMaterial(_userText: string): string { return '求导公式：函数 y=x 的导数为 1。'; }
 }
 
 class FailingReplyPort implements IConversationReplyPort {
@@ -199,6 +205,10 @@ async function executeFailure(
   route: string,
 ): Promise<RecordingWorkflowCallbacks> {
   const callbacks: RecordingWorkflowCallbacks = new RecordingWorkflowCallbacks();
+  if (route === 'note') {
+    const ability = await abilityDelegatorRegistry.getAbilityDelegator().getCurrentTopAbility();
+    callbacks.context = ability.context;
+  }
   const ports: ConversationWorkflowPorts = new ConversationWorkflowPorts(
     new FixedIntentPort(intent),
     new FailingReplyPort(route),
@@ -206,7 +216,7 @@ async function executeFailure(
   );
   const workflow: ConversationWorkflow = new ConversationWorkflow(callbacks, ports);
   try {
-    await workflow.run(request, { sessionId: 's1', runId: 'r' + route });
+    await workflow.run(request, { sessionId: 's215failure' + Date.now().toString(), runId: 'r' + route });
   } catch (_error) {}
   return callbacks;
 }
@@ -255,6 +265,7 @@ export default function conversationWorkflowFailureTest(): void {
         'note',
       );
       expectExclusiveFailure(callbacks, 'failed');
+      expect(callbacks.errors[0]).assertContain('NOTE_FAILED');
     });
 
     it('should keep an interrupted stream partial out of failed answer content', 0, async () => {

@@ -96,11 +96,22 @@ class FakeIncrementalModel extends KnowledgeModel {
 class FakeIncrementalRepository implements NoteGenerationRepository {
   base: IncrementalBase;
   checkpoints: NoteGenerationCheckpoint[] = [];
+  savedRun: NoteGenerationRun | undefined = undefined;
+  savedSources: SourceBundle = { fragments: [] };
 
   constructor(base: IncrementalBase) { this.base = base; }
-  async saveRun(_run: NoteGenerationRun, _bundle: SourceBundle): Promise<void> {}
+  async saveRun(run: NoteGenerationRun, bundle: SourceBundle): Promise<void> {
+    this.savedRun = run;
+    this.savedSources = bundle;
+  }
   async saveCheckpoint(checkpoint: NoteGenerationCheckpoint): Promise<void> { this.checkpoints.push(checkpoint); }
-  async restore(_runId: string): Promise<NoteGenerationRecovery | undefined> { return undefined; }
+  async restore(runId: string): Promise<NoteGenerationRecovery | undefined> {
+    if (this.savedRun === undefined || this.savedRun.id !== runId) { return undefined; }
+    return {
+      run: this.savedRun, sources: this.savedSources, checkpoints: this.checkpoints,
+      bestCheckpoint: this.checkpoints[0], softIssueCodes: [],
+    };
+  }
   async saveCommitResult(_result: NoteGenerationCommitResult): Promise<void> {}
   async getCommitResult(_key: string): Promise<NoteGenerationCommitResult | undefined> { return undefined; }
   async cancelRun(_runId: string): Promise<void> {}
@@ -111,6 +122,38 @@ class FakeIncrementalRepository implements NoteGenerationRepository {
 
 export default function incrementalRegenerationTest(): void {
   describe('IncrementalRegeneration.issue104_incremental_regeneration', () => {
+    it('allows chapter-local derivative formulas while preserving a locked rule', 0, () => {
+      const sections: IncrementalSection[] = parseIncrementalSections(
+        "## 法则\n用户编辑标记\nf'(x) = n x^{n-1}\n## 平方例子\nf'(x) = 2x",
+      );
+      sections[0].state = 'locked';
+      const plan: IncrementalPlan = {
+        noteId: 'scope-regression', baseVersion: 2, targetSectionIds: [sections[1].id],
+        lockedSectionIds: [sections[0].id], existingSourceIds: ['source'],
+        newSourceIds: [], relevantSourceIds: ['source'],
+      };
+      const patch: IncrementalPatch = {
+        sectionId: sections[1].id, operation: 'replace',
+        content: "f'(x) = 2x\n先确定指数，再应用法则。", sourceIds: ['source'],
+      };
+      const result = mergeIncrementalPatches(sections, plan, [patch]);
+      expect(result.ok).assertTrue();
+      expect(result.sections[0].content).assertEqual("用户编辑标记\nf'(x) = n x^{n-1}");
+      expect(result.diff[0].kind).assertEqual('locked');
+      expect(result.sections[1].content).assertEqual(patch.content);
+    });
+
+    it('still rejects different equations for the same symbol within one section', 0, () => {
+      const sections: IncrementalSection[] = parseIncrementalSections("## 例子\nf'(x) = 2x\nf'(x) = 3x");
+      const plan: IncrementalPlan = {
+        noteId: 'scope-regression', baseVersion: 1, targetSectionIds: [], lockedSectionIds: [],
+        existingSourceIds: [], newSourceIds: [], relevantSourceIds: [],
+      };
+      const result = mergeIncrementalPatches(sections, plan, []);
+      expect(result.ok).assertFalse();
+      expect(result.issues.includes('FORMULA_INCONSISTENT:' + sections[0].id)).assertTrue();
+    });
+
     it('parses stable sections and locks a manually edited latest revision', 0, () => {
       const current = parseIncrementalSections('## 定义\n定义正文\n## 例子\n例子正文');
       const generated: IncrementalManifest = buildIncrementalManifest('note-104', 2, current, ['source-old']);
@@ -193,6 +236,7 @@ export default function incrementalRegenerationTest(): void {
       const repository: FakeIncrementalRepository = new FakeIncrementalRepository(base);
       const request: NoteGenerationRequest = {
         runId: 'incremental-preview-104', instruction: '增加一个例子', mode: 'regenerate',
+        originSessionId: 'session-incremental', parentConversationRunId: 'conversation-incremental',
         targetNoteId: 'note-104', baseVersion: 2,
         sources: { fragments: [{ id: 'source-new', kind: 'conversation', originId: 'new', sequence: 0, fingerprint: 'new', text: '新例子' }] },
       };
@@ -205,6 +249,9 @@ export default function incrementalRegenerationTest(): void {
       expect(result.data?.content.includes('新增例子')).assertTrue();
       expect(result.generation?.incrementalDiff?.some((item): boolean => item.kind === 'preserved')).assertTrue();
       expect(repository.checkpoints.length).assertEqual(1);
+      const recovered: NoteGenerationRecovery | undefined = await repository.restore(request.runId);
+      expect(recovered?.run.originSessionId).assertEqual('session-incremental');
+      expect(recovered?.run.parentConversationRunId).assertEqual('conversation-incremental');
     });
   });
 }
