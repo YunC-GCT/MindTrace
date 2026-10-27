@@ -5,6 +5,8 @@ import { KnowledgeModel } from '../agents/KnowledgeModel';
 import { TruthCheckService } from '../agents/TruthCheckService';
 import {
   Logger,
+  RunContext,
+  createRootRunContext,
   KnowledgeUnit,
   DispatchRequest,
   DispatchResult,
@@ -77,6 +79,8 @@ export interface DispatchOptions {
   generationRepository?: NoteGenerationRepository;
   knowledgeModel?: KnowledgeModel;
   cancellationToken?: CancellationToken;
+  /** #243：调用方自带的 run 上下文；不传则捕获路径自建一个根上下文 */
+  runContext?: RunContext;
   progressSink?: NoteGenerationProgressSink;
   onNodeTiming?: (step: string, elapsedMs: number) => void;
 }
@@ -105,6 +109,9 @@ interface DeepFormulaCandidate {
 }
 
 export class Dispatcher {
+  // 与 StateGraph 老的 maxNodeRuns=128 保持一致：接线不改变捕获路径的可用节点数。
+  private static readonly CAPTURE_RUN_BUDGET: number = 128;
+
   private static sourceFromPayload(payload: DispatchPayload): string {
     if (payload.kind === 'image') { return 'camera_capture'; }
     if (payload.kind === 'text') { return 'manual'; }
@@ -139,7 +146,14 @@ export class Dispatcher {
       cancellationToken: options.cancellationToken,
     };
     const graph: CaptureGraph = this.buildGraph(options);
-    const finalState: AgentState = await graph.run(initial);
+    // #243：预算与取消是运行时属性，只走调用参数，不经 AgentState。
+    const runContext: RunContext = options.runContext ?? createRootRunContext(
+      'capture-' + Date.now().toString(),
+      Dispatcher.CAPTURE_RUN_BUDGET,
+      0,
+      options.cancellationToken ?? null,
+    );
+    const finalState: AgentState = await graph.run(initial, runContext);
     options.cancellationToken?.throwIfCancelled();
     const error: CaptureGraphError | undefined = finalState.error;
     if (error !== undefined) {

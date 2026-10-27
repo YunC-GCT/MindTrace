@@ -319,7 +319,7 @@ export { ToolLoop } from './tools/ToolLoop';
 export { StateGraph, StateGraphError } from './workflow/StateGraph';
 export type { AgentTool, ToolResult } from './tools/ToolRegistry';
 export type { StateGraphNode, StateGraphRoute, StateGraphHalt, StateGraphErrorKind } from './workflow/StateGraph';
-// #243 步骤 1：RunContext 契约。只定义类型与错误，StateGraph / CaptureGraph / Dispatcher 尚未接线。
+// #243：RunContext 契约。StateGraph / CaptureGraph 已接（步骤 2/3），Dispatcher 走 DispatchOptions.runContext（步骤 4）。
 export { RunBudget, createRunBudget } from './workflow/RunBudget';
 export { CancellationError, DeadlineExceededError, isCancellationError, isDeadlineExceededError } from './workflow/RunErrors';
 export { RunContext, createRootRunContext, createChildRunContext } from './workflow/RunContext';

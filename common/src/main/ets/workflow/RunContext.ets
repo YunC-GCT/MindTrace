@@ -37,7 +37,7 @@ export class RunContext {
     this.runId = runId;
     this.parentRunId = parentRunId;
     this.deadlineAt = deadlineAt;
-    this.token = token;
+    this.token = token ?? null;
     this.budget = budget;
   }
 
