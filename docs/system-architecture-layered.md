@@ -653,14 +653,14 @@ APP 输入 / 小艺 Want
 | 取消语义（未提交 / 已提交） | 节点前后的 `CancellationToken` 检查撤不掉已经落库的写 |
 | 版本与时间戳 | 卡片投影、embedding、边都是 post-commit effect，必须能判断落后于哪个提交 |
 
-| 契约 | 归属 | 现状 | 至少要定义 |
-|---|---|---|---|
-| `Dispatcher.dispatch` | agents | 四分支已存在，返回扁平结果 | `NoteCommand`（capture / generation / regenerate / preparedCandidate / analysisOnly）+ discriminated `NoteOutcome`（needsInput / readyPreview / committed / failed(code, retryable) / cancelled） |
-| `NoteReadPort` / `NoteWritePort` | 接口 common，实现 entry | 直连 DAO，无端口 | `commitKey`、`expectedVersion`、`approvedCheckpointHash`（防 Agent 绕过 HITL）、幂等重放、`committed/cancelled` 判定 |
-| `StudyPlanReadPort` / `StudyPlanWritePort` | 同上 | `StudyPlanDao` 裸 CRUD | **先定领域**：待办 vs 间隔复习；再定评分 / 掌握度 / 复习记录 |
-| `ArtifactStorePort` | 同上 | 无 | `artifactId`、媒体类型、URI、校验和、保留与删除、部分失败的清理 |
-| `CardSnapshotStore` | common | Preferences 静态读写，无 schema version | projection schema version、`updatedAt`、原子替换、刷新失败可重试 |
-| `RunStore` | common | 无（只有 `NoteGenerationRepository` 的 run 行） | `runId` / `parentRunId` / `eventId`、单调 `sequence`、status + version、checkpoint、恢复与取消合同 |
+| 契约 | 归属 | 现状 | 至少要定义 | 依据 |
+|---|---|---|---|---|
+| `Dispatcher.dispatch` | agents | 四分支已存在，返回扁平结果 | `NoteCommand`（capture / generation / regenerate / preparedCandidate / analysisOnly）+ discriminated `NoteOutcome`（needsInput / readyPreview / committed / failed(code, retryable) / cancelled） | ADR-0019（[0019](./adr/0019-note-command-and-outcome.md)） |
+| `NoteReadPort` / `NoteWritePort` | 接口 common，实现 entry | 直连 DAO，无端口 | `commitKey`、`expectedVersion`、`approvedCheckpointHash`（防 Agent 绕过 HITL）、幂等重放、`committed/cancelled` 判定 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `StudyPlanReadPort` / `StudyPlanWritePort` | 同上 | `StudyPlanDao` 裸 CRUD | **先定领域**：待办 vs 间隔复习；再定评分 / 掌握度 / 复习记录 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `ArtifactStorePort` | 同上 | 无 | `artifactId`、媒体类型、URI、校验和、保留与删除、部分失败的清理 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `CardSnapshotStore` | common | Preferences 静态读写，无 schema version | projection schema version、`updatedAt`、原子替换、刷新失败可重试 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `RunStore` | common | 无（只有 `NoteGenerationRepository` 的 run 行） | `runId` / `parentRunId` / `eventId`、单调 `sequence`、status + version、checkpoint、恢复与取消合同 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 
 Token 事件只记数量与耗时，**不落正文**（沿用日志脱敏约束）。
 

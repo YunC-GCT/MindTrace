@@ -26,6 +26,7 @@ choice made, and the reversibility.
 | [0016](./0016-reply-contract-by-transport.md) | Reply contract scoped by transport: stream prompt emits the Reply Body (MM-MD-v1 Markdown) directly, complete keeps the JSON envelope + LlmGuard; ReplyService exclusively owns envelope→body; chat content is always a Reply Body | accepted |
 | [0017](./0017-renderer-scheduler-budget-baseline.md) | Renderer scheduler budget baseline for ticket #124: maxWebCreatesPerFrame=1, maxWebWorkMsPerFrame=16; derived from webWorkDurationSamplesMs (n=16, median=150ms, p75=426ms); DevEco emulator performance target NOT_MET — recorded as ticket-1 follow-up | accepted |
 | [0018](./0018-note-evidence-provenance.md) | Separate note assertions, immutable source provenance, and read-only verification; the model returns positional statuses while the pipeline owns IDs and exact source spans | accepted |
+| [0019](./0019-note-command-and-outcome.md) | `NoteCommand` (capture / generation / regenerate / preparedCandidate / analysisOnly) and `NoteOutcome` (needsInput / readyPreview / committed / failed / cancelled) as discriminated unions; `failed` carries code + retryable, `cancelled` carries whether a write was committed; subgraph scope revised in ADR-0008 | accepted |
 
 ## How to write a new ADR
 
