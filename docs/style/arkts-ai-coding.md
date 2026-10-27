@@ -11,7 +11,7 @@
 1. 读 [`CONTEXT.md`](../../CONTEXT.md) 的相关词条（尤其 `Dispatcher` / `KnowledgeUnit` / `StreamEvent` / `Reply Body`）。
 2. 读本页；需要细节再查 [`arkts-1.1.md`](./arkts-1.1.md) 对应小节；需要机器可读的规则清单用 [`arkts-rules.json`](./arkts-rules.json)。
 3. 新文件先套 [`file-header-template.md`](../agents/file-header-template.md) 的文件头。
-4. 改完跑 `node scripts/agent-gate/index.mjs`；它会串起 lint / naming / link / doc-trace。
+4. 改完跑 `node scripts/agent-gate/index.mjs`；它会串起 lint / naming / link / doc-trace / process-boundary，并跑全量单测。
 5. 交付时贴 gate 的 `RESULT: PASS`（或失败项）；没有 gate 输出的“完成”不算完成。
 
 ---
@@ -147,7 +147,7 @@ node scripts/arkts-lint/index.mjs --quiet
 # 2. lint 引擎自身的 curated 测试（应全绿）
 npm --prefix scripts/arkts-lint test
 
-# 3. 全量测试（含既有失败基线，不要新增失败）
+# 3. 全量测试（应为全绿；回归先修再提交）
 node --test scripts/arkts-lint/tests/*.test.mjs
 
 # 4. 命名 / 链接守门
@@ -161,7 +161,7 @@ node scripts/link-check/index.mjs
 判读口径：
 
 - `arkts-lint` 的 **error 必须为 0**；warning 先看是否为本文件新增。
-- curated `npm test` **329/329** 是当前基线；全量 `node --test` 是 **707 项 / 15 项既有失败**。新增失败要修，不要用“本来就有失败”掩盖。
+- `npm test` **768 项全绿** 是当前基线（2026-10-27 起取消 curated 白名单，跑全量 glob）；`agent-gate` 与 CI 都跑这一份。新增失败就是回归，立刻修，不要再引用「本来就有失败」当挡箭牌。
 - build 失败先看第一条 `ArkTS` 报错，不要从最后一条开始猜。
 
 ---

@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const repoRoot = process.cwd();
+// 不能依赖 process.cwd()：从 scripts/arkts-lint 里跑会拼出 scripts/arkts-lint/common/...
+const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
 const llmClientPath = join(repoRoot, 'common', 'src', 'main', 'ets', 'llm', 'LlmClient.ets');
 const providersPath = join(repoRoot, 'common', 'src', 'main', 'ets', 'llm', 'providers.ets');
-const knowledgeModelPath = join(repoRoot, 'agents', 'src', 'main', 'ets', 'agents', 'KnowledgeModel.ets');
+// spec 015 之后 response_format 的能力分支收口在 GenerationDraftSupport
+const draftSupportPath = join(repoRoot, 'agents', 'src', 'main', 'ets', 'agents', 'GenerationDraftSupport.ets');
 
 function readLlmClient() {
   return readFileSync(llmClientPath, 'utf8');
@@ -16,8 +18,8 @@ function readProviders() {
   return readFileSync(providersPath, 'utf8');
 }
 
-function readKnowledgeModel() {
-  return readFileSync(knowledgeModelPath, 'utf8');
+function readDraftSupport() {
+  return readFileSync(draftSupportPath, 'utf8');
 }
 
 test('LlmClient non-200 path must not stringify response.result directly', () => {
@@ -120,8 +122,8 @@ test('DeepSeek provider must not declare strict schema response format support',
   );
 });
 
-test('KnowledgeModel keeps provider-driven JSON object fallback for structured output', () => {
-  const source = readKnowledgeModel();
+test('结构化输出按 provider 能力选 response_format，缺能力时退回 json_object', () => {
+  const source = readDraftSupport();
   assert.match(
     source,
     /supportsStrictStructuredOutput\(\)/,

@@ -29,8 +29,9 @@
 | **P5 合规落地** | AI 标识 + 导出元数据 | ⬜ | 导出的文件带 `AI生成 / MindTrace / mindtrace-note-agent` | 导出样本文件 |
 | **P6 上架运营** | 平台审核通过并发布 | 🟡 | 开放平台状态为「已上架」 | 平台截图 |
 
-## 每阶段的完成定义 (DoD)
+> **现状（2026-10-27 实测）**：`entry/src/main/ets/agentextability/`（3 个文件 671 行）里没有任何 `Dispatcher` / `CaptureGraph` / `NoteDao` / `KnowledgeModel` 引用，`handleTask` 只把用户那句文本交给 `ReplyService.complete` 换一句话回来。所以小艺现在**只能对话**：发「整理数学题」它只会追问要题目，既拿不到图，也不会往 RDB 写任何东西。P0「能调起」与 P3「真整理」之间的缺口就是这个。
 
+## 每阶段的完成定义 (DoD)
 一个阶段算「完成」必须同时满足四条，缺一条就是 🟡：
 
 1. 代码合入分支，`node scripts/agent-gate/index.mjs` 为 `RESULT: PASS`

@@ -29,7 +29,8 @@ test('连接测试读取当前 vendor 的 API key', () => {
 
 test('旧全局 KeyInput 与 ViewModel apiKey 状态已清理', () => {
   assert.equal(existsSync(resolve(root, 'entry/src/main/ets/pages/AiSettings/KeyInput.ets')), false);
-  assert.doesNotMatch(vm, /\bapiKey\s*:\s*string\s*=/);
+  // 只禁「类成员状态」，别误伤 saveLlm/addCustomVendor 里的局部 const apiKey
+  assert.doesNotMatch(vm, /\n\s+(private\s+|public\s+|@State\s+|readonly\s+)*apiKey\s*:\s*string\s*=/);
   assert.doesNotMatch(vm, /setApiKey\s*\(\s*value\s*:\s*string\s*\)/);
   assert.doesNotMatch(vm, /llm\.setApiKey\(key\)/);
 });

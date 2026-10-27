@@ -7,6 +7,8 @@
 ```bash
 python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"
 python scripts/a2a-smoke/a2a_smoke.py --agent "其它智能体名" --tag 其它TAG --no-restart
+# 连发 N 条采延迟样本（定默认模型前攒 20 条）
+python scripts/a2a-smoke/latency_series.py --n 20 --text "整理数学题" --out samples.jsonl
 ```
 
 输出 JSON：
@@ -41,6 +43,8 @@ python scripts/a2a-smoke/a2a_smoke.py --agent "其它智能体名" --tag 其它T
 | `aa start` 只起进程不起界面 | 兜底点桌面图标，取**面积最小**的可点祖先 |
 | 侧栏滑动手势不稳定 | 改点左上角菜单按钮 |
 | 回复里混入侧栏/历史文本 | 基准快照在进入会话之后取，`reply_text` 取最长新增项 |
+| `aa start` 报 success 但小艺没到前台，且 `dumpLayout` 根节点常常取不到 bundleName → `launch()` 误判失败 | `latency_series.py` 不判断前台包名，直接看「智能体名是否出现在文本里」，取不到就回桌面点图标（`ICON_XY`，换设备要重取） |
+| 反复发同一句会撞到 `chat answer validation failed ... JSON object extraction failed` | 该条 `llm_ms` 为 `null`，采样脚本单独计数（算失败样本，不进延迟统计），失败率本身就是要看的指标 |
 
 ## 协议事实（改代码前先看）
 

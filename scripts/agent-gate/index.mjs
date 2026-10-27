@@ -7,7 +7,8 @@
  * Default: inspect the current change set (tracked + untracked) and run:
  *   - .ets hygiene: UTF-8 BOM, file header, module-boundary imports
  *   - arkts-lint (only when .ets files changed)
- *   - naming-lint, link-check, doc-trace
+ *   - naming-lint, link-check, doc-trace, process-boundary
+ *   - unit-tests: 全量 node --test（改动集里有 .ets/.mjs/.ts/.json 时才跑）
  *
  * Usage:
  *   node scripts/agent-gate/index.mjs
@@ -166,6 +167,34 @@ function runNode(script, args = []) {
   }
 }
 
+// 与 `npm --prefix scripts/arkts-lint test` 等价，但自己展开 glob：
+// execFileSync 不过 shell，Windows 上也不依赖 npm.cmd。
+function testFiles() {
+  const dir = join(REPO_ROOT, 'scripts', 'arkts-lint', 'tests');
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.test.mjs'))
+    .sort()
+    .map((f) => `scripts/arkts-lint/tests/${f}`);
+  files.push('tools/galaxy3d-preview/scripts/native-scene.test.mjs');
+  return files;
+}
+
+function runUnitTests() {
+  const files = testFiles();
+  try {
+    const out = execFileSync('node', ['--test', ...files], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 900000,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    return { status: 0, output: out };
+  } catch (e) {
+    return { status: e.status ?? 1, output: `${e.stdout ?? ''}${e.stderr ?? ''}` };
+  }
+}
+
 function checkEts(files, all = false) {
   const errors = [];
   const warnings = [];
@@ -231,6 +260,23 @@ function main() {
       errors: r.status === 0 ? [] : [r.output.trim().split('\n').slice(0, 12).join('\n')],
       warnings: [],
     });
+  }
+
+  // 只有改到代码/脚本才跑单测；纯文档改动跳过，免得每次评审都等 40 s
+  const touchedCode = all || files.some((f) => /\.(ets|mjs|ts|json5?)$/.test(f));
+  if (touchedCode) {
+    const tests = runUnitTests();
+    const pass = /^ℹ pass (\d+)/m.exec(tests.output);
+    const fail = /^ℹ fail (\d+)/m.exec(tests.output);
+    checks.push({
+      name: 'unit-tests',
+      status: tests.status === 0 ? 'PASS' : 'FAIL',
+      detail: `pass=${pass?.[1] ?? '?'} fail=${fail?.[1] ?? '?'}`,
+      errors: tests.status === 0 ? [] : [tests.output.trim().split('\n').slice(-30).join('\n')],
+      warnings: [],
+    });
+  } else {
+    checks.push({ name: 'unit-tests', status: 'SKIP', detail: 'no code changes', errors: [], warnings: [] });
   }
 
   const failed = checks.filter((c) => c.status === 'FAIL');

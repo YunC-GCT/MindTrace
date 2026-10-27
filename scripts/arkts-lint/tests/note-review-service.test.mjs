@@ -73,6 +73,13 @@ function loadConversationWorkflow(overrides = {}) {
             },
           },
           StateGraph: overrides.StateGraph ?? class StateGraph {},
+          // ConversationWorkflowPorts.production 会 new 一个本地模型 provider；
+          // 单测里不需要端侧模型，只要 isReady/init/askStream 有形状即可。
+          LocalChatProvider: class LocalChatProvider {
+            isReady() { return false; }
+            async init() { return false; }
+            async askStream() { return ''; }
+          },
           LlmError: class LlmError extends Error {},
           LlmErrorBodyFormatter: {
             redactSensitiveText(value) {

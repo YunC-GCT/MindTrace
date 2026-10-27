@@ -4,11 +4,18 @@
  * 职责：管理 API Key、端点、模型、OCR 配置的读写与连接测试。
  * 依赖：LlmConfig、OcrConfig、LlmClient、OcrTool
  */
-import { LlmClient, LlmConfig, OcrConfig } from "common"
-import type { CustomVendorConfig, ProviderConfig } from "common"
-import { PROVIDERS } from "common"
+import {
+  LlmClient, LlmConfig, OcrConfig, PROVIDERS,
+  discoverModels, getProviderCatalog, resolveModel,
+} from "common"
+import type {
+  CustomVendorConfig, DiscoveryResult, ModelListing, ModelPreference,
+  ProviderConfig, ProviderCatalog, ResolvedModel, VendorModelMeta,
+} from "common"
 import { OcrTool } from "agents"
 import type { OcrRecognitionResult } from "agents"
+import { ModelSelector } from "../services/ModelSelector"
+import type { ModelAvailability } from "../services/ModelSelector"
 
 // PR2-T2 P3: 用户添加的自定义 vendor 列表
 // PR2-T2 ticket #83 L1 (2026-09-08): 不用 extends CustomVendorConfig,直接声明全部字段
@@ -86,6 +93,8 @@ export class AiSettingsViewModel {
     this.vendorApiKeys = llm.getAllVendorApiKeys()
     this.activeVendorModels = llm.getAllActiveVendorModels()
     this.modelContextWindows = llm.getAllModelContextWindows()
+    // 2026-10-26: 按型号运行偏好(thinking / effort), 与选择项分开加载
+    this.modelPrefs = llm.getAllModelPreferences()
 
     try {
       const key: string | null = await llm.getApiKey(this.vendorId)
@@ -115,6 +124,14 @@ export class AiSettingsViewModel {
 
   async saveLlm(): Promise<boolean> {
     try {
+      // 2026-10-25: 不可用模型不落盘 — 先拦, 再写任何偏好, 避免"静默保存成可用"。
+      const availability: ModelAvailability = this.currentModelAvailability()
+      if (!availability.usable) {
+        const reasonText: string = availability.hint.length > 0
+          ? availability.hint : '未确认的模型 ID'
+        this.statusText = '模型不可用：' + reasonText
+        return false
+      }
       const llm: LlmConfig = LlmConfig.getInstance()
       // PR2-T2: 持久化 vendorId — 不持久化则切换 vendor 后刷新页面就丢失
       await llm.setVendorId(this.vendorId)
@@ -145,6 +162,17 @@ export class AiSettingsViewModel {
           const vendorId: string = key.substring(0, separator)
           const model: string = key.substring(separator + 2)
           await llm.setContextWindowTokens(vendorId, model, this.modelContextWindows[key])
+          // 用户手改的上下文窗口写回元信息, 否则 chip 重开仍显示 discovery 的旧值
+          const meta: VendorModelMeta | null = llm.getVendorModelMeta(vendorId, model)
+          if (meta !== null && meta.contextWindow !== this.modelContextWindows[key]) {
+            const nextMeta: VendorModelMeta = {
+              displayName: meta.displayName,
+              contextWindow: this.modelContextWindows[key],
+              inputModalities: meta.inputModalities,
+              source: meta.source,
+            }
+            await llm.setVendorModelMeta(vendorId, model, nextMeta)
+          }
         }
       }
       // PR2-T2 ticket #83 L3 (2026-09-08): 持久化 per-vendor API Key
@@ -305,9 +333,196 @@ export class AiSettingsViewModel {
   vendorApiKeys: Record<string, string> = {}
   activeVendorModels: Record<string, string> = {}
   modelContextWindows: Record<string, number> = {}
+  // 2026-10-26: { "vendorId/modelId": {thinking?, effort?} } — 运行偏好, 不属于 ModelSpec
+  modelPrefs: Record<string, ModelPreference> = {}
+
+  // 2026-10-25: 本次会话 discovery 结果的元信息暂存(displayName / contextWindow / 模态)。
+  // 只有用户点候选(chip)时才随 vendor_models 一起落盘; 不在这里直接写 preferences。
+  private discoveredMeta: Record<string, Record<string, VendorModelMeta>> = {}
 
   selectVendor(id: string): void {
     this.vendorId = id
+  }
+
+  // ===== 2026-10-25 Phase 1.5: 设置页模型清单(先选提供商, 再列该提供商的模型) =====
+  // 只读投影, 不写 preferences:
+  //   - catalog 有内置清单(deepseek) → 直接返回 catalog listing(官方 displayName/contextWindow)
+  //   - catalog 为空(tongyi/glm/kimi/doubao/custom) → vendor_models 经 vendor_model_meta 投影
+  getModelsForVendor(vendorId: string): ModelListing[] {
+    const id: string = vendorId.trim()
+    if (id.length === 0) { return [] }
+    const catalog: ProviderCatalog | null = getProviderCatalog(id)
+    if (catalog !== null && catalog.models.length > 0) {
+      return catalog.models.slice(0)
+    }
+    const saved: string[] | undefined = this.vendorModels[id]
+    let models: string[] = saved !== undefined
+      ? saved
+      : LlmConfig.getInstance().getVendorModels(id)
+    if (models.length === 0) {
+      // custom vendor 可能只有入口配置里的首个模型, 尚无 vendor_models
+      for (const v of this.customVendors) {
+        if (v.id === id && v.model.trim().length > 0) {
+          models = [v.model]
+          break
+        }
+      }
+    }
+    return this.toUserListings(id, models)
+  }
+
+  private toUserListings(vendorId: string, models: string[]): ModelListing[] {
+    const out: ModelListing[] = []
+    const config: LlmConfig = LlmConfig.getInstance()
+    for (const raw of models) {
+      const modelId: string = raw.trim()
+      if (modelId.length === 0) { continue }
+      if (this.containsListingId(out, modelId)) { continue }
+      const resolved: ResolvedModel = resolveModel(vendorId, modelId)
+      if (resolved.listing !== null) {
+        out.push(resolved.listing)
+        continue
+      }
+      // 2026-10-25: 优先用持久化的元信息; 老数据没有 meta 时 displayName 回落模型 ID,
+      // contextWindow 回落 model_context_windows — chip 不会变空。
+      const meta: VendorModelMeta | null = config.getVendorModelMeta(vendorId, modelId)
+      const metaWindow: number = meta !== null ? meta.contextWindow : 0
+      const windowValue: number | undefined = this.modelContextWindows[vendorId + '::' + modelId]
+      const contextWindow: number = metaWindow > 0
+        ? metaWindow
+        : (windowValue !== undefined ? windowValue : 0)
+      const listing: ModelListing = {
+        id: modelId,
+        displayName: meta !== null && meta.displayName.length > 0 ? meta.displayName : modelId,
+        providerId: vendorId,
+        contextWindow: contextWindow,
+        maxOutputTokens: 0,
+        inputModalities: meta !== null ? meta.inputModalities : [],
+        source: meta !== null && meta.source.length > 0 ? meta.source : 'user',
+      }
+      out.push(listing)
+    }
+    return out
+  }
+
+  private containsListingId(listings: ModelListing[], id: string): boolean {
+    for (const listing of listings) {
+      if (listing.id === id) { return true }
+    }
+    return false
+  }
+
+  // 2026-10-25: 当前选择的模型是否可保存 — chip 与保存按钮共用同一份判定。
+  private currentModelAvailability(): ModelAvailability {
+    const modelId: string = this.getCurrentModel().trim()
+    let source: string = ''
+    if (modelId.length > 0) {
+      const listings: ModelListing[] = this.getModelsForVendor(this.vendorId)
+      for (const listing of listings) {
+        if (listing.id === modelId) {
+          source = listing.source
+          break
+        }
+      }
+    }
+    return ModelSelector.availabilityOf(this.vendorId, modelId, source)
+  }
+
+  // 拉取候选: 用设置页草稿/已保存的 per-vendor key(不回退全局 vault,
+  // 避免把一个厂商的 key 发到另一个厂商的 endpoint)。
+  // 只返回 DiscoveryResult, 不落盘 — 落盘只能由用户点 chip 触发 commitVendorModel。
+  // 2026-10-25: 成功响应先暂存元信息, 供 commitVendorModel 随 vendor_models 一起落盘。
+  async refreshModels(vendorId: string): Promise<DiscoveryResult> {
+    const id: string = vendorId.trim()
+    const endpoint: string = this.endpointForVendor(id)
+    const draftKey: string | undefined = this.vendorApiKeys[id]
+    const apiKey: string = draftKey !== undefined ? draftKey : ''
+    const result: DiscoveryResult = await discoverModels(id, endpoint, apiKey, 15000)
+    if (result.ok) {
+      const perVendor: Record<string, VendorModelMeta> = {}
+      for (const listing of result.models) {
+        const meta: VendorModelMeta = {
+          displayName: listing.displayName,
+          contextWindow: listing.contextWindow,
+          inputModalities: listing.inputModalities,
+          source: 'discovery',
+        }
+        perVendor[listing.id] = meta
+      }
+      this.discoveredMeta[id] = perVendor
+    }
+    return result
+  }
+
+  // 用户显式点击「未保存」chip 才写 preferences; 同步刷新内存镜像供 UI 高亮。
+  async commitVendorModel(vendorId: string, model: string, contextWindow: number): Promise<boolean> {
+    const id: string = vendorId.trim()
+    const modelId: string = model.trim()
+    if (id.length === 0 || modelId.length === 0) { return false }
+    try {
+      const llm: LlmConfig = LlmConfig.getInstance()
+      // 先把当前 vendor 已知模型补齐, 避免只落盘候选时把 seed 默认模型挤掉
+      const known: string[] | undefined = this.vendorModels[id]
+      const baseModels: string[] = known !== undefined ? known : llm.getVendorModels(id)
+      for (const m of baseModels) {
+        await llm.addVendorModel(id, m)
+      }
+      // 2026-10-25: 元信息与 vendor_models 同一次调用写入(displayName / 上下文 / 模态 / source)
+      const meta: VendorModelMeta = this.discoveryMetaFor(id, modelId, contextWindow)
+      await llm.addVendorModel(id, modelId, meta)
+      await llm.setActiveVendorModel(id, modelId)
+      if (contextWindow > 0) {
+        await llm.setContextWindowTokens(id, modelId, contextWindow)
+      }
+      for (const m of baseModels) {
+        this.addVendorModel(id, m)
+      }
+      this.addVendorModel(id, modelId)
+      this.selectVendorModel(id, modelId)
+      if (contextWindow > 0) {
+        this.setModelContextWindow(id, modelId, contextWindow)
+      }
+      return true
+    } catch (_e) {
+      return false
+    }
+  }
+
+  private discoveryMetaFor(vendorId: string, modelId: string, contextWindow: number): VendorModelMeta {
+    const perVendor: Record<string, VendorModelMeta> | undefined = this.discoveredMeta[vendorId]
+    if (perVendor !== undefined) {
+      const cached: VendorModelMeta | undefined = perVendor[modelId]
+      if (cached !== undefined) {
+        const copy: VendorModelMeta = {
+          displayName: cached.displayName.length > 0 ? cached.displayName : modelId,
+          contextWindow: cached.contextWindow > 0
+            ? cached.contextWindow
+            : (contextWindow > 0 ? contextWindow : 0),
+          inputModalities: cached.inputModalities,
+          source: 'discovery',
+        }
+        return copy
+      }
+    }
+    // 没拿到本次 discovery 记录(理论上不该发生)时仍标 discovery, 但 displayName 回落 ID,
+    // 不编造能力字段。
+    const fallback: VendorModelMeta = {
+      displayName: modelId,
+      contextWindow: contextWindow > 0 ? contextWindow : 0,
+      inputModalities: [],
+      source: 'discovery',
+    }
+    return fallback
+  }
+
+  private endpointForVendor(vendorId: string): string {
+    for (const p of PROVIDERS) {
+      if (p.id === vendorId) { return p.baseUrl }
+    }
+    for (const v of this.customVendors) {
+      if (v.id === vendorId) { return v.baseUrl }
+    }
+    return ''
   }
 
   selectVendorModel(vendorId: string, model: string): void {
@@ -317,6 +532,71 @@ export class AiSettingsViewModel {
     }
     next[vendorId] = model
     this.activeVendorModels = next
+  }
+
+  // ===== 2026-10-26: 按型号运行偏好 (thinking / effort) =====
+  // 切模型只改选择项; 开关/强度作为偏好单独存, 立即写 LlmConfig.model_prefs。
+  private modelPreferenceKey(vendorId: string, model: string): string {
+    return vendorId.trim() + '/' + model.trim()
+  }
+
+  getModelPreference(vendorId: string, model: string): ModelPreference {
+    const key: string = this.modelPreferenceKey(vendorId, model)
+    const pref: ModelPreference | undefined = this.modelPrefs[key]
+    if (pref === undefined) {
+      const empty: ModelPreference = {}
+      return empty
+    }
+    const copy: ModelPreference = {}
+    if (pref.thinking !== undefined) { copy.thinking = pref.thinking }
+    if (pref.effort !== undefined) { copy.effort = pref.effort }
+    return copy
+  }
+
+  setModelThinking(vendorId: string, model: string, enabled: boolean): void {
+    const key: string = this.modelPreferenceKey(vendorId, model)
+    const current: ModelPreference | undefined = this.modelPrefs[key]
+    const next: ModelPreference = { thinking: enabled }
+    if (current !== undefined && current.effort !== undefined) {
+      next.effort = current.effort
+    }
+    this.writeModelPreference(key, vendorId, model, next)
+  }
+
+  setModelEffort(vendorId: string, model: string, effort: string): void {
+    const key: string = this.modelPreferenceKey(vendorId, model)
+    const current: ModelPreference | undefined = this.modelPrefs[key]
+    const next: ModelPreference = {}
+    if (current !== undefined && current.thinking !== undefined) {
+      next.thinking = current.thinking
+    }
+    if (effort.trim().length > 0) {
+      next.effort = effort.trim()
+    }
+    this.writeModelPreference(key, vendorId, model, next)
+  }
+
+  private writeModelPreference(
+    key: string, vendorId: string, model: string, pref: ModelPreference,
+  ): void {
+    const nextMap: Record<string, ModelPreference> = {}
+    for (const k of Object.keys(this.modelPrefs)) {
+      nextMap[k] = this.modelPrefs[k]
+    }
+    nextMap[key] = pref
+    this.modelPrefs = nextMap
+    LlmConfig.getInstance().setModelPreference(vendorId.trim(), model.trim(), pref)
+      .catch((_e: Error): void => {})
+  }
+
+  private dropModelPreference(vendorId: string, model: string): void {
+    const key: string = this.modelPreferenceKey(vendorId, model)
+    if (this.modelPrefs[key] === undefined) { return }
+    const next: Record<string, ModelPreference> = {}
+    for (const k of Object.keys(this.modelPrefs)) {
+      if (k !== key) { next[k] = this.modelPrefs[k] }
+    }
+    this.modelPrefs = next
   }
 
   setModelContextWindow(vendorId: string, model: string, value: number): void {
@@ -390,6 +670,8 @@ export class AiSettingsViewModel {
       const nextModel: string = filtered.length > 0 ? filtered[0] : this.providerDefaultModel(vendorId)
       this.selectVendorModel(vendorId, nextModel)
     }
+    // 删模型时连带清掉该型号的开关/强度偏好
+    this.dropModelPreference(vendorId, model)
   }
 
   // PR2-T2 ticket #83 L3 (2026-09-08): per-vendor API Key UI 动作

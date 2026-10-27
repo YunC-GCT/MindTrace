@@ -1,88 +1,83 @@
 // scripts/arkts-lint/tests/llm-config-allow-default-model.test.mjs
 //
-// P0 bug 真实修复的 RED 测试:
-// LlmConfig.normalizeModel 不应把 DEFAULT_MODEL 本身视为 reserved keyword
-// (ticket #9 修复的副作用: reserved list 误把默认值抛错)
+// Phase 1 模型适配回归:
+//   - 删除 isAllowedDeepSeekModel 三个字符串相等白名单
+//   - 删除 v3 / flash / r1 子串抛 NORMALIZE_KEYWORD_REJECTED 的路径
+//   - normalizeModel 改调 model-resolver: catalog 规范 ID 直接可用, 旧别名归一化
 //
-// 现象: ViewModel.test() 调用 saveAll(...) 内部 normalizeModel(DEFAULT_MODEL) →
-//       抛 NORMALIZE_KEYWORD_REJECTED → 用户看到"连接失败",
-//       实际是 normalize 抛错,根因 = 用户保存的就是默认模型(合法)。
-//
-// 修复: LlmConfig.normalizeModel 删除 `lower === DEFAULT_MODEL ||` 这一行。
-//
-// 一手信源:
-//   docs/specs/016-llm-settings-redesign.md §背景 (P0 bug)
-//   docs/specs/009-llm-config-throw-on-silent-override.md (ticket #9 修复精神)
-//   docs/legacy/mindtrace/handoffs/llm-settings-scope-2026-09-06.md §附录 D (真实根因诊断)
-//   docs/legacy/mindtrace/handoffs/llm-settings/pr0-fix-pro-model.md
+// 背景: 旧守卫不在白名单里的含 'flash' 输入会被拒绝, 导致官方规范 ID
+// `deepseek-flash` 无法保存/加载。本测试锁定"清单存在即允许 + alias resolver"。
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import ts from 'typescript';
 
 const root = resolve(import.meta.dirname, '../../..');
 
-const read = (p) => readFileSync(resolve(root, p), 'utf8');
+const read = (path) => readFileSync(resolve(root, path), 'utf8').replace(/\r\n/g, '\n');
 
 const llmConfig = read('common/src/main/ets/llm/LlmConfig.ets');
 
-// 测试 1: normalizeModel 不应把 DEFAULT_MODEL 本身视为 reserved keyword
-// (ticket #9 副作用的回归测试)
-test('normalizeModel allows DEFAULT_MODEL itself (no longer rejects it)', () => {
-  // 确认 DEFAULT_MODEL 常量存在并提取其值
-  const defaultModelMatch = llmConfig.match(/DEFAULT_MODEL\s*=\s*['"]([^'"]+)['"]/);
-  assert.ok(defaultModelMatch !== null, 'DEFAULT_MODEL constant must exist');
-  const defaultModel = defaultModelMatch[1];
-  assert.ok(defaultModel.length > 0, 'DEFAULT_MODEL must be non-empty');
+async function loadResolver() {
+  const catalog = read('common/src/main/ets/llm/model-catalog.ets');
+  const resolver = read('common/src/main/ets/llm/model-resolver.ets')
+    .replace(/import\s+(?:type\s+)?\{[^}]*\}\s+from\s+'\.\/model-catalog';/g, '');
+  const js = ts.transpileModule(catalog + '\n' + resolver, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
+  }).outputText;
+  return await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
+}
 
-  // 关键回归:normalizeModel 的 reserved keyword 守卫不应包含
-  // `lower === DEFAULT_MODEL` 这一项(否则用户保存默认模型会抛错)
+const resolverModules = loadResolver();
+
+test('normalizeModel delegates to catalog/alias resolver instead of a flash allowlist', () => {
   assert.doesNotMatch(
     llmConfig,
-    /lower\s*===\s*DEFAULT_MODEL\s*\|\|/,
-    'normalizeModel must NOT treat DEFAULT_MODEL itself as a reserved keyword (P0 bug fix). ' +
-    '修复: 删除 `lower === DEFAULT_MODEL ||` 这一行(LlmConfig.ets:232)。'
+    /isAllowedDeepSeekModel/,
+    'the old three-string DeepSeek allowlist must be deleted'
   );
-
-  // 同时守卫应为空输入返回 DEFAULT_MODEL(不是抛错)
-  assert.match(
-    llmConfig,
-    /if\s*\(\s*t\.length\s*===\s*0\s*\)\s*{\s*return\s+DEFAULT_MODEL/,
-    'normalizeModel must return DEFAULT_MODEL for empty input (not throw)'
-  );
-});
-
-// 测试 2: ticket #9 的其他 keyword 守卫必须保留(不破坏既有修复)
-test('normalizeModel still rejects legacy fallback keywords after official DeepSeek allowlist', () => {
-  assert.match(
-    llmConfig,
-    /lower\.indexOf\(['"]v3['"]\)\s*>=\s*0/,
-    'normalizeModel must still reject v3 keyword (ticket #9 intent)'
-  );
-  assert.match(
+  assert.doesNotMatch(
     llmConfig,
     /lower\.indexOf\(['"]flash['"]\)\s*>=\s*0/,
-    'normalizeModel must still reject non-allowlisted flash keyword (ticket #9 intent)'
+    'flash substring must no longer reject a model ID'
   );
-  assert.match(
+  assert.doesNotMatch(
     llmConfig,
-    /model\s*===\s*['"]deepseek-v4-flash['"]/,
-    'normalizeModel must allow current official deepseek-v4-flash before flash keyword rejection'
+    /lower\.indexOf\(['"]v3['"]\)\s*>=\s*0/,
+    'v3 substring must no longer reject a model ID'
   );
-  assert.match(
-    llmConfig,
-    /model\s*===\s*['"]deepseek-v4-flash-vision-exp['"]/,
-    'normalizeModel must allow current official deepseek-v4-flash-vision-exp before flash keyword rejection'
-  );
-  assert.match(
+  assert.doesNotMatch(
     llmConfig,
     /lower\.indexOf\(['"]r1['"]\)\s*>=\s*0/,
-    'normalizeModel must still reject r1 keyword (ticket #9 intent)'
+    'r1 substring must no longer reject a model ID'
   );
+
+  assert.match(llmConfig,
+    /private\s+normalizeModelForVendor\s*\([\s\S]*?resolveModel\s*\(\s*vendorId\s*,\s*v\s*\)/,
+    'normalizeModel must delegate to resolveModel(vendorId, v)');
+  assert.match(llmConfig, /return\s+resolved\.canonicalId/,
+    'normalizeModel must return the resolver canonical ID');
 });
 
-// 测试 3: normalizeEndpoint 不应有同样的 bug(DEFAULT_ENDPOINT 自身不应抛错)
+test('canonical deepseek-flash is accepted and both legacy aliases resolve to it', async () => {
+  const mod = await resolverModules;
+
+  const canonical = mod.resolveModel('deepseek', 'deepseek-flash');
+  assert.equal(canonical.usable, true, 'deepseek-flash must be usable (not rejected)');
+  assert.equal(canonical.canonicalId, 'deepseek-flash');
+  assert.equal(canonical.reason, '');
+
+  const aliases = ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'];
+  for (const alias of aliases) {
+    const resolved = mod.resolveModel('deepseek', alias);
+    assert.equal(resolved.canonicalId, 'deepseek-flash', alias + ' must resolve to deepseek-flash');
+    assert.equal(resolved.degraded, false, alias + ' alias resolution is not a degradation');
+    assert.equal(resolved.reason, 'ALIAS_RESOLVED:' + alias);
+  }
+});
+
 test('normalizeEndpoint does not reject DEFAULT_ENDPOINT itself', () => {
   // normalizeEndpoint 应该没有 `lower === DEFAULT_ENDPOINT` 检查
   assert.doesNotMatch(
@@ -99,13 +94,7 @@ test('normalizeEndpoint does not reject DEFAULT_ENDPOINT itself', () => {
   );
 });
 
-// 测试 4: 端到端诊断 — providers.ets deepseek.defaultModel 与 LlmConfig.DEFAULT_MODEL 必须保持一致
-// PR2-T2 ticket #83 L5 (2026-09-08): EndpointPicker.ets / ModelPicker.ets git rm,DS_ENDPOINT/PRO_MODEL 字面替换
-// 新来源:common/src/main/ets/llm/providers.ets(PR2-T1)的 PROVIDERS[0].defaultModel
-// ViewModel.test() 调 saveAll(getCurrentModel()) — 应当命中 vendor-aware normalize 的 deepseek path
-// 因此 providers deepseek.defaultModel 必须等于 LlmConfig.DEFAULT_MODEL(否则 vendor-aware normalize 不一致)
-test('PROVIDERS deepseek.defaultModel (in providers.ets) equals DEFAULT_MODEL (in LlmConfig)', () => {
-  // PROVIDERS[0] = deepseek.defaultModel(PR2-T1 spec)
+test('PROVIDERS deepseek.defaultModel equals LlmConfig.DEFAULT_MODEL', () => {
   const providers = read('common/src/main/ets/llm/providers.ets');
   const firstProviderMatch = providers.match(
     /id:\s*['"]deepseek['"][\s\S]*?defaultModel:\s*['"]([^'"]+)['"]/
@@ -113,16 +102,13 @@ test('PROVIDERS deepseek.defaultModel (in providers.ets) equals DEFAULT_MODEL (i
   assert.ok(firstProviderMatch !== null, 'PROVIDERS deepseek.defaultModel must exist in providers.ets');
   const providerModel = firstProviderMatch[1];
 
-  // DEFAULT_MODEL 在 LlmConfig.ets 定义
   const defaultModelMatch = llmConfig.match(/DEFAULT_MODEL\s*=\s*['"]([^'"]+)['"]/);
   assert.ok(defaultModelMatch !== null, 'DEFAULT_MODEL constant must exist in LlmConfig.ets');
   const defaultModel = defaultModelMatch[1];
 
-  // 端到端: 两者必须相等
   assert.equal(
     providerModel,
     defaultModel,
-    `PROVIDERS deepseek.defaultModel=${providerModel} must equal LlmConfig.DEFAULT_MODEL=${defaultModel}. ` +
-    'If they diverge, ViewModel.saveAll(deepseek-default) hits vendor-aware normalize mismatch.'
+    `PROVIDERS deepseek.defaultModel=${providerModel} must equal LlmConfig.DEFAULT_MODEL=${defaultModel}.`
   );
 });

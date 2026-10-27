@@ -5,7 +5,13 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
-const knowledgeModel = read('agents/src/main/ets/agents/KnowledgeModel.ets');
+// standard 生成的实现在 spec 015 里搬到了 DraftComposer（解析/提示词）与
+// NoteDraftVerifier（证据校验），三个文件一起看才代表这条链路。
+const knowledgeModel = [
+  read('agents/src/main/ets/agents/KnowledgeModel.ets'),
+  read('agents/src/main/ets/agents/DraftComposer.ets'),
+  read('agents/src/main/ets/agents/NoteDraftVerifier.ets'),
+].join('\n');
 const models = read('common/src/main/ets/models/NoteGenerationModels.ets');
 
 test('standard generation prompt includes the complete artifacts contract', () => {

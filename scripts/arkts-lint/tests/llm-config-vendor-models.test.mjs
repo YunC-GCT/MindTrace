@@ -48,8 +48,9 @@ test('L2: LlmConfig.addVendorModel(vendorId, model) persists', () => {
   const src = readLlmConfigSource();
   assert.match(
     src,
-    /public\s+async\s+addVendorModel\s*\(\s*vendorId\s*:\s*string\s*,\s*model\s*:\s*string\s*\)\s*:\s*Promise\s*<\s*void\s*>/,
-    'LlmConfig must declare public async addVendorModel(vendorId, model): Promise<void>'
+    // 签名后来多了可选 meta: VendorModelMeta，这里只要求前两个参数与返回类型不变
+    /public\s+async\s+addVendorModel\s*\(\s*vendorId\s*:\s*string\s*,\s*model\s*:\s*string\s*(,\s*meta\??\s*:\s*VendorModelMeta\s*)?\)\s*:\s*Promise\s*<\s*void\s*>/,
+    'LlmConfig must declare public async addVendorModel(vendorId, model, meta?): Promise<void>'
   );
 });
 
