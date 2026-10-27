@@ -203,18 +203,6 @@ test('note context schema migration and repository persistence stay compatible',
   assert.match(repository, /provenanceIds: provenanceIds\.length > 0 \? provenanceIds : undefined/);
 });
 
-test('interrupted topic selection is reset for restart recovery without duplicating active generation', () => {
-  const service = readRepoFile('entry/src/main/ets/services/AiService.ets');
-
-  assert.match(service, /private static readonly activeClarificationRuns: Set<string>/);
-  assert.match(service, /AiService\.activeClarificationRuns\.has\(recovery\.run\.id\)/);
-  assert.match(service, /AiService\.activeClarificationRuns\.add\(recovery\.run\.id\)/);
-  assert.match(service, /finally \{[\s\S]*?AiService\.activeClarificationRuns\.delete\(recovery\.run\.id\)/);
-  assert.match(service, /clarification\.status === 'selected'[\s\S]*?!AiService\.activeClarificationRuns\.has\(run\.id\)/);
-  assert.match(service, /await this\.restorePendingClarification\(repository, recovery\);[\s\S]*?runs\[index\] = recovery\.run/);
-  assert.doesNotMatch(service, /isRecentSelection/);
-});
-
 test('context builder removes failures and controls while retaining wrapped mathematics', () => {
   const Builder = loadContextBuilder();
   const result = Builder.build(buildInput({

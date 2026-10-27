@@ -69,9 +69,11 @@ export struct NoteTopicClarificationCard {
     .backgroundColor(this.isSelected(candidate, clarification) ? 'rgba(91,227,176,0.14)' : 'rgba(255,255,255,0.04)')
     .border({ width: 0.5, color: this.isSelected(candidate, clarification) ? MINT : BORDER })
     .margin({ top: S_1 })
-    .enabled(clarification.status === 'pending')
+    .enabled(clarification.status === 'pending'
+      || (clarification.status === 'selected' && this.isSelected(candidate, clarification)))
     .onClick((): void => {
-      if (clarification.status === 'pending') {
+      if (clarification.status === 'pending'
+        || (clarification.status === 'selected' && this.isSelected(candidate, clarification))) {
         this.onSelect(clarification.runId, candidate.id)
       }
     })
@@ -86,7 +88,7 @@ export struct NoteTopicClarificationCard {
   }
 
   private statusText = (clarification: NoteContextClarification): string => {
-    if (clarification.status === 'selected') { return '已选择，正在生成单主题笔记' }
+    if (clarification.status === 'selected') { return '主题已确认；若生成失败，可点击已选主题重试' }
     if (clarification.status === 'cancelled') { return '该选择已取消' }
     if (clarification.candidates.length === 0) { return '请在输入框中填写一个具体数学主题' }
     return '检测到多个主题，本次只会生成你选择的一个主题'

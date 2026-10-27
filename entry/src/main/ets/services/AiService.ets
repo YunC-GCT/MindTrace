@@ -57,12 +57,12 @@ import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFac
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from './AgentMemoryService';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
-import type { CancellationToken } from 'common';
+import { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
 const captureLog: Logger = new Logger('AICapture');
 export class AiService {
-  private static readonly activeClarificationRuns: Set<string> = new Set<string>();
+  private static readonly activeClarificationRuns: Map<string, CancellationToken> = new Map<string, CancellationToken>();
   private static captureSeq: number = 0;
 
   // UIAbilityContext 引用,capture() 准备图片文件时用
@@ -263,10 +263,17 @@ export class AiService {
     cancellationToken?: CancellationToken,
     progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
+    // restore() marks running jobs interrupted; reject duplicates before reading.
+    if (AiService.activeClarificationRuns.has(runId)) {
+      throw new Error('TOPIC_CLARIFICATION_IN_PROGRESS');
+    }
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     const recovery: NoteGenerationRecovery | undefined = await repository.restore(runId);
     if (recovery === undefined) {
       throw new Error('TOPIC_CLARIFICATION_NOT_PENDING');
+    }
+    if (recovery.run.status === 'cancelled') {
+      throw new Error('笔记生成已取消');
     }
     if (recovery.run.clarification === undefined) {
       if (recovery.bestCheckpoint !== undefined
@@ -276,6 +283,11 @@ export class AiService {
       throw new Error('TOPIC_CLARIFICATION_NOT_PENDING');
     }
     const clarification: NoteContextClarification = recovery.run.clarification;
+    let validTopic: boolean = false;
+    for (const candidate of clarification.candidates) {
+      if (candidate.id === topicId && candidate.sourceIds.length > 0) { validTopic = true; }
+    }
+    if (!validTopic) { throw new Error('TOPIC_CLARIFICATION_INVALID_SELECTION'); }
     if (clarification.status === 'selected') {
       if (clarification.selectedTopicId !== topicId) {
         throw new Error('TOPIC_CLARIFICATION_ALREADY_SELECTED');
@@ -325,15 +337,22 @@ export class AiService {
     if (AiService.activeClarificationRuns.has(recovery.run.id)) {
       throw new Error('TOPIC_CLARIFICATION_IN_PROGRESS');
     }
-    AiService.activeClarificationRuns.add(recovery.run.id);
+    const token: CancellationToken = cancellationToken ?? new CancellationToken();
+    AiService.activeClarificationRuns.set(recovery.run.id, token);
     try {
       if (persistSelection) {
         recovery.run.updatedAt = Date.now();
         await repository.saveRun(recovery.run, recovery.sources);
       }
-      return await this.generateSelectedClarificationDraft(recovery, topicId, cancellationToken, progressSink);
+      const event: NoteDraftReadyEvent = await this.generateSelectedClarificationDraft(recovery, topicId, token, progressSink);
+      token.throwIfCancelled();
+      return event;
     } catch (error) {
-      await this.restorePendingClarification(repository, recovery);
+      if (token.isCancelled()) {
+        await repository.cancelRun(recovery.run.id);
+      } else {
+        await this.markClarificationGenerationFailed(repository, recovery);
+      }
       if (error instanceof Error) {
         throw new Error(error.message);
       }
@@ -343,25 +362,20 @@ export class AiService {
     }
   }
 
-  private async restorePendingClarification(
+  private async markClarificationGenerationFailed(
     repository: NoteGenerationRepositoryContract,
     recovery: NoteGenerationRecovery,
   ): Promise<void> {
     const clarification: NoteContextClarification | undefined = recovery.run.clarification;
     if (clarification === undefined || clarification.status !== 'selected') { return; }
-    const pending: NoteContextClarification = {
-      runId: clarification.runId,
-      instruction: clarification.instruction,
-      status: 'pending',
-      candidates: clarification.candidates,
-      createdAt: clarification.createdAt,
-    };
-    recovery.run.status = 'needs-input';
-    recovery.run.stopReason = 'topic_clarification_required';
-    recovery.run.bestCheckpointId = undefined;
-    recovery.run.clarification = pending;
-    recovery.run.updatedAt = Date.now();
-    await repository.saveRun(recovery.run, recovery.sources);
+    const latest: NoteGenerationRecovery | undefined = await repository.restore(recovery.run.id);
+    if (latest === undefined || latest.run.status === 'cancelled' || latest.run.status === 'committed') { return; }
+    // A failed execution does not revoke the user's confirmed topic.
+    latest.run.status = 'failed';
+    latest.run.stopReason = latest.run.stopReason ?? 'topic_generation_failed';
+    latest.run.updatedAt = Date.now();
+    await repository.saveRun(latest.run, latest.sources);
+    recovery.run = latest.run;
   }
 
   private async generateSelectedClarificationDraft(
@@ -373,8 +387,12 @@ export class AiService {
     const clarification: NoteContextClarification | undefined = recovery.run.clarification;
     if (clarification === undefined) { throw new Error('TOPIC_CLARIFICATION_NOT_PENDING'); }
     let allowedSourceIds: string[] = [];
+    let topicName: string = '';
     for (const candidate of clarification.candidates) {
-      if (candidate.id === topicId) { allowedSourceIds = candidate.sourceIds.slice(0); }
+      if (candidate.id === topicId) {
+        allowedSourceIds = candidate.sourceIds.slice(0);
+        topicName = candidate.displayName;
+      }
     }
     if (allowedSourceIds.length === 0) { throw new Error('TOPIC_CLARIFICATION_INVALID_SELECTION'); }
     const fragments: SourceFragment[] = [];
@@ -393,7 +411,7 @@ export class AiService {
     }
     return await this.generateNoteDraftWithBundle(
       recovery.run.id,
-      recovery.run.instruction,
+      clarification.instruction + '\n用户已确认主题：' + topicName + '。仅整理该主题的内容。',
       selectedBundle,
       pendingSourceIds,
       AiService.contextBudgetForRecovery(recovery.run),
@@ -645,6 +663,7 @@ export class AiService {
   }
 
   async cancelDraft(runId: string): Promise<void> {
+    AiService.activeClarificationRuns.get(runId)?.cancel();
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
     await repository.cancelRun(runId);
     await repository.appendLifecycleLog({ runId: runId, event: 'cancelled' });
@@ -658,6 +677,11 @@ export class AiService {
     }
     if (recovery.bestCheckpoint !== undefined) {
       return await this.restoreDraft(runId);
+    }
+    const clarification: NoteContextClarification | undefined = recovery.run.clarification;
+    if (clarification !== undefined && clarification.status === 'selected'
+      && clarification.selectedTopicId !== undefined) {
+      return await this.resumeNoteContextClarification(runId, clarification.selectedTopicId);
     }
     let conversationText: string = '';
     const pendingSources: SourceFragment[] = [];
@@ -696,7 +720,7 @@ export class AiService {
       if (!interruptedSelection) { continue; }
       const recovery: NoteGenerationRecovery | undefined = await repository.restore(run.id);
       if (recovery === undefined) { continue; }
-      await this.restorePendingClarification(repository, recovery);
+      await this.markClarificationGenerationFailed(repository, recovery);
       runs[index] = recovery.run;
     }
     return runs;
