@@ -163,6 +163,6 @@ MSYS2_ARG_CONV_EXCL="*" hdc install -r entry/build/default/outputs/default/entry
 - `ReplyService` 传 `salvageKey: 'answer'`，救回时打 `[ReplyCtx] json salvage mode=<mode> chars=<n> issues=...`，方便日后统计真实发生率。
 - 结构化链路（笔记生成等）**不开** `salvageKey`，半成品仍抛错；错误信息也从 `after retry` 改成 `after N attempt(s)`（A2A 本来就是 0 重试，旧文案会误导排查方向）。
 
-**验证**：`scripts/arkts-lint/tests/llm-guard-salvage.test.mjs` 7 项（直接加载真 `LlmGuard.ets`，假 client 喂坏样本）全绿；`npm test` **388/388 全绿**（7 个陈旧的既有失败已在本轮修掉）。真机 46 次连发未再复现该失败（修复前那一批是 2/20；装新 `common.hsp` 后复测 3/3 ok，A2A 2127–2345 ms），所以**失败率是否真的降到 0 无法证实**，能保证的是同样的坏输入不再整条失败、且降级会留日志。
+**验证**：`scripts/arkts-lint/tests/llm-guard-salvage.test.mjs` 7 项（直接加载真 `LlmGuard.ets`，假 client 喂坏样本）全绿；`npm test` **768/768 全绿**（curated 白名单改回全量 glob，17 个陈旧失败已在本轮修掉）。真机 46 次连发未再复现该失败（修复前那一批是 2/20；装新 `common.hsp` 后复测 3/3 ok，A2A 2127–2345 ms），所以**失败率是否真的降到 0 无法证实**，能保证的是同样的坏输入不再整条失败、且降级会留日志。
 
 

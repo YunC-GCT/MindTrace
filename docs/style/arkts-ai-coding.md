@@ -147,7 +147,7 @@ node scripts/arkts-lint/index.mjs --quiet
 # 2. lint 引擎自身的 curated 测试（应全绿）
 npm --prefix scripts/arkts-lint test
 
-# 3. 全量测试（含既有失败基线，不要新增失败）
+# 3. 全量测试（应为全绿；回归先修再提交）
 node --test scripts/arkts-lint/tests/*.test.mjs
 
 # 4. 命名 / 链接守门

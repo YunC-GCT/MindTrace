@@ -81,7 +81,8 @@ test('ChatModels keeps noteReview metadata in memory and persistence snapshots',
     { mocks: chatModelsDependencyMocks },
   );
   const message = chatMessage();
-  const session = { id: 's-note-review', name: '复习', messages: [message] };
+  // SessionIdPolicy 只认 ^[0-9a-z]{2,64}$（ADR-0006 对话身份），别用连字符
+  const session = { id: 'snotereview1', name: '复习', messages: [message] };
 
   const memoryMessage = copyChatMsgForMemory(message);
   const persistedMessage = copyChatMsgForPersistence(message);
@@ -176,7 +177,7 @@ test('ChatModels drops malformed optional review metadata while preserving valid
   assert.equal(copyChatMsgForMemory(malformed).noteReview, undefined);
 
   const session = {
-    id: 'session-a',
+    id: 'sessiona1',
     name: '复习',
     messages: [valid],
   };
