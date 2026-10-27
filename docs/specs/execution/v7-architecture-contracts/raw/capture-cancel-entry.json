@@ -21,6 +21,6 @@
   },
   "throws": {
     "message": "CONVERSATION_CANCELLED",
-    "name": "Error"
+    "name": "CancellationError"
   }
 }

@@ -656,7 +656,7 @@ const CASES = [
   },
   {
     name: 'generation-cancel-in-graph',
-    clause: 'ADR-0019 (e) in-graph cancel / (b) failed / (c) NODE_ERROR (light)',
+    clause: 'ADR-0019 (e) in-graph cancel / (b) failed / (c) CANCELLED (light)',
     input: lightInput(),
     options: { cancellation: 'in-graph' },
     zeroWrite: true,
@@ -674,7 +674,7 @@ const CASES = [
     },
     assert(obs) {
       assert.equal(obs.result.success, false);
-      assert.equal(obs.result.generation.issues[0].code, 'NODE_ERROR');
+      assert.equal(obs.result.generation.issues[0].code, 'CANCELLED');
       assert.equal(obs.storage.writes.length, 0);
     },
   },

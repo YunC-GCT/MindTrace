@@ -31,6 +31,26 @@ export interface CaptureGraphError {
   cause?: Object;
 }
 
+// 跨 realm 判据：不依赖 instanceof。形状命中或 name 命中都算 CaptureGraphError。
+// 保留 interface 是有意的：ArkTS 的 arkts-no-untyped-obj-literals 不允许把对象字面量
+// 赋给 class 类型，而 8 个节点都用字面量返回错误（OcrNode / ClassifyNode / StructureNode
+// / TruthCheckNode / PersistNode ...），升 class 会把它们全部打红。#243 需要的只是
+// 「字段不被改写 + 可判定」，type guard 就够了。
+export function isCaptureGraphError(error: Object): boolean {
+  const candidate: CaptureGraphError = error as CaptureGraphError;
+  if (!candidate) {
+    return false;
+  }
+  if (typeof candidate.kind === 'string'
+    && typeof candidate.message === 'string'
+    && typeof candidate.step === 'string'
+    && typeof candidate.retriable === 'boolean') {
+    return true;
+  }
+  const named: Error = error as Error;
+  return named.name === 'CaptureGraphError';
+}
+
 export interface AgentState {
   captureText: string;
   source: string;

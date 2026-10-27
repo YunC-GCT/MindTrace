@@ -325,7 +325,8 @@ test('mid-flight cancellation propagates token and prevents preview/DAO commit',
   });
   assert.equal(result.success, false);
   assert.match(result.errorMessage, /CONVERSATION_CANCELLED/);
-  assert.equal(result.generation.issues[0].code, 'NODE_ERROR');
+  // #243：取消不再被 CaptureGraph 抹成 NODE_ERROR，issue.code 现在是 CANCELLED。
+  assert.equal(result.generation.issues[0].code, 'CANCELLED');
   assert.equal(storage.writes.length, 0);
   assert.equal(storage.checkpoints.length, 0);
 });

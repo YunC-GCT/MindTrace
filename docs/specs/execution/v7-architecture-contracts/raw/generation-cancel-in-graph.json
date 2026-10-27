@@ -1,6 +1,6 @@
 {
   "case": "generation-cancel-in-graph",
-  "clause": "ADR-0019 (e) in-graph cancel / (b) failed / (c) NODE_ERROR (light)",
+  "clause": "ADR-0019 (e) in-graph cancel / (b) failed / (c) CANCELLED (light)",
   "input": {
     "generation": {
       "instruction": "保留定义",
@@ -43,7 +43,7 @@
     "generation": {
       "bestCheckpointId": null,
       "issueCodes": [
-        "NODE_ERROR"
+        "CANCELLED"
       ],
       "questions": [],
       "route": "light",

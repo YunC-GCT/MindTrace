@@ -14,8 +14,8 @@
 | [`capture-analysis-only.json`](./capture-analysis-only.json) | capture + `analysisOnly` | 无写入（`persist:false`） | (a) analysisOnly / no persist | 只调用分类、不结构化、不写 DAO；`data` 为空 |
 | [`capture-model-unavailable.json`](./capture-model-unavailable.json) | capture，模型调用抛 `LlmError` | `failed`（现状：只有 `errorMessage`，无 `errorCode`） | (a) capture / (b) failed / (c) `MODEL_UNAVAILABLE`（目标码） | 模型不可用时结构失败、零落库；分类器先走规则兜底，错误只经 `errorMessage` 暴露 |
 | [`capture-empty-input.json`](./capture-empty-input.json) | capture，空文本 | `failed`（现状：入口未校验，结构调用失败） | (a) capture / (b) failed / (c) 输入校验缺口 | 空文本分类走 fallback 后仍调用结构化模型；说明空输入没有在 capture 入口被拦截 |
-| [`capture-cancel-entry.json`](./capture-cancel-entry.json) | capture，进图前已取消的 token | 现状：抛 `Error('CONVERSATION_CANCELLED')` | (e) entry cancel / (c) `CANCELLED` | 入口取消零 LLM、零写入，且以抛错而非 `NoteOutcome` 返回 |
-| [`capture-cancel-in-graph.json`](./capture-cancel-in-graph.json) | capture，节点内观察到取消 | 现状：抛 `Error('CONVERSATION_CANCELLED')` | (e) in-graph cancel / (c) `CANCELLED` | 节点内取消已产生 1 次分类调用；`CaptureGraph` 先压成 `NODE_ERROR`，但 `Dispatcher` 在 graph 返回后再次 `throwIfCancelled`，所以 capture seam 仍抛错 |
+| [`capture-cancel-entry.json`](./capture-cancel-entry.json) | capture，进图前已取消的 token | 抛 `CancellationError`（message 仍是 `CONVERSATION_CANCELLED`） | (e) entry cancel / (c) `CANCELLED` | 入口取消零 LLM、零写入，且以抛错而非 `NoteOutcome` 返回；#243 起抛的是 typed error，按字符串判取消的老代码仍有效 |
+| [`capture-cancel-in-graph.json`](./capture-cancel-in-graph.json) | capture，节点内观察到取消 | 图内落 `state.error.kind='CANCELLED'`；seam 上抛 `CancellationError` | (e) in-graph cancel / (c) `CANCELLED` | 节点内取消已产生 1 次分类调用；`CaptureGraph` 不再抹成 `NODE_ERROR`，`Dispatcher` 在 graph 返回后复检 token 仍抛错 |
 | [`generation-light.json`](./generation-light.json) | generation(light) | `readyPreview` | (a) generation(light) / (b) readyPreview | light 生成 1 次调用（1200 tokens）、保存 checkpoint、零 DAO 写入 |
 | [`generation-standard.json`](./generation-standard.json) | generation(standard) | `readyPreview` | (a) generation(standard) / (b) readyPreview | standard 草稿 + 只读 verifier 两次调用（6000 / 2600），零 DAO 写入 |
 | [`generation-deep.json`](./generation-deep.json) | generation(deep) | `readyPreview` | (a) generation(deep) / (b) readyPreview | deep 两段顺序生成 + verifier（4800 / 4800 / 2600），多来源证据映射，零 DAO 写入 |
@@ -24,14 +24,20 @@
 | [`regenerate-note-missing.json`](./regenerate-note-missing.json) | regenerate，`noteId` 不存在 | `failed(NOTE_NOT_FOUND)` | (a) regenerate / (b) failed / (c) `NOTE_NOT_FOUND` | 找不到目标笔记时返回稳定错误码，无生成、无写入 |
 | [`prepared-candidate-hash-mismatch.json`](./prepared-candidate-hash-mismatch.json) | preparedCandidate，hash 不匹配 | 现状：`failed`，`候选内容已变化`，**无 `errorCode`** | (a) preparedCandidate / (b) failed / (c) `APPROVAL_HASH_MISMATCH`（目标码） | 审批哈希在写库前被拒绝；证明目标码尚未落地 |
 | [`prepared-candidate-commit-and-replay.json`](./prepared-candidate-commit-and-replay.json) | 先 preview，再 commit，再原样重放 | 首次 `committed`；重放不再写第二条 | (a) preparedCandidate / (b) committed / (c) `commitKey` 幂等 | 首次 insert 1 条笔记并写 commit receipt；重放命中同一 `commitKey`，笔记数仍为 1 |
-| [`generation-cancel-in-graph.json`](./generation-cancel-in-graph.json) | generation(light)，节点内观察到取消 | 现状：`failed` + `NODE_ERROR`（目标：`cancelled`） | (e) in-graph cancel / (b) failed / (c) `NODE_ERROR` | light 途中取消不生成 checkpoint、不写 DAO；`NODE_ERROR` 只在本路径可见，capture 同场景仍抛错 |
+| [`generation-cancel-in-graph.json`](./generation-cancel-in-graph.json) | generation(light)，节点内观察到取消 | `failed` + `CANCELLED`（目标：`cancelled`） | (e) in-graph cancel / (b) failed / (c) `CANCELLED` | light 途中取消不生成 checkpoint、不写 DAO；#243 起错误码是 `CANCELLED`，不再被抹成 `NODE_ERROR` |
 
 ## 现状注记（一手依据）
 
-- **capture 图内取消为什么记抛错而不是 `NODE_ERROR`**：`CaptureGraph.ets:41-43` 先把节点抛出的
-  `CONVERSATION_CANCELLED` 改写成 `NODE_ERROR`，但 `Dispatcher.ets:143` 在 `graph.run` 返回后再次
-  `options.cancellationToken?.throwIfCancelled()`，所以 capture seam 上看到的是抛错；`NODE_ERROR`
-  只在没有这道复检的 light generation 路径可见（见 `generation-cancel-in-graph.json`）。
+- **取消为什么在 capture seam 上是抛错、在 light generation 上是错误码**：`#243` 起 `CaptureGraph`
+  按类型落 `state.error`（取消 → `kind='CANCELLED'`，不再抹成 `NODE_ERROR`），但 `Dispatcher`
+  在 `graph.run` 返回后仍复检 `throwIfCancelled()`，所以 capture seam 看到的是 `CancellationError`
+  抛错；light generation 没有这道复检，`CANCELLED` 就作为 `issue.code` 露出（见 `generation-cancel-in-graph.json`）。
+  `CancellationError` 的 message 仍是 `CONVERSATION_CANCELLED`——`ConversationWorkflow` 与
+  `AgentExtAbility` 里按字符串判取消的老代码不能同时改，换类不换文案。
+- **三份取消快照在 #243 步骤 3 重录过**（`capture-cancel-entry` / `capture-cancel-in-graph` /
+  `generation-cancel-in-graph`）：只有两处字面变化——`throws.name` 从 `Error` 变 `CancellationError`，
+  generation 的 `issue.code` 从 `NODE_ERROR` 变 `CANCELLED`。这是预期的语义变更，不是回归；
+  重录前后默认模式都跑过，其余 15 份快照一字未动。
 - **capture 空输入为什么不是输入校验**：`TypeClassifier.ets:115-123` 对空文本直接返回 fallback，
   `Dispatcher.ets:131-208` 没有空文本入口检查，随后仍调用结构化模型；本快照记录的是这次模型调用失败。
 - **preparedCandidate hash 不匹配为什么没有 `errorCode`**：`Dispatcher.ets:1449-1451` 只返回中文
