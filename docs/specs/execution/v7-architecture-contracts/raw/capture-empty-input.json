@@ -1,0 +1,42 @@
+{
+  "case": "capture-empty-input",
+  "clause": "ADR-0019 (a) capture / (b) failed (input validation gap)",
+  "input": {
+    "payload": {
+      "kind": "text",
+      "text": ""
+    },
+    "source": "app"
+  },
+  "options": {
+    "dao": true
+  },
+  "requests": [
+    {
+      "enableThinking": null,
+      "maxTokens": 12000
+    }
+  ],
+  "result": {
+    "classification": {
+      "chapter": "",
+      "confidence": 0.2,
+      "ocrText": "",
+      "ocrTextQuality": "fallback",
+      "subject": "其它",
+      "type": "概念"
+    },
+    "data": null,
+    "errorCode": null,
+    "errorMessage": "AI 结构化失败: LLM 调用失败: Unexpected LLM request",
+    "generation": null,
+    "route": "D1",
+    "success": false
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": null
+}

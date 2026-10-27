@@ -1,0 +1,46 @@
+{
+  "case": "capture-model-unavailable",
+  "clause": "ADR-0019 (a) capture / (b) failed (MODEL_UNAVAILABLE target)",
+  "input": {
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "source": "app"
+  },
+  "options": {
+    "dao": true
+  },
+  "requests": [
+    {
+      "enableThinking": null,
+      "maxTokens": 8000
+    },
+    {
+      "enableThinking": null,
+      "maxTokens": 12000
+    }
+  ],
+  "result": {
+    "classification": {
+      "chapter": "函数在一点连续。",
+      "confidence": 0.45,
+      "ocrText": "函数在一点连续。",
+      "ocrTextQuality": "fallback",
+      "subject": "数学分析",
+      "type": "概念"
+    },
+    "data": null,
+    "errorCode": null,
+    "errorMessage": "AI 结构化失败: model unavailable",
+    "generation": null,
+    "route": "D1",
+    "success": false
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": null
+}

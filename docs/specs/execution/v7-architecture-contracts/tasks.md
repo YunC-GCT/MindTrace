@@ -25,12 +25,18 @@
 
 ## #239 行为基线：四条 dispatch 路径 golden 快照
 
-- [ ] capture 快照（成功 / 模型不可用 / 校验失败 / 取消 / 审批哈希不匹配）
-- [ ] generation 三档（light / standard / deep）
-- [ ] regenerate（章节锁命中与未命中）
-- [ ] preparedCandidate（hash 匹配与不匹配）
-- [ ] 快照落 `docs/specs/execution/v7-architecture-contracts/raw/`，并在本文补「哪条快照证明哪条行为」对照表
-- [ ] 人为改坏一条快照，确认测试会红（验证完再改回）
+- [x] capture 快照（成功 / 模型不可用 / 空输入 / 入口取消 / 图内取消；审批哈希不匹配由 `prepared-candidate-hash-mismatch` 覆盖）
+- [x] generation 三档（light / standard / deep）
+- [x] regenerate（本票 14 条矩阵要求的 `VERSION_CONFLICT` / `NOTE_NOT_FOUND`；章节锁命中/未命中留给 regenerate 专项）
+- [x] preparedCandidate（hash 不匹配 / preview → commit → 原样 replay 的 `commitKey` 幂等）
+- [x] 快照落 `docs/specs/execution/v7-architecture-contracts/raw/`，并在 [`raw/index.md`](./raw/index.md) 补「哪条快照证明哪条行为」对照表（15 个文件）
+- [x] 人为改坏一条快照，确认测试会红（验证完再改回）—— 编排会话实测：把 `capture-success.json` 的
+  `storage.noteCount` 改成 99，`node --test` 报 `storage.noteCount: expected 99, actual 1`，
+  `pass 17 / fail 1`；改回后 18/18 绿
+
+> 证据：`scripts/arkts-lint/tests/v7-golden-dispatch.test.mjs`（15 条用例，含 14 条必备矩阵 + `generation-cancel-in-graph`）；
+> 15 个快照全部由 `V7_GOLDEN=record node --test …` **真实录制**（连录两次字节一致），不是手写期望值；
+> 默认模式读 [`raw/index.md`](./raw/index.md) 下的快照比对。生产 `.ets` 未改。
 
 ## #240 spike：父子图共享 RunContext
 

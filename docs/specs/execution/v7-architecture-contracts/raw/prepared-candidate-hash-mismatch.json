@@ -1,0 +1,38 @@
+{
+  "case": "prepared-candidate-hash-mismatch",
+  "clause": "ADR-0019 (a) preparedCandidate / (b) failed / (c) APPROVAL_HASH_MISMATCH (现状无码)",
+  "input": {
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "preparedCandidate": {
+      "candidate": {
+        "title": "连续性",
+        "version": 1
+      },
+      "candidateHash": "<id>",
+      "checkpointId": "<id>:0",
+      "commitKey": "<id>",
+      "runId": "<id>"
+    },
+    "source": "text"
+  },
+  "options": {},
+  "requests": [],
+  "result": {
+    "classification": null,
+    "data": null,
+    "errorCode": null,
+    "errorMessage": "候选内容已变化",
+    "generation": null,
+    "route": "D1",
+    "success": false
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": null
+}
