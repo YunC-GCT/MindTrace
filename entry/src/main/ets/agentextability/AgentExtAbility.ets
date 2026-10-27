@@ -31,13 +31,14 @@ import type { ProviderCatalog, ResolvedModel } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
 import type { LlmCallPolicy } from '../services/ReplyService';
+import type { ReplyStyle } from '../services/ReplyStyleRules';
 import {
   CaptureReceipt,
   CaptureReceiptStore,
   formatReceipt,
   matchesReceiptIntent,
 } from '../services/CaptureReceipt';
-import { buildTaskSnapshot } from './TaskSnapshot';
+import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
 
@@ -66,6 +67,13 @@ export const A2A_POLICY: A2APolicy = {
   deadlineMs: 35000,
   taskNeedTokens: 4096,
 };
+
+/**
+ * A2A 回复风格（#234）：小艺渲染层会吞掉 $...$ / LaTeX，扩展通道只发纯文本数学。
+ * App 内聊天走 ReplyService 默认的 'markdown'，公式渲染不受影响。
+ * 回退只需改成 'markdown' 并重建（小艺会重新出现公式被吞的现象）。
+ */
+const A2A_REPLY_STYLE: ReplyStyle = 'plain_text_math';
 
 function a2aAttempts(): number {
   return A2A_POLICY.maxRetries + 1;
@@ -190,7 +198,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     const request: A2ARequest | null = this.parseRequest(data);
     if (request === null) {
       this.lastRequestId = '';
-      this.sendAnswer('', PARSE_ERROR);
+      this.sendAnswer('', PARSE_ERROR, 0);
       return;
     }
 
@@ -201,7 +209,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       this.lastRequestId, taskId.length > 0 ? taskId : 'none', query);
 
     if (query.length === 0) {
-      this.sendAnswer(taskId, '没收到问题内容，再说一次？');
+      this.sendAnswer(taskId, '没收到问题内容，再说一次？', 0);
       return;
     }
     // onData 必须立刻返回：模型链路异步跑，结果回来再自己发快照
@@ -360,7 +368,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       receipt !== null ? receipt.done : 0,
       receipt !== null ? receipt.failed : 0,
       receipt !== null ? receipt.total : 0);
-    this.sendAnswer(taskId, formatReceipt(receipt, Date.now()));
+    this.sendAnswer(taskId, formatReceipt(receipt, Date.now()), 0);
   }
 
   /** 配置读取最多等 T_config；超时返回 false，由调用方回配置超时 task。 */
@@ -527,11 +535,12 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       session.requestedModel, session.canonicalModel, session.attempts,
       policy.timeoutMs, policy.maxTokens);
     const raw: string = await new ReplyService(new IntentClassifier())
-      .complete(context, session.token, policy);
+      .complete(context, session.token, policy, A2A_REPLY_STYLE);
     const elapsed: number = Date.now() - session.requestStartedAt;
     const text: string = raw.length > 0 ? raw : '模型没有返回内容，换个问法试试。';
     const withNote: string = degradedNote.length > 0 ? text + degradedNote : text;
-    hilog.info(DOMAIN, TAG, 'LLM 返回 %{public}d 字，耗时 %{public}d ms', withNote.length, elapsed);
+    hilog.info(DOMAIN, TAG, 'LLM 返回 %{public}d 字，耗时 %{public}d ms',
+      unicodeCharCount(withNote), elapsed);
     return withNote;
   }
 
@@ -571,15 +580,19 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       '%{public}s requestId=%{public}s taskId=%{public}s requestedModel=%{public}s canonicalModel=%{public}s reason=%{public}s attempts=%{public}d elapsedMs=%{public}d',
       code, this.lastRequestId, session.taskId, session.requestedModel, session.canonicalModel,
       reason, session.attempts, elapsedMs);
-    this.sendAnswer(session.taskId, text);
+    this.sendAnswer(session.taskId, text, session.requestStartedAt);
   }
 
   /**
    * 单帧 result.task 快照：一次给全 artifacts + TASK_STATE_COMPLETED。
    * 不拆 statusUpdate / artifactUpdate —— 小艺对增量帧只渲染开头几个词。
    * 报文拼装由 TaskSnapshot.buildTaskSnapshot（纯函数）负责，这里只选 taskId 并发送。
+   *
+   * #234 可观测性: 发送成功后只打计数摘要（chars/字节/特殊符号/耗时），
+   * 不打印正文、正文前缀或哈希（AGENTS 红线）。requestStartedAt 由调用方传入
+   * 当前 session 的模型调用起点；无 session 的分支传 0，elapsedMs 记 0。
    */
-  private sendAnswer(taskId: string, text: string): void {
+  private sendAnswer(taskId: string, text: string, requestStartedAt: number): void {
     const finalTaskId: string = taskId.length > 0 ? taskId : 'task-' + Date.now().toString();
     const payload: string = buildTaskSnapshot(this.lastRequestId, finalTaskId, text);
     if (this.hostProxy === null) {
@@ -588,10 +601,41 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     }
     try {
       this.hostProxy.sendData(payload);
-      hilog.info(DOMAIN, TAG, 'task snapshot sent %{public}d 字节, task=%{public}s completed',
-        payload.length, finalTaskId);
+      const elapsedMs: number = requestStartedAt > 0 ? Date.now() - requestStartedAt : 0;
+      hilog.info(DOMAIN, TAG,
+        'A2A_REPLY_SENT chars=%{public}d utf8Bytes=%{public}d snapshotBytes=%{public}d dollar=%{public}d backslash=%{public}d zeroWidth=%{public}d sqrt=%{public}d ge=%{public}d elapsedMs=%{public}d taskId=%{public}s',
+        unicodeCharCount(text), utf8ByteLength(text), utf8ByteLength(payload),
+        this.countOccurrences(text, '$'), this.countOccurrences(text, '\\'),
+        this.countZeroWidth(text), text.indexOf('√') >= 0 ? 1 : 0,
+        text.indexOf('≥') >= 0 ? 1 : 0, elapsedMs, finalTaskId);
     } catch (error) {
       hilog.error(DOMAIN, TAG, '发送 task 快照失败: %{public}s', (error as Error).message);
     }
+  }
+
+  /** 统计子串出现次数：只把计数写日志，永远不写正文。 */
+  private countOccurrences(text: string, needle: string): number {
+    if (needle.length === 0) {
+      return 0;
+    }
+    let count: number = 0;
+    let index: number = text.indexOf(needle);
+    while (index >= 0) {
+      count += 1;
+      index = text.indexOf(needle, index + needle.length);
+    }
+    return count;
+  }
+
+  /** 零宽字符计数（U+200B/200C/200D/FEFF）：小艺吞公式时会留下 U+200B 占位。 */
+  private countZeroWidth(text: string): number {
+    let count: number = 0;
+    for (let i = 0; i < text.length; i++) {
+      const code: number = text.charCodeAt(i);
+      if (code === 0x200B || code === 0x200C || code === 0x200D || code === 0xFEFF) {
+        count += 1;
+      }
+    }
+    return count;
   }
 }
