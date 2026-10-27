@@ -55,7 +55,7 @@ export function resolveCapabilities(
   const supportsImage: boolean = supportsImageInput(listing);
   if (spec === null) {
     // 没有规格 ≠ 不支持; 这是"没证据", 请求层与 UI 都必须显示未确认。
-    const unknown: ModelCapability = {
+    const noSpec: ModelCapability = {
       thinking: 'unverified',
       efforts: [],
       defaultEffort: '',
@@ -63,7 +63,7 @@ export function resolveCapabilities(
       defaultThinkingEnabled: false,
       effortPath: [],
     };
-    return unknown;
+    return noSpec;
   }
 
   const thinking: ThinkingMode = spec.request.thinking.control;
