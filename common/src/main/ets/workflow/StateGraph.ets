@@ -1,3 +1,5 @@
+import type { RunContext } from './RunContext';
+
 export type StateGraphNode<State> = (state: State) => Promise<State>;
 export type StateGraphRoute<State, Step extends string> = (state: State) => Step;
 export type StateGraphHalt<State> = (state: State) => boolean;
@@ -52,13 +54,34 @@ export class StateGraph<State, Step extends string> {
     this.conditionalEdges.set(from, route);
   }
 
-  async run(initialState: State, maxNodeRuns: number = 128): Promise<State> {
+  /**
+   * 运行图。
+   *
+   * context === null（老调用方）：行为与接线前完全一致，maxNodeRuns 是唯一上限，
+   *   超限消息仍是 `Workflow exceeded maxNodeRuns=N`。
+   * context !== null：预算唯一来源是 context.budget，maxNodeRuns 被完全忽略，
+   *   不是「maxNodeRuns 与 budget.limit 取小」。父子图共享同一个 budget 实例。
+   *   每个节点执行前先 throwIfStopped() 再 budget.take()（被取消的 run 不消耗配额）；
+   *   节点执行后再 throwIfStopped()，节点内刚取消时不会继续进入下一个节点。
+   *
+   * 节点异常不在这里 catch；CancellationError / DeadlineExceededError /
+   * CaptureGraphError 原样向上抛，压平由 CaptureGraph 负责。
+   */
+  async run(initialState: State, maxNodeRuns: number = 128, context: RunContext | null = null): Promise<State> {
     let state: State = initialState;
     let current: Step = this.next(this.startStep, state);
     let nodeRuns: number = 0;
     while (current !== this.endStep) {
-      if (nodeRuns >= maxNodeRuns) {
-        throw new StateGraphError('Workflow exceeded maxNodeRuns=' + maxNodeRuns.toString(), 'MAX_NODE_RUNS', current);
+      if (context === null) {
+        if (nodeRuns >= maxNodeRuns) {
+          throw new StateGraphError('Workflow exceeded maxNodeRuns=' + maxNodeRuns.toString(), 'MAX_NODE_RUNS', current);
+        }
+      } else {
+        context.throwIfStopped();
+        if (!context.budget.take()) {
+          throw new StateGraphError('Workflow exceeded run budget=' + context.budget.limit.toString(),
+            'MAX_NODE_RUNS', current);
+        }
       }
       const node: StateGraphNode<State> | undefined = this.nodes.get(current);
       if (node === undefined) {
@@ -66,6 +89,9 @@ export class StateGraph<State, Step extends string> {
       }
       state = await node(state);
       nodeRuns += 1;
+      if (context !== null) {
+        context.throwIfStopped();
+      }
       if (this.haltWhen !== undefined && this.haltWhen(state)) {
         return state;
       }
