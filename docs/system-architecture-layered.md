@@ -579,17 +579,22 @@ preflight → route → invoke → verify → HITL → publish
 - 与现状的关系：现在是 `Dispatcher.dispatch` 的四条固定分支（preparedCandidate / regenerate / generation / capture），目标是把模式判断下沉进 `NoteAgent` 子图，主图只保留「选哪个 Agent、何时确认、何时发布」。
 - 粒度原则：一个 Agent = 一个目标 + 一份上下文 + 一个 run；分类/结构化/校验是 `NoteAgent` 的内部阶段，不再拆成三个 Agent。
 
-| 子图 | 阶段 | 输出 | 可复用 |
-|---|---|---|---|
-| NoteAgent | classify → structure → verify | NoteDraft / KnowledgeUnit | TypeClassifier、KnowledgeModel、TruthCheckService、CaptureGraph |
-| ReviewAgent | plan → ask → grade | StudyPlan / ReviewSession | NoteReviewService（StudyPlan 数据新增） |
-| MathVideoAgent | outline → script → render | VideoArtifact / mp4 | 无（渲染走外部服务） |
+| 子图 | 阶段 | 输出 | 可复用 | 现状 |
+|---|---|---|---|---|
+| NoteAgent | classify → structure → verify | NoteDraft / KnowledgeUnit | TypeClassifier、KnowledgeModel、CaptureGraph | **已存在**：`CaptureGraph` 五节点（ocr → classify → structure → truthcheck → persist），`Dispatcher` 持有 |
+| ReviewAgent | plan → ask → grade | StudyPlan / ReviewSession | NoteReviewService（StudyPlan 数据新增） | 待建 |
+| MathVideoAgent | outline → script → render | VideoArtifact / mp4 | 无（渲染走外部服务） | 待建 |
+
+> 补充（2026-10-27 复核）：`KnowledgeModel` 已在 10-13/10-14 拆完——现在只有 102 行 facade，实际实现分别在
+> `CaptureStructurer`（618 行）、`DraftComposer`（523）、`DeepDraftComposer`（361）、`IncrementalPatchComposer`、
+> `TruthCheckService`（249）、`PromptBuilder`。ADR 0006 里「870 LOC 待拆」是当时的现状描述，票 #209–#214 的
+> 拆分工作在代码里已经落地，剩下的是核对与关票，不是重写。
 
 ### 17.3 内核差距（按优先级）
 
-1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；
+1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；现状 `CaptureGraph` 已是 `StateGraph` 实例，但由 `Dispatcher` 直接 `new` 并喂节点，还不是「子图作为节点」；
 2. **RunContext**：runId / parentRunId / cancel / budget（当前只有 `CancellationToken`）；
-3. **EventSink**：node / tool / token / approval 事件（当前只有 `progressSink`）；
+3. **EventSink**：node / tool / token / approval 事件（当前只有 `progressSink` 与 #235 加的按节点耗时回调 `NodeTimingSink`）；
 4. **State / Reducer**：typed channel 取代手写 `copyAgentState`；
 5. **Checkpoint**：保持业务级（草稿 / 确认），要做 runtime checkpoint 需单独 ADR。
 
