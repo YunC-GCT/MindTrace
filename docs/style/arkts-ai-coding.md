@@ -161,7 +161,7 @@ node scripts/link-check/index.mjs
 判读口径：
 
 - `arkts-lint` 的 **error 必须为 0**；warning 先看是否为本文件新增。
-- curated `npm test` **329/329** 是当前基线；全量 `node --test` 是 **707 项 / 15 项既有失败**。新增失败要修，不要用“本来就有失败”掩盖。
+- `npm test` **768 项全绿** 是当前基线（2026-10-27 起取消 curated 白名单，跑全量 glob）；`agent-gate` 与 CI 都跑这一份。新增失败就是回归，立刻修，不要再引用「本来就有失败」当挡箭牌。
 - build 失败先看第一条 `ArkTS` 报错，不要从最后一条开始猜。
 
 ---

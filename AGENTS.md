@@ -82,7 +82,7 @@
 > 这一节是给 **AI agent 的运行时约束**，不是建议。与“必守红线”叠加生效。
 
 1. **先读后写**：改 `.ets` 前读 [`docs/style/arkts-ai-coding.md`](./docs/style/arkts-ai-coding.md)；不确定的规则查 [`docs/style/arkts-1.1.md`](./docs/style/arkts-1.1.md) 或机器可读清单 [`docs/style/arkts-rules.json`](./docs/style/arkts-rules.json)。不要凭记忆猜 ArkTS 语法。
-2. **改完必跑 gate**：`node scripts/agent-gate/index.mjs`。它检查改动的 `.ets`（BOM / 文件头 / 模块边界）、`arkts-lint`、`naming-lint`、`link-check`、`doc-trace`。
+2. **改完必跑 gate**：`node scripts/agent-gate/index.mjs`。它检查改动的 `.ets`（BOM / 文件头 / 模块边界）、`arkts-lint`、`naming-lint`、`link-check`、`doc-trace`、`process-boundary`，**并跑全量单测**（改动集含 `.ets/.mjs/.ts/.json` 时；`--all` 必跑）。
 3. **交付必须带 gate 结果**：回复 / PR / commit 里写 `RESULT: PASS` 或失败项；没有 gate 输出的“已完成”视为未完成。
 4. **不许绕过**：不得用 `--no-verify`、注释掉 lint 规则、删除/跳过测试、改 `build-profile` 或 CI 来让 gate 变绿。gate 失败先修第一条 error，再重跑。
 5. **边界不放宽**：`agents/` 不 import `entry/`；`pages/` / `overlays/` 不直接 import `CaptureGraph` / `Dispatcher` / `NoteDao`（走 service）；不新建第 6 个 module；不改 `mcp/` 语义（ADR-0010）。
@@ -103,7 +103,7 @@
 | **AI 智能分类 + 知识结构化** | `agents/src/main/ets/agents/` | 5 类题型识别 + KnowledgeUnit 拆解, 端到端 LLM pipeline; KnowledgeModel 重构为轻量编排 agent (spec 015: 拆出 PromptBuilder / TruthCheckService 协作服务) |
 | **LlmClient 统一调用层** | `common/src/main/ets/llm/LlmClient.ets` | 唯一公共入口 `call(request)` (spec [`005`](./docs/specs/005-llm-client-consolidation.md)): JSON 与真 SSE 流式 (requestInStream) 双适配路径 |
 | **知识星系可视化** | `entry/src/main/ets/pages/KnowledgeGalaxy*` | 用户学情可视化 |
-| **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 · `npm --prefix scripts/arkts-lint test` 329 项全绿 · 全量 `node --test scripts/arkts-lint/tests/*.test.mjs` 707 项（15 项为既有失败基线）· **CI 已接入** |
+| **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 · `npm --prefix scripts/arkts-lint test` **768 项全绿**（已取消 curated 白名单，跑全量 glob，约 40 s）· `agent-gate` 与 CI 同源 · **CI 已接入** |
 | **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 18 ADR + 22 设计 spec + 执行记录目录, 设计透明度高 |
 
 ### 演示路径 (5 分钟 walk-through · 复赛版)
