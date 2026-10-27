@@ -9,6 +9,7 @@
 | [`plan.md`](./plan.md) | **交接文档**：给接手会话的读法、已完成项、票单与顺序、硬约束、环境命令、已知坑、阻塞项 |
 | [`tasks.md`](./tasks.md) | 逐票勾选清单与证据要求 |
 | [`raw/index.md`](./raw/index.md) | #239 golden 快照对照表：文件 / 命令 / 终态 / ADR-0019 条款 / 证明的行为 |
+| [`spike-240-run-context.md`](./spike-240-run-context.md) | #240 四问结论：Q1/Q2/Q3 **FAIL**，Q4 无适用对象；总判决停在 #241 之前，含最小改动提案 |
 | `raw/` | #239 的 golden 快照（已生成；测试直接读，移动目录必须同 commit 改引用） |
 
 **#239 行为基线：** ✅ 已落地。15 条 golden 快照落在 [`raw/`](./raw/index.md)，测试为

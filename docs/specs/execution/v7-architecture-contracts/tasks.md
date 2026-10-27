@@ -47,11 +47,11 @@
 
 ## #240 spike：父子图共享 RunContext
 
-- [ ] 子图能拿到父图 `runId` / `deadline` / `CancellationToken`，且取消能冒泡
-- [ ] `maxNodeRuns` 父子累计
-- [ ] 领域错误穿子图边界不被压成 `Error`
-- [ ] Worker 节点只传可序列化数据
-- [ ] 结论写 `plan.md`「spike 结论」+ `review-report.md`；任一 no → 停，回 §17 改方案
+- [ ] 子图能拿到父图 `runId` / `deadline` / `CancellationToken`，且取消能冒泡 —— **FAIL**。卡在：`StateGraph` 不持 `runId` / `deadline`，全仓 workflow 层无 `RunContext`（`common/src/main/ets/workflow/StateGraph.ets:19-32`、`:55`）；token 只能靠 `AgentState.cancellationToken` 手工传递（`agents/src/main/ets/graph/AgentState.ets:52`）；`CaptureGraph` 把取消压成 `NODE_ERROR(retriable=false)`（`agents/src/main/ets/graph/CaptureGraph.ets:41-43`）。
+- [ ] `maxNodeRuns` 父子累计 —— **FAIL**。卡在：`StateGraph.run()` 每次重置 `nodeRuns`（`common/src/main/ets/workflow/StateGraph.ets:58`），父子各算各的；`CaptureGraph.run` 也没有预算透传入口（`:61-64`）。
+- [ ] 领域错误穿子图边界不被压成 `Error` —— **FAIL**。卡在：`CaptureGraphError` 是 interface，且 `CaptureGraph.ets:41-43` 只保留 `message`、统一改写成 `NODE_ERROR`；`kind` / `step` / `retriable` 丢失。裸 `StateGraph` 不 catch，但生产子图边界是 `CaptureGraph`。
+- [x] Worker 节点只传可序列化数据 —— **PASS（静态取证，现状无适用对象）**。全仓 8 个 `.ets` / 44 处 `.addNode(` 均无 `ThreadWorker` / `workerPort`；最近的 Worker 协议是纯数据接口（`entry/src/main/ets/workers/ChatPersistenceWorker.ets:27-50`、`entry/src/main/ets/workers/ImageSearchWorker.ets:39-55`）。
+- [x] 结论写 `plan.md`「spike 结论」+ `review-report.md`；任一 no → 停，回 §17 改方案 —— 结论已写入 [`spike-240-run-context.md`](./spike-240-run-context.md) 并回填 [`plan.md`](./plan.md)「spike 结论（#240）」；bundle 内无 `review-report.md`，未新建。**总判决：Q1/Q2/Q3 FAIL → 停，不进 #241。** 探针 [`scripts/spikes/v7-run-context-spike.mjs`](../../../../scripts/spikes/v7-run-context-spike.mjs) 沙箱内未跑成，已由编排会话在主机执行：`SUMMARY blocking=3 total=4`，四条 `Q<n>` 实测输出与静态取证一致，见 [`spike-240-run-context.md`](./spike-240-run-context.md) §0.1。
 
 ## #241 NoteAgent 薄包装 + 迁 capture
 
