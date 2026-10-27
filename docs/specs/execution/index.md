@@ -28,6 +28,7 @@
 | [`ticket-0-5-customspan-placeholder-seam/`](./ticket-0-5-customspan-placeholder-seam/) | CustomSpan placeholder seam | spec / plan / tasks / verification-record | Draft |
 | [`ticket-0-6-chat-render-fixtures-budgets/`](./ticket-0-6-chat-render-fixtures-budgets/) | #124 · [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | spec / plan / tasks / verification-record / `raw/*.jsonl` | Draft（ticket-0 证据完整） |
 | [`note-generation-stability/`](./note-generation-stability/) | 2026-09-21 笔记生成稳定性计划 | plan | 仅计划 |
+| [`v7-architecture-contracts/`](./v7-architecture-contracts/) | #237–#242 · [§17 目标态](../../system-architecture-layered.md) · [外评审](../../architecture/review-v7-2026-10-27.md) | plan（含交接说明）/ tasks | `ready-to-execute`（未开始写代码） |
 
 `feature.json` 是 Spec-Kit 工具的元数据，不是 bundle。
 
