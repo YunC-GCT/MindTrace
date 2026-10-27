@@ -49,7 +49,7 @@
 1. **Kimi / GLM / 豆包 没有 catalog listing**（`model-catalog.ets:341-363` 的 `models: []`），所以面板显示「未提供内置清单」、手动输入的 `kimi-k2.6` 挂「能力未确认」chip —— 但同一个面板又出现了按 spec 渲染的「思考模式」开关。两个信号自相矛盾：chip 该读 spec 的 `evidence.status`（`verified`/`partial` → 「字段已核实（默认值未证实）」），而不是只看 listing 是否存在。**（已处理，见文末「接手后进展」）**
 2. **百炼 `thinking_budget` 未建模** —— 第三类控制（思维链限长），和 effort 不是一回事，要不要加待定。
 3. **GLM 只加了 6 个精确 ID**（5.3 / 5.3-flash / 5 / 5.1 / 5.2 / 4.7），`GLM-5.3-FlashX`、`GLM-5-Turbo`、`GLM-4.7-Flash` 等未加，避免编 ID；加之前先核官方 model id 大小写。**（部分处理：已按官方示例补 `glm-4.7-flash`，见文末「接手后进展」）**
-4. **A2A 延迟样本只有 1 条**：`canonicalModel=deepseek-flash / attempts=1 / elapsedMs=1696`。要拍「默认模型切不切 flash」需攒 20 条算 P50/P95。抓取：`hdc hilog | grep --line-buffered -E "A2A_(REPLY_SENT|DEADLINE_EXCEEDED|LLM_TIMEOUT|LLM_FAILED)"`。
+4. **A2A 延迟样本只有 1 条**：`canonicalModel=deepseek-flash / attempts=1 / elapsedMs=1696`。要拍「默认模型切不切 flash」需攒 20 条算 P50/P95。抓取：`hdc hilog | grep --line-buffered -E "A2A_(REPLY_SENT|DEADLINE_EXCEEDED|LLM_TIMEOUT|LLM_FAILED)"`。**（已攒够 20 条，见文末「A2A 延迟样本」）**
 5. **用户体感「重连之后才出回复」未定性** —— 我们的链路 1.7s，慢在小艺 ASR/调度或连接断链；需要给 Agent 加 `onConnect/onDisconnect` 日志才能分辨。
 6. `ReplyService` 两条链路显式 `enableThinking: false`（聊天与小艺都按不思考的时延预算）；如果以后要「聊天也思考」，得开一个按链路区分的开关，别再依赖默认值。
 7. `build-hsp-hap.mjs` 在本机仍会在非 tty 下挂（`stdin is not a tty`），只能走两步手动构建；P0 032「构建顺序断言」没加。**（已澄清，见文末「接手后进展」——脚本没问题，是我的调用管道有问题）**
@@ -134,3 +134,18 @@ MSYS2_ARG_CONV_EXCL="*" hdc install -r entry/build/default/outputs/default/entry
 | DeepSeek · deepseek-v4-pro | （无横幅，有内置清单） | `· 内置`，另有 思考模式 / 推理强度 |
 
 三处口径一致，Kimi/豆包 都渲染出「思考模式」开关（来自 spec 的 thinking.toggle），说明规格控件与能力信号同源。**问题 1 至此真机收口。**
+
+## A2A 延迟样本（2026-10-27，20 条，设备 3XTYD24C16203663）
+
+采样方式：新增 `scripts/a2a-smoke/latency_series.py`，在小艺的「MindTrace 数学笔记助手」会话里连发 20 条 `整理数学题`，逐条 `hilog -r` 清缓冲、读 `MindTraceA2A` 时间戳算 `onData 收到 → task snapshot sent`。**全程不需要人说话**——小艺的消息是脚本点输入框打进去的。
+
+| 口径 | min | P50 | P95 | max |
+|---|---|---|---|---|
+| 全部正常回复（含冷启动首条） | 1341 ms | 2024 ms | 15304 ms | 15304 ms |
+| 去掉冷启动首条（n=17） | 1500 ms | **1963 ms** | 2940 ms | 2940 ms |
+
+- **首条 15304 ms**：扩展进程冷启 + 模型加载，只出现在第一次拉起；后续稳定在 1.3–2.9s。
+- **LLM 占端到端 99.9%**：`a2a_ms` 与 `llm_ms` 几乎相等，说明我们这层的编排/序列化不是瓶颈，长度全在模型往返。
+- **20 条里 2 条失败**（1695 ms / 7810 ms）：回复正文是 `模型暂时不可用：chat answer validation failed after retry: JSON object extraction failed`。这是采样反复发同一句撞出来的新问题——**失败率 10% 比延迟更值得先修**，且失败时同样会走完 A2A 快照，所以不计入延迟统计。
+- 结论方向：`deepseek-flash` 这条路径的 P50 ≈ 2s，与小艺侧体感「重连才出回复」的超时门槛还有余量；但要拍「默认模型切不切」仍需换模型跑同一份脚本对比（脚本已可复用）。
+

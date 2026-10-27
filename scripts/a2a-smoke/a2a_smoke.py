@@ -23,7 +23,8 @@ import sys
 import tempfile
 import time
 
-DEFAULT_HDC = r"D:/HarmoNova/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe"
+DEFAULT_HDC = os.environ.get("HDC") or (
+    r"C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe")
 DEFAULT_AGENT = "MindTrace 数学笔记助手"
 YIXIAO_BUNDLE = "com.huawei.hmos.vassistant"
 YIXIAO_ABILITY = "VoiceAbility"
