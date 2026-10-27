@@ -20,7 +20,7 @@
 - 仓库：`D:\HMgent\MindTrace`，分支 `bugfix/galaxy-web-temporary`
 - HEAD：`978585d merge feat/xiaoyi-latency-tuning`（10-27）
 - 这次合并把「模型适配分层 + A2A 35s 预算 + 768 项单测」并入 v1 收尾线；合并后 **构建 5/5 成功、gate PASS、单测 768/0**
-- 工作区**有 2 个未提交删除**：`entry/src/main/resources/base/media/galaxy_detail_bg.png`、`galaxy_overview_bg.png`。这是用户在调 galaxy 页面时的改动，**不要提交、不要恢复**，除非用户明说。
+- 工作区干净；两个 galaxy 背景图（`entry/src/main/resources/base/media/galaxy_*_bg.png`）已由用户确认删除（`8b6be9f`），当前代码已无引用，不要恢复。
 - 相关旧分支：`feat/231-capture-receipt`、`feat/232-ai-compliance` 已合并并删除；`feat/xiaoyi-latency-tuning` 已合并但分支与 worktree `D:/HMgent/MindTrace-latency` 还在，真机回归通过后可清理。
 
 ## 3. 环境与命令（都已验证）
