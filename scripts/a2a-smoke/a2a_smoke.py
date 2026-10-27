@@ -269,6 +269,24 @@ def clean_reply_text(text):
     return cleaned.strip()
 
 
+# 小艺吞公式时会留下零宽占位（U+200B）；其余零宽格式符也一起计数
+ZERO_WIDTH_PATTERN = re.compile("[\u200b\u200c\u200d\ufeff]")
+
+
+def reply_text_metrics(text):
+    """对 reply_text 计算可观测字段：区分「快照里有什么」与「小艺显示了什么」。"""
+    raw = text or ""
+    return {
+        "reply_code_points": len(raw),
+        "reply_utf8_bytes": len(raw.encode("utf-8")),
+        "dollar_count": raw.count("$"),
+        "backslash_count": raw.count("\\"),
+        "zero_width_count": len(ZERO_WIDTH_PATTERN.findall(raw)),
+        "has_sqrt": "√" in raw,
+        "has_ge": "≥" in raw,
+    }
+
+
 def hilog_tail(hdc, tag, lines=6):
     rc, out = hdc.shell(f'hilog -x | grep -i "{tag}" | tail -{lines}', timeout=90)
     return out.strip()
@@ -281,6 +299,11 @@ def main():
     ap.add_argument("--text", default="把相册里的数学题整理成笔记")
     ap.add_argument("--tag", default="MindTraceA2A", help="hilog 关键字")
     ap.add_argument("--no-restart", action="store_true", help="不重启小艺")
+    ap.add_argument(
+        "--case",
+        default="",
+        help="本次冒烟用例标签（如 A/B/C），原样写进输出 JSON",
+    )
     ap.add_argument(
         "--wait-seconds",
         "--timeout",
@@ -298,7 +321,7 @@ def main():
     args = ap.parse_args()
 
     hdc = Hdc(args.hdc)
-    result = {"ok": False, "device": None, "agent": args.agent, "text": args.text}
+    result = {"ok": False, "device": None, "agent": args.agent, "text": args.text, "case": args.case}
     try:
         result["device"] = ensure_device(hdc)
         # 亮屏 + 临时把息屏时间拉到 30 分钟，避免跑到一半又锁上
@@ -324,6 +347,7 @@ def main():
         result["reply"] = reply
         # 最长的那条通常是 agent 气泡正文
         result["reply_text"] = max(reply, key=len) if reply else ""
+        result.update(reply_text_metrics(result["reply_text"]))
         cleaned_reply = clean_reply_text(result["reply_text"])
         result["reply_chars"] = len(cleaned_reply)
         errors = []

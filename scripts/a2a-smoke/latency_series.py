@@ -67,7 +67,10 @@ def sample_once(hdc, text, n, timeout=60.0):
     log = hdc.shell('hilog -x | grep -i "MindTraceA2A" | tail -60')[1]
     lines = [l for l in log.splitlines() if "MindTraceA2A" in l]
     req = next((l for l in lines if "onData 收到" in l), None)
-    done = next((l for l in reversed(lines) if "task snapshot sent" in l), None)
+    done = next(
+        (l for l in reversed(lines) if "A2A_REPLY_SENT" in l or "task snapshot sent" in l),
+        None,
+    )
     llm = next((l for l in reversed(lines) if "耗时" in l), None)
     span = None
     if req and done:

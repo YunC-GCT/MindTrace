@@ -27,6 +27,7 @@ import type {
   CancellationToken,
 } from 'common';
 import { IntentClassifier, ReplyContext } from './IntentClassifier';
+import type { ReplyStyle } from './ReplyStyleRules';
 import { DebugFaults } from './DebugFaults';
 import type { DebugFault } from './DebugFaults';
 
@@ -78,8 +79,9 @@ export class ReplyService {
     context: ReplyContext,
     cancellationToken?: CancellationToken,
     policy?: LlmCallPolicy,
+    style: ReplyStyle = 'markdown',
   ): Promise<string> {
-    return await this.guardedComplete(context, 'chat answer', cancellationToken, policy);
+    return await this.guardedComplete(context, 'chat answer', cancellationToken, policy, style);
   }
 
   private async guardedComplete(
@@ -87,6 +89,7 @@ export class ReplyService {
     label: string,
     cancellationToken?: CancellationToken,
     policy?: LlmCallPolicy,
+    style: ReplyStyle = 'markdown',
   ): Promise<string> {
     cancellationToken?.throwIfCancelled();
     const effectivePolicy: LlmCallPolicy = policy !== undefined ? policy : CHAT_REPLY_POLICY;
@@ -103,7 +106,7 @@ export class ReplyService {
       replyLog.warn('[ReplyCtx] WARN empty userContent');
     }
     const guarded: LlmGuardJsonResult = await new LlmGuard().callJsonWithRetry(
-      this.intentClassifier.buildReplyMessages(context),
+      this.intentClassifier.buildReplyMessages(context, style),
       {
         maxTokens: effectivePolicy.maxTokens,
         timeoutMs: effectivePolicy.timeoutMs,

@@ -17,7 +17,10 @@ test('IntentClassifier exposes its public intent and reply APIs', () => {
   assert.match(classifier, /public async classify\(userText: string\): Promise<TextIntent>/);
   assert.match(classifier, /public inlineNoteMaterial\(userInstruction: string\): string/);
   assert.match(classifier, /export interface ReplyContext/);
-  assert.match(classifier, /public buildReplyMessages\(context: ReplyContext\): ChatMessage\[\]/);
+  assert.match(
+    classifier,
+    /public buildReplyMessages\(context: ReplyContext, style: ReplyStyle = 'markdown'\): ChatMessage\[\]/,
+  );
   assert.match(classifier, /export type TextIntent = 'note_generation' \| 'chat';/);
 });
 

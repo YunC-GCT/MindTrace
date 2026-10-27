@@ -40,3 +40,60 @@ export function buildTaskSnapshot(requestId: string, taskId: string, text: strin
     + taskId + '-artifact","parts":[{"text":' + JSON.stringify(text)
     + ',"mediaType":"' + TEXT_MEDIA_TYPE + '"}]}]}}}';
 }
+
+/**
+ * 按 UTF-8 计算字符串字节数（纯函数，不依赖 util.TextEncoder —— 扩展进程未验证）。
+ *
+ * 计法: <= 0x7F 记 1 字节；<= 0x7FF 记 2 字节；普通 BMP 记 3 字节；
+ * 合法代理对记 4 字节并跳过低代理；孤立代理按替换字符 U+FFFD 记 3 字节。
+ * 只用于日志里的字节数，不参与报文拼装。
+ */
+export function utf8ByteLength(text: string): number {
+  let bytes: number = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code: number = text.charCodeAt(i);
+    if (code <= 0x7F) {
+      bytes += 1;
+    } else if (code <= 0x7FF) {
+      bytes += 2;
+    } else if (code >= 0xD800 && code <= 0xDBFF) {
+      if (i + 1 < text.length) {
+        const next: number = text.charCodeAt(i + 1);
+        if (next >= 0xDC00 && next <= 0xDFFF) {
+          bytes += 4;
+          i += 1;
+        } else {
+          // 孤立高代理：按 U+FFFD 计
+          bytes += 3;
+        }
+      } else {
+        bytes += 3;
+      }
+    } else if (code >= 0xDC00 && code <= 0xDFFF) {
+      // 孤立低代理：按 U+FFFD 计
+      bytes += 3;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+/**
+ * 按 Unicode code point 计字符数（代理对算 1 个）。
+ * 用于日志里的 chars= —— 不能用 string.length 冒充「字」。
+ */
+export function unicodeCharCount(text: string): number {
+  let count: number = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code: number = text.charCodeAt(i);
+    if (code >= 0xD800 && code <= 0xDBFF && i + 1 < text.length) {
+      const next: number = text.charCodeAt(i + 1);
+      if (next >= 0xDC00 && next <= 0xDFFF) {
+        i += 1;
+      }
+    }
+    count += 1;
+  }
+  return count;
+}
