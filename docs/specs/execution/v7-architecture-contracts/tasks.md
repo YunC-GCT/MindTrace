@@ -53,6 +53,17 @@
 - [x] Worker 节点只传可序列化数据 —— **PASS（静态取证，现状无适用对象）**。全仓 8 个 `.ets` / 44 处 `.addNode(` 均无 `ThreadWorker` / `workerPort`；最近的 Worker 协议是纯数据接口（`entry/src/main/ets/workers/ChatPersistenceWorker.ets:27-50`、`entry/src/main/ets/workers/ImageSearchWorker.ets:39-55`）。
 - [x] 结论写 `plan.md`「spike 结论」+ `review-report.md`；任一 no → 停，回 §17 改方案 —— 结论已写入 [`spike-240-run-context.md`](./spike-240-run-context.md) 并回填 [`plan.md`](./plan.md)「spike 结论（#240）」；bundle 内无 `review-report.md`，未新建。**总判决：Q1/Q2/Q3 FAIL → 停，不进 #241。** 探针 [`scripts/spikes/v7-run-context-spike.mjs`](../../../../scripts/spikes/v7-run-context-spike.mjs) 沙箱内未跑成，已由编排会话在主机执行：`SUMMARY blocking=3 total=4`，四条 `Q<n>` 实测输出与静态取证一致，见 [`spike-240-run-context.md`](./spike-240-run-context.md) §0.1。
 
+### #243 落地后复核（2026-10-27）
+
+上面三个 FAIL 是 spike 当时的事实，不是待办清单。#243 按 LangGraph 的做法（运行上下文走调用参数，不进 State）把它们补上了：
+
+- **Q1 子图拿得到父 run 的上下文** —— 已修。`RunContext`（`runId` / `parentRunId` / `deadlineAt` / `budget` / `token`）由调用方经 `DispatchOptions.runContext` 传入，capture / generation / prepared 三条图路径统一走 `Dispatcher.resolveRunContext`（`f362790` / `40bffb7` / `de7f48a`）。
+- **Q2 预算父子累计** —— 已修。`StateGraph.run(initial, maxNodeRuns, context)` 在有 context 时只认 `context.budget`，且取消先于扣配额（`ef81ae7`）。
+- **Q3 领域错误穿边界不被压平** —— 已修。取消 → `CancellationError`（`kind='CANCELLED'`，文案仍是 `CONVERSATION_CANCELLED`）、超时 → `DEADLINE_EXCEEDED`、节点 typed 错误保留 `step` / `kind` / `retriable`。`CaptureGraphError` 仍是 interface：升 class 会触发 `arkts-no-untyped-obj-literals` 打红 8 个节点文件（`72dd5ef`）。
+- **token 移出 `AgentState`** —— `StateGraphNode` / `CaptureNode` 改为 `(state, context)`，五个捕获节点改用 `context.throwIfStopped()`（`de7f48a`）。
+
+证据：`v7-run-context`(15) / `v7-stategraph-run-context`(7) / `v7-dispatch-run-context`(4) / `v7-capturegraph-errors`(7) / `v7-capture-state-no-token`(4) 全绿；18 份 golden **一份未重录**；`agent-gate --all` = `RESULT: PASS`（410 `.ets` / 213 docs / `pass=880`）。#241 阻塞解除。
+
 ## #241 NoteAgent 薄包装 + 迁 capture
 
 - [ ] `NoteAgent` 只包现有节点与服务，不改 prompt、不重写 `TruthCheck`
