@@ -106,7 +106,7 @@ test('a cancelled token makes throwIfStopped throw CancellationError', () => {
   assert.notEqual(thrown, null, 'a cancelled token must stop the run');
   assert.equal(thrown.name, 'CancellationError', 'the boundary classifies by name');
   assert.equal(thrown.code, 'CANCELLED', 'CancellationError carries the ADR-0019 CANCELLED code');
-  assert.equal(thrown.message, 'run cancelled', 'the default English message matches the repo style');
+  assert.equal(thrown.message, 'CONVERSATION_CANCELLED', 'cancel keeps the token message so existing consumers still match');
 });
 
 test('an expired deadline makes throwIfStopped throw DeadlineExceededError', () => {

@@ -2,12 +2,12 @@
 // 2026-09-05 · D2 Ticket #5
 import { AgentState, CaptureNode, CaptureGraphError, CaptureNodeResult, copyAgentState } from '../AgentState';
 import { NoteDaoInterface } from '../../models/NoteDaoInterface';
-import { NoteGenerationCommitResult } from 'common';
+import { NoteGenerationCommitResult, RunContext } from 'common';
 
 export class PersistNodeFactory {
   static create(dao: NoteDaoInterface): CaptureNode {
-    return async (input: AgentState): Promise<CaptureNodeResult> => {
-      input.cancellationToken?.throwIfCancelled();
+    return async (input: AgentState, context?: RunContext | null): Promise<CaptureNodeResult> => {
+      context?.throwIfStopped();
       if (!input.persist) {
         return { state: input };
       }
@@ -37,7 +37,7 @@ export class PersistNodeFactory {
             ? '' : JSON.stringify(input.preparedCandidate.incrementalManifest),
         };
         const commitResult = await dao.updateWithCommitKey(input.knowledgeUnit, input.preparedCandidate.expectedVersion, commit);
-        input.cancellationToken?.throwIfCancelled();
+        context?.throwIfStopped();
         const next: AgentState = copyAgentState(input);
         if (commitResult.success === false) {
           next.error = {
@@ -75,7 +75,7 @@ export class PersistNodeFactory {
             ? '' : JSON.stringify(input.preparedCandidate.incrementalManifest),
         };
         const commitResult = await dao.insertWithCommitKey(input.knowledgeUnit, commit);
-        input.cancellationToken?.throwIfCancelled();
+        context?.throwIfStopped();
         const next: AgentState = copyAgentState(input);
         if (commitResult.success === false) {
           next.error = {
@@ -90,7 +90,7 @@ export class PersistNodeFactory {
         return { state: next };
       } else {
         await dao.insert(input.knowledgeUnit);
-        input.cancellationToken?.throwIfCancelled();
+        context?.throwIfStopped();
       }
       return { state: input };
     };

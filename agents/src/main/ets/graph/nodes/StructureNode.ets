@@ -10,14 +10,15 @@ import {
   LlmError,
   NoteDraftDocument,
   NoteGenerationStandardResult,
+  RunContext,
   captureProvenanceFromFragments,
 } from 'common';
 
 export class StructureNodeFactory {
   static create(service: KnowledgeModel): CaptureNode {
-    return async (input: AgentState): Promise<CaptureNodeResult> => {
+    return async (input: AgentState, context?: RunContext | null): Promise<CaptureNodeResult> => {
       try {
-        input.cancellationToken?.throwIfCancelled();
+        context?.throwIfStopped();
         let draft: NoteDraftDocument | undefined = undefined;
         let standardResult: NoteGenerationStandardResult | undefined = undefined;
         let unit: KnowledgeUnit;
@@ -62,7 +63,7 @@ export class StructureNodeFactory {
           );
         }
         const next: AgentState = copyAgentState(input);
-        next.cancellationToken?.throwIfCancelled();
+        context?.throwIfStopped();
         next.knowledgeUnit = unit;
         if (draft !== undefined) {
           next.draft = draft;

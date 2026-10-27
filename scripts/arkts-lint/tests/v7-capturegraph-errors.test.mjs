@@ -37,18 +37,14 @@ const DeadlineExceededError = errorsModule.DeadlineExceededError;
 const CancellationToken = tokenModule.CancellationToken;
 const createRootRunContext = contextModule.createRootRunContext;
 
-function initialState(token) {
-  const state = {
+function initialState() {
+  return {
     captureText: 'x + 1 = 2',
     source: 'test',
     currentStep: 'START',
     persist: false,
     analysisOnly: false,
   };
-  if (token !== undefined) {
-    state.cancellationToken = token;
-  }
-  return state;
 }
 
 function graphWithNode(node) {
@@ -81,9 +77,10 @@ test('CancellationToken.throwIfCancelled is still recognized as cancellation', a
   const graph = graphWithNode(async () => {
     token.cancel();
     token.throwIfCancelled();
-    return { state: initialState(token) };
+    return { state: initialState() };
   });
-  const result = await graph.run(initialState(token));
+  const context = createRootRunContext('err-run', 8, 0, token);
+  const result = await graph.run(initialState(), context);
   assert.equal(result.error.kind, 'CANCELLED');
   assert.match(result.error.message, /CONVERSATION_CANCELLED/);
 });

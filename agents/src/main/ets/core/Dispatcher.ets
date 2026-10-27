@@ -109,8 +109,19 @@ interface DeepFormulaCandidate {
 }
 
 export class Dispatcher {
-  // 与 StateGraph 老的 maxNodeRuns=128 保持一致：接线不改变捕获路径的可用节点数。
-  private static readonly CAPTURE_RUN_BUDGET: number = 128;
+  // 与 StateGraph 老的 maxNodeRuns=128 保持一致：接线不改变各条路径的可用节点数。
+  private static readonly DISPATCH_RUN_BUDGET: number = 128;
+
+  // 预算与取消只走调用参数。三条路径（capture / generation / prepared）都从这里拿上下文，
+  // 免得哪条忘了转发就把刹车和预算一起丢掉。
+  private resolveRunContext(options: DispatchOptions): RunContext {
+    return options.runContext ?? createRootRunContext(
+      'dispatch-' + Date.now().toString(),
+      Dispatcher.DISPATCH_RUN_BUDGET,
+      0,
+      options.cancellationToken ?? null,
+    );
+  }
 
   private static sourceFromPayload(payload: DispatchPayload): string {
     if (payload.kind === 'image') { return 'camera_capture'; }
@@ -143,16 +154,10 @@ export class Dispatcher {
       currentStep: 'START',
       persist: options.persist !== false,
       analysisOnly: options.analysisOnly === true,
-      cancellationToken: options.cancellationToken,
     };
     const graph: CaptureGraph = this.buildGraph(options);
     // #243：预算与取消是运行时属性，只走调用参数，不经 AgentState。
-    const runContext: RunContext = options.runContext ?? createRootRunContext(
-      'capture-' + Date.now().toString(),
-      Dispatcher.CAPTURE_RUN_BUDGET,
-      0,
-      options.cancellationToken ?? null,
-    );
+    const runContext: RunContext = this.resolveRunContext(options);
     const finalState: AgentState = await graph.run(initial, runContext);
     options.cancellationToken?.throwIfCancelled();
     const error: CaptureGraphError | undefined = finalState.error;
@@ -611,7 +616,6 @@ export class Dispatcher {
       currentStep: 'START',
       persist: false,
       analysisOnly: false,
-      cancellationToken: options.cancellationToken,
     };
     this.emitGenerationProgress(options, {
       phase: 'compose',
@@ -619,7 +623,7 @@ export class Dispatcher {
       activity: 'write_draft',
     });
     const graph: CaptureGraph = this.buildGenerationGraph(options.knowledgeModel, options.cancellationToken);
-    const finalState: AgentState = await graph.run(initial);
+    const finalState: AgentState = await graph.run(initial, this.resolveRunContext(options));
     this.emitGenerationProgress(options, {
       phase: 'compose',
       state: finalState.error === undefined ? 'success' : 'failed',
@@ -1505,10 +1509,9 @@ export class Dispatcher {
       analysisOnly: false,
       preparedCandidate: prepared,
       knowledgeUnit: prepared.candidate,
-      cancellationToken: options.cancellationToken,
     };
     const graph: CaptureGraph = this.buildPreparedGraph(options.dao);
-    const finalState: AgentState = await graph.run(initial);
+    const finalState: AgentState = await graph.run(initial, this.resolveRunContext(options));
     if (finalState.error !== undefined) {
       const conflict: boolean = finalState.error.message.indexOf('VERSION_CONFLICT') >= 0;
       return {

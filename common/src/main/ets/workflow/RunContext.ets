@@ -23,7 +23,7 @@
  */
 import { CancellationToken } from '../llm/CancellationToken';
 import { RunBudget, createRunBudget } from './RunBudget';
-import { CancellationError, DeadlineExceededError } from './RunErrors';
+import { DeadlineExceededError } from './RunErrors';
 
 export class RunContext {
   readonly runId: string;
@@ -41,10 +41,12 @@ export class RunContext {
     this.budget = budget;
   }
 
+  // 取消文案沿用 CancellationToken 的 CONVERSATION_CANCELLED：ConversationWorkflow 用
+  // indexOf、AgentExtAbility 用 ===，换文案会让上层认不出来。deadline 有自己的一句。
   throwIfStopped(): void {
     const token: CancellationToken | null = this.token;
-    if (token !== null && token.isCancelled()) {
-      throw new CancellationError('run cancelled');
+    if (token !== null) {
+      token.throwIfCancelled();
     }
     if (this.deadlineAt > 0 && Date.now() >= this.deadlineAt) {
       throw new DeadlineExceededError('run deadline exceeded');

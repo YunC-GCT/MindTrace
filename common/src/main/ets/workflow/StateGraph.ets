@@ -1,6 +1,6 @@
 import type { RunContext } from './RunContext';
 
-export type StateGraphNode<State> = (state: State) => Promise<State>;
+export type StateGraphNode<State> = (state: State, context?: RunContext | null) => Promise<State>;
 export type StateGraphRoute<State, Step extends string> = (state: State) => Step;
 export type StateGraphHalt<State> = (state: State) => boolean;
 
@@ -87,7 +87,7 @@ export class StateGraph<State, Step extends string> {
       if (node === undefined) {
         throw new StateGraphError('Missing workflow node: ' + current, 'INVALID_GRAPH', current);
       }
-      state = await node(state);
+      state = await node(state, context);
       nodeRuns += 1;
       if (context !== null) {
         context.throwIfStopped();

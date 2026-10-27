@@ -12,7 +12,7 @@ import {
   NoteGenerationStandardResult,
 } from 'common';
 import { NoteCommitResult } from '../models/NoteDaoInterface';
-import type { CancellationToken } from 'common';
+import type { RunContext } from 'common';
 
 export type CaptureStep =
   | 'START'
@@ -69,14 +69,13 @@ export interface AgentState {
   standardResult?: NoteGenerationStandardResult;
   preparedCandidate?: PreparedCandidate;
   commitResult?: NoteCommitResult;
-  cancellationToken?: CancellationToken;
 }
 
 export interface CaptureNodeResult {
   state: AgentState;
 }
 
-export type CaptureNode = (state: AgentState) => Promise<CaptureNodeResult>;
+export type CaptureNode = (state: AgentState, context?: RunContext | null) => Promise<CaptureNodeResult>;
 
 export function copyAgentState(input: AgentState): AgentState {
   const copied: AgentState = {
@@ -115,9 +114,6 @@ export function copyAgentState(input: AgentState): AgentState {
   }
   if (input.commitResult !== undefined) {
     copied.commitResult = input.commitResult;
-  }
-  if (input.cancellationToken !== undefined) {
-    copied.cancellationToken = input.cancellationToken;
   }
   return copied;
 }
