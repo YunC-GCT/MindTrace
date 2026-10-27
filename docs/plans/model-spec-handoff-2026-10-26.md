@@ -48,7 +48,7 @@
 
 1. **Kimi / GLM / 豆包 没有 catalog listing**（`model-catalog.ets:341-363` 的 `models: []`），所以面板显示「未提供内置清单」、手动输入的 `kimi-k2.6` 挂「能力未确认」chip —— 但同一个面板又出现了按 spec 渲染的「思考模式」开关。两个信号自相矛盾：chip 该读 spec 的 `evidence.status`（`verified`/`partial` → 「字段已核实（默认值未证实）」），而不是只看 listing 是否存在。**（已处理，见文末「接手后进展」）**
 2. **百炼 `thinking_budget` 未建模** —— 第三类控制（思维链限长），和 effort 不是一回事，要不要加待定。
-3. **GLM 只加了 6 个精确 ID**（5.3 / 5.3-flash / 5 / 5.1 / 5.2 / 4.7），`GLM-5.3-FlashX`、`GLM-5-Turbo`、`GLM-4.7-Flash` 等未加，避免编 ID；加之前先核官方 model id 大小写。
+3. **GLM 只加了 6 个精确 ID**（5.3 / 5.3-flash / 5 / 5.1 / 5.2 / 4.7），`GLM-5.3-FlashX`、`GLM-5-Turbo`、`GLM-4.7-Flash` 等未加，避免编 ID；加之前先核官方 model id 大小写。**（部分处理：已按官方示例补 `glm-4.7-flash`，见文末「接手后进展」）**
 4. **A2A 延迟样本只有 1 条**：`canonicalModel=deepseek-flash / attempts=1 / elapsedMs=1696`。要拍「默认模型切不切 flash」需攒 20 条算 P50/P95。抓取：`hdc hilog | grep --line-buffered -E "A2A_(REPLY_SENT|DEADLINE_EXCEEDED|LLM_TIMEOUT|LLM_FAILED)"`。
 5. **用户体感「重连之后才出回复」未定性** —— 我们的链路 1.7s，慢在小艺 ASR/调度或连接断链；需要给 Agent 加 `onConnect/onDisconnect` 日志才能分辨。
 6. `ReplyService` 两条链路显式 `enableThinking: false`（聊天与小艺都按不思考的时延预算）；如果以后要「聊天也思考」，得开一个按链路区分的开关，别再依赖默认值。
@@ -97,3 +97,19 @@ MSYS2_ARG_CONV_EXCL="*" hdc install -r entry/build/default/outputs/default/entry
 所以「只能两步手动构建」不成立，`build-hsp-hap.mjs` 可以当唯一构建入口用；P0 032「构建顺序断言」也就没有额外的阻塞理由。剩下要补的只是别在这个 host 上给构建输出接管道。
 
 顺带一条诚实的记录：本轮先在后台管道里跑了两次脚本都没真正构建，我是靠手动两步拿到构建结果的；后来为了定位原因才做了上面的对照实验。构建结论本身（HSP/HAP SUCCESSFUL）来自真实 hvigor 输出，不受影响。
+
+**问题 3 部分收口：GLM ID 按官方文档核过一轮。**
+
+官方文档 `docs.bigmodel.cn`（模型概览 + 各模型页的调用示例）能给到的 model 字符串只有这些：
+
+| 官方显示名 | 官方示例里的 `"model"` | 处理 |
+|---|---|---|
+| GLM-4.7 / GLM-4.7-FlashX（同页） | `glm-4.7` | 本来就有 |
+| GLM-4.7-Flash | `glm-4.7-flash` | **本轮新增**：默认开 thinking、`thinking.type=disabled` 可关、200K/128K |
+| GLM-5-Turbo | `glm-5-turbo` | **不建 spec**：`thinking.type` 已被示例证实，但「默认思考行为」文档只列了 5.3/5.3-FLASH/5.2/5.1/5/4.7 系列，turbo 的默认值无出处 → `defaultEnabled` 只能猜，宁可不建（面板按新逻辑显示「能力未确认」，这正是该信号的用途） |
+| GLM-5.3-FlashX / FlashX-Legal | 文档只有显示名 | 不建，ID 无出处 |
+| GLM-4.6 / GLM-4.5-AirX / GLM-4-Long 等 | 页码里没有 model 字符串 | 不建 |
+
+测试里把这条口径写成断言：`getModelSpec('glm','glm-4.7-flash')` 有 spec 且 `verified`、`control=toggle`、`off=[{path:['thinking','type'],value:'disabled'}]`；`glm-5-turbo`、`glm-4.7-flashx` 必须为 `null`——防止后来的人"顺手补全"成猜出来的 ID。
+
+**问题 3 之后的验证（含本轮 glm-4.7-flash）**：`npm test` **380 项 / 373 通过 / 7 失败**（仍是那 7 个基线失败）；agent-gate **PASS**；`build-hsp-hap.mjs` 三步跑通，HSP `BUILD SUCCESSFUL in 1 min 53 s`、HAP `46 s 303 ms`，退出码 0。新增的 GLM spec 在 `common` 里，HSP 已按新源码重建（不是旧产物）。

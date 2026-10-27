@@ -595,6 +595,26 @@ const GLM47_SPEC: ModelSpec = {
   },
 };
 
+// GLM-4.7-Flash: 免费 30B 级; 官方调用示例里 model 名就是 glm-4.7-flash,
+// 属 GLM-4.7 系列 → 默认开 thinking、可用 thinking.type=disabled 关闭 (思考模式文档"默认思考行为")。
+const GLM47_FLASH_SPEC: ModelSpec = {
+  schemaVersion: MODEL_SPEC_SCHEMA_VERSION,
+  id: 'glm-4.7-flash',
+  providerId: 'glm',
+  displayName: 'glm-4.7-flash',
+  protocol: OPENAI_CHAT_PROTOCOL,
+  contextWindow: 0,
+  maxOutputTokens: 0,
+  inputModalities: [],
+  evidence: GLM_EVIDENCE,
+  request: {
+    outputTokenPath: ['max_tokens'],
+    thinking: NESTED_TOGGLE_THINKING,
+    effort: null,
+    sampling: UNSET_SAMPLING,
+  },
+};
+
 // ===== Kimi 直连 =====
 // kimi-k2.6: 默认开启, 可关; 不支持 reasoning_effort。
 const KIMI_K26_SPEC: ModelSpec = {
@@ -743,6 +763,7 @@ const BUILTIN_MODEL_SPECS: ModelSpec[] = [
   GLM51_SPEC,
   GLM52_SPEC,
   GLM47_SPEC,
+  GLM47_FLASH_SPEC,
   KIMI_K26_SPEC,
   KIMI_K27_CODE_SPEC,
   KIMI_K27_CODE_HIGHSPEED_SPEC,

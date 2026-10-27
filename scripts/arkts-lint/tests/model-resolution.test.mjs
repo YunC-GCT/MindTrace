@@ -351,3 +351,23 @@ test('capabilitySignal: 三态只认 spec 证据, 缺失规格 = 未确认(不�
   assert.equal(mod.getProviderCatalog('kimi').models.length, 0);
   assert.equal(mod.capabilitySignal(mod.getModelSpec('kimi', 'kimi-k3')), 'verified');
 });
+
+test('glm-4.7-flash: 照抄官方调用示例的 model 名, 不是按显示名猜 ID', async () => {
+  const mod = await modelModules;
+
+  // 官方示例 `"model": "glm-4.7-flash"` + GLM-4.7 系列默认开 thinking、可 disabled 关闭
+  const spec = mod.getModelSpec('glm', 'glm-4.7-flash');
+  assert.ok(spec, 'glm-4.7-flash 应有内置规格');
+  assert.equal(spec.id, 'glm-4.7-flash');
+  assert.equal(mod.capabilitySignal(spec), 'verified');
+  assert.equal(spec.request.thinking.control, 'toggle');
+  assert.equal(spec.request.thinking.defaultEnabled, true);
+  assert.deepEqual(spec.request.thinking.off, [{ path: ['thinking', 'type'], value: 'disabled' }]);
+
+  // glm-5-turbo: model 字符串官方有 (`"model": "glm-5-turbo"`), 但「默认思考行为」
+  // 文档没把它列进默认开启的家族 → 默认值未知, 不凭猜测建 spec (面板显示能力未确认)。
+  assert.equal(mod.getModelSpec('glm', 'glm-5-turbo'), null);
+
+  // glm-4.7-flashx / glm-5.3-flashx: 文档只有显示名 (GLM-4.7-FlashX), 没有 model 字符串 → 不编 ID。
+  assert.equal(mod.getModelSpec('glm', 'glm-4.7-flashx'), null);
+});
