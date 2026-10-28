@@ -7,7 +7,7 @@
  * 依赖: @kit.AbilityKit (common.Context)、@kit.CoreFileKit (fileIo)
  *
  * 数据流:
- *   AgentFloatWindow.onBatchAction / DebugCaptureRunner.run → CaptureReceiptStore.save()
+ *   AgentFloatWindow.runCaptureSet / DebugCaptureRunner.run → CaptureReceiptStore.save()
  *     → <filesDir>/receipts/last-capture.json
  *   AgentExtAbility.handleQuery → matchesReceiptIntent(query)
  *     → CaptureReceiptStore.read() → formatReceipt(receipt, Date.now()) → sendAnswer()

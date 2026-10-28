@@ -190,7 +190,8 @@ awaiting_confirm → discarded（用户不勾）
 | `common/models/CaptureChain.ets` | `CaptureSetRequest` / `CaptureSetItemResult` / `CaptureSetResult`：一个 set 一份逐项回执，`cancelled` 与 `failed` 分开计数 |
 | `agents/core/Dispatcher.ets` | `dispatchSet()`：顺序执行、全部共享同一 `RunContext`（预算 + 取消）、单项失败不打断整批；`withRunContext()` 显式搬运 `DispatchOptions` |
 | `entry/services/AiService.ets` | `captureSet(uris, text?, token?)`：逐张准备（准备失败只废该项）、一次 `dispatchSet`、结果按原始下标合回 |
-| `entry/overlays/AgentFloatWindow` | `onBatchAction` 不再 `for` 循环 `capture`，改走 `captureSet`；回执仍写 `CaptureReceipt` |
+| `entry/overlays/AgentFloatWindow` | 图片入口即相册多选（1..20），`runCaptureSet` 不再 `for` 循环 `capture`；回执仍写 `CaptureReceipt` |
+| `entry/overlays/AgentFloatWindow`（记录） | 整理过程写进当前会话：一条 `origin:'image'` 的 ai 消息随进度原地更新，收尾写总结句并落盘；不再用 toast 汇报进度 |
 | `scripts/arkts-lint/tests/v7-capture-set.test.mjs` | 4 条守卫：逐项回执顺序、失败隔离、取消不混进失败、UI 不再自循环 |
 
 验证：`agent-gate` = `RESULT: PASS (884 tests, 0 fail)`；`node scripts/build-hsp-hap.mjs` = 4× `BUILD SUCCESSFUL`。
