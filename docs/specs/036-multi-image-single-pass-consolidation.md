@@ -1,6 +1,6 @@
 # 036 — 一次整理：1..N 张图 → 多题汇总
 
-> 状态: 草案（4 个决策待拍板）· 起点: 2026-10-28 · 主线: v1 采集中枢
+> 状态: 阶段 1 已落地（`0c60f21`）· 阶段 2–5 未动 · 起点: 2026-10-28 · 主线: v1 采集中枢
 > 上游: [`phase-tracker.md`](../agents/phase-tracker.md) P2/P4 · [`ADR-0019`](../adr/0019-note-command-and-outcome.md) NoteCommand / NoteOutcome
 > 下游: 采集进度与确认（本 spec §7/§8）、`#241` Dispatcher 定型
 
@@ -179,6 +179,24 @@ awaiting_confirm → discarded（用户不勾）
 | 5 | 幂等 + 逐条回执 + 计费预估 | 阶段 3、4 |
 
 阶段 1 就能把「一个 set 一个 run」立住，是后面全部工作的地基；阶段 4 是用户直接感知的那层。
+
+### 阶段 1 实施记录（2026-10-28）
+
+落地形态与上表略有出入：没有新增 `kind:'images'` 载荷，而是在**集合层**加了一个入口，
+`DispatchPayload` 与 `DispatchResult` 的形状都不动，切题器以后接在 set 内部。
+
+| 位置 | 内容 |
+|---|---|
+| `common/models/CaptureChain.ets` | `CaptureSetRequest` / `CaptureSetItemResult` / `CaptureSetResult`：一个 set 一份逐项回执，`cancelled` 与 `failed` 分开计数 |
+| `agents/core/Dispatcher.ets` | `dispatchSet()`：顺序执行、全部共享同一 `RunContext`（预算 + 取消）、单项失败不打断整批；`withRunContext()` 显式搬运 `DispatchOptions` |
+| `entry/services/AiService.ets` | `captureSet(uris, text?, token?)`：逐张准备（准备失败只废该项）、一次 `dispatchSet`、结果按原始下标合回 |
+| `entry/overlays/AgentFloatWindow` | `onBatchAction` 不再 `for` 循环 `capture`，改走 `captureSet`；回执仍写 `CaptureReceipt` |
+| `scripts/arkts-lint/tests/v7-capture-set.test.mjs` | 4 条守卫：逐项回执顺序、失败隔离、取消不混进失败、UI 不再自循环 |
+
+验证：`agent-gate` = `RESULT: PASS (884 tests, 0 fail)`；`node scripts/build-hsp-hap.mjs` = 4× `BUILD SUCCESSFUL`。
+**真机未验**：本轮设备未连接，选图链路要由人来自选图片，未做。
+
+仍未做（阶段 2–5）：切题器 `segmentProblems`、跨图合并、确认页、进度订阅、幂等与计费预估。
 
 ## 13. 待拍板（阻塞实现）
 
