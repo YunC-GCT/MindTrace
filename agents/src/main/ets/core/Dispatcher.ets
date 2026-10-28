@@ -57,6 +57,9 @@ import {
   buildDeepOutline,
   validateDeepOutline,
   captureProvenanceFromFragments,
+  CaptureSetRequest,
+  CaptureSetItemResult,
+  CaptureSetResult,
 } from 'common';
 import type { DispatchPayload, CancellationToken } from 'common';
 import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
@@ -132,6 +135,106 @@ export class Dispatcher {
   // D2 唯一最终公共入口: 跑 CaptureGraph, 失败返回结构化错误。
   async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
     return await this.dispatchRequest(req, options);
+  }
+
+  // spec 036 阶段 1：一个 set 一个 run。
+  // 顺序执行 req.items，全部共享同一个 RunContext（预算与取消）；单项失败不打断整批；
+  // 取消后未开始/未完成的项单独记 cancelled，不混进 failed。
+  // 切题（一图多题）与跨图合并留给阶段 2/3，这一层只把「多张图 = 一次整理」立住。
+  async dispatchSet(req: CaptureSetRequest, options: DispatchOptions = {}): Promise<CaptureSetResult> {
+    const startedAt: number = Date.now();
+    const shared: RunContext = this.resolveRunContext(options);
+    const items: CaptureSetItemResult[] = [];
+    let done: number = 0;
+    let failed: number = 0;
+    let cancelled: number = 0;
+    let stop: boolean = false;
+    for (let i = 0; i < req.items.length; i++) {
+      const payload: DispatchPayload = req.items[i];
+      const itemStart: number = Date.now();
+      if (stop || Dispatcher.isCancelled(options)) {
+        cancelled += 1;
+        items.push(Dispatcher.skippedItem(i, payload));
+        continue;
+      }
+      try {
+        const result: DispatchResult = await this.dispatch(
+          { source: req.source, payload: payload },
+          Dispatcher.withRunContext(options, shared),
+        );
+        const item: CaptureSetItemResult = {
+          index: i,
+          kind: payload.kind,
+          success: result.success,
+          cancelled: false,
+          durationMs: Date.now() - itemStart,
+        };
+        if (result.data !== undefined) { item.noteId = result.data.id; }
+        if (result.classification !== undefined) { item.category = result.classification.type; }
+        if (!result.success) {
+          failed += 1;
+          if (result.errorMessage !== undefined) { item.errorMessage = result.errorMessage; }
+          if (result.errorCode !== undefined) { item.errorCode = result.errorCode; }
+        } else {
+          done += 1;
+        }
+        items.push(item);
+      } catch (error) {
+        if (Dispatcher.isCancelled(options)) {
+          cancelled += 1;
+          items.push(Dispatcher.skippedItem(i, payload));
+          stop = true;
+          continue;
+        }
+        failed += 1;
+        items.push({
+          index: i,
+          kind: payload.kind,
+          success: false,
+          errorMessage: (error as Error).message,
+          cancelled: false,
+          durationMs: Date.now() - itemStart,
+        });
+      }
+    }
+    const totalMs: number = Date.now() - startedAt;
+    log.info('dispatchSet done total=' + req.items.length.toString() + ' ok=' + done.toString()
+      + ' failed=' + failed.toString() + ' cancelled=' + cancelled.toString()
+      + ' totalMs=' + totalMs.toString());
+    return {
+      total: req.items.length,
+      done: done,
+      failed: failed,
+      cancelled: cancelled,
+      items: items,
+      durationMs: totalMs,
+    };
+  }
+
+  private static isCancelled(options: DispatchOptions): boolean {
+    const token: CancellationToken | undefined = options.cancellationToken;
+    return token !== undefined && token.isCancelled();
+  }
+
+  private static skippedItem(index: number, payload: DispatchPayload): CaptureSetItemResult {
+    return { index: index, kind: payload.kind, success: false, cancelled: true, durationMs: 0 };
+  }
+
+  // 逐字段搬运而不是 {...options}：ArkTS 1.1 对对象展开有限制，且显式列举能让
+  // DispatchOptions 新增字段时在这里编译报错，而不是静默丢参数。
+  private static withRunContext(options: DispatchOptions, runContext: RunContext): DispatchOptions {
+    const copy: DispatchOptions = {};
+    copy.persist = options.persist;
+    copy.includeRawText = options.includeRawText;
+    copy.analysisOnly = options.analysisOnly;
+    copy.dao = options.dao;
+    copy.generationRepository = options.generationRepository;
+    copy.knowledgeModel = options.knowledgeModel;
+    copy.cancellationToken = options.cancellationToken;
+    copy.runContext = runContext;
+    copy.progressSink = options.progressSink;
+    copy.onNodeTiming = options.onNodeTiming;
+    return copy;
   }
 
   private async dispatchRequest(req: DispatchRequest, options: DispatchOptions): Promise<DispatchResult> {

@@ -59,6 +59,7 @@ import { SessionsPanelController } from '../../services/SessionsPanelController'
 import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
+import { CaptureSetResult } from 'common';
 import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
 import { ConversationMessageEvent } from '../../workflows/conversation/ConversationTypes';
 import { AiService } from '../../services/AiService';
@@ -951,7 +952,8 @@ export struct AgentFloatWindow {
       });
   };
 
-  // 批量整理：多选 → 逐张走 AiService.capture（识别 + 结构化 + 落库）
+  // 一次整理：1 张或多张都走同一个 set（spec 036 阶段 1）。
+  // 不再是一张图一个独立任务循环，而是一个 run 顺序处理全部图片并逐项回执。
   private onBatchAction = (): void => {
     const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
     AlbumPickerLauncher.pick(ctx, 20)
@@ -960,36 +962,29 @@ export struct AgentFloatWindow {
           return;
         }
         const service: AiService = new AiService(ctx);
-        let done: number = 0;
-        let failed: number = 0;
-        for (let i = 0; i < uris.length; i++) {
-          this.showToast('正在整理 ' + (i + 1).toString() + '/' + uris.length.toString());
-          try {
-            await service.capture(uris[i]);
-            done += 1;
-          } catch (error) {
-            failed += 1;
-            console.warn('[BatchCapture] failed at ' + (i + 1).toString() + ': ' + (error as Error).message);
-          }
-        }
+        this.showToast(uris.length === 1 ? '正在整理' : '正在整理 ' + uris.length.toString() + ' 张图片');
+        const result: CaptureSetResult = await service.captureSet(uris);
+        // 取消不算失败，但回执只有 done/failed 两个格子，这里并入 failed 以便用户看到"没成"
+        const failed: number = result.failed + result.cancelled;
         const receipt: CaptureReceipt = {
-          done: done,
+          done: result.done,
           failed: failed,
-          total: uris.length,
+          total: result.total,
           at: Date.now(),
           source: 'batch',
         };
         try {
           await CaptureReceiptStore.save(ctx, receipt);
         } catch (error) {
-          console.warn('[BatchCapture] receipt save failed: ' + (error as Error).message);
+          console.warn('[CaptureSet] receipt save failed: ' + (error as Error).message);
         }
         this.batchUris = [];
-        this.showToast('批量完成：成功 ' + done.toString() + ' 条，失败 ' + failed.toString() + ' 条');
-        console.info('[BatchCapture] done=' + done.toString() + ' failed=' + failed.toString());
+        this.showToast('整理完成：成功 ' + result.done.toString() + ' 条，失败 ' + failed.toString() + ' 条');
+        console.info('[CaptureSet] total=' + result.total.toString() + ' done=' + result.done.toString()
+          + ' failed=' + result.failed.toString() + ' cancelled=' + result.cancelled.toString());
       })
       .catch((e: Error): void => {
-        this.showToast('批量整理失败：' + e.message);
+        this.showToast('整理失败：' + e.message);
       });
   };
 

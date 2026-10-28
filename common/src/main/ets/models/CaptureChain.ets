@@ -138,6 +138,38 @@ export interface DispatchResult {
   errorCode?: string;
 }
 
+// ==================== 集合级整理（spec 036 阶段 1）====================
+// 一次「整理」= 用户选中的 1..N 张图。集合级只保证「一个 set 一个 run」：
+// 顺序执行每一项、共享同一个 RunContext（预算 + 取消），逐项隔离失败、逐项回执。
+// 切题（一图多题）与跨图合并不在本切片，见 docs/specs/036-* 阶段 2/3。
+export interface CaptureSetRequest {
+  // 与 DispatchRequest.source 同域，避免在 dispatchSet 里静默收窄/放宽
+  source: 'app' | 'skill' | 'card';
+  items: DispatchPayload[];
+}
+
+export interface CaptureSetItemResult {
+  index: number;
+  kind: string;
+  success: boolean;
+  noteId?: string;
+  category?: string;
+  errorMessage?: string;
+  errorCode?: string;
+  // 该组是否因取消而未执行/未完成；取消不是失败，回执里单独计数
+  cancelled: boolean;
+  durationMs: number;
+}
+
+export interface CaptureSetResult {
+  total: number;
+  done: number;
+  failed: number;
+  cancelled: number;
+  items: CaptureSetItemResult[];
+  durationMs: number;
+}
+
 // ==================== 通用 API 响应包装 ====================
 // ApiClient.request() 的返回类型
 // 后端真实返回结构:{code, message, data, success}

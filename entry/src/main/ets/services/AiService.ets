@@ -46,6 +46,8 @@ import {
   IncrementalSection,
   parseIncrementalSections,
   buildIncrementalManifest,
+  CaptureSetResult,
+  CaptureSetItemResult,
 } from 'common';
 import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
@@ -116,6 +118,97 @@ export class AiService {
       const totalMs: number = Date.now() - startedAt;
       captureLog.info(AiService.formatCaptureTiming(seq, outcome, resolveMs, nodeTotals, nodeVisits, totalMs));
     }
+  }
+
+  // spec 036 阶段 1：一次整理 = 用户选中的 1..N 张图。
+  // 与 capture() 的差别只有三处：准备 N 张图 → 走 dispatchSet（一个 set 一个 run，
+  // 共享预算与取消）→ 返回逐项回执。单张时语义与 capture() 等价。
+  // 切题与跨图合并不在这里（阶段 2/3），本方法只保证「N 张图是一次整理，不是 N 个任务」。
+  async captureSet(imageUris: string[], userText?: string,
+    token?: CancellationToken): Promise<CaptureSetResult> {
+    const startedAt: number = Date.now();
+    const seq: number = ++AiService.captureSeq;
+    const context: common.UIAbilityContext = this.requireContext();
+    const resolver: ImageUriResolver = new ImageUriResolver(context);
+    const items: DispatchPayload[] = [];
+    // items[i] 对应用户选中的第几张；准备失败的图不进 items，但必须回到原始下标
+    const indexOfItem: number[] = [];
+    const localPaths: string[] = [];
+    const preFailed: CaptureSetItemResult[] = [];
+
+    // 1) 逐张把 file:// URI 复制到沙箱；单张失败不拖垮整批
+    for (let i = 0; i < imageUris.length; i++) {
+      try {
+        const resolved: ResolvedImageFile = await resolver.resolve(imageUris[i]);
+        items.push({ kind: 'image', imageUri: resolved.localPath, userText: userText });
+        indexOfItem.push(i);
+        localPaths.push(resolved.localPath);
+      } catch (error) {
+        preFailed.push({
+          index: i,
+          kind: 'image',
+          success: false,
+          cancelled: false,
+          errorMessage: (error as Error).message,
+          durationMs: 0,
+        });
+      }
+    }
+
+    // 2) 一次 set：公共入口 dispatchSet，持久化仍走注入的 dao
+    const dao: NoteDaoInterface = await this.buildNoteDao();
+    const dispatcher: Dispatcher = new Dispatcher();
+    const run: CaptureSetResult = await dispatcher.dispatchSet({
+      source: 'app',
+      items: items,
+    }, {
+      persist: true,
+      dao: dao,
+      cancellationToken: token,
+    });
+
+    // 3) 落库成功的项再建文搜图索引：索引失败只记日志，不影响笔记
+    for (let k = 0; k < run.items.length; k++) {
+      const item: CaptureSetItemResult = run.items[k];
+      if (item.success && item.noteId !== undefined && item.noteId.length > 0) {
+        await this.indexForSearch(localPaths[item.index], item.noteId);
+      }
+    }
+
+    // 4) 把 dispatchSet 的结果按原始下标合回（含准备失败项）
+    const merged: CaptureSetItemResult[] = [];
+    for (let i = 0; i < imageUris.length; i++) {
+      merged.push({
+        index: i,
+        kind: 'image',
+        success: false,
+        cancelled: false,
+        errorMessage: 'not processed',
+        durationMs: 0,
+      });
+    }
+    for (let k = 0; k < run.items.length; k++) {
+      merged[indexOfItem[run.items[k].index]] = run.items[k];
+    }
+    for (let k = 0; k < preFailed.length; k++) {
+      merged[preFailed[k].index] = preFailed[k];
+    }
+
+    const failed: number = run.failed + preFailed.length;
+    const result: CaptureSetResult = {
+      total: imageUris.length,
+      done: run.done,
+      failed: failed,
+      cancelled: run.cancelled,
+      items: merged,
+      durationMs: Date.now() - startedAt,
+    };
+    log.info('captureSet done, total=' + result.total.toString() + ', done=' + result.done.toString()
+      + ', failed=' + failed.toString() + ', cancelled=' + result.cancelled.toString());
+    captureLog.info('CAPTURE_SET_TIMING seq=' + seq.toString() + ' total=' + result.total.toString()
+      + ' done=' + result.done.toString() + ' failed=' + failed.toString()
+      + ' cancelled=' + result.cancelled.toString() + ' totalMs=' + result.durationMs.toString());
+    return result;
   }
 
   private static formatCaptureTiming(
