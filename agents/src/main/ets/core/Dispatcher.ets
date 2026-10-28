@@ -88,6 +88,13 @@ export interface DispatchOptions {
   onNodeTiming?: (step: string, elapsedMs: number) => void;
 }
 
+// spec 036 阶段 1：集合级整理的可选项。
+// DispatchOptions 定义在 agents，common 不能反向依赖 agents，所以这里承载 onItem；
+// 每完成一项就回调一次，UI 用它原地更新对话记录。
+export interface CaptureSetOptions extends DispatchOptions {
+  onItem?: (item: CaptureSetItemResult) => void;
+}
+
 interface GenerationCandidateEvaluation {
   result: NoteGenerationStandardResult;
   candidate: KnowledgeUnit;
@@ -141,7 +148,7 @@ export class Dispatcher {
   // 顺序执行 req.items，全部共享同一个 RunContext（预算与取消）；单项失败不打断整批；
   // 取消后未开始/未完成的项单独记 cancelled，不混进 failed。
   // 切题（一图多题）与跨图合并留给阶段 2/3，这一层只把「多张图 = 一次整理」立住。
-  async dispatchSet(req: CaptureSetRequest, options: DispatchOptions = {}): Promise<CaptureSetResult> {
+  async dispatchSet(req: CaptureSetRequest, options: CaptureSetOptions = {}): Promise<CaptureSetResult> {
     const startedAt: number = Date.now();
     const shared: RunContext = this.resolveRunContext(options);
     const items: CaptureSetItemResult[] = [];
@@ -154,7 +161,9 @@ export class Dispatcher {
       const itemStart: number = Date.now();
       if (stop || Dispatcher.isCancelled(options)) {
         cancelled += 1;
-        items.push(Dispatcher.skippedItem(i, payload));
+        const skipped: CaptureSetItemResult = Dispatcher.skippedItem(i, payload);
+        items.push(skipped);
+        if (options.onItem !== undefined) { options.onItem(skipped); }
         continue;
       }
       try {
@@ -169,7 +178,10 @@ export class Dispatcher {
           cancelled: false,
           durationMs: Date.now() - itemStart,
         };
-        if (result.data !== undefined) { item.noteId = result.data.id; }
+        if (result.data !== undefined) {
+          item.noteId = result.data.id;
+          item.title = result.data.title;
+        }
         if (result.classification !== undefined) { item.category = result.classification.type; }
         if (!result.success) {
           failed += 1;
@@ -179,22 +191,27 @@ export class Dispatcher {
           done += 1;
         }
         items.push(item);
+        if (options.onItem !== undefined) { options.onItem(item); }
       } catch (error) {
         if (Dispatcher.isCancelled(options)) {
           cancelled += 1;
-          items.push(Dispatcher.skippedItem(i, payload));
+          const skipped: CaptureSetItemResult = Dispatcher.skippedItem(i, payload);
+          items.push(skipped);
+          if (options.onItem !== undefined) { options.onItem(skipped); }
           stop = true;
           continue;
         }
         failed += 1;
-        items.push({
+        const failedItem: CaptureSetItemResult = {
           index: i,
           kind: payload.kind,
           success: false,
           errorMessage: (error as Error).message,
           cancelled: false,
           durationMs: Date.now() - itemStart,
-        });
+        };
+        items.push(failedItem);
+        if (options.onItem !== undefined) { options.onItem(failedItem); }
       }
     }
     const totalMs: number = Date.now() - startedAt;

@@ -124,8 +124,8 @@ export class AiService {
   // 与 capture() 的差别只有三处：准备 N 张图 → 走 dispatchSet（一个 set 一个 run，
   // 共享预算与取消）→ 返回逐项回执。单张时语义与 capture() 等价。
   // 切题与跨图合并不在这里（阶段 2/3），本方法只保证「N 张图是一次整理，不是 N 个任务」。
-  async captureSet(imageUris: string[], userText?: string,
-    token?: CancellationToken): Promise<CaptureSetResult> {
+  async captureSet(imageUris: string[], userText?: string, token?: CancellationToken,
+    onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
     const startedAt: number = Date.now();
     const seq: number = ++AiService.captureSeq;
     const context: common.UIAbilityContext = this.requireContext();
@@ -155,7 +155,11 @@ export class AiService {
       }
     }
 
-    // 2) 一次 set：公共入口 dispatchSet，持久化仍走注入的 dao
+    // 2) 一次 set：公共入口 dispatchSet，持久化仍走注入的 dao。
+    // 回调时序：准备失败的项不在 items 里，若边跑边透传，它们只能在整批结束后补发，
+    // 行序会与本图下标交错。于是全部准备成功时直接透传（逐项真进度）；一旦有准备失败项，
+    // 就收集到 merged 后按原始 index 统一回调一次，保证 ①②③ 的编号与顺序一致。
+    const canStreamItems: boolean = preFailed.length === 0;
     const dao: NoteDaoInterface = await this.buildNoteDao();
     const dispatcher: Dispatcher = new Dispatcher();
     const run: CaptureSetResult = await dispatcher.dispatchSet({
@@ -165,17 +169,14 @@ export class AiService {
       persist: true,
       dao: dao,
       cancellationToken: token,
+      onItem: (item: CaptureSetItemResult): void => {
+        if (canStreamItems && onItem !== undefined) {
+          onItem(item);
+        }
+      },
     });
 
-    // 3) 落库成功的项再建文搜图索引：索引失败只记日志，不影响笔记
-    for (let k = 0; k < run.items.length; k++) {
-      const item: CaptureSetItemResult = run.items[k];
-      if (item.success && item.noteId !== undefined && item.noteId.length > 0) {
-        await this.indexForSearch(localPaths[item.index], item.noteId);
-      }
-    }
-
-    // 4) 把 dispatchSet 的结果按原始下标合回（含准备失败项）
+    // 3) 把 dispatchSet 的结果按原始下标合回（含准备失败项）
     const merged: CaptureSetItemResult[] = [];
     for (let i = 0; i < imageUris.length; i++) {
       merged.push({
@@ -192,6 +193,21 @@ export class AiService {
     }
     for (let k = 0; k < preFailed.length; k++) {
       merged[preFailed[k].index] = preFailed[k];
+    }
+
+    // 4) 有准备失败项时，按原始 index 逐项补发一次；无准备失败项时上面已逐项透传
+    if (!canStreamItems && onItem !== undefined) {
+      for (let i = 0; i < merged.length; i++) {
+        onItem(merged[i]);
+      }
+    }
+
+    // 5) 落库成功的项再建文搜图索引：索引失败只记日志，不影响笔记
+    for (let k = 0; k < run.items.length; k++) {
+      const item: CaptureSetItemResult = run.items[k];
+      if (item.success && item.noteId !== undefined && item.noteId.length > 0) {
+        await this.indexForSearch(localPaths[item.index], item.noteId);
+      }
     }
 
     const failed: number = run.failed + preFailed.length;

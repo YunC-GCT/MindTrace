@@ -4,6 +4,8 @@
 //       2) 单项失败不打断整批（失败隔离）
 //       3) 取消后剩余项记 cancelled，不混进 failed，也不抛给调用方
 //       4) UI 入口不再自己 for 循环 capture（那正是要修掉的形态）
+//       5) onItem 每完成一项回调一次，且在 dispatchSet 返回前触发
+//       6) 入口守卫：批量胶囊删除，图片入口固定 1..20 张并写 origin=image 记录
 // Why: 采集入口原来在 AgentFloatWindow 里逐张调用 AiService.capture，
 //      同一批图被当成 N 个互不相干的任务：没有共享预算、没有统一取消、
 //      失败只留一个计数。dispatchSet 把「多张图 = 一次整理」立住，
@@ -11,12 +13,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createRuntime, memoryStorage } from './knowledge-dispatch-runtime.mjs';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(HERE, '..', '..', '..');
+// 测试文件在 scripts/arkts-lint/tests/：3 个 .. 到仓库根（文件段会先被 URL 解析掉）。
+const REPO_ROOT = new URL('../../../', import.meta.url);
+const readRepoFile = (path) => readFileSync(new URL(path, REPO_ROOT), 'utf8');
 
 const CLASSIFICATION = {
   category: '概念',
@@ -116,10 +117,51 @@ test('dispatchSet: 取消后剩余项记 cancelled，不混进 failed', async ()
 });
 
 test('采集入口：UI 不再自己 for 循环 capture，统一走 captureSet', () => {
-  const source = readFileSync(
-    join(REPO_ROOT, 'entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets'),
-    'utf8',
-  );
-  assert.ok(source.includes('service.captureSet('), 'onBatchAction 必须调用 captureSet');
+  const source = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
+  assert.ok(source.includes('service.captureSet('), '整理入口必须调用 captureSet');
   assert.ok(!source.includes('service.capture('), '不得再逐张调用 capture（会退化成 N 个独立任务）');
+});
+
+test('dispatchSet: onItem 每完成一项回调一次，且在返回前触发', async () => {
+  const runtime = createRuntime(alternating());
+  const storage = memoryStorage();
+  const seen = [];
+  let returned = false;
+  const items = [
+    TEXT_ITEMS[0],
+    TEXT_ITEMS[1],
+    { kind: 'text', text: '第三题：极限的定义。' },
+  ];
+  const result = await runtime.dispatcher.dispatchSet(
+    { source: 'app', items },
+    {
+      persist: true,
+      dao: storage.dao,
+      onItem: (item) => {
+        assert.equal(returned, false, 'onItem 必须在 dispatchSet 返回之前触发');
+        seen.push({ index: item.index, success: item.success });
+      },
+    },
+  );
+  returned = true;
+
+  assert.equal(result.done, 3);
+  assert.equal(seen.length, 3, '3 项都必须各回调一次');
+  assert.deepEqual(seen.map((item) => item.index), [0, 1, 2], 'index 必须依次为 0/1/2');
+  assert.ok(seen.every((item) => item.success === true), '3 项都应成功');
+});
+
+test('入口守卫：批量入口合并进图片图标（spec 036）', () => {
+  const plus = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/PlusActionSheet.ets');
+  assert.equal(plus.includes('BatchAction'), false, '+ 弹窗不得再出现 BatchAction 胶囊');
+
+  const floatWindow = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
+  assert.equal(floatWindow.includes('onBatchAction'), false, '不得保留 onBatchAction');
+  assert.equal(floatWindow.includes('onAlbumBatchAction'), false, '不得保留 onAlbumBatchAction');
+  assert.ok(floatWindow.includes("origin: 'image'"), '整理记录必须写成 origin=image 的 ai 消息');
+  assert.ok(
+    // getContext(this) 自带括号，不能用 [^)]* 这种「不含右括号」的朴素匹配
+    /AlbumPickerLauncher\.pick\([\s\S]{0,160}?,\s*20\)/.test(floatWindow),
+    '图片入口必须固定最多 20 张',
+  );
 });

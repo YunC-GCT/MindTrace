@@ -139,6 +139,8 @@ export interface DispatchResult {
 }
 
 // ==================== 集合级整理（spec 036 阶段 1）====================
+// 集合级选项 CaptureSetOptions 定义在 agents/core/Dispatcher.ets：它 extends 那里的
+// DispatchOptions，而 common 不能反向依赖 agents，所以不放在本文件。
 // 一次「整理」= 用户选中的 1..N 张图。集合级只保证「一个 set 一个 run」：
 // 顺序执行每一项、共享同一个 RunContext（预算 + 取消），逐项隔离失败、逐项回执。
 // 切题（一图多题）与跨图合并不在本切片，见 docs/specs/036-* 阶段 2/3。
@@ -154,6 +156,8 @@ export interface CaptureSetItemResult {
   success: boolean;
   noteId?: string;
   category?: string;
+  // 笔记标题(取 DispatchResult.data.title；准备失败/无 data 时留空)
+  title?: string;
   errorMessage?: string;
   errorCode?: string;
   // 该组是否因取消而未执行/未完成；取消不是失败，回执里单独计数

@@ -59,8 +59,12 @@ import { SessionsPanelController } from '../../services/SessionsPanelController'
 import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
-import { CaptureSetResult } from 'common';
-import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
+import { CaptureSetItemResult, CaptureSetResult } from 'common';
+import {
+  ConversationRunRef,
+  chatMessageIdPolicy,
+  conversationRunIdPolicy,
+} from '../../services/ConversationIdentity';
 import { ConversationMessageEvent } from '../../workflows/conversation/ConversationTypes';
 import { AiService } from '../../services/AiService';
 import { DraftRecoveryService } from '../../services/DraftRecoveryService';
@@ -124,7 +128,6 @@ export struct AgentFloatWindow {
   @State sheetOffset: number = FLOAT_SHEET_OPEN_OFFSET;
   @State panelVisible: boolean = false;
   @State generatedDraft: NoteDraftReadyEvent | null = null;
-  @State batchUris: string[] = [];
   @State sourceOverlayVisible: boolean = false;
   @State sourceOverlayLoading: boolean = false;
   @State sourceOverlayCitation: NoteEvidenceCitation | null = null;
@@ -936,57 +939,197 @@ export struct AgentFloatWindow {
     this.sm.flush(this.sessions).catch((): void => {});
   };
 
-  // + 弹窗 → 相册长按: 批量选图（spec 031 P2，最多 20 张）
-  private onAlbumBatchAction = (): void => {
+  // + 弹窗 → 相册: 1..20 张一次选完。点一下就是这个交互，长按同行为，
+  // 不再有单独的批量入口（spec 036）。只有选图本身失败才 toast。
+  private onAlbumAction = (): void => {
     AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext, 20)
       .then((uris: string[]): void => {
-        if (uris.length === 0) {
-          return;
-        }
-        this.batchUris = uris;
-        this.showToast('已选择 ' + uris.length + ' 张，待整理');
-        console.info('[BatchCapture] picked=' + uris.length);
+        this.runCaptureSet(uris).catch((error: Error): void => {
+          console.warn('[CaptureSet] code=RUN_CAPTURE_SET_FAILED; ' + error.message);
+        });
       })
       .catch((e: Error): void => {
-        this.showToast('选图失败：' + e.message);
+        this.showToast('相册启动失败: ' + e.message);
       });
   };
 
-  // 一次整理：1 张或多张都走同一个 set（spec 036 阶段 1）。
-  // 不再是一张图一个独立任务循环，而是一个 run 顺序处理全部图片并逐项回执。
-  private onBatchAction = (): void => {
+  // 一次整理：相册多选与拍照单张都走同一条 set 链路。
+  // 先在当前会话插入一条 ai 记录消息，onItem 每回调一项就原地补一行；
+  // 结束后把收尾句追加到 content 末尾，streaming=false + outcome，然后落盘。
+  private async runCaptureSet(uris: string[]): Promise<void> {
+    if (uris.length === 0) {
+      return;
+    }
     const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
-    AlbumPickerLauncher.pick(ctx, 20)
-      .then(async (uris: string[]): Promise<void> => {
-        if (uris.length === 0) {
-          return;
-        }
-        const service: AiService = new AiService(ctx);
-        this.showToast(uris.length === 1 ? '正在整理' : '正在整理 ' + uris.length.toString() + ' 张图片');
-        const result: CaptureSetResult = await service.captureSet(uris);
-        // 取消不算失败，但回执只有 done/failed 两个格子，这里并入 failed 以便用户看到"没成"
-        const failed: number = result.failed + result.cancelled;
-        const receipt: CaptureReceipt = {
-          done: result.done,
-          failed: failed,
-          total: result.total,
-          at: Date.now(),
-          source: 'batch',
+    const sessionId: string = this.ensureActiveSession();
+    const messageId: number = chatMessageIdPolicy.create();
+    // ChatHistoryPersistence 对非 legacy 的 ai 消息要求 runId；整理任务没有 ConversationRunRef，
+    // 这里单独生成一个只用于该记录消息持久化的 runId。
+    const runId: string = conversationRunIdPolicy.create();
+    let content: string = '正在整理 ' + uris.length.toString() + ' 张图片…';
+    const created: ChatMsg = {
+      id: messageId,
+      role: 'ai',
+      content: content,
+      ts: Date.now(),
+      streaming: true,
+      reasoning: '',
+      origin: 'image',
+      runId: runId,
+    };
+    if (!this.appendImageRecordMessage(created)) {
+      console.warn('[CaptureSet] code=RECORD_SESSION_MISSING; sessionId=' + sessionId);
+      return;
+    }
+    const onItem = (item: CaptureSetItemResult): void => {
+      content = content + '\n' + this.formatCaptureSetItem(item);
+      this.updateMessageById(messageId, (message: ChatMsg): ChatMsg => {
+        const next: ChatMsg = {
+          id: message.id,
+          role: message.role,
+          content: content,
+          ts: message.ts,
+          streaming: true,
+          reasoning: message.reasoning ?? '',
+          origin: 'image',
+          runId: runId,
         };
-        try {
-          await CaptureReceiptStore.save(ctx, receipt);
-        } catch (error) {
-          console.warn('[CaptureSet] receipt save failed: ' + (error as Error).message);
-        }
-        this.batchUris = [];
-        this.showToast('整理完成：成功 ' + result.done.toString() + ' 条，失败 ' + failed.toString() + ' 条');
-        console.info('[CaptureSet] total=' + result.total.toString() + ' done=' + result.done.toString()
-          + ' failed=' + result.failed.toString() + ' cancelled=' + result.cancelled.toString());
-      })
-      .catch((e: Error): void => {
-        this.showToast('整理失败：' + e.message);
+        return next;
       });
-  };
+    };
+    const service: AiService = new AiService(ctx);
+    try {
+      const result: CaptureSetResult = await service.captureSet(uris, undefined, undefined, onItem);
+      const receipt: CaptureReceipt = {
+        done: result.done,
+        // 取消不算失败，但回执只有 done/failed 两个格子，这里并入 failed 以便用户看到"没成"
+        failed: result.failed + result.cancelled,
+        total: result.total,
+        at: Date.now(),
+        source: 'album',
+      };
+      try {
+        await CaptureReceiptStore.save(ctx, receipt);
+      } catch (error) {
+        console.warn('[CaptureSet] receipt save failed: ' + (error as Error).message);
+      }
+      const outcome: ChatMessageOutcome = result.cancelled > 0
+        ? 'cancelled'
+        : (result.failed > 0 ? 'failed' : 'completed');
+      this.finishCaptureRecord(
+        messageId,
+        content + '\n' + this.captureSetSummary(result),
+        outcome,
+        runId,
+      );
+      console.info('[CaptureSet] total=' + result.total.toString() + ' done=' + result.done.toString()
+        + ' failed=' + result.failed.toString() + ' cancelled=' + result.cancelled.toString());
+    } catch (error) {
+      const detail: string = error instanceof Error ? error.message : String(error);
+      console.warn('[CaptureSet] code=CAPTURE_SET_FAILED; ' + detail);
+      this.finishCaptureRecord(messageId, content + '\n整理失败：' + detail, 'failed', runId);
+    }
+    this.sm.flush(this.sessions).catch((error: Error): void => {
+      console.warn('[CaptureSet] conversation flush failed: ' + error.message);
+    });
+  }
+
+  // 追加记录消息：只改 activeSid 对应的 session，再按 updateMessageById 的写法回写 sessions/messages。
+  private appendImageRecordMessage(msg: ChatMsg): boolean {
+    let appended: boolean = false;
+    const next: ChatSession[] = [];
+    for (const session of this.sessions) {
+      if (session.id === this.activeSid) {
+        const messages: ChatMsg[] = [];
+        for (const message of session.messages) {
+          messages.push(message);
+        }
+        messages.push(msg);
+        next.push({ id: session.id, name: session.name, messages: messages });
+        appended = true;
+      } else {
+        next.push({ id: session.id, name: session.name, messages: session.messages });
+      }
+    }
+    if (!appended) {
+      return false;
+    }
+    this.sessions = next;
+    const active: ChatSession | undefined = next.find(
+      (session: ChatSession): boolean => session.id === this.activeSid,
+    );
+    if (active !== undefined) {
+      this.messages = active.messages;
+    }
+    return true;
+  }
+
+  // 记录行：序号取 item.index + 1，不取回调到达顺序。
+  private formatCaptureSetItem(item: CaptureSetItemResult): string {
+    const position: number = item.index + 1;
+    let line: string = this.captureSetOrdinal(position) + ' ';
+    const category: string = item.category ?? '';
+    if (category.length > 0) {
+      line += category;
+    } else {
+      line += '第 ' + position.toString() + ' 张';
+    }
+    const title: string = item.title ?? '';
+    if (title.length > 0) {
+      line += ' · ' + title;
+    }
+    if (item.cancelled) {
+      return line + ' ⊘ 已取消';
+    }
+    if (!item.success) {
+      const reason: string = item.errorMessage !== undefined && item.errorMessage.length > 0
+        ? item.errorMessage
+        : '未知原因';
+      return line + ' ✗ ' + reason;
+    }
+    return line + ' ✓';
+  }
+
+  private captureSetOrdinal(position: number): string {
+    const circled: string[] = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    if (position >= 1 && position <= circled.length) {
+      return circled[position - 1];
+    }
+    return '(' + position.toString() + ')';
+  }
+
+  private captureSetSummary(result: CaptureSetResult): string {
+    if (result.cancelled > 0) {
+      return '整理已取消：完成 ' + result.done.toString() + '/' + result.total.toString() + ' 张';
+    }
+    if (result.failed > 0) {
+      return '整理完成：' + result.total.toString() + ' 张图 → ' + result.done.toString()
+        + ' 条笔记，' + result.failed.toString() + ' 张失败';
+    }
+    return '整理完成：' + result.total.toString() + ' 张图 → ' + result.done.toString() + ' 条笔记';
+  }
+
+  private finishCaptureRecord(
+    messageId: number,
+    content: string,
+    outcome: ChatMessageOutcome,
+    runId: string,
+  ): void {
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg => {
+      const next: ChatMsg = {
+        id: message.id,
+        role: message.role,
+        content: content,
+        ts: message.ts,
+        streaming: false,
+        reasoning: message.reasoning ?? '',
+        origin: 'image',
+        runId: runId,
+        outcome: outcome,
+      };
+      return next;
+    });
+  }
 
   // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
   private showToast(message: string): void {
@@ -1000,7 +1143,8 @@ export struct AgentFloatWindow {
     }
   }
 
-  // + 弹窗 → 相机: 拉起 HarmonyOS 系统相机选择器, 拍完写入 VM + Toast
+  // + 弹窗 → 相机: 保持原来的「拍照 → 预览 → 可带问题发送」。
+  // 相册入口才改成多选即整理（spec 036）；相机如果也吞掉预览，用户就再也没法对着照片问一句。
   private onCameraAction = (): void => {
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
@@ -1015,28 +1159,6 @@ export struct AgentFloatWindow {
       })
       .catch((e: Error): void => {
         this.showToast('相机启动失败: ' + e.message);
-      });
-  };
-
-  // + 弹窗 → 相册: 拉起 HarmonyOS 系统相册选择器, 选完写入 VM + Toast
-  private onAlbumAction = (): void => {
-    this.sync();
-    this.sm.flush(this.sessions).catch((): void => {});
-    const originSessionId: string = this.ensureActiveSession();
-    AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext)
-      .then((uris: string[]): void => {
-        if (uris.length > 0) {
-          if (!this.inputVm.setImagePreviewForSession(originSessionId, uris[0])) {
-            console.warn('[SessionUiState] code=LATE_PICKER_TARGET_DELETED; sessionId=' + originSessionId);
-            return;
-          }
-          this.showToast('已选图片');
-        } else {
-          this.showToast('未选择图片');
-        }
-      })
-      .catch((e: Error): void => {
-        this.showToast('相册启动失败: ' + e.message);
       });
   };
 
@@ -1175,8 +1297,6 @@ export struct AgentFloatWindow {
             modelName: ModelSelector.currentLabel(),
             onCamera: this.onCameraAction,
             onAlbum: this.onAlbumAction,
-            onAlbumLongPress: this.onAlbumBatchAction,
-            onBatch: this.onBatchAction,
             onStop: (): void => { this.stopStreaming(); },
           });
         }
