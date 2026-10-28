@@ -35,6 +35,7 @@ an ADR (`docs/adr/`) and follows the same template.
 | **进程边界** | [`033-process-boundaries.md`](./033-process-boundaries.md) | (spec-driven，依据 2026-10-24 事故) | **proposed** (2026-10-24 — 进程 × 模块可见性矩阵、受限 Kit 清单、barrel 传染检查) |
 | **#230 文搜图线程隔离** | [`034-image-search-isolation.md`](./034-image-search-isolation.md) | (spec-driven，依据 2026-10-25 真机阻塞实测) | **implemented** (2026-10-25 — Worker 常驻 + 5s 降级，真机两轮 PASS，见 §8) |
 | **v1 收尾：回执 + 合规** | [`035-v1-closeout-receipt-and-compliance.md`](./035-v1-closeout-receipt-and-compliance.md) | (spec-driven，依据 phase-tracker P4 回执 / P5 合规缺口) | **proposed** (2026-10-25 — 回执落盘 + 最小 Markdown 导出与 AI 标识) |
+| **多图汇总整理** | [`036-multi-image-single-pass-consolidation.md`](./036-multi-image-single-pass-consolidation.md) | (spec-driven，依据 P2 多选入口 + 一图多题 / 多图多题场景) | **draft** (2026-10-28 — 一个 set 一次整理；切题 / 跨页合并 / 确认闸门；D1–D4 待拍板) |
 
 ## Execution bundles
 
