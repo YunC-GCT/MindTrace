@@ -2,10 +2,12 @@
 //  entryability/EntryAbility.ets — 应用入口
 //  ----------------------------------------------------------------------------
 //  路径: entry/src/main/ets/entryability/EntryAbility.ets
-//  职责: 解析默认关闭的 NoteDetail benchmark + ArkWeb 启动期预热 + 初始化服务 + 加载首页。
+//  职责: 解析默认关闭的 NoteDetail benchmark + ArkWeb 启动期预热 + 初始化服务 + 加载首页 +
+//       消费小艺 AgentUiCard 回传的 mtAction（pick_from_card / camera_from_card）。
 //  依赖: NoteDetailBenchmarkLaunch, WebKeepAliveExperiment, ArkWebWarmupService,
 //       LlmConfig, OcrConfig, OcrRecognizerRegistry, CoreVisionOcrRecognizer,
-//       DatabaseHelper, Kit facades, ChatFilesDirSeam, ChatSessionManager。
+//       DatabaseHelper, Kit facades, ChatFilesDirSeam, ChatSessionManager,
+//       AlbumPickerLauncher, CameraKitLauncher, AgentIngestService。
 //  沉浸式状态栏: app 内容延伸到 status bar 下方, status bar 背景透明。
 //  视觉效果: 系统时间/电量/信号/wifi 浮在 app 内容上, 与 app 无缝衔接。
 //  ============================================================================
@@ -28,8 +30,15 @@ import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
 import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
 import { A2AInboxIngestService } from '../services/A2AInboxIngestService';
 import { AgentIngestService } from '../services/AgentIngestService';
-import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_APP_SHARE } from '../services/AgentIngestRequest';
+import {
+  AgentIngestRequest,
+  buildIngestRequest,
+  INGEST_SOURCE_APP_PICKER,
+  INGEST_SOURCE_APP_SHARE,
+} from '../services/AgentIngestRequest';
 import { AgentImagePart } from '../services/AgentImageParts';
+import { AlbumPickerLauncher } from '../services/AlbumPickerLauncher';
+import { CameraKitLauncher } from '../services/CameraKitLauncher';
 import { KnowledgeUnitUiEffects } from '../services/KnowledgeUnitUiEffects';
 import { CardUiEffectProvider } from '../services/KnowledgeUnitPostCommitEffects';
 import {
@@ -41,8 +50,15 @@ const DOMAIN = 0x0000;
 /** 系统分享图片进来的两种 action（相册/文件管理器 → 分享 → MindTrace） */
 const SHARE_ACTION_SEND_DATA: string = 'ohos.want.action.sendData';
 const SHARE_ACTION_VIEW_DATA: string = 'ohos.want.action.viewData';
+/** AgentUiCard 回传的两个选图意图（与 pages/AgentUiCard.ets 约定一致） */
+const CARD_ACTION_PICK: string = 'pick_from_card';
+const CARD_ACTION_CAMERA: string = 'camera_from_card';
 
 export default class EntryAbility extends UIAbility {
+  /** 卡片带回、等待页面恢复后消费的意图；空串表示没有 */
+  private pendingCardAction: string = '';
+  /** 窗口内容是否已加载：Picker 必须在 UI 起来后再拉 */
+  private windowReady: boolean = false;
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     // 卡片刷新这类 UI 副作用只能在主进程加载：注册一次，共享写路径按注册表取用
     KnowledgeUnitUiEffects.register(new CardUiEffectProvider());
@@ -94,6 +110,7 @@ export default class EntryAbility extends UIAbility {
     // ticket-0.3 (#121): 应用级 filesDir 缝 — 组合根解析一次,发布纯字符串 seam(无 UI 上下文)
     const chatFilesDirSeam = ChatFilesDirSeam.fromApplicationContext(this.context.getApplicationContext());
     this.ingestSharedImage(want);
+    this.readCardAction(want);
     publishChatFilesDirSeam(chatFilesDirSeam);
     if (chatFilesDirSeam.state === 'resolved') {
       hilog.info(DOMAIN, 'testTag', '%{public}s', chatFilesDirSeam.diagnostic);
@@ -103,9 +120,85 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 
-  /** 应用已在前台时又被分享拉起 */
+  /** 应用已在前台时又被分享 / 卡片拉起 */
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     this.ingestSharedImage(want);
+    this.readCardAction(want);
+    this.consumeCardAction();
+  }
+
+  /**
+   * 读 AgentUiCard 回传的 mtAction：只认 pick_from_card / camera_from_card。
+   * 真机验收看这一行：CARD_ACTION received action=...
+   */
+  private readCardAction(want: Want): void {
+    const action: Object | undefined = want.parameters?.['mtAction'];
+    if (action === undefined) {
+      return;
+    }
+    const value: string = action.toString();
+    if (value !== CARD_ACTION_PICK && value !== CARD_ACTION_CAMERA) {
+      hilog.warn(DOMAIN, 'testTag', 'CARD_ACTION ignored action=%{public}s', value);
+      return;
+    }
+    this.pendingCardAction = value;
+    hilog.info(DOMAIN, 'testTag', 'CARD_ACTION received action=%{public}s', value);
+  }
+
+  /**
+   * 页面恢复后再消费卡片意图：扩展进程不能拉 Picker，这里用 UIAbilityContext 拉系统 Picker，
+   * 选中的图直接复用分享通道的同一条整理链路（AgentIngestService）。
+   * pending 在启动前清空，避免回到前台时重复弹 Picker。
+   */
+  private consumeCardAction(): void {
+    const action: string = this.pendingCardAction;
+    if (!this.windowReady || action.length === 0) {
+      return;
+    }
+    this.pendingCardAction = '';
+    if (action === CARD_ACTION_CAMERA) {
+      hilog.info(DOMAIN, 'testTag', 'CARD_ACTION camera start');
+      CameraKitLauncher.capture(this.context)
+        .then((uri: string): void => {
+          this.ingestImage(uri, INGEST_SOURCE_APP_PICKER);
+        })
+        .catch((e: Error): void => {
+          hilog.warn(DOMAIN, 'testTag', 'CARD_ACTION camera cancelled/failed: %{public}s', e.message);
+        });
+      return;
+    }
+    hilog.info(DOMAIN, 'testTag', 'CARD_ACTION album start');
+    AlbumPickerLauncher.pick(this.context, 1)
+      .then((uris: string[]): void => {
+        if (uris.length === 0) {
+          hilog.info(DOMAIN, 'testTag', 'CARD_ACTION album cancelled');
+          return;
+        }
+        this.ingestImage(uris[0], INGEST_SOURCE_APP_PICKER);
+      })
+      .catch((e: Error): void => {
+        hilog.warn(DOMAIN, 'testTag', 'CARD_ACTION album cancelled/failed: %{public}s', e.message);
+      });
+  }
+
+  /**
+   * 单张图片的统一整理入口：系统分享与卡片选图共用。
+   * 与 A2A 图片 part 走同一个 AgentIngestService 端口（OCR → Dispatcher → 写路径）。
+   */
+  private ingestImage(uri: string, source: string): void {
+    if (uri.length === 0) {
+      return;
+    }
+    const image: AgentImagePart = { kind: 'uri', value: uri };
+    const request: AgentIngestRequest = buildIngestRequest(source, '', [image]);
+    AgentIngestService.ingest(this.context, request)
+      .then((unit: KnowledgeUnit): void => {
+        hilog.info(DOMAIN, 'testTag', '%{public}s done subject=%{public}s title=%{public}s',
+          source, unit.subject, unit.title);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, 'testTag', '%{public}s failed %{public}s', source, e.message);
+      });
   }
 
   /**
@@ -122,16 +215,7 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     hilog.info(DOMAIN, 'testTag', 'SHARE_INGEST start action=%{public}s uri=%{public}s', action, uri);
-    const image: AgentImagePart = { kind: 'uri', value: uri };
-    const request: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_APP_SHARE, '', [image]);
-    AgentIngestService.ingest(this.context, request)
-      .then((unit: KnowledgeUnit): void => {
-        hilog.info(DOMAIN, 'testTag', 'SHARE_INGEST done subject=%{public}s title=%{public}s',
-          unit.subject, unit.title);
-      })
-      .catch((e: Error): void => {
-        hilog.error(DOMAIN, 'testTag', 'SHARE_INGEST failed %{public}s', e.message);
-      });
+    this.ingestImage(uri, INGEST_SOURCE_APP_SHARE);
   }
 
   /**
@@ -213,6 +297,9 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      // 页面已就绪：这时候才有前台 UI 上下文去拉系统 Picker
+      this.windowReady = true;
+      this.consumeCardAction();
       // 自检依赖窗口/OCR 就绪，必须等内容加载完成再跑（onCreate 阶段跑会卡在 Dispatcher）
       setTimeout((): void => {
         this.runE2eIfRequested().catch((e: Error) => {
