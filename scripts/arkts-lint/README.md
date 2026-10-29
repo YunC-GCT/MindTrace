@@ -1,6 +1,6 @@
 # scripts/arkts-lint/ — ArkTS 1.1 strict lint (AST-based)
 
-> **状态**: 🟢 Day 3 完成 (2026-09-01) — **34 规则, 63/63 tests pass, exit 0, 0 errors / 253 warnings**
+> **状态 (2026-10-27)**: **34 规则**；`npm test` 现在直接跑全量 **768 项 / 768 通过**（约 40 s），CI 与本地同一个命令，不再有「不在 CI 里的历史断言」。下面的 Day 3 表是 2026-09-01 快照，保留作历史对比。
 > **目标**: 替代 v1 (regex), 消除 ~80% 误报, 补齐 40+ 规则
 > **关联**: Phase 4 ticket #15
 

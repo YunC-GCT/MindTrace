@@ -11,6 +11,7 @@
  * 第一阶段保留 facade；生成业务是否脱离外部 Interface 留待后续阶段裁决。
  */
 import type {
+  CaptureProvenance,
   ClassificationResult,
   KnowledgeUnit,
   LlmCaller,
@@ -50,16 +51,18 @@ export class KnowledgeModel {
     subject?: string,
     chapter: string = '',
     source: string = 'camera_capture',
+    provenance?: CaptureProvenance,
   ): Promise<KnowledgeUnit> {
-    return await this.captureStructurer.structure(ocrText, type, subject, chapter, source);
+    return await this.captureStructurer.structure(ocrText, type, subject, chapter, source, provenance);
   }
 
   async structureWithClassification(
     ocrText: string,
     classification: ClassificationResult,
     source: string = 'camera_capture',
+    provenance?: CaptureProvenance,
   ): Promise<KnowledgeUnit> {
-    return await this.captureStructurer.structureWithClassification(ocrText, classification, source);
+    return await this.captureStructurer.structureWithClassification(ocrText, classification, source, provenance);
   }
 
   async structureLightDraft(request: NoteGenerationRequest): Promise<NoteDraftDocument> {
@@ -89,7 +92,11 @@ export class KnowledgeModel {
     return await this.incrementalPatchComposer.compose(request, plan, sections, sources);
   }
 
-  draftToKnowledgeUnit(document: NoteDraftDocument, source: string): KnowledgeUnit {
-    return this.captureStructurer.draftToKnowledgeUnit(document, source);
+  draftToKnowledgeUnit(
+    document: NoteDraftDocument,
+    source: string,
+    provenance?: CaptureProvenance,
+  ): KnowledgeUnit {
+    return this.captureStructurer.draftToKnowledgeUnit(document, source, provenance);
   }
 }

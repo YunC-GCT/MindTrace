@@ -23,6 +23,18 @@ This file is **project-specific** (MindTrace). For universal agent / software ar
 The single source-of-truth pipeline the user triggers when capturing a math note. An Order flows Capture → Classify → Structure → TruthCheck → Persist; with `persist: false` it runs analysis-only and stops before Persist.
 _Avoid_: pipeline, job, request
 
+**On-device capability slot (端侧能力位)**:
+The reserved place where an on-device model would run, satisfiable only by a real model artifact. It is not a default path: API 26 exposes no system text-generation API, so in v1 the slot reports itself unavailable and every reply comes from the user-configured cloud model.
+_Avoid_: on-device default, local model (when no artifact ships)
+
+**Degraded reply (已降级)**:
+A reply produced by a fallback provider because the requested one was unavailable, always labelled with its reason in the answer text. Never silent: if the label is absent, the reply is not degraded.
+_Avoid_: fallback answer, silent switch
+
+**Single-frame task snapshot (单帧快照)**:
+The only A2A response shape that 小艺 renders in full: one `result.task` carrying status and all artifacts at once. Incremental `artifactUpdate` frames make the client paint only the opening characters.
+_Avoid_: streaming reply, incremental artifact
+
 **KnowledgeUnit**:
 The canonical structured representation of a note. Carries subject, chapter, difficulty (1–4), type, content, embedding, prerequisites, related links, review state.
 _Avoid_: Card, NoteData, Unit (in user-facing copy), note (in code surface)

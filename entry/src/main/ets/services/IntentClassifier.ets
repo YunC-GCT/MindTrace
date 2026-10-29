@@ -11,6 +11,8 @@
 import { ChatMessage, JSON_ONLY_RULES, LATEX_GENERATION_RULES, LlmConfig, LlmGuard } from 'common';
 import type { LlmGuardValidationResult } from 'common';
 import type { CancellationToken } from 'common';
+import { buildMathStyleRules } from './ReplyStyleRules';
+import type { ReplyStyle } from './ReplyStyleRules';
 
 export type TextIntent = 'note_generation' | 'chat';
 export type ReplyKind = 'chat' | 'image_recognition';
@@ -264,15 +266,15 @@ export class IntentClassifier {
   }
 
   // ===== 聊天回复 system prompt (MM-MD-v1 子集 + JSON/LaTeX 约束 + 画像/记忆注入) =====
-  public buildReplyMessages(context: ReplyContext): ChatMessage[] {
-    return this.buildReplyMessagesByMode(context, true);
+  public buildReplyMessages(context: ReplyContext, style: ReplyStyle = 'markdown'): ChatMessage[] {
+    return this.buildReplyMessagesByMode(context, true, style);
   }
 
-  public buildStreamingReplyMessages(context: ReplyContext): ChatMessage[] {
-    return this.buildReplyMessagesByMode(context, false);
+  public buildStreamingReplyMessages(context: ReplyContext, style: ReplyStyle = 'markdown'): ChatMessage[] {
+    return this.buildReplyMessagesByMode(context, false, style);
   }
 
-  private buildReplyMessagesByMode(context: ReplyContext, strictJson: boolean): ChatMessage[] {
+  private buildReplyMessagesByMode(context: ReplyContext, strictJson: boolean, style: ReplyStyle): ChatMessage[] {
     if (context.replyKind === 'image_recognition') {
       return this.buildImageRecognitionMessages(context, strictJson);
     }
@@ -290,12 +292,8 @@ export class IntentClassifier {
         ? '10. 只输出严格 JSON 对象，格式固定为 {"answer":"..."}；不要输出 JSON 代码块、解释或额外文本。\n'
         : '10. 直接输出给用户看的回答正文，不要输出 {"answer":...} 包装、JSON 代码块、解释或额外外壳。\n')
       + '11. 回答正文采用 MM-MD-v1 子集：只使用标题、段落、单层有序/无序列表、加粗、行内代码和代码块；不要输出原始 HTML、Markdown 表格、任务列表、脚注或 Mermaid。\n'
-      + '12. 短公式必须融入文字并用单个美元符定界，例如 $a>0$；不要输出裸 \\mu、\\sigma、\\Phi、\\operatorname，也不要使用单独的 [ ] 充当公式边界。\n'
-      + '13. 重要公式、长公式和多行推导使用展示公式，起止 $$ 必须各占独立一行；不要写成 $$公式$$，不要在 $$ 内嵌套单个美元符，也不要用 Markdown 代码块包公式。\n'
-      + '14. 多行公式只能在独立的 $$ 块内使用 \\begin{aligned}...\\end{aligned}；不要使用 align 或 align* 环境。\n'
-      + '15. 列表项内只允许短行内公式；长公式和 $$ 定界符必须移到列表外，绝不能写成“1. $$”“2. 公式”“3. $$”。如需分步推导，用“第 1 步：”文字段落，再另起独立 $$ 块。\n\n'
-      + '16. 如果发现格式问题，请在内部修正后继续回答原问题；禁止输出“格式问题”“校验失败”“上一条回答存在问题”等格式诊断或元评论，只输出最终答案。\n'
-      + LATEX_GENERATION_RULES;
+      + buildMathStyleRules(style)
+      + (style === 'markdown' ? LATEX_GENERATION_RULES : '');
     if (strictJson) {
       systemPrompt += '\n' + JSON_ONLY_RULES;
     }

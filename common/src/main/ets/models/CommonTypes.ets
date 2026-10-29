@@ -65,6 +65,9 @@ export interface KnowledgeUnit {
   chapter: string; // 章节/知识点短语（独立于 source，如"微分中值定理"）
   difficulty: DifficultyLevel; // 难度
   source: string; // 来源标记(camera_capture/manual/file_import)
+  sourceImageId?: string; // 溯源: 来源图片 ID(无图片时为空)
+  sourceRegion?: string; // 溯源: 来源区域(图片坐标/裁剪区域序列化字符串)
+  ocrConfidence?: number; // 溯源: OCR 置信度(未知为 0)
   createdAt: number; // 创建时间戳
   updatedAt: number; // 更新时间戳
 

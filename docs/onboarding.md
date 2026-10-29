@@ -19,12 +19,12 @@ MindTrace is a **HarmonyOS math learning assistant** for the **鸿蒙高校创�
 
 - 5 modules (1 HAP + 4 HSP): `entry`, `common`, `agents`, `skill`, `cardservice`
 - AI pipeline: photo → OCR → classify → structure → persist
-- Custom ArkTS lint engine (34 rules, 70 tests)
+- Custom ArkTS lint engine (34 rules; test count grows — read the summary line)
 - Architecture: 4 layers + 5 modules (see `AGENTS.md`)
 
 ### Read in this order
 
-1. **Top of [`AGENTS.md`](../AGENTS.md)** — project context + 7 hard rules
+1. **Top of [`AGENTS.md`](../AGENTS.md)** — project context + 8 hard rules + AI coding contract
 2. **Top of [`CONTEXT.md`](../CONTEXT.md)** — project glossary (KnowledgeUnit, CaptureGraph, …)
 3. **Top of [`docs/index.md`](./index.md)** — full doc navigation
 4. The "改什么 → 读哪" pointer table in `AGENTS.md` — answers "where do I find X?"
@@ -37,9 +37,10 @@ pwd                                      # should be <本地仓库根>
 git status                               # should be clean
 node scripts/naming-lint/index.mjs       # should print "OK: 0 violations"
 node scripts/link-check/index.mjs         # should print "OK: 0 broken links"
+node scripts/doc-trace/index.mjs          # should print "OK: ... reachable"
 ```
 
-If all three pass, you're set up correctly.
+If all four pass, you're set up correctly.
 
 ---
 
@@ -49,6 +50,7 @@ If all three pass, you're set up correctly.
 
 - [`docs/adr/`](./adr/) — architecture decisions, **read in order**
 - [`docs/specs/`](./specs/) — implementation specs (TDD plans)
+- [`docs/style/arkts-ai-coding.md`](./style/arkts-ai-coding.md) — 60-second AI coding checklist (read before writing `.ets`)
 - [`docs/style/arkts-1.1.md`](./style/arkts-1.1.md) — 40+ ArkTS rules
 - [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./legacy/mindtrace/architecture/audit-full-2026-09-01.md) — 21 audit findings
 
@@ -62,11 +64,19 @@ If all three pass, you're set up correctly.
 ### 3. Run the tests (5 min)
 
 ```bash
-# 111 unit tests across the project
-node --test scripts/arkts-lint/tests/*.test.mjs          # 70 tests
-node --test scripts/naming-lint/tests/*.test.mjs         # 23 tests (8 helpers + 15 config)
-node --test scripts/link-check/tests/link-parser.test.mjs # 18 tests
+# full suites (counts move; read each summary line)
+node --test scripts/arkts-lint/tests/*.test.mjs          # 707 tests as of 2026-10-18 (15 known failures; curated `npm test` is 329/329)
+node --test scripts/naming-lint/tests/*.test.mjs        # 23 tests
+node --test scripts/link-check/tests/*.test.mjs         # 33 tests
 ```
+
+### 4. Before handing off code
+
+```bash
+node scripts/agent-gate/index.mjs    # changed set; --all for the whole repo
+```
+
+The gate runs `.ets` hygiene, `arkts-lint`, `naming-lint`, `link-check`, and `doc-trace`. Paste `RESULT: PASS` (or the first failure) into the handoff; see `AGENTS.md` §AI 编码执行契约.
 
 ---
 

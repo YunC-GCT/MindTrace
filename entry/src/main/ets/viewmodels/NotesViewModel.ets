@@ -16,6 +16,7 @@
 import { relationalStore } from '@kit.ArkData'
 import { DatabaseHelper, KnowledgeUnit, NoteItem } from "common"
 import { NoteDao } from "../database/NoteDao"
+import { GalaxyPreviewSeedService } from "../services/GalaxyPreviewSeedService"
 import {
   NotesSnapshot,
   SubjectGroup,
@@ -36,6 +37,7 @@ export class NotesViewModel {
     version: number = UiDataCacheService.currentNotesVersion(),
   ): Promise<boolean> {
     try {
+      await GalaxyPreviewSeedService.ensureSeeded(context)
       const snapshot: NotesSnapshot = await UiDataCacheService.loadNotesSnapshot(context, version)
       if (UiDataCacheService.currentNotesVersion() !== version) {
         return true

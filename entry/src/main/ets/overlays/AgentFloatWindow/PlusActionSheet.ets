@@ -31,6 +31,7 @@ import { PlusButton } from './PlusButton';
 import { CameraAction } from './CameraAction';
 import { AlbumAction } from './AlbumAction';
 import { FileAction } from './FileAction';
+import { BatchAction } from './BatchAction';
 
 interface PopupStateEvent {
   isVisible: boolean;
@@ -42,6 +43,8 @@ export struct PlusActionSheet {
 
   onCamera?: () => void = (): void => {};
   onAlbum?: () => void = (): void => {};
+  onAlbumLongPress?: () => void = (): void => {};
+  onBatch?: () => void = (): void => {};
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
@@ -79,10 +82,19 @@ export struct PlusActionSheet {
         },
       })
       AlbumAction({
+          onLongPress: this.onAlbumLongPress,
         onTap: (): void => {
           this.showPopup = false;
           if (this.onAlbum) {
             this.onAlbum();
+          }
+        },
+      })
+      BatchAction({
+        onTap: (): void => {
+          this.showPopup = false;
+          if (this.onBatch) {
+            this.onBatch();
           }
         },
       })

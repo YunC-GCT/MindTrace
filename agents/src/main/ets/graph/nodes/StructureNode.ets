@@ -3,7 +3,15 @@
 import { AgentState, CaptureNode, CaptureGraphError, CaptureNodeResult, copyAgentState } from '../AgentState';
 import { KnowledgeModel } from '../../agents/KnowledgeModel';
 import { GenerationJsonError } from '../../agents/GenerationJsonCaller';
-import { KnowledgeUnit, LlmError, NoteDraftDocument, NoteGenerationStandardResult } from 'common';
+import {
+  CaptureProvenance,
+  DispatchPayload,
+  KnowledgeUnit,
+  LlmError,
+  NoteDraftDocument,
+  NoteGenerationStandardResult,
+  captureProvenanceFromFragments,
+} from 'common';
 
 export class StructureNodeFactory {
   static create(service: KnowledgeModel): CaptureNode {
@@ -13,6 +21,11 @@ export class StructureNodeFactory {
         let draft: NoteDraftDocument | undefined = undefined;
         let standardResult: NoteGenerationStandardResult | undefined = undefined;
         let unit: KnowledgeUnit;
+        let provenance: CaptureProvenance | undefined =
+          StructureNodeFactory.provenanceFromPayload(input.payload);
+        if (provenance === undefined && input.generationRequest !== undefined) {
+          provenance = captureProvenanceFromFragments(input.generationRequest.sources.fragments);
+        }
         if (input.generationRequest !== undefined) {
           if (input.generationRequest.route === 'standard') {
             standardResult = await service.structureStandardDraft(input.generationRequest);
@@ -37,11 +50,16 @@ export class StructureNodeFactory {
             // owned by KnowledgeModel and is then checked by TruthCheckNode.
             draft = await service.structureLightDraft(input.generationRequest);
           }
-          unit = service.draftToKnowledgeUnit(draft, input.source);
+          unit = service.draftToKnowledgeUnit(draft, input.source, provenance);
         } else if (input.classification === undefined) {
-          unit = await service.structure(input.captureText);
+          unit = await service.structure(input.captureText, undefined, undefined, '', input.source, provenance);
         } else {
-          unit = await service.structureWithClassification(input.captureText, input.classification, input.source);
+          unit = await service.structureWithClassification(
+            input.captureText,
+            input.classification,
+            input.source,
+            provenance,
+          );
         }
         const next: AgentState = copyAgentState(input);
         next.cancellationToken?.throwIfCancelled();
@@ -74,6 +92,29 @@ export class StructureNodeFactory {
         return { state: next };
       }
     };
+  }
+
+  // OcrTool 当前不返回逐行/整体置信度；0 表示未知，不拿分类置信度冒充 OCR 置信度。
+  // TODO(traceability): OcrRecognitionResult 暴露真实置信度后，在这里透传并用它替换 0。
+  private static provenanceFromPayload(payload: DispatchPayload | undefined): CaptureProvenance | undefined {
+    if (payload === undefined) {
+      return undefined;
+    }
+    if (payload.kind === 'image') {
+      return {
+        sourceImageId: payload.imageUri,
+        sourceRegion: '',
+        ocrConfidence: 0,
+      };
+    }
+    if (payload.kind === 'file' && payload.mimeType.startsWith('image/')) {
+      return {
+        sourceImageId: payload.fileUri,
+        sourceRegion: '',
+        ocrConfidence: 0,
+      };
+    }
+    return undefined;
   }
 
   private static standardGateMessage(result: NoteGenerationStandardResult): string {

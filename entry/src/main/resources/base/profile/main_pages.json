@@ -2,6 +2,7 @@
   "src": [
     "pages/Index",
     "pages/AiSettings/AiSettingsPage",
-    "pages/Notes/SubjectDetailPage"
+    "pages/Notes/SubjectDetailPage",
+    "pages/AgentUiCard"
   ]
 }

@@ -6,7 +6,7 @@
 
 | Path | Project | Last updated |
 |---|---|---|
-| [`mindtrace/`](./mindtrace/) | MindTrace (HarmonyOS ArkTS) — 5 module, W4 design, 21 audit findings | 2026-09-01 |
+| [`mindtrace/`](./mindtrace/) | MindTrace (HarmonyOS ArkTS) — audit evidence + frozen handoffs; pre-D2 plans/research purged 2026-10-18 | 2026-10-18 |
 
 ## When to add a new entry
 

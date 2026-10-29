@@ -25,11 +25,13 @@ export class AlbumPickerLauncher {
    * @returns 选中图片的 URI 数组 (空数组 = 用户取消)
    * @throws 系统错误时抛出异常
    */
-  static async pick(context: common.UIAbilityContext): Promise<string[]> {
+  static async pick(context: common.UIAbilityContext, maxCount: number = 1): Promise<string[]> {
     const picker: photoAccessHelper.PhotoViewPicker = new photoAccessHelper.PhotoViewPicker();
     const options: photoAccessHelper.PhotoSelectOptions = new photoAccessHelper.PhotoSelectOptions();
     options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
-    options.maxSelectNumber = 1;
+    // 批量整理最多 20 张（spec 031 §4.3）
+    const safeCount: number = Math.min(Math.max(maxCount, 1), 20);
+    options.maxSelectNumber = safeCount;
     options.isPhotoTakingSupported = false;
 
     const result: photoAccessHelper.PhotoSelectResult = await picker.select(options);

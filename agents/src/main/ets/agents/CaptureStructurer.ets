@@ -29,6 +29,7 @@ import {
   normalizeDraftDifficulty,
 } from 'common/src/main/ets/Index';
 import type {
+  CaptureProvenance,
   ChatMessage,
   ClassificationResult,
   ContentValidationResult,
@@ -73,6 +74,7 @@ export class CaptureStructurer {
     subject?: string,
     chapter: string = '',
     source: string = 'camera_capture',
+    provenance?: CaptureProvenance,
   ): Promise<KnowledgeUnit> {
     this.cancellationToken?.throwIfCancelled();
     const startTime: number = Date.now();
@@ -123,7 +125,7 @@ export class CaptureStructurer {
 
     this.markNeedsUserInput(ext, aiRaw);
 
-    const unit: KnowledgeUnit = this.toKnowledgeUnit(ext, startTime);
+    const unit: KnowledgeUnit = this.toKnowledgeUnit(ext, startTime, '', provenance);
     console.info('[KnowledgeModel] structure done: noteId=' + unit.id
       + ' category=' + ext.type + ' aiFields=' + aiRaw.fields.length.toString());
     return unit;
@@ -133,6 +135,7 @@ export class CaptureStructurer {
     ocrText: string,
     classification: ClassificationResult,
     source: string = 'camera_capture',
+    provenance?: CaptureProvenance,
   ): Promise<KnowledgeUnit> {
     return await this.structure(
       ocrText,
@@ -140,10 +143,15 @@ export class CaptureStructurer {
       classification.subject,
       classification.chapter ?? '',
       source,
+      provenance,
     );
   }
 
-  draftToKnowledgeUnit(document: NoteDraftDocument, source: string): KnowledgeUnit {
+  draftToKnowledgeUnit(
+    document: NoteDraftDocument,
+    source: string,
+    provenance?: CaptureProvenance,
+  ): KnowledgeUnit {
     const fields: StructuredField[] = [];
     let index: number = 0;
     for (const section of document.sections) {
@@ -165,10 +173,15 @@ export class CaptureStructurer {
     ext.difficulty = document.difficulty;
     ext.source = source;
     ext.chapter = document.chapter;
-    return this.toKnowledgeUnit(ext, Date.now(), document.summary);
+    return this.toKnowledgeUnit(ext, Date.now(), document.summary, provenance);
   }
 
-  private toKnowledgeUnit(ext: KnowledgeUnitExt, createdAt: number, summaryOverride: string = ''): KnowledgeUnit {
+  private toKnowledgeUnit(
+    ext: KnowledgeUnitExt,
+    createdAt: number,
+    summaryOverride: string = '',
+    provenance?: CaptureProvenance,
+  ): KnowledgeUnit {
     const generatedSummary: string = this.summaryFromFields(ext);
     const summary: string = summaryOverride.trim().length > 0
       ? this.contentExcerptBuilder.buildSummary(summaryOverride, 60)
@@ -185,6 +198,10 @@ export class CaptureStructurer {
       chapter: ext.chapter,
       difficulty: this.toDifficultyLevel(ext.difficulty),
       source: ext.source.length > 0 ? ext.source : 'camera_capture',
+      // 溯源字段: 没有图片/OCR 证据时保持空字符串/0；0 表示 OCR 未提供置信度，不是估算值。
+      sourceImageId: provenance !== undefined ? provenance.sourceImageId : '',
+      sourceRegion: provenance !== undefined ? provenance.sourceRegion : '',
+      ocrConfidence: provenance !== undefined ? provenance.ocrConfidence : 0,
       createdAt: now,
       updatedAt: now,
       reviewStatus: ReviewStatus.NEW,

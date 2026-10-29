@@ -28,6 +28,7 @@ interface NoteCommitLookup {
 
 const NOTE_METADATA_COLUMNS: string[] = [
   'id', 'title', 'summary', 'tags', 'subject', 'category', 'chapter', 'difficulty', 'source',
+  'source_image_id', 'source_region', 'ocr_confidence',
   'created_at', 'updated_at', 'review_status', 'next_review_at', 'interval_days',
   'ease_factor', 'repetitions', 'user_id', 'version',
 ];
@@ -373,6 +374,39 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
     });
   }
 
+  // 增量图谱补边: 只取同 chapter 的最近 N 条笔记 id，避免全库两两比较。
+  async queryRecentUnitIdsByChapter(chapter: string, excludeId: string, limit: number): Promise<string[]> {
+    const normalizedChapter: string = chapter.trim();
+    if (normalizedChapter.length === 0 || limit <= 0) {
+      return [];
+    }
+    const predicates = new relationalStore.RdbPredicates('knowledge_unit');
+    predicates.equalTo('chapter', normalizedChapter);
+    predicates.orderByDesc('created_at');
+    // 多取一条用于排除当前笔记，避免依赖 notEqualTo 的边界行为。
+    predicates.limitAs(limit + 1);
+
+    return new Promise<string[]>((resolve, reject) => {
+      this.store.query(predicates, ['id'], (_err, resultSet) => {
+        if (_err) {
+          reject(new Error('NoteDao.queryRecentUnitIdsByChapter failed: ' + _err.message));
+          return;
+        }
+        const ids: string[] = [];
+        if (resultSet.goToFirstRow()) {
+          do {
+            const id: string = NoteDao.readString(resultSet, 'id', '');
+            if (id.length > 0 && id !== excludeId && ids.length < limit) {
+              ids.push(id);
+            }
+          } while (resultSet.goToNextRow());
+        }
+        resultSet.close();
+        resolve(ids);
+      });
+    });
+  }
+
   // Knowledge graph needs only display/review metadata. It intentionally skips content and embedding.
   async queryAllGraphMetadata(): Promise<KnowledgeUnit[]> {
     const predicates = new relationalStore.RdbPredicates('knowledge_unit');
@@ -433,6 +467,9 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       chapter: NoteDao.readString(rs, 'chapter', ''),
       difficulty: NoteDao.parseDifficulty(NoteDao.readLong(rs, 'difficulty', DifficultyLevel.EASY)),
       source: NoteDao.readString(rs, 'source', ''),
+      sourceImageId: NoteDao.readString(rs, 'source_image_id', ''),
+      sourceRegion: NoteDao.readString(rs, 'source_region', ''),
+      ocrConfidence: NoteDao.readDouble(rs, 'ocr_confidence', 0),
       createdAt: NoteDao.readLong(rs, 'created_at', 0),
       updatedAt: NoteDao.readLong(rs, 'updated_at', 0),
       reviewStatus: NoteDao.parseReviewStatus(NoteDao.readString(rs, 'review_status', ReviewStatus.NEW)),
@@ -460,6 +497,9 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       chapter: NoteDao.readString(rs, 'chapter', ''),
       difficulty: NoteDao.parseDifficulty(NoteDao.readLong(rs, 'difficulty', DifficultyLevel.EASY)),
       source: NoteDao.readString(rs, 'source', ''),
+      sourceImageId: NoteDao.readString(rs, 'source_image_id', ''),
+      sourceRegion: NoteDao.readString(rs, 'source_region', ''),
+      ocrConfidence: NoteDao.readDouble(rs, 'ocr_confidence', 0),
       createdAt: NoteDao.readLong(rs, 'created_at', 0),
       updatedAt: NoteDao.readLong(rs, 'updated_at', 0),
       reviewStatus: NoteDao.parseReviewStatus(NoteDao.readString(rs, 'review_status', ReviewStatus.NEW)),
@@ -487,6 +527,9 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       'chapter': unit.chapter,
       'difficulty': unit.difficulty.valueOf(),
       'source': unit.source,
+      'source_image_id': unit.sourceImageId ?? '',
+      'source_region': unit.sourceRegion ?? '',
+      'ocr_confidence': unit.ocrConfidence ?? 0,
       'created_at': unit.createdAt,
       'updated_at': unit.updatedAt,
       'review_status': unit.reviewStatus.valueOf(),
@@ -613,6 +656,9 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       chapter: changed.chapter,
       difficulty: changed.difficulty,
       source: current.source,
+      sourceImageId: changed.sourceImageId !== undefined ? changed.sourceImageId : current.sourceImageId,
+      sourceRegion: changed.sourceRegion !== undefined ? changed.sourceRegion : current.sourceRegion,
+      ocrConfidence: changed.ocrConfidence !== undefined ? changed.ocrConfidence : current.ocrConfidence,
       createdAt: current.createdAt,
       updatedAt: changed.updatedAt,
       reviewStatus: current.reviewStatus,

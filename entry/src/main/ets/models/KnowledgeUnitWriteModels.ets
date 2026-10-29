@@ -66,6 +66,8 @@ export interface NoteGenerationBaseProvider {
 
 export interface KnowledgeUnitPostCommitEffect {
   name: string;
+  // true 表示只在新笔记首次提交后执行；update 路径会跳过。
+  createOnly?: boolean;
   run(unit: KnowledgeUnit): Promise<void>;
 }
 

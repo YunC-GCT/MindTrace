@@ -1,4 +1,5 @@
 import { relationalStore } from '@kit.ArkData';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { ChatMessageRecord, ChatRole } from '../models/AgentMemoryModels';
 import { SessionIdPolicy } from '../services/ConversationIdentity';
 
@@ -93,6 +94,18 @@ export class ChatMessageDao {
       this.store.delete(predicates, (err: Error, _rows: number) => {
         if (err) {
           reject(new Error('ChatMessageDao.deleteBySession failed: ' + err.message));
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+
+  async deleteAll(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.store.executeSql('DELETE FROM chat_message', [], (err: BusinessError) => {
+        if (err) {
+          reject(new Error('ChatMessageDao.deleteAll failed: ' + err.message));
           return;
         }
         resolve();

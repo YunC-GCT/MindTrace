@@ -94,16 +94,21 @@
 >
 > **结论**: 现在 `git push origin main` **被 ruleset 完全挡住**(任何人,包括 admin)。AI 在其他 session 必须走 **PR 流程**(创建 feature 分支 → push → 开 PR → review → merge),无法直接动 main。
 >
-> **api 更新命令**(gh CLI,需 admin scope `repo`):
+> **api 更新命令**(gh CLI,需 admin scope `repo`)。payload 不随仓库保存,用前先导出到本地临时文件(`.scratch/` 已 gitignore):
 >
 > ```bash
+> # 1. 导出当前 ruleset（临时目录不存在就先建）
+> mkdir -p .scratch
+> gh api /repos/YunC-GCT/MindTrace/rulesets/22318353 > .scratch/protect-main.json
+> gh api /repos/YunC-GCT/MindTrace/rulesets/22318810 > .scratch/protect-develop.json
+> # 2. 改字段后回写
 > gh api --method PUT /repos/YunC-GCT/MindTrace/rulesets/22318353 \
 >   --input .scratch/protect-main.json
 > gh api --method PUT /repos/YunC-GCT/MindTrace/rulesets/22318810 \
 >   --input .scratch/protect-develop.json
 > ```
 >
-> **未来变更流程**: 修改 `.scratch/protect-main.json` 或 `.scratch/protect-develop.json` → 用 gh PUT 更新 → 验证 `current_user_can_bypass: pull_requests_only` 保持 → 提交 commit message 记录变更。
+> **未来变更流程**: 导出 → 修改 → `gh api PUT` 回写 → 验证 `current_user_can_bypass: pull_requests_only` 保持 → 提交 commit message 记录变更。本地 JSON 只是中间产物,不入库。
 
 ### 3. 不受保护
 

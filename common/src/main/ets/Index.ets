@@ -1,4 +1,6 @@
 // common HSP - public API 入口
+// 路径: common/src/main/ets/Index.ets
+// 职责: 对外导出 common 的全部公共 API (值导出 + 类型导出)。
 // W1 块 3: 暴露 Agent 业务所需的最小子集(Dispatcher 侧)
 
 // ========== 设计 Token (颜色 / 尺寸 / 字号) ==========
@@ -81,7 +83,16 @@ export {
   API_CODE,
   CLASSIFY_CONFIDENCE_THRESHOLD,
 } from './models/CaptureChain';
-export type { ApiCode, DispatchPayload, ImagePayload, TextPayload, FilePayload, NoteCategory } from './models/CaptureChain';
+export type {
+  ApiCode,
+  DispatchPayload,
+  ImagePayload,
+  TextPayload,
+  FilePayload,
+  NoteCategory,
+  CaptureProvenance,
+} from './models/CaptureChain';
+export { captureProvenanceFromFragments } from './models/CaptureChain';
 export type {
   NoteGenerationMode,
   SourceKind,
@@ -214,8 +225,58 @@ export {
 //   ApiKeyVault: 凭据 vault (@kit.AssetStoreKit, 兼容读取旧 preferences key)
 //   providers:  5 厂商预设(DeepSeek / Tongyi / GLM / Kimi / Doubao) + findProvider 工厂
 export { LlmConfig, DEFAULT_ENABLE_THINKING, DEFAULT_CONTEXT_WINDOW_TOKENS } from './llm/LlmConfig';
+// 2026-10-25: 模型元信息(displayName/contextWindow/模态/source)的类型出口 — 仅类型, 无运行时依赖
+// 2026-10-26: 模型选择(active_model)与按型号运行偏好(model_prefs)的类型出口
+export type { ModelActiveSelection, ModelPreference, VendorModelMeta } from './llm/LlmConfig';
+export { OnDeviceLlm, ON_DEVICE_MODEL_DIR, ON_DEVICE_MODEL_FILE } from './llm/OnDeviceLlm';
+// LocalChatProvider：@kit.DataAugmentationKit 改为运行时懒加载，barrel 求值不再触碰受限 Kit
+// （spec 033 §6 S2）。扩展进程即便 import 本 barrel 也不会初始化该 Kit。
+export { LocalChatProvider } from './llm/LocalChatProvider';
+export type { OnDeviceAvailability, OnDeviceReply } from './llm/OnDeviceLlm';
 export { ApiKeyVault } from './security/ApiKeyVault';
 export { LlmClient } from './llm/LlmClient';
+// issue #226: 思考模式按模型能力适配 — toggle / always_on / unsupported / unverified
+// 2026-10-26 模型规格分层: Listing(可发现清单) / ModelSpec(请求协议) 分开
+export { resolveModelCapability, resolveCapabilities, supportsImageInput } from './llm/ModelCapabilities';
+export type { ModelCapability, ThinkingMode } from './llm/ModelCapabilities';
+export {
+  capabilitySignal,
+  capabilityHint,
+  getProviderCatalog,
+  getCatalogDefaultListing,
+  getModelSpec,
+  getBuiltinModelSpecs,
+  isValidModelSpec,
+  modelSpecKey,
+  setModelSpecOverrides,
+} from './llm/model-catalog';
+export type {
+  CapabilitySignal,
+  EffortRequiredWhen,
+  EffortSendWhen,
+  EvidenceStatus,
+  ModelEffortSpec,
+  ModelFieldValue,
+  ModelFieldWrite,
+  ModelListing,
+  ModelRequestSpec,
+  ModelSamplingRule,
+  ModelSamplingSpec,
+  ModelSpec,
+  ModelSpecEvidence,
+  ModelSpecSource,
+  ModelThinkingSpec,
+  ProviderCatalog,
+  SamplingSupport,
+  SamplingWhen,
+  ThinkingControl,
+} from './llm/model-catalog';
+export { applyFieldWrites, boundOutputTokens, planModelRequest, putField } from './llm/ModelRequestBuilder';
+export type { ModelRequestPlan, ModelRequestSelection } from './llm/ModelRequestBuilder';
+export { resolveModel } from './llm/model-resolver';
+export type { ResolvedModel } from './llm/model-resolver';
+export { discoverModels } from './llm/model-discovery';
+export type { DiscoveryResult } from './llm/model-discovery';
 export { CancellationToken } from './llm/CancellationToken';
 export { LlmGuard } from './llm/LlmGuard';
 export { JSON_ONLY_RULES, LATEX_GENERATION_RULES, buildGuardRetryMessage } from './llm/LlmOutputRules';
@@ -264,6 +325,13 @@ export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
 //   OcrConfig:  单例, preferences 持久化 endpoint + enabled, 真机部署改 IP
 export { OcrConfig } from './ocr/OcrConfig';
+
+// ========== OCR 能力端口 (issue #227 / spec 033) ==========
+//   契约零 @kit 依赖; 实现在 entry (Kit 只允许在 UI 进程加载), 不进任何 barrel。
+export { OcrRecognizerRegistry } from './capability/ocr/OcrRecognizer';
+export type { OcrRecognizer, OcrTextResult } from './capability/ocr/OcrRecognizer';
+export { ImageSearchIndexRegistry } from './capability/imagesearch/ImageSearchIndex';
+export type { ImageSearchIndex, ImageSearchHit } from './capability/imagesearch/ImageSearchIndex';
 
 // ========== 数据库 (持久化存储) ==========
 export { DatabaseHelper } from './DatabaseHelper';

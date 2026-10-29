@@ -146,7 +146,7 @@ https://github.com/YunC-GCT/MindTrace/compare/develop...main?expand=1
 
 ### 3.6 通知团队
 
-打开 `.scratch/team-announcement.md`(本地草稿)→ 复制 → 发到3 人消息群。
+在 3 人消息群发一条发布公告（本地起草，不入库），至少包含：版本号与发布日期、本次包含的 PR / 主要变更、升级注意（数据库迁移、配置变更）、回滚方式（revert 或重新发版）。
 
 ---
 
@@ -364,7 +364,7 @@ A: 合并后 GitHub 提示 "Delete branch",建议删(保持仓库干净)。本�
 
 - `docs/agents/git-conventions.md` — 完整 commit + 分支规范
 - `docs/agents/branch-protection.md` — 保护规则 + self-approve 策略
-- `docs/agents/git-flow-setup-2026-09-04.md` — owner 操作清单(初始化用,后续不需要)
+- `docs/legacy/mindtrace/handoffs/git-flow-setup-2026-09-04.md` — owner 操作清单(初始化用,后续不需要)
 - `.github/PULL_REQUEST_TEMPLATE.md` — PR 必填字段
 - `.github/CODEOWNERS` — 3-owner 路由表
 - `CONTEXT.md` — 项目词汇表(术语消歧)

@@ -3,7 +3,7 @@
 // 创建: Z (W1 块 3 主 agent 业务 - 2026-07-13)
 
 import { KnowledgeUnit } from './CommonTypes';
-import { NoteGenerationRequest, NoteGenerationResult, PreparedCandidate } from './NoteGenerationModels';
+import { NoteGenerationRequest, NoteGenerationResult, PreparedCandidate, SourceFragment } from './NoteGenerationModels';
 
 // ==================== B2 分类结果 ====================
 // B2 classify 入参(Dispatcher 转发,任一字段可单独传)
@@ -75,6 +75,43 @@ export interface FilePayload {
 }
 
 export type DispatchPayload = ImagePayload | TextPayload | FilePayload;
+
+// ==================== 溯源 ====================
+// 拍照 / 图片 OCR 到 KnowledgeUnit 的来源元数据。
+// sourceRegion 当前没有坐标数据时固定为空字符串；
+// ocrConfidence 只能来自 OCR 结果本身，工具未返回置信度时为 0，禁止估算。
+export interface CaptureProvenance {
+  sourceImageId: string;
+  sourceRegion: string;
+  ocrConfidence: number;
+}
+
+// 从 OCR 源片段提取来源图片。多张不同来源图无法用单字段准确表达，返回 undefined 而不是猜一张。
+export function captureProvenanceFromFragments(fragments: SourceFragment[]): CaptureProvenance | undefined {
+  let imageId: string = '';
+  for (const fragment of fragments) {
+    if (fragment.kind !== 'ocr') {
+      continue;
+    }
+    const originId: string = fragment.originId.trim();
+    if (originId.length === 0) {
+      continue;
+    }
+    if (imageId.length === 0) {
+      imageId = originId;
+    } else if (imageId !== originId) {
+      return undefined;
+    }
+  }
+  if (imageId.length === 0) {
+    return undefined;
+  }
+  return {
+    sourceImageId: imageId,
+    sourceRegion: '',
+    ocrConfidence: 0,
+  };
+}
 
 export interface DispatchRequest {
   // 来源标识

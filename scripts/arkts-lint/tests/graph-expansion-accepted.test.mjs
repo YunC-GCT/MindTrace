@@ -25,8 +25,10 @@ test('Galaxy builds systems from persisted units, not from in-memory drafts', ()
   assert.match(galaxyVm, /loadPersistedGraph/);
 });
 
-test('preview units are disabled by default in Galaxy', () => {
-  assert.match(galaxyVm, /ENABLE_GALAXY_PREVIEW_UNITS: boolean = false/);
+test('Galaxy does not inject in-memory preview units or relations', () => {
+  assert.doesNotMatch(galaxyVm, /withPreviewUnits|withPreviewRelations|findLoadedPreviewUnit/);
+  assert.match(galaxyVm, /const units: KnowledgeUnit\[\] = graphData\.units/);
+  assert.match(galaxyVm, /const relations: KnowledgeRelation\[\] = graphData\.relations/);
 });
 
 test('Galaxy filters out WRONG_NOTE_TYPE from the graph', () => {

@@ -9,23 +9,36 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
 const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 
-test('LlmClient.callStreamInternal firstByteTimer must be >= 30000ms', () => {
-  const firstByteMatch = llmClient.match(/firstByteTimer[\s\S]*?setTimeout[\s\S]*?,\s*(\d+)\s*\)/);
-  assert.ok(firstByteMatch !== null, 'firstByteTimer setTimeout call must exist');
-  const ms = parseInt(firstByteMatch[1], 10);
-  assert.ok(ms >= 30000, `firstByteTimer must be >= 30000ms, got ${ms}ms`);
+test('LlmClient.callStreamInternal firstByteTimer tiers by thinking capability', () => {
+  // issue #226: 关闭思考 / unsupported → 30s；开启思考 / always_on → 60s。
+  // 旧规则「上限锁 30s」只对可关闭思考的模型成立，always_on 模型不能靠关思考换首字节。
+  assert.match(
+    llmClient,
+    /const firstByteWatchdogMs: number = thinkingActive \? 60000 : 30000;/,
+    'first-byte watchdog must pick 60000ms for thinking, 30000ms otherwise',
+  );
+  assert.match(
+    llmClient,
+    /firstByteTimer = setTimeout\([\s\S]*?firstByteWatchdogMs\s*\)/,
+    'firstByteTimer must use the capability-tiered value',
+  );
 });
 
-test('ReplyService reply paths inherit enableThinking from LlmClient config', () => {
-  assert.doesNotMatch(replyService, /enableThinking\s*:\s*false/);
+test('ReplyService reply paths pin enableThinking to false instead of inheriting config', () => {
+  // 2026-10-26: 默认思考现在来自 ModelSpec（DeepSeek 官方默认开启），
+  // 聊天与小艺两条链路都按「不思考」的时延预算跑，必须显式钉死，不能继承配置。
+  const pinned = (replyService.match(/enableThinking\s*:\s*false/g) ?? []).length;
+  assert.equal(pinned, 2, 'both reply paths (JSON guarded + stream) must pass enableThinking: false');
 });
 
-test('LlmClient maps enableThinking to the Qwen HTTP switch on both transports', () => {
-  const qwenSwitches = llmClient.match(/enable_thinking/g) ?? [];
-  assert.ok(qwenSwitches.length >= 2, 'JSON and SSE request bodies must both carry enable_thinking');
-  assert.match(llmClient, /body\.enable_thinking\s*=\s*enableThinking/);
-  assert.match(llmClient, /bodyObj\[.enable_thinking.\]\s*=\s*enableThinking/);
+test('LlmClient maps thinking switches through the shared ModelSpec builder', () => {
+  // 2026-10-26: Qwen 的 enable_thinking / DeepSeek 的 thinking.type 都来自
+  // ModelSpec.on/off, LlmClient 不再按 vendor 分支。
+  assert.doesNotMatch(llmClient, /enable_thinking/, 'flat enable_thinking is now a FieldWrite');
+  assert.doesNotMatch(llmClient, /vendorId === 'deepseek'/);
+  assert.doesNotMatch(llmClient, /vendorId === 'tongyi'/);
   assert.doesNotMatch(llmClient, /chat_template_kwargs/);
+  assert.match(llmClient, /planModelRequest\(resolved\.spec, selection\)/);
 });
 
 test('LlmClient requestInStream callback tolerates undefined status data', () => {

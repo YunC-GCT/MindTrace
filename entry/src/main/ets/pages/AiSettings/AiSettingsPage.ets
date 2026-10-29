@@ -1,15 +1,32 @@
+/**
+ * FileName: AiSettingsPage.ets — AI 设置页外壳
+ *
+ * 路径: entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets
+ * 职责: 组织 AI 服务 / 服务厂商 / OCR / 端侧模型 / 小艺入口各 section;
+ *       把 ViewModel 状态与 VendorPicker 回调接线。
+ * 依赖: AiSettingsViewModel、各 section 组件、common tokens
+ */
+
 // ============================================================================
 //  pages/AiSettings/AiSettingsPage.ets - ai settings shell
 // ============================================================================
 
-import { BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_SM, F_XS, W_SEMIBOLD, S_2, S_4 } from "common"
+import { BG_CARD, BG_DARK, BORDER, MINT, TEXT, TEXT_3, F_MD, F_SM, F_XS, W_SEMIBOLD, R_LG, R_MD, S_2, S_4 } from "common"
+import { LocalChatProvider } from "common"
+import type { DiscoveryResult, ModelListing } from "common"
 import { KeyboardAvoidMode, promptAction } from "@kit.ArkUI"
 import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
 import { ActionBar } from "./ActionBar"
 import { VendorPicker } from "./VendorPicker"
 import { OcrConfigSection } from "./OcrConfigSection"
+import { OnDeviceModelSection } from "./OnDeviceModelSection"
+import { XiaoyiEntrySection } from "./XiaoyiEntrySection"
 import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
+import { DebugFaults } from "../../services/DebugFaults"
+import { DebugCaptureRunner } from "../../services/DebugCaptureRunner"
+import { common } from "@kit.AbilityKit"
+import type { DebugFault } from "../../services/DebugFaults"
 
 // PR2-T2 P3: 添加新供应商 modal 4 字段 cfg
 // 与 VendorPicker.ets AddCustomVendorCfg 同步(DRY 妥协 — ArkTS 1.1 不允许 inline object literal as type)
@@ -25,12 +42,39 @@ interface AddCustomVendorCfg {
 struct AiSettingsPage {
   @StorageProp("statusBarHeight") sbh: number = 0
   @State vm: AiSettingsViewModel = new AiSettingsViewModel()
+  // issue #221: 端侧能力位(只读可观测)
+  @State onDeviceAvailable: boolean = false
+  @State onDeviceStatus: string = ''
+  // #224 调试入口: 默认隐藏; 连点标题 5 次后出现
+  @State debugVisible: boolean = false
+  @State debugFault: string = 'none'
+  private titleTapCount: number = 0
+  private titleLastTapAt: number = 0
 
   aboutToAppear(): void {
     try {
       this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.OFFSET)
     } catch (_e) {}
     this.reload()
+    // #224: 页面显式传 Context 读一次持久化档位(服务侧异步链路取不到 Context 时也能回填 UI)
+    DebugFaults.load(getContext(this)).then((v: DebugFault): void => {
+      this.debugFault = v
+    }).catch((_e: Error): void => {})
+    // issue #221 修订: 端侧就绪以系统问答模型 init() 结果为准(不再看模型文件)
+    this.onDeviceStatus = '检测中…'
+    try {
+      const provider: LocalChatProvider = new LocalChatProvider()
+      provider.init().then((ready: boolean): void => {
+        this.onDeviceAvailable = ready
+        this.onDeviceStatus = ready ? '' : '系统端侧问答模型初始化失败（设备不支持或模型未就绪）'
+      }).catch((e: Error): void => {
+        this.onDeviceAvailable = false
+        this.onDeviceStatus = '端侧状态读取失败：' + e.message
+      })
+    } catch (_e) {
+      this.onDeviceAvailable = false
+      this.onDeviceStatus = '端侧状态读取失败'
+    }
   }
 
   aboutToDisappear(): void {
@@ -92,10 +136,63 @@ struct AiSettingsPage {
     return modeLabel + " / " + this.vm.ocrEndpoint.trim()
   }
 
+  // #224 隐藏入口: 2s 内连点标题 5 次展开调试行
+  private onTitleTap = (): void => {
+    const now: number = Date.now()
+    if (now - this.titleLastTapAt > 2000) {
+      this.titleTapCount = 0
+    }
+    this.titleLastTapAt = now
+    this.titleTapCount += 1
+    if (this.titleTapCount < 5) {
+      return
+    }
+    this.titleTapCount = 0
+    const alreadyVisible: boolean = this.debugVisible
+    this.debugVisible = true
+    if (!alreadyVisible) {
+      try { promptAction.showToast({ message: '调试入口已开启', duration: 1500 }) } catch (_e) {}
+    }
+  }
+
+  private selectDebugFault = (value: DebugFault): void => {
+    this.debugFault = value
+    DebugFaults.set(value).then((): void => {
+      const label: string = value === 'empty' ? '空流' : (value === 'interrupted' ? '中断' : '正常')
+      try { promptAction.showToast({ message: '调试故障：' + label, duration: 1500 }) } catch (_e) {}
+    }).catch((_e: Error): void => {
+      try { promptAction.showToast({ message: '调试故障设置失败', duration: 1500 }) } catch (_e) {}
+    })
+  }
+
+  @Builder
+  debugChip(label: string, value: DebugFault) {
+    Text(label)
+      .fontSize(F_XS)
+      .fontColor(this.debugFault === value ? '#FFFFFF' : TEXT_3)
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(32)
+      .backgroundColor(this.debugFault === value ? MINT : '#0AFFFFFF')
+      .borderRadius(R_MD)
+      .margin({ left: value === 'none' ? 0 : 6 })
+      .onClick((): void => { this.selectDebugFault(value) })
+  }
+
   build() {
     Column() {
       Row().width("100%").height(this.sbh).backgroundColor(BG_DARK)
-      PageHeader({ title: "AI 设置" })
+      Stack() {
+        PageHeader({ title: "AI 设置" })
+        // #224 隐藏入口: 透明标题覆盖层, 2s 内连点 5 次展开调试行(不影响左侧返回)
+        Text("AI 设置")
+          .fontSize(F_MD)
+          .fontWeight(W_SEMIBOLD)
+          .fontColor(Color.Transparent)
+          .padding({ left: 24, right: 24, top: S_2, bottom: S_2 })
+          .onClick((): void => { this.onTitleTap() })
+      }
+      .width("100%")
       Row().width("100%").height(0.5).backgroundColor(BORDER)
 
       Scroll() {
@@ -165,6 +262,8 @@ struct AiSettingsPage {
             activeVendorModels: this.vm.activeVendorModels,
             modelContextWindows: this.vm.modelContextWindows,
             customVendors: this.vm.customVendors,
+            // 2026-10-26: 按型号运行偏好(thinking / effort)由 ViewModel 持有
+            modelPrefs: this.vm.modelPrefs,
             onSelect: (id: string): void => { this.vm.selectVendor(id) },
             // PR2-T2 P3: modal 确认后回调,把 4 字段 cfg 传给 ViewModel
             // PR2-T2 polish: 返回新 vendorId 用于 NEW badge 跟踪(ticket #81 task A4)
@@ -188,8 +287,24 @@ struct AiSettingsPage {
             onContextWindowChange: (vendorId: string, model: string, value: number): void => {
               this.vm.setModelContextWindow(vendorId, model, value)
             },
+            onThinkingChange: (vendorId: string, model: string, enabled: boolean): void => {
+              this.vm.setModelThinking(vendorId, model, enabled)
+            },
+            onEffortChange: (vendorId: string, model: string, effort: string): void => {
+              this.vm.setModelEffort(vendorId, model, effort)
+            },
             onSaveEdit: (_vendorId: string): void => {
               this.saveLlm()
+            },
+            // 2026-10-25 Phase 1.5: 模型 chip 走 catalog, discovery 只回候选
+            onGetModels: (vendorId: string): ModelListing[] => {
+              return this.vm.getModelsForVendor(vendorId)
+            },
+            onDiscoverModels: (vendorId: string): Promise<DiscoveryResult> => {
+              return this.vm.refreshModels(vendorId)
+            },
+            onCommitModel: (vendorId: string, model: string, contextWindow: number): Promise<boolean> => {
+              return this.vm.commitVendorModel(vendorId, model, contextWindow)
             },
           })
 
@@ -229,6 +344,52 @@ struct AiSettingsPage {
               })
             },
           })
+
+          OnDeviceModelSection({
+            available: this.onDeviceAvailable,
+            statusText: this.onDeviceStatus,
+          })
+
+          // #224 调试行: 仅在连点标题 5 次后可见
+          if (this.debugVisible) {
+            Column() {
+              Text('调试：流式故障注入')
+                .fontSize(F_XS)
+                .fontColor(TEXT_3)
+                .width('100%')
+              Row() {
+                this.debugChip('正常', 'none')
+                this.debugChip('空流', 'empty')
+                this.debugChip('中断', 'interrupted')
+              }
+              .width('100%')
+              .margin({ top: 6 })
+              Text('调试：批量链路自检（2 张样例题）')
+                .fontSize(F_XS)
+                .fontColor(TEXT_3)
+                .width('100%')
+                .margin({ top: 10 })
+                .onClick((): void => {
+                  const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+                  promptAction.showToast({ message: '自检开始，看 [E2E] 日志', duration: 1500 });
+                  DebugCaptureRunner.run(ctx)
+                    .then((summary: string): void => {
+                      promptAction.showToast({ message: '自检完成 ' + summary, duration: 2500 });
+                    })
+                    .catch((e: Error): void => {
+                      promptAction.showToast({ message: '自检失败 ' + e.message, duration: 2500 });
+                    });
+                })
+            }
+            .width('100%')
+            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+            .margin({ left: 8, right: 8 })
+            .borderRadius(R_LG)
+            .backgroundColor(BG_CARD)
+          }
+
+          // issue #225: 应用内「问小艺」入口（不可用时只显示提示行）
+          XiaoyiEntrySection()
 
           Blank().height(40)
         }

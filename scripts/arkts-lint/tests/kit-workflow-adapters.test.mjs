@@ -32,14 +32,15 @@ test('FormCardFacade persists one snapshot source and updates real running forms
   assert.match(store, /load\(context: Context\): CardSnapshot/);
 });
 
-test('EntryAbility injects all three Kit facade implementations', () => {
+test('EntryAbility 只注入仍需要的 Kit facade，不再申请后台任务', () => {
   const source = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(source, /new ReminderFacadeImpl/);
-  assert.match(source, /new BackgroundTaskFacadeImpl/);
   assert.match(source, /new FormCardFacadeImpl/);
-  assert.match(source, /requestOneShot\('review_sync'\)/);
-  assert.match(source, /CardSnapshotService\.refresh\(this\.context\)/);
-  assert.match(source, /facade\.finish\('review_sync'\)/);
+  // 3706bab refactor(entry): 卡片刷新不再借后台任务, 组合根里不该出现 BackgroundTaskFacadeImpl
+  assert.doesNotMatch(source, /new BackgroundTaskFacadeImpl/);
+  assert.doesNotMatch(source, /requestOneShot\('review_sync'\)/);
+  assert.match(source, /AppStorage\.setOrCreate<ReminderFacadeImpl>\('reminderFacade'/);
+  assert.match(source, /AppStorage\.setOrCreate<FormCardFacadeImpl>\('formCardFacade'/);
 });
 
 test('FormAbility reads the shared snapshot and removes fixed mock data', () => {

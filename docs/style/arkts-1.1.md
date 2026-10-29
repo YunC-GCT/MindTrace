@@ -1,6 +1,6 @@
 # ArkTS 1.1 Strict — Syntax Rules for MindTrace
 
-> **目的**: 抽取自 [`docs/legacy/mindtrace/research/huawei-arkui-agent-20260901.md` §3](../legacy/mindtrace/research/huawei-arkui-agent-20260901.md#3-arkts-11-strict-mode-constraints),做成**可被任意 agent 直接加载**的语法规则手册。
+> **目的**: 抽取自华为官方文档调研（2026-09-01，调研原文已随旧资料清理）§3，做成**可被任意 agent 直接加载**的语法规则手册。
 > **使用方**: AGENTS.md 引用、Lint job (Phase 4 ticket #15) 用本文件生成 grep 模式、新 session 接 MindTrace 时**应加载本文件**再写代码。
 > **生成日期**: 2026-09-01 (审计同步)
 > **权威源**: <https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-migration-background>
@@ -458,7 +458,7 @@ grep -rEn '^\s+(rotate|translate|opacity|scale|backgroundColor)\s*[:=]' --includ
 6. **一个鸿蒙应用只能有一个 `type:entry` 模块**: 其他 HAP 用 `type:feature`
 7. **obfuscation-rules.txt 必须存在**: 即使 `enable:false` 也要有文件
 8. **新 .ets 文件必须用 Write 工具创建**: 避免 PowerShell 5.1/7 中文编码陷阱
-9. **`agents/mcp/tools/` 是命名误导**: 项目未运行 MCP server (audit §4.8), 计划改名 `tools/`
+9. **`agents/mcp/tools/` 保留 MCP 语义**: 项目未运行 MCP server，但 `OcrTool` 是队员按 MCP 工具语义改造的，`mcp/` 保留；增删查改类工具放 `agents/src/main/ets/tools/`（ADR-0010，2026-09-06 改名已撤销）
 
 ---
 

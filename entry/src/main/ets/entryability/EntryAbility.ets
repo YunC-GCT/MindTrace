@@ -1,9 +1,11 @@
 // ============================================================================
 //  entryability/EntryAbility.ets — 应用入口
 //  ----------------------------------------------------------------------------
+//  路径: entry/src/main/ets/entryability/EntryAbility.ets
 //  职责: 解析默认关闭的 NoteDetail benchmark + ArkWeb 启动期预热 + 初始化服务 + 加载首页。
 //  依赖: NoteDetailBenchmarkLaunch, WebKeepAliveExperiment, ArkWebWarmupService,
-//       LlmConfig, OcrConfig, DatabaseHelper, Kit facades, ChatFilesDirSeam, ChatSessionManager。
+//       LlmConfig, OcrConfig, OcrRecognizerRegistry, CoreVisionOcrRecognizer,
+//       DatabaseHelper, Kit facades, ChatFilesDirSeam, ChatSessionManager。
 //  沉浸式状态栏: app 内容延伸到 status bar 下方, status bar 背景透明。
 //  视觉效果: 系统时间/电量/信号/wifi 浮在 app 内容上, 与 app 无缝衔接。
 //  ============================================================================
@@ -11,16 +13,19 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { LlmConfig, OcrConfig, DatabaseHelper } from 'common';
+import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
-import { BackgroundTaskFacadeImpl } from '../kit/BackgroundTaskFacadeImpl';
-import { getBackgroundTaskFacade } from '../kit/BackgroundTaskFacadeImpl';
+import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
+import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
+import { DebugCaptureRunner } from '../services/DebugCaptureRunner';
+import { ImageSearchWorkerProbe } from '../services/ImageSearchWorkerProbe';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
 import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFilesDirSeam';
 import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';
 import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
+import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
 import {
   NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
   NoteDetailBenchmarkLaunchConfig,
@@ -48,6 +53,10 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
+    // issue #227: OCR 端口实现在 entry 侧注册 — Kit 只在本进程加载, agents 只依赖 common 契约
+    OcrRecognizerRegistry.install(new CoreVisionOcrRecognizer());
+    // 文搜图端口实现同样在 entry 注册: textSearchImage 属 Core Vision Kit, 只能在 UI 进程加载
+    ImageSearchIndexRegistry.install(new CoreVisionImageSearchIndex());
     // 初始化 LLM 配置(持久化 API key/endpoint/model)
     LlmConfig.getInstance().init(this.context).catch((e: Error) => {
       hilog.error(DOMAIN, 'testTag', 'LlmConfig init failed: %{public}s', e.message);
@@ -56,6 +65,12 @@ export default class EntryAbility extends UIAbility {
     OcrConfig.getInstance().init(this.context).catch((e: Error) => {
       hilog.error(DOMAIN, 'testTag', 'OcrConfig init failed: %{public}s', e.message);
     });
+    // 清空对话历史控制状态: 同步打开 Preferences, 失败降级且不阻断启动
+    try {
+      new ChatHistoryClearControl().init(this.context);
+    } catch (e) {
+      hilog.error(DOMAIN, 'testTag', 'ChatHistoryClearControl init failed: %{public}s', JSON.stringify(e));
+    }
     // 初始化数据库
     DatabaseHelper.init(this.context)
       .then((): Promise<void> => CardSnapshotService.refresh(this.context))
@@ -64,10 +79,6 @@ export default class EntryAbility extends UIAbility {
       });
     // F3 最小闭环 (spec 013 / ADR-0009): ReminderFacade 实现在组合根构造并注入
     AppStorage.setOrCreate<ReminderFacadeImpl>('reminderFacade', new ReminderFacadeImpl(this.context));
-    AppStorage.setOrCreate<BackgroundTaskFacadeImpl>(
-      'backgroundTaskFacade',
-      new BackgroundTaskFacadeImpl(),
-    );
     AppStorage.setOrCreate<FormCardFacadeImpl>('formCardFacade', new FormCardFacadeImpl(this.context));
     // ticket-0.3 (#121): 应用级 filesDir 缝 — 组合根解析一次,发布纯字符串 seam(无 UI 上下文)
     const chatFilesDirSeam = ChatFilesDirSeam.fromApplicationContext(this.context.getApplicationContext());
@@ -80,12 +91,44 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 
-  onDestroy(): void {
-    const facade = getBackgroundTaskFacade();
-    if (facade !== null) {
-      facade.finish('review_sync');
-      facade.finish('note_backup');
+  /**
+   * 启动参数 e2e=true 时自动跑一次批量链路自检。
+   * 给真机脚本用：`aa start ... --ps e2e true`，省去连点标题再滑到底找按钮的 UI 路径。
+   * e2e=search 只跑检索探针；e2e=worker 跑 S1 Worker 可用性探针。
+   */
+  private async runE2eIfRequested(): Promise<void> {
+    const flag: Object | undefined = this.launchWant?.parameters?.['e2e'];
+    if (flag === undefined) {
+      return;
     }
+    const mode: string = flag.toString();
+    hilog.info(0xE2E0, 'E2E', '%{public}s', 'launch-param e2e=' + mode + ', 触发自检');
+    if (mode === 'search') {
+      DebugCaptureRunner.runSearchProbe().catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', '检索探针异常: ' + e.message);
+      });
+      return;
+    }
+    if (mode === 'worker') {
+      try {
+        const ok: boolean = await ImageSearchWorkerProbe.run();
+        hilog.info(0xE2E0, 'E2E', '%{public}s',
+          'stage=worker-probe ok=' + (ok ? 'true' : 'false'));
+      } catch (error) {
+        const e: Error = error as Error;
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'stage=worker-probe ok=false err=' + e.message);
+      }
+      return;
+    }
+    if (mode !== 'true') {
+      return;
+    }
+    DebugCaptureRunner.run(this.context).catch((e: Error) => {
+      hilog.error(0xE2E0, 'E2E', '%{public}s', '批量自检异常: ' + e.message);
+    });
+  }
+
+  onDestroy(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
@@ -127,6 +170,12 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      // 自检依赖窗口/OCR 就绪，必须等内容加载完成再跑（onCreate 阶段跑会卡在 Dispatcher）
+      setTimeout((): void => {
+        this.runE2eIfRequested().catch((e: Error) => {
+          hilog.error(0xE2E0, 'E2E', '%{public}s', '自检异常: ' + e.message);
+        });
+      }, 1200);
     });
   }
 
@@ -137,24 +186,13 @@ export default class EntryAbility extends UIAbility {
     ChatSessionManager.flushActive().catch((e: Error) => {
       hilog.warn(DOMAIN, 'testTag', 'Chat history flush failed: %{public}s', e.message);
     });
-    this.refreshCardSnapshotInBackground().catch((e: Error) => {
-      hilog.warn(DOMAIN, 'testTag', 'Background card refresh failed: %{public}s', e.message);
+    this.refreshCardSnapshot().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'testTag', 'Card refresh failed: %{public}s', e.message);
     });
   }
 
-  private async refreshCardSnapshotInBackground(): Promise<void> {
-    const facade = getBackgroundTaskFacade();
-    if (facade === null) {
-      return;
-    }
-    const granted: boolean = await facade.requestOneShot('review_sync');
-    if (!granted) {
-      return;
-    }
-    try {
-      await CardSnapshotService.refresh(this.context);
-    } finally {
-      facade.finish('review_sync');
-    }
+  // v1 不做复习同步/备份，卡片快照改为退到后台时直接刷新，不再申请后台任务
+  private async refreshCardSnapshot(): Promise<void> {
+    await CardSnapshotService.refresh(this.context);
   }
 }

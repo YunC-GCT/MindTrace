@@ -3,7 +3,7 @@
  *
  * Path: entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets
  * Responsibility: Keep LLM, OCR, and Capture effects behind testable workflow seams.
- * Dependencies: AiService; IntentClassifier; ReplyService; common contracts.
+ * Dependencies: AiService; IntentClassifier; ReplyService; ModelRouter; LocalChatProvider; common contracts.
  *
  * Data flow:
  *   Workflow request -> typed port -> external service -> typed domain result.
@@ -13,6 +13,8 @@ import {
   CancellationToken,
   ClassificationResult,
   LlmConfig,
+  LocalChatProvider,
+  Logger,
   NoteDraftReadyEvent,
   NoteGenerationRoute,
   NoteGenerationProgressSink,
@@ -21,10 +23,15 @@ import {
   SourceBundle,
   NoteTopicCandidate,
 } from 'common';
+import type { StreamEvent } from 'common';
 import { AiService } from '../../services/AiService';
 import { IntentClassifier, ReplyContext, TextIntent } from '../../services/IntentClassifier';
 import { ReplyEventSink, ReplyService, StreamReplyResult } from '../../services/ReplyService';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { ModelRouter } from '../../services/ModelRouter';
+import type { RoutedReply } from '../../services/ModelRouter';
+
+const replyPortLog: Logger = new Logger('ConversationReplyPort');
 
 export interface IConversationIntentPort {
   classify(userText: string): Promise<TextIntent>;
@@ -36,6 +43,7 @@ export interface IConversationIntentPort {
 export interface IConversationReplyPort {
   isConfigured(): Promise<boolean>;
   complete(context: ReplyContext, token?: CancellationToken): Promise<string>;
+  completeRouted(context: ReplyContext, token?: CancellationToken): Promise<RoutedReply>;
   stream(context: ReplyContext, sink: ReplyEventSink, token?: CancellationToken): Promise<StreamReplyResult>;
   normalize(content: string): string;
 }
@@ -122,13 +130,37 @@ class ConversationIntentAdapter implements IConversationIntentPort {
 
 class ConversationReplyAdapter implements IConversationReplyPort {
   private readonly reply: ReplyService;
+  private readonly router: ModelRouter;
+  private localChat?: LocalChatProvider;
 
-  constructor(reply: ReplyService) { this.reply = reply; }
+  constructor(reply: ReplyService, router: ModelRouter) {
+    this.reply = reply;
+    this.router = router;
+  }
+
+  /** production() 注入与 ModelRouter 共享的同一个 LocalChatProvider，避免二次 init 与状态分叉。 */
+  attachLocalChat(localChat: LocalChatProvider): void {
+    this.localChat = localChat;
+  }
 
   async isConfigured(): Promise<boolean> { return await LlmConfig.getInstance().isConfigured(); }
 
+  async completeRouted(context: ReplyContext, token?: CancellationToken): Promise<RoutedReply> {
+    token?.throwIfCancelled();
+    const routed: RoutedReply = await this.router.answer(context);
+    replyPortLog.info('source=' + routed.source
+      + ' degraded=' + routed.degraded.toString()
+      + ' reason=' + routed.reason
+      + ' chars=' + routed.text.length.toString());
+    return routed;
+  }
+
   async complete(context: ReplyContext, token?: CancellationToken): Promise<string> {
-    return await this.reply.complete(context, token);
+    const routed: RoutedReply = await this.completeRouted(context, token);
+    if (routed.degraded) {
+      return routed.text + '\n\n（已降级：' + routed.reason + '）';
+    }
+    return routed.text;
   }
 
   async stream(
@@ -136,6 +168,41 @@ class ConversationReplyAdapter implements IConversationReplyPort {
     sink: ReplyEventSink,
     token?: CancellationToken,
   ): Promise<StreamReplyResult> {
+    token?.throwIfCancelled();
+    const localChat: LocalChatProvider | undefined = this.localChat;
+
+    // 端侧就绪优先：真流式回调直接转成 text delta；失败不在本层兜底，
+    // 交给 ConversationWorkflow.recoverStreamReply 统一 fallback + 标注。
+    if (localChat !== undefined && localChat.isReady()) {
+      const startedAt: number = Date.now();
+      let cancelled: boolean = false;
+      replyPortLog.info('[StreamRoute] source=on_device');
+      const content: string = await localChat.askStream(
+        context.userContent,
+        (chunk: string, _finished: boolean): void => {
+          if (cancelled || chunk.length === 0) {
+            return;
+          }
+          if (token !== undefined && token.isCancelled()) {
+            cancelled = true;
+            return;
+          }
+          const textEvent: StreamEvent = { type: 'text', delta: chunk };
+          sink(textEvent);
+        },
+      );
+      token?.throwIfCancelled();
+      replyPortLog.info('[StreamRoute] source=on_device chars=' + content.length.toString()
+        + ' elapsedMs=' + (Date.now() - startedAt).toString());
+      const onDeviceResult: StreamReplyResult = {
+        content: content,
+        interrupted: false,
+        usedFallback: false,
+      };
+      return onDeviceResult;
+    }
+
+    replyPortLog.info('[StreamRoute] source=remote');
     return await this.reply.stream(context, sink, token);
   }
 
@@ -284,9 +351,21 @@ export class ConversationWorkflowPorts {
     noteRoute?: IConversationNoteRoutePort,
   ): ConversationWorkflowPorts {
     const classifier: IntentClassifier = new IntentClassifier();
+    const replyService: ReplyService = new ReplyService(classifier);
+    const localChat: LocalChatProvider = new LocalChatProvider();
+    // 不阻塞 production()：init 失败由 provider 内部记录并返回 false，router 继续走云端/报错
+    localChat.init().then((ready: boolean): void => {
+      replyPortLog.info('localChat init result=' + ready.toString());
+    }).catch((e: Error): void => {
+      replyPortLog.error('localChat init crashed: ' + e.message);
+    });
+    const router: ModelRouter = new ModelRouter(context.filesDir, replyService, localChat);
+    // 保持既有构造签名不变；流式路由复用同一个 localChat 实例
+    const replyAdapter: ConversationReplyAdapter = new ConversationReplyAdapter(replyService, router);
+    replyAdapter.attachLocalChat(localChat);
     return new ConversationWorkflowPorts(
       new ConversationIntentAdapter(classifier),
-      new ConversationReplyAdapter(new ReplyService(classifier)),
+      replyAdapter,
       new ConversationCaptureAdapter(context),
       noteRoute,
     );

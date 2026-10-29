@@ -30,7 +30,6 @@ import {
   GalaxyRendererCallbacks,
 } from './GalaxyRendererContracts'
 import { GalaxyWebAdapter } from './GalaxyWebAdapter'
-import { ReviewGraphView } from './ReviewGraphView'
 
 @Component
 export struct KnowledgeGalaxy3DHost {
@@ -94,7 +93,7 @@ export struct KnowledgeGalaxy3DHost {
         GalaxyComponent3DAdapter({
           snapshot: this.snapshot,
           selectedId: this.selectedId,
-          paused: this.paused,
+          paused: this.paused || this.selectedNote !== null,
           viewportWidth: this.viewportWidth,
           viewportHeight: this.viewportHeight,
           callbacks: this.nativeCallbacks,
@@ -107,10 +106,18 @@ export struct KnowledgeGalaxy3DHost {
           callbacks: this.webCallbacks,
         })
       } else {
-        ReviewGraphView({ onGoAI: this.onGoAI })
+        Column({ space: S_2 }) {
+          Text('三维星系暂时不可用')
+            .fontSize(F_SM)
+            .fontColor(TEXT_3)
+          Button('重试三维星系')
+            .onClick(this.retryRenderer)
+          Button('前往 AI 助手')
+            .onClick(this.onGoAI)
+        }
       }
 
-      if (this.loading || (this.rendererMode !== 'fallback' && !this.rendererReady)) {
+      if (this.rendererMode !== 'unavailable' && (this.loading || !this.rendererReady)) {
         Column({ space: S_2 }) {
           LoadingProgress()
             .width(28)
@@ -180,14 +187,20 @@ export struct KnowledgeGalaxy3DHost {
   private handleRendererFailure(event: GalaxyRendererEvent, reason: string): void {
     const currentMode: GalaxyRendererMode = this.rendererMode
     this.handleRendererEvent(event)
-    if (currentMode === 'web' && this.rendererMode === 'fallback') {
+    if (currentMode === 'web' && this.rendererMode === 'unavailable') {
       try {
-        promptAction.showToast({ message: '三维星系加载失败，已切换兼容视图', duration: 1800 })
+        promptAction.showToast({ message: '三维星系加载失败，请重试', duration: 1800 })
       } catch (_error) {}
       console.warn('[KnowledgeGalaxy3DHost] Web renderer failed: ' + reason)
     } else if (currentMode === 'native' && this.rendererMode === 'web') {
       console.info('[KnowledgeGalaxy3DHost] Native renderer unavailable: ' + reason)
     }
+  }
+
+  private retryRenderer = (): void => {
+    this.rendererReady = false
+    this.rendererMode = chooseInitialGalaxyRenderer(this.hasNativeCapability())
+    if (this.loadFailed) this.reloadGalaxy(true)
   }
 
   private selectOrOpenById = (id: string): void => {

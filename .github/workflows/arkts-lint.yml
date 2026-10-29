@@ -3,9 +3,9 @@ name: arkts-lint
 # Run on push to main, on PRs, and manual dispatch
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 # Cancel in-progress runs for same branch on new push
@@ -30,7 +30,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: scripts/arkts-lint/package.json
 
@@ -46,6 +46,12 @@ jobs:
         working-directory: scripts/arkts-lint
         run: npm test
 
+      - name: Check generated rule manifest is current
+        run: node scripts/arkts-lint/export-rules.mjs --check
+
+      - name: Run agent-gate unit tests
+        run: node --test scripts/agent-gate/tests/*.test.mjs
+
   lint-ast:
     name: Lint (arkts-lint v0.3 AST)
     runs-on: ubuntu-latest
@@ -57,7 +63,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: scripts/arkts-lint/package.json
 
@@ -67,6 +73,28 @@ jobs:
 
       - name: Run AST lint (must exit 0)
         run: node scripts/arkts-lint/index.mjs --quiet
+
+  agent-gate:
+    name: Agent handoff gate (whole repo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: scripts/arkts-lint/package.json
+
+      - name: Install dependencies
+        working-directory: scripts/arkts-lint
+        run: npm ci
+
+      - name: Run agent-gate (must exit 0)
+        run: node scripts/agent-gate/index.mjs --all
 
   lint-regex:
     name: Lint (v1 regex, reference)
@@ -78,7 +106,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Run regex lint
         run: node scripts/audit-arkts-strict.mjs --quiet

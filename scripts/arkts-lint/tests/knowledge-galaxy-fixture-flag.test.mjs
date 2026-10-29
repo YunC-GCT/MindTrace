@@ -2,10 +2,10 @@
  * knowledge-galaxy-fixture-flag.test.mjs — built-in galaxy sample notes
  *
  * Asserts the source-level state of:
- *   entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets
+ *   entry/src/main/ets/services/GalaxyPreviewData.ets
  *
  * The built-in notes intentionally remain enabled so a fresh install has a
- * populated galaxy. Their reserved IDs must remain protected from deletion.
+ * populated galaxy. They are seeded into RDB and then behave as normal notes.
  *
  * This is a SOURCE-LEVEL test (parses the .ets file and inspects the AST).
  * It does not need a HarmonyOS runtime to run. The companion Hypium
@@ -25,7 +25,7 @@ import { preprocessArkUI } from '../parser/index.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // From tests/ → arkts-lint/ → scripts/ → MindMind/  (3 levels up)
 const REPO_ROOT = resolve(__dirname, '../../..');
-const TARGET_FILE = join(REPO_ROOT, 'entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets');
+const TARGET_FILE = join(REPO_ROOT, 'entry/src/main/ets/services/GalaxyPreviewData.ets');
 
 /**
  * Find the `ENABLE_GALAXY_PREVIEW_UNITS` VariableDeclaration in the AST
@@ -85,9 +85,9 @@ test('built-in galaxy notes remain enabled', () => {
   );
 });
 
-test('built-in galaxy notes remain protected and include long formulas', () => {
+test('built-in galaxy notes retain fixed IDs and long formulas after moving to RDB', () => {
   const source = readFileSync(TARGET_FILE, 'utf8');
-  assert.match(source, /if \(this\.isPreviewUnitId\(id\)\) \{\s*return false/);
+  assert.match(source, /PREVIEW_UNIT_PREFIX: string = "galaxy_preview_"/);
   assert.match(source, /\\\\sum_\{k=0\}\^\{n\}/);
   assert.match(source, /\\\\operatorname\{rank\}/);
   assert.match(source, /\\\\forall \\\\varepsilon>0/);
@@ -96,5 +96,5 @@ test('built-in galaxy notes remain protected and include long formulas', () => {
 test('the file is still parseable (regression check)', () => {
   // Just make sure we can read the file and that the search found the declaration.
   const init = readFixtureFlag();
-  assert.ok(init, 'KnowledgeGalaxyViewModel.ets was not parseable, or declaration was renamed');
+  assert.ok(init, 'GalaxyPreviewData.ets was not parseable, or declaration was renamed');
 });

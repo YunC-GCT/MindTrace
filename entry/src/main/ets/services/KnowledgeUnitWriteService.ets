@@ -32,7 +32,7 @@ export class KnowledgeUnitWriteService {
     WritePathValidator.validateKnowledgeUnit(unit);
     const persisted: KnowledgeUnitPersistenceResult =
       await this.repository.createWithRevision(unit, generationMetadata);
-    const warnings: string[] = await this.runPostCommit(persisted.unit);
+    const warnings: string[] = await this.runPostCommit(persisted.unit, true);
     const result: KnowledgeUnitWriteResult = {
       committed: true,
       rowId: persisted.rowId,
@@ -51,7 +51,7 @@ export class KnowledgeUnitWriteService {
     try {
       const persisted: KnowledgeUnitPersistenceResult =
         await this.repository.updateWithRevision(unit, expectedVersion, generationMetadata);
-      const warnings: string[] = await this.runPostCommit(persisted.unit);
+      const warnings: string[] = await this.runPostCommit(persisted.unit, false);
       const result: KnowledgeUnitWriteResult = {
         committed: true,
         rowId: persisted.rowId,
@@ -95,7 +95,7 @@ export class KnowledgeUnitWriteService {
       generationMetadata,
       commit,
     );
-    const warnings: string[] = await this.runPostCommit(persisted.unit);
+    const warnings: string[] = await this.runPostCommit(persisted.unit, persisted.duplicate !== true);
     return {
       committed: true,
       rowId: persisted.rowId,
@@ -122,7 +122,7 @@ export class KnowledgeUnitWriteService {
         generationMetadata,
         commit,
       );
-      const warnings: string[] = await this.runPostCommit(persisted.unit);
+      const warnings: string[] = await this.runPostCommit(persisted.unit, false);
       return {
         committed: true,
         rowId: persisted.rowId,
@@ -151,9 +151,12 @@ export class KnowledgeUnitWriteService {
     }
   }
 
-  private async runPostCommit(unit: KnowledgeUnit): Promise<string[]> {
+  private async runPostCommit(unit: KnowledgeUnit, isCreate: boolean): Promise<string[]> {
     const warnings: string[] = [];
     for (const effect of this.effects) {
+      if (effect.createOnly === true && !isCreate) {
+        continue;
+      }
       try {
         await effect.run(unit);
       } catch (e) {

@@ -1,6 +1,6 @@
 ﻿# 021 — Chat 流式增量 Markdown/LaTeX 渲染与持久化降载
 
-> **Status**: proposed + ticket-0 evidence complete (2026-09-13 grill session; §6 defaults frozen from corrected #124 raw evidence; emulator performance follow-up recorded)
+> **Status**: implemented in develop; device acceptance pending (2026-10-18 — RendererScheduler / RenderTick / StreamingReplyDocument landed 2026-09-18/19; #118 closed; §6 defaults frozen from corrected #124 raw evidence; emulator performance follow-up recorded)
 > **Source**: [chat Markdown/LaTeX render research](../research/chat-markdown-latex-render-jank-2026-09-13.md) · code fact verification · grill decisions Q1–Q35
 > **Related**: [spec 019](./019-reasoning-process-display-p0.md) · [spec 020](./020-reply-body-contract.md) · [ADR-0015](../adr/0015-structured-stream-events.md) · [ADR-0016](../adr/0016-reply-contract-by-transport.md)
 > **Official API evidence**: `API参考/ArkUI_方舟UI框架/UI开发_ArkTS声明式开发范式/使用文本/属性字符串_StyledString_MutableStyledString/arkts-styled-string` · `API参考/ArkUI_方舟UI框架/ArkTS组件/文本与输入/属性字符串/ts-universal-styled-string` · `API参考/ArkTS_方舟编程语言/ArkTS_API/ohos_taskpool_启动任务池_/js-apis-taskpool` · `API参考/Core_File_Kit_文件基础服务/ArkTS_API/ohos_file_fs_文件管理_/js-apis-file-fs`
@@ -123,7 +123,7 @@ MindTrace 的 chat 流式回复目前在 SSE 期间主要以轻量 `Text` 展示
   - `perCreateWorkMs` = 每个 Web 工作单元从创建（进入 Web 渲染决策）到首次真实高度回传应用的实测耗时样本集。
   - `maxWebCreatesPerFrame = clamp(floor(32 / median(perCreateWorkMs)), 1, 4)`
   - `maxWebWorkMsPerFrame = clamp(round(p75(perCreateWorkMs)), 1, 16)`
-  - 数值状态（post-code-review corrected evidence）：基于 `spec/ticket-0-6-chat-render-fixtures-budgets/raw/` 中 A/B/C/C′ 4×20 JSONL 原始行，直接 `webWorkDurationSamplesMs` 样本 `n=16`，median=150ms，p75=426ms → `maxWebCreatesPerFrame=1`、`maxWebWorkMsPerFrame=16`。percentile 用 nearest-rank（`ceil(p/100 * n)`），clamp 上下界为冻结常量。证据基线交付状态为 `PASS_WITH_EMULATOR_PERFORMANCE_FOLLOW_UP`；`T_finishToStable` p95: B=554ms、C=2649ms、C′=687ms > 500ms，且 B 连续长帧 13/20，均作为 DevEco 模拟器上的性能跟进项记录，不否定本 ticket 的证据交付。任何最终数值修改需新设备证据。
+  - 数值状态（post-code-review corrected evidence）：基于 `docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/raw/` 中 A/B/C/C′ 4×20 JSONL 原始行，直接 `webWorkDurationSamplesMs` 样本 `n=16`，median=150ms，p75=426ms → `maxWebCreatesPerFrame=1`、`maxWebWorkMsPerFrame=16`。percentile 用 nearest-rank（`ceil(p/100 * n)`），clamp 上下界为冻结常量。证据基线交付状态为 `PASS_WITH_EMULATOR_PERFORMANCE_FOLLOW_UP`；`T_finishToStable` p95: B=554ms、C=2649ms、C′=687ms > 500ms，且 B 连续长帧 13/20，均作为 DevEco 模拟器上的性能跟进项记录，不否定本 ticket 的证据交付。任何最终数值修改需新设备证据。
 - `RenderTick` 是通用、浮窗实例级的 50ms 节拍源，唯一常量为 `TICK_MS = 50`，使用 `setInterval`。
 - RenderTick 按需启动：第一个 pending 事件入队时启动计时器，不同步执行；tick 触发后派发本 tick pending，检查 pending 为空后暂停。暂停保留实例、引用和订阅，下一次入队复用；`aboutToDisappear` 才是 dispose，清空 pending、断开订阅、释放 timer，dispose 后入队为 no-op 或开发态断言。
 - `show=false` 只暂停 RenderTick，不销毁 Document；停止前先按订阅者有效性 flush pending。若 List 已销毁，只更新 Document 状态，不回调失效组件。

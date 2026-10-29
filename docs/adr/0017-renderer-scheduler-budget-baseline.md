@@ -46,7 +46,7 @@ typical work unit with a hard 16ms ceiling (half of the 32ms frame budget as saf
 - `maxWebWorkMsPerFrame = clamp(round(p75(perCreateWorkMs)), 1, 16)`
 - Percentiles use nearest-rank (`ceil(p/100 * n)`); the clamp bounds are frozen constants.
 - Final values are recomputable from the corrected raw per-run JSONL files in
-  `spec/ticket-0-6-chat-render-fixtures-budgets/raw/` (one record per run, 20 rows per fixture). The
+  `docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/raw/` (one record per run, 20 rows per fixture). The
   older Phase-9 proxy-derived values below are retained only as superseded historical evidence.
 
 ## Environment
@@ -67,7 +67,7 @@ Corrected evidence was collected 2026-09-16 on the MatePad Pro 13 emulator (127.
 post-review seam that emits `webWorkStartCount` and `webWorkDurationSamplesMs` directly. One process
 ran warmup → precondition query → A/B/C/C′ 4×20 collection and emitted
 `ALL_RUNS_DONE records=80` at 12:53:02.690. Raw rows are committed under
-`spec/ticket-0-6-chat-render-fixtures-budgets/raw/`:
+`docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/raw/`:
 
 - `A.jsonl` — 20 rows
 - `B.jsonl` — 20 rows

@@ -85,7 +85,7 @@ MindTrace 将数学截图、公式与零散文本整理为结构化笔记，经�
    快速模式优先使用端侧文字识别。公式识别或服务端回退需要启动配套 OCR 服务：
 
    ```powershell
-   .\start_ocr_server.bat
+   .\start-ocr-server.bat
    ```
 
    服务脚本面向 Windows，需要 Python 3.10+。将启动后显示的地址填入应用 OCR 设置，例如：

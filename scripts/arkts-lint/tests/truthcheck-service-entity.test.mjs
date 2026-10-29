@@ -20,6 +20,7 @@ const runtimeSources = [
   'agents/src/main/ets/agents/TruthCheckService.ets',
   'agents/src/main/ets/graph/nodes/TruthCheckNode.ets',
   'agents/src/main/ets/graph/CaptureGraph.ets',
+  'common/src/main/ets/models/CaptureChain.ets',
   'agents/src/main/ets/core/Dispatcher.ets',
 ].map((path) => read(path).replace(/^import[\s\S]*?;\r?\n/gm, '')).join('\n');
 const compiled = ts.transpileModule('class Logger {}\n' + runtimeSources, {

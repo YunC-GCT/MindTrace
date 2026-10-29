@@ -13,6 +13,19 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+## Repository state (2026-10-18)
+
+- Default branch is **`main`**; day-to-day PRs target **`develop`**. `develop` is 913 commits ahead of `main`, so `main` is a release branch, not the integration gate.
+- **`Closes #N` does not fire on `develop` merges.** GitHub only auto-closes when the PR merges into the default branch. After merging a PR into `develop`, close the claimed issues manually:
+
+  ```bash
+  gh issue close <n> --comment "Implemented and merged to develop via #<pr>. Closing; ships with the next main release."
+  ```
+
+- Snapshot: 105 issues (36 open / 69 closed after the 2026-10-18 reconciliation; the pre-reconciliation state was 73 open / 32 closed), 112 PRs (98 merged / 13 closed-unmerged / 1 open). The open PR is #216, blocked on review rather than code.
+- On 2026-10-18, 37 issues were closed: 16 completed by #179 / #193 / #194, 11 verified from code/tests (#96–#104, #115, #118), and 10 tied to the reverted spec 016 frontend draft (#63–#72). #62 moved to `ready-for-human`.
+- Full reconciliation: [`docs/research/github-issue-pr-audit-2026-10-18.md`](../research/github-issue-pr-audit-2026-10-18.md).
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_

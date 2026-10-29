@@ -1,0 +1,183 @@
+# 031 — 小艺唤起批量整理 (P1–P3)
+
+> 状态: 进行中 · 起点: 2026-10-23 · 主线: v1 端A2A
+> 上游: [`phase-tracker.md`](../agents/phase-tracker.md) P1/P2/P3
+
+## 1. 背景
+
+P0 已打通「小艺 → `AgentExtensionAbility` → 回复」。现在用户在小艺里说「把相册里的数学题整理成笔记」，只能拿到一段静态计划，应用不会出现。
+
+本 spec 把这条路接到真实能力：**小艺 → 拉起应用半屏浮窗 → 用户选图 → OCR → 落库 → 回执**。
+
+## 2. 已定决策
+
+| 决策 | 选择 | 理由 |
+|---|---|---|
+| 应用被拉起后的形态 | **半屏浮窗**，用户再点选图 | 不打断当前界面；复用现有 `AgentFloatWindow` |
+| 取消选图 | 回「已取消，需要时再叫我」 | 需异步通道，见 §6 风险 |
+| 范围 | P1+P2+P3 合并推进 | 只拿到 URI 不算可用 |
+
+## 3. 数据流
+
+```
+小艺 SendStreamingMessage
+   → AgentExtAbility.handleTask(query)
+      → 命中意图(batch_capture)
+      → startAbility(EntryAbility, parameters{ mtAction, mtQuery })
+      → 立即回 task 快照「已打开应用，请在浮窗里选图」
+   → EntryAbility.onCreate / onNewWant 读 parameters
+      → AppStorage.setOrCreate('mtPendingAction', {...})
+   → Index.ets 监听 → activeOverlay = 'float' + batchMode = true
+   → AgentFloatWindow 显示「选图整理」入口
+      → AlbumPickerLauncher.pick(ctx, 20)   ← P2 改多选
+      → uris[]
+      → Dispatcher.dispatch(...)            ← P3 接现有编排
+      → 落库 + 卡片/列表刷新
+```
+
+### 3.1 已否决：`AgentExtensionAbility` 直接拉起应用
+
+2026-10-23 实测编译失败（`Property 'startAbility' does not exist on type 'AgentExtensionContext'`）。
+
+**原因（SDK 证据）**：`AgentExtensionContext extends ExtensionContext extends Context`，整条链上没有 `startAbility`；扩展进程不能启动 UIAbility。
+
+**正确路径**：用 `AgentUIExtensionAbility`（`UIExtensionAbility` 子类，SDK `@ohos.app.agent.AgentUIExtensionAbility.d.ts`，API 24），它的 `UIExtensionContext` 提供 `startAbility`，且必须与 `AgentExtensionAbility` **同进程**运行。
+
+因此 P1 拆成两步：
+
+| 票 | 内容 |
+|---|---|
+| T1a | 新增 `AgentUIExtensionAbility` + 卡片页（半屏内容：「选图整理」按钮） |
+| T1b | 卡片按钮 `context.startAbility(EntryAbility)` → 应用打开并弹 Picker |
+
+## 4. 接口契约
+
+### 4.1 Want parameters（A2A → 应用）
+
+| key | 类型 | 说明 |
+|---|---|---|
+| `mtAction` | string | 固定 `batch_capture` |
+| `mtQuery` | string | 用户原话，用于浮窗展示 |
+
+### 4.2 AppStorage key
+
+| key | 类型 | 说明 |
+|---|---|---|
+| `mtPendingAction` | `{ action: string; query: string; at: number }` | 页面消费后置空 |
+
+### 4.3 选图接口
+
+```ts
+// 现状: maxSelectNumber = 1
+// 目标: 显式传入上限，默认 1，批量路径传 20
+static async pick(context: common.UIAbilityContext, maxCount: number = 1): Promise<string[]>
+```
+
+### 4.4 意图识别（v1 用关键词，不接模型）
+
+命中集合：`整理` / `笔记` / `数学题` / `相册` 任意两个词，或整句包含「整理…笔记」。
+
+未命中 → 保持现有静态计划回复（不改变 P0 行为）。
+
+### 4.5 UI 扩展注册形态（SDK / 运行时源码确认）
+
+- 类型值：`module.json5` → `extensionAbilities[].type = "agentUI"`（`toolchains/modulecheck/module.json` 枚举里存在）
+- 类：`AgentUIExtensionAbility` 是 `UIExtensionAbility` 的空子类（`@ohos.app.agent.AgentUIExtensionAbility.d.ts`），生命周期全部来自父类
+- 页面：`onSessionCreate(want, session)` → `session.loadContent('pages/<卡片页>')`
+- 与 `AgentExtensionAbility` **同进程**运行（官方文档约束）
+- `services/abilitymgr/resource/ams_extension_config.json` 里 `agentUI` 只登记了锁屏策略，没有额外 metadata 要求
+
+### 4.6 实测：小艺不会自动拉起 `agentUI` 扩展（2026-10-23）
+
+- 扩展已注册成功：`bm dump` 可见 `extensionTypeName: agentUI`、`name: AgentUIExtAbility`
+- 构建、装机均通过
+- 但真机发消息后：**小艺侧无任何 `agentUI` / `UIExtension` 日志，扩展进程未被启动**
+- `AgentHostProxy` 只有 `sendData` / `authorize`，没有“请求显示 UI”的方法
+- `AgentCard.d.ts` 里没有 UI 相关字段
+- 结论：**触发条件在闭源的小艺客户端里**，公开 SDK 与文档都查不到
+
+### 4.7 资料调研结果（2026-10-23）
+
+| 来源 | 结论 |
+|---|---|
+| 官方 `openharmony/docs` | 只有 1 页 API 存根（1781 字节），没有触发方式 |
+| `toolchains/modulecheck/module.json` | 确认 `type: "agentUI"` 合法 |
+| `ams_extension_config.json` | 只登记锁屏策略，无 metadata 要求 |
+| `AgentHostProxy.d.ts` | 只有 `sendData` / `authorize`，无显示 UI 的方法 |
+| `AgentCard.d.ts` | 无任何 UI 字段 |
+| 全网代码检索 `uiExtensionCard` / `ability.want.params.payload` | **只在 1 篇社区文章里出现**，官方仓库与其他实现零命中 |
+
+**实测该社区方案**：在 task 的 `artifacts[].parts[]` 里追加 `{type:'uiExtensionCard', payload:{...}}` 后，
+小艺**连文本气泡都不再渲染**（响应 600 字节被整条丢弃），扩展进程也没有被拉起 → 该格式不被当前客户端接受。
+
+### 4.8 补查：触发方式找到了，但依赖 API 26
+
+后续从《端A2A协议技术规范》相关文档确认：
+
+- **Part 没有 `type` 字段**，合法字段是 `text / raw / url / data / mediaType / filename / metadata`；卡片指令放在 **`data`** 里
+- 小艺收到 `data` 中的 `uiExtensionCard` 指令后拉起 `AgentUIExtensionAbility`，payload 经 `ability.want.params.payload` 透传
+- Part / Artifact / TaskArtifactParam 与 `createA2AServer` 都来自 **`@kit.AgentFrameworkKit`，起始版本 API 26**
+
+**本机约束**：DevEco SDK 与本机 OS 都是 **API 24**（`6.1.0.135`）。我们没有 AgentFrameworkKit 的 Part 类型，只能手写 JSON；实测在 task 的 `artifacts[].parts[]` 里追加带 `data` 的第二个 part 后，**整条响应不再渲染**（`ok:false`）。回滚后文本回复恢复（`ok:true`）。
+
+**结论**：A 路线阻塞于 **API 26 SDK + 官方 A2A Server**，不是靠猜 JSON 能解决的。需要：升级 SDK 到 API 26 → 用 `createA2AServer` 构造 Part/Artifact → 再验证卡片。
+
+**当前判断**：P1 先走文字引导 + 应用内入口；A 记为 ⛔ 阻塞（依赖 API 26）。
+
+### 4.9 API 26 落地结果（2026-10-24）
+
+- 安装 DevEco Studio 26.0.0（`sdk 26.0.0 (API 26)`），项目 `targetSdkVersion: "26.0.0"`、`compatibleSdkVersion: "6.1.1(24)"`，构建通过
+- `AgentExtAbility` 改用 `createA2AServer` + `Server.onMessage / addArtifact / updateStatus`
+- 真机（HarmonyOS 7.0.0.111，API 26）验证：小艺收到文本回复；日志 `method=Execute`，三帧 `sendData`
+- **卡片仍未拉起**：`Part.data = { type:'uiExtensionCard', payload:{...} }` 时小艺日志把它归为 `A2aUnknownMsg` 转发云端，`AgentUIExtensionAbility` 未启动；把 `payload` 改成 JSON 字符串同样无效
+- **指令 schema 已确认**（2026-10-24）：A2A v1 用字段名做判别器，正确写法是
+
+```json
+"data": { "uiExtensionCard": { "payload": { ... } } }
+```
+
+  加上这层后，小艺日志立刻从 `A2aUnknownMsg` 变成真正去加载组件：
+
+```
+AgentUIExtensionComponent:load UIExtensionComponent failed:
+{"code":1011,"name":"start_ability_fail",
+ "message":"Start ui extension ability failed, please check the want of UIextensionAbility."}
+```
+
+- **回复渲染：必须单帧 task 快照（2026-10-24 深夜实测）**。`createA2AServer` 会先自动发 `TASK_STATE_SUBMITTED`（带 history），再发 `artifactUpdate` 增量帧；小艺在这种序列下只渲染开头一两个词（实测「已」「好」「当前」），即使报文里带着 200+ 字。改回**手写 JSON-RPC 单帧 `result.task`**（artifacts + `TASK_STATE_COMPLETED` 一次给全）后完整渲染 263 字。结论：SDK 的流式封装与本客户端的渲染器不兼容
+- **A2A 真模型链路稳定性（2026-10-24 深夜）**：`LLM 返回 47 字，耗时 1254 ms`；此前几次「模型响应超时」是模型端临时变慢，兜底超时已从 25s 提到 60s
+- **教训：扩展进程不要引入应用层重依赖**。把 `ModelRouter` 导进 `AgentExtAbility` 会让扩展在 onCreate 之前就以 `exit 254 / Reason:SyntaxError` 死掉；同理，把 `ModelRouter` 接进 `ConversationWorkflowPorts` 会让 App 主进程同样崩。路由接线已回退，`ModelRouter` 暂留未接
+- **A2A 已接入真模型**（2026-10-24）：`AgentExtAbility` 不再返回固定文案，改走 `ReplyService → LlmGuard → LlmClient`；冷启动实测 3.5 秒返回 355 字真实回答
+- 排障教训：早期的「配置初始化挂起 / 请求不返回」是**热进程仍在跑旧代码**造成的假象，冷启动（`aa force-stop`）后即恢复正常；验收 A2A 改动必须先杀进程
+- **当前卡点**：小艺拼出来的 Want 指向了错误的 Ability，UI 扩展起不来。尝试用 `module.json5` 的 `process` 字段让两个扩展同进程，但该字段被 schema 拒绝（`^[:][0-9a-zA-Z_]+$` 与其它约束冲突），已回滚
+- **副作用（已修）**：只要对话里存在这张加载失败的卡片，小艺就会以约 12 次/秒的频率重试 `start_ability_fail`，表现为回复区一直转圈；杀掉小艺后归零。当前改为**只发文本**，新对话不再触发
+- 已验证：把 AgentCard 的 `abilityName` 指向 `AgentUIExtAbility` 后 A2A 文本链路仍正常（连接走 metadata，不靠该字段），但 UI 扩展仍起不来；在 `uiExtensionCard` 里显式带 `bundleName/moduleName/abilityName` 也无效
+- 下一步：查 `ability_runtime` 里 agentUI 的启动路径，确认 Want 里 `bundleName/moduleName/abilityName` 的来源（大概率要平台 AgentCard 单独声明 UI ability）
+
+**结论**：文本链路已在官方 SDK 上跑通；卡片只差指令 schema 这一项。
+
+## 5. 分票
+
+| # | 票 | 验收 |
+|---|---|---|
+| T1 | 意图识别 + `startAbility` + AppStorage 传递 | 小艺说话后应用到前台并进浮窗；日志可见 `mtAction=batch_capture` |
+| T2 | `AlbumPickerLauncher.pick(ctx, maxCount)` 多选 20 | 选 20 张不崩，URI 全可读 |
+| T3 | 选图 → `Dispatcher.dispatch` → 落库 | 杀掉应用重启，笔记仍在 |
+| T4 | 回执：浮窗显示「已整理 N 条」；小艺侧下一轮可查询 | 数字与库内一致 |
+| T5 (spike) | 异步回「已取消」：保持 A2A 流不结束 | 能验证就做，不能就把取消写进应用内记录 |
+
+## 6. 风险
+
+| 风险 | 影响 | 处理 |
+|---|---|---|
+| **A2A 单向**：回完 task 即结束，应用侧事件推不回小艺 | T5 取消回话做不到 | 先做 T1–T4；T5 单独 spike，失败则降级为「应用内提示」 |
+| 半屏浮窗需要前台 UI 上下文 | A2A 里不能直接弹 Picker | 必须走 `startAbility`，由页面拉起 |
+| `Dispatcher.dispatch` 依赖网络/模型 | 无网时落库失败 | 失败要显式报错，不静默 |
+| 多选 20 张内存 | 低端机可能 OOM | 先按 10 张验收，再放开 20 |
+
+## 7. 验收（对应 phase-tracker）
+
+- P1：真机小艺说「整理相册里的数学题」→ 应用进前台浮窗
+- P2：选 10 张成功返回 URI
+- P3：笔记落库，重启仍在
+- 全程 `node scripts/agent-gate/index.mjs` 为 PASS

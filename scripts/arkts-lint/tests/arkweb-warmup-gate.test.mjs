@@ -1,6 +1,6 @@
 // scripts/arkts-lint/tests/arkweb-warmup-gate.test.mjs
 //
-// Issue #119 / spec/restore-arkweb-warmup:
+// Issue #119 / docs/specs/execution/restore-arkweb-warmup:
 //   Regression gate for the ArkWeb startup warmup, fixed SINGLE mode,
 //   public baseline precondition state, and protected no-migration scope.
 
