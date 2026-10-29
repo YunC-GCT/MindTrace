@@ -42,6 +42,28 @@ test('an image part with neither raw nor url is skipped instead of crashing', ()
   assert.equal(images.length, 0, '拿不到字节就跳过，交给「没认出文字」回执');
 });
 
+test('data 里直接放 base64（含 data url 前缀）也能取到字节', () => {
+  const plain = collectImageParts([{ mediaType: 'image/png', data: 'AAAA' }]);
+  assert.equal(plain.length, 1);
+  assert.equal(plain[0].kind, 'base64');
+  assert.equal(plain[0].value, 'AAAA');
+
+  const dataUrl = collectImageParts([
+    { mediaType: 'image/jpeg', data: 'data:image/jpeg;base64,/9j/4AAQ' },
+  ]);
+  assert.equal(dataUrl.length, 1);
+  assert.equal(dataUrl[0].value, '/9j/4AAQ', 'data url 前缀必须剥掉，否则 base64 解不出来');
+});
+
+test('Part<url> 形状（端A2A 文档里的图片下发方式）被当成 uri 图', () => {
+  const images = collectImageParts([
+    { url: 'file://docs/storage/Users/currentUser/a.png', filename: 'a.png', mediaType: 'image/png' },
+  ]);
+  assert.equal(images.length, 1);
+  assert.equal(images[0].kind, 'uri');
+  assert.equal(images[0].value, 'file://docs/storage/Users/currentUser/a.png');
+});
+
 test('text beside images is preserved as the hint', () => {
   const parts = [
     { mediaType: 'image/png', raw: 'AAAA' },

@@ -5,10 +5,11 @@
  * 职责: 把小艺请求里的 parts[] 归一成「文本 part / 图片 part」两种，图片供 OCR 节点使用
  * 依赖: 无（不碰 Context、不碰 Kit，可直接单测）
  *
- * 协议事实（API 26 实测）：文本 part 只有 { mediaType, text }；
- *   图片按 BCP 惯例会落在 { mediaType: 'image/*', raw: '<base64>' } 或 { url: 'file://…' }。
- *   当前小艺客户端还不下发图片 part，这里的提取逻辑先按契约写好，
- *   等平台透传后无需改调用方。
+ * 协议事实（端A2A · Part 结构定义）：
+ *   图片走 Part<url>：{ url, filename, mediaType: 'image/png' }，支持双向传递；
+ *   也兼容 { mediaType: 'image/*', raw: '<base64>' } 与 data 里直接放 base64 的写法。
+ *   注意：小艺侧要在开放平台「输入文件设置 → 照片设置 → 支持上传照片」开启后才会下发图片 part；
+ *   开关关闭时用户发的图不会到扩展进程（实测只收到一个 text 为空的 text part）。
  */
 
 /** A2A message.parts[] 的元素（proto-JSON 字段名，v1.0 无 kind 字段） */
@@ -28,6 +29,8 @@ export interface AgentImagePart {
   value: string;
 }
 
+const DATA_URL_PREFIX: string = 'data:';
+
 /** mediaType 以 image/ 开头即图片；缺失 mediaType 但有 raw 的按图片兜底 */
 export function isImagePart(part: AgentPart): boolean {
   const mediaType: string = part.mediaType === undefined ? '' : part.mediaType;
@@ -38,7 +41,33 @@ export function isImagePart(part: AgentPart): boolean {
   return mediaType.length === 0 && raw.length > 0;
 }
 
-/** 提取所有图片 part，跳过无法取字节的形状（既没有 raw 也没有 url） */
+/** data:image/png;base64,xxxx 去掉前缀，只留 base64 正文 */
+function stripDataUrl(value: string): string {
+  const comma: number = value.indexOf(',');
+  if (value.indexOf(DATA_URL_PREFIX) === 0 && comma > 0) {
+    return value.substring(comma + 1);
+  }
+  return value;
+}
+
+/** 从 part 里取图片字节的来源：raw > url > data(string) */
+export function pickImageSource(part: AgentPart): AgentImagePart | undefined {
+  const raw: string = part.raw === undefined ? '' : part.raw;
+  if (raw.length > 0) {
+    return { kind: 'base64', value: raw };
+  }
+  const url: string = part.url === undefined ? '' : part.url;
+  if (url.length > 0) {
+    return { kind: 'uri', value: url };
+  }
+  const data: string | number | boolean | object | undefined = part.data;
+  if (typeof data === 'string' && data.length > 0) {
+    return { kind: 'base64', value: stripDataUrl(data) };
+  }
+  return undefined;
+}
+
+/** 提取所有图片 part，跳过无法取字节的形状 */
 export function collectImageParts(parts: AgentPart[]): AgentImagePart[] {
   const images: AgentImagePart[] = [];
   for (let i = 0; i < parts.length; i++) {
@@ -46,14 +75,9 @@ export function collectImageParts(parts: AgentPart[]): AgentImagePart[] {
     if (!isImagePart(part)) {
       continue;
     }
-    const raw: string = part.raw === undefined ? '' : part.raw;
-    if (raw.length > 0) {
-      images.push({ kind: 'base64', value: raw });
-      continue;
-    }
-    const url: string = part.url === undefined ? '' : part.url;
-    if (url.length > 0) {
-      images.push({ kind: 'uri', value: url });
+    const source: AgentImagePart | undefined = pickImageSource(part);
+    if (source !== undefined) {
+      images.push(source);
     }
   }
   return images;

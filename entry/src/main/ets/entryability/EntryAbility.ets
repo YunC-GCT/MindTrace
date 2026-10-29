@@ -13,7 +13,7 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry } from 'common';
+import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry, KnowledgeUnit } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
@@ -27,6 +27,9 @@ import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSessio
 import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
 import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
 import { A2AInboxIngestService } from '../services/A2AInboxIngestService';
+import { AgentIngestService } from '../services/AgentIngestService';
+import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_APP_SHARE } from '../services/AgentIngestRequest';
+import { AgentImagePart } from '../services/AgentImageParts';
 import { KnowledgeUnitUiEffects } from '../services/KnowledgeUnitUiEffects';
 import { CardUiEffectProvider } from '../services/KnowledgeUnitPostCommitEffects';
 import {
@@ -35,6 +38,9 @@ import {
 } from '../services/NoteDetailBenchmarkLaunch';
 
 const DOMAIN = 0x0000;
+/** 系统分享图片进来的两种 action（相册/文件管理器 → 分享 → MindTrace） */
+const SHARE_ACTION_SEND_DATA: string = 'ohos.want.action.sendData';
+const SHARE_ACTION_VIEW_DATA: string = 'ohos.want.action.viewData';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -87,6 +93,7 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate<FormCardFacadeImpl>('formCardFacade', new FormCardFacadeImpl(this.context));
     // ticket-0.3 (#121): 应用级 filesDir 缝 — 组合根解析一次,发布纯字符串 seam(无 UI 上下文)
     const chatFilesDirSeam = ChatFilesDirSeam.fromApplicationContext(this.context.getApplicationContext());
+    this.ingestSharedImage(want);
     publishChatFilesDirSeam(chatFilesDirSeam);
     if (chatFilesDirSeam.state === 'resolved') {
       hilog.info(DOMAIN, 'testTag', '%{public}s', chatFilesDirSeam.diagnostic);
@@ -94,6 +101,37 @@ export default class EntryAbility extends UIAbility {
       hilog.warn(DOMAIN, 'testTag', '%{public}s', chatFilesDirSeam.diagnostic);
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+  }
+
+  /** 应用已在前台时又被分享拉起 */
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    this.ingestSharedImage(want);
+  }
+
+  /**
+   * 系统分享进来的图片（相册 → 分享 → MindTrace）。
+   *
+   * 小艺客户端目前不把图片 part 转发给第三方智能体，所以图片进应用只能走这条系统分享通道。
+   * 它和「存笔记」走的是同一个整理端口：OcrService 端侧识别 → 同一条 agent 链路 → 同一条写路径。
+   */
+  private ingestSharedImage(want: Want): void {
+    const action: string = want.action ?? '';
+    const uri: string = want.uri ?? '';
+    const isShare: boolean = action === SHARE_ACTION_SEND_DATA || action === SHARE_ACTION_VIEW_DATA;
+    if (!isShare || uri.length === 0) {
+      return;
+    }
+    hilog.info(DOMAIN, 'testTag', 'SHARE_INGEST start action=%{public}s uri=%{public}s', action, uri);
+    const image: AgentImagePart = { kind: 'uri', value: uri };
+    const request: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_APP_SHARE, '', [image]);
+    AgentIngestService.ingest(this.context, request)
+      .then((unit: KnowledgeUnit): void => {
+        hilog.info(DOMAIN, 'testTag', 'SHARE_INGEST done subject=%{public}s title=%{public}s',
+          unit.subject, unit.title);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, 'testTag', 'SHARE_INGEST failed %{public}s', e.message);
+      });
   }
 
   /**

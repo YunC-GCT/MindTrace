@@ -7,8 +7,9 @@
  * 为什么手写: SDK 的自动应答封装会先发一帧 TASK_STATE_SUBMITTED（带 history），
  *       再发 artifactUpdate；小艺在这种序列下只渲染开头一两个词。历史实测「单帧 result.task
  *       一次给全 artifacts + COMPLETED」能完整渲染长文本，故回到手写。
- * 依赖: @kit.AbilityKit、@kit.PerformanceAnalysisKit、common.LlmConfig、
- *       ./services/ReplyService、./services/IntentClassifier、./services/CaptureReceipt、./TaskSnapshot
+ * 依赖: @kit.AbilityKit、@kit.PerformanceAnalysisKit、common.LlmConfig/OcrRecognizerRegistry、
+ *       ./services/ReplyService、./services/IntentClassifier、./services/CaptureReceipt、./TaskSnapshot、
+ *       ./services/CoreVisionOcrRecognizer
  *
  * 进程约束（重要）: 扩展跑在独立进程 <bundle>:agent，模块加载失败表现为 exit 254 /
  *   Reason:SyntaxError 且 onCreate 一行日志都打不出来（错误发生在 import 图求值阶段）。
@@ -16,6 +17,7 @@
  *   （ConversationWorkflowPorts）使用。
  *
  * 数据流:
+ *   onCreate -> 组合根安装 OCR 能力（OcrRecognizerRegistry.install(CoreVisionOcrRecognizer)）
  *   onData(proxy, data) -> JSON.parse 取 id / params.message.parts[] 第一段 string text
  *     -> 解析失败：回一条错误快照（不崩）
  *     -> query 为空：回「没收到问题内容」
@@ -26,7 +28,7 @@
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { CancellationToken, getProviderCatalog, KnowledgeUnit, LlmConfig, LlmError, resolveModel } from 'common';
+import { CancellationToken, getProviderCatalog, KnowledgeUnit, LlmConfig, LlmError, OcrRecognizerRegistry, resolveModel } from 'common';
 import type { ProviderCatalog, ResolvedModel } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
@@ -44,6 +46,7 @@ import { AgentIngestService } from '../services/AgentIngestService';
 import { AgentIngestRequest, buildIngestRequest, hasIngestPayload, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
 import { AgentImagePart, AgentPart, collectImageParts, joinTextParts } from '../services/AgentImageParts';
 import { OcrService } from '../services/OcrService';
+import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
@@ -163,6 +166,11 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   onCreate(want: Want): void {
     const abilityName: string = want.abilityName ?? 'unknown';
     hilog.info(DOMAIN, TAG, 'onCreate: 扩展被拉起 ability=%{public}s（手写单帧快照模式）', abilityName);
+    // 组合根：:agent 进程自己安装 OCR 实现。主进程由 EntryAbility.onCreate 安装同一份实现。
+    if (!OcrRecognizerRegistry.isInstalled()) {
+      OcrRecognizerRegistry.install(new CoreVisionOcrRecognizer());
+      hilog.info(DOMAIN, TAG, 'OCR 能力已安装（:agent 组合根）');
+    }
     hilog.info(DOMAIN, TAG,
       'A2A policy config=%{public}d attempts=%{public}d inner=%{public}d backoff=%{public}d margin=%{public}d deadline=%{public}d budget=%{public}d taskNeed=%{public}d',
       A2A_POLICY.configTimeoutMs, a2aAttempts(), A2A_POLICY.requestTimeoutMs, A2A_POLICY.backoffMs,
@@ -229,12 +237,19 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       return;
     }
     if (!hasIngestPayload(ingest)) {
-      this.sendAnswer(taskId, '没收到问题内容，再说一次？', 0);
+      // 实测：开关关闭时用户只发图，扩展收到的只有 1 个空 text part
+      // （media=text/plain text=0 raw=0 data=none url=none）——图片没被平台下发。
+      // 端A2A 协议本身支持图片 Part<url>，所以这是「开放平台 → 编排 → 输入文件设置 → 支持上传照片」没开，
+      // 不是应用侧做不到。这里如实说明，同时给出应用内两条现在就能用的图片路径。
+      this.sendAnswer(taskId,
+        '这条消息没有文字，图片也没有传到扩展进程。' +
+        '小艺侧要在开放平台「编排 → 输入文件设置 → 照片设置 → 支持上传照片」开启后，图片才会下发给智能体。' +
+        '现在也可以：① 把题目文字发我；② 在 MindTrace 里用相册/拍照选图整理。', 0);
       return;
     }
-    // 小艺不把图片转发给第三方智能体，所以「存笔记」走文字；
+    // 「存笔记」走文字；有图片 part 时无论带不带文字都直接整理。
     // 原文在这里就地整理入库，用户不用回到应用（失败才退回队列，等应用前台补）。
-    if (shouldEnqueue(query)) {
+    if (ingest.images.length > 0 || shouldEnqueue(query)) {
       this.ingestDirectly(taskId, ingest);
       return;
     }
