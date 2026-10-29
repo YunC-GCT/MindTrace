@@ -10,7 +10,7 @@
 //
 //  数据流:
 //   aboutToAppear → SubjectRepairService.preview → 学科分布
-//   点击整理     → SubjectRepairService.repairNow → 报告(before/after/changes)
+//   点击整理     → SubjectRepairService.repair    → 报告(before/after/changes)
 // ============================================================================
 
 import {
@@ -92,7 +92,7 @@ struct SubjectMaintenancePage {
     const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
     this.running = true
     this.errorText = ""
-    SubjectRepairService.repairNow(context).then((report: SubjectRepairReport): void => {
+    SubjectRepairService.repair(context).then((report: SubjectRepairReport): void => {
       this.scanned = report.scanned
       this.subjectFixed = report.subjectFixed
       this.titleFixed = report.titleFixed

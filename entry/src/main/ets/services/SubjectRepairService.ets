@@ -6,9 +6,11 @@
  *       同时给出「整理前 / 整理后」的学科分布，供「我的 → 学科整理」页展示。
  * 依赖: NoteDao(读全量) + KnowledgeUnitWriteService(带 revision 的正规写路径)
  *
+ * 触发时机: 只在「我的 → 学科整理」页由用户点击触发，启动路径里不再自动跑。
+ *
  * 数据流:
- *   启动一次性修复: EntryAbility → repairIfNeeded(按规则版本只跑一次)
- *   手动再整理:     SubjectMaintenancePage → repairNow(用户点了就跑，不看版本位)
+ *   只在「我的 → 学科整理」页由用户点击触发: SubjectMaintenancePage → repair
+ *   （不在启动路径里自动跑：改用户数据必须是他自己点的）
  *
  * Why: 归一与清洗是这次才加的，库里已经有一条「最优化」、一条「数学（优化理论/运筹学）」，
  *      光改采集链路治不了旧数据。用户会一直看到三个学科名，所以必须补一次修复。
@@ -17,7 +19,6 @@
  *   - 只在「非规范」时才写：subject 已规范、标题已干净的记录一条不碰（幂等）。
  *   - 走 update 的正规写路径（校验 + 版本递增 + revision），不直接改 SQL。
  *   - 单条失败不回滚整批：记 failed 计数继续下一条。
- *   - preferences 存规则版本号，每台设备按版本跑一次；规则升级 +1 即可重跑。
  *   - 空学科不算「可归一」：归一不出结果就写「其它」，避免校验失败。
  *
  * ArkTS 1.1 strict 适配:
@@ -26,7 +27,7 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { preferences, relationalStore } from '@kit.ArkData';
+import { relationalStore } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DatabaseHelper, KnowledgeUnit } from 'common';
 import {
@@ -42,10 +43,6 @@ import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFac
 
 const DOMAIN: number = 0x0001;
 const TAG: string = 'SubjectRepair';
-const PREFS_NAME: string = 'mindtrace_maintenance';
-const FLAG_KEY: string = 'subjectRepair.version';
-// 清洗规则升级就 +1：置位过的设备会再跑一遍，不用手动清数据
-const REPAIR_VERSION: number = 2;
 const EMPTY_SUBJECT_FALLBACK: string = '其它';
 
 /** 某个学科当前挂了几条笔记 */
@@ -105,29 +102,6 @@ function tally(subjects: string[]): SubjectUsage[] {
 }
 
 export class SubjectRepairService {
-  /** 每台设备只跑一次；已跑过或跑失败都不再重复（失败原因看 hilog）。 */
-  static async repairIfNeeded(context: common.UIAbilityContext): Promise<SubjectRepairReport | null> {
-    const prefs: preferences.Preferences = await preferences.getPreferences(context, PREFS_NAME);
-    const stored: preferences.ValueType = await prefs.get(FLAG_KEY, 0);
-    const applied: number = typeof stored === 'number' ? stored : 0;
-    if (applied >= REPAIR_VERSION) {
-      return null;
-    }
-    const report: SubjectRepairReport = await SubjectRepairService.repair(context);
-    await prefs.put(FLAG_KEY, REPAIR_VERSION);
-    await prefs.flush();
-    return report;
-  }
-
-  /** 用户手动点「开始整理」：不看版本位，什么时候点就什么时候跑。 */
-  static async repairNow(context: common.UIAbilityContext): Promise<SubjectRepairReport> {
-    const report: SubjectRepairReport = await SubjectRepairService.repair(context);
-    const prefs: preferences.Preferences = await preferences.getPreferences(context, PREFS_NAME);
-    await prefs.put(FLAG_KEY, REPAIR_VERSION);
-    await prefs.flush();
-    return report;
-  }
-
   /** 只读：当前学科分布，用于整理前预览。 */
   static async preview(context: common.UIAbilityContext): Promise<SubjectUsage[]> {
     const existing: relationalStore.RdbStore | null = DatabaseHelper.getStore();
