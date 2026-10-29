@@ -44,6 +44,7 @@
 | [`harmonyos-ondevice-llm-2026-10-24.md`](./harmonyos-ondevice-llm-2026-10-24.md) | 2026-10-24 | 鸿蒙 7 端侧大模型是什么、第三方能否直接用 | active (能力边界) |
 | [`xiaoyi-as-model-2026-10-24.md`](./xiaoyi-as-model-2026-10-24.md) | 2026-10-24 | 应用能否调用小艺并把文本回答拿回自己的界面 | active (能力边界) |
 | [`xiaoyi-client-integration-2026-10-24.md`](./xiaoyi-client-integration-2026-10-24.md) | 2026-10-24 | 应用侧调用小艺智能体的官方口径与限制 | active (能力边界) |
+| [`a2a-image-input-feasibility-2026-10-29.md`](./a2a-image-input-feasibility-2026-10-29.md) | 2026-10-29 | 小艺→端侧 Agent 图片输入协议可行性（Part 载体 / inputModes / 客户端丢图） | active (能力边界) |
 
 临时原料 [`_positioning-facts-2026-09-04.md`](./_positioning-facts-2026-09-04.md)（下划线前缀）按约定不入正式索引，供 `project-positioning-2026-09-04.md` 溯源。
 
