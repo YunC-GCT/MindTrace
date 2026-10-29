@@ -86,3 +86,11 @@ node scripts/e2e-capture/run.mjs --with-card --timeout 220
 ## 9. 完成判据
 
 每票以票内验收为准，共同底线：build 5/5、`agent-gate --all` PASS、单测不低于 806、四件套真机装机后对应流程有截图或日志。#241 额外要求 capture 快照逐字段等价。
+
+## spike 结论（#240）
+
+- 四问：Q1 共享 `runId` / `deadline` + 取消冒泡 = **FAIL**；Q2 `maxNodeRuns` 父子累计 = **FAIL**；Q3 领域错误穿子图边界 = **FAIL**；Q4 Worker 节点 = **PASS（现状无适用对象）**。
+- 依据：`StateGraph` 不持 run context，且每次 `run()` 重置 `nodeRuns`（`common/src/main/ets/workflow/StateGraph.ets:55-58`）；`CaptureGraph` 把取消与领域错误吞成 `NODE_ERROR`（`agents/src/main/ets/graph/CaptureGraph.ets:41-43`）。
+- **总判决：任一 FAIL → 停，不进 #241，回 §17 改方案。** #241 还依赖 #238，后者仍有未完成项。
+- 全文（含四问证据、最小改动提案、`review-report.md` 的替代内容）：[`spike-240-run-context.md`](./spike-240-run-context.md)。
+- 探针：[`scripts/spikes/v7-run-context-spike.mjs`](../../../../scripts/spikes/v7-run-context-spike.mjs)。沙箱会话内因 ACL 未跑成，已由编排会话在主机执行：`Q1 FAIL / Q2 FAIL / Q3 FAIL / Q4 PASS`，`SUMMARY blocking=3 total=4`，输出贴在 spike 文档 §0.1，与静态取证逐条一致。

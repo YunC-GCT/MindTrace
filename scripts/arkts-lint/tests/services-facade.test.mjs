@@ -31,12 +31,12 @@ test('Collaborator contract: Structure and TruthCheck have distinct workflow own
   // spec 015: 真实结构化发生在 CaptureStructurer，KnowledgeModel 只转发
   assert.match(structurer, /AI 结构化失败/);
   assert.doesNotMatch(km, /truthCheckService\.check\(ocrText\)/, 'KnowledgeModel must not duplicate the TruthCheck workflow node');
-  assert.match(structurer, /this\.promptBuilder\.buildPrompt\(ocrText\)/, 'prompt delegated to PromptBuilder');
+  assert.match(structurer, /this\.promptBuilder\.buildPrompt\(ocrText(,\s*knownSubjects)?\)/, 'prompt delegated to PromptBuilder');
   assert.doesNotMatch(km, /你是数学学习笔记结构化助手/, 'prompt body must live in PromptBuilder');
   assert.doesNotMatch(km, /checkBracePairing\(/, 'truth checks must live in TruthCheckService');
   assert.doesNotMatch(km, /legacy\.truthCheck\(/);
   // PromptBuilder 实体
-  assert.match(prompt, /buildPrompt\(ocrText: string\): string/);
+  assert.match(prompt, /buildPrompt\(ocrText: string(,\s*knownSubjects: string\[\] = \[\])?\): string/);
   assert.match(prompt, /你是数学学习笔记结构化助手/);
   assert.doesNotMatch(prompt, /from '\.\/KnowledgeModel'/);
   // TruthCheckService 实体

@@ -126,7 +126,7 @@ test('the 4 internal result interfaces moved with the logic', () => {
 test('CaptureStructurer structures via PromptBuilder while CaptureGraph owns TruthCheck', () => {
   assert.match(km, /export class KnowledgeModel {/);
   assert.doesNotMatch(km, /truthCheckService\.check\(ocrText\)/, 'structure() must not duplicate TruthCheckNode');
-  assert.match(captureStructurer, /this\.promptBuilder\.buildPrompt\(ocrText\)/, 'callAi must call PromptBuilder directly');
+  assert.match(captureStructurer, /this\.promptBuilder\.buildPrompt\(ocrText(,\s*knownSubjects)?\)/, 'callAi must call PromptBuilder directly');
   assert.doesNotMatch(km, /checkBracePairing\(/, 'truth checks must live in TruthCheckService');
   assert.doesNotMatch(captureStructurer, /你是数学学习笔记结构化助手/, 'prompt body must live in PromptBuilder');
 });

@@ -79,6 +79,9 @@ export {
   TruthCheckResult,
   DispatchRequest,
   DispatchResult,
+  CaptureSetRequest,
+  CaptureSetItemResult,
+  CaptureSetResult,
   ApiResponse,
   API_CODE,
   CLASSIFY_CONFIDENCE_THRESHOLD,
@@ -319,6 +322,10 @@ export { ToolLoop } from './tools/ToolLoop';
 export { StateGraph, StateGraphError } from './workflow/StateGraph';
 export type { AgentTool, ToolResult } from './tools/ToolRegistry';
 export type { StateGraphNode, StateGraphRoute, StateGraphHalt, StateGraphErrorKind } from './workflow/StateGraph';
+// #243：RunContext 契约。StateGraph / CaptureGraph 已接（步骤 2/3），Dispatcher 走 DispatchOptions.runContext（步骤 4）。
+export { RunBudget, createRunBudget } from './workflow/RunBudget';
+export { CancellationError, DeadlineExceededError, isCancellationError, isDeadlineExceededError } from './workflow/RunErrors';
+export { RunContext, createRootRunContext, createChildRunContext } from './workflow/RunContext';
 export type { ToolLoopOptions } from './workflow/tool-calling/ToolCallingState';
 export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools } from './tools/NoteQueryTools';
 
@@ -378,3 +385,23 @@ export type {
 } from './kit/FormCardFacade';
 export { CardSnapshotBinding } from './kit/FormCardFacade';
 export { CardSnapshotStore } from './kit/CardSnapshotStore';
+export type { CardSnapshotLoadResult } from './kit/CardSnapshotStore';
+
+// ========== v7 契约层切片 A (ADR-0019 / #238) ==========
+//   纯契约 / 纯函数：零 @kit.* 依赖；CardSnapshotStore 的 Preferences 边界保持原样。
+//   StudyPlanItem 与既有 models/StudyPlan 的 UI 类同名，这里改名为 StudyPlanPendingItem 导出。
+export { NotePortError } from './ports/NoteWritePort';
+export type { NoteWriteCommand, NoteWriteOutcome, NoteWritePort } from './ports/NoteWritePort';
+export { decideWrite } from './ports/NoteWriteDecisions';
+export type { NoteSnapshot, WriteDecisionKind, WriteDecision } from './ports/NoteWriteDecisions';
+export {
+  CARD_SNAPSHOT_SCHEMA_VERSION,
+  encodeCardSnapshot,
+  decodeCardSnapshot,
+} from './kit/CardSnapshotCodec';
+export type { CardSnapshotEnvelope, CardSnapshotDecodeResult } from './kit/CardSnapshotCodec';
+export type { RunStatus, RunRecord, RunStorePort } from './ports/RunStore';
+export type {
+  StudyPlanPendingItem,
+  StudyPlanReadPort,
+} from './ports/StudyPlanPorts';

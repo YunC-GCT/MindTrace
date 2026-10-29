@@ -20,13 +20,18 @@ export class PromptBuilder {
     return this.buildPrompt(input);
   }
 
-  buildPrompt(ocrText: string): string {
+  buildPrompt(ocrText: string, knownSubjects: string[] = []): string {
     const categories: string = NOTE_TYPE_KEYS.join(' / ');
+    // 学科是封闭词表不是自由创作：把库里已有的学科名直接列给模型，
+    // 它就不会每次都给同一门课起个新名字。
+    const subjectRule: string = knownSubjects.length > 0
+      ? `学科名称必须从这里选（一字不差）：${knownSubjects.join(' / ')}。只有确实都不是时才新建一个通用学科名（2-6 字），不要用句子描述`
+      : '学科名称由你自主判断（如"高等数学"/"线性代数"/"初中数学"），无法判断时返回"其它"';
     return `你是数学学习笔记结构化助手。只返回纯 JSON 文本，不要用 \`\`\`json\`\`\` 代码块包裹。
 语言: 默认全部使用中文。
 字段:
 - category: 必须从 ${categories} 这五类中选择，不要返回 concept/theorem/formula/proof/computation
-- subject: 学科名称由你自主判断（如"高等数学"/"线性代数"/"初中数学"），无法判断时返回"其它"
+- subject: ${subjectRule}
 - chapter: 章节/知识点短语（如"微分中值定理"/"行列式"），无法判断时返回空字符串
 - title: 严谨名称或题目摘要
 - tags: 返回 2-4 个中文关键词（具体概念/方法/技巧），学科名请填在 subject 字段。示例: ["二次函数", "配方法", "顶点", "对称轴"]

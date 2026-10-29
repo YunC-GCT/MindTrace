@@ -8,6 +8,13 @@
 |---|---|
 | [`plan.md`](./plan.md) | **交接文档**：给接手会话的读法、已完成项、票单与顺序、硬约束、环境命令、已知坑、阻塞项 |
 | [`tasks.md`](./tasks.md) | 逐票勾选清单与证据要求 |
-| `raw/` | #239 的 golden 快照（尚未生成；测试直接读，移动目录必须同 commit 改引用） |
+| [`raw/index.md`](./raw/index.md) | #239 golden 快照对照表：文件 / 命令 / 终态 / ADR-0019 条款 / 证明的行为 |
+| [`spike-240-run-context.md`](./spike-240-run-context.md) | #240 四问结论：Q1/Q2/Q3 **FAIL**，Q4 无适用对象；总判决停在 #241 之前，含最小改动提案 |
+| `raw/` | #239 的 golden 快照（已生成；测试直接读，移动目录必须同 commit 改引用） |
+
+**#239 行为基线：** ✅ 已落地。15 条 golden 快照落在 [`raw/`](./raw/index.md)，测试为
+[`v7-golden-dispatch.test.mjs`](../../../../scripts/arkts-lint/tests/v7-golden-dispatch.test.mjs)；
+默认模式读快照比对，`V7_GOLDEN=record` 重录。快照如实保留 capture 取消抛错、hash 不匹配无
+`errorCode` 等现状，作为 #241 迁移的等价判据。
 
 设计变更写回 §17 或 `docs/adr/`，不在本 bundle 里改设计（见 `docs/style/naming-conventions.md` §3.9）。

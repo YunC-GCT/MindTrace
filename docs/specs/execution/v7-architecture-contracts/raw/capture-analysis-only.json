@@ -1,0 +1,44 @@
+{
+  "case": "capture-analysis-only",
+  "clause": "ADR-0019 (a) analysisOnly / no persist",
+  "input": {
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "source": "app"
+  },
+  "options": {
+    "analysisOnly": true,
+    "dao": true,
+    "includeRawText": true
+  },
+  "requests": [
+    {
+      "enableThinking": null,
+      "maxTokens": 8000
+    }
+  ],
+  "result": {
+    "classification": {
+      "chapter": "连续性",
+      "confidence": 0.95,
+      "ocrText": "函数在一点连续。",
+      "ocrTextQuality": "refined",
+      "subject": "数学分析",
+      "type": "概念"
+    },
+    "data": null,
+    "errorCode": null,
+    "errorMessage": null,
+    "generation": null,
+    "route": "D1",
+    "success": true
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": null
+}

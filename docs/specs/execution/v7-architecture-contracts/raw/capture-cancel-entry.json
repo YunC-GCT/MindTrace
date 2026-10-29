@@ -1,0 +1,26 @@
+{
+  "case": "capture-cancel-entry",
+  "clause": "ADR-0019 (e) entry cancel / (c) CANCELLED",
+  "input": {
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "source": "app"
+  },
+  "options": {
+    "cancellation": "entry",
+    "dao": true
+  },
+  "requests": [],
+  "result": null,
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": {
+    "message": "CONVERSATION_CANCELLED",
+    "name": "CancellationError"
+  }
+}

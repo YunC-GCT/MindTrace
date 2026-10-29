@@ -13,6 +13,14 @@
 import type { KnowledgeCategory } from '../models/KnowledgeCategory';
 import { KnowledgeUnitExt, createUnitExt, StructuredField, AiRawResponse } from '../models/KnowledgeUnitExt';
 import {
+  normalizeSubjectName,
+  resolveSubjectName,
+  sanitizeNoteTitle,
+  TitleSanitization,
+  SubjectNormalization,
+  SubjectResolution,
+} from './KnowledgeTaxonomy';
+import {
   DifficultyLevel,
   ContentExcerptBuilder,
   ContentProtocol,
@@ -75,6 +83,7 @@ export class CaptureStructurer {
     chapter: string = '',
     source: string = 'camera_capture',
     provenance?: CaptureProvenance,
+    knownSubjects: string[] = [],
   ): Promise<KnowledgeUnit> {
     this.cancellationToken?.throwIfCancelled();
     const startTime: number = Date.now();
@@ -106,6 +115,7 @@ export class CaptureStructurer {
         subjectHint,
         chapterHint,
         classificationHint.confidence,
+        knownSubjects,
       );
     } catch (aiErr) {
       const errMsg: string = (aiErr as Error).message ?? String(aiErr);
@@ -136,6 +146,7 @@ export class CaptureStructurer {
     classification: ClassificationResult,
     source: string = 'camera_capture',
     provenance?: CaptureProvenance,
+    knownSubjects: string[] = [],
   ): Promise<KnowledgeUnit> {
     return await this.structure(
       ocrText,
@@ -144,6 +155,7 @@ export class CaptureStructurer {
       classification.chapter ?? '',
       source,
       provenance,
+      knownSubjects,
     );
   }
 
@@ -249,6 +261,7 @@ export class CaptureStructurer {
     subjectHint?: string,
     chapterHint: string = '',
     confidenceHint: number = 0,
+    knownSubjects: string[] = [],
   ): Promise<AiRawResponse> {
     // 可选分类 hint：TypeClassifier 只提供软参考，KnowledgeModel 仍按正文独立结构化。
     const hint: string = (typeHint !== undefined && typeHint.length > 0) || (subjectHint !== undefined && subjectHint.length > 0)
@@ -259,7 +272,7 @@ export class CaptureStructurer {
         '- 置信度: ' + confidenceHint.toString() + '\n' +
         '优先用它减少五类歧义；如果正文证据更强, 以正文为准。'
       : '';
-    const prompt: string = this.promptBuilder.buildPrompt(ocrText) + hint;
+    const prompt: string = this.promptBuilder.buildPrompt(ocrText, knownSubjects) + hint;
 
     const systemMsg: ChatMessage = {
       role: 'system',
@@ -297,11 +310,17 @@ export class CaptureStructurer {
 
     const parsed: Record<string, Object> = guarded.json;
 
+    // 先清洗标题，再决定 title 用哪个：复核标记被剥掉时说明模型自己也不确定，
+    // 这个事实要挂到 AiRawResponse 上，最后由 needsUserInput 告诉用户「标题待确认」。
+    const titleSource: string = String(this.readRecordValue(parsed, 'title') ?? '');
+    const titleClean: TitleSanitization = sanitizeNoteTitle(titleSource);
+
     const aiRaw: AiRawResponse = {
       category: this.normalizeCategory(String(this.readRecordValue(parsed, 'category') ?? ''), typeHint),
-      subject: this.normalizeSubject(String(this.readRecordValue(parsed, 'subject') ?? ''), subjectHint),
+      subject: this.normalizeSubject(String(this.readRecordValue(parsed, 'subject') ?? ''), subjectHint, knownSubjects),
       chapter: this.normalizeChapter(String(this.readRecordValue(parsed, 'chapter') ?? '')),
-      title: this.normalizeTitle(String(this.readRecordValue(parsed, 'title') ?? ''), userText),
+      title: this.normalizeTitle(titleClean.title, userText),
+      titleNeedsReview: titleClean.stripped.length > 0,
       tags: this.normalizeStringArray(this.readRecordValue(parsed, 'tags')),
       difficulty: normalizeDraftDifficulty(Number(this.readRecordValue(parsed, 'difficulty') ?? 3)),
       importance: this.normalizeScore(Number(this.readRecordValue(parsed, 'importance') ?? 3)),
@@ -424,7 +443,8 @@ export class CaptureStructurer {
    * @param aiRaw - AI 原始响应
    */
   private markNeedsUserInput(unit: KnowledgeUnitExt, aiRaw: AiRawResponse): void {
-    if (aiRaw.category === '证明题' || aiRaw.category === '计算题') {
+    // 标题里原本有「（OCR 信息不完整）」这类标记 → 标记被剥掉了，但不确定性要留给用户看。
+    if (aiRaw.category === '证明题' || aiRaw.category === '计算题' || aiRaw.titleNeedsReview === true) {
       unit.needsUserInput.push('title');
     }
     unit.needsUserInput.push('difficulty');
@@ -468,8 +488,12 @@ export class CaptureStructurer {
     return KNOWLEDGE_FALLBACK_CATEGORY;
   }
 
-  private normalizeSubject(value: string, fallback?: string): string {
-    const subject: string = value.trim();
+  private normalizeSubject(value: string, fallback?: string, knownSubjects: string[] = []): string {
+    // 学科裁决：内置学科 > 库里已有学科 > 才允许新建。
+    // 提示词里已经把已有学科列成封闭词表，这里再兜一次，防止模型无视约束。
+    const resolution: SubjectResolution = resolveSubjectName(value, knownSubjects);
+    const normalized: SubjectNormalization = normalizeSubjectName(resolution.subject, fallback !== undefined ? fallback : '');
+    const subject: string = normalized.subject.trim();
     if (subject.length > 0 && subject !== '未知' && subject !== 'null' && subject !== 'undefined') {
       return subject;
     }
@@ -491,11 +515,12 @@ export class CaptureStructurer {
   }
 
   private normalizeTitle(value: string, fallbackText: string): string {
+    // 入参已经过 sanitizeNoteTitle；这里只兜「空标题」和「占位值」两种退化。
     const title: string = value.trim();
     if (title.length > 0 && title !== '未知' && title !== 'null' && title !== 'undefined') {
       return title;
     }
-    const firstLine: string = fallbackText.split('\n')[0].trim();
+    const firstLine: string = sanitizeNoteTitle(fallbackText.split('\n')[0]).title;
     if (firstLine.length > 0 && firstLine.length <= 60) {
       return firstLine;
     }

@@ -5,6 +5,8 @@ import { KnowledgeModel } from '../agents/KnowledgeModel';
 import { TruthCheckService } from '../agents/TruthCheckService';
 import {
   Logger,
+  RunContext,
+  createRootRunContext,
   KnowledgeUnit,
   DispatchRequest,
   DispatchResult,
@@ -55,6 +57,9 @@ import {
   buildDeepOutline,
   validateDeepOutline,
   captureProvenanceFromFragments,
+  CaptureSetRequest,
+  CaptureSetItemResult,
+  CaptureSetResult,
 } from 'common';
 import type { DispatchPayload, CancellationToken } from 'common';
 import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
@@ -77,8 +82,19 @@ export interface DispatchOptions {
   generationRepository?: NoteGenerationRepository;
   knowledgeModel?: KnowledgeModel;
   cancellationToken?: CancellationToken;
+  /** #243：调用方自带的 run 上下文；不传则捕获路径自建一个根上下文 */
+  runContext?: RunContext;
   progressSink?: NoteGenerationProgressSink;
   onNodeTiming?: (step: string, elapsedMs: number) => void;
+  /** 库里已有的学科名（含内置学科）；structure 用它决定复用还是新建 */
+  subjectVocabulary?: string[];
+}
+
+// spec 036 阶段 1：集合级整理的可选项。
+// DispatchOptions 定义在 agents，common 不能反向依赖 agents，所以这里承载 onItem；
+// 每完成一项就回调一次，UI 用它原地更新对话记录。
+export interface CaptureSetOptions extends DispatchOptions {
+  onItem?: (item: CaptureSetItemResult) => void;
 }
 
 interface GenerationCandidateEvaluation {
@@ -105,6 +121,20 @@ interface DeepFormulaCandidate {
 }
 
 export class Dispatcher {
+  // 与 StateGraph 老的 maxNodeRuns=128 保持一致：接线不改变各条路径的可用节点数。
+  private static readonly DISPATCH_RUN_BUDGET: number = 128;
+
+  // 预算与取消只走调用参数。三条路径（capture / generation / prepared）都从这里拿上下文，
+  // 免得哪条忘了转发就把刹车和预算一起丢掉。
+  private resolveRunContext(options: DispatchOptions): RunContext {
+    return options.runContext ?? createRootRunContext(
+      'dispatch-' + Date.now().toString(),
+      Dispatcher.DISPATCH_RUN_BUDGET,
+      0,
+      options.cancellationToken ?? null,
+    );
+  }
+
   private static sourceFromPayload(payload: DispatchPayload): string {
     if (payload.kind === 'image') { return 'camera_capture'; }
     if (payload.kind === 'text') { return 'manual'; }
@@ -114,6 +144,116 @@ export class Dispatcher {
   // D2 唯一最终公共入口: 跑 CaptureGraph, 失败返回结构化错误。
   async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
     return await this.dispatchRequest(req, options);
+  }
+
+  // spec 036 阶段 1：一个 set 一个 run。
+  // 顺序执行 req.items，全部共享同一个 RunContext（预算与取消）；单项失败不打断整批；
+  // 取消后未开始/未完成的项单独记 cancelled，不混进 failed。
+  // 切题（一图多题）与跨图合并留给阶段 2/3，这一层只把「多张图 = 一次整理」立住。
+  async dispatchSet(req: CaptureSetRequest, options: CaptureSetOptions = {}): Promise<CaptureSetResult> {
+    const startedAt: number = Date.now();
+    const shared: RunContext = this.resolveRunContext(options);
+    const items: CaptureSetItemResult[] = [];
+    let done: number = 0;
+    let failed: number = 0;
+    let cancelled: number = 0;
+    let stop: boolean = false;
+    for (let i = 0; i < req.items.length; i++) {
+      const payload: DispatchPayload = req.items[i];
+      const itemStart: number = Date.now();
+      if (stop || Dispatcher.isCancelled(options)) {
+        cancelled += 1;
+        const skipped: CaptureSetItemResult = Dispatcher.skippedItem(i, payload);
+        items.push(skipped);
+        if (options.onItem !== undefined) { options.onItem(skipped); }
+        continue;
+      }
+      try {
+        const result: DispatchResult = await this.dispatch(
+          { source: req.source, payload: payload },
+          Dispatcher.withRunContext(options, shared),
+        );
+        const item: CaptureSetItemResult = {
+          index: i,
+          kind: payload.kind,
+          success: result.success,
+          cancelled: false,
+          durationMs: Date.now() - itemStart,
+        };
+        if (result.data !== undefined) {
+          item.noteId = result.data.id;
+          item.title = result.data.title;
+        }
+        if (result.classification !== undefined) { item.category = result.classification.type; }
+        if (!result.success) {
+          failed += 1;
+          if (result.errorMessage !== undefined) { item.errorMessage = result.errorMessage; }
+          if (result.errorCode !== undefined) { item.errorCode = result.errorCode; }
+        } else {
+          done += 1;
+        }
+        items.push(item);
+        if (options.onItem !== undefined) { options.onItem(item); }
+      } catch (error) {
+        if (Dispatcher.isCancelled(options)) {
+          cancelled += 1;
+          const skipped: CaptureSetItemResult = Dispatcher.skippedItem(i, payload);
+          items.push(skipped);
+          if (options.onItem !== undefined) { options.onItem(skipped); }
+          stop = true;
+          continue;
+        }
+        failed += 1;
+        const failedItem: CaptureSetItemResult = {
+          index: i,
+          kind: payload.kind,
+          success: false,
+          errorMessage: (error as Error).message,
+          cancelled: false,
+          durationMs: Date.now() - itemStart,
+        };
+        items.push(failedItem);
+        if (options.onItem !== undefined) { options.onItem(failedItem); }
+      }
+    }
+    const totalMs: number = Date.now() - startedAt;
+    log.info('dispatchSet done total=' + req.items.length.toString() + ' ok=' + done.toString()
+      + ' failed=' + failed.toString() + ' cancelled=' + cancelled.toString()
+      + ' totalMs=' + totalMs.toString());
+    return {
+      total: req.items.length,
+      done: done,
+      failed: failed,
+      cancelled: cancelled,
+      items: items,
+      durationMs: totalMs,
+    };
+  }
+
+  private static isCancelled(options: DispatchOptions): boolean {
+    const token: CancellationToken | undefined = options.cancellationToken;
+    return token !== undefined && token.isCancelled();
+  }
+
+  private static skippedItem(index: number, payload: DispatchPayload): CaptureSetItemResult {
+    return { index: index, kind: payload.kind, success: false, cancelled: true, durationMs: 0 };
+  }
+
+  // 逐字段搬运而不是 {...options}：ArkTS 1.1 对对象展开有限制，且显式列举能让
+  // DispatchOptions 新增字段时在这里编译报错，而不是静默丢参数。
+  private static withRunContext(options: DispatchOptions, runContext: RunContext): DispatchOptions {
+    const copy: DispatchOptions = {};
+    copy.persist = options.persist;
+    copy.includeRawText = options.includeRawText;
+    copy.analysisOnly = options.analysisOnly;
+    copy.dao = options.dao;
+    copy.generationRepository = options.generationRepository;
+    copy.knowledgeModel = options.knowledgeModel;
+    copy.cancellationToken = options.cancellationToken;
+    copy.runContext = runContext;
+    copy.progressSink = options.progressSink;
+    copy.onNodeTiming = options.onNodeTiming;
+    return copy;
   }
 
   private async dispatchRequest(req: DispatchRequest, options: DispatchOptions): Promise<DispatchResult> {
@@ -136,10 +276,12 @@ export class Dispatcher {
       currentStep: 'START',
       persist: options.persist !== false,
       analysisOnly: options.analysisOnly === true,
-      cancellationToken: options.cancellationToken,
+      subjectVocabulary: options.subjectVocabulary ?? [],
     };
     const graph: CaptureGraph = this.buildGraph(options);
-    const finalState: AgentState = await graph.run(initial);
+    // #243：预算与取消是运行时属性，只走调用参数，不经 AgentState。
+    const runContext: RunContext = this.resolveRunContext(options);
+    const finalState: AgentState = await graph.run(initial, runContext);
     options.cancellationToken?.throwIfCancelled();
     const error: CaptureGraphError | undefined = finalState.error;
     if (error !== undefined) {
@@ -597,7 +739,6 @@ export class Dispatcher {
       currentStep: 'START',
       persist: false,
       analysisOnly: false,
-      cancellationToken: options.cancellationToken,
     };
     this.emitGenerationProgress(options, {
       phase: 'compose',
@@ -605,7 +746,7 @@ export class Dispatcher {
       activity: 'write_draft',
     });
     const graph: CaptureGraph = this.buildGenerationGraph(options.knowledgeModel, options.cancellationToken);
-    const finalState: AgentState = await graph.run(initial);
+    const finalState: AgentState = await graph.run(initial, this.resolveRunContext(options));
     this.emitGenerationProgress(options, {
       phase: 'compose',
       state: finalState.error === undefined ? 'success' : 'failed',
@@ -1491,10 +1632,9 @@ export class Dispatcher {
       analysisOnly: false,
       preparedCandidate: prepared,
       knowledgeUnit: prepared.candidate,
-      cancellationToken: options.cancellationToken,
     };
     const graph: CaptureGraph = this.buildPreparedGraph(options.dao);
-    const finalState: AgentState = await graph.run(initial);
+    const finalState: AgentState = await graph.run(initial, this.resolveRunContext(options));
     if (finalState.error !== undefined) {
       const conflict: boolean = finalState.error.message.indexOf('VERSION_CONFLICT') >= 0;
       return {

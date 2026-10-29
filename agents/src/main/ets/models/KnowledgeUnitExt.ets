@@ -38,6 +38,8 @@ export interface AiRawResponse {
   readonly difficulty: number;
   readonly importance: number;
   readonly fields: StructuredField[];
+  /** 标题里原本带复核标记（OCR/待确认…），已在归一阶段剥掉，需要用户确认标题 */
+  readonly titleNeedsReview?: boolean;
 }
 
 // ═══════════════════════════════════════

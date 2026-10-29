@@ -46,6 +46,7 @@ import type { ModelRequestPlan, ModelRequestSelection } from './ModelRequestBuil
 import { LlmErrorBodyFormatter } from './LlmErrorBodyFormatter';
 import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
 import { Logger } from '../utils/logger';
+import { CancellationError } from '../workflow/RunErrors';
 import {
   LlmResponse,
   LlmStreamChunk,
@@ -394,7 +395,7 @@ export class LlmClient {
         clearTimeout(timer);
         clearTimeout(firstByteTimer);
         httpRequest.destroy();
-        reject(new Error('CONVERSATION_CANCELLED'));
+        reject(new CancellationError('CONVERSATION_CANCELLED') as Error);
       });
 
       // 订阅流式数据事件
@@ -431,7 +432,7 @@ export class LlmClient {
                 clearTimeout(firstByteTimer);
                 removeCancellation?.();
                 httpRequest.destroy();
-                reject(new Error('CONVERSATION_CANCELLED'));
+                reject(new CancellationError('CONVERSATION_CANCELLED') as Error);
               }
               return;
             }

@@ -1,0 +1,71 @@
+{
+  "case": "generation-light",
+  "clause": "ADR-0019 (a) generation(light) / (b) readyPreview",
+  "input": {
+    "generation": {
+      "instruction": "保留定义",
+      "mode": "create",
+      "route": "light",
+      "runId": "<id>",
+      "sources": {
+        "fragments": [
+          {
+            "fingerprint": "fp-1",
+            "id": "<id>",
+            "kind": "conversation",
+            "originId": "origin-1",
+            "sequence": 0,
+            "text": "函数在一点连续。"
+          }
+        ]
+      }
+    },
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "source": "text"
+  },
+  "options": {
+    "dao": true,
+    "generationRepository": true
+  },
+  "requests": [
+    {
+      "enableThinking": false,
+      "maxTokens": 1200
+    }
+  ],
+  "result": {
+    "classification": null,
+    "data": {
+      "category": "概念",
+      "chapter": "连续性",
+      "difficulty": 1,
+      "id": "<id>",
+      "source": "note_generation",
+      "subject": "数学分析",
+      "title": "连续性",
+      "version": 1
+    },
+    "errorCode": null,
+    "errorMessage": null,
+    "generation": {
+      "bestCheckpointId": "<id>:0",
+      "issueCodes": [],
+      "questions": [],
+      "route": "light",
+      "runId": "<id>",
+      "status": "ready-preview",
+      "stopReason": "light_complete"
+    },
+    "route": "D1",
+    "success": true
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": null
+}

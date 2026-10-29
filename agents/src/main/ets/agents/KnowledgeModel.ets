@@ -52,8 +52,9 @@ export class KnowledgeModel {
     chapter: string = '',
     source: string = 'camera_capture',
     provenance?: CaptureProvenance,
+    knownSubjects: string[] = [],
   ): Promise<KnowledgeUnit> {
-    return await this.captureStructurer.structure(ocrText, type, subject, chapter, source, provenance);
+    return await this.captureStructurer.structure(ocrText, type, subject, chapter, source, provenance, knownSubjects);
   }
 
   async structureWithClassification(
@@ -61,8 +62,10 @@ export class KnowledgeModel {
     classification: ClassificationResult,
     source: string = 'camera_capture',
     provenance?: CaptureProvenance,
+    knownSubjects: string[] = [],
   ): Promise<KnowledgeUnit> {
-    return await this.captureStructurer.structureWithClassification(ocrText, classification, source, provenance);
+    return await this.captureStructurer.structureWithClassification(
+      ocrText, classification, source, provenance, knownSubjects);
   }
 
   async structureLightDraft(request: NoteGenerationRequest): Promise<NoteDraftDocument> {

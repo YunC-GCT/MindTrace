@@ -1,0 +1,50 @@
+{
+  "case": "regenerate-note-missing",
+  "clause": "ADR-0019 (a) regenerate / (b) failed / (c) NOTE_NOT_FOUND",
+  "input": {
+    "generation": {
+      "baseVersion": 1,
+      "instruction": "保留定义",
+      "mode": "regenerate",
+      "route": "light",
+      "runId": "<id>",
+      "sources": {
+        "fragments": [
+          {
+            "fingerprint": "fp-1",
+            "id": "<id>",
+            "kind": "conversation",
+            "originId": "origin-1",
+            "sequence": 0,
+            "text": "函数在一点连续。"
+          }
+        ]
+      },
+      "targetNoteId": "<id>"
+    },
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "source": "text"
+  },
+  "options": {
+    "generationRepository": true
+  },
+  "requests": [],
+  "result": {
+    "classification": null,
+    "data": null,
+    "errorCode": "NOTE_NOT_FOUND",
+    "errorMessage": "找不到指定 KnowledgeUnit",
+    "generation": null,
+    "route": "D1",
+    "success": false
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": null
+}
