@@ -13,6 +13,7 @@ import {
   OVERLAY_MASK, SCREEN_H,
   DUR_FAST, DUR_BASE,
   DatabaseHelper,
+  LlmErrorBodyFormatter,
 } from 'common';
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
@@ -637,9 +638,27 @@ export struct AgentFloatWindow {
       return;
     }
     service.resumeNoteContextClarification(sessionId, runId, topicId)
-      .catch((): void => {
-        this.rollbackNoteTopicSelection(messageId, runId, topicId);
-        this.showToast('主题选择处理失败，请重试');
+      .catch(async (error: Error): Promise<void> => {
+        // Reconcile optimistic UI with the durable choice; generation failure
+        // must not revoke a topic that the user already confirmed.
+        try {
+          const runs: NoteGenerationRun[] = await service.listRecoverableDrafts();
+          for (const run of runs) {
+            if (run.id === runId && run.clarification !== undefined) {
+              const clarification: NoteContextClarification = run.clarification;
+              this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+                applyNoteContextClarificationToChatMsg(message, clarification)
+              );
+              this.sync();
+              this.sm.flush(this.sessions).catch((): void => {});
+              break;
+            }
+          }
+        } catch (_recoveryError) {
+          // Keep the local choice until storage is available again.
+        }
+        const detail: string = LlmErrorBodyFormatter.redactSensitiveText(error.message ?? '未知错误');
+        this.showToast('笔记未生成：' + detail.substring(0, 120));
       });
   };
 
@@ -656,7 +675,8 @@ export struct AgentFloatWindow {
       for (const message of session.messages) {
         const clarification: NoteContextClarification | undefined = message.noteContextClarification;
         if (message.id === messageId && clarification !== undefined
-          && clarification.runId === runId && clarification.status === 'pending') {
+          && clarification.runId === runId && (clarification.status === 'pending'
+            || (clarification.status === 'selected' && clarification.selectedTopicId === topicId))) {
           for (const candidate of clarification.candidates) {
             if (candidate.id === topicId) { return true; }
           }

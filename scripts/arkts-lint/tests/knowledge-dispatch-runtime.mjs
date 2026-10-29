@@ -11,7 +11,7 @@ const barrel = ts.createSourceFile(barrelPath,
   readFileSync(new URL('../../../common/src/main/ets/Index.ets', import.meta.url), 'utf8'),
   ts.ScriptTarget.Latest, true);
 
-export function createRuntime(respond = () => { throw new Error('Unexpected LLM request'); }) {
+export function createRuntime(respond = () => { throw new Error('Unexpected LLM request'); }, boundaryMocks = {}) {
   const requests = [];
   class LlmClient {
     async call(request) {
@@ -35,6 +35,7 @@ export function createRuntime(respond = () => { throw new Error('Unexpected LLM 
     '@kit.CoreVisionKit': { textRecognition: unavailable },
     '@kit.ImageKit': { image: unavailable },
     '@kit.NetworkKit': { http: unavailable },
+    ...boundaryMocks,
   } };
   const load = path => options.mocks[path] ?? loadNoteReviewEtsModule(path, options);
   // Resolve the real public barrel lazily: loading UI-only exports must not be necessary in Node.
@@ -48,6 +49,7 @@ export function createRuntime(respond = () => { throw new Error('Unexpected LLM 
     }
   }
   const { Dispatcher } = load('agents/src/main/ets/core/Dispatcher.ets');
+  options.mocks.agents = { Dispatcher };
   const { KnowledgeModel } = load('agents/src/main/ets/agents/KnowledgeModel.ets');
   return { common, load, requests, dispatcher: new Dispatcher(), model: new KnowledgeModel(new LlmClient()) };
 }
