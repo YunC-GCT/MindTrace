@@ -17,7 +17,8 @@ test('manual and AI KnowledgeUnit writes share one entry-side service', () => {
   assert.match(factory, /new KnowledgeUnitWriteService\(new NoteDao\(store\), effects\)/);
   assert.match(manual, /KnowledgeUnitWriteService/);
   assert.match(adapter, /KnowledgeUnitWriteService/);
-  assert.match(ai, /KnowledgeUnitWriteServiceFactory\.create\(this\.context\)/);
+  // 形状：工厂可能带第二个参数（includeUiEffects），扩展进程里要关掉 UI 副作用
+  assert.match(ai, /KnowledgeUnitWriteServiceFactory\.create\(this\.context(, this\.includeUiEffects)?\)/);
   assert.doesNotMatch(manual, /new NoteDao|dao\.insert|dao\.update/);
   assert.doesNotMatch(adapter, /WritePathValidator|insertUnit/);
   assert.doesNotMatch(ai, /from ['"]\.\.\/database\/NoteDao['"]|new NoteDao\(|noteDao\.insert/);
@@ -61,7 +62,9 @@ test('callers do not duplicate centralized notesVersion and cache side effects',
   const conversation = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
   const conversationTypes = read('entry/src/main/ets/workflows/conversation/ConversationTypes.ets');
   const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
-  const effects = read('entry/src/main/ets/services/KnowledgeUnitPostCommitEffects.ets');
+  // 写后副作用拆成两个文件：notes_changed（不依赖 UI Kit）+ 卡片刷新（FormKit，仅主进程）
+  const effects = read('entry/src/main/ets/services/KnowledgeUnitPostCommitEffects.ets')
+    + read('entry/src/main/ets/services/KnowledgeUnitNotesChangedEffect.ets');
 
   assert.doesNotMatch(editor, /AppStorage\.setOrCreate\('notesVersion'/);
   assert.doesNotMatch(editor, /UiDataCacheService\.invalidateNote/);

@@ -70,10 +70,13 @@ export class AiService {
   private static captureSeq: number = 0;
 
   // UIAbilityContext 引用,capture() 准备图片文件时用
-  private context?: common.UIAbilityContext;
+  private context?: common.Context;
+  /** 卡片刷新等 UI 副作用是否启用：扩展进程（小艺）里没有 UI，必须关掉。 */
+  private includeUiEffects: boolean = true;
 
-  constructor(context?: common.UIAbilityContext) {
+  constructor(context?: common.Context, includeUiEffects: boolean = true) {
     this.context = context;
+    this.includeUiEffects = includeUiEffects;
   }
 
   // 拍照/相册入口:把图片处理成 KnowledgeUnit 并持久化
@@ -96,7 +99,7 @@ export class AiService {
 
       // 1) 把 file:// URI 复制到沙箱(本地路径,OCR/Dao 都能访问)
       const resolveStartedAt: number = Date.now();
-      const resolved: ResolvedImageFile = await new ImageUriResolver(this.context).resolve(imageUri);
+      const resolved: ResolvedImageFile = await new ImageUriResolver(this.context as common.UIAbilityContext).resolve(imageUri);
       resolveMs = Date.now() - resolveStartedAt;
       log.info('capture 图片已准备,本地路径=' + resolved.localPath);
 
@@ -302,7 +305,7 @@ export class AiService {
       throw new Error('AiService.analyzeImage 需要 UIAbilityContext 来准备图片文件');
     }
 
-    const resolved: ResolvedImageFile = await new ImageUriResolver(this.context).resolve(imageUri);
+    const resolved: ResolvedImageFile = await new ImageUriResolver(this.context as common.UIAbilityContext).resolve(imageUri);
     const req: DispatchRequest = {
       source: 'app',
       payload: {
@@ -330,7 +333,7 @@ export class AiService {
     if (this.context === undefined) {
       throw new Error('AiService.buildNoteDao 需要 UIAbilityContext');
     }
-    const service: KnowledgeUnitWriteService = await KnowledgeUnitWriteServiceFactory.create(this.context);
+    const service: KnowledgeUnitWriteService = await KnowledgeUnitWriteServiceFactory.create(this.context, this.includeUiEffects);
     const adapter: NoteDaoAdapter = new NoteDaoAdapter(service);
     return adapter;
   }
@@ -1075,6 +1078,6 @@ export class AiService {
     if (this.context === undefined) {
       throw new Error('AiService 需要 UIAbilityContext');
     }
-    return this.context;
+    return this.context as common.UIAbilityContext;
   }
 }

@@ -27,6 +27,8 @@ import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSessio
 import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
 import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
 import { A2AInboxIngestService } from '../services/A2AInboxIngestService';
+import { KnowledgeUnitUiEffects } from '../services/KnowledgeUnitUiEffects';
+import { CardUiEffectProvider } from '../services/KnowledgeUnitPostCommitEffects';
 import {
   NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
   NoteDetailBenchmarkLaunchConfig,
@@ -36,6 +38,8 @@ const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // 卡片刷新这类 UI 副作用只能在主进程加载：注册一次，共享写路径按注册表取用
+    KnowledgeUnitUiEffects.register(new CardUiEffectProvider());
     const benchmarkConfig: NoteDetailBenchmarkLaunchConfig =
       NoteDetailBenchmarkLaunchConfig.fromUri(want.uri ?? '');
     AppStorage.setOrCreate<NoteDetailBenchmarkLaunchConfig>(

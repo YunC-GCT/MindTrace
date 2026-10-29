@@ -26,7 +26,7 @@
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { CancellationToken, getProviderCatalog, LlmConfig, LlmError, resolveModel } from 'common';
+import { CancellationToken, getProviderCatalog, KnowledgeUnit, LlmConfig, LlmError, resolveModel } from 'common';
 import type { ProviderCatalog, ResolvedModel } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
@@ -40,6 +40,7 @@ import {
 } from '../services/CaptureReceipt';
 import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
+import { XiaoyiIngestService } from './XiaoyiIngestService';
 import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
@@ -224,14 +225,33 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       this.sendAnswer(taskId, '没收到问题内容，再说一次？', 0);
       return;
     }
-    // 小艺不把图片转发给第三方智能体，所以「存笔记」走文字：先排进应用沙箱队列，
-    // 由应用回到前台时用正规写路径（AiService.ingestText）整理入库。
+    // 小艺不把图片转发给第三方智能体，所以「存笔记」走文字；
+    // 原文在这里就地整理入库，用户不用回到应用（失败才退回队列，等应用前台补）。
     if (shouldEnqueue(query)) {
-      this.enqueueForIngest(taskId, query);
+      this.ingestDirectly(taskId, query);
       return;
     }
     // onData 必须立刻返回：模型链路异步跑，结果回来再自己发快照
     this.runQuery(taskId, query);
+  }
+
+  /**
+   * 就地整理：扩展进程自己初始化同一个 MindTrace.db，跑完整链路并落库，直接在小艺里回执。
+   * 任何一步失败（模型、库、超时）都退回队列，保证原文不丢。
+   */
+  private ingestDirectly(taskId: string, query: string): void {
+    hilog.info(DOMAIN, TAG, 'INGEST_DIRECT start chars=%{public}d', query.length);
+    XiaoyiIngestService.ingest(this.context, query)
+      .then((unit: KnowledgeUnit): void => {
+        hilog.info(DOMAIN, TAG, 'INGEST_DIRECT done subject=%{public}s title=%{public}s',
+          unit.subject, unit.title);
+        this.sendAnswer(taskId,
+          '已整理入库：' + unit.title + '（' + unit.subject + '）', 0);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed %{public}s, fallback to queue', e.message);
+        this.enqueueForIngest(taskId, query);
+      });
   }
 
   /**
@@ -245,7 +265,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         hilog.info(DOMAIN, TAG, 'INBOX_ENQUEUED pending=%{public}d chars=%{public}d',
           pending, item.text.length);
         this.sendAnswer(taskId,
-          '已记为待整理（第 ' + pending.toString() + ' 条）。打开 MindTrace 会自动整理入库。', 0);
+          '模型这次没通，已记为待整理（第 ' + pending.toString() + ' 条）。打开 MindTrace 会自动补上。', 0);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'INBOX_ENQUEUE_FAILED %{public}s', e.message);
