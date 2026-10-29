@@ -12,6 +12,14 @@
  *   开关关闭时用户发的图不会到扩展进程（实测只收到一个 text 为空的 text part）。
  */
 
+/** 云A2A 报文的文件载体：{ file: { name, fileId, uri, mimeType }, kind: 'file' } */
+export interface AgentFileRef {
+  uri?: string;
+  mimeType?: string;
+  name?: string;
+  fileId?: string;
+}
+
 /** A2A message.parts[] 的元素（proto-JSON 字段名，v1.0 无 kind 字段） */
 export interface AgentPart {
   mediaType?: string;
@@ -20,6 +28,9 @@ export interface AgentPart {
   url?: string;
   data?: string | number | boolean | object;
   filename?: string;
+  /** 兜底：有的客户端把图片放 file.uri + file.mimeType（云A2A 报文示例就是这个形状） */
+  file?: AgentFileRef;
+  kind?: string;
 }
 
 /** 一张待识别的图片：kind 决定用什么方式取字节 */
@@ -31,14 +42,27 @@ export interface AgentImagePart {
 
 const DATA_URL_PREFIX: string = 'data:';
 
-/** mediaType 以 image/ 开头即图片；缺失 mediaType 但有 raw 的按图片兜底 */
+/** 图片 part 判定：mediaType/file.mimeType 以 image/ 开头；缺失 mediaType 但有 raw 的按图片兜底 */
 export function isImagePart(part: AgentPart): boolean {
-  const mediaType: string = part.mediaType === undefined ? '' : part.mediaType;
+  const mediaType: string = mediaTypeOf(part);
   if (mediaType.indexOf('image/') === 0) {
     return true;
   }
   const raw: string = part.raw === undefined ? '' : part.raw;
   return mediaType.length === 0 && raw.length > 0;
+}
+
+/** part 的媒体类型：优先 part.mediaType，其次 file.mimeType */
+export function mediaTypeOf(part: AgentPart): string {
+  const direct: string = part.mediaType === undefined ? '' : part.mediaType;
+  if (direct.length > 0) {
+    return direct;
+  }
+  const file: AgentFileRef | undefined = part.file;
+  if (file !== undefined && file.mimeType !== undefined) {
+    return file.mimeType;
+  }
+  return '';
 }
 
 /** data:image/png;base64,xxxx 去掉前缀，只留 base64 正文 */
@@ -50,7 +74,7 @@ function stripDataUrl(value: string): string {
   return value;
 }
 
-/** 从 part 里取图片字节的来源：raw > url > data(string) */
+/** 从 part 里取图片字节的来源：raw > url > file.uri > data(string) */
 export function pickImageSource(part: AgentPart): AgentImagePart | undefined {
   const raw: string = part.raw === undefined ? '' : part.raw;
   if (raw.length > 0) {
@@ -59,6 +83,10 @@ export function pickImageSource(part: AgentPart): AgentImagePart | undefined {
   const url: string = part.url === undefined ? '' : part.url;
   if (url.length > 0) {
     return { kind: 'uri', value: url };
+  }
+  const file: AgentFileRef | undefined = part.file;
+  if (file !== undefined && file.uri !== undefined && file.uri.length > 0) {
+    return { kind: 'uri', value: file.uri };
   }
   const data: string | number | boolean | object | undefined = part.data;
   if (typeof data === 'string' && data.length > 0) {

@@ -8,7 +8,7 @@
         "organization": "MindTrace",
         "url": "https://github.com/YunC-GCT/MindTrace"
       },
-      "version": "1.0.0",
+      "version": "1.0.1",
       "documentationUrl": "https://github.com/YunC-GCT/MindTrace/blob/main/README.md",
       "capabilities": {
         "streaming": false,
@@ -18,7 +18,11 @@
       },
       "defaultInputModes": [
         "text/plain",
-        "image/*"
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/bmp",
+        "image/gif"
       ],
       "defaultOutputModes": [
         "text/plain"
@@ -41,7 +45,11 @@
           ],
           "inputModes": [
             "text/plain",
-            "image/*"
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/bmp",
+            "image/gif"
           ],
           "outputModes": [
             "text/plain"

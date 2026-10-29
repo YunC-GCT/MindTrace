@@ -64,6 +64,21 @@ test('Part<url> 形状（端A2A 文档里的图片下发方式）被当成 uri �
   assert.equal(images[0].value, 'file://docs/storage/Users/currentUser/a.png');
 });
 
+test('云A2A 的 file 形状（{kind:file, file:{uri,mimeType}}）也当图片，别只认 mediaType', () => {
+  const images = collectImageParts([
+    { kind: 'file', file: { uri: 'file://docs/a.jpg', mimeType: 'image/jpeg', name: 'a.jpg' } },
+  ]);
+  assert.equal(images.length, 1);
+  assert.equal(images[0].kind, 'uri');
+  assert.equal(images[0].value, 'file://docs/a.jpg');
+});
+
+test('实测报文形状（只有 mediaType=text/plain 的空 part）不产生图片', () => {
+  const parts = [{ mediaType: 'text/plain' }];
+  assert.equal(collectImageParts(parts).length, 0);
+  assert.equal(joinTextParts(parts), '');
+});
+
 test('text beside images is preserved as the hint', () => {
   const parts = [
     { mediaType: 'image/png', raw: 'AAAA' },

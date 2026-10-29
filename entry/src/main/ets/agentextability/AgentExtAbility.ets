@@ -44,7 +44,7 @@ import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/Agent
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { AgentIngestService } from '../services/AgentIngestService';
 import { AgentIngestRequest, buildIngestRequest, hasIngestPayload, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
-import { AgentImagePart, AgentPart, collectImageParts, joinTextParts } from '../services/AgentImageParts';
+import { AgentImagePart, AgentPart, collectImageParts, joinTextParts, mediaTypeOf } from '../services/AgentImageParts';
 import { OcrService } from '../services/OcrService';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
@@ -200,6 +200,9 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   onData(proxy: common.AgentHostProxy, data: string): void {
     hilog.info(DOMAIN, TAG, 'onData 收到 %{public}d 字节', data.length);
+    // 诊断：把原始报文前 1200 字打进日志。小艺侧“发了图但 parts 里没有图”的判定只能靠它，
+    // 否则看不到客户端到底往报文里塞了什么（file 形状、metadata.fileInfos 等）。
+    hilog.info(DOMAIN, TAG, 'raw=%{public}s', data.substring(0, Math.min(data.length, 1200)));
     this.hostProxy = proxy;
     // 新请求一到达就作废上一条在途请求（含后面的 parse-error / 空 query 分支），
     // 避免旧 session 晚到的回复套用新 requestId 发出去。
@@ -237,14 +240,14 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       return;
     }
     if (!hasIngestPayload(ingest)) {
-      // 实测：开关关闭时用户只发图，扩展收到的只有 1 个空 text part
-      // （media=text/plain text=0 raw=0 data=none url=none）——图片没被平台下发。
-      // 端A2A 协议本身支持图片 Part<url>，所以这是「开放平台 → 编排 → 输入文件设置 → 支持上传照片」没开，
-      // 不是应用侧做不到。这里如实说明，同时给出应用内两条现在就能用的图片路径。
+      // 实测（2026-10-29，小艺 11.7.8，平台照片开关已开、客户端也把图传到了 OBS）：
+      // 扩展收到的仍然只有 1 个空 part —— {"parts":[{"mediaType":"text/plain"}]}，
+      // 既没有 url 也没有 file，说明图是在小艺组装报文那一步被丢掉的，不是应用侧解析漏字段。
+      // 应用侧已按协议兼容 url / raw / file.uri 三种图片载体（AgentImageParts）。
       this.sendAnswer(taskId,
-        '这条消息没有文字，图片也没有传到扩展进程。' +
-        '小艺侧要在开放平台「编排 → 输入文件设置 → 照片设置 → 支持上传照片」开启后，图片才会下发给智能体。' +
-        '现在也可以：① 把题目文字发我；② 在 MindTrace 里用相册/拍照选图整理。', 0);
+        '这条消息里没有文字，也没有图片内容——小艺只下发了一个空 part。' +
+        '端A2A 协议本身支持图片 part（url + filename + mediaType），扩展侧也已兼容 url/raw/file 三种形状。' +
+        '现在可以先：① 把题目文字发我；② 在 MindTrace 里用相册/拍照选图整理。', 0);
       return;
     }
     // 「存笔记」走文字；有图片 part 时无论带不带文字都直接整理。
@@ -363,24 +366,26 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     hilog.info(DOMAIN, TAG, 'parts=%{public}d', parts.length);
     let i: number = 0;
     for (const part of parts) {
-      const media: string = part.mediaType ?? 'none';
+      const media: string = mediaTypeOf(part);
       const textLen: number = (part.text ?? '').length;
       const rawLen: number = (part.raw ?? '').length;
       const url: string = part.url ?? '';
+      const fileUri: string = part.file !== undefined && part.file.uri !== undefined ? part.file.uri : '';
       const dataKind: string = part.data === undefined ? 'none' : typeof part.data;
       hilog.info(DOMAIN, TAG,
-        'part[%{public}d] media=%{public}s text=%{public}d raw=%{public}d data=%{public}s url=%{public}s',
-        i, media, textLen, rawLen, dataKind, url.length > 0 ? url : 'none');
+        'part[%{public}d] media=%{public}s text=%{public}d raw=%{public}d data=%{public}s url=%{public}s file=%{public}s',
+        i, media, textLen, rawLen, dataKind, url.length > 0 ? url : 'none',
+        fileUri.length > 0 ? fileUri : 'none');
       i = i + 1;
     }
   }
 
-  /** 统计图片 part 数量：mediaType 以 image/ 开头且带 raw 或 url */
+  /** 统计图片 part 数量：mediaType（或 file.mimeType）以 image/ 开头 */
   private countImageParts(request: A2ARequest): number {
     const parts: AgentPart[] = this.readParts(request);
     let count: number = 0;
     for (const part of parts) {
-      const media: string = part.mediaType ?? '';
+      const media: string = mediaTypeOf(part);
       if (media.startsWith('image/')) {
         count = count + 1;
       }
