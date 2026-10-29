@@ -40,9 +40,10 @@ import {
 } from '../services/CaptureReceipt';
 import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
-import { XiaoyiIngestService } from './XiaoyiIngestService';
-import { XiaoyiOcrService } from './XiaoyiOcrService';
-import { AgentImagePart, AgentPart, collectImageParts } from '../services/AgentImageParts';
+import { AgentIngestService } from '../services/AgentIngestService';
+import { AgentIngestRequest, buildIngestRequest, hasIngestPayload, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
+import { AgentImagePart, AgentPart, collectImageParts, joinTextParts } from '../services/AgentImageParts';
+import { OcrService } from '../services/OcrService';
 import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
@@ -212,25 +213,29 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       this.lastRequestId, taskId.length > 0 ? taskId : 'none', query);
 
     if (query.indexOf('识别探针') >= 0) {
-      XiaoyiOcrService.probe(this.context).then((r: string): void => {
+      OcrService.probe(this.context).then((r: string): void => {
         this.sendAnswer(taskId, 'OCR 探针：' + r, 0);
       });
       return;
     }
-    // 图片优先：小艺一旦透传图片 part，就先端侧 OCR 成文本，再喂进与文字入口相同的整理节点
-    const images: AgentImagePart[] = collectImageParts(this.readParts(request));
+    // 协议 → 数据契约：文字和图片都折成同一个 AgentIngestRequest，后面的整理链路只认它。
+    // 图片 part 存在时以「识别 + 整理」为主；只发图不打字也要能跑。
+    const parts: AgentPart[] = this.readParts(request);
+    const images: AgentImagePart[] = collectImageParts(parts);
+    const text: string = query.length > 0 ? query : joinTextParts(parts);
+    const ingest: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, text, images);
     if (images.length > 0) {
-      this.ingestImagesDirectly(taskId, images, query);
+      this.ingestDirectly(taskId, ingest);
       return;
     }
-    if (query.length === 0) {
+    if (!hasIngestPayload(ingest)) {
       this.sendAnswer(taskId, '没收到问题内容，再说一次？', 0);
       return;
     }
     // 小艺不把图片转发给第三方智能体，所以「存笔记」走文字；
     // 原文在这里就地整理入库，用户不用回到应用（失败才退回队列，等应用前台补）。
     if (shouldEnqueue(query)) {
-      this.ingestDirectly(taskId, query);
+      this.ingestDirectly(taskId, ingest);
       return;
     }
     // onData 必须立刻返回：模型链路异步跑，结果回来再自己发快照
@@ -239,46 +244,29 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /**
    * 就地整理：扩展进程自己初始化同一个 MindTrace.db，跑完整链路并落库，直接在小艺里回执。
-   * 任何一步失败（模型、库、超时）都退回队列，保证原文不丢。
+   * 图片请求会先经过 OcrService（端侧识别）再落库；任何一步失败（模型、库、超时）
+   * 都退回队列，保证原文不丢。
    */
-  private ingestDirectly(taskId: string, query: string): void {
-    hilog.info(DOMAIN, TAG, 'INGEST_DIRECT start chars=%{public}d', query.length);
-    XiaoyiIngestService.ingest(this.context, query)
+  private ingestDirectly(taskId: string, request: AgentIngestRequest): void {
+    hilog.info(DOMAIN, TAG, 'INGEST_DIRECT start source=%{public}s chars=%{public}d images=%{public}d',
+      request.source, request.text.length, request.images.length);
+    AgentIngestService.ingest(this.context, request)
       .then((unit: KnowledgeUnit): void => {
         hilog.info(DOMAIN, TAG, 'INGEST_DIRECT done subject=%{public}s title=%{public}s',
-          unit.subject, unit.title);
-        this.sendAnswer(taskId,
-          '已整理入库：' + unit.title + '（' + unit.subject + '）', 0);
-      })
-      .catch((e: Error): void => {
-        hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed %{public}s, fallback to queue', e.message);
-        this.enqueueForIngest(taskId, query);
-      });
-  }
-
-  /**
-   * 图片入口：先端侧 OCR（CoreVisionKit），再把文本交给同一个整理节点。
-   * 全部图都没认出文字时如实回执，不写空笔记，也不把图片丢进队列（队列只存文本）。
-   */
-  private ingestImagesDirectly(taskId: string, images: AgentImagePart[], hint: string): void {
-    hilog.info(DOMAIN, TAG, 'INGEST_IMAGE start count=%{public}d hintChars=%{public}d',
-      images.length, hint.length);
-    XiaoyiIngestService.ingestImages(this.context, images, hint)
-      .then((unit: KnowledgeUnit): void => {
-        hilog.info(DOMAIN, TAG, 'INGEST_IMAGE done subject=%{public}s title=%{public}s',
           unit.subject, unit.title);
         this.sendAnswer(taskId, '已整理入库：' + unit.title + '（' + unit.subject + '）', 0);
       })
       .catch((e: Error): void => {
-        hilog.error(DOMAIN, TAG, 'INGEST_IMAGE failed %{public}s', e.message);
-        this.sendAnswer(taskId, '这几张图没认出文字，换张清晰点的，或直接把题目文字发我。', 0);
+        hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed %{public}s', e.message);
+        if (request.images.length > 0) {
+          // 队列只存文本；图片识别失败就把提示原样排进队列，至少留下用户意图
+          this.sendAnswer(taskId, '这几张图没认出文字，换张清晰点的，或直接把题目文字发我。', 0);
+          return;
+        }
+        this.enqueueForIngest(taskId, request.text);
       });
   }
 
-  /**
-   * 把「存笔记」原文排进应用沙箱队列。
-   * 扩展进程（:agent）不碰 notes 库，入库交给应用前台；这里只负责落盘 + 回一句确认。
-   */
   private enqueueForIngest(taskId: string, query: string): void {
     const item: AgentInboxItem = buildInboxItem(query, Date.now());
     AgentInboxQueue.append(this.context, item)

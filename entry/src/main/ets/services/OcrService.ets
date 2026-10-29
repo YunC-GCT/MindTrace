@@ -1,13 +1,14 @@
 /**
- * XiaoyiOcrService.ets — 小艺入口的端侧 OCR（CoreVisionKit）
+ * OcrService.ets — 端侧 OCR 能力（CoreVisionKit），所有入口共用
  *
- * 路径: entry/src/main/ets/agentextability/XiaoyiOcrService.ets
+ * 路径: entry/src/main/ets/services/OcrService.ets
  * 职责: 把 A2A 收到的图片 part（base64 或 file:// uri）识别成纯文本，
  *       交给同一个整理链路（XiaoyiIngestService.ingest → Dispatcher → 结构化 → 落库）。
  * 依赖: @kit.CoreVisionKit (textRecognition), @kit.ImageKit (image), @kit.ArkTS (util)
  *
- * 为什么放在扩展目录：OCR 是「入口侧的能力」，图片只在这里出现；
- *   识别完就把文本送进 agent 链路的输入端，后续节点不感知图片。
+ * 为什么放在 services：这是共享能力层，不属于某个入口。
+ *   小艺入口（:agent）、应用内选图、分享入口都把它当同一种能力调用，
+ *   识别完只产出文本，后面的 agent 链路不感知图片。
  * Process: 主进程与 :agent 都要能加载（见 spec 033 §4 的 RESTRICTED 表）。
  */
 
@@ -20,7 +21,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 const DOMAIN: number = 0xA2A0;
 const TAG: string = 'XiaoyiOcr';
 
-export class XiaoyiOcrService {
+export class OcrService {
   /** 设备是否具备端侧文本识别能力 */
   static isAvailable(): boolean {
     return canIUse('SystemCapability.AI.OCR.TextRecognition');
@@ -31,7 +32,7 @@ export class XiaoyiOcrService {
    * 图片 part 目前还没从小艺下发，先用这个探针证明「识别能力本身在 :agent 里可用」。
    */
   static async probe(context: common.Context): Promise<string> {
-    const available: boolean = XiaoyiOcrService.isAvailable();
+    const available: boolean = OcrService.isAvailable();
     let initialized: boolean = false;
     let message: string = '';
     if (available) {
@@ -45,7 +46,7 @@ export class XiaoyiOcrService {
     let head: string = '';
     if (initialized) {
       try {
-        const text: string = await XiaoyiOcrService.recognizeRawFile(context, 'ocr-probe.png');
+        const text: string = await OcrService.recognizeRawFile(context, 'ocr-probe.png');
         head = text.length > 60 ? text.substring(0, 60) : text;
         head = head.split('\n').join(' / ');
         message = message.length > 0 ? message : ('ocrChars=' + text.length.toString());
@@ -68,26 +69,26 @@ export class XiaoyiOcrService {
     const helper: util.Base64Helper = new util.Base64Helper();
     const bytes: Uint8Array = helper.decodeSync(base64);
     const source: image.ImageSource = image.createImageSource(bytes.buffer as ArrayBuffer);
-    return XiaoyiOcrService.recognizeSource(source);
+    return OcrService.recognizeSource(source);
   }
 
   /** 应用内置图（rawfile）→ 文本，用于自检：不依赖任何外部输入 */
   static async recognizeRawFile(context: common.Context, name: string): Promise<string> {
     const bytes: Uint8Array = await context.resourceManager.getRawFileContent(name);
     const source: image.ImageSource = image.createImageSource(bytes.buffer as ArrayBuffer);
-    return XiaoyiOcrService.recognizeSource(source);
+    return OcrService.recognizeSource(source);
   }
 
   /** file:// uri（url part）→ 文本 */
   static async recognizeUri(uri: string): Promise<string> {
     const path: string = uri.startsWith('file://') ? uri.substring('file://'.length) : uri;
     const source: image.ImageSource = image.createImageSource(path);
-    return XiaoyiOcrService.recognizeSource(source);
+    return OcrService.recognizeSource(source);
   }
 
   /** 一张图 → 多行文本（按视觉顺序拼行） */
   private static async recognizeSource(source: image.ImageSource): Promise<string> {
-    if (!XiaoyiOcrService.isAvailable()) {
+    if (!OcrService.isAvailable()) {
       throw new Error('CoreVisionKit text OCR is not supported on this device');
     }
     let pixelMap: image.PixelMap | undefined = undefined;
@@ -103,7 +104,7 @@ export class XiaoyiOcrService {
       }
       const result: textRecognition.TextRecognitionResult =
         await textRecognition.recognizeText({ pixelMap: pixelMap });
-      return XiaoyiOcrService.extractText(result);
+      return OcrService.extractText(result);
     } finally {
       if (initialized) {
         await textRecognition.release();
