@@ -199,6 +199,24 @@ awaiting_confirm → discarded（用户不勾）
 
 仍未做（阶段 2–5）：切题器 `segmentProblems`、跨图合并、确认页、进度订阅、幂等与计费预估。
 
+### 实施记录：学科词表与标题清洗（2026-10-29）
+
+多图整理跑通后暴露出两个**与切题无关**的质量问题，先修干净再加阶段 2：
+
+| 症状 | 根因 | 处理 |
+|---|---|---|
+| 24 篇笔记裂成 7 个学科（「最优化方法」3、「最优化」1、「数学（优化理论/运筹学）」1） | 结构化提示词写「学科名称由你自主判断」，模型每轮重新起名 | `PromptBuilder.buildPrompt(ocrText, knownSubjects)`：把库里已有学科渲染成封闭词表；`resolveSubjectName` 三态裁决（内置学科 → 库里已有 → 才新建），新建时回传近似候选 |
+| 标题尾部长出「（OCR 信息不完整）」「（含待确认）」「（隐式公式无法识别项）」 | 模型把置信度标记写进 title | `sanitizeNoteTitle` 只剥复核类括号，分值/年份/公式类括号保留；剥掉的标记转成 `needsUserInput.title`，提示不丢 |
+
+存量也要干净：`SubjectRepairService` 在首页首帧后（3s）扫一遍 `knowledge_unit`，
+只改非规范项、走 `KnowledgeUnitWriteService.update` 正规写路径（校验 + 版本递增 + revision），
+单条失败不回滚整批；`preferences` 存 **规则版本号**（当前 v2）而不是布尔位，
+以后清洗规则升级就 +1，已跑过的设备会再修一次。
+
+验证：`agent-gate` = `RESULT: PASS (913 tests, 0 fail)`；4× `BUILD SUCCESSFUL`；
+真机 `scanned=25 subject=3 title=3 failed=0` → 复查 `subject=0 title=1`（用户补的「无法识别」一类），
+笔记页学科从 **7 → 5**（数学分析 7 / 最优化方法 6 / 线性代数 6 / 初中数学 4 / 数值分析 2）。
+
 ## 13. 待拍板（阻塞实现）
 
 | 编号 | 问题 | 选项 | 建议 |
