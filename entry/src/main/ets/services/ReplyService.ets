@@ -36,6 +36,8 @@ const CHAT_REPLY_MAX_TOKENS: number = 12000;
 const CHAT_REPLY_TIMEOUT_MS: number = 120000;
 const CHAT_REPLY_MAX_RETRIES: number = 2;
 const STREAM_FAILURE_THRESHOLD: number = 2;
+// 熔断不是永久拉黑: 冷却结束后放行一次 SSE, 成功就恢复流式, 失败再熔断。
+const STREAM_CIRCUIT_COOLDOWN_MS: number = 5 * 60 * 1000;
 
 /**
  * 单次 complete 调用的预算覆盖（只影响本次调用，不改 LlmGuard/LlmClient 默认值）。
@@ -68,8 +70,10 @@ export class ReplyService {
   private readonly intentClassifier: IntentClassifier;
   private readonly contentProtocol: ContentProtocol = new ContentProtocol();
   // 进程内流式熔断: 连续传输层失败达到阈值后, 本进程后续 stream() 跳过 SSE 直接走非流式 fallback。
+  // 冷却窗口到期后放行一次 (half-open), 成功即恢复流式, 避免一次弱网把流式永久关掉。
   private static streamTransportFailures: number = 0;
   private static streamDisabled: boolean = false;
+  private static streamDisabledUntilMs: number = 0;
 
   constructor(intentClassifier: IntentClassifier) {
     this.intentClassifier = intentClassifier;
@@ -144,8 +148,15 @@ export class ReplyService {
     // #224 调试注入: 首次调用懒加载档位; 'none' 时下面所有返回原样透传。
     await DebugFaults.load();
     if (ReplyService.streamDisabled) {
-      replyLog.warn('[StreamCircuit] open, skip SSE');
-      return this.applyDebugFault(await this.fallback(context, cancellationToken));
+      if (Date.now() >= ReplyService.streamDisabledUntilMs) {
+        // 冷却结束: half-open, 放行一次 SSE 试探。成功会在流水末尾恢复, 失败由 recordTransportFailure 再次熔断。
+        ReplyService.streamDisabled = false;
+        ReplyService.streamTransportFailures = 0;
+        replyLog.info('[StreamCircuit] half-open after cooldown, probing SSE once');
+      } else {
+        replyLog.warn('[StreamCircuit] open, skip SSE');
+        return this.applyDebugFault(await this.fallback(context, cancellationToken));
+      }
     }
     const client: LlmClient = new LlmClient();
     let content: string = '';
@@ -322,8 +333,10 @@ export class ReplyService {
     ReplyService.streamTransportFailures += 1;
     if (ReplyService.streamTransportFailures >= STREAM_FAILURE_THRESHOLD && !ReplyService.streamDisabled) {
       ReplyService.streamDisabled = true;
+      ReplyService.streamDisabledUntilMs = Date.now() + STREAM_CIRCUIT_COOLDOWN_MS;
       replyLog.warn('[StreamCircuit] open consecutive=' + ReplyService.streamTransportFailures.toString()
-        + ' threshold=' + STREAM_FAILURE_THRESHOLD.toString());
+        + ' threshold=' + STREAM_FAILURE_THRESHOLD.toString()
+        + ' cooldownMs=' + STREAM_CIRCUIT_COOLDOWN_MS.toString());
       return;
     }
     replyLog.warn('[StreamCircuit] transport failure consecutive=' + ReplyService.streamTransportFailures.toString());

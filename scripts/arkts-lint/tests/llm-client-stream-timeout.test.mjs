@@ -10,17 +10,32 @@ const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
 const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 
 test('LlmClient.callStreamInternal firstByteTimer tiers by thinking capability', () => {
-  // issue #226: 关闭思考 / unsupported → 30s；开启思考 / always_on → 60s。
+  // issue #226: 关闭思考 / unsupported → 12s；开启思考 / always_on → 60s。
   // 旧规则「上限锁 30s」只对可关闭思考的模型成立，always_on 模型不能靠关思考换首字节。
+  // 2026-10-29: 非思考档 30s → 12s，弱网下不再让用户干等半分钟。
   assert.match(
     llmClient,
-    /const firstByteWatchdogMs: number = thinkingActive \? 60000 : 30000;/,
-    'first-byte watchdog must pick 60000ms for thinking, 30000ms otherwise',
+    /const firstByteWatchdogMs: number = thinkingActive \? 60000 : 12000;/,
+    'first-byte watchdog must pick 60000ms for thinking, 12000ms otherwise',
   );
   assert.match(
     llmClient,
     /firstByteTimer = setTimeout\([\s\S]*?firstByteWatchdogMs\s*\)/,
     'firstByteTimer must use the capability-tiered value',
+  );
+});
+
+test('ReplyService stream circuit reopens after a cooldown instead of disabling SSE for the process', () => {
+  assert.match(replyService, /const STREAM_CIRCUIT_COOLDOWN_MS: number = 5 \* 60 \* 1000;/);
+  assert.match(
+    replyService,
+    /ReplyService\.streamDisabledUntilMs = Date\.now\(\) \+ STREAM_CIRCUIT_COOLDOWN_MS;/,
+    'opening the circuit must stamp a cooldown deadline',
+  );
+  assert.match(
+    replyService,
+    /if \(Date\.now\(\) >= ReplyService\.streamDisabledUntilMs\) \{[\s\S]{0,220}?ReplyService\.streamDisabled = false;/,
+    'stream() must half-open once the cooldown elapsed',
   );
 });
 

@@ -371,11 +371,13 @@ export class LlmClient {
       }, timeoutMs);
 
       // 首字节看门狗按能力分档 (issue #226):
-      //   toggle 本次关闭 / unsupported / unverified → 30s (首字节本就该快);
+      //   toggle 本次关闭 / unsupported / unverified → 12s (首字节本就该快);
       //   toggle 本次开启 / always_on                → 60s (思维链先于首个可见 token 生成)。
+      // 2026-10-29: 非思考档从 30s 收到 12s —— 真机弱网下 SSE 首字节偶尔整段丢失,
+      //   30s 会让用户以为"对话没反应"; 12s 未到就放弃 SSE、由 ReplyService 立刻切非流式。
       const thinkingActive: boolean = capability.thinking === 'always_on'
         || (capability.thinking === 'toggle' && composed.thinkingEnabled);
-      const firstByteWatchdogMs: number = thinkingActive ? 60000 : 30000;
+      const firstByteWatchdogMs: number = thinkingActive ? 60000 : 12000;
       firstByteTimer = setTimeout((): void => {
         if (!streamEnded && !dataReceived) {
           streamEnded = true;

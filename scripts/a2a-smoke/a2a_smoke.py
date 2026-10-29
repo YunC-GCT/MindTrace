@@ -149,15 +149,21 @@ def launch(hdc, restart=True):
     if foreground_bundle(hdc) == YIXIAO_BUNDLE:
         return True
 
-    # 兜底 1：直接点桌面上的小艺图标
+    # 兜底 1：先回桌面，再点桌面上的小艺图标。
+    # aa start 在部分系统版本上只起进程不起界面（返回 start ability successfully 但前台仍是原应用），
+    # 不回桌面就去 dump，拿到的还是原应用的节点，永远找不到「小艺」。
+    hdc.shell("uitest uiInput keyEvent 1")
+    time.sleep(1.5)
     nodes = walk(dump_layout(hdc))
     n, b = find_text(nodes, "小艺", exact=True)
     if b:
         target = clickable_containing(nodes, center(b)) or b
         tap(hdc, *center(target))
-        time.sleep(4.5)
-        if foreground_bundle(hdc) == YIXIAO_BUNDLE:
-            return True
+        # 冷启动慢：轮询到前台切过去为止，别一次 sleep 就判定失败
+        for _ in range(8):
+            time.sleep(1.2)
+            if foreground_bundle(hdc) == YIXIAO_BUNDLE:
+                return True
 
     # 兜底 2：再等一轮（冷启动有时较慢）
     time.sleep(4)
