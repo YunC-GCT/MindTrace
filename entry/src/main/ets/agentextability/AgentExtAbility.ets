@@ -24,7 +24,8 @@
  *     -> 回执意图命中：读 last-capture.json -> formatReceipt -> sendAnswer（不等配置、不调模型）
  *     -> 异步：等配置（≤4s）-> isConfigured -> ReplyService.complete（25s / 0 retry）
  *     -> 35s deadline 到点：取消同一个 token（LlmClient 内 destroy 底层 HTTP），只回一次 timeout
- *     -> sendAnswer(taskId, text)：buildTaskSnapshot 拼单帧 task 快照，artifacts 内是完整文本
+ *     -> sendAnswer(taskId, text, query)：命中拍题/选图意图时用 buildTaskSnapshotWithCard
+ *        追加一个官方 uiExtensionCard part；否则是逐字节不变的纯文本单帧快照
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -47,9 +48,16 @@ import { AgentIngestRequest, buildIngestRequest, hasIngestPayload, INGEST_SOURCE
 import { AgentImagePart, AgentPart, collectImageParts, joinTextParts, mediaTypeOf } from '../services/AgentImageParts';
 import { OcrService } from '../services/OcrService';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
-import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
+import { buildTaskSnapshotWithCard, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
+import { buildPickCardPartJson, CARD_ID, wantsPickCard } from './A2AUiCard';
 
 const TAG: string = 'MindTraceA2A';
+
+/**
+ * 官方 UI 卡片开关。真机出现 1011 start_ability_fail 或每秒重试时改 false 并重建，
+ * 立刻退回纯文本（buildTaskSnapshotWithCard 的空卡片路径与旧输出逐字节一致）。
+ */
+const UI_CARD_ENABLED: boolean = true;
 
 /**
  * A2A 单次回复预算（计划 §4.1–§4.3）——超时/重试/输出预算的数字只在这里定义。
@@ -122,6 +130,8 @@ const PARSE_ERROR: string = '请求解析失败，请重试。';
 /** 单次请求的预算与状态：保证 deadline 只取消一次、timeout 只发一次 */
 interface A2ARequestSession {
   taskId: string;
+  /** 本轮原始 query：回执据此决定是否附带「拍题/选图」卡片 part */
+  query: string;
   token: CancellationToken;
   startedAt: number;
   /** 实际发起模型调用的时刻；0 表示尚未调用 */
@@ -244,10 +254,8 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       // 扩展收到的仍然只有 1 个空 part —— {"parts":[{"mediaType":"text/plain"}]}，
       // 既没有 url 也没有 file，说明图是在小艺组装报文那一步被丢掉的，不是应用侧解析漏字段。
       // 应用侧已按协议兼容 url / raw / file.uri 三种图片载体（AgentImageParts）。
-      this.sendAnswer(taskId,
-        '这条消息里没有文字，也没有图片内容——小艺只下发了一个空 part。' +
-        '端A2A 协议本身支持图片 part（url + filename + mediaType），扩展侧也已兼容 url/raw/file 三种形状。' +
-        '现在可以先：① 把题目文字发我；② 在 MindTrace 里用相册/拍照选图整理。', 0);
+      // 空 payload 无法从 query 判意图，直接给卡片：点一下就能进应用选图。
+      this.sendAnswerWithPickCard(taskId, '点下面的卡片去选图，或直接说『存笔记：…』');
       return;
     }
     // 「存笔记」走文字；有图片 part 时无论带不带文字都直接整理。
@@ -272,7 +280,8 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       .then((unit: KnowledgeUnit): void => {
         hilog.info(DOMAIN, TAG, 'INGEST_DIRECT done subject=%{public}s title=%{public}s',
           unit.subject, unit.title);
-        this.sendAnswer(taskId, '已整理入库：' + unit.title + '（' + unit.subject + '）', 0);
+        this.sendAnswer(taskId, '已整理入库：' + unit.title + '（' + unit.subject + '）', 0,
+          request.text);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed %{public}s', e.message);
@@ -429,6 +438,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     const token: CancellationToken = new CancellationToken();
     const session: A2ARequestSession = {
       taskId: taskId,
+      query: query,
       token: token,
       startedAt: startedAt,
       requestStartedAt: 0,
@@ -703,27 +713,50 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       '%{public}s requestId=%{public}s taskId=%{public}s requestedModel=%{public}s canonicalModel=%{public}s reason=%{public}s attempts=%{public}d elapsedMs=%{public}d',
       code, this.lastRequestId, session.taskId, session.requestedModel, session.canonicalModel,
       reason, session.attempts, elapsedMs);
-    this.sendAnswer(session.taskId, text, session.requestStartedAt);
+    this.sendAnswer(session.taskId, text, session.requestStartedAt, session.query);
   }
 
   /**
    * 单帧 result.task 快照：一次给全 artifacts + TASK_STATE_COMPLETED。
    * 不拆 statusUpdate / artifactUpdate —— 小艺对增量帧只渲染开头几个词。
-   * 报文拼装由 TaskSnapshot.buildTaskSnapshot（纯函数）负责，这里只选 taskId 并发送。
+   * 报文拼装由 TaskSnapshot（纯函数）负责，这里只选 taskId 并发送。
+   *
+   * 卡片 part：query 命中「拍题/选图」意图且 UI_CARD_ENABLED 时追加一个
+   * buildPickCardPartJson(query)；每个 task 只发一帧快照，卡片 part 最多一个。
    *
    * #234 可观测性: 发送成功后只打计数摘要（chars/字节/特殊符号/耗时），
    * 不打印正文、正文前缀或哈希（AGENTS 红线）。requestStartedAt 由调用方传入
    * 当前 session 的模型调用起点；无 session 的分支传 0，elapsedMs 记 0。
    */
-  private sendAnswer(taskId: string, text: string, requestStartedAt: number): void {
+  private sendAnswer(taskId: string, text: string, requestStartedAt: number, cardQuery: string = ''): void {
+    const cardPartJson: string = UI_CARD_ENABLED && wantsPickCard(cardQuery)
+      ? buildPickCardPartJson(cardQuery) : '';
+    this.sendSnapshot(taskId, text, requestStartedAt, cardPartJson);
+  }
+
+  /**
+   * 空 payload 分支专用：没有 query 可判意图，直接带一张卡片。
+   * 文案与 sendAnswer 分开，避免把「没有内容」说成「已整理」。
+   */
+  private sendAnswerWithPickCard(taskId: string, text: string): void {
+    const cardPartJson: string = UI_CARD_ENABLED ? buildPickCardPartJson('') : '';
+    this.sendSnapshot(taskId, text, 0, cardPartJson);
+  }
+
+  /** 唯一发帧出口：拼快照 + 发一帧 + 计数日志。 */
+  private sendSnapshot(taskId: string, text: string, requestStartedAt: number, cardPartJson: string): void {
     const finalTaskId: string = taskId.length > 0 ? taskId : 'task-' + Date.now().toString();
-    const payload: string = buildTaskSnapshot(this.lastRequestId, finalTaskId, text);
+    const payload: string = buildTaskSnapshotWithCard(this.lastRequestId, finalTaskId, text, cardPartJson);
     if (this.hostProxy === null) {
       hilog.error(DOMAIN, TAG, 'hostProxy 为空，无法发送 task 快照');
       return;
     }
     try {
       this.hostProxy.sendData(payload);
+      if (cardPartJson.length > 0) {
+        hilog.info(DOMAIN, TAG, 'A2A_UI_CARD sent cardId=%{public}s chars=%{public}d',
+          CARD_ID, cardPartJson.length);
+      }
       const elapsedMs: number = requestStartedAt > 0 ? Date.now() - requestStartedAt : 0;
       hilog.info(DOMAIN, TAG,
         'A2A_REPLY_SENT chars=%{public}d utf8Bytes=%{public}d snapshotBytes=%{public}d dollar=%{public}d backslash=%{public}d zeroWidth=%{public}d sqrt=%{public}d ge=%{public}d elapsedMs=%{public}d taskId=%{public}s',
