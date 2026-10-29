@@ -16,7 +16,9 @@
  *
  * 输出契约（与改造前 sendAnswer 的内联拼接逐字节一致）:
  *   contextId 固定 mindtrace-context；artifactId 为 <taskId>-artifact；
- *   parts 只放 text + mediaType，不引入客户端不认识的 part（未知 part 会让整条响应被丢弃）。
+ *   buildTaskSnapshot 的 parts 只放 text + mediaType，不引入客户端不认识的 part
+ *   （未知 part 会让整条响应被丢弃）；buildTaskSnapshotWithCard 仅在显式传入
+ *   卡片 part JSON 时追加第二个 part，空字符串时逐字节退化为前者。
  */
 const CONTEXT_ID: string = 'mindtrace-context';
 const COMPLETED_STATE: string = 'TASK_STATE_COMPLETED';
@@ -39,6 +41,33 @@ export function buildTaskSnapshot(requestId: string, taskId: string, text: strin
     + '","status":{"state":"' + COMPLETED_STATE + '"},"artifacts":[{"artifactId":"'
     + taskId + '-artifact","parts":[{"text":' + JSON.stringify(text)
     + ',"mediaType":"' + TEXT_MEDIA_TYPE + '"}]}]}}}';
+}
+
+/**
+ * 带一个可选卡片 part 的单帧 result.task 快照（纯函数）。
+ *
+ * cardPartJson 是调用方已序列化的 part JSON 字符串，例如
+ *   {"data":{"uiExtensionCard":{"cardId":"mindtrace-pick",...}}}
+ * 以原样拼进 parts[]，因此 parts 顺序固定为 [text part, card part]。
+ *
+ * 空字符串退化成 buildTaskSnapshot 的逐字节输出：现有 golden 不变，
+ * 也让 UI_CARD_ENABLED=false 的回退路径与旧版本完全一致（防「未知 part 丢整条响应」）。
+ */
+export function buildTaskSnapshotWithCard(
+  requestId: string,
+  taskId: string,
+  text: string,
+  cardPartJson: string,
+): string {
+  if (cardPartJson.length === 0) {
+    return buildTaskSnapshot(requestId, taskId, text);
+  }
+  return '{"jsonrpc":"2.0","id":"' + requestId
+    + '","result":{"task":{"id":"' + taskId
+    + '","contextId":"' + CONTEXT_ID
+    + '","status":{"state":"' + COMPLETED_STATE + '"},"artifacts":[{"artifactId":"'
+    + taskId + '-artifact","parts":[{"text":' + JSON.stringify(text)
+    + ',"mediaType":"' + TEXT_MEDIA_TYPE + '"},' + cardPartJson + ']}]}}}';
 }
 
 /**
