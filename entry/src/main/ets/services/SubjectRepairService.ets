@@ -1,12 +1,14 @@
 /**
- * SubjectRepairService.ets — 一次性修复历史笔记的学科名与标题。
+ * SubjectRepairService.ets — 历史笔记的学科归一 / 标题清洗。
  *
  * 路径: entry/src/main/ets/services/SubjectRepairService.ets
- * 职责: 启动后扫一遍 knowledge_unit，把非规范学科名归一、把标题里的复核标记剥掉。
+ * 职责: 扫一遍 knowledge_unit，把非规范学科名归到已有学科、把标题里的复核标记剥掉；
+ *       同时给出「整理前 / 整理后」的学科分布，供「我的 → 学科整理」页展示。
  * 依赖: NoteDao(读全量) + KnowledgeUnitWriteService(带 revision 的正规写路径)
  *
  * 数据流:
- *   EntryAbility.loadContent → repairIfNeeded(context) → queryAll → 逐条 update
+ *   启动一次性修复: EntryAbility → repairIfNeeded(按规则版本只跑一次)
+ *   手动再整理:     SubjectMaintenancePage → repairNow(用户点了就跑，不看版本位)
  *
  * Why: 归一与清洗是这次才加的，库里已经有一条「最优化」、一条「数学（优化理论/运筹学）」，
  *      光改采集链路治不了旧数据。用户会一直看到三个学科名，所以必须补一次修复。
@@ -15,7 +17,7 @@
  *   - 只在「非规范」时才写：subject 已规范、标题已干净的记录一条不碰（幂等）。
  *   - 走 update 的正规写路径（校验 + 版本递增 + revision），不直接改 SQL。
  *   - 单条失败不回滚整批：记 failed 计数继续下一条。
- *   - preferences 存 'subjectRepair.v1'，每台设备只跑一次；跑完就置位。
+ *   - preferences 存规则版本号，每台设备按版本跑一次；规则升级 +1 即可重跑。
  *   - 空学科不算「可归一」：归一不出结果就写「其它」，避免校验失败。
  *
  * ArkTS 1.1 strict 适配:
@@ -46,11 +48,60 @@ const FLAG_KEY: string = 'subjectRepair.version';
 const REPAIR_VERSION: number = 2;
 const EMPTY_SUBJECT_FALLBACK: string = '其它';
 
+/** 某个学科当前挂了几条笔记 */
+export interface SubjectUsage {
+  subject: string;
+  count: number;
+}
+
+/** 一条归一记录：原学科名 → 归到哪个学科，涉及几条 */
+export interface SubjectChange {
+  from: string;
+  to: string;
+  count: number;
+}
+
 export interface SubjectRepairReport {
   scanned: number;
   subjectFixed: number;
   titleFixed: number;
   failed: number;
+  before: SubjectUsage[];
+  after: SubjectUsage[];
+  changes: SubjectChange[];
+}
+
+function tally(subjects: string[]): SubjectUsage[] {
+  const names: string[] = [];
+  const counts: number[] = [];
+  for (let i = 0; i < subjects.length; i++) {
+    const name: string = subjects[i].trim();
+    if (name.length === 0) {
+      continue;
+    }
+    const at: number = names.indexOf(name);
+    if (at >= 0) {
+      counts[at] = counts[at] + 1;
+    } else {
+      names.push(name);
+      counts.push(1);
+    }
+  }
+  const usages: SubjectUsage[] = [];
+  for (let i = 0; i < names.length; i++) {
+    usages.push({ subject: names[i], count: counts[i] });
+  }
+  // 条数多的排前面；同条数按名字排，保证页面顺序稳定
+  usages.sort((a: SubjectUsage, b: SubjectUsage): number => {
+    if (b.count !== a.count) {
+      return b.count - a.count;
+    }
+    if (a.subject === b.subject) {
+      return 0;
+    }
+    return a.subject < b.subject ? -1 : 1;
+  });
+  return usages;
 }
 
 export class SubjectRepairService {
@@ -68,6 +119,28 @@ export class SubjectRepairService {
     return report;
   }
 
+  /** 用户手动点「开始整理」：不看版本位，什么时候点就什么时候跑。 */
+  static async repairNow(context: common.UIAbilityContext): Promise<SubjectRepairReport> {
+    const report: SubjectRepairReport = await SubjectRepairService.repair(context);
+    const prefs: preferences.Preferences = await preferences.getPreferences(context, PREFS_NAME);
+    await prefs.put(FLAG_KEY, REPAIR_VERSION);
+    await prefs.flush();
+    return report;
+  }
+
+  /** 只读：当前学科分布，用于整理前预览。 */
+  static async preview(context: common.UIAbilityContext): Promise<SubjectUsage[]> {
+    const existing: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    const store: relationalStore.RdbStore = existing !== null ? existing : await DatabaseHelper.init(context);
+    const dao: NoteDao = new NoteDao(store);
+    const units: KnowledgeUnit[] = await dao.queryAllMetadata();
+    const subjects: string[] = [];
+    for (let i = 0; i < units.length; i++) {
+      subjects.push(units[i].subject);
+    }
+    return tally(subjects);
+  }
+
   static async repair(context: common.UIAbilityContext): Promise<SubjectRepairReport> {
     const existing: relationalStore.RdbStore | null = DatabaseHelper.getStore();
     const store: relationalStore.RdbStore = existing !== null ? existing : await DatabaseHelper.init(context);
@@ -75,12 +148,21 @@ export class SubjectRepairService {
     const units: KnowledgeUnit[] = await dao.queryAll();
     const writer: KnowledgeUnitWriteService = await KnowledgeUnitWriteServiceFactory.create(context);
 
+    const beforeSubjects: string[] = [];
+    for (let i = 0; i < units.length; i++) {
+      beforeSubjects.push(units[i].subject);
+    }
+
+    const changeFrom: string[] = [];
+    const changeTo: string[] = [];
+    const changeCount: number[] = [];
     let subjectFixed: number = 0;
     let titleFixed: number = 0;
     let failed: number = 0;
 
     for (let i = 0; i < units.length; i++) {
       const unit: KnowledgeUnit = units[i];
+      const originalSubject: string = unit.subject;
       const subjectResult: SubjectNormalization = normalizeSubjectName(unit.subject);
       const titleResult: TitleSanitization = sanitizeNoteTitle(unit.title);
 
@@ -102,20 +184,40 @@ export class SubjectRepairService {
         const result: KnowledgeUnitWriteResult = await writer.update(unit, unit.version, 'subject_repair');
         if (!result.committed) {
           failed += 1;
+          // 写失败要把内存里的改动还原，否则「整理后分布」会显示没落库的名字
+          unit.subject = originalSubject;
           hilog.warn(DOMAIN, TAG, 'skip %{public}s: write not committed', unit.id);
           continue;
         }
         if (subjectChanged) {
           subjectFixed += 1;
+          const at: number = changeFrom.indexOf(originalSubject);
+          if (at >= 0 && changeTo[at] === nextSubject) {
+            changeCount[at] = changeCount[at] + 1;
+          } else {
+            changeFrom.push(originalSubject);
+            changeTo.push(nextSubject);
+            changeCount.push(1);
+          }
         }
         if (titleChanged) {
           titleFixed += 1;
         }
       } catch (e) {
         failed += 1;
+        unit.subject = originalSubject;
         const message: string = e instanceof Error ? e.message : String(e);
         hilog.warn(DOMAIN, TAG, 'skip %{public}s: %{public}s', unit.id, message);
       }
+    }
+
+    const afterSubjects: string[] = [];
+    for (let i = 0; i < units.length; i++) {
+      afterSubjects.push(units[i].subject);
+    }
+    const changes: SubjectChange[] = [];
+    for (let i = 0; i < changeFrom.length; i++) {
+      changes.push({ from: changeFrom[i], to: changeTo[i], count: changeCount[i] });
     }
 
     const report: SubjectRepairReport = {
@@ -123,6 +225,9 @@ export class SubjectRepairService {
       subjectFixed: subjectFixed,
       titleFixed: titleFixed,
       failed: failed,
+      before: tally(beforeSubjects),
+      after: tally(afterSubjects),
+      changes: changes,
     };
     hilog.info(DOMAIN, TAG,
       'done scanned=%{public}d subject=%{public}d title=%{public}d failed=%{public}d',

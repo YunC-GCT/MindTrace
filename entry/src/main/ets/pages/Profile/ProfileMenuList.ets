@@ -61,6 +61,13 @@ export struct ProfileMenuList {
         onTap: (): void => { router.pushUrl({ url: "pages/AiSettings/AiSettingsPage" }) }
       })
 
+      // 5.1 学科整理(把历史笔记重新归到更合适的学科)
+      ProfileMenuItemRow({
+        icon: "notes",
+        label: "学科整理",
+        onTap: (): void => { router.pushUrl({ url: "pages/Profile/SubjectMaintenancePage" }) }
+      })
+
       // 6. 帮助反馈
       ProfileMenuItemRow({
         icon: "feedback",

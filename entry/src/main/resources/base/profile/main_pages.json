@@ -3,6 +3,7 @@
     "pages/Index",
     "pages/AiSettings/AiSettingsPage",
     "pages/Notes/SubjectDetailPage",
+    "pages/Profile/SubjectMaintenancePage",
     "pages/AgentUiCard"
   ]
 }
