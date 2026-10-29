@@ -90,6 +90,8 @@ A2A 的 LLM 调用永不返回：日志停在「LLM 调用开始」，60s 超时
 | 小艺面板 | `@kit.AgentFrameworkKit`（`FunctionComponent`、`AgentController`） | main | 依赖 UI 与华为账号态 |
 | ArkWeb | `@ohos.web.webview` / `Web` 组件 | main | 需要渲染进程与 UI 上下文 |
 | 卡片 | `@kit.FormKit` | 卡片宿主 | 由 FormAbility 提供 |
+| 端侧 OCR | `@kit.CoreVisionKit`（`textRecognition`） | main、agent | 纯端侧推理，无 UI/账号态依赖；`:agent` 的小艺图片入口靠它把图变成文本。真机 `:agent` 实测 `available=true init=true`，内置图识别 4 行 48 字 |
+| 图片编解码 | `@kit.ImageKit` | main、agent | 把 A2A `part.raw`/`part.url` 解码成 `PixelMap` 供 OCR；纯内存/文件解析 |
 
 ## 5. 执行机制
 

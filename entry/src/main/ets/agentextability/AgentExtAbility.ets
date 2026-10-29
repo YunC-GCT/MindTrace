@@ -41,6 +41,8 @@ import {
 import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { XiaoyiIngestService } from './XiaoyiIngestService';
+import { XiaoyiOcrService } from './XiaoyiOcrService';
+import { AgentImagePart, AgentPart, collectImageParts } from '../services/AgentImageParts';
 import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
@@ -133,16 +135,9 @@ const DOMAIN: number = 0xA2A0;
 
 // 小艺发来的 JSON-RPC 请求（proto-JSON）：文本 part 只有 mediaType + text，没有 kind/type；
 // 图片/文件 part 用 raw（base64）或 url（file:// 等）+ mediaType（image/png…）承载。
-interface A2ATextSegment {
-  mediaType?: string;
-  text?: string;
-  raw?: string;
-  url?: string;
-  data?: string | number | boolean | object;
-}
-
+// part 的形状判定与图片提取集中在 services/AgentImageParts（纯函数，可单测），这里只做透传。
 interface A2AMessage {
-  parts?: A2ATextSegment[];
+  parts?: AgentPart[];
 }
 
 interface A2AParams {
@@ -216,12 +211,19 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     hilog.info(DOMAIN, TAG, 'id=%{public}s taskId=%{public}s query=%{public}s',
       this.lastRequestId, taskId.length > 0 ? taskId : 'none', query);
 
+    if (query.indexOf('识别探针') >= 0) {
+      XiaoyiOcrService.probe(this.context).then((r: string): void => {
+        this.sendAnswer(taskId, 'OCR 探针：' + r, 0);
+      });
+      return;
+    }
+    // 图片优先：小艺一旦透传图片 part，就先端侧 OCR 成文本，再喂进与文字入口相同的整理节点
+    const images: AgentImagePart[] = collectImageParts(this.readParts(request));
+    if (images.length > 0) {
+      this.ingestImagesDirectly(taskId, images, query);
+      return;
+    }
     if (query.length === 0) {
-      const images: number = this.countImageParts(request);
-      if (images > 0) {
-        this.sendAnswer(taskId, '收到 ' + images.toString() + ' 张图片。图片整理还没接通，先在 MindTrace 里选图整理。', 0);
-        return;
-      }
       this.sendAnswer(taskId, '没收到问题内容，再说一次？', 0);
       return;
     }
@@ -251,6 +253,25 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed %{public}s, fallback to queue', e.message);
         this.enqueueForIngest(taskId, query);
+      });
+  }
+
+  /**
+   * 图片入口：先端侧 OCR（CoreVisionKit），再把文本交给同一个整理节点。
+   * 全部图都没认出文字时如实回执，不写空笔记，也不把图片丢进队列（队列只存文本）。
+   */
+  private ingestImagesDirectly(taskId: string, images: AgentImagePart[], hint: string): void {
+    hilog.info(DOMAIN, TAG, 'INGEST_IMAGE start count=%{public}d hintChars=%{public}d',
+      images.length, hint.length);
+    XiaoyiIngestService.ingestImages(this.context, images, hint)
+      .then((unit: KnowledgeUnit): void => {
+        hilog.info(DOMAIN, TAG, 'INGEST_IMAGE done subject=%{public}s title=%{public}s',
+          unit.subject, unit.title);
+        this.sendAnswer(taskId, '已整理入库：' + unit.title + '（' + unit.subject + '）', 0);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'INGEST_IMAGE failed %{public}s', e.message);
+        this.sendAnswer(taskId, '这几张图没认出文字，换张清晰点的，或直接把题目文字发我。', 0);
       });
   }
 
@@ -317,7 +338,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   }
 
   /** 取出所有 parts（文本 + 图片/文件），解析层与诊断日志共用 */
-  private readParts(request: A2ARequest): A2ATextSegment[] {
+  private readParts(request: A2ARequest): AgentPart[] {
     const params: A2AParams | undefined = request.params;
     if (params === undefined) {
       return [];
@@ -326,7 +347,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     if (message === undefined) {
       return [];
     }
-    const parts: A2ATextSegment[] | undefined = message.parts;
+    const parts: AgentPart[] | undefined = message.parts;
     if (parts === undefined) {
       return [];
     }
@@ -335,7 +356,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 诊断：把每个 part 的形状打进日志（媒体类型 + 各字段长度），确认小艺到底发了什么 */
   private logParts(request: A2ARequest): void {
-    const parts: A2ATextSegment[] = this.readParts(request);
+    const parts: AgentPart[] = this.readParts(request);
     hilog.info(DOMAIN, TAG, 'parts=%{public}d', parts.length);
     let i: number = 0;
     for (const part of parts) {
@@ -353,7 +374,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 统计图片 part 数量：mediaType 以 image/ 开头且带 raw 或 url */
   private countImageParts(request: A2ARequest): number {
-    const parts: A2ATextSegment[] = this.readParts(request);
+    const parts: AgentPart[] = this.readParts(request);
     let count: number = 0;
     for (const part of parts) {
       const media: string = part.mediaType ?? '';
@@ -366,7 +387,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 小艺的 parts 只有 mediaType + text：取第一个 text 为 string 的 part */
   private readQuery(request: A2ARequest): string {
-    const parts: A2ATextSegment[] = this.readParts(request);
+    const parts: AgentPart[] = this.readParts(request);
     for (const part of parts) {
       const text: string | undefined = part.text;
       if (text !== undefined && typeof text === 'string') {

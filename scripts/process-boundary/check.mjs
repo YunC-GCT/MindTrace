@@ -42,8 +42,10 @@ export const RESTRICTED = {
   '@kit.AgentFrameworkKit': ['main'],
   '@ohos.web.webview': ['main'],
   '@kit.FormKit': ['main', 'form'], // main 用 formProvider.updateForm 推快照，卡片宿主也要
-  '@kit.CoreVisionKit': ['main'],   // OCR 适配层在 entry（Process: main only）
-  '@kit.ImageKit': ['main'],
+  // OCR：main 用 CoreVisionOcrRecognizer；:agent 用小艺入口的 OCR 节点
+  // （agentextability/XiaoyiOcrService，识别完只传文本，不碰 UI）
+  '@kit.CoreVisionKit': ['main', 'agent'],
+  '@kit.ImageKit': ['main', 'agent'],  // :agent 侧把 part.raw/url 解码成 PixelMap 供 OCR
   '@ohos.file.picker': ['main'],
   '@kit.CameraKit': ['main'],
 };
