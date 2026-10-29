@@ -82,6 +82,23 @@ A2A 的 LLM 调用永不返回：日志停在「LLM 调用开始」，60s 超时
 
 任何新 Kit 进 `common` 之前，先在 §4 清单登记「允许的进程」；未登记的一律按「全进程禁止」处理，直到登记完成。
 
+### R5 Kit 的落点按「谁 eval」定，不按「是否共享」定
+
+共享的是**接口**，不是 Kit。三档：
+
+| Kit 的用途 | 落点 | 本仓库实例 |
+|---|---|---|
+| 只有主进程 UI 用 | 使用它的模块（`entry` / `cardservice`），不进 `common` | `@kit.ArkGraphics3D`（仅 entry 2 处）、`@kit.FormKit`（cardservice）、`@kit.CameraKit`、`@kit.MediaLibraryKit`、`@ohos.web.webview` |
+| 同一 HAP 的多进程用 | `entry`，各进程在自己的组合根 `install` 同一实现 | `@kit.CoreVisionKit` / `@kit.ImageKit` → `entry/services/CoreVisionOcrRecognizer.ets`，`EntryAbility.onCreate` 与 `AgentExtAbility.onCreate` 各自安装 |
+| 跨 HSP 复用（agents / skill / cardservice 也要） | 才搬 `common/<能力目录>`，**独立文件、不进 `Index.ets`**，使用方按文件路径 import | 现有先例：`agents` 里 16 处 `from 'common/src/main/ets/Index'`，说明子路径 import 可行 |
+
+两条附加规则：
+
+1. **端口在 `common`、零 Kit**：`OcrRecognizer` / `OcrRecognizerRegistry` 是契约，`scripts/ocr-port/tests/` 守着「端口文件不得出现 `@kit`」。
+2. **受限 Kit（§4 里 main-only 的项）即使文件在 `common`，也只能被深路径引用**；确实需要经 barrel 共享时，改为运行时 `import()` 懒加载（`common/Index.ets` 导出 `LocalChatProvider` 就是这个做法）。
+
+反例（本次修正）：`@kit.CoreVisionKit` 的适配器**不搬** `common`——现在只有 main 与 `:agent` 两个消费者，两者同属一个 HAP，`entry/services/` 本身就是共享的；搬过去只是给每个进程多一份 Kit 求值风险，收益为零。等 `agents` / `skill` 里真有人要 OCR，再按上表第三行搬。
+
 ## 4. 受限能力清单（initial）
 
 | 能力 | 包 / 符号 | 允许进程 | 依据 |
@@ -90,6 +107,8 @@ A2A 的 LLM 调用永不返回：日志停在「LLM 调用开始」，60s 超时
 | 小艺面板 | `@kit.AgentFrameworkKit`（`FunctionComponent`、`AgentController`） | main | 依赖 UI 与华为账号态 |
 | ArkWeb | `@ohos.web.webview` / `Web` 组件 | main | 需要渲染进程与 UI 上下文 |
 | 卡片 | `@kit.FormKit` | 卡片宿主 | 由 FormAbility 提供 |
+| 端侧 OCR | `@kit.CoreVisionKit`（`textRecognition`） | main、agent | 纯端侧推理，无 UI/账号态依赖；`:agent` 的小艺图片入口靠它把图变成文本。真机 `:agent` 实测 `available=true init=true`，内置图识别 4 行 48 字 |
+| 图片编解码 | `@kit.ImageKit` | main、agent | 把 A2A `part.raw`/`part.url` 解码成 `PixelMap` 供 OCR；纯内存/文件解析 |
 
 ## 5. 执行机制
 

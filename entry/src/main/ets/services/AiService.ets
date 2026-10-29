@@ -48,6 +48,7 @@ import {
   buildIncrementalManifest,
   CaptureSetResult,
   CaptureSetItemResult,
+  TextPayload,
 } from 'common';
 import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
@@ -69,10 +70,13 @@ export class AiService {
   private static captureSeq: number = 0;
 
   // UIAbilityContext 引用,capture() 准备图片文件时用
-  private context?: common.UIAbilityContext;
+  private context?: common.Context;
+  /** 卡片刷新等 UI 副作用是否启用：扩展进程（小艺）里没有 UI，必须关掉。 */
+  private includeUiEffects: boolean = true;
 
-  constructor(context?: common.UIAbilityContext) {
+  constructor(context?: common.Context, includeUiEffects: boolean = true) {
     this.context = context;
+    this.includeUiEffects = includeUiEffects;
   }
 
   // 拍照/相册入口:把图片处理成 KnowledgeUnit 并持久化
@@ -95,7 +99,7 @@ export class AiService {
 
       // 1) 把 file:// URI 复制到沙箱(本地路径,OCR/Dao 都能访问)
       const resolveStartedAt: number = Date.now();
-      const resolved: ResolvedImageFile = await new ImageUriResolver(this.context).resolve(imageUri);
+      const resolved: ResolvedImageFile = await new ImageUriResolver(this.context as common.UIAbilityContext).resolve(imageUri);
       resolveMs = Date.now() - resolveStartedAt;
       log.info('capture 图片已准备,本地路径=' + resolved.localPath);
 
@@ -119,6 +123,21 @@ export class AiService {
       const totalMs: number = Date.now() - startedAt;
       captureLog.info(AiService.formatCaptureTiming(seq, outcome, resolveMs, nodeTotals, nodeVisits, totalMs));
     }
+  }
+
+  /**
+   * 文本入口：小艺侧排进队列的原文（用户手输/粘贴的题目文字）直接走同一条
+   * 「结构化 → 持久化」链路，不经过图片与 OCR。
+   *
+   * 与 capture() 的差别只有输入形态：这里没有图片要准备、没有文搜图索引要建。
+   */
+  async ingestText(text: string): Promise<KnowledgeUnit> {
+    const body: string = text.trim();
+    if (body.length === 0) {
+      throw new Error('AiService.ingestText 需要非空文本');
+    }
+    const payload: TextPayload = { kind: 'text', text: body };
+    return await this.processAndPersist(payload);
   }
 
   // spec 036 阶段 1：一次整理 = 用户选中的 1..N 张图。
@@ -286,7 +305,7 @@ export class AiService {
       throw new Error('AiService.analyzeImage 需要 UIAbilityContext 来准备图片文件');
     }
 
-    const resolved: ResolvedImageFile = await new ImageUriResolver(this.context).resolve(imageUri);
+    const resolved: ResolvedImageFile = await new ImageUriResolver(this.context as common.UIAbilityContext).resolve(imageUri);
     const req: DispatchRequest = {
       source: 'app',
       payload: {
@@ -314,7 +333,7 @@ export class AiService {
     if (this.context === undefined) {
       throw new Error('AiService.buildNoteDao 需要 UIAbilityContext');
     }
-    const service: KnowledgeUnitWriteService = await KnowledgeUnitWriteServiceFactory.create(this.context);
+    const service: KnowledgeUnitWriteService = await KnowledgeUnitWriteServiceFactory.create(this.context, this.includeUiEffects);
     const adapter: NoteDaoAdapter = new NoteDaoAdapter(service);
     return adapter;
   }
@@ -1059,6 +1078,6 @@ export class AiService {
     if (this.context === undefined) {
       throw new Error('AiService 需要 UIAbilityContext');
     }
-    return this.context;
+    return this.context as common.UIAbilityContext;
   }
 }
