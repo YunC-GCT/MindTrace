@@ -67,6 +67,8 @@ export interface AgentState {
   generationRequest?: NoteGenerationRequest;
   draft?: NoteDraftDocument;
   standardResult?: NoteGenerationStandardResult;
+  /** 采集链路可复用的学科词表（来自库里已有学科）；structure 用它做「复用 vs 新建」裁决 */
+  subjectVocabulary?: string[];
   preparedCandidate?: PreparedCandidate;
   commitResult?: NoteCommitResult;
 }
@@ -108,6 +110,9 @@ export function copyAgentState(input: AgentState): AgentState {
   }
   if (input.standardResult !== undefined) {
     copied.standardResult = input.standardResult;
+  }
+  if (input.subjectVocabulary !== undefined) {
+    copied.subjectVocabulary = input.subjectVocabulary;
   }
   if (input.preparedCandidate !== undefined) {
     copied.preparedCandidate = input.preparedCandidate;

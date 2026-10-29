@@ -10,6 +10,7 @@ import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 const mod = loadNoteReviewEtsModule('agents/src/main/ets/agents/KnowledgeTaxonomy.ets');
 const normalizeSubjectName = mod.normalizeSubjectName;
 const sanitizeNoteTitle = mod.sanitizeNoteTitle;
+const resolveSubjectName = mod.resolveSubjectName;
 
 test('subject aliases collapse into one canonical name', () => {
   const cases = [
@@ -28,6 +29,33 @@ test('subject aliases collapse into one canonical name', () => {
     const result = normalizeSubjectName(raw);
     assert.equal(result.subject, expected, `subject of ${raw}`);
   }
+});
+
+test('subject resolution reuses what is already in the library', () => {
+  const known = ['数学分析', '线性代数', '最优化方法', '初中数学'];
+  // loader 产出的对象原型不同，逐字段断言
+  const optimisation = resolveSubjectName('最优化', known);
+  assert.equal(optimisation.subject, '最优化方法');
+  assert.equal(optimisation.decision, 'canonical');
+  const continued = resolveSubjectName('高等数学（下）', ['高等数学']);
+  assert.equal(continued.subject, '高等数学');
+  // 内置学科表里就有「高等数学」，所以走 canonical；库里自建学科才走 existing
+  assert.equal(continued.decision, 'canonical');
+  const custom = resolveSubjectName('数据结构（树）', ['数据结构', '数学分析']);
+  assert.equal(custom.subject, '数据结构');
+  assert.equal(custom.decision, 'existing');
+  const linear = resolveSubjectName('线性代数', known);
+  assert.equal(linear.subject, '线性代数');
+  assert.equal(linear.decision, 'canonical');
+});
+
+test('a genuinely new subject is marked new and gets candidates to pick from', () => {
+  const known = ['数学分析', '线性代数', '最优化方法'];
+  const fresh = resolveSubjectName('数据结构与算法', known);
+  assert.equal(fresh.decision, 'new');
+  assert.equal(fresh.subject, '数据结构与算法');
+  const near = resolveSubjectName('最优化理论选讲', known);
+  assert.equal(near.decision, 'canonical');
 });
 
 test('a canonical subject is left untouched and reported as unchanged', () => {
@@ -54,6 +82,7 @@ test('review markers are stripped out of titles', () => {
     ['二次规划解与 Lagrange 乘子证明及乘子法算例（含待确认）', '二次规划解与 Lagrange 乘子证明及乘子法算例'],
     ['矩阵算子范数(ocr pending)', '矩阵算子范数'],
     ['无约束优化算法（OCR 信息不完整', '无约束优化算法'],
+    ['线性多步法的 A 稳定性判定（隐式公式无法识别项）', '线性多步法的 A 稳定性判定'],
   ];
   for (const [raw, expected] of cases) {
     const result = sanitizeNoteTitle(raw);

@@ -53,13 +53,16 @@ export class StructureNodeFactory {
           }
           unit = service.draftToKnowledgeUnit(draft, input.source, provenance);
         } else if (input.classification === undefined) {
-          unit = await service.structure(input.captureText, undefined, undefined, '', input.source, provenance);
+          unit = await service.structure(
+            input.captureText, undefined, undefined, '', input.source, provenance,
+            input.subjectVocabulary ?? []);
         } else {
           unit = await service.structureWithClassification(
             input.captureText,
             input.classification,
             input.source,
             provenance,
+            input.subjectVocabulary ?? [],
           );
         }
         const next: AgentState = copyAgentState(input);

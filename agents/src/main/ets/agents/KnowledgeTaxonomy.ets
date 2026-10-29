@@ -79,6 +79,8 @@ const SUBJECT_ALIASES: SubjectAlias[] = [
 // 复核类标记的判定词；命中就把整个括号从标题里摘掉。
 const REVIEW_MARKER_WORDS: string[] = [
   'ocr', '待确认', '待核对', '待补', '待人工', '待定', '未确认', '信息不完整', '识别不完整',
+  // 模型不会只用一套说法：「隐式公式无法识别项」和「OCR 信息不完整」是同一件事
+  '无法识别', '未识别', '无法确定', '识别不清',
 ];
 
 // 标题首尾允许被吞掉的分隔符。
@@ -218,6 +220,64 @@ export function normalizeSubjectName(raw: string, fallback: string = ''): Subjec
  * 只摘「复核类」括号；正常括号（分值、年份、题号）原样保留。
  * 末尾被截断的括号（比如模型写了一半）整段丢弃，并把原文记进 stripped。
  */
+export interface SubjectResolution {
+  subject: string;
+  /** canonical=命中内置学科名；existing=复用库里已有学科；new=确实没有，要新建 */
+  decision: 'canonical' | 'existing' | 'new';
+  /** decision=new 时给的近似候选（最多 3 个），供 UI 让用户改选 */
+  candidates: string[];
+}
+
+function sharedCharCount(a: string, b: string): number {
+  let count: number = 0;
+  for (let i = 0; i < a.length; i++) {
+    const ch: string = a.charAt(i);
+    if (b.indexOf(ch) >= 0) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * 分类 agent 的学科裁决：先认内置学科，再认库里已有的学科，最后才允许新建。
+ *
+ * 用户要的正是这个判断——同一门课已经在库里出现过的名字必须复用，
+ * 否则「最优化」和「最优化方法」会长期并存；只有确实没见过才新建，
+ * 并返回近似候选，让 UI 有机会让用户改选。
+ */
+export function resolveSubjectName(raw: string, known: string[]): SubjectResolution {
+  const trimmed: string = raw.trim();
+  const normalized: SubjectNormalization = normalizeSubjectName(trimmed);
+  if (CANONICAL_SUBJECTS.indexOf(normalized.subject) >= 0) {
+    return { subject: normalized.subject, decision: 'canonical', candidates: [] };
+  }
+  if (trimmed.length > 0 && known.indexOf(trimmed) >= 0) {
+    return { subject: trimmed, decision: 'existing', candidates: [] };
+  }
+  // 「高等数学」已在库里、模型写「高等数学（下）」时，包含关系就是最可靠的复用信号
+  for (let i = 0; i < known.length; i++) {
+    const candidate: string = known[i].trim();
+    if (candidate.length < 2) {
+      continue;
+    }
+    if (trimmed.indexOf(candidate) >= 0 || candidate.indexOf(trimmed) >= 0) {
+      return { subject: candidate, decision: 'existing', candidates: [] };
+    }
+  }
+  const scored: string[] = known.slice(0);
+  scored.sort((a: string, b: string): number => sharedCharCount(b, trimmed) - sharedCharCount(a, trimmed));
+  const candidates: string[] = [];
+  for (let i = 0; i < scored.length && candidates.length < 3; i++) {
+    const item: string = scored[i].trim();
+    if (item.length > 0 && sharedCharCount(item, trimmed) >= 2) {
+      candidates.push(item);
+    }
+  }
+  const subject: string = trimmed.length > 0 ? trimmed : normalized.subject;
+  return { subject: subject, decision: 'new', candidates: candidates };
+}
+
 export function sanitizeNoteTitle(raw: string): TitleSanitization {
   const source: string = raw.trim();
   const stripped: string[] = [];

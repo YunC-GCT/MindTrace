@@ -53,6 +53,7 @@ import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
 import { NoteDaoAdapter } from '../adapters/NoteDaoAdapter';
+import { SubjectVocabularyService } from './SubjectVocabularyService';
 import { ConversationRunIdPolicy, SessionIdPolicy } from './ConversationIdentity';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
 import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFactory';
@@ -169,6 +170,7 @@ export class AiService {
       persist: true,
       dao: dao,
       cancellationToken: token,
+      subjectVocabulary: await SubjectVocabularyService.list(),
       onItem: (item: CaptureSetItemResult): void => {
         if (canStreamItems && onItem !== undefined) {
           onItem(item);
@@ -1012,6 +1014,7 @@ export class AiService {
     const result: DispatchResult = await dispatcher.dispatch(req, {
       persist: true,
       dao: dao,
+      subjectVocabulary: await SubjectVocabularyService.list(),
       onNodeTiming: onNodeTiming,
     });
     if (!result.success) {

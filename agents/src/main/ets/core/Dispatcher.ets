@@ -86,6 +86,8 @@ export interface DispatchOptions {
   runContext?: RunContext;
   progressSink?: NoteGenerationProgressSink;
   onNodeTiming?: (step: string, elapsedMs: number) => void;
+  /** 库里已有的学科名（含内置学科）；structure 用它决定复用还是新建 */
+  subjectVocabulary?: string[];
 }
 
 // spec 036 阶段 1：集合级整理的可选项。
@@ -274,6 +276,7 @@ export class Dispatcher {
       currentStep: 'START',
       persist: options.persist !== false,
       analysisOnly: options.analysisOnly === true,
+      subjectVocabulary: options.subjectVocabulary ?? [],
     };
     const graph: CaptureGraph = this.buildGraph(options);
     // #243：预算与取消是运行时属性，只走调用参数，不经 AgentState。

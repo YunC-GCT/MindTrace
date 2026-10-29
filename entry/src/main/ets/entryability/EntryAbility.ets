@@ -26,6 +26,7 @@ import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFiles
 import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';
 import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
 import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
+import { SubjectRepairService } from '../services/SubjectRepairService';
 import {
   NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
   NoteDetailBenchmarkLaunchConfig,
@@ -176,6 +177,13 @@ export default class EntryAbility extends UIAbility {
           hilog.error(0xE2E0, 'E2E', '%{public}s', '自检异常: ' + e.message);
         });
       }, 1200);
+      // 历史笔记的一次性归一：学科名 + 标题复核标记。只跑一次（preferences 置位），
+      // 放在首页首帧之后再动库，避免和启动期渲染抢 IO。
+      setTimeout((): void => {
+        SubjectRepairService.repairIfNeeded(this.context).catch((e: Error) => {
+          hilog.warn(DOMAIN, 'testTag', 'subject repair failed: %{public}s', e.message);
+        });
+      }, 3000);
     });
   }
 

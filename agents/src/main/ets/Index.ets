@@ -20,6 +20,8 @@ export type { TypeClassifierTextResult } from './agents/TypeClassifier';
 export { KnowledgeModel } from './agents/KnowledgeModel';
 export { PromptBuilder } from './agents/PromptBuilder';
 export { TruthCheckService } from './agents/TruthCheckService';
+export { normalizeSubjectName, sanitizeNoteTitle, CANONICAL_SUBJECTS } from './agents/KnowledgeTaxonomy';
+export type { SubjectNormalization, TitleSanitization } from './agents/KnowledgeTaxonomy';
 export { OcrTool } from './mcp/tools/OcrTool';
 export type { OcrRecognitionResult } from './mcp/tools/OcrTool';
 
