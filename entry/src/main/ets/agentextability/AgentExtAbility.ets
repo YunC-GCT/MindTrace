@@ -38,6 +38,8 @@ import {
   formatReceipt,
   matchesReceiptIntent,
 } from '../services/CaptureReceipt';
+import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/AgentInboxModels';
+import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
@@ -128,10 +130,14 @@ interface A2ARequestSession {
 let configReady: Promise<void> | null = null;
 const DOMAIN: number = 0xA2A0;
 
-// 小艺发来的 JSON-RPC 请求（proto-JSON）：parts 只有 mediaType + text，没有 kind/type
+// 小艺发来的 JSON-RPC 请求（proto-JSON）：文本 part 只有 mediaType + text，没有 kind/type；
+// 图片/文件 part 用 raw（base64）或 url（file:// 等）+ mediaType（image/png…）承载。
 interface A2ATextSegment {
   mediaType?: string;
   text?: string;
+  raw?: string;
+  url?: string;
+  data?: string | number | boolean | object;
 }
 
 interface A2AMessage {
@@ -203,17 +209,48 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     }
 
     this.lastRequestId = this.readRequestId(request.id);
+    this.logParts(request);
     const query: string = this.readQuery(request);
     const taskId: string = this.readTaskId(request);
     hilog.info(DOMAIN, TAG, 'id=%{public}s taskId=%{public}s query=%{public}s',
       this.lastRequestId, taskId.length > 0 ? taskId : 'none', query);
 
     if (query.length === 0) {
+      const images: number = this.countImageParts(request);
+      if (images > 0) {
+        this.sendAnswer(taskId, '收到 ' + images.toString() + ' 张图片。图片整理还没接通，先在 MindTrace 里选图整理。', 0);
+        return;
+      }
       this.sendAnswer(taskId, '没收到问题内容，再说一次？', 0);
+      return;
+    }
+    // 小艺不把图片转发给第三方智能体，所以「存笔记」走文字：先排进应用沙箱队列，
+    // 由应用回到前台时用正规写路径（AiService.ingestText）整理入库。
+    if (shouldEnqueue(query)) {
+      this.enqueueForIngest(taskId, query);
       return;
     }
     // onData 必须立刻返回：模型链路异步跑，结果回来再自己发快照
     this.runQuery(taskId, query);
+  }
+
+  /**
+   * 把「存笔记」原文排进应用沙箱队列。
+   * 扩展进程（:agent）不碰 notes 库，入库交给应用前台；这里只负责落盘 + 回一句确认。
+   */
+  private enqueueForIngest(taskId: string, query: string): void {
+    const item: AgentInboxItem = buildInboxItem(query, Date.now());
+    AgentInboxQueue.append(this.context, item)
+      .then((pending: number): void => {
+        hilog.info(DOMAIN, TAG, 'INBOX_ENQUEUED pending=%{public}d chars=%{public}d',
+          pending, item.text.length);
+        this.sendAnswer(taskId,
+          '已记为待整理（第 ' + pending.toString() + ' 条）。打开 MindTrace 会自动整理入库。', 0);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'INBOX_ENQUEUE_FAILED %{public}s', e.message);
+        this.sendAnswer(taskId, '这条笔记没排上队，再发一次？', 0);
+      });
   }
 
   /** 手写解析：JSON.parse 失败或结果为 null 都返回 null，由 onData 回错误快照 */
@@ -259,20 +296,57 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     return '';
   }
 
-  /** 小艺的 parts 只有 mediaType + text：取第一个 text 为 string 的 part */
-  private readQuery(request: A2ARequest): string {
+  /** 取出所有 parts（文本 + 图片/文件），解析层与诊断日志共用 */
+  private readParts(request: A2ARequest): A2ATextSegment[] {
     const params: A2AParams | undefined = request.params;
     if (params === undefined) {
-      return '';
+      return [];
     }
     const message: A2AMessage | undefined = params.message;
     if (message === undefined) {
-      return '';
+      return [];
     }
     const parts: A2ATextSegment[] | undefined = message.parts;
     if (parts === undefined) {
-      return '';
+      return [];
     }
+    return parts;
+  }
+
+  /** 诊断：把每个 part 的形状打进日志（媒体类型 + 各字段长度），确认小艺到底发了什么 */
+  private logParts(request: A2ARequest): void {
+    const parts: A2ATextSegment[] = this.readParts(request);
+    hilog.info(DOMAIN, TAG, 'parts=%{public}d', parts.length);
+    let i: number = 0;
+    for (const part of parts) {
+      const media: string = part.mediaType ?? 'none';
+      const textLen: number = (part.text ?? '').length;
+      const rawLen: number = (part.raw ?? '').length;
+      const url: string = part.url ?? '';
+      const dataKind: string = part.data === undefined ? 'none' : typeof part.data;
+      hilog.info(DOMAIN, TAG,
+        'part[%{public}d] media=%{public}s text=%{public}d raw=%{public}d data=%{public}s url=%{public}s',
+        i, media, textLen, rawLen, dataKind, url.length > 0 ? url : 'none');
+      i = i + 1;
+    }
+  }
+
+  /** 统计图片 part 数量：mediaType 以 image/ 开头且带 raw 或 url */
+  private countImageParts(request: A2ARequest): number {
+    const parts: A2ATextSegment[] = this.readParts(request);
+    let count: number = 0;
+    for (const part of parts) {
+      const media: string = part.mediaType ?? '';
+      if (media.startsWith('image/')) {
+        count = count + 1;
+      }
+    }
+    return count;
+  }
+
+  /** 小艺的 parts 只有 mediaType + text：取第一个 text 为 string 的 part */
+  private readQuery(request: A2ARequest): string {
+    const parts: A2ATextSegment[] = this.readParts(request);
     for (const part of parts) {
       const text: string | undefined = part.text;
       if (text !== undefined && typeof text === 'string') {

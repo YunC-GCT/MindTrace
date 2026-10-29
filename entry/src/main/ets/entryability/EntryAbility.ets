@@ -26,6 +26,7 @@ import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFiles
 import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';
 import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
 import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
+import { A2AInboxIngestService } from '../services/A2AInboxIngestService';
 import {
   NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
   NoteDetailBenchmarkLaunchConfig,
@@ -180,9 +181,17 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy'); }
-  onForeground(): void { hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground'); }
+  onForeground(): void {
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
+    // 小艺侧排进队列的待整理原文：回到应用时逐条走正规写路径入库（队列空则立即返回）
+    A2AInboxIngestService.consume(this.context).catch((e: Error): void => {
+      hilog.error(DOMAIN, 'testTag', 'A2A inbox consume failed: %{public}s', e.message);
+    });
+    A2AInboxIngestService.startWatch(this.context);
+  }
   onBackground(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+    A2AInboxIngestService.stopWatch();
     ChatSessionManager.flushActive().catch((e: Error) => {
       hilog.warn(DOMAIN, 'testTag', 'Chat history flush failed: %{public}s', e.message);
     });

@@ -48,6 +48,7 @@ import {
   buildIncrementalManifest,
   CaptureSetResult,
   CaptureSetItemResult,
+  TextPayload,
 } from 'common';
 import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
@@ -119,6 +120,21 @@ export class AiService {
       const totalMs: number = Date.now() - startedAt;
       captureLog.info(AiService.formatCaptureTiming(seq, outcome, resolveMs, nodeTotals, nodeVisits, totalMs));
     }
+  }
+
+  /**
+   * 文本入口：小艺侧排进队列的原文（用户手输/粘贴的题目文字）直接走同一条
+   * 「结构化 → 持久化」链路，不经过图片与 OCR。
+   *
+   * 与 capture() 的差别只有输入形态：这里没有图片要准备、没有文搜图索引要建。
+   */
+  async ingestText(text: string): Promise<KnowledgeUnit> {
+    const body: string = text.trim();
+    if (body.length === 0) {
+      throw new Error('AiService.ingestText 需要非空文本');
+    }
+    const payload: TextPayload = { kind: 'text', text: body };
+    return await this.processAndPersist(payload);
   }
 
   // spec 036 阶段 1：一次整理 = 用户选中的 1..N 张图。

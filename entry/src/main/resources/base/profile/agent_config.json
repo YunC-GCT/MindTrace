@@ -17,7 +17,8 @@
         "extendedAgentCard": false
       },
       "defaultInputModes": [
-        "text/plain"
+        "text/plain",
+        "image/*"
       ],
       "defaultOutputModes": [
         "text/plain"
@@ -38,7 +39,8 @@
             "帮我识别这几张图里的题目"
           ],
           "inputModes": [
-            "text/plain"
+            "text/plain",
+            "image/*"
           ],
           "outputModes": [
             "text/plain"
