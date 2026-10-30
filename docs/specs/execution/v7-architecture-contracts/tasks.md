@@ -88,7 +88,15 @@
 
 ## #242 拍板：Video 范围 / ReviewAgent 领域
 
-- [ ] Video：只产脚本 vs mp4；产物隐私 / 存储配额 / 取消语义
-- [ ] ReviewAgent：升级 `study_plan`（含迁移与回滚）还是新建 `review_item` / `review_log`（含 schema 草案）
-- [ ] 两个决定都回答「v1 已上架用户数据怎么办」
-- [ ] 落 ADR 或 §17.7 定稿，再开实现票
+- [x] Video：**只产脚本，不做 mp4 renderer**（ADR-0022）；产物是文本，隐私/存储/取消按无大文件设计
+- [x] ReviewAgent：**新建 `review_item` / `review_log`**，`study_plan` 保持待办（ADR-0022，含 schema 草案）
+- [x] 数据问题降级：测试态不上架、无线上数据，schema v15 按 `CREATE TABLE IF NOT EXISTS`，回滚 = `DROP TABLE`
+- [x] 已落 ADR-0022（`docs/adr/0022-review-and-video-scope.md`）+ §17.7 定稿
+
+### 派生票（拍板后待开/待做）
+
+- [ ] schema v15 迁移：`review_item` / `review_log` + 索引 + 回滚（`DatabaseHelper` v14 → v15）
+- [ ] `ReviewReadPort` / `ReviewWritePort` 契约 + adapter + 契约测试（按 #238 六必填项）
+- [ ] `ReviewAgent` 子图：`plan → ask → grade`，SM-2 落在 `review.plan` 工具
+- [ ] `MathVideoAgent` 脚本流水线：`outline → script`（产物落 App Store 文本产物）
+- [ ] `RunStore` 迁移票（`run_event` 表 + 五终态列）—— #238 最后一个待自证缺口

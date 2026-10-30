@@ -28,6 +28,7 @@ choice made, and the reversibility.
 | [0018](./0018-note-evidence-provenance.md) | Separate note assertions, immutable source provenance, and read-only verification; the model returns positional statuses while the pipeline owns IDs and exact source spans | accepted |
 | [0019](./0019-note-command-and-outcome.md) | `NoteCommand` (capture / generation / regenerate / preparedCandidate / analysisOnly) and `NoteOutcome` (needsInput / readyPreview / committed / failed / cancelled) as discriminated unions; `failed` carries code + retryable, `cancelled` carries whether a write was committed; subgraph scope revised in ADR-0008 — **目标契约，代码零实现**（#238/#239/#241 未开工） | accepted（未实现） |
 | [0021](./0021-shared-read-port-implementation-in-common.md) | 只读端口实现放 `common/ports/impl`（skill/cardservice 无法依赖 entry，且 common 已持有 ArkData）；写实现留 `entry`；`agents` 只依赖契约不碰实现；只读端口返回投影而非整行 `KnowledgeUnit` | accepted |
+| [0022](./0022-review-and-video-scope.md) | `#242` 拍板：MathVideoAgent 只产脚本（不做 mp4 renderer）；ReviewAgent 新建 `review_item` / `review_log`，`study_plan` 保持待办语义；测试态按本地开发数据处理迁移（v14 → v15，回滚 = DROP） | accepted |
 
 ## How to write a new ADR
 

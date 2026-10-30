@@ -325,11 +325,11 @@ query
 
 | 表/字段 | 说明 |
 |---|---|
-| `review_item` | note_id、下次到期、间隔、难度、连续正确次数 |
-| `review_log` | 每次作答：时间、对错、耗时、评分 |
+| `review_item` | unit_id、下次到期、间隔、难度（ease）、连续正确次数、lapses、状态 |
+| `review_log` | 每次作答：时间、对错、耗时、评分（again/hard/good/easy）、间隔前后值 |
 | `mastery` | 按知识点聚合的掌握度（0–1） |
 
-RDB 不用大改，**加两张表 + 一个聚合字段**即可。关键是读接口先定好，不然复习接进来会到处写 SQL。
+RDB 不用大改，**加两张表 + 一个聚合字段**即可（ADR-0022 已拍板走新建表，不动 `study_plan`；schema v15 迁移票待开）。关键是读接口先定好，不然复习接进来会到处写 SQL。
 
 ### 8.3 调度算法
 
@@ -549,7 +549,7 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 | 笔记列表与详情 | `knowledge_unit` | 分页；按时间、学科、章节过滤 |
 | 知识星系 | `kg_edge` + `knowledge_unit` | 只读预计算的边，渲染时不计算 |
 | 待办（当前叫「复习计划」） | `study_plan` | 标题、完成状态、优先级、关联笔记、due date；**是待办清单，不是间隔复习计划** |
-| 复习记录 | 未建表 | `review_item` / `review_log` 都不存在，v2 接 SM-2 时再建 |
+| 复习记录 | **已拍板新建（ADR-0022）** | `review_item` / `review_log` 走到 schema v15 迁移票；`study_plan` 仍是待办，不承载复习语义 |
 
 ### 16.2 关系边怎么产生
 
@@ -697,5 +697,5 @@ Token 事件只记数量与耗时，**不落正文**（沿用日志脱敏约束�
 | Subgraph 实现方式 | 共享 RunContext 的子图节点组合，**不要伪装成 Tool**（重试与输出语义不同） | 建议采纳 |
 | Checkpoint 层级 | 保持业务级；runtime checkpoint 单开 ADR 并先定序列化兼容 | 采纳 |
 | 笔记 / 计划的数据归属 | RDB 与平台实现归 entry，接口在 common，写操作经审批 + 幂等 Port | 建议采纳，需与「App Store 归谁」一并写进 §17.1；只读实现归属已由 ADR-0021 定为 common |
-| Video 是否端侧只产脚本 | 暂缓 mp4 renderer，先定「只产脚本」与产物隐私 / 存储 / 取消 | 待产品拍板 |
-| ReviewAgent 是否负责出题评分 | 不要直接展开 `study_plan`，先定待办 vs 间隔复习 | 待产品拍板 |
+| Video 是否端侧只产脚本 | 暂缓 mp4 renderer，先定「只产脚本」与产物隐私 / 存储 / 取消 | **已拍板：只产脚本，不做 mp4**（ADR-0022） |
+| ReviewAgent 是否负责出题评分 | 不要直接展开 `study_plan`，先定待办 vs 间隔复习 | **已拍板：新建 `review_item` / `review_log`，`study_plan` 保持待办**（ADR-0022） |
