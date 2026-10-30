@@ -417,6 +417,10 @@ export type {
 // 只读实现跨 HAP 共享（ADR-0021）；写实现留在 entry，不经本 barrel 导出。
 export { NoteReadPortAdapter } from './ports/impl/NoteReadPortAdapter';
 export { RdbNoteReadStore } from './ports/impl/RdbNoteReadStore';
+// 检索端口（ADR-0021）：正文/标签/全文命中归这里，读端口的 search 只匹配元数据。
+export { NOTE_SEARCH_DEFAULT_TOP_K, NOTE_SEARCH_MAX_TOP_K } from './ports/NoteSearchPort';
+export type { NoteSearchHit, NoteSearchPort, NoteSearchQuery } from './ports/NoteSearchPort';
+export { RdbNoteSearchAdapter } from './ports/impl/RdbNoteSearchAdapter';
 export type { ArtifactDescriptor, ArtifactFileIo, ArtifactStorePort } from './ports/ArtifactStorePort';
 export { STUDY_PLAN_ERROR_READ_FAILED } from './ports/StudyPlanPorts';
 export type {

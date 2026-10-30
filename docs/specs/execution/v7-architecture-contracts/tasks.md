@@ -23,7 +23,8 @@
 - [x] `CardSnapshotStore` 补 `schemaVersion` / `updatedAt` / 单 key 原子替换 / 失败返回 `false` 可重试 — 切片 A（`CardSnapshotCodec` + `loadResult`）
 - [x] `RunStore` 接口契约（runId / parentRunId / status / checkpoint / committedNoteId / committedVersion / updatedAt）— 切片 A，`common/src/main/ets/ports/RunStore.ets`
 - [ ] **未决：RunStore 生产适配器需单开迁移票** — `parentRunId` / 事件序号 / 五终态落库三项目前**没有存储列**（`DatabaseHelper` 13 张表里没有 `run_event`）；本切片不实现生产适配器、不伪造持久化。
-- [ ] **消费方接线（Step 1 已做，Step 2 待做）**：ADR-0021 已把只读实现下沉 `common`（`NoteReadPortAdapter` + `RdbNoteReadStore`），`skill` 现在能复用；**Step 2** 仍需把 `common/tools/NoteQueryTools` 的裸 SQL 改走端口（`note_query_rag` 全文检索属 `NoteSearchPort`，不塞进读端口），`SkillAbility` 随之摘掉 `DatabaseHelper.init` 直连；`NoteEvidenceService` 在 Step 3 通过构造参数接收端口
+- [x] **检索端口（Step 2a，ADR-0021）**：`NoteSearchPort` 契约（query / hit / TopK 上限 10）+ `NoteSearchRanking` 纯打分（title×4 / tags×3 / summary×2 / content×1，稳定排序）+ `RdbNoteSearchAdapter`（common，SQL 与 `note_query_rag` 等价）；契约测试 8 条
+- [ ] **消费方接线 Step 2b**：`NoteQueryTools` 的 `note_query_rag` 改走 `NoteSearchPort`、`note_get` 改走 `NoteReadPort`；`note_query` 的 keyword 语义含正文，需单独定映射；`ToolCatalog` 注入默认实现后，`SkillAbility` 才能真正摘掉 `DatabaseHelper.init` 直连；`NoteEvidenceService`（Step 3）通过构造参数接收端口
 - [x] `NoteWritePort` + `CardSnapshotCodec` 契约测试：`scripts/arkts-lint/tests/v7-note-contracts.test.mjs`
       （19 条，`node --test` 实测 `pass 19 / fail 0`，覆盖 `decideWrite` 六分支 + codec 往返/版本/bad JSON/缺字段）
 - [x] 读侧契约测试（2026-10-30）：
