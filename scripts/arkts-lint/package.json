@@ -7,7 +7,6 @@
   "scripts": {
     "lint": "node index.mjs",
     "scan": "node index.mjs --quiet",
-    "baseline": "node index.mjs --baseline=docs/lint-baseline-20260901-ast.json --quiet",
     "check-rules": "node index.mjs --check-rules",
     "test": "node --test tests/*.test.mjs ../../tools/galaxy3d-preview/scripts/native-scene.test.mjs"
   },
