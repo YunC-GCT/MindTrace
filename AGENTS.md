@@ -104,7 +104,7 @@
 | **LlmClient 统一调用层** | `common/src/main/ets/llm/LlmClient.ets` | 唯一公共入口 `call(request)` (spec [`005`](./docs/specs/005-llm-client-consolidation.md)): JSON 与真 SSE 流式 (requestInStream) 双适配路径 |
 | **知识星系可视化** | `entry/src/main/ets/pages/KnowledgeGalaxy*` | 用户学情可视化 |
 | **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 · `npm --prefix scripts/arkts-lint test` **768 项全绿**（已取消 curated 白名单，跑全量 glob，约 40 s）· `agent-gate` 与 CI 同源 · **CI 已接入** |
-| **审计 + ADR + Spec 完整设计层** | `docs/adr/` + `docs/specs/` + `docs/legacy/mindtrace/` | 19 篇 ADR + 22 篇设计 spec + 执行记录目录, 设计透明度高 |
+| **审计 + ADR + Spec 完整设计层** | `docs/adr/` + `docs/specs/` + `docs/legacy/mindtrace/` | 19 篇 ADR + 26 篇设计 spec + 8 个执行包 + 1 份残包合并记录, 设计透明度高 |
 
 ### 当前阶段 (v1 端A2A)
 
