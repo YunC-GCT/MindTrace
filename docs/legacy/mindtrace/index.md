@@ -2,11 +2,11 @@
 
 > **This directory is frozen.** It keeps only records that still explain a current decision or provide audit evidence for it.
 >
-> **Do not add new files here.** Create new docs in their canonical location per [`docs/style/naming-conventions.md`](../../style/naming-conventions.md).
+> **Do not add new files here** — with one exception: a fully superseded spec that a current ADR/spec still cites may be archived here with a banner (2026-10-30: spec 003 / spec 007 / note-generation plan). New design docs go to their canonical location per [`docs/style/naming-conventions.md`](../../style/naming-conventions.md).
 >
-> **Layout (2026-10-30)**: flattened from `architecture/` `competition/` `plans/` `handoffs/` (each held 1–5 files plus its own `index.md`) into one flat directory: 10 files, 1 index, no subdirectories.
+> **Layout (2026-10-30)**: flattened from `architecture/` `competition/` `plans/` `handoffs/` (each held 1–5 files plus its own `index.md`) into one flat directory: 13 files, 1 index, no subdirectories.
 
-## Contents (10 files)
+## Contents (13 files)
 
 | File | Why it is still here | Referenced by |
 |---|---|---|
@@ -20,6 +20,9 @@
 | [`note-generation-failure-diagnostics-handoff-2026-09-29.md`](./note-generation-failure-diagnostics-handoff-2026-09-29.md) | Postmortem of `VERIFIER_UNAVAILABLE` and how the diagnostics were added | (self-contained) |
 | [`qwen-deepseek-reasoning-handoff-2026-09-12.md`](./qwen-deepseek-reasoning-handoff-2026-09-12.md) | Why `enableThinking` defaults to true and how reasoning content is routed (ADR-0015) | 4x `docs/specs/execution/*/verification-record.md` |
 | [`llm-settings-scope-2026-09-06.md`](./llm-settings-scope-2026-09-06.md) | Scope decisions behind spec 016 / ADR-0013 / ADR-0014 | `docs/specs/016-llm-settings-redesign.md`, `docs/plans/xiaoyi-latency-tuning-plan.md` |
+| [`spec-003-knowledge-model-decomposition.md`](./spec-003-knowledge-model-decomposition.md) | 被 spec 015 取代的 KnowledgeModel 三拆方案（2026-09-06） | `docs/specs/index.md`, `docs/specs/015`, ADR-0006 |
+| [`spec-007-agent-chat-service-decomposition.md`](./spec-007-agent-chat-service-decomposition.md) | 被 spec 018 取代的 AgentChatService 三拆方案（2026-09-07） | `docs/specs/index.md`, ADR-0012, `backend-migration-handoff` |
+| [`note-generation-stability-plan-2026-09-21.md`](./note-generation-stability-plan-2026-09-21.md) | 笔记生成稳定性实施计划（唯一副本，588 行） | `docs/specs/execution/archive-2026-09.md` |
 
 ## 2026-10-30 cleanup — what was removed and why
 

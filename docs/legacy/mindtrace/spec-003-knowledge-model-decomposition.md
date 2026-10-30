@@ -1,7 +1,8 @@
 # Ticket #3 — KnowledgeModel decomposition into 3 services
 
-> **Status**: superseded by [spec 015](./015-knowledge-model-decomposition-v2.md) (2026-09-06; ADR-0006 amended)
-> **Source ADR**: [`../adr/0006-knowledge-model-decomposition-plan.md`](../adr/0006-knowledge-model-decomposition-plan.md)
+> **归档 2026-10-30**：本规格已被 [spec 015](../../specs/015-knowledge-model-decomposition-v2.md) 取代（003）/ 被 [spec 018](../../specs/018-agent-workflow-architecture.md) 的 ConversationWorkflow 取代（007），正文冻结保留；现行口径见 `docs/specs/index.md`。
+> **Status**: superseded by [spec 015)](../../specs/015-knowledge-model-decomposition-v2.md) (2026-09-06; ADR-0006 amended)
+> **Source ADR**: [`../adr/0006-knowledge-model-decomposition-plan.md`)](../../adr/0006-knowledge-model-decomposition-plan.md)
 > **Files affected**: `agents/src/main/ets/agents/KnowledgeModel.ets` (split into 3 files); `agents/src/main/ets/agents/TypeClassifier.ets` (consumer, unchanged interface); `agents/src/main/ets/core/Dispatcher.ets` (orchestrator, calls the 3 services)
 > **Test files**: new `agents/src/test/StructureService.test.ets` (Hypium), `agents/src/test/TruthCheckService.test.ets` (Hypium), `agents/src/test/PromptBuilder.test.ets` (Hypium)
 

@@ -14,10 +14,10 @@ an ADR (`docs/adr/`) and follows the same template.
 
 | Ticket | Spec | ADR | Status |
 |--------|------|-----|--------|
-| **#3** | [`003-knowledge-model-decomposition.md`](./003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | **superseded** by [`015`](./015-knowledge-model-decomposition-v2.md) (2026-09-06; ADR-0006 amended) |
+| **#3** | [`spec-003-knowledge-model-decomposition.md`](../legacy/mindtrace/spec-003-knowledge-model-decomposition.md) | [`0006`](../adr/0006-knowledge-model-decomposition-plan.md) | **superseded by [`015`](./015-knowledge-model-decomposition-v2.md)**，原文 2026-10-30 归档 legacy（2026-09-06；ADR-0006 amended） |
 | **#4** | [`004-dispatcher-single-entry.md`](./004-dispatcher-single-entry.md) | [`0003`](../adr/0003-dispatcher-single-entry-design.md) | **implemented** (D2, 2026-09-05) |
 | **#5** | [`005-llm-client-consolidation.md`](./005-llm-client-consolidation.md) | [`0004`](../adr/0004-llm-call-layer-consolidation.md) | **implemented** (2026-09-06) |
-| **#7** | [`007-agent-chat-service-decomposition.md`](./007-agent-chat-service-decomposition.md) | (implicit) | **terminal shape superseded by 018** — IntentClassifier/ChatStatusMachine retained; ConversationWorkflow owns orchestration; AgentChatService 约 70 LOC facade |
+| **#7** | [`spec-007-agent-chat-service-decomposition.md`](../legacy/mindtrace/spec-007-agent-chat-service-decomposition.md) | (implicit) | **terminal shape superseded by 018**，原文 2026-10-30 归档 legacy — IntentClassifier/ChatStatusMachine retained; ConversationWorkflow owns orchestration; AgentChatService 约 70 LOC facade |
 | **#9** | [`009-llm-config-throw-on-silent-override.md`](./009-llm-config-throw-on-silent-override.md) | (implicit, defensive coding principle) | **implemented** (TDD) |
 | **#10** | [`010-mcp-to-tools-rename.md`](./010-mcp-to-tools-rename.md) | [`0005`](../adr/0005-mcp-to-tools-rename.md) | **reverted** (2026-09-06, [ADR-0010](../adr/0010-mcp-tools-semantics.md) — OcrTool 是 MCP 工具, `mcp/` 保留) |
 | **#11 / D2** | [`011-capturegraph-arkts-refactor.md`](./011-capturegraph-arkts-refactor.md) | [`0008`](../adr/0008-capturegraph-self-built-runtime.md) | **implemented** (D2, 2026-09-05; see [teaching doc](../agents/d2-capturegraph-teaching-2026-09-05.md)) |

@@ -115,7 +115,7 @@ If a file is not in the whitelist, it must be in a subdirectory (`docs/`, `scrip
 
 - `NNN` = 3-digit zero-padded sequence.
 - `{topic-slug}` matches the corresponding ADR where possible.
-- Example: `003-knowledge-model-decomposition.md`
+- Example: `036-multi-image-single-pass-consolidation.md`
 
 ### 3.4 Style — `{scope}-{topic}.md`
 

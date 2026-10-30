@@ -1,5 +1,6 @@
 # Ticket #7 — AgentChatService decomposition into 3 services
 
+> **归档 2026-10-30**：本规格已被 [spec 015](../../specs/015-knowledge-model-decomposition-v2.md) 取代（003）/ 被 [spec 018](../../specs/018-agent-workflow-architecture.md) 的 ConversationWorkflow 取代（007），正文冻结保留；现行口径见 `docs/specs/index.md`。
 > **Status**: superseded terminal shape (2026-09-10 — PR1/PR2 保留; PR3 由 spec 018 ConversationWorkflow + 约 70 LOC AgentChatService facade 取代)
 > **Source ADR**: implicit (mirrors ticket #3, ADR-0006 philosophy)
 > **Files affected**: `entry/src/main/ets/services/AgentChatService.ets` (split into 3 files); `entry/src/main/ets/overlays/AgentFloatWindow/` (consumer, unchanged)

@@ -39,8 +39,8 @@ agents 不能 import entry      (持久化走 NoteDaoInterface 注入, ADR-0001)
 > **forward path**:完成 AgentChatService → facade 收敛,与 PR1 (IntentClassifier) + PR2 (ChatStatusMachine) 形成三件套。
 
 - **读**:
-  - [`docs/specs/007-agent-chat-service-decomposition.md` §"PR 3"](../../specs/007-agent-chat-service-decomposition.md) — spec 写的设计
-  - [`docs/specs/007-agent-chat-service-decomposition.md` §"Progress (2026-09-07)"](../../specs/007-agent-chat-service-decomposition.md) — 现状: PR1 + PR2 已合, AgentChatService 861 → 516 LOC
+  - `docs/specs/007-agent-chat-service-decomposition.md` §"PR 3"（2026-10-30 归档至 `docs/legacy/mindtrace/spec-007-agent-chat-service-decomposition.md`） — spec 写的设计
+  - `docs/specs/007-agent-chat-service-decomposition.md` §"Progress (2026-09-07)"（同上归档） — 现状: PR1 + PR2 已合, AgentChatService 861 → 516 LOC
 - **范围**:`entry/src/main/ets/services/`
   - 新建 `ReplyService.ets` (~300 LOC) — `realReply` / `realReplyStream` / `captureReply` 编排 (classify → memory → prompt → LLM → normalize → memory-write)
   - 收敛 `AgentChatService.ets` 至 ≤ 100 LOC (纯 facade)
@@ -256,7 +256,7 @@ entry/src/main/ets/
 | 项目规则 (7 红线 + ArkTS 1.1 + 命名) | [`AGENTS.md`](../../../AGENTS.md) + [`docs/style/arkts-1.1.md`](../../style/arkts-1.1.md) |
 | 项目术语 (Order/KnowledgeUnit/NoteType/...) | [`CONTEXT.md`](../../../CONTEXT.md) |
 | 通用 agent 术语 (Node/Edge/State/HITL) | [`docs/agents/agent-glossary.md`](../../agents/agent-glossary.md) |
-| Spec 007 PR3 范围 | [`docs/specs/007-agent-chat-service-decomposition.md`](../../specs/007-agent-chat-service-decomposition.md) |
+| Spec 007 PR3 范围 | `docs/legacy/mindtrace/spec-007-agent-chat-service-decomposition.md`（归档原文） |
 | Spec 013 Kit 范围 | [`docs/specs/013-kit-adoption-boundary.md`](../../specs/013-kit-adoption-boundary.md) |
 | 工具库存盘点 (F1/F2) | [`docs/architecture/agent-tools-inventory-2026-09-06.md`](../../architecture/agent-tools-inventory-2026-09-06.md) |
 | 前端审查 (C1/C2/C3/C4/C5/C6) | [`docs/research/frontend-component-audit-2026-09-06.md`](../../research/frontend-component-audit-2026-09-06.md) |

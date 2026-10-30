@@ -290,8 +290,8 @@ README.md      # 状态条 + 维护手册
 |---|---|---|---|---|
 | 1 | **#4** | `004-dispatcher-single-entry.md` | `Dispatcher` 缩到单公开方法 + 迁移 `AiService` 调用方 | S(最小爆炸半径) |
 | 2 | **#5** | `005-llm-client-consolidation.md` | `LlmClient` 合一调用路径(3 → 1) | S(~5 行 refactor) |
-| 3 | **#3** | `003-knowledge-model-decomposition.md` | `KnowledgeModel` 拆 3 服务 + 对应 Hypium 测试 | L(870 LOC,3 atomic PR) |
-| 4 | **#7** | `007-agent-chat-service-decomposition.md` | `AgentChatService`(802 LOC)拆 `IntentClassifier` + `ReplyService` + `ChatStatusMachine` | L(802 LOC,3 atomic PR) |
+| 3 | **#3** | `docs/legacy/mindtrace/spec-003-knowledge-model-decomposition.md`（原 docs/specs/003） | `KnowledgeModel` 拆 3 服务 + 对应 Hypium 测试 | L(870 LOC,3 atomic PR) |
+| 4 | **#7** | `docs/legacy/mindtrace/spec-007-agent-chat-service-decomposition.md`（原 docs/specs/007） | `AgentChatService`(802 LOC)拆 `IntentClassifier` + `ReplyService` + `ChatStatusMachine` | L(802 LOC,3 atomic PR) |
 | 5 | **#10** | `010-mcp-to-tools-rename.md` | `mcp/tools/` → `tools/` 的 `git mv` + import 修正 | XS(~3 行) |
 | 6 | **#9** | `009-llm-config-throw-on-silent-override.md` | `LlmConfig` 静默覆盖改抛错 | XS(~10 行) |
 

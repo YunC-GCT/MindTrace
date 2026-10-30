@@ -6,7 +6,7 @@
 
 | Path | Project | Last updated |
 |---|---|---|
-| [`mindtrace/`](./mindtrace/) | MindTrace (HarmonyOS ArkTS) — audit evidence + frozen handoffs. Purged 2026-10-18; flattened 2026-10-30 to a single directory (10 files, no subdirs) | 2026-10-30 |
+| [`mindtrace/`](./mindtrace/) | MindTrace (HarmonyOS ArkTS) — audit evidence + frozen handoffs. Purged 2026-10-18; flattened 2026-10-30 to a single directory (13 files, no subdirs: 10 audit/handoff originals + spec 003 / spec 007 / note-generation plan archived 2026-10-30) | 2026-10-30 |
 
 ## Known stale facts in the frozen files
 
@@ -18,6 +18,8 @@ Frozen text is not corrected in place — these notes exist so nobody copies the
 ## When to add a new entry
 
 Only when **archiving an entire project's docs** as a single unit. If you have just a few stale docs, use the git history or a one-line reference in the current docs — don't create a new project subdirectory.
+
+**Exception (2026-10-30)**: a spec that a current ADR/spec still cites, but which has been fully superseded, is moved to `mindtrace/` with an archive banner instead of being deleted — the citing doc keeps a working link. Applies to `spec-003` (`docs/specs/003`), `spec-007` (`docs/specs/007`), and the note-generation stability plan.
 
 ## When to update existing entries
 

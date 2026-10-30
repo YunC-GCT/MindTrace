@@ -95,7 +95,7 @@
 <!-- Links to ADRs, specs, prior PRs, or related issues -->
 
 - ADR: <!-- e.g. `docs/adr/0006-knowledge-model-decomposition-plan.md` -->
-- Spec: <!-- e.g. `docs/specs/003-knowledge-model-decomposition.md` -->
+- Spec: <!-- e.g. `docs/specs/036-multi-image-single-pass-consolidation.md` -->
 - Closes: <!-- e.g. #16 -->
 - Follow-up: <!-- e.g. "post-merge, file ticket for #3 follow-up" -->
 
