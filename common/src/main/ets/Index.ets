@@ -431,10 +431,24 @@ export { NOTE_SEARCH_DEFAULT_TOP_K, NOTE_SEARCH_MAX_TOP_K } from './ports/NoteSe
 export type { NoteSearchHit, NoteSearchPort, NoteSearchQuery } from './ports/NoteSearchPort';
 export { RdbNoteSearchAdapter } from './ports/impl/RdbNoteSearchAdapter';
 export type { ArtifactDescriptor, ArtifactFileIo, ArtifactStorePort } from './ports/ArtifactStorePort';
-export { STUDY_PLAN_ERROR_READ_FAILED } from './ports/StudyPlanPorts';
+export {
+  StudyPlanError,
+  STUDY_PLAN_ERROR_READ_FAILED,
+  STUDY_PLAN_ERROR_OPERATION_REQUIRED,
+  STUDY_PLAN_ERROR_INVALID_PLAN,
+  STUDY_PLAN_ERROR_NOT_FOUND,
+  STUDY_PLAN_ERROR_VERSION_CONFLICT,
+  STUDY_PLAN_ERROR_WRITE_FAILED,
+} from './ports/StudyPlanPorts';
 export type {
+  StudyPlanOperationRecord,
   StudyPlanPendingItem,
   StudyPlanReadPort,
   StudyPlanReadStore,
   StudyPlanRecord,
+  StudyPlanWriteCommand,
+  StudyPlanWriteOutcome,
+  StudyPlanWritePort,
+  StudyPlanWriteRecord,
+  StudyPlanWriteStore,
 } from './ports/StudyPlanPorts';

@@ -18,7 +18,7 @@
 - [x] `NoteReadPort`（`list` / `get` / `search` / `listByIds`；结构化错误码 `INVALID_QUERY` / `NOTE_READ_FAILED`；返回 `NoteSummary` / `NoteDetail` 投影）— 契约 `common/ports/NoteReadPort.ets`；**实现已按 ADR-0021 下沉 common**：`ports/impl/NoteReadPortAdapter` + `RdbNoteReadStore`（skill 可复用），entry 侧保留 `NoteDaoReadStore` 供精确测试
 - [x] `NoteWriteDecisions` 纯判定（insert / update / duplicate / conflict / reject + ADR-0019 错误码）— 切片 A，`common/src/main/ets/ports/NoteWriteDecisions.ets`
 - [x] `StudyPlanReadPort`（只承载现有待办语义；`subject` 由注入的 resolver 从 linked note 派生）+ entry 适配器 `StudyPlanPortAdapter`
-- [ ] `StudyPlanWritePort`（升级为复习计划前不定义，等 #242 拍板）
+- [x] `StudyPlanWritePort`（待办语义，ADR-0022 拍板后定义）：`create / update / complete` + `operationId` 幂等 + `expectedVersion` CAS；契约 `common/ports/StudyPlanPorts.ets`，适配器 `StudyPlanWritePortAdapter` + `StudyPlanWriteStoreDao`（v17：`study_plan.version` + `study_plan_op` 事务内写入）
 - [x] `ArtifactStorePort`（artifactId 幂等 / 媒体类型 / URI / 校验和 / 删除 / 部分失败回滚）— 契约 `common/src/main/ets/ports/ArtifactStorePort.ets` + 适配器 `entry/src/main/ets/database/ArtifactStoreAdapter.ets`
 - [x] `CardSnapshotStore` 补 `schemaVersion` / `updatedAt` / 单 key 原子替换 / 失败返回 `false` 可重试 — 切片 A（`CardSnapshotCodec` + `loadResult`）
 - [x] `RunStore` 契约 + 生产实现（2026-10-30）：`run_store` / `run_event`（schema v16）+ `RunStoreAdapter`（create 幂等、update 的 committed 保护、事件序号透传、错误分流）+ `RunStoreDao`（事务内 `MAX(sequence)+1`）；契约测试 `v7-runstore.test.mjs` 8 条
@@ -100,3 +100,4 @@
 - [ ] `ReviewAgent` 子图：`plan → ask → grade`，SM-2 落在 `review.plan` 工具
 - [ ] `MathVideoAgent` 脚本流水线：`outline → script`（产物落 App Store 文本产物）
 - [x] schema v16：`run_store` / `run_event` + 2 个索引（`RunStoreDao` 生产实现，`MAX(sequence)+1` 事务内递增）；随 v7-runstore 契约测试一起验证
+- [x] schema v17 + `StudyPlanWritePort`：`study_plan.version` CAS 列 + `study_plan_op` 幂等表；`StudyPlanWritePortAdapter` + `StudyPlanWriteStoreDao`（业务写入与操作记录同事务）；契约测试 `v7-studyplan-write.test.mjs` 8 条

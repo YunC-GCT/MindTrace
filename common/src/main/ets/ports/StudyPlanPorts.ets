@@ -57,3 +57,71 @@ export interface StudyPlanReadStore {
 
 // 读侧稳定错误码：结构与其他 Port 一致，供 UI / A2A 分流。
 export const STUDY_PLAN_ERROR_READ_FAILED: string = 'STUDY_PLAN_READ_FAILED';
+
+// ==================== 写侧（待办语义，不是复习评分） ====================
+
+// 写命令：operationId 必填作为幂等键；expectedVersion 有值即 CAS（schema v17 给 study_plan 加了 version 列）。
+export interface StudyPlanWriteCommand {
+  operationId: string;
+  expectedVersion?: number;
+}
+
+// 写回执：duplicate=true 表示同一 operationId 重放，未产生第二次写入。
+export interface StudyPlanWriteOutcome {
+  id: string;
+  version: number;
+  operationId: string;
+  duplicate: boolean;
+  committedAt?: number;
+}
+
+// 持久层写记录：比读记录多 version（CAS 用）。
+export interface StudyPlanWriteRecord extends StudyPlanRecord {
+  version: number;
+}
+
+// 幂等操作记录：与写入放在同一事务里。
+export interface StudyPlanOperationRecord {
+  operationId: string;
+  planId: string;
+  kind: string;
+  version: number;
+  committedAt: number;
+}
+
+// 写侧存储缝：契约在 common，实现（StudyPlanWriteStoreDao）在 entry。
+// 三个写方法都带 command（operationId），DAO 必须把「业务写入 + 操作记录」放在同一事务里。
+export interface StudyPlanWriteStore {
+  queryOperation(operationId: string): Promise<StudyPlanOperationRecord | null>;
+  queryRecord(id: string): Promise<StudyPlanWriteRecord | null>;
+  insertRecord(item: StudyPlanRecord, command: StudyPlanWriteCommand): Promise<StudyPlanWriteRecord>;
+  updateRecord(item: StudyPlanRecord, command: StudyPlanWriteCommand): Promise<StudyPlanWriteRecord>;
+  setDone(id: string, done: boolean, command: StudyPlanWriteCommand): Promise<StudyPlanWriteRecord>;
+}
+
+// 写侧稳定错误（结构与其他端口一致）。
+export class StudyPlanError extends Error {
+  readonly code: string;
+  readonly retryable: boolean;
+
+  constructor(code: string, message: string, retryable: boolean) {
+    super(message);
+    this.name = 'StudyPlanError';
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
+
+// 写侧端口：待办 CRUD，不提供复习评分/掌握度（那属 ReviewAgent，ADR-0022）。
+export interface StudyPlanWritePort {
+  create(item: StudyPlanRecord, command: StudyPlanWriteCommand): Promise<StudyPlanWriteOutcome>;
+  update(item: StudyPlanRecord, command: StudyPlanWriteCommand): Promise<StudyPlanWriteOutcome>;
+  complete(id: string, command: StudyPlanWriteCommand): Promise<StudyPlanWriteOutcome>;
+}
+
+// 写侧稳定错误码（与 ADR-0019 的分流口径一致）。
+export const STUDY_PLAN_ERROR_OPERATION_REQUIRED: string = 'OPERATION_ID_REQUIRED';
+export const STUDY_PLAN_ERROR_INVALID_PLAN: string = 'INVALID_STUDY_PLAN';
+export const STUDY_PLAN_ERROR_NOT_FOUND: string = 'STUDY_PLAN_NOT_FOUND';
+export const STUDY_PLAN_ERROR_VERSION_CONFLICT: string = 'VERSION_CONFLICT';
+export const STUDY_PLAN_ERROR_WRITE_FAILED: string = 'STUDY_PLAN_WRITE_FAILED';

@@ -219,7 +219,7 @@ ModelRouter                      入口：一次回答只能选一条路
 | **Vision Kit** | DocumentScanner | 拍纸质题自动裁边 | 是 UI 组件 | 可选 |
 | Vision Kit | AI 识图 | 图像理解 | — | 不用 |
 | **Data Augmentation Kit** | 知识库 / 知识检索 / RAG（`ChatLLM` 需应用自己实现，不含模型） | 端侧 RAG 框架 | 无内置生成模型，见 4.2 | ⚠️ |
-| **ArkData RelationalStore** | RDB | 笔记、复习计划、run 事件 | 已有 17 张表（v15 加 `review_item` / `review_log`，v16 加 `run_store` / `run_event`） | ✅ |
+| **ArkData RelationalStore** | RDB | 笔记、待办、复习、run 事件 | 已有 18 张表（v15 `review_item` / `review_log`，v16 `run_store` / `run_event`，v17 `study_plan_op`） | ✅ |
 | **Form Kit** | 卡片 | 结果回显 | 已有 | ✅ |
 | **Intents Kit** | 意图声明与调用 | 小艺入口 | 需审核 | ✅ |
 | **Agent Framework Kit** | 拉起智能体 / A2A | 入口 | 仅手机平板 | 可选 |
@@ -286,7 +286,8 @@ query
 |---|---|---|
 | RDB · `knowledge_unit` | **笔记主体**：标题、正文、标签、学科、章节、SM-2 复习字段 | Agent 写，App 读 |
 | RDB · `kg_edge` | 关系边：同知识点 / 相似 / 前后置 | Agent 写，App 读 |
-| RDB · `study_plan` | 复习计划条目（到期、完成状态） | App 写，Agent 读 |
+| RDB · `study_plan` | 待办条目（完成状态、优先级、due date；v17 加 `version` 做 CAS） | App 写，Agent 读 |
+| RDB · `study_plan_op` | 待办写的幂等操作记录（v17） | App 写 |
 | RDB · `note_generation_run` / `_checkpoint` | 批次与断点 | Agent 写 |
 | RAG · `rag_chunk` / `rag_embedding` | 笔记文本与向量 | Agent 写，检索读 |
 | 文件 | 原图、附件 | 应用沙箱，App 只读 |
@@ -346,7 +347,7 @@ v1 用 SM-2（间隔 × 难度因子），规则简单、可解释；v2 再考�
 | L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试；回执短路读 `receipts/last-capture.json`；7 个 action 声明 | A2A 文字/图片**已就地入库**（`AgentIngestService → OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService`，`64008c3`），不再直调 `ReplyService`；对话分支仍走 `ReplyService`；P4 结果回执未做；skill 侧 7 个 action 仍只有声明（测试态无法注册意图） |
 | L2 | `Dispatcher` 四分支 + `CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 已是 102 行 facade | 没有端口层：`skill/SkillAbility` 自己 `DatabaseHelper.init()` 并建只读 ToolRegistry，`entry` 的 `NoteEvidenceService` 直连 RDB 与 `kg_edge`；没有 RunContext / EventSink；没有统一 Trace |
 | L3 | Core Vision Kit OCR（`SERVER_FALLBACK_ENABLED=false`）、文搜图常驻 Worker、模型网关 catalog / resolver / discovery 多提供商 | MCP 只有 `OcrTool`，没有 schema 发现与权限；RAG 只有 `rag_embedding` 建表，没有检索实现 |
-| L4 | RDB 17 张表（v15 `review_item` / `review_log`、v16 `run_store` / `run_event`；另有 `knowledge_unit` / `kg_edge` / `study_plan` / 生成 run） | `similar` 边未生成（`embedding: []`）；`study_plan` 仍是待办，不是复习计划；复习端口/子图未做 |
+| L4 | RDB 18 张表（v15 `review_item` / `review_log`、v16 `run_store` / `run_event`、v17 `study_plan_op`；另有 `knowledge_unit` / `kg_edge` / `study_plan` / 生成 run） | `similar` 边未生成（`embedding: []`）；`study_plan` 仍是待办，不是复习计划；复习端口/子图未做 |
 | L5 | 分阶段日志（capture 五段耗时）、A2A 日志（requestId / taskId / attempts / 耗时） | 没有跨工作流统一 Trace：`runId` / `parentRunId` 串不起来，node / tool / approval / commit 事件不落盘 |
 
 「小艺真机未通」「观测为零」这两个说法已过期，别再引用。
@@ -662,7 +663,7 @@ APP 输入 / 小艺 Want
 |---|---|---|---|---|
 | `Dispatcher.dispatch` | agents | 四分支已存在，返回扁平结果 | `NoteCommand`（capture / generation / regenerate / preparedCandidate / analysisOnly）+ discriminated `NoteOutcome`（needsInput / readyPreview / committed / failed(code, retryable) / cancelled） | ADR-0019（[0019](./adr/0019-note-command-and-outcome.md)） |
 | `NoteReadPort` / `NoteWritePort` | 读实现 common（`ports/impl`）/ 写实现 entry（ADR-0021） | 直连 DAO，无端口 | `commitKey`、`expectedVersion`、`approvedCheckpointHash`（防 Agent 绕过 HITL）、幂等重放、`committed/cancelled` 判定 | 契约由 #238 落地；语义受 ADR-0019 约束 |
-| `StudyPlanReadPort` / `StudyPlanWritePort` | 同上 | `StudyPlanDao` 裸 CRUD | **先定领域**：待办 vs 间隔复习；再定评分 / 掌握度 / 复习记录 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `StudyPlanReadPort` / `StudyPlanWritePort` | common（契约）/ entry（实现） | **已落地**：读 `StudyPlanPortAdapter`；写 `StudyPlanWritePortAdapter`（operationId 幂等 + CAS）+ v17 `study_plan.version` / `study_plan_op` | **领域已定（ADR-0022）**：只做待办，不做评分/掌握度/复习记录 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 | `ArtifactStorePort` | 同上 | 无 | `artifactId`、媒体类型、URI、校验和、保留与删除、部分失败的清理 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 | `CardSnapshotStore` | common | Preferences 静态读写，无 schema version | projection schema version、`updatedAt`、原子替换、刷新失败可重试 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 | `RunStore` | common（契约）/ entry（实现） | **已落地**：v16 `run_store` + `run_event`；`RunStoreAdapter`（committed 保护 / 序号透传）+ `RunStoreDao`（事务内 `MAX(sequence)+1`） | `runId` / `parentRunId` / `eventId`、单调 `sequence`、status + version、checkpoint、恢复与取消合同 | 契约由 #238 落地；语义受 ADR-0019 约束 |

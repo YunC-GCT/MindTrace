@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 16;
+const DB_SCHEMA_VERSION: number = 17;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -294,6 +294,23 @@ const SQL_INDEX_RUN_STORE_STATUS: string =
 const SQL_INDEX_RUN_EVENT_RUN_SEQ: string =
   "CREATE INDEX IF NOT EXISTS idx_run_event_run_seq ON run_event(run_id, sequence)";
 
+// StudyPlanWritePort（v16 → v17）：study_plan 加 version 列做 CAS，另建幂等操作表。
+// 语义仍是待办（ADR-0022）：只加版本与操作记录，不加评分/掌握度字段。
+const SQL_MIGRATE_STUDY_PLAN_VERSION: string =
+  "ALTER TABLE study_plan ADD COLUMN version INTEGER NOT NULL DEFAULT 1";
+
+const SQL_CREATE_STUDY_PLAN_OP: string = `
+CREATE TABLE IF NOT EXISTS study_plan_op (
+  operation_id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  committed_at INTEGER NOT NULL
+)`;
+
+const SQL_INDEX_STUDY_PLAN_OP_PLAN: string =
+  "CREATE INDEX IF NOT EXISTS idx_study_plan_op_plan ON study_plan_op(plan_id)";
+
 const SQL_INDEX_KNOWLEDGE_CREATED: string =
   "CREATE INDEX IF NOT EXISTS idx_knowledge_unit_created_at ON knowledge_unit(created_at)";
 const SQL_INDEX_KNOWLEDGE_REVIEW: string =
@@ -455,6 +472,7 @@ export class DatabaseHelper {
       SQL_CREATE_REVIEW_LOG,
       SQL_CREATE_RUN_STORE,
       SQL_CREATE_RUN_EVENT,
+      SQL_CREATE_STUDY_PLAN_OP,
       SQL_INDEX_KNOWLEDGE_CREATED,
       SQL_INDEX_KNOWLEDGE_REVIEW,
       SQL_INDEX_NOTE_REVISION_NOTE,
@@ -475,6 +493,7 @@ export class DatabaseHelper {
       SQL_INDEX_REVIEW_LOG_ITEM,
       SQL_INDEX_RUN_STORE_STATUS,
       SQL_INDEX_RUN_EVENT_RUN_SEQ,
+      SQL_INDEX_STUDY_PLAN_OP_PLAN,
     ];
 
     for (const sql of statements) {
@@ -585,6 +604,9 @@ export class DatabaseHelper {
     if (!hasGenerationContextBudget) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_CONTEXT_BUDGET); }
     const hasGenerationSourceProvenance: boolean = await DatabaseHelper.hasColumn(store, "note_generation_source", "provenance_ids");
     if (!hasGenerationSourceProvenance) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_GENERATION_SOURCE_PROVENANCE); }
+    // v17：待办写端口需要 CAS 版本列（ADR-0022 仍保持待办语义，不加复习字段）
+    const hasStudyPlanVersion: boolean = await DatabaseHelper.hasColumn(store, "study_plan", "version");
+    if (!hasStudyPlanVersion) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_STUDY_PLAN_VERSION); }
 
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_MESSAGE_KEY);
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_SEQUENCE);
