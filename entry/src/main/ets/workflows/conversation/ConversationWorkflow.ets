@@ -80,6 +80,20 @@ const workflowLog: Logger = new Logger('ConversationWorkflow');
 /** 触发 recoverStreamReply 的路径: empty=流正常但内容为空; interrupted=有部分内容后断流; throw=stream 抛异常 */
 type StreamRecoveryReason = 'empty' | 'interrupted' | 'throw';
 
+/**
+ * StreamTiming 观测口径 (与 @ship 的指标表契约对齐, 仅观测不改业务):
+ *   - path=text|ocr|recover
+ *   - usedFallback=true|false|unknown —— unknown 表示拿不到 streamResult 或 complete() 无标记,
+ *     聚合时必须单列一档, 不允许并入 false (否则"未降级"组里躺着没测过的样本)
+ *   - text/ocr: firstChunkMs totalMs chars outcome interrupted
+ *   - recover : recoverMs (不带 firstChunkMs/totalMs —— 同一数值挂两个名字必被误聚合)
+ *   - sessionId/runId 取自已存在的 ConversationRunRef, 供 @ship 按会话聚合
+ *   - 失败时 firstChunkMs=-1 (0 是合法首字延迟, 不能当哨兵)
+ */
+type StreamTimingPath = 'text' | 'ocr';
+type StreamTimingFallback = 'true' | 'false' | 'unknown';
+type StreamTimingOutcome = 'ok' | 'error';
+
 interface RegenerationInstruction {
   noteId: string;
   instruction: string;
@@ -550,10 +564,8 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         );
       } catch (e) {
         const streamTotalMs: number = Date.now() - streamStartedAt;
-        console.warn('[StreamTiming] firstChunkMs=' + firstChunkMs.toString()
-          + ' totalMs=' + streamTotalMs.toString()
-          + ' chars=' + streamedChars.toString()
-          + ' usedFallback=false error=true');
+        // 异常分支拿不到 streamResult -> 降级状态不可知, 记 unknown 而不是 false
+        this.logStreamTiming('ocr', ref, firstChunkMs, streamTotalMs, streamedChars, 'unknown', 'error', true);
         await this.recoverStreamReply(ref, msgId, replyContext, displayedText, undefined, 'throw');
         return;
       }
@@ -565,11 +577,9 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const emptyContent: boolean = displayContent.trim().length === 0;
       const errorMarked: boolean = streamResult.interrupted || emptyContent;
       const streamTotalMs: number = Date.now() - streamStartedAt;
-      console.info('[StreamTiming] firstChunkMs=' + firstChunkMs.toString()
-        + ' totalMs=' + streamTotalMs.toString()
-        + ' chars=' + streamResult.content.length.toString()
-        + ' usedFallback=' + streamResult.usedFallback.toString()
-        + ' error=' + errorMarked.toString());
+      this.logStreamTiming('ocr', ref, firstChunkMs, streamTotalMs, streamResult.content.length,
+        streamResult.usedFallback ? 'true' : 'false',
+        errorMarked ? 'error' : 'ok', errorMarked);
       if (streamResult.usedFallback && !emptyContent) {
         await this.appendAssistantReply(ref, streamResult.content, msgId);
         this.setStep(ref, 'completed');
@@ -801,10 +811,8 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
           const interruptedTailMessage: ConversationMessageEvent = { kind: 'stream', event: interruptedTailEvent };
           this.cbs.updateAiMsg(ref, msgId, interruptedTailMessage);
         }
-        console.warn('[StreamTiming] firstChunkMs=' + firstChunkMs.toString()
-          + ' totalMs=' + streamTotalMs.toString()
-          + ' chars=' + streamedChars.toString()
-          + ' usedFallback=false error=true');
+        // 异常分支拿不到 streamResult -> 降级状态不可知, 记 unknown 而不是 false
+        this.logStreamTiming('text', ref, firstChunkMs, streamTotalMs, streamedChars, 'unknown', 'error', true);
         const recovered: boolean = await this.recoverStreamReply(ref, msgId, replyContext, displayedText, evidence, 'throw');
         if (recovered) {
           await this.safeUpdateLearnerProfileIfNeeded(ref);
@@ -830,11 +838,9 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const emptyAnswer: boolean = displayAnswer.trim().length === 0;
       const errorMarked: boolean = streamResult.interrupted || emptyAnswer;
       const streamTotalMs: number = Date.now() - streamStartedAt;
-      console.info('[StreamTiming] firstChunkMs=' + firstChunkMs.toString()
-        + ' totalMs=' + streamTotalMs.toString()
-        + ' chars=' + streamResult.content.length.toString()
-        + ' usedFallback=' + streamResult.usedFallback.toString()
-        + ' error=' + errorMarked.toString());
+      this.logStreamTiming('text', ref, firstChunkMs, streamTotalMs, streamResult.content.length,
+        streamResult.usedFallback ? 'true' : 'false',
+        errorMarked ? 'error' : 'ok', errorMarked);
       if (streamResult.usedFallback && !emptyAnswer) {
         await this.appendAssistantReply(ref, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
         return;
@@ -1250,6 +1256,69 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   }
 
   /**
+   * 流式调用的耗时观测 (StreamTiming)。
+   *
+   * 只写日志, 不参与任何业务分支 —— 唯一目的是让 @ship 的指标表能按 key=value 解析。
+   * 一律走 workflowLog (DOMAIN 0x0001 / TAG 'MindTrace'), 不再用 console.*,
+   * 因为 console 最终落到 hilog 的哪个 tag 在真机上未验证, 抓不到就没有"未测"以外的状态。
+   * interrupted 是附加维度: outcome=error 的行按约定不进延迟分布, 但 interrupted 且
+   * firstChunkMs>=0 的样本本身是有效首字延迟, 聚合时可按 interrupted 单独取回。
+   */
+  private logStreamTiming(
+    path: StreamTimingPath,
+    ref: ConversationRunRef,
+    firstChunkMs: number,
+    totalMs: number,
+    chars: number,
+    usedFallback: StreamTimingFallback,
+    outcome: StreamTimingOutcome,
+    interrupted: boolean,
+  ): void {
+    const line: string = '[StreamTiming] path=' + path
+      + ' usedFallback=' + usedFallback
+      + ' firstChunkMs=' + firstChunkMs.toString()
+      + ' totalMs=' + totalMs.toString()
+      + ' chars=' + chars.toString()
+      + ' outcome=' + outcome
+      + ' interrupted=' + interrupted.toString()
+      + ' sessionId=' + ref.sessionId
+      + ' runId=' + ref.runId;
+    if (outcome === 'error') {
+      workflowLog.warn(line);
+    } else {
+      workflowLog.info(line);
+    }
+  }
+
+  /**
+   * 断流恢复 (非流式单次 complete) 的耗时观测。
+   *
+   * recoverMs = 调用发起 → Promise 落定 (resolve 或 reject 都要出这条)。
+   * complete() 只返回 string, 没有 usedFallback 标记 (见 matchesFallbackShape 注释),
+   * 所以这一路恒为 usedFallback=unknown, 不写 false 冒充"未降级"。
+   * 不带 firstChunkMs / totalMs: 单次请求一次落定, 同一数值挂三个名字必被误聚合。
+   */
+  private logStreamRecoverTiming(
+    ref: ConversationRunRef,
+    recoverMs: number,
+    chars: number,
+    outcome: StreamTimingOutcome,
+  ): void {
+    const line: string = '[StreamTiming] path=recover'
+      + ' usedFallback=unknown'
+      + ' recoverMs=' + recoverMs.toString()
+      + ' chars=' + chars.toString()
+      + ' outcome=' + outcome
+      + ' sessionId=' + ref.sessionId
+      + ' runId=' + ref.runId;
+    if (outcome === 'error') {
+      workflowLog.warn(line);
+    } else {
+      workflowLog.info(line);
+    }
+  }
+
+  /**
    * 断流后自动降级重取一次: 保留已得内容, 成功替换并标注重连; 失败保留部分内容并追加中文错误。
    * reason 区分触发路径 (empty / interrupted / throw), 真机日志用它区分"空回复"与"真断流"。
    */
@@ -1274,9 +1343,15 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       workflowLog.warn('[ReplyCtx] WARN empty userContent via=recover');
     }
     let reconnected: string = '';
+    // recoverMs 起点: 紧贴 complete() 调用之前; 终点: Promise 落定 (resolve / reject 都记)
+    const recoverStartedAt: number = Date.now();
+    let recoverMs: number = -1;
     try {
       reconnected = await this.replyService.complete(replyContext, token);
+      recoverMs = Date.now() - recoverStartedAt;
+      this.logStreamRecoverTiming(ref, recoverMs, reconnected.length, 'ok');
     } catch (e) {
+      recoverMs = Date.now() - recoverStartedAt;
       const rawMessage: string = LlmErrorBodyFormatter.redactSensitiveText(
         ConversationWorkflow.rawErrorMessage(e),
       );
@@ -1288,7 +1363,8 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const failureEvent: ConversationMessageEvent = { kind: 'replace-content', content: failureContent };
       this.cbs.updateAiMsg(ref, msgId, failureEvent);
       const outcome: ChatMessageOutcome = ConversationWorkflow.failureOutcome(e);
-      console.warn('[StreamRecovery] reconnect_failed reason=' + reason + ' error=' + errorText);
+      workflowLog.warn('[StreamRecovery] reconnect_failed reason=' + reason + ' error=' + errorText);
+      this.logStreamRecoverTiming(ref, recoverMs, 0, 'error');
       this.finishRunFailure(ref, e, outcome);
       return false;
     }
@@ -1301,7 +1377,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const fallbackEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayContent };
       this.cbs.updateAiMsg(ref, msgId, fallbackEvent);
       this.cbs.finishAiMsg(ref, msgId, 'interrupted');
-      console.warn('[StreamRecovery] reconnect_fallback_not_answer reason=' + reason
+      workflowLog.warn('[StreamRecovery] reconnect_fallback_not_answer reason=' + reason
         + ' chars=' + reconnectedNormalized.length.toString());
       return false;
     }
@@ -1315,7 +1391,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const emptyEvent: ConversationMessageEvent = { kind: 'replace-content', content: failureContent };
       this.cbs.updateAiMsg(ref, msgId, emptyEvent);
       this.cbs.finishAiMsg(ref, msgId, 'interrupted');
-      console.warn('[StreamRecovery] reconnect_failed reason=' + reason + ' error=' + emptyText);
+      workflowLog.warn('[StreamRecovery] reconnect_failed reason=' + reason + ' error=' + emptyText);
       return false;
     }
     const displayContent: string = recovered + '\n\n（已重连）';
@@ -1324,7 +1400,8 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     this.cbs.updateAiMsg(ref, msgId, recoveredEvent);
     this.cbs.finishAiMsg(ref, msgId, 'completed');
     await this.safeSaveAssistantMessage(ref, displayContent, msgId);
-    console.info('[StreamRecovery] reconnect_ok reason=' + reason + ' chars=' + displayContent.length.toString());
+    workflowLog.info('[StreamRecovery] reconnect_ok reason=' + reason + ' chars=' + displayContent.length.toString()
+      + ' recoverMs=' + recoverMs.toString());
     return true;
   }
 

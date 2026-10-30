@@ -18,11 +18,21 @@ const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
 
 // Execute the real error delivery boundary, with only platform imports removed.
 const withoutImports = (source) => source.replace(/import\s+(?:type\s+)?\{[\s\S]*?\}\s+from\s+'[^']+';\s*/g, '');
+// Logger 桩必须可调用: ConversationWorkflow 的观测日志 (StreamTiming / StreamRecovery) 走 workflowLog,
+// 空 Logger 会让任何一次 info() 抛 "workflowLog.info is not a function" —— 那是桩的问题, 不是被测代码的问题。
+// 同时把每行日志收进 globalThis.__mindtraceLogs, 让 StreamTiming 的字段契约可以被断言而不是靠人眼看。
+const LOG_STUB = 'class Logger {'
+  + ' constructor(tag) { this.tag = tag; }'
+  + ' record(level, msg) { const box = globalThis.__mindtraceLogs ?? (globalThis.__mindtraceLogs = []); box.push({ level, tag: this.tag, msg }); }'
+  + ' debug(msg) { this.record("debug", msg); } info(msg) { this.record("info", msg); }'
+  + ' warn(msg) { this.record("warn", msg); } error(msg) { this.record("error", msg); }'
+  + '}\nclass LlmError extends Error {}\n';
 const errorHarness = ts.transpileModule(
-  'class Logger {}\nclass LlmError extends Error {}\n'
+  LOG_STUB
     + withoutImports(read('common/src/main/ets/llm/LlmErrorBodyFormatter.ets'))
     + withoutImports(read('entry/src/main/ets/services/NoteRetrievalQuery.ets'))
     + withoutImports(read('entry/src/main/ets/services/NoteEvidenceService.ets'))
+    + withoutImports(read('entry/src/main/ets/services/StreamErrorText.ets'))
     + withoutImports(workflow),
   { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } },
 ).outputText;
@@ -253,4 +263,108 @@ test('Conversation workflow normalizes streamed content through one message even
   assert.doesNotMatch(workflowTypes, /appendAiMsg/);
   assert.match(workflow, /kind: 'replace-content', content: displayAnswer/);
   assert.doesNotMatch(workflow, /this\.cbs\.replaceAiMsg/);
+});
+
+// StreamTiming 观测契约 (@ship 指标表的采集前提):
+//   一次流式回复留下一行 `[StreamTiming] path=… usedFallback=… firstChunkMs=… totalMs=… chars=… outcome=… interrupted=… sessionId=… runId=…`
+//   recover 单独一行 `[StreamTiming] path=recover usedFallback=unknown recoverMs=… chars=… outcome=… sessionId=… runId=…`
+// 断言点: 拿不到 streamResult 的异常分支必须是 usedFallback=unknown —— 写成 false 会让"未降级"组混入没测过的样本;
+//        recover 行不能带 firstChunkMs/totalMs —— 一次非流式请求同一耗时挂多个名字必然被误聚合。
+const STREAM_TIMING_LINE = /^\[StreamTiming\] path=(?:text|ocr|recover) usedFallback=(?:true|false|unknown)(?: [a-zA-Z]+=\S+)*$/;
+
+function timingFields(line) {
+  const fields = {};
+  for (const pair of line.replace('[StreamTiming] ', '').split(' ')) {
+    const at = pair.indexOf('=');
+    fields[pair.slice(0, at)] = pair.slice(at + 1);
+  }
+  return fields;
+}
+
+function timingInstance(mode) {
+  const instance = Object.create(ConversationWorkflow.prototype);
+  instance.evidenceService = new NoteEvidenceService();
+  instance.cancellationTokens = new Map();
+  instance.runOrigins = new Map();
+  instance.reportedErrorRuns = new Set();
+  instance.memoryProjection = { async saveAssistant() {}, async updateLearnerProfile() {}, async summarize() {} };
+  instance.cbs = {
+    isCurrentRun: () => true, onProgress() {}, addAiMsgEmpty: () => 42,
+    updateAiMsg() {}, finishAiMsg() {}, onError() {},
+  };
+  instance.replyService = {
+    isConfigured: async () => true,
+    normalize: (text) => text,
+    async complete() {
+      if (mode === 'recover-fail') { throw new Error('connection timed out'); }
+      return '重连回答';
+    },
+    async stream(_context, sink) {
+      if (mode === 'throw' || mode === 'recover-fail') { throw new Error('HTTP 500 stream broke'); }
+      if (mode === 'empty') { return { content: '', usedFallback: false, interrupted: false }; }
+      if (mode === 'fallback') { return { content: '回退回答', usedFallback: true, interrupted: false }; }
+      sink({ type: 'text', delta: '流式回答' });
+      return { content: '流式回答', usedFallback: false, interrupted: false };
+    },
+  };
+  return instance;
+}
+
+async function runTiming(mode) {
+  globalThis.__mindtraceLogs = [];
+  const instance = timingInstance(mode);
+  const ref = { sessionId: 'sabc123', runId: 'rdef456' };
+  await instance.handleStreamReply(ref, '', '', '解释极限', undefined, undefined);
+  return (globalThis.__mindtraceLogs ?? []).filter((line) => line.msg.startsWith('[StreamTiming]'));
+}
+
+test('StreamTiming keeps fallback, interruption and recover latency as separate fields', async () => {
+  const okLines = await runTiming('ok');
+  assert.equal(okLines.length, 1, '正常流只留一行 StreamTiming');
+  assert.match(okLines[0].msg, STREAM_TIMING_LINE);
+  const ok = timingFields(okLines[0].msg);
+  assert.equal(ok.path, 'text');
+  assert.equal(ok.usedFallback, 'false');
+  assert.equal(ok.outcome, 'ok');
+  assert.equal(ok.interrupted, 'false');
+  assert.equal(ok.sessionId, 'sabc123');
+  assert.equal(ok.runId, 'rdef456');
+  assert.match(ok.firstChunkMs, /^\d+$/);
+  assert.match(ok.totalMs, /^\d+$/);
+  assert.equal(ok.chars, '4');
+  assert.equal(okLines[0].level, 'info');
+
+  const fallback = timingFields((await runTiming('fallback'))[0].msg);
+  assert.equal(fallback.usedFallback, 'true');
+  assert.equal(fallback.outcome, 'ok');
+
+  const empty = await runTiming('empty');
+  const emptyFields = timingFields(empty[0].msg);
+  assert.equal(emptyFields.outcome, 'error', '空正文按 error 记账');
+  assert.equal(emptyFields.interrupted, 'true');
+  assert.equal(emptyFields.usedFallback, 'false');
+
+  const thrown = await runTiming('throw');
+  assert.equal(thrown.length, 2, '抛异常 = 一行失败流 + 一行 recover');
+  const thrownStream = timingFields(thrown[0].msg);
+  assert.equal(thrownStream.usedFallback, 'unknown', '拿不到 streamResult 时不能写 false');
+  assert.equal(thrownStream.outcome, 'error');
+  assert.equal(thrownStream.interrupted, 'true');
+  const recoverOk = timingFields(thrown[1].msg);
+  assert.equal(recoverOk.path, 'recover');
+  assert.equal(recoverOk.usedFallback, 'unknown');
+  assert.equal(recoverOk.outcome, 'ok');
+  assert.match(recoverOk.recoverMs, /^\d+$/);
+  assert.equal(recoverOk.firstChunkMs, undefined, 'recover 行不带 firstChunkMs');
+  assert.equal(recoverOk.totalMs, undefined, 'recover 行不带 totalMs');
+  assert.equal(recoverOk.sessionId, 'sabc123');
+  assert.equal(recoverOk.runId, 'rdef456');
+
+  const recoverFailed = await runTiming('recover-fail');
+  const recoverError = timingFields(recoverFailed[1].msg);
+  assert.equal(recoverError.path, 'recover');
+  assert.equal(recoverError.outcome, 'error');
+  assert.equal(recoverError.chars, '0');
+  assert.match(recoverError.recoverMs, /^\d+$/);
+  assert.equal(recoverFailed[1].level, 'warn');
 });
