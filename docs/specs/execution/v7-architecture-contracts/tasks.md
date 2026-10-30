@@ -27,7 +27,7 @@
 - [x] **消费方接线 Step 2b-1**：`note_query_rag` 改走 `NoteSearchPort`（端口未就绪仍返回 `store not ready`；payload 字段与 tags 编码保持旧形状）；工具文件不再保留第二套打分算法，`keyword-search-tool` 的可读性断言改为指向端口实现
 - [x] **消费方接线 Step 2b-2**：`note_get` 改走 `NoteReadPort.get`；`NoteDetail` 补齐 `createdAt` / `intervalDays` / `easeFactor` / `repetitions` / `userId`，payload 字段名与 `tags`/`difficulty` 编码保持旧形状
 - [x] **消费方接线 2b-3 决策**：`note_query` 的 keyword 同时命中 title/content，横跨读端口与检索端口语义；**记为工具层特例保留直查**，将来需要复用再新增 `NoteFilterPort`（已写进 ADR-0021 第 4 条）
-- [x] **Step 3 证据服务注入**：`NoteEvidenceService(port?)` + `configureEvidenceReadPort`；`EntryAbility` 在 `DatabaseHelper.init` 完成后注入 `NoteReadPortAdapter(RdbNoteReadStore)`；未注入（测试 / 未配置组合根）仍走既有 SQL 路径，行为不变；`kg_edge` 读取仍直连（`KnowledgePort` 未建）
+- [x] **Step 3 证据服务注入**：`NoteEvidenceService(port?)` + `configureEvidenceReadPort`；`EntryAbility` 在 `DatabaseHelper.init` 完成后注入 `NoteReadPortAdapter(RdbNoteReadStore)`；未注入（测试 / 未配置组合根）仍走既有 SQL 路径，行为不变；**注入路径已有契约测试**：`v7-evidence-port.test.mjs`（fake port + fake 图扩展，断言 `listByIds` 被调用且行映射成 citation）；`kg_edge` 读取仍直连（`KnowledgePort` 未建）
 - [x] `NoteWritePort` + `CardSnapshotCodec` 契约测试：`scripts/arkts-lint/tests/v7-note-contracts.test.mjs`
       （19 条，`node --test` 实测 `pass 19 / fail 0`，覆盖 `decideWrite` 六分支 + codec 往返/版本/bad JSON/缺字段）
 - [x] 读侧契约测试（2026-10-30）：
