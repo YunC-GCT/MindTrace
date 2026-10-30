@@ -35,6 +35,7 @@
 | [`smoke-test.md`](./smoke-test.md) | 8 步人工冒烟矩阵 |
 | [`triage-labels.md`](./triage-labels.md) | 5 个 triage 标签的语义与流转 |
 | [`patterns/index.md`](./patterns/index.md) | 可复用工作模式入口（add-new-adr / investigate / refactor-x / capability-to-implementation） |
+| [`bots/index.md`](./bots/index.md) | 五个 Bot 的分工与本轮派活单（architect / ui / flow / harmony / ship） |
 
 ## 已移出的交接文档
 
