@@ -104,17 +104,7 @@
 | **LlmClient 统一调用层** | `common/src/main/ets/llm/LlmClient.ets` | 唯一公共入口 `call(request)` (spec [`005`](./docs/specs/005-llm-client-consolidation.md)): JSON 与真 SSE 流式 (requestInStream) 双适配路径 |
 | **知识星系可视化** | `entry/src/main/ets/pages/KnowledgeGalaxy*` | 用户学情可视化 |
 | **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 · `npm --prefix scripts/arkts-lint test` **768 项全绿**（已取消 curated 白名单，跑全量 glob，约 40 s）· `agent-gate` 与 CI 同源 · **CI 已接入** |
-| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/` (历史审计) + `docs/adr/` + `docs/specs/` | 18 ADR + 22 设计 spec + 执行记录目录, 设计透明度高 |
-
-### 演示路径 (5 分钟 walk-through · 复赛版)
-
-> **v1 已 Kit 化**：端A2A 走系统 Core Vision Kit + 端侧模型，不再启动外部 OCR 服务。以下步骤仅作复赛历史参考；v1 的验收以 [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) 为准。
-
-1. 启动 OCR 服务 (运行 `tools/ocr_service/start.bat`, 端口 8000; 详见 tools/ocr_service/README.md)
-2. DevEco Studio `Run → Run 'entry'` (真机/模拟器)
-3. 主流程: 拍照 → OCR → AI 分类 → 知识结构化 → 持久化 → 复习浮窗对话 (SSE 流式)
-4. 5 Tab 流畅 / 知识星系无 "示例:*" 假学科 (ticket #16 已修)
-5. 源码: `agents/` (AI 业务) + `scripts/arkts-lint/` (工程亮点) + `docs/legacy/mindtrace/audit-full-2026-09-01.md` (21 个 finding 的架构审计)
+| **审计 + ADR + Spec 完整设计层** | `docs/adr/` + `docs/specs/` + `docs/legacy/mindtrace/` | 19 篇 ADR + 22 篇设计 spec + 执行记录目录, 设计透明度高 |
 
 ### 当前阶段 (v1 端A2A)
 
@@ -124,7 +114,7 @@
 | **P1–P5** | ⬜ | 选图入口 / 批量 Picker / 真实编排 / 结果回执 / 合规标识，逐项验收口径见 phase-tracker |
 | **P6 上架** | 🟡 | 已提交审核；通过前只有白名单账号能调起 |
 
-复赛版本的 audit 修复（#15 / #9 / #16 / #10、spec 018 等）保留在 git history 与 `docs/legacy/`。**新功能一律按 P1–P5 推进，不再回顾赛。**
+**新功能一律按 P1–P5 推进。**
 ---
 
 ## 关键架构 (30 秒读懂)
@@ -145,7 +135,7 @@
 
 **5 module 拓扑**: 1 HAP (`entry`, `type:entry`) + 4 HSP (`common` / `agents` / `skill` / `cardservice`, `type:feature`); 跨 module import 必须完整路径
 
-**已废弃 (不要新建)**: ~~`entry/src/main/ets/components/`~~ ~~`entry/src/main/ets/atoms/`~~ ~~`archive/`~~ ~~`MindTrace-MVP/`~~ ~~`common/src/main/ets/database/`~~ (顶层) ~~`docs/W3_SUMMARY.md`~~。注意：`entry/src/main/ets/shared/atoms/` 与 `shared/molecules/` 是 spec 012 的**现行**结构，不要当成废弃目录。
+**共享原子件**: `entry/src/main/ets/shared/atoms/` 与 `shared/molecules/` (spec 012)
 
 ---
 
@@ -180,10 +170,9 @@
 | Skill | 说明 | 详细 |
 |---|---|---|
 | **CONTEXT.md** | 项目专属词汇 (4 种 "agent" 消歧; D2 起含 CaptureGraph 等) | [`CONTEXT.md`](./CONTEXT.md) |
-| **ADR** | 架构决策记录 (18 个) | [`docs/adr/`](./docs/adr/) |
+| **ADR** | 架构决策记录 (19 篇) | [`docs/adr/`](./docs/adr/) |
 | **Ticket specs** | 依 ADR 写的设计 spec (22 个) + 执行记录 | [`docs/specs/`](./docs/specs/) · [`docs/specs/execution/`](./docs/specs/execution/) |
 | **Issue tracker** | GitHub Issues on `YunC-GCT/MindTrace`, via `gh` CLI | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) |
 | **Triage labels** | 5 标签: `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix` | [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
 | **端A2A 接入 / 排障** | 小艺调起 `AgentExtensionAbility` 的完整流程与坑 (服务名称=abilityName、proto-JSON、单条 task 快照) | Hermes skill `harmonyos-xiaoyi-a2a` + [`scripts/a2a-smoke/`](./scripts/a2a-smoke/) |
-| **其它 AI 工具入口** | `CLAUDE.md` / `.github/copilot-instructions.md` / `.cursor/rules/mindtrace.mdc` 都只是指针，规则只维护在 `AGENTS.md` | 本文 |
 | **TDD / domain-modeling** | 按需调 skill, 不强制 | (内置 skill) |
