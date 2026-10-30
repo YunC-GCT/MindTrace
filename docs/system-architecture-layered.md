@@ -345,7 +345,7 @@ v1 用 SM-2（间隔 × 难度因子），规则简单、可解释；v2 再考�
 | 层 | 已有 | 缺 |
 |---|---|---|
 | L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试；回执短路读 `receipts/last-capture.json`；7 个 action 声明 | A2A 文字/图片**已就地入库**（`AgentIngestService → OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService`，`64008c3`），不再直调 `ReplyService`；对话分支仍走 `ReplyService`；P4 结果回执未做；skill 侧 7 个 action 仍只有声明（测试态无法注册意图） |
-| L2 | `Dispatcher` 四分支 + `CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 已是 102 行 facade | 没有端口层：`skill/SkillAbility` 自己 `DatabaseHelper.init()` 并建只读 ToolRegistry，`entry` 的 `NoteEvidenceService` 直连 RDB 与 `kg_edge`；没有 RunContext / EventSink；没有统一 Trace |
+| L2 | `Dispatcher` 四分支 + `CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 已是 102 行 facade；**capture 的 PersistNode 已可走 `NoteWritePort`（切片 A1）**，`RunContext` 已接 | 仍未做：主图（preflight/route/invoke/verify/HITL/publish）、`NoteCommand`/`NoteOutcome`、`EventSink`、preparedCandidate 写路径接端口；`skill/SkillAbility` 自己 `DatabaseHelper.init()`；`NoteEvidenceService` 的 `kg_edge` 仍直连 |
 | L3 | Core Vision Kit OCR（`SERVER_FALLBACK_ENABLED=false`）、文搜图常驻 Worker、模型网关 catalog / resolver / discovery 多提供商 | MCP 只有 `OcrTool`，没有 schema 发现与权限；RAG 只有 `rag_embedding` 建表，没有检索实现 |
 | L4 | RDB 18 张表（v15 `review_item` / `review_log`、v16 `run_store` / `run_event`、v17 `study_plan_op`；另有 `knowledge_unit` / `kg_edge` / `study_plan` / 生成 run） | `similar` 边未生成（`embedding: []`）；`study_plan` 仍是待办，不是复习计划；复习端口/子图未做 |
 | L5 | 分阶段日志（capture 五段耗时）、A2A 日志（requestId / taskId / attempts / 耗时） | 没有跨工作流统一 Trace：`runId` / `parentRunId` 串不起来，node / tool / approval / commit 事件不落盘 |

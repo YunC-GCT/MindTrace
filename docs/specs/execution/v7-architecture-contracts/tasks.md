@@ -39,6 +39,13 @@
 - [x] build 5/5、gate PASS、单测 ≥ 806 —— 2026-10-30 实测：`node scripts/build-hsp-hap.mjs` 49 tasks BUILD SUCCESSFUL；
       `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（`pass=998 fail=0`）
 
+## 链路迁移（§17.6 步 5–7）
+
+- [x] **A1：capture 持久化接端口（2026-10-30）**：`PersistNodeFactory.createWithWritePort`、`NoteAgentOptions/DispatchOptions.noteWritePort` 透传、`AiService` 经 `NoteWritePortFactory` 装配（**不直连 DAO**，写服务保留 post-commit effects）。普通 capture 合成 `capture:<noteId>` 幂等键；测试 `v7-persist-port.test.mjs` 6 条
+- [ ] **A2：preparedCandidate 写路径接端口**：`Dispatcher.buildPreparedGraph` 的 PersistNode 换端口；HITL 审批哈希需先有持久化列（v18 待拍板）
+- [ ] **A3：调用方切 `NoteCommand`/`NoteOutcome`**（ADR-0019）：`DispatchResult` 降级为迁移适配器
+- [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
+
 ## #239 行为基线：四条 dispatch 路径 golden 快照
 
 - [x] capture 快照（成功 / 模型不可用 / 空输入 / 入口取消 / 图内取消；审批哈希不匹配由 `prepared-candidate-hash-mismatch` 覆盖）

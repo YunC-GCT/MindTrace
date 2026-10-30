@@ -395,6 +395,7 @@ export type {
   NoteWriteCommand,
   NoteWriteOutcome,
   NoteWritePort,
+  NoteWriteSnapshot,
   NoteWriteStore,
 } from './ports/NoteWritePort';
 export { decideWrite } from './ports/NoteWriteDecisions';

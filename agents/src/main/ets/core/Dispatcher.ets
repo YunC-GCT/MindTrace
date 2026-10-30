@@ -62,7 +62,7 @@ import {
   CaptureSetItemResult,
   CaptureSetResult,
 } from 'common';
-import type { DispatchPayload, CancellationToken } from 'common';
+import type { DispatchPayload, CancellationToken, NoteWritePort } from 'common';
 import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
 import { CaptureGraph } from '../graph/CaptureGraph';
 import { StructureNodeFactory } from '../graph/nodes/StructureNode';
@@ -77,6 +77,8 @@ export interface DispatchOptions {
   includeRawText?: boolean;
   analysisOnly?: boolean;
   dao?: NoteDaoInterface;
+  /** #238 切片 A1：capture 持久化端口；提供时优先于 dao（幂等 / CAS / 结构化错误） */
+  noteWritePort?: NoteWritePort;
   generationRepository?: NoteGenerationRepository;
   knowledgeModel?: KnowledgeModel;
   cancellationToken?: CancellationToken;
@@ -245,12 +247,14 @@ export class Dispatcher {
     copy.includeRawText = options.includeRawText;
     copy.analysisOnly = options.analysisOnly;
     copy.dao = options.dao;
+    copy.noteWritePort = options.noteWritePort;
     copy.generationRepository = options.generationRepository;
     copy.knowledgeModel = options.knowledgeModel;
     copy.cancellationToken = options.cancellationToken;
     copy.runContext = runContext;
     copy.progressSink = options.progressSink;
     copy.onNodeTiming = options.onNodeTiming;
+    copy.subjectVocabulary = options.subjectVocabulary;
     return copy;
   }
 
@@ -279,6 +283,7 @@ export class Dispatcher {
     // #241：capture 由 NoteAgent 子 Agent 装配并执行，这里只负责 run 上下文与结果映射。
     const noteOptions: NoteAgentOptions = {
       dao: options.dao,
+      noteWritePort: options.noteWritePort,
       cancellationToken: options.cancellationToken,
       onNodeTiming: options.onNodeTiming,
     };

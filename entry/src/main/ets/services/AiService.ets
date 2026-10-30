@@ -50,6 +50,7 @@ import {
   CaptureSetItemResult,
   TextPayload,
 } from 'common';
+import type { NoteWritePort } from 'common';
 import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
@@ -61,6 +62,7 @@ import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFac
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from './AgentMemoryService';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
+import { NoteWritePortFactory } from './NoteWritePortFactory';
 import { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
@@ -188,6 +190,7 @@ export class AiService {
     }, {
       persist: true,
       dao: dao,
+      noteWritePort: await this.buildNoteWritePort(),
       cancellationToken: token,
       subjectVocabulary: await SubjectVocabularyService.list(),
       onItem: (item: CaptureSetItemResult): void => {
@@ -336,6 +339,14 @@ export class AiService {
     const service: KnowledgeUnitWriteService = await KnowledgeUnitWriteServiceFactory.create(this.context, this.includeUiEffects);
     const adapter: NoteDaoAdapter = new NoteDaoAdapter(service);
     return adapter;
+  }
+
+  /**
+   * #238 切片 A1：capture 持久化走 NoteWritePort（commitKey 幂等 / CAS / 结构化错误）。
+   * 装配在 services 层工厂里完成，AiService 不直连 DAO（ownership 规则）。
+   */
+  private async buildNoteWritePort(): Promise<NoteWritePort> {
+    return await NoteWritePortFactory.create(this.requireContext(), this.includeUiEffects);
   }
 
   async generateNoteDraft(runId: string, instruction: string, sourceText: string): Promise<NoteDraftReadyEvent> {
@@ -1057,6 +1068,7 @@ export class AiService {
     const result: DispatchResult = await dispatcher.dispatch(req, {
       persist: true,
       dao: dao,
+      noteWritePort: await this.buildNoteWritePort(),
       subjectVocabulary: await SubjectVocabularyService.list(),
       onNodeTiming: onNodeTiming,
     });

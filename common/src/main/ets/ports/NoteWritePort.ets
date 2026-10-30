@@ -35,6 +35,11 @@ export interface NoteWriteCommand {
   expectedVersion?: number;          // 有值即 CAS
   approvedCheckpointHash?: string;   // 有值即要求审批哈希一致
   cancellationToken?: CancellationToken; // 提交前后检查取消；已提交不可撤回
+  // 提交记录的业务元数据（写入 note_generation_commit；缺省由适配器给占位值）
+  runId?: string;
+  checkpointId?: string;
+  sourceIds?: string[];
+  generationMetadata?: string;
 }
 
 // 写入端口的成功回执：duplicate=true 表示同 commitKey 重放，未产生第二次写入。

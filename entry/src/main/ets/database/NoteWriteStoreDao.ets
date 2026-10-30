@@ -129,14 +129,17 @@ export class NoteWriteStoreDao implements NoteWriteStore {
     version: number): NoteGenerationCommitResult {
     const commit: NoteGenerationCommitResult = {
       commitKey: command.commitKey,
-      runId: WRITE_PORT_RUN_ID,
-      checkpointId: '',
+      runId: command.runId !== undefined && command.runId.length > 0 ? command.runId : WRITE_PORT_RUN_ID,
+      checkpointId: command.checkpointId ?? '',
       noteId: unit.id,
       version: version,
-      sourceIds: [],
+      sourceIds: command.sourceIds ?? [],
       candidateJson: JSON.stringify(unit),
       committedAt: Date.now(),
     };
+    if (command.generationMetadata !== undefined) {
+      commit.generationMetadata = command.generationMetadata;
+    }
     return commit;
   }
 

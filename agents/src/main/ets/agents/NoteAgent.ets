@@ -11,7 +11,7 @@
  *   - 下一片才把它接成 Dispatcher 主图里的一个节点（§17.3 内核差距 1）。
  *   - 行为等价判据：#239 的 capture golden 快照，输出必须逐字段一致。
  */
-import type { CancellationToken, RunContext } from 'common';
+import type { CancellationToken, NoteWritePort, RunContext } from 'common';
 import {
   AgentState,
   CaptureGraphError,
@@ -33,6 +33,8 @@ import { TruthCheckService } from './TruthCheckService';
 
 export interface NoteAgentOptions {
   dao?: NoteDaoInterface;
+  /** #238 切片 A1：优先走端口写库；未提供时退回 legacy DAO 缝（golden 测试仍走此路径） */
+  noteWritePort?: NoteWritePort;
   cancellationToken?: CancellationToken;
   onNodeTiming?: (step: string, elapsedMs: number) => void;
 }
@@ -63,8 +65,12 @@ export class NoteAgent {
     graph.addNode('classify', ClassifyNodeFactory.create(classifier));
     graph.addNode('structure', StructureNodeFactory.create(structure));
     graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
+    const writePort: NoteWritePort | undefined = this.options.noteWritePort;
     const dao: NoteDaoInterface | undefined = this.options.dao;
-    if (dao !== undefined) {
+    if (writePort !== undefined) {
+      // #238 切片 A1：端口优先——幂等 / CAS / 结构化错误在端口层统一处理。
+      graph.addNode('persist', PersistNodeFactory.createWithWritePort(writePort));
+    } else if (dao !== undefined) {
       graph.addNode('persist', PersistNodeFactory.create(dao));
     } else {
       graph.addNode('persist', async (input: AgentState): Promise<CaptureNodeResult> => {

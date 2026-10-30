@@ -1,8 +1,9 @@
 // MindTrace - PersistNode
 // 2026-09-05 · D2 Ticket #5
 import { AgentState, CaptureNode, CaptureGraphError, CaptureNodeResult, copyAgentState } from '../AgentState';
-import { NoteDaoInterface } from '../../models/NoteDaoInterface';
-import { NoteGenerationCommitResult, RunContext } from 'common';
+import { NoteCommitResult, NoteDaoInterface } from '../../models/NoteDaoInterface';
+import { NotePortError, NoteGenerationCommitResult, RunContext } from 'common';
+import type { NoteWriteCommand, NoteWriteOutcome, NoteWritePort } from 'common';
 
 export class PersistNodeFactory {
   static create(dao: NoteDaoInterface): CaptureNode {
@@ -94,5 +95,90 @@ export class PersistNodeFactory {
       }
       return { state: input };
     };
+  }
+
+  /**
+   * #238 / 分层迁移切片 A1：通过 NoteWritePort 落库（幂等 / CAS / 结构化错误）。
+   * 普通 capture 没有外部 commitKey 时，用 `capture:<noteId>` 合成稳定幂等键；
+   * preparedCandidate 分支沿用其 commitKey 与 expectedVersion。
+   * 注意：审批哈希（HITL）尚未接线 —— 当前写入路径没有持久化的 approved 哈希可比，
+   * 传 candidateHash 会让所有 preparedCandidate 写入被拒，故本切片不传；待 v18 加列后补。
+   */
+  static createWithWritePort(port: NoteWritePort): CaptureNode {
+    return async (input: AgentState, context?: RunContext | null): Promise<CaptureNodeResult> => {
+      context?.throwIfStopped();
+      if (!input.persist) {
+        return { state: input };
+      }
+      if (!input.knowledgeUnit) {
+        const next: AgentState = copyAgentState(input);
+        next.error = {
+          kind: 'PERSIST_NO_UNIT',
+          message: 'persist requested but knowledgeUnit is missing',
+          step: 'persist',
+          retriable: false,
+        };
+        return { state: next };
+      }
+      const command: NoteWriteCommand = {
+        commitKey: PersistNodeFactory.deriveCommitKey(input),
+      };
+      const candidate = input.preparedCandidate;
+      if (candidate !== undefined) {
+        command.runId = candidate.runId;
+        command.checkpointId = candidate.checkpointId;
+        command.sourceIds = candidate.pendingSourceIds !== undefined ? candidate.pendingSourceIds : (candidate.sourceIds ?? []);
+        command.generationMetadata = candidate.incrementalManifest === undefined
+          ? '' : JSON.stringify(candidate.incrementalManifest);
+        if (candidate.updateExisting === true && candidate.expectedVersion !== undefined) {
+          command.expectedVersion = candidate.expectedVersion;
+        }
+      }
+      try {
+        const outcome: NoteWriteOutcome = await port.commit(input.knowledgeUnit, command);
+        context?.throwIfStopped();
+        const next: AgentState = copyAgentState(input);
+        const commitResult: NoteCommitResult = {
+          commitKey: outcome.commitKey,
+          rowId: 0,
+          noteId: outcome.noteId,
+          version: outcome.version,
+          duplicate: outcome.duplicate,
+          success: true,
+        };
+        next.commitResult = commitResult;
+        return { state: next };
+      } catch (e) {
+        const next: AgentState = copyAgentState(input);
+        if (e instanceof NotePortError) {
+          next.error = {
+            kind: e.code,
+            message: e.message,
+            step: 'persist',
+            retriable: e.retryable,
+          };
+        } else {
+          next.error = {
+            kind: 'PERSIST_ERROR',
+            message: e instanceof Error ? e.message : String(e),
+            step: 'persist',
+            retriable: false,
+          };
+        }
+        return { state: next };
+      }
+    };
+  }
+
+  private static deriveCommitKey(input: AgentState): string {
+    const candidate = input.preparedCandidate;
+    if (candidate !== undefined && candidate.commitKey !== undefined && candidate.commitKey.length > 0) {
+      return candidate.commitKey;
+    }
+    const unit = input.knowledgeUnit;
+    if (unit !== undefined && unit.id.length > 0) {
+      return 'capture:' + unit.id;
+    }
+    return 'capture:' + Date.now().toString();
   }
 }
