@@ -16,7 +16,7 @@
 - Pre-existing unrelated dirty work observed before #120 implementation:
   - `CONTEXT.md`
   - `docs/adr/0015-structured-stream-events.md`
-  - `docs/legacy/mindtrace/handoffs/qwen-deepseek-reasoning-handoff-2026-09-12.md`
+  - `docs/legacy/mindtrace/qwen-deepseek-reasoning-handoff-2026-09-12.md`
   - `docs/research/index.md`
   - `docs/specs/019-reasoning-process-display-p0.md`
   - `docs/specs/index.md`

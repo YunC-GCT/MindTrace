@@ -2,20 +2,42 @@
 
 > **This directory is frozen.** It keeps only records that still explain a current decision or provide audit evidence for it.
 >
-> **Do not add new files here.** Create new docs in their canonical location per [`docs/style/naming-conventions.md`](../../style/naming-conventions.md).
+> **Do not add new files here** — with one exception: a fully superseded spec that a current ADR/spec still cites may be archived here with a banner (2026-10-30: spec 003 / spec 007 / note-generation plan). New design docs go to their canonical location per [`docs/style/naming-conventions.md`](../../style/naming-conventions.md).
+>
+> **Layout (2026-10-30)**: flattened from `architecture/` `competition/` `plans/` `handoffs/` (each held 1–5 files plus its own `index.md`) into one flat directory: 13 files, 1 index, no subdirectories.
 
-## Contents
+## Contents (13 files)
 
-| Subdir | What is there | Count |
+| File | Why it is still here | Referenced by |
 |---|---|---|
-| [`architecture/`](./architecture/) | 2026-09-01 full audit + deep-dive + lint baselines | 5 files (2 md + 1 html + 2 json) |
-| [`competition/`](./competition/) | Competition reference list (licenses / upstream projects) | 1 md |
-| [`plans/`](./plans/) | Note-generation origin design (see status note below) | 1 md |
-| [`handoffs/`](./handoffs/) | One-off session handoffs / execution traces, frozen 2026-10-18 | 14 files (10 + 4 in `llm-settings/`) |
+| [`audit-full-2026-09-01.md`](./audit-full-2026-09-01.md) | The 21-finding audit that drove ADR-0001…0018 and specs 003–018 | `AGENTS.md`, `docs/index.md`, `docs/adr/index.md`, `docs/onboarding.md`, `docs/specs/index.md`, `docs/specs/017`, 3x research |
+| [`deep-dive-2026-09-01.md`](./deep-dive-2026-09-01.md) | Per-file analysis of the 7 largest classes at audit time; the evidence behind ADR-0006's split | `docs/specs/index.md`, 2x research |
+| [`lint-baseline-2026-09-01.json`](./lint-baseline-2026-09-01.json) | The lint numbers those decisions were measured against | `docs/research/note-detail-overlay-state-2026-09-23.md` |
+| [`competition-references-2026-07-26.md`](./competition-references-2026-07-26.md) | Upstream projects + licenses used in submission material | `docs/plans/xiaoyi-latency-tuning-plan.md`, 1x research |
+| [`note-generation-origin-plan-2026-09-08.md`](./note-generation-origin-plan-2026-09-08.md) | 482-line origin design for verifiable note generation. Core contracts landed via spec 015/018 + ADR-0018; the bounded evaluator-optimizer loop with checkpoint rollback is still unimplemented — this file is its only source | (self-contained) |
+| [`backend-migration-handoff.md`](./backend-migration-handoff.md) | Background for spec 018 (backend/workflow migration); the pointer new owners are sent to | `AGENTS.md`, 1x research |
+| [`note-generation-fix-handoff-2026-09-20.md`](./note-generation-fix-handoff-2026-09-20.md) | Explains the current `LLM_TRUNCATED` / generation-budget behaviour | `docs/plans/xiaoyi-latency-tuning-plan.md`, `docs/specs/execution/note-generation-stability/plan.md` |
+| [`note-generation-failure-diagnostics-handoff-2026-09-29.md`](./note-generation-failure-diagnostics-handoff-2026-09-29.md) | Postmortem of `VERIFIER_UNAVAILABLE` and how the diagnostics were added | (self-contained) |
+| [`qwen-deepseek-reasoning-handoff-2026-09-12.md`](./qwen-deepseek-reasoning-handoff-2026-09-12.md) | Why `enableThinking` defaults to true and how reasoning content is routed (ADR-0015) | 4x `docs/specs/execution/*/verification-record.md` |
+| [`llm-settings-scope-2026-09-06.md`](./llm-settings-scope-2026-09-06.md) | Scope decisions behind spec 016 / ADR-0013 / ADR-0014 | `docs/specs/016-llm-settings-redesign.md`, `docs/plans/xiaoyi-latency-tuning-plan.md` |
+| [`spec-003-knowledge-model-decomposition.md`](./spec-003-knowledge-model-decomposition.md) | 被 spec 015 取代的 KnowledgeModel 三拆方案（2026-09-06） | `docs/specs/index.md`, `docs/specs/015`, ADR-0006 |
+| [`spec-007-agent-chat-service-decomposition.md`](./spec-007-agent-chat-service-decomposition.md) | 被 spec 018 取代的 AgentChatService 三拆方案（2026-09-07） | `docs/specs/index.md`, ADR-0012, `backend-migration-handoff` |
+| [`note-generation-stability-plan-2026-09-21.md`](./note-generation-stability-plan-2026-09-21.md) | 笔记生成稳定性实施计划（唯一副本，588 行） | `docs/specs/execution/archive-2026-09.md` |
 
-Total: 22 content files (each subdirectory also carries an `index.md`).
+## 2026-10-30 cleanup — what was removed and why
 
-## 2026-10-18 purge — what was removed and why
+| Removed | Why |
+|---|---|
+| `architecture/audit-full-2026-09-01.html` (44 KB) | Render of the `.md` above; zero inbound links; the markdown is the authoritative record |
+| `architecture/lint-baseline-ast-2026-09-01.json` (104 KB) | Baseline of the pre-0.3 AST engine; that engine has since been rewritten (34 rules, gate `pass=953`), so the file can no longer be diffed against anything |
+| `handoffs/handoff-2026-09-06.md` | Sprint-week session handoff; every pointer in it (spec coverage map, demo prep) is long resolved |
+| `handoffs/handoff-langgraph-migration.md` | Plan for migrating to LangGraph — a route **rejected** by ADR-0008 (self-built ArkTS `StateGraph`) |
+| `handoffs/agent-run-timeline-handoff.md` | Timeline infrastructure that never landed (`grep -r "RunTimeline|AgentRunEvent"` → 0 hits) |
+| `handoffs/git-flow-setup-2026-09-04.md` | Owner's one-time setup checklist; promoted into [`docs/agents/git-flow-lightweight-2026-09-04.md`](../../agents/git-flow-lightweight-2026-09-04.md), which itself marks it as no longer needed |
+| `handoffs/llm-settings/` (5 files) | PR-by-PR implementation notes for a shipped feature; ADR-0013 / ADR-0014 / spec 016 are the authoritative record |
+| 5 subdirectory `index.md` files | Superseded by this single index after the flattening |
+
+## 2026-10-18 purge (kept for provenance)
 
 The corpus had accumulated three generations of design docs that no longer match the current direction (5 modules, single backend, native `StateGraph`, `Dispatcher` single entry, MM-MD-v1). They were deleted rather than kept "for history", because they describe architectures the project explicitly rejected:
 
@@ -31,32 +53,18 @@ The corpus had accumulated three generations of design docs that no longer match
 | `architecture/audit-2026-09-01.md` + html | Single-document AGENTS audit explicitly superseded by `audit-full-2026-09-01.md`. |
 | `competition/ocr-setup.md` | Superseded by `README.md` + `tools/ocr_service/README.md`. |
 
-Kept because they are still the evidence behind current decisions:
+## Audit findings — where they stand
 
-- `architecture/audit-full-2026-09-01.md` — the 21-finding audit that drove ADR-0001..0018 and specs 003–018.
-- `architecture/deep-dive-2026-09-01.md` — analysis of the 7 largest files at audit time.
-- `architecture/lint-baseline-*.json` — the lint baseline those decisions measured against.
-- `competition/references-2026-07-26.md` — upstream projects and licenses used in submission material.
-- `handoffs/` — see [`handoffs/index.md`](./handoffs/index.md) for the per-file status.
+The 2026-09-01 audit identified 21 findings:
 
-## Note on `plans/note-generation-origin-plan-2026-09-08.md`
+- #9 (LlmConfig throw on reserved keyword) — fixed in TDD commit
+- #15 (ArkTS 铁律反例) — fixed via `docs/style/arkts-1.1.md` + lint engines
+- #16 (production fixture data leak) — fixed in TDD commit
+- #10 (mcp→tools rename) — resolved as ADR-0010 (keep `mcp/`)
+- #1 / #3 / #4 / #5 / #7 — tracked in `docs/specs/index.md`
 
-A 482-line design for incremental verifiable note generation (routing, SourceBundle, evidence ledger, checkpoint rollback). Its core contracts landed and were reshaped by spec 015 / 018 and ADR-0018; a bounded evaluator-optimizer loop with checkpoint rollback remains the main idea not implemented. It is kept as the only source for that unimplemented part, not as current guidance.
+## Where to look instead
 
-## Why this directory exists
-
-The content in `architecture/` is **frozen at 2026-09-01** (the last audit date). It records what the code looked like when the current architecture was chosen. Current decisions live in `docs/adr/`, `docs/specs/`, and `docs/agents/`.
-
-The audit identified 21 findings. Of those:
-
-- ✅ #9 (LlmConfig throw on reserved keyword) — fixed in TDD commit
-- ✅ #15 (ArkTS 铁律反例) — fixed via `docs/style/arkts-1.1.md` + lint engines
-- ✅ #16 (production fixture data leak) — fixed in TDD commit
-- ✅ #10 (mcp→tools rename) — resolved as ADR-0010 (keep `mcp/`)
-- 🟡 #1 / #3 / #4 / #5 / #7 — tracked in `docs/specs/index.md`
-
-## If you need to reference MindTrace
-
-- **For current project decisions**: read `docs/adr/` and `docs/specs/`
-- **For the original audit**: read `architecture/audit-full-2026-09-01.md`
-- **For ArkTS rules**: read `docs/style/arkts-1.1.md`
+- **Current project decisions**: [`docs/adr/`](../../adr/) and [`docs/specs/`](../../specs/)
+- **Original audit (frozen at 2026-09-01)**: [`audit-full-2026-09-01.md`](./audit-full-2026-09-01.md)
+- **ArkTS rules**: [`docs/style/arkts-1.1.md`](../../style/arkts-1.1.md)

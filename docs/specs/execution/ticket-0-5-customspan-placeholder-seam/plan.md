@@ -18,7 +18,7 @@ The gate is tri-state: `PASS` releases the three-state rendering contract for do
 **Storage**: None in this ticket; chat history Preferences path untouched
 **Testing**: Existing Hypium-style `.ets` tests under `entry/src/test/` registered in `List.test.ets`; `arkts_check`; focused tests; one full suite run at the end; debug build
 **Target Platform**: MindTrace HarmonyOS entry-module chat floating window (production path read-only); emulator `MatePad Pro 13` for the harness observation
-**Project Type**: Existing multi-module HarmonyOS mobile application (1 HAP + 4 HSP)
+**Project Type**: Existing multi-module HarmonyOS mobile application (3 HAP + 2 HSP)
 **Performance Goals**: Zero production overhead — the seam is an unwired service and the harness is deleted after observation
 **Constraints**: API 24 baseline only (no `maxWidth`/`layoutPolicy`); no LaTeX/KaTeX/`MathTextParser`/`ContentProtocol` rendering; no production chat/renderer/persistence changes; do not repoint `spec/feature.json`; do not modify unrelated dirty work; harness must be deleted with zero residual diff
 **Scale/Scope**: One P0 gate ticket; one new service file, one new focused test file, one temporary harness page (deleted), one verification record

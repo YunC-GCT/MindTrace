@@ -364,7 +364,7 @@ A: 合并后 GitHub 提示 "Delete branch",建议删(保持仓库干净)。本�
 
 - `docs/agents/git-conventions.md` — 完整 commit + 分支规范
 - `docs/agents/branch-protection.md` — 保护规则 + self-approve 策略
-- `docs/legacy/mindtrace/handoffs/git-flow-setup-2026-09-04.md` — owner 操作清单(初始化用,后续不需要)
+- owner 初始化操作清单（原 `docs/legacy/mindtrace/handoffs/git-flow-setup-2026-09-04.md`，2026-10-30 清理时移除，内容已并入本手册）
 - `.github/PULL_REQUEST_TEMPLATE.md` — PR 必填字段
 - `.github/CODEOWNERS` — 3-owner 路由表
 - `CONTEXT.md` — 项目词汇表(术语消歧)

@@ -17,7 +17,7 @@
   ```text
   M CONTEXT.md
   M docs/adr/0015-structured-stream-events.md
-  M docs/legacy/mindtrace/handoffs/qwen-deepseek-reasoning-handoff-2026-09-12.md
+  M docs/legacy/mindtrace/qwen-deepseek-reasoning-handoff-2026-09-12.md
   M docs/research/index.md
   M docs/specs/019-reasoning-process-display-p0.md
   M docs/specs/index.md

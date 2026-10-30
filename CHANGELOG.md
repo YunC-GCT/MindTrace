@@ -8,7 +8,7 @@
 
 | 版本 | 发布日期 | 主要内容 |
 |---|---|---|
-| **v1.0** | 2026-09-05 | 比赛复赛 W4 增量;5 module (entry HAP + 4 HSP);CODEOWNERS 3-owner 路由;Git Flow 轻量版;Self-approve 兜底策略;arkts-lint v0.3 AST 引擎 (34 规则 / 63 tests);2026-09-01 架构审计落地 |
+| **v1.0** | 2026-09-05 | 比赛复赛 W4 增量;5 module (3 HAP: `entry` / `skill` / `cardservice` + 2 HSP: `common` / `agents`);CODEOWNERS 3-owner 路由;Git Flow 轻量版;Self-approve 兜底策略;arkts-lint v0.3 AST 引擎 (34 规则 / 63 tests);2026-09-01 架构审计落地 |
 
 ## 升级触发
 

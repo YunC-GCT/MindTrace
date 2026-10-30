@@ -14,6 +14,19 @@
 - Reject (2): a class that does only JSON schema validation should be a function or a small module, not a sibling class. The 4th class adds DI complexity.
 - Reject (3): 870 LOC is past the "I can hold it all in my head" threshold. Code review cost grows superlinearly.
 
+## 实际落地（2026-10-30 回填）
+
+拆分做了，但和本 ADR 的计划表有两处偏差，按事实记录（不粉饰）：
+
+| 计划 | 实际 | 说明 |
+|---|---|---|
+| `StructureService`（~300 行） | **没有这个类**。结构化逻辑在 `agents/src/main/ets/agents/CaptureStructurer.ets`（**643 行**，`export class CaptureStructurer` @ `:65`） | 名字没沿用，职责也没压到 300 行以内 |
+| `TruthCheckService`（~250 行） | `agents/src/main/ets/agents/TruthCheckService.ets` ✓ | 与计划一致 |
+| `PromptBuilder`（~200 行） | `agents/src/main/ets/agents/PromptBuilder.ets` ✓ | 与计划一致 |
+| `KnowledgeModel` 只做编排 | `KnowledgeModel.ets` 从 870 行降到 **105 行** | 拆分目标达成 |
+
+结论：**拆分的意图成立，命名与行数承诺没兑现**。Consequences 里「each class ≤ 300 LOC」应视为未达成的期望，不再当约束引用；真要压 `CaptureStructurer`，那是一张新的重构票，不是本 ADR 的欠账。
+
 ## Reversibility
 
 **Hard**. The class is consumed by `Dispatcher.dispatch` and `KnowledgeGalaxyViewModel`. Splitting changes the import graph. Migration is mechanical (one PR) but rollback is also mechanical (one revert). Once split, the parts don't have a strong reason to merge back.
@@ -49,7 +62,7 @@ Direction reaffirmed with a tool-calling addendum, per the [agent-tools inventor
 
 - **The 3-way split stands.** User ruling: prompt constants and validation stay as code (this already endorses 2 of the 3 classes).
 - **Tool-calling reservation**: after the split, `StructureService` confines its LLM interaction to a single private seam (today `LlmGuard.callJsonWithRetry`, same `LlmCaller` pattern), swappable by the `ToolLoop` from [ADR-0012](./0012-tool-calling-protocol.md) without interface change.
-- **Schedule**: only the TruthCheck extraction landed in the competition window (zero-LLM-dependency segment, lowest regression risk); PromptBuilder/StructureService extraction followed the same day per a later user ruling. The updated plan lives in [spec 015](../specs/015-knowledge-model-decomposition-v2.md), which supersedes [spec 003](../specs/003-knowledge-model-decomposition.md) (its PR sequence and test counts predate the D2 world: the 3 façade shells already exist, `Dispatcher` is single-entry).
+- **Schedule**: only the TruthCheck extraction landed in the competition window (zero-LLM-dependency segment, lowest regression risk); PromptBuilder/StructureService extraction followed the same day per a later user ruling. The updated plan lives in [spec 015](../specs/015-knowledge-model-decomposition-v2.md), which supersedes [spec 003](../legacy/mindtrace/spec-003-knowledge-model-decomposition.md) (archived) (its PR sequence and test counts predate the D2 world: the 3 façade shells already exist, `Dispatcher` is single-entry).
 - **Naming ruling (2026-09-06, user)**: the slimmed orchestrator **retains the name `KnowledgeModel`** — it is the structuring agent. Prompt construction and the single LLM-call seam remain its collaborators; TruthCheckService remains extracted but is invoked only by the Capture workflow's TruthCheckNode after the 2026-09-09 ownership clarification below.
 
 ## Workflow ownership clarification (2026-09-09)

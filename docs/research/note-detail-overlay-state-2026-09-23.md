@@ -7,6 +7,7 @@
 > **调研方式** Lead 深度阅读 + 5 个并行子代理(A 核心实现 / B 调用链 / C 数据层 / D 文档 / E 设计 token)
 > **状态** active (权威)
 > **版本** v1.1 — 合并子代理 cross-check 修正(详见附录 C)
+> **引用注记（2026-10-30）**：本文多处引用 `docs/research/frontend-*-2026-09-06.md:Lxx`,那 8 篇已于 2026-10-30 合并为 [`frontend-baseline-sweep-2026-09-06.md`](./frontend-baseline-sweep-2026-09-06.md)(节 1–8:走查 / 五态 / a11y / i18n / 性能 / 持久化 / 错误 / 待办)。**行号是合并前旧文件的**,按节定位;内容原样保留。
 
 ---
 
@@ -328,13 +329,13 @@ Concept Theorem Formula Proof Comp Fallback
 | `docs/research/frontend-interaction-states-2026-09-06.md:10, 20, 121` | 5 态失衡;CameraOverlay 有 loading/disabled,NoteDetailOverlay 没有 |
 | `docs/agents/demo-script-2026-09-06.md:31` | 步 5:打开笔记详情 → 验证 MM-MD-v1 渲染(独立公式 `$$` 单独成行,字段分区) |
 | `docs/agents/smoke-test.md:12` | 步 6:笔记详情浮层打开/关闭,期望浮层无残留 |
-| `docs/legacy/mindtrace/architecture/deep-dive-2026-09-01.md:365-468 (§F4.1-F4.9)` | **§F4.1 P0 mockShare shipped in production** (L555-557);F4.2 P0 saveEdit 5 步混杂;F4.3 5 个 @Watch 触发同一 watcher;F4.4 parseTags 分隔符不全;F4.5/F4.6 category/tag 重叠;F4.7 DiscardConfirm 嵌套布局;F4.8 bumpNotesVersion 三处写;F4.9 SOURCE_CAMERA 常量 |
+| `docs/legacy/mindtrace/deep-dive-2026-09-01.md:365-468 (§F4.1-F4.9)` | **§F4.1 P0 mockShare shipped in production** (L555-557);F4.2 P0 saveEdit 5 步混杂;F4.3 5 个 @Watch 触发同一 watcher;F4.4 parseTags 分隔符不全;F4.5/F4.6 category/tag 重叠;F4.7 DiscardConfirm 嵌套布局;F4.8 bumpNotesVersion 三处写;F4.9 SOURCE_CAMERA 常量 |
 | `docs/legacy/mindtrace/architecture/audit-2026-09-01.md:67`（原文已清理） | ✅ NoteDetailOverlay 三大浮层之一 |
 | `docs/legacy/mindtrace/plans/w3/ui-preload-cache-optimization-2026-07-21.md:88`（原文已清理） | NoteDetailOverlay 新增 `DetailRenderCache` 的来源 |
 | `docs/legacy/mindtrace/plans/w3/notes-page-structure-proposal-2026-07-19.html:627-849`（原文已清理） | "完成 smoke test 后,再进入笔记详情页新结构规划" — 详情页重构**未实施** |
 | `docs/legacy/mindtrace/plans/w3/render-protocol-optimization-route-2026-07-22.md:1996`（原文已清理） | "NoteDetailOverlay 改用 `List + LazyForEach`,每个 `DetailBlock` 对应一个 `ListItem`" — **未实施** |
 | `docs/legacy/mindtrace/plans/w3/dead-code-archive-2026-07-19.md:33`（原文已清理） | `ConfDot.ets` unused(2026-07 标记) |
-| `docs/legacy/mindtrace/competition/references-2026-07-26.md:13` | KaTeX 用于 chat 气泡 + **笔记详情页公式展示** + 公式预览卡片 |
+| `docs/legacy/mindtrace/competition-references-2026-07-26.md:13` | KaTeX 用于 chat 气泡 + **笔记详情页公式展示** + 公式预览卡片 |
 | `docs/adr/` | **0 条直接命中 `NoteDetailOverlay`** — 设计权落在 `frontend-component-audit-2026-09-06.md` 和 `presentation-deep-dive-2026-09-16.md` |
 
 ---
@@ -939,11 +940,11 @@ DetailRenderModel 暴露给六类 renderer(Concept/Theorem/Formula/Proof/Computa
 | `docs/research/frontend-interaction-states-2026-09-06.md` | L10, L20, L121 | 交互态调研 | 5 态失衡;CameraOverlay 是少数有 loading/disabled 态的浮层,NoteDetailOverlay 没有 |
 | `docs/agents/demo-script-2026-09-06.md` | §2 步 5 L31 | 复赛演示脚本 | 步 5:打开笔记详情 → 验证 MM-MD-v1 渲染(独立公式 `$$` 单独成行,字段分区);**叙事:结构化输出经协议校验,不合格直接报错不落库** |
 | `docs/agents/smoke-test.md` | §1 步 6 L12 | 手动 smoke test 矩阵 | 步 6:**笔记详情浮层打开/关闭,期望浮层无残留** |
-| `docs/legacy/mindtrace/handoffs/backend-migration-handoff.md` | L112, L171 | 后端迁移 handoff | 1880 行 ReviewGraphView 拆 5 文件计划中含 `NoteDetailPanel`;`overlays/` = AgentFloatWindow / CameraOverlay / NoteDetailOverlay |
+| `docs/legacy/mindtrace/backend-migration-handoff.md` | L112, L171 | 后端迁移 handoff | 1880 行 ReviewGraphView 拆 5 文件计划中含 `NoteDetailPanel`;`overlays/` = AgentFloatWindow / CameraOverlay / NoteDetailOverlay |
 | `docs/legacy/mindtrace/architecture/audit-2026-09-01.md` | L67 | 完整审计 | ✅ AgentFloatWindow/CameraOverlay/NoteDetailOverlay 三大浮层都在 OK |
-| `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` | L71, L87, L90, L977, L1013 | 完整审计(L876 行) | NoteDetailOverlay 25 文件 / NoteDetailOverlay.ets 516 行 / DetailRenderModel 449 行;LOC top 7 第 4 位(deep-dive §F4.1) |
-| `docs/legacy/mindtrace/architecture/deep-dive-2026-09-01.md` | File 4 §F4.1-F4.9 L365-468, §Cross-file L849-853 | 7 个最大文件深度审计 | **§F4.1 (P0) mockShare shipped in production:L555-557 仅 toast "分享功能暂未开放"**;F4.2 saveEdit 5 步混杂(VM 逻辑进 UI);F4.3 5 个 @Watch 触发同一 watcher;F4.4 parseTags 分隔符不全;F4.5/F4.6 category/tag 重叠;F4.7 DiscardConfirm 嵌套布局;F4.8 bumpNotesVersion 三处写;F4.9 SOURCE_CAMERA 常量 |
-| `docs/legacy/mindtrace/architecture/lint-baseline-2026-09-01.json` | L848-1057 | lint 基线 | NoteDetailOverlay 全部 22 文件逐个条目 |
+| `docs/legacy/mindtrace/audit-full-2026-09-01.md` | L71, L87, L90, L977, L1013 | 完整审计(L876 行) | NoteDetailOverlay 25 文件 / NoteDetailOverlay.ets 516 行 / DetailRenderModel 449 行;LOC top 7 第 4 位(deep-dive §F4.1) |
+| `docs/legacy/mindtrace/deep-dive-2026-09-01.md` | File 4 §F4.1-F4.9 L365-468, §Cross-file L849-853 | 7 个最大文件深度审计 | **§F4.1 (P0) mockShare shipped in production:L555-557 仅 toast "分享功能暂未开放"**;F4.2 saveEdit 5 步混杂(VM 逻辑进 UI);F4.3 5 个 @Watch 触发同一 watcher;F4.4 parseTags 分隔符不全;F4.5/F4.6 category/tag 重叠;F4.7 DiscardConfirm 嵌套布局;F4.8 bumpNotesVersion 三处写;F4.9 SOURCE_CAMERA 常量 |
+| `docs/legacy/mindtrace/lint-baseline-2026-09-01.json` | L848-1057 | lint 基线 | NoteDetailOverlay 全部 22 文件逐个条目 |
 | `docs/legacy/mindtrace/architecture/audit-2026-09-01.html` | L355 | 审计 HTML | 树状图显示 `overlays/NoteDetailOverlay/` ← ✅ (smoke test 5) |
 | `docs/legacy/mindtrace/plans/w3/frontend-architecture-2026-07-17.md` | L3, §二 L47-89 | W3 前端架构(历史) | "NoteDetailOverlay 对齐 v2-ui";5 Tab + 3 浮层 + OverlayService 互斥;`SubjectDetailPage` 职责:学科内笔记浏览,点击行打开现有 NoteDetailOverlay |
 | `docs/legacy/mindtrace/plans/w3/notes-editor-markdown-2026-07-20.md` | L64-70 | 笔记编辑器 Markdown(历史) | 列出 NoteDetailOverlay 装配层 4 文件 |
@@ -957,7 +958,7 @@ DetailRenderModel 暴露给六类 renderer(Concept/Theorem/Formula/Proof/Computa
 | `docs/legacy/mindtrace/plans/w3/chapter-field-refactor-2026-07-22.md` | L86-92, L154-155 | 章节字段重构(历史) | 笔记详情编辑保存涉及 `NoteDetailOverlay.ets` + `DetailRenderModel.ets` |
 | `docs/legacy/mindtrace/plans/w3/dataflow-knowledge-structures-2026-07-20.html` | §详情页 L555-624 | 数据流文档(历史) | 当前详情页是通用分段渲染,**不存在独立 `StructuredNoteView` 或五类专用组件**(注:与今天不符,5 类 renderer 已落地) |
 | `docs/legacy/mindtrace/plans/w3/summary.md` | L17, L30 | W3 周报 | "NoteDetailOverlay 装配层 + 5 个子组件补全中文注释" |
-| `docs/legacy/mindtrace/competition/references-2026-07-26.md` | L13 | 比赛参考 | KaTeX 用于 chat 气泡 + **笔记详情页公式展示** + 公式预览卡片 |
+| `docs/legacy/mindtrace/competition-references-2026-07-26.md` | L13 | 比赛参考 | KaTeX 用于 chat 气泡 + **笔记详情页公式展示** + 公式预览卡片 |
 | `docs/legacy/api/contract.md` | L235 | API 契约 | `image` 路径涉及拍照/相册 → `CameraOverlay` / `PhotoViewPicker` → OCR → LLM 分类 |
 | `CONTEXT.md` | (无) | 项目词汇表 | **未直接定义 NoteDetailOverlay**;NoteDetail 是隐含概念,通过 NoteType / KnowledgeUnit 间接相关 |
 

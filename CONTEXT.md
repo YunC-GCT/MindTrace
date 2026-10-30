@@ -128,7 +128,7 @@ The team-built Python FastAPI OCR service at the **repo-root** `tools/` director
 _Avoid_: confusing repo-root `tools/` (Python 服务) with the agents `tools/` 预留位 (F7, agent-tools inventory 2026-09-06).
 
 **小艺 skill (skill/)**:
-The Xiaoyi integration HSP. Its seven declared intent actions enter the typed SkillIntent workflow. `SearchNote` currently reuses the shared `note_query` tool; the other six actions return explicit unsupported results until their product semantics are confirmed (ADR-0011, spec 018).
+The Xiaoyi integration HAP (`skill/`, `type: feature`). Its seven declared intent actions enter the typed SkillIntent workflow. `SearchNote` currently reuses the shared `note_query` tool; the other six actions return explicit unsupported results until their product semantics are confirmed (ADR-0011, spec 018).
 _Avoid_: calling it a second backend; implementing unconfirmed actions by guessing.
 
 **StreamEvent**:

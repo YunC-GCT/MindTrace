@@ -7,8 +7,9 @@
  * 为什么手写: SDK 的自动应答封装会先发一帧 TASK_STATE_SUBMITTED（带 history），
  *       再发 artifactUpdate；小艺在这种序列下只渲染开头一两个词。历史实测「单帧 result.task
  *       一次给全 artifacts + COMPLETED」能完整渲染长文本，故回到手写。
- * 依赖: @kit.AbilityKit、@kit.PerformanceAnalysisKit、common.LlmConfig、
- *       ./services/ReplyService、./services/IntentClassifier、./services/CaptureReceipt、./TaskSnapshot
+ * 依赖: @kit.AbilityKit、@kit.PerformanceAnalysisKit、common.LlmConfig/OcrRecognizerRegistry、
+ *       ./services/ReplyService、./services/IntentClassifier、./services/CaptureReceipt、./TaskSnapshot、
+ *       ./services/CoreVisionOcrRecognizer
  *
  * 进程约束（重要）: 扩展跑在独立进程 <bundle>:agent，模块加载失败表现为 exit 254 /
  *   Reason:SyntaxError 且 onCreate 一行日志都打不出来（错误发生在 import 图求值阶段）。
@@ -16,17 +17,19 @@
  *   （ConversationWorkflowPorts）使用。
  *
  * 数据流:
+ *   onCreate -> 组合根安装 OCR 能力（OcrRecognizerRegistry.install(CoreVisionOcrRecognizer)）
  *   onData(proxy, data) -> JSON.parse 取 id / params.message.parts[] 第一段 string text
  *     -> 解析失败：回一条错误快照（不崩）
  *     -> query 为空：回「没收到问题内容」
  *     -> 回执意图命中：读 last-capture.json -> formatReceipt -> sendAnswer（不等配置、不调模型）
  *     -> 异步：等配置（≤4s）-> isConfigured -> ReplyService.complete（25s / 0 retry）
  *     -> 35s deadline 到点：取消同一个 token（LlmClient 内 destroy 底层 HTTP），只回一次 timeout
- *     -> sendAnswer(taskId, text)：buildTaskSnapshot 拼单帧 task 快照，artifacts 内是完整文本
+ *     -> sendAnswer(taskId, text, query)：命中拍题/选图意图时用 buildTaskSnapshotWithCard
+ *        追加一个官方 uiExtensionCard part；否则是逐字节不变的纯文本单帧快照
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { CancellationToken, getProviderCatalog, LlmConfig, LlmError, resolveModel } from 'common';
+import { CancellationToken, getProviderCatalog, KnowledgeUnit, LlmConfig, LlmError, OcrRecognizerRegistry, resolveModel } from 'common';
 import type { ProviderCatalog, ResolvedModel } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
@@ -38,9 +41,23 @@ import {
   formatReceipt,
   matchesReceiptIntent,
 } from '../services/CaptureReceipt';
-import { buildTaskSnapshot, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
+import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/AgentInboxModels';
+import { AgentInboxQueue } from '../services/AgentInboxQueue';
+import { AgentIngestService } from '../services/AgentIngestService';
+import { AgentIngestRequest, buildIngestRequest, hasIngestPayload, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
+import { AgentImagePart, AgentPart, collectImageParts, joinTextParts, mediaTypeOf } from '../services/AgentImageParts';
+import { OcrService } from '../services/OcrService';
+import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
+import { buildTaskSnapshotWithCard, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
+import { buildPickCardPartJson, CARD_ID, wantsPickCard } from './A2AUiCard';
 
 const TAG: string = 'MindTraceA2A';
+
+/**
+ * 官方 UI 卡片开关。真机出现 1011 start_ability_fail 或每秒重试时改 false 并重建，
+ * 立刻退回纯文本（buildTaskSnapshotWithCard 的空卡片路径与旧输出逐字节一致）。
+ */
+const UI_CARD_ENABLED: boolean = true;
 
 /**
  * A2A 单次回复预算（计划 §4.1–§4.3）——超时/重试/输出预算的数字只在这里定义。
@@ -113,6 +130,8 @@ const PARSE_ERROR: string = '请求解析失败，请重试。';
 /** 单次请求的预算与状态：保证 deadline 只取消一次、timeout 只发一次 */
 interface A2ARequestSession {
   taskId: string;
+  /** 本轮原始 query：回执据此决定是否附带「拍题/选图」卡片 part */
+  query: string;
   token: CancellationToken;
   startedAt: number;
   /** 实际发起模型调用的时刻；0 表示尚未调用 */
@@ -128,14 +147,11 @@ interface A2ARequestSession {
 let configReady: Promise<void> | null = null;
 const DOMAIN: number = 0xA2A0;
 
-// 小艺发来的 JSON-RPC 请求（proto-JSON）：parts 只有 mediaType + text，没有 kind/type
-interface A2ATextSegment {
-  mediaType?: string;
-  text?: string;
-}
-
+// 小艺发来的 JSON-RPC 请求（proto-JSON）：文本 part 只有 mediaType + text，没有 kind/type；
+// 图片/文件 part 用 raw（base64）或 url（file:// 等）+ mediaType（image/png…）承载。
+// part 的形状判定与图片提取集中在 services/AgentImageParts（纯函数，可单测），这里只做透传。
 interface A2AMessage {
-  parts?: A2ATextSegment[];
+  parts?: AgentPart[];
 }
 
 interface A2AParams {
@@ -160,6 +176,11 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   onCreate(want: Want): void {
     const abilityName: string = want.abilityName ?? 'unknown';
     hilog.info(DOMAIN, TAG, 'onCreate: 扩展被拉起 ability=%{public}s（手写单帧快照模式）', abilityName);
+    // 组合根：:agent 进程自己安装 OCR 实现。主进程由 EntryAbility.onCreate 安装同一份实现。
+    if (!OcrRecognizerRegistry.isInstalled()) {
+      OcrRecognizerRegistry.install(new CoreVisionOcrRecognizer());
+      hilog.info(DOMAIN, TAG, 'OCR 能力已安装（:agent 组合根）');
+    }
     hilog.info(DOMAIN, TAG,
       'A2A policy config=%{public}d attempts=%{public}d inner=%{public}d backoff=%{public}d margin=%{public}d deadline=%{public}d budget=%{public}d taskNeed=%{public}d',
       A2A_POLICY.configTimeoutMs, a2aAttempts(), A2A_POLICY.requestTimeoutMs, A2A_POLICY.backoffMs,
@@ -189,6 +210,9 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   onData(proxy: common.AgentHostProxy, data: string): void {
     hilog.info(DOMAIN, TAG, 'onData 收到 %{public}d 字节', data.length);
+    // 诊断：把原始报文前 1200 字打进日志。小艺侧“发了图但 parts 里没有图”的判定只能靠它，
+    // 否则看不到客户端到底往报文里塞了什么（file 形状、metadata.fileInfos 等）。
+    hilog.info(DOMAIN, TAG, 'raw=%{public}s', data.substring(0, Math.min(data.length, 1200)));
     this.hostProxy = proxy;
     // 新请求一到达就作废上一条在途请求（含后面的 parse-error / 空 query 分支），
     // 避免旧 session 晚到的回复套用新 requestId 发出去。
@@ -203,17 +227,86 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     }
 
     this.lastRequestId = this.readRequestId(request.id);
+    this.logParts(request);
     const query: string = this.readQuery(request);
     const taskId: string = this.readTaskId(request);
     hilog.info(DOMAIN, TAG, 'id=%{public}s taskId=%{public}s query=%{public}s',
       this.lastRequestId, taskId.length > 0 ? taskId : 'none', query);
 
-    if (query.length === 0) {
-      this.sendAnswer(taskId, '没收到问题内容，再说一次？', 0);
+    if (query.indexOf('识别探针') >= 0) {
+      OcrService.probe(this.context).then((r: string): void => {
+        this.sendAnswer(taskId, 'OCR 探针：' + r, 0);
+      });
+      return;
+    }
+    // 协议 → 数据契约：文字和图片都折成同一个 AgentIngestRequest，后面的整理链路只认它。
+    // 图片 part 存在时以「识别 + 整理」为主；只发图不打字也要能跑。
+    const parts: AgentPart[] = this.readParts(request);
+    const images: AgentImagePart[] = collectImageParts(parts);
+    const text: string = query.length > 0 ? query : joinTextParts(parts);
+    const ingest: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, text, images);
+    if (images.length > 0) {
+      this.ingestDirectly(taskId, ingest);
+      return;
+    }
+    if (!hasIngestPayload(ingest)) {
+      // 实测（2026-10-29，小艺 11.7.8，平台照片开关已开、客户端也把图传到了 OBS）：
+      // 扩展收到的仍然只有 1 个空 part —— {"parts":[{"mediaType":"text/plain"}]}，
+      // 既没有 url 也没有 file，说明图是在小艺组装报文那一步被丢掉的，不是应用侧解析漏字段。
+      // 应用侧已按协议兼容 url / raw / file.uri 三种图片载体（AgentImageParts）。
+      // 空 payload 无法从 query 判意图，直接给卡片：点一下就能进应用选图。
+      this.sendAnswerWithPickCard(taskId, '点下面的卡片去选图，或直接说『存笔记：…』');
+      return;
+    }
+    // 「存笔记」走文字；有图片 part 时无论带不带文字都直接整理。
+    // 原文在这里就地整理入库，用户不用回到应用（失败才退回队列，等应用前台补）。
+    if (ingest.images.length > 0 || shouldEnqueue(query)) {
+      this.ingestDirectly(taskId, ingest);
       return;
     }
     // onData 必须立刻返回：模型链路异步跑，结果回来再自己发快照
     this.runQuery(taskId, query);
+  }
+
+  /**
+   * 就地整理：扩展进程自己初始化同一个 MindTrace.db，跑完整链路并落库，直接在小艺里回执。
+   * 图片请求会先经过 OcrService（端侧识别）再落库；任何一步失败（模型、库、超时）
+   * 都退回队列，保证原文不丢。
+   */
+  private ingestDirectly(taskId: string, request: AgentIngestRequest): void {
+    hilog.info(DOMAIN, TAG, 'INGEST_DIRECT start source=%{public}s chars=%{public}d images=%{public}d',
+      request.source, request.text.length, request.images.length);
+    AgentIngestService.ingest(this.context, request)
+      .then((unit: KnowledgeUnit): void => {
+        hilog.info(DOMAIN, TAG, 'INGEST_DIRECT done subject=%{public}s title=%{public}s',
+          unit.subject, unit.title);
+        this.sendAnswer(taskId, '已整理入库：' + unit.title + '（' + unit.subject + '）', 0,
+          request.text);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed %{public}s', e.message);
+        if (request.images.length > 0) {
+          // 队列只存文本；图片识别失败就把提示原样排进队列，至少留下用户意图
+          this.sendAnswer(taskId, '这几张图没认出文字，换张清晰点的，或直接把题目文字发我。', 0);
+          return;
+        }
+        this.enqueueForIngest(taskId, request.text);
+      });
+  }
+
+  private enqueueForIngest(taskId: string, query: string): void {
+    const item: AgentInboxItem = buildInboxItem(query, Date.now());
+    AgentInboxQueue.append(this.context, item)
+      .then((pending: number): void => {
+        hilog.info(DOMAIN, TAG, 'INBOX_ENQUEUED pending=%{public}d chars=%{public}d',
+          pending, item.text.length);
+        this.sendAnswer(taskId,
+          '模型这次没通，已记为待整理（第 ' + pending.toString() + ' 条）。打开 MindTrace 会自动补上。', 0);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'INBOX_ENQUEUE_FAILED %{public}s', e.message);
+        this.sendAnswer(taskId, '这条笔记没排上队，再发一次？', 0);
+      });
   }
 
   /** 手写解析：JSON.parse 失败或结果为 null 都返回 null，由 onData 回错误快照 */
@@ -259,20 +352,59 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     return '';
   }
 
-  /** 小艺的 parts 只有 mediaType + text：取第一个 text 为 string 的 part */
-  private readQuery(request: A2ARequest): string {
+  /** 取出所有 parts（文本 + 图片/文件），解析层与诊断日志共用 */
+  private readParts(request: A2ARequest): AgentPart[] {
     const params: A2AParams | undefined = request.params;
     if (params === undefined) {
-      return '';
+      return [];
     }
     const message: A2AMessage | undefined = params.message;
     if (message === undefined) {
-      return '';
+      return [];
     }
-    const parts: A2ATextSegment[] | undefined = message.parts;
+    const parts: AgentPart[] | undefined = message.parts;
     if (parts === undefined) {
-      return '';
+      return [];
     }
+    return parts;
+  }
+
+  /** 诊断：把每个 part 的形状打进日志（媒体类型 + 各字段长度），确认小艺到底发了什么 */
+  private logParts(request: A2ARequest): void {
+    const parts: AgentPart[] = this.readParts(request);
+    hilog.info(DOMAIN, TAG, 'parts=%{public}d', parts.length);
+    let i: number = 0;
+    for (const part of parts) {
+      const media: string = mediaTypeOf(part);
+      const textLen: number = (part.text ?? '').length;
+      const rawLen: number = (part.raw ?? '').length;
+      const url: string = part.url ?? '';
+      const fileUri: string = part.file !== undefined && part.file.uri !== undefined ? part.file.uri : '';
+      const dataKind: string = part.data === undefined ? 'none' : typeof part.data;
+      hilog.info(DOMAIN, TAG,
+        'part[%{public}d] media=%{public}s text=%{public}d raw=%{public}d data=%{public}s url=%{public}s file=%{public}s',
+        i, media, textLen, rawLen, dataKind, url.length > 0 ? url : 'none',
+        fileUri.length > 0 ? fileUri : 'none');
+      i = i + 1;
+    }
+  }
+
+  /** 统计图片 part 数量：mediaType（或 file.mimeType）以 image/ 开头 */
+  private countImageParts(request: A2ARequest): number {
+    const parts: AgentPart[] = this.readParts(request);
+    let count: number = 0;
+    for (const part of parts) {
+      const media: string = mediaTypeOf(part);
+      if (media.startsWith('image/')) {
+        count = count + 1;
+      }
+    }
+    return count;
+  }
+
+  /** 小艺的 parts 只有 mediaType + text：取第一个 text 为 string 的 part */
+  private readQuery(request: A2ARequest): string {
+    const parts: AgentPart[] = this.readParts(request);
     for (const part of parts) {
       const text: string | undefined = part.text;
       if (text !== undefined && typeof text === 'string') {
@@ -306,6 +438,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     const token: CancellationToken = new CancellationToken();
     const session: A2ARequestSession = {
       taskId: taskId,
+      query: query,
       token: token,
       startedAt: startedAt,
       requestStartedAt: 0,
@@ -580,27 +713,50 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       '%{public}s requestId=%{public}s taskId=%{public}s requestedModel=%{public}s canonicalModel=%{public}s reason=%{public}s attempts=%{public}d elapsedMs=%{public}d',
       code, this.lastRequestId, session.taskId, session.requestedModel, session.canonicalModel,
       reason, session.attempts, elapsedMs);
-    this.sendAnswer(session.taskId, text, session.requestStartedAt);
+    this.sendAnswer(session.taskId, text, session.requestStartedAt, session.query);
   }
 
   /**
    * 单帧 result.task 快照：一次给全 artifacts + TASK_STATE_COMPLETED。
    * 不拆 statusUpdate / artifactUpdate —— 小艺对增量帧只渲染开头几个词。
-   * 报文拼装由 TaskSnapshot.buildTaskSnapshot（纯函数）负责，这里只选 taskId 并发送。
+   * 报文拼装由 TaskSnapshot（纯函数）负责，这里只选 taskId 并发送。
+   *
+   * 卡片 part：query 命中「拍题/选图」意图且 UI_CARD_ENABLED 时追加一个
+   * buildPickCardPartJson(query)；每个 task 只发一帧快照，卡片 part 最多一个。
    *
    * #234 可观测性: 发送成功后只打计数摘要（chars/字节/特殊符号/耗时），
    * 不打印正文、正文前缀或哈希（AGENTS 红线）。requestStartedAt 由调用方传入
    * 当前 session 的模型调用起点；无 session 的分支传 0，elapsedMs 记 0。
    */
-  private sendAnswer(taskId: string, text: string, requestStartedAt: number): void {
+  private sendAnswer(taskId: string, text: string, requestStartedAt: number, cardQuery: string = ''): void {
+    const cardPartJson: string = UI_CARD_ENABLED && wantsPickCard(cardQuery)
+      ? buildPickCardPartJson(cardQuery) : '';
+    this.sendSnapshot(taskId, text, requestStartedAt, cardPartJson);
+  }
+
+  /**
+   * 空 payload 分支专用：没有 query 可判意图，直接带一张卡片。
+   * 文案与 sendAnswer 分开，避免把「没有内容」说成「已整理」。
+   */
+  private sendAnswerWithPickCard(taskId: string, text: string): void {
+    const cardPartJson: string = UI_CARD_ENABLED ? buildPickCardPartJson('') : '';
+    this.sendSnapshot(taskId, text, 0, cardPartJson);
+  }
+
+  /** 唯一发帧出口：拼快照 + 发一帧 + 计数日志。 */
+  private sendSnapshot(taskId: string, text: string, requestStartedAt: number, cardPartJson: string): void {
     const finalTaskId: string = taskId.length > 0 ? taskId : 'task-' + Date.now().toString();
-    const payload: string = buildTaskSnapshot(this.lastRequestId, finalTaskId, text);
+    const payload: string = buildTaskSnapshotWithCard(this.lastRequestId, finalTaskId, text, cardPartJson);
     if (this.hostProxy === null) {
       hilog.error(DOMAIN, TAG, 'hostProxy 为空，无法发送 task 快照');
       return;
     }
     try {
       this.hostProxy.sendData(payload);
+      if (cardPartJson.length > 0) {
+        hilog.info(DOMAIN, TAG, 'A2A_UI_CARD sent cardId=%{public}s chars=%{public}d',
+          CARD_ID, cardPartJson.length);
+      }
       const elapsedMs: number = requestStartedAt > 0 ? Date.now() - requestStartedAt : 0;
       hilog.info(DOMAIN, TAG,
         'A2A_REPLY_SENT chars=%{public}d utf8Bytes=%{public}d snapshotBytes=%{public}d dollar=%{public}d backslash=%{public}d zeroWidth=%{public}d sqrt=%{public}d ge=%{public}d elapsedMs=%{public}d taskId=%{public}s',

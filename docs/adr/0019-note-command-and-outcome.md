@@ -4,7 +4,9 @@
 
 ## Status
 
-`accepted` (2026-10-27, ticket #237)
+`accepted`（目标契约；2026-10-27 定稿于 ticket #237，**代码尚未实现**）
+
+> 实现进度（2026-10-30 核对）：`grep -ril "notecommand\|noteoutcome" --include=*.ets` 全仓 **0 命中**；`DispatchResult` 仍是扁平结构 + boolean `success`，`Dispatcher` 仍按分支顺序推断终态。本 ADR 目前只约束**目标形态**，不能当作现状描述引用（引用现状请看 [review-v7-2026-10-27](../architecture/review-v7-2026-10-27.md)）。落地顺序：#238 端口与 `RunStore` → #239 golden → #241 `NoteAgent`，三者未开工前本 ADR 的实际约束力为零。
 
 ## Context
 

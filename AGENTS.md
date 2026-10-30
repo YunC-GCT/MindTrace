@@ -1,7 +1,7 @@
 # MindTrace — AGENTS.md
 
 > **鸿蒙高校创新赛 · 复赛项目 → v1 端A2A 交付** — HarmonyOS 数学学习助手 (拍照 / OCR / 知识结构化 / 端侧 Agent)
-> 5 module: `entry` (HAP) + `common` / `agents` / `skill` / `cardservice` (4 HSP)
+> 5 module: 3 HAP (`entry` / `skill` / `cardservice`) + 2 HSP (`common` / `agents`)
 > **DevEco Studio 与 hvigor CLI 均为合法开发入口**; CLI 构建 + `hdc` 装机已跑通, AI 可自行验证
 > 当前主线: **v1 端A2A 接入小艺** (复赛版本冻结, 不再加功能) · 进度与验收口径见 [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md)
 > 项目: **MindTrace** (GitHub 仓库 `YunC-GCT/MindTrace`; 本地目录名因机器而异, 文档一律用相对路径)
@@ -29,14 +29,14 @@
 | 查当前做到哪一阶段 / 怎么验收 | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (唯一进度口径, P0–P6 + DoD) |
 | 真机验证 A2A 链路 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (自动起小艺 → 进智能体 → 发送 → 比对回复) |
 | 推进 agent 能力级工作 (工具层 / 调用协议 / 拆分) | [`docs/agents/patterns/capability-to-implementation.md`](./docs/agents/patterns/capability-to-implementation.md) (skill 链路) + [`docs/architecture/agent-tool-chain-2026-09-06.md`](./docs/architecture/agent-tool-chain-2026-09-06.md) (派发链总览) |
-| 接手后端架构迁移 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) (当前权威状态) → [`docs/legacy/mindtrace/handoffs/backend-migration-handoff.md`](./docs/legacy/mindtrace/handoffs/backend-migration-handoff.md) (历史推进背景) |
+| 接手后端架构迁移 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) (当前权威状态) → [`docs/legacy/mindtrace/backend-migration-handoff.md`](./docs/legacy/mindtrace/backend-migration-handoff.md) (历史推进背景) |
 | 改 entry UI 设计/动效/token | 先读 [`docs/research/frontend-component-audit-2026-09-06.md`](./docs/research/frontend-component-audit-2026-09-06.md) (分层裁决 + C1-C6 候选) → 设计/动效细节 [`docs/research/frontend-ui-design-inventory-2026-09-06.md`](./docs/research/frontend-ui-design-inventory-2026-09-06.md) (96 件三维档案: 令牌/布局/动效) |
 | 写 / 改 / 归档 doc | [`docs/index.md`](./docs/index.md) (文档导航) + [`docs/agents/document-control.md`](./docs/agents/document-control.md) (状态/追溯规则) + [`docs/agents/domain.md`](./docs/agents/domain.md) (workflow) + [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) (issue 模板) |
 | 记录执行 / 验收证据 | [`docs/specs/execution/index.md`](./docs/specs/execution/index.md) (bundle 文件词汇与状态口径) |
-| 查历史 session 交接 | [`docs/legacy/mindtrace/handoffs/`](./docs/legacy/mindtrace/handoffs/) (冻结, 非当前指引) |
+| 查历史 session 交接 | [`docs/legacy/mindtrace/`](./docs/legacy/mindtrace/) (冻结, 非当前指引) |
 | 写 issue / 改 spec | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) + [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
-| 排查 audit finding | [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md) |
-| 整体目录结构 | `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` §3 |
+| 排查 audit finding | [`docs/legacy/mindtrace/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/audit-full-2026-09-01.md) |
+| 整体目录结构 | `docs/legacy/mindtrace/audit-full-2026-09-01.md` §3 |
 | 写新文件 / 改文件名 | [`docs/style/naming-conventions.md`](./docs/style/naming-conventions.md) (权威源) + `node scripts/naming-lint/index.mjs` (验证) |
 | 生成 HTML render / 配对 .md+.html 视觉稿 / 清理 docs/legacy/ | [`docs/style/html-in-docs.md`](./docs/style/html-in-docs.md) (决策树) + `.gitignore` + `.naminglintrc.json` skip.files |
 
@@ -104,17 +104,7 @@
 | **LlmClient 统一调用层** | `common/src/main/ets/llm/LlmClient.ets` | 唯一公共入口 `call(request)` (spec [`005`](./docs/specs/005-llm-client-consolidation.md)): JSON 与真 SSE 流式 (requestInStream) 双适配路径 |
 | **知识星系可视化** | `entry/src/main/ets/pages/KnowledgeGalaxy*` | 用户学情可视化 |
 | **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 · `npm --prefix scripts/arkts-lint test` **768 项全绿**（已取消 curated 白名单，跑全量 glob，约 40 s）· `agent-gate` 与 CI 同源 · **CI 已接入** |
-| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 18 ADR + 22 设计 spec + 执行记录目录, 设计透明度高 |
-
-### 演示路径 (5 分钟 walk-through · 复赛版)
-
-> **v1 已 Kit 化**：端A2A 走系统 Core Vision Kit + 端侧模型，不再启动外部 OCR 服务。以下步骤仅作复赛历史参考；v1 的验收以 [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) 为准。
-
-1. 启动 OCR 服务 (运行 `tools/ocr_service/start.bat`, 端口 8000; 详见 tools/ocr_service/README.md)
-2. DevEco Studio `Run → Run 'entry'` (真机/模拟器)
-3. 主流程: 拍照 → OCR → AI 分类 → 知识结构化 → 持久化 → 复习浮窗对话 (SSE 流式)
-4. 5 Tab 流畅 / 知识星系无 "示例:*" 假学科 (ticket #16 已修)
-5. 源码: `agents/` (AI 业务) + `scripts/arkts-lint/` (工程亮点) + `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` (21 个 finding 的架构审计)
+| **审计 + ADR + Spec 完整设计层** | `docs/adr/` + `docs/specs/` + `docs/legacy/mindtrace/` | 19 篇 ADR + 26 篇设计 spec + 8 个执行包 + 1 份残包合并记录, 设计透明度高 |
 
 ### 当前阶段 (v1 端A2A)
 
@@ -124,7 +114,7 @@
 | **P1–P5** | ⬜ | 选图入口 / 批量 Picker / 真实编排 / 结果回执 / 合规标识，逐项验收口径见 phase-tracker |
 | **P6 上架** | 🟡 | 已提交审核；通过前只有白名单账号能调起 |
 
-复赛版本的 audit 修复（#15 / #9 / #16 / #10、spec 018 等）保留在 git history 与 `docs/legacy/`。**新功能一律按 P1–P5 推进，不再回顾赛。**
+**新功能一律按 P1–P5 推进。**
 ---
 
 ## 关键架构 (30 秒读懂)
@@ -143,9 +133,9 @@
 
 **LLM 截断处理**: 聊天回复在 `finish_reason === 'length'` 时**不再抛错**——流式在末尾追加 `*(回复因长度限制被截断)*`，非流式返回 partial + 同一标记（`LlmResponseParser` / `LlmClient`）。`ReplyService` 仍显式传 `CHAT_REPLY_MAX_TOKENS = 12000`。**注意**：note generation 的 JSON 路径（`GenerationJsonCaller`）遇到同一标记会抛 `LLM_TRUNCATED`，消息形如 `... response truncated by max_tokens`；这不是聊天回复的 StreamEvent 解析问题，修法是提高生成预算 / 压缩 prompt，而不是改流式解析。
 
-**5 module 拓扑**: 1 HAP (`entry`, `type:entry`) + 4 HSP (`common` / `agents` / `skill` / `cardservice`, `type:feature`); 跨 module import 必须完整路径
+**5 module 拓扑**: 3 HAP (`entry` `type:entry` / `skill` / `cardservice` `type:feature`) + 2 HSP (`common` / `agents` `type:shared`); 跨 module import 必须完整路径
 
-**已废弃 (不要新建)**: ~~`entry/src/main/ets/components/`~~ ~~`entry/src/main/ets/atoms/`~~ ~~`archive/`~~ ~~`MindTrace-MVP/`~~ ~~`common/src/main/ets/database/`~~ (顶层) ~~`docs/W3_SUMMARY.md`~~。注意：`entry/src/main/ets/shared/atoms/` 与 `shared/molecules/` 是 spec 012 的**现行**结构，不要当成废弃目录。
+**共享原子件**: `entry/src/main/ets/shared/atoms/` 与 `shared/molecules/` (spec 012)
 
 ---
 
@@ -180,10 +170,9 @@
 | Skill | 说明 | 详细 |
 |---|---|---|
 | **CONTEXT.md** | 项目专属词汇 (4 种 "agent" 消歧; D2 起含 CaptureGraph 等) | [`CONTEXT.md`](./CONTEXT.md) |
-| **ADR** | 架构决策记录 (18 个) | [`docs/adr/`](./docs/adr/) |
+| **ADR** | 架构决策记录 (19 篇) | [`docs/adr/`](./docs/adr/) |
 | **Ticket specs** | 依 ADR 写的设计 spec (22 个) + 执行记录 | [`docs/specs/`](./docs/specs/) · [`docs/specs/execution/`](./docs/specs/execution/) |
 | **Issue tracker** | GitHub Issues on `YunC-GCT/MindTrace`, via `gh` CLI | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) |
 | **Triage labels** | 5 标签: `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix` | [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
 | **端A2A 接入 / 排障** | 小艺调起 `AgentExtensionAbility` 的完整流程与坑 (服务名称=abilityName、proto-JSON、单条 task 快照) | Hermes skill `harmonyos-xiaoyi-a2a` + [`scripts/a2a-smoke/`](./scripts/a2a-smoke/) |
-| **其它 AI 工具入口** | `CLAUDE.md` / `.github/copilot-instructions.md` / `.cursor/rules/mindtrace.mdc` 都只是指针，规则只维护在 `AGENTS.md` | 本文 |
 | **TDD / domain-modeling** | 按需调 skill, 不强制 | (内置 skill) |

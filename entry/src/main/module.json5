@@ -51,6 +51,16 @@
             "actions": [
               "ohos.want.action.home"
             ]
+          },
+          {
+            "actions": [
+              "ohos.want.action.sendData"
+            ],
+            "uris": [
+              {
+                "type": "image/*"
+              }
+            ]
           }
         ]
       }

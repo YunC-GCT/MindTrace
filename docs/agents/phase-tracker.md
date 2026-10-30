@@ -56,6 +56,7 @@
 | 小艺上架审核 | P6 | 审核通过前只有白名单账号能调起 |
 | 设备重装后必须重启小艺 | P0 复测 | 旧连接不释放，日志里连 `onCreate` 都没有 |
 | 平台「服务名称」= `abilityName` | P0 | 填错就是 `extension ability not exist`，改完必须重新导入 AgentCard |
+| 端A2A 图片不进报文 | P1 图片通道 | 小艺侧已上传成功（`HwVA_ObsAbilityRequestTask: uploadToObs fileId=…`）、待发送区有缩略图，但发出的 `message.parts` 只有 `[{"mediaType":"text/plain"}]`；整包 475 B，见 `MindTraceA2A: raw=`。卡片声明 `image/*` + 五种显式 MIME（v1.0.2）后仍复现。平台下发的 agentEntity 里 `supportPlusInputModes=["image","camera","file"]`、`agentApiType=[]`。扩展侧已兼容 `url`/`raw`/`file`/`data` 四种 part 形状，待定位客户端为何不填 parts |
 
 ## 维护规则
 

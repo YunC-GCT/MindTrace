@@ -1,6 +1,6 @@
 # 032 — 模型网关与端A2A 运行时契约
 
-> **Status**: proposed（2026-10-24）
+> **Status**: partial（2026-10-24 — 构建顺序 / 单帧快照 / 端侧能力位已落, #219–#223 已闭; `services/ModelRouter.ets` 已接 `ConversationWorkflowPorts`; 网关注册表未定型）
 > **依据**: [`a2a-module-loading-2026-10-24.md`](../research/a2a-module-loading-2026-10-24.md)、[`on-device-llm-2026-10-24.md`](../research/on-device-llm-2026-10-24.md)
 > **前置**: [`031-xiaoyi-batch-capture-entry.md`](./031-xiaoyi-batch-capture-entry.md)（端A2A 接入本体）
 

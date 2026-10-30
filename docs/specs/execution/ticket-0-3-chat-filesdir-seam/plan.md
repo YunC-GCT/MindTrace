@@ -16,7 +16,7 @@ The gate is tri-state: `PASS` releases the storage branch for downstream design 
 **Storage**: Preferences chat history unchanged (`chat_history`/`sessions`). The resolved filesDir is retained as plain data only; no file I/O in this ticket
 **Testing**: Existing Hypium-style `.ets` tests under `entry/src/test/` registered in `List.test.ets`; `arkts_check`; focused tests; one full suite run at the end; debug build
 **Target Platform**: MindTrace HarmonyOS entry-module chat floating window
-**Project Type**: Existing multi-module HarmonyOS mobile application (1 HAP + 4 HSP)
+**Project Type**: Existing multi-module HarmonyOS mobile application (3 HAP + 2 HSP)
 **Performance Goals**: No new production persistence or rendering overhead; seam resolution is a one-time string read at ability creation and a per-window string hand-off at initialization
 **Constraints**: Do not import or invoke AtomicFile/TaskPool in production; do not change the Preferences load/save path; do not hold a UI context in the seam or the collaborator; do not log chat content or secrets; do not modify unrelated dirty work; do not repoint `spec/feature.json`
 **Scale/Scope**: One P0 gate ticket; one new seam service file, one new focused test file, three small production edits, one verification record

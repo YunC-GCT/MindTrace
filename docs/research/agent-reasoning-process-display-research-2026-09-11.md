@@ -408,6 +408,6 @@ MindTrace 的思考展示链路**骨架全通但两端哑火**: 传输层 (reque
 ### Cross-references after reconciliation
 - Spec source of truth: [`docs/specs/019-reasoning-process-display-p0.md`](../specs/019-reasoning-process-display-p0.md) § "Accepted UI Amendment — 2026-09-13"
 - ADR source of truth: [`docs/adr/0015-structured-stream-events.md`](../adr/0015-structured-stream-events.md)
-- Implementation: [`entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets`](../../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets), [`entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets`](../../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets), [`entry/src/main/ets/services/ReplyService.ets`](../../../entry/src/main/ets/services/ReplyService.ets)
+- Implementation: [`entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets), [`entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets`](../../entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets), [`entry/src/main/ets/services/ReplyService.ets`](../../entry/src/main/ets/services/ReplyService.ets)
 
 > 2026-09-13 reconciliation note appended by two-axis code review (no overwrite of the original 2026-09-11 findings, per AGENTS.md red line 3).

@@ -231,7 +231,7 @@ API 24 官方 SDK 确认以下通用事件可用：[H12]
 - AI 输入支持 Enter 提交与组合输入法，详情编辑支持焦点移动和键盘避让。
 - 浮层打开时焦点进入面板，关闭后回到触发元素；Escape/返回行为需要一致。
 
-仓库现状：除知识星系局部 `.onHover` 外，未发现系统性的 `focusable`、`tabIndex`、`onKeyEvent` 或无障碍接入。已有 `frontend-a11y-audit-2026-09-06.md` 可作为后续实现输入。
+仓库现状：除知识星系局部 `.onHover` 外，未发现系统性的 `focusable`、`tabIndex`、`onKeyEvent` 或无障碍接入。已有 `frontend-baseline-sweep-2026-09-06.md` §3 a11y 作为后续实现输入。
 
 ## 9. 折叠屏状态与窗口变化
 
@@ -525,7 +525,7 @@ rg -n 'phone|tablet|2in1|fold|breakpoint|screenshot|windowSize' entry/src/test e
 | §12.1 星系 360x520 基准 | `pages/Review/ReviewGraphView.ets:21-24` + `viewmodels/KnowledgeGalaxyViewModel.ets:700-701,732-733`（该文件 1880 行） | ✅ |
 | §7.1 资源仅 base/dark/rawfile | `entry/src/main/resources/` 目录列表 | ✅ |
 | §8 输入现状（仅星系局部 onHover） | 全 entry grep：`onHover` 仅 `ReviewGraphView.ets:1395`；无 focusable/tabIndex/onKeyEvent/accessibility | ✅ |
-| §8 a11y 审计已存在 | `docs/research/frontend-a11y-audit-2026-09-06.md` 存在 | ✅ |
+| §8 a11y 审计已存在 | `docs/research/frontend-baseline-sweep-2026-09-06.md` §3 存在 | ✅ |
 
 ### 18.3 交叉验证的官方指南（devecocli docs 本地文档库）
 

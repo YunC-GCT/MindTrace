@@ -18,7 +18,7 @@ MindTrace 是**鸿蒙高校创新赛复赛项目**:一个跑在 HarmonyOS 上的
 
 | 维度 | 值 |
 |---|---|
-| **项目名 / 包名** | MindTrace / `entry`(HAP) + `common` / `agents` / `skill` / `cardservice`(4 HSP) |
+| **项目名 / 包名** | MindTrace / 3 HAP (`entry` / `skill` / `cardservice`) + 2 HSP (`common` / `agents`) |
 | **比赛** | 鸿蒙高校创新赛 · 复赛 |
 | **平台** | HarmonyOS(`runtimeOS: HarmonyOS` / `targetSdkVersion: 6.1.1(24)` / `compatibleSdkVersion: 6.1.1(24)`) |
 | **核心能力** | 数学拍照 OCR → LLM 解析 → KaTeX 渲染回 ArkUI WebView;5 类题型(概念/定理/公式/证明题/计算题)自动分类;KnowledgeUnit 结构化 + 知识星系图谱可视化;AI 助手浮窗 + 复习浮窗 SSE 流式对话 |
@@ -76,7 +76,7 @@ MindTrace 是**鸿蒙高校创新赛复赛项目**:一个跑在 HarmonyOS 上的
 | `cardservice` | HSP (`type:shared`) | — | 58 / 6 文件 | `common`, `agents` |
 | **合计** | | | **23,301 / 162 文件** | |
 
-> 注:`module.json5` 中 `common/agents/skill/cardservice` 的 `type` 字段是 `"shared"`,而非字面 `"hsp"`;"4 HSP" 是行业统称,审计报告沿用。
+> 注:`module.json5` 的 `type` 有三值——`entry` / `shared` / `feature`,没有字面的 `hsp` / `hap`。按 `hvigorfile.ts` 的 `hspTasks` / `hapTasks` 判定:2 HSP 是 `common` / `agents`(`type: shared`),3 HAP 是 `entry`(`entry`) / `skill` / `cardservice`(`feature`)。早期文档的「1 HAP + 4 HSP」是错的。
 
 **依赖图(单向无环)**:
 
@@ -205,14 +205,14 @@ README.md      # 状态条 + 维护手册
 ### 5.2 审计 + ADR + Spec 完整设计层(亮点 2)
 
 **审计基线**:
-- `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`:全代码库架构审计主报告,**162 文件 / 23,301 LOC**
+- `docs/legacy/mindtrace/audit-full-2026-09-01.md`:全代码库架构审计主报告,**162 文件 / 23,301 LOC**
 - 总评级 🟡 "可工作但分层混乱"
 - 21 个 finding,分类:
   - 🔴 P0(4 条):LLM 三套调用路径并行(§4.1)/ `KnowledgeModel` 870 LOC god class(§4.2)/ `AgentChatService` 802 LOC god class(§4.3)/ Production fixture data 泄漏(§4.20)
   - 🔴 其他: `AGENTS.md` 路径错误/过期(§4.16)、"禁 C 风格 for" 规约理解错(§4.17)
   - 🟡 P1(11 条): `LlmConfig` 静默覆盖(§4.4)/ `Dispatcher` 双入口(§4.5)/ `OcrTool` C-style for(§4.6)/ `ContentProtocol` 580 LOC(§4.7)/ `mcp/` 空壳(§4.8)/ `ReviewGraphView` 1880 LOC(§4.9)/ `KnowledgeGalaxyViewModel` 789 LOC + P0 BUG(§4.10)/ UTF-8 手写编码(§4.11)/ ArkTS 1.1 规则表覆盖率 ~10%(§4.18)/ `compatibleSdkVersion < 10` 不强制(§4.19)/ `extractJsonObject` 正则在嵌套 JSON 上截断(§4.21)
   - 🟢 P2: agent 术语重载(§4.12)/ 文件头模板覆盖不均(§4.13)/ 缺 `CONTEXT.md` + `docs/adr/`(§4.14,已部分解决)/ 模块命名误导(§4.15)
-- `docs/legacy/mindtrace/architecture/deep-dive-2026-09-01.md`:7 个最大文件的 deep-dive(§F1 ReviewGraphView、§F2 KnowledgeGalaxyViewModel、§F3 extractJsonObject 等)
+- `docs/legacy/mindtrace/deep-dive-2026-09-01.md`:7 个最大文件的 deep-dive(§F1 ReviewGraphView、§F2 KnowledgeGalaxyViewModel、§F3 extractJsonObject 等)
 
 **ADR 层**(`docs/adr/`,7 篇 + index):
 | ADR | 决定 |
@@ -255,7 +255,7 @@ README.md      # 状态条 + 维护手册
 | `docs/adr/` | 7 + index | 架构决策记录(why) | `docs/adr/index.md` |
 | `docs/specs/` | 6 + index | 实施 spec(how)— 6 个 ticket 对应 | `docs/specs/index.md` |
 | `docs/agents/` | 12 + `patterns/` | agent 工作流治理 | `docs/agents/agent-glossary.md`(通用 agent 术语) / `docs/agents/domain.md`(域文档消费规则) |
-| `docs/legacy/mindtrace/architecture/` | 7 | 审计基线 + deep-dive + lint baseline | `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` |
+| `docs/legacy/mindtrace/architecture/` | 7 | 审计基线 + deep-dive + lint baseline | `docs/legacy/mindtrace/audit-full-2026-09-01.md` |
 | `docs/legacy/mindtrace/plans/{w3,w4}/` | 多 | 阶段计划(W3 渲染协议 / W4 多 WebView 分块) | `README.md` 中提到的 plan 文件 |
 | `docs/legacy/mindtrace/research/` | 多 | 调研支撑(多 WebView 性能 / 公式渲染策略) | `README.md` 中提到的 research 文件 |
 | `docs/research/` | 4(2 md + 2 html) | 一手调研产物(agent framework / langgraph migration / 本报告) | `docs/research/` |
@@ -290,8 +290,8 @@ README.md      # 状态条 + 维护手册
 |---|---|---|---|---|
 | 1 | **#4** | `004-dispatcher-single-entry.md` | `Dispatcher` 缩到单公开方法 + 迁移 `AiService` 调用方 | S(最小爆炸半径) |
 | 2 | **#5** | `005-llm-client-consolidation.md` | `LlmClient` 合一调用路径(3 → 1) | S(~5 行 refactor) |
-| 3 | **#3** | `003-knowledge-model-decomposition.md` | `KnowledgeModel` 拆 3 服务 + 对应 Hypium 测试 | L(870 LOC,3 atomic PR) |
-| 4 | **#7** | `007-agent-chat-service-decomposition.md` | `AgentChatService`(802 LOC)拆 `IntentClassifier` + `ReplyService` + `ChatStatusMachine` | L(802 LOC,3 atomic PR) |
+| 3 | **#3** | `docs/legacy/mindtrace/spec-003-knowledge-model-decomposition.md`（原 docs/specs/003） | `KnowledgeModel` 拆 3 服务 + 对应 Hypium 测试 | L(870 LOC,3 atomic PR) |
+| 4 | **#7** | `docs/legacy/mindtrace/spec-007-agent-chat-service-decomposition.md`（原 docs/specs/007） | `AgentChatService`(802 LOC)拆 `IntentClassifier` + `ReplyService` + `ChatStatusMachine` | L(802 LOC,3 atomic PR) |
 | 5 | **#10** | `010-mcp-to-tools-rename.md` | `mcp/tools/` → `tools/` 的 `git mv` + import 修正 | XS(~3 行) |
 | 6 | **#9** | `009-llm-config-throw-on-silent-override.md` | `LlmConfig` 静默覆盖改抛错 | XS(~10 行) |
 
@@ -435,7 +435,7 @@ README.md      # 状态条 + 维护手册
 - `docs/adr/index.md` + 7 ADR
 - `docs/specs/index.md` + 6 spec
 - `docs/agents/`(12 文件 + `patterns/`)
-- `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` `deep-dive-2026-09-01.md` `lint-baseline-2026-09-01.json` `lint-baseline-ast-2026-09-01.json`
+- `docs/legacy/mindtrace/audit-full-2026-09-01.md` `deep-dive-2026-09-01.md` `lint-baseline-2026-09-01.json` `lint-baseline-ast-2026-09-01.json`
 - `docs/style/arkts-1.1.md` `naming-conventions.md`
 - `docs/template/` + `docs/index.md` + `docs/onboarding.md`
 - `docs/research/agent-framework-comparison-2026-09-02.md`

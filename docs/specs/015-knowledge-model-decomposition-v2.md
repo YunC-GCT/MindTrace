@@ -1,6 +1,6 @@
 # 015 — KnowledgeModel 实质拆分 v2(TruthCheck 先行;工具化预留位)
 
-Supersedes [spec 003](./003-knowledge-model-decomposition.md)。Derived from [ADR-0006](../adr/0006-knowledge-model-decomposition-plan.md)(2026-09-06 修订:叠加工具化预留位)与 [ADR-0012](../adr/0012-tool-calling-protocol.md)。
+Supersedes [spec 003](../legacy/mindtrace/spec-003-knowledge-model-decomposition.md)（原文已归档）。Derived from [ADR-0006](../adr/0006-knowledge-model-decomposition-plan.md)(2026-09-06 修订:叠加工具化预留位)与 [ADR-0012](../adr/0012-tool-calling-protocol.md)。
 **排期**:PR1 于复赛窗口内完成(2026-09-06);PR2/PR3 原定赛后,用户裁决变更后同日完成(2026-09-06)。**全部 PR 已落地;KnowledgeModel 依用户裁决保留其名,重构为轻量编排 agent(提示词/真值检查/常量已拆为协作服务)。**
 
 ## Why this ticket(为什么重立)

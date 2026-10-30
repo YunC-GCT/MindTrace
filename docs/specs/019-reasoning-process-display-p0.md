@@ -1,6 +1,6 @@
 # 019 — 分层思考过程展示 P0:StreamEvent 协议 + enableThinking 供给 + 双区块
 
-> **Status**: proposed (2026-09-11, grill session)
+> **Status**: implemented & accepted (2026-09-13 — `#110`–`#114` 全绿, bundle `verification-report.md` `Final status: PASS`; 设计起点 2026-09-11)
 > **Source**: [research](../research/agent-reasoning-process-display-research-2026-09-11.md) · [ADR-0015](../adr/0015-structured-stream-events.md) · grill 决议 (Q1-Q9 + seam 确认)
 > **Related**: ADR-0004 (call 层收敛) · ADR-0012 / [spec 014](./014-tool-calling-protocol.md) (tool-calling, SSE 工具循环排除声明) · [spec 018](./018-agent-workflow-architecture.md) (Conversation workflow)
 

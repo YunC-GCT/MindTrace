@@ -15,7 +15,7 @@
 **State Management**: 增量改造现有项目，保留当前 ArkUI State Management V1；不引入 V2 迁移
 **Storage**: `common/src/main/ets/llm/LlmConfig.ets` 使用 preferences；ChatMsg 现有 JSON 会话持久化保持字段兼容，不新增持久化字段
 **Testing**: Hypium tests under `common/src/test` and `entry/src/test`；ArkTS strict check via `arkts_check`；project lint via `node scripts/arkts-lint/index.mjs --quiet`；full lint tests via `npm --prefix scripts/arkts-lint test`；build via HarmonyOS project build
-**Target Platform**: HarmonyOS mobile app，MindTrace `entry` HAP + `common`/`agents`/`skill`/`cardservice` HSP topology
+**Target Platform**: HarmonyOS mobile app，MindTrace 3 HAP (`entry` / `skill` / `cardservice`) + 2 HSP (`common` / `agents`) topology
 **Project Type**: Existing HarmonyOS/ArkTS multi-module mobile app
 **Performance Goals**: 流式 token 到达后保持逐增量分发，不引入额外网络轮询或 UI 阻塞；SSE 解析保持线性处理
 **Constraints**: 不保留新旧双轨；不新增 UI 思考开关；不把思考文本复制到最终回答；不混入当前工作区既有无关调研/开关删除改动；最终 code-review 在工具链支持时使用 `GLM-5.3` + reasoning `max`
