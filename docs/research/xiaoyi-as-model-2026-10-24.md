@@ -191,6 +191,12 @@ ArkAF 概述把这件事说得最直白：「提供意图框架、Skill 框架�
 
 ---
 
+### 6.1 卡在哪一步（合并自同日短版）
+
+卡在**没有客户端传输层**。自建聊天 UI + 流式需要三件事：① 取 token 流；② 带 `contextId` 续多轮；③ 可取消。当前这三件只有服务端实现（`Server.updateStatus` / `addArtifact`），客户端侧一个都没有。
+
+退路两条：用 `FunctionComponent`（丢自建 UI 与流式），或把自己注册成端 A2A Agent（入口与 UI 归小艺）。
+
 ## 7. 来源清单
 
 ### 7.1 本机 SDK（路径均相对 `C:/Program Files/Huawei/DevEco Studio/sdk/default/`）

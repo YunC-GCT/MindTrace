@@ -2,7 +2,7 @@
 
 > **Scope**: 调研产物索引（一手底料 + 项目定位 + 架构体检 + 专项研究）。
 > **Convention**: `<topic-slug>-YYYY-MM-DD.md`（kebab-case）；一次性原料用 `_<topic-slug>-YYYY-MM-DD.md`，不入正式索引。
-> **Source-of-truth**: 本目录文件均为 research 一次性产物，落定后不再修改；新版本开新文件并把旧的挪 `docs/legacy/`。
+> **Source-of-truth**: 本目录文件均为 research 一次性产物，落定后不再修改；被取代时把仍有效的结论并入当前文档、删除旧文件（映射见 §Superseded / removed，正文进 git 历史）。
 
 ## Active
 
@@ -12,15 +12,8 @@
 | [`harmonyos-kits-survey-2026-09-05.md`](./harmonyos-kits-survey-2026-09-05.md) | 2026-09-05 | 12 个官方 kit 家族能力 + MindTrace 适配点 + 成本档位；P0 = FormKit/Reminder/BackgroundTasks，P1 = AIEngine/NLP | active (D4 依据) |
 | [`agent-toolkit-and-skill-dispatch-2026-09-06.md`](./agent-toolkit-and-skill-dispatch-2026-09-06.md) | 2026-09-06 | 工具层 / 小艺 skill 调度设计；ToolRegistry 落位 common/agents；ADR-0008 复核 | active |
 | [`langgraph-mapping-verification-2026-09-06.md`](./langgraph-mapping-verification-2026-09-06.md) | 2026-09-06 | LangGraph 概念 ↔ 鸿蒙 Kit API 逐行核查，API 24 vs 26 边界 | active |
-| [`frontend-a11y-audit-2026-09-06.md`](./frontend-a11y-audit-2026-09-06.md) | 2026-09-06 | 前端可访问性摸底 | active |
+| [`frontend-baseline-sweep-2026-09-06.md`](./frontend-baseline-sweep-2026-09-06.md) | 2026-09-06 | 前端体检合集（8 篇同日摸底合并：走查 / 五态 / a11y / i18n / 性能 / 持久化 / 错误降级 / 待办合同） | active |
 | [`frontend-component-audit-2026-09-06.md`](./frontend-component-audit-2026-09-06.md) | 2026-09-06 | 前端 UI 组件设计审查（分层裁决 + C1-C6 候选） | active |
-| [`frontend-error-handling-2026-09-06.md`](./frontend-error-handling-2026-09-06.md) | 2026-09-06 | 前端错误降级与边界摸底 | active |
-| [`frontend-flow-walkthrough-2026-09-06.md`](./frontend-flow-walkthrough-2026-09-06.md) | 2026-09-06 | 前端用户路径走查 | active |
-| [`frontend-healthcheck-plan-2026-09-06.md`](./frontend-healthcheck-plan-2026-09-06.md) | 2026-09-06 | 前端体检后续待办合同 | active |
-| [`frontend-i18n-audit-2026-09-06.md`](./frontend-i18n-audit-2026-09-06.md) | 2026-09-06 | 前端国际化与文案一致性摸底 | active |
-| [`frontend-interaction-states-2026-09-06.md`](./frontend-interaction-states-2026-09-06.md) | 2026-09-06 | 前端交互五态完整性摸底 | active |
-| [`frontend-performance-audit-2026-09-06.md`](./frontend-performance-audit-2026-09-06.md) | 2026-09-06 | 前端性能与资源摸底 | active |
-| [`frontend-persistence-2026-09-06.md`](./frontend-persistence-2026-09-06.md) | 2026-09-06 | 前端状态序列化与持久化摸底 | active |
 | [`frontend-ui-design-inventory-2026-09-06.md`](./frontend-ui-design-inventory-2026-09-06.md) | 2026-09-06 | 前端 UI 设计/布局/动效三维档案（96 件） | active |
 | [`harmonyos-multi-device-ui-adaptation-2026-09-08.md`](./harmonyos-multi-device-ui-adaptation-2026-09-08.md) | 2026-09-08 | API 24 一次开发多端部署：手机 / 平板 / 折叠屏 / 2-in-1 | active (spec 022 输入) |
 | [`agent-float-window-component-research-2026-09-11.md`](./agent-float-window-component-research-2026-09-11.md) | 2026-09-11 | AgentFloatWindow 组件清点与替换候选 | active |
@@ -41,12 +34,9 @@
 | [`docs-traceability-audit-2026-10-18.md`](./docs-traceability-audit-2026-10-18.md) | 2026-10-18 | 文档规范 / 设计冲突 / 可追溯性 / ArkTS-AI coding 可用性审计（9 处冲突修正 + doc-trace 守门） | active (审计结论) |
 | [`a2a-module-loading-2026-10-24.md`](./a2a-module-loading-2026-10-24.md) | 2026-10-24 | 端A2A 扩展进程在模块加载阶段 `SyntaxError` 的成因与跨包/类型导入规则 | active (排障依据) |
 | [`on-device-llm-2026-10-24.md`](./on-device-llm-2026-10-24.md) | 2026-10-24 | API 26 端侧生成式模型能力盘点（含更正：漏检 localChatModel） | active (选型依据) |
-| [`harmonyos-ondevice-llm-2026-10-24.md`](./harmonyos-ondevice-llm-2026-10-24.md) | 2026-10-24 | 鸿蒙 7 端侧大模型是什么、第三方能否直接用 | active (能力边界) |
 | [`xiaoyi-as-model-2026-10-24.md`](./xiaoyi-as-model-2026-10-24.md) | 2026-10-24 | 应用能否调用小艺并把文本回答拿回自己的界面 | active (能力边界) |
-| [`xiaoyi-client-integration-2026-10-24.md`](./xiaoyi-client-integration-2026-10-24.md) | 2026-10-24 | 应用侧调用小艺智能体的官方口径与限制 | active (能力边界) |
 | [`a2a-image-input-feasibility-2026-10-29.md`](./a2a-image-input-feasibility-2026-10-29.md) | 2026-10-29 | 小艺→端侧 Agent 图片输入协议可行性（Part 载体 / inputModes / 客户端丢图） | active (能力边界) |
 
-临时原料 [`_positioning-facts-2026-09-04.md`](./_positioning-facts-2026-09-04.md)（下划线前缀）按约定不入正式索引，供 `project-positioning-2026-09-04.md` 溯源。
 
 ## Cross-reference
 
@@ -71,7 +61,7 @@
 
 ## Last updated
 
-2026-10-18（目录规范化：补全 20 篇未登记研究；临时原料链接修正；旧研究大清洗——已被取代或描述被否决架构的文档删除，映射见下）
+2026-10-30（去重：8 篇 2026-09-06 前端摸底合并为 `frontend-baseline-sweep-2026-09-06.md`；2 篇端侧 LLM/小艺短版并入长版；删除 `_positioning-facts` 过期底料）· 2026-10-18（目录规范化：补全 20 篇未登记研究；临时原料链接修正；旧研究大清洗——已被取代或描述被否决架构的文档删除，映射见下）
 
 ## Superseded / removed
 
@@ -84,3 +74,6 @@ Older research that was fully merged into the authoritative documents above, or 
 | `tool-packaging-mcp-path-2026-09-16`, `tool-packaging-direct-kit-path-2026-09-16` | same file §10.6 (Direct Tool decision) |
 | `formula-render-strategies`, `multi-webview-performance`, `harmonyos-http-streaming` (2026-07-24) | [spec 021](../specs/021-chat-streaming-incremental-rendering.md) + `chat-markdown-latex-render-jank-2026-09-13` |
 | `huawei-arkui-agent-20260901` | [`docs/style/arkts-1.1.md`](../style/arkts-1.1.md) (rules extracted) |
+| `harmonyos-ondevice-llm-2026-10-24`, `xiaoyi-client-integration-2026-10-24` | 短版结论并入 [`on-device-llm-2026-10-24.md`](./on-device-llm-2026-10-24.md) §7.5 与 [`xiaoyi-as-model-2026-10-24.md`](./xiaoyi-as-model-2026-10-24.md) §6.1 |
+| `frontend-{a11y,i18n,performance,persistence,error-handling,interaction-states,flow-walkthrough,healthcheck-plan}-2026-09-06` | 合并为 [`frontend-baseline-sweep-2026-09-06.md`](./frontend-baseline-sweep-2026-09-06.md)（8 节，节内内容原样） |
+| `_positioning-facts-2026-09-04`（692 行一手底料） | 数字与路径已过期（`MathMind`、`docs/legacy/.../architecture/`、旧 5 module 口径）；可读版本见 [`project-positioning-2026-09-04.md`](./project-positioning-2026-09-04.md) |
