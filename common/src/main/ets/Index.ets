@@ -407,7 +407,16 @@ export {
 export type { CardSnapshotEnvelope, CardSnapshotDecodeResult } from './kit/CardSnapshotCodec';
 export type { RunStatus, RunRecord, RunStorePort } from './ports/RunStore';
 export { NOTE_READ_ERROR_INVALID_QUERY, NOTE_READ_ERROR_READ_FAILED } from './ports/NoteReadPort';
-export type { NoteQuery, NoteReadPort, NoteReadStore, NoteSummary } from './ports/NoteReadPort';
+export type {
+  NoteDetail,
+  NoteQuery,
+  NoteReadPort,
+  NoteReadStore,
+  NoteSummary,
+} from './ports/NoteReadPort';
+// 只读实现跨 HAP 共享（ADR-0021）；写实现留在 entry，不经本 barrel 导出。
+export { NoteReadPortAdapter } from './ports/impl/NoteReadPortAdapter';
+export { RdbNoteReadStore } from './ports/impl/RdbNoteReadStore';
 export type { ArtifactDescriptor, ArtifactFileIo, ArtifactStorePort } from './ports/ArtifactStorePort';
 export { STUDY_PLAN_ERROR_READ_FAILED } from './ports/StudyPlanPorts';
 export type {

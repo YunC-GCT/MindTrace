@@ -1,27 +1,27 @@
 /**
- * NoteReadPortAdapter.ets — NoteReadPort 的 entry 侧实现（DAO 之上的薄适配）
+ * NoteReadPortAdapter.ets — NoteReadPort 的只读实现（投影 / 过滤 / 排序 / 分页）
  *
- * 路径: entry/src/main/ets/database/NoteReadPortAdapter.ets
- * 职责: 把 NoteReadPort 的 list / get / search 映射到 NoteReadStore（生产是 NoteDao）；
- *       过滤、排序、分页、投影都在本层完成，DAO 不感知端口。
- * 依赖: common 的契约类型（type-only，编译期擦除）；运行期只依赖注入的 NoteReadStore。
+ * 路径: common/src/main/ets/ports/impl/NoteReadPortAdapter.ets
+ * 职责: 把 NoteReadStore 的只读查询映射成端口语义：过滤、按 updatedAt 倒序、分页、投影；
+ *       不持 RDB 句柄、不做写入（写实现留在 entry，见 ADR-0021）。
+ * 依赖: ../NoteReadPort（契约与错误码）、../NoteWritePort（NotePortError）；均同模块相对路径。
  *
  * 数据流:
- *   UI / ReviewAgent → list / get / search → NoteReadStore（生产是 NoteDao）→ knowledge_unit 表
+ *   UI / ReviewAgent / skill 工具 → list / get / search / listByIds → NoteReadStore → knowledge_unit 表
  *
- * 契约实现（#238 / §17.5）:
- *   - 参数非法（limit <= 0 / offset < 0）抛 NotePortError(INVALID_QUERY, retryable=false)。
- *   - list / search 共用同一套查询形状；先过滤、再按 updatedAt 倒序、最后分页（不排序后分页）。
- *   - 存储读失败统一抛 NotePortError(NOTE_READ_FAILED, retryable=true)；get 的「不存在」返回 null。
- *   - 投影里的 tags 是副本；查询结果数组不被原地排序（不动 store 返回的数组）。
+ * 契约实现（#238 / ADR-0021）:
+ *   - 参数非法（limit <= 0 / offset < 0）抛 INVALID_QUERY，不静默返回空数组。
+ *   - 先过滤、再排序、最后分页；不原地排序 store 返回的数组。
+ *   - search 只匹配元数据（title / summary / tags / subject / chapter），正文检索归 NoteSearchPort。
+ *   - 存储读失败抛 NOTE_READ_FAILED(retryable=true)；get 的「不存在」返回 null。
+ *   - 投影里的 tags 是副本；返回 NoteSummary / NoteDetail，不泄漏整行 KnowledgeUnit。
  *
  * ArkTS 1.1 strict 适配:
- *   - 静态工具方法用 private static；实例只持注入依赖。
- *   - 不使用解构 / any / unknown；箭头函数显式标注参数与返回类型。
+ *   - 静态工具方法用 private static；实例只持注入依赖；箭头函数显式标注参数与返回类型。
  */
-import type { KnowledgeUnit } from 'common';
-import type { NoteQuery, NoteReadPort, NoteReadStore, NoteSummary } from 'common';
-import { NotePortError, NOTE_READ_ERROR_INVALID_QUERY, NOTE_READ_ERROR_READ_FAILED } from 'common';
+import { NotePortError } from '../NoteWritePort';
+import { NOTE_READ_ERROR_INVALID_QUERY, NOTE_READ_ERROR_READ_FAILED } from '../NoteReadPort';
+import type { NoteDetail, NoteQuery, NoteReadPort, NoteReadStore, NoteSummary } from '../NoteReadPort';
 
 export class NoteReadPortAdapter implements NoteReadPort {
   private readonly store: NoteReadStore;
@@ -30,13 +30,16 @@ export class NoteReadPortAdapter implements NoteReadPort {
     this.store = store;
   }
 
-  async get(id: string): Promise<KnowledgeUnit | null> {
+  async get(id: string): Promise<NoteDetail | null> {
     if (id.length === 0) {
       throw new NotePortError(NOTE_READ_ERROR_INVALID_QUERY, 'note id must not be empty', false);
     }
     try {
       return await this.store.queryById(id);
     } catch (e) {
+      if (e instanceof NotePortError) {
+        throw new NotePortError(e.code, e.message, e.retryable);
+      }
       const message: string = e instanceof Error ? e.message : String(e);
       throw new NotePortError(NOTE_READ_ERROR_READ_FAILED, message, true);
     }
@@ -44,16 +47,16 @@ export class NoteReadPortAdapter implements NoteReadPort {
 
   async list(query: NoteQuery): Promise<NoteSummary[]> {
     NoteReadPortAdapter.validate(query);
-    const all: KnowledgeUnit[] = await this.readAll();
-    const matched: KnowledgeUnit[] = all.filter((unit: KnowledgeUnit): boolean => {
+    const all: NoteDetail[] = await this.readAll();
+    const matched: NoteDetail[] = all.filter((unit: NoteDetail): boolean => {
       return NoteReadPortAdapter.matches(unit, query);
     });
-    const ordered: KnowledgeUnit[] = matched.slice();
-    ordered.sort((left: KnowledgeUnit, right: KnowledgeUnit): number => {
+    const ordered: NoteDetail[] = matched.slice();
+    ordered.sort((left: NoteDetail, right: NoteDetail): number => {
       return right.updatedAt - left.updatedAt;
     });
-    const page: KnowledgeUnit[] = ordered.slice(query.offset, query.offset + query.limit);
-    return page.map((unit: KnowledgeUnit): NoteSummary => NoteReadPortAdapter.toSummary(unit));
+    const page: NoteDetail[] = ordered.slice(query.offset, query.offset + query.limit);
+    return page.map((unit: NoteDetail): NoteSummary => NoteReadPortAdapter.toSummary(unit));
   }
 
   async search(query: NoteQuery): Promise<NoteSummary[]> {
@@ -65,7 +68,7 @@ export class NoteReadPortAdapter implements NoteReadPort {
     return await this.list(query);
   }
 
-  async listByIds(ids: string[]): Promise<KnowledgeUnit[]> {
+  async listByIds(ids: string[]): Promise<NoteDetail[]> {
     const unique: string[] = [];
     for (const id of ids) {
       if (id.length > 0 && unique.indexOf(id) < 0) {
@@ -73,9 +76,9 @@ export class NoteReadPortAdapter implements NoteReadPort {
       }
     }
     unique.sort();
-    const found: KnowledgeUnit[] = [];
+    const found: NoteDetail[] = [];
     for (const id of unique) {
-      const unit: KnowledgeUnit | null = await this.get(id);
+      const unit: NoteDetail | null = await this.get(id);
       if (unit !== null) {
         found.push(unit);
       }
@@ -83,10 +86,13 @@ export class NoteReadPortAdapter implements NoteReadPort {
     return found;
   }
 
-  private async readAll(): Promise<KnowledgeUnit[]> {
+  private async readAll(): Promise<NoteDetail[]> {
     try {
       return await this.store.queryAllMetadata();
     } catch (e) {
+      if (e instanceof NotePortError) {
+        throw new NotePortError(e.code, e.message, e.retryable);
+      }
       const message: string = e instanceof Error ? e.message : String(e);
       throw new NotePortError(NOTE_READ_ERROR_READ_FAILED, message, true);
     }
@@ -101,7 +107,7 @@ export class NoteReadPortAdapter implements NoteReadPort {
     }
   }
 
-  private static matches(unit: KnowledgeUnit, query: NoteQuery): boolean {
+  private static matches(unit: NoteDetail, query: NoteQuery): boolean {
     if (query.subject !== undefined && query.subject.length > 0 && unit.subject !== query.subject) {
       return false;
     }
@@ -127,7 +133,7 @@ export class NoteReadPortAdapter implements NoteReadPort {
     return false;
   }
 
-  private static toSummary(unit: KnowledgeUnit): NoteSummary {
+  private static toSummary(unit: NoteDetail): NoteSummary {
     const summary: NoteSummary = {
       id: unit.id,
       title: unit.title,

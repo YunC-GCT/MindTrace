@@ -15,7 +15,7 @@
 ## #238 契约层：六个 Port + adapter + 契约测试
 
 - [x] `NoteWritePort`（`commitKey` 必填、`expectedVersion` CAS、`approvedCheckpointHash`、`NotePortError`）— 契约与纯判定在切片 A；**entry adapter 已补**：`NoteWritePortAdapter`（幂等 / CAS / 审批哈希 / 错误分流）+ `NoteWriteStoreDao`（commit 查 `note_generation_commit`，写走 NoteDao 事务）。**已知缺口**：`approvedCheckpointHash` 没有任何持久化列，带哈希的写入会被安全拒绝；放行需先定存储位置并开迁移票
-- [x] `NoteReadPort`（`list` / `get` / `search` / `listByIds`；结构化错误码 `INVALID_QUERY` / `NOTE_READ_FAILED`；投影含复习字段）— 契约 `common/src/main/ets/ports/NoteReadPort.ets` + 适配器 `entry/src/main/ets/database/NoteReadPortAdapter.ets`
+- [x] `NoteReadPort`（`list` / `get` / `search` / `listByIds`；结构化错误码 `INVALID_QUERY` / `NOTE_READ_FAILED`；返回 `NoteSummary` / `NoteDetail` 投影）— 契约 `common/ports/NoteReadPort.ets`；**实现已按 ADR-0021 下沉 common**：`ports/impl/NoteReadPortAdapter` + `RdbNoteReadStore`（skill 可复用），entry 侧保留 `NoteDaoReadStore` 供精确测试
 - [x] `NoteWriteDecisions` 纯判定（insert / update / duplicate / conflict / reject + ADR-0019 错误码）— 切片 A，`common/src/main/ets/ports/NoteWriteDecisions.ets`
 - [x] `StudyPlanReadPort`（只承载现有待办语义；`subject` 由注入的 resolver 从 linked note 派生）+ entry 适配器 `StudyPlanPortAdapter`
 - [ ] `StudyPlanWritePort`（升级为复习计划前不定义，等 #242 拍板）
@@ -23,7 +23,7 @@
 - [x] `CardSnapshotStore` 补 `schemaVersion` / `updatedAt` / 单 key 原子替换 / 失败返回 `false` 可重试 — 切片 A（`CardSnapshotCodec` + `loadResult`）
 - [x] `RunStore` 接口契约（runId / parentRunId / status / checkpoint / committedNoteId / committedVersion / updatedAt）— 切片 A，`common/src/main/ets/ports/RunStore.ets`
 - [ ] **未决：RunStore 生产适配器需单开迁移票** — `parentRunId` / 事件序号 / 五终态落库三项目前**没有存储列**（`DatabaseHelper` 13 张表里没有 `run_event`）；本切片不实现生产适配器、不伪造持久化。
-- [ ] **消费方接线（阻塞，需单开切片）**：`skill/SkillAbility` 与 `entry/NoteEvidenceService` 去直连 RDB。实测两条硬约束：① 端口实现在 `entry`，`skill` 是独立 HAP 不能 import；② `NoteEvidenceService` 被 Node 契约测试装载，value-import entry 适配器（内含 `@kit.ArkData`）会让 loader `MODULE_NOT_FOUND`，构建本身能过。可行方向：把读适配器下沉 `common`（common 已持有 `DatabaseHelper`），或在组合根注入 `NoteReadPort`；`kg_edge` 读取需 `KnowledgePort`（目标态未建）
+- [ ] **消费方接线（Step 1 已做，Step 2 待做）**：ADR-0021 已把只读实现下沉 `common`（`NoteReadPortAdapter` + `RdbNoteReadStore`），`skill` 现在能复用；**Step 2** 仍需把 `common/tools/NoteQueryTools` 的裸 SQL 改走端口（`note_query_rag` 全文检索属 `NoteSearchPort`，不塞进读端口），`SkillAbility` 随之摘掉 `DatabaseHelper.init` 直连；`NoteEvidenceService` 在 Step 3 通过构造参数接收端口
 - [x] `NoteWritePort` + `CardSnapshotCodec` 契约测试：`scripts/arkts-lint/tests/v7-note-contracts.test.mjs`
       （19 条，`node --test` 实测 `pass 19 / fail 0`，覆盖 `decideWrite` 六分支 + codec 往返/版本/bad JSON/缺字段）
 - [x] 读侧契约测试（2026-10-30）：

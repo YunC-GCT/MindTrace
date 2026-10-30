@@ -19,7 +19,7 @@
  *   - 参数非法（limit <= 0 / offset < 0）抛 INVALID_QUERY(retryable=false)，不静默返回空数组。
  *   - 返回的 tags 是副本，调用方改投影不会污染存储。
  */
-import { KnowledgeUnit, DifficultyLevel, ReviewStatus } from '../models/CommonTypes';
+import { DifficultyLevel, ReviewStatus } from '../models/CommonTypes';
 
 // 列表查询：过滤条件全部可选；limit / offset 必填，由调用方给出分页意图。
 export interface NoteQuery {
@@ -50,18 +50,40 @@ export interface NoteSummary {
 export const NOTE_READ_ERROR_INVALID_QUERY: string = 'INVALID_QUERY';
 export const NOTE_READ_ERROR_READ_FAILED: string = 'NOTE_READ_FAILED';
 
-// DAO 需要满足的最小存储缝：只读两个查询，端口层不持 RDB 句柄。
-// 契约放 common，实现（NoteDao）在 entry —— 依赖方向仍是 entry → common。
-export interface NoteReadStore {
-  queryById(id: string): Promise<KnowledgeUnit | null>;
-  queryAllMetadata(): Promise<KnowledgeUnit[]>;
+// 详情投影：足够渲染详情页与证据引用，但不把整行写模型（KnowledgeUnit）泄漏给只读消费者。
+export interface NoteDetail {
+  id: string;
+  title: string;
+  content: string;
+  summary: string;
+  tags: string[];
+  subject: string;
+  category: string;
+  chapter: string;
+  difficulty: DifficultyLevel;
+  reviewStatus: ReviewStatus;
+  nextReviewAt: number;
+  updatedAt: number;
+  version: number;
+  source: string;
+  sourceImageId?: string;
+  sourceRegion?: string;
+  ocrConfidence?: number;
 }
 
-// 读侧端口。实现由 entry 侧适配器提供（NoteReadPortAdapter），common 不依赖任何 Kit。
+// DAO 需要满足的最小存储缝：只读两个查询，端口层不持 RDB 句柄。
+// 契约放 common，实现（NoteDaoReadStore / RdbNoteReadStore）不依赖写路径。
+export interface NoteReadStore {
+  queryById(id: string): Promise<NoteDetail | null>;
+  queryAllMetadata(): Promise<NoteDetail[]>;
+}
+
+// 读侧端口。实现由 common/ports/impl 提供（只读实现跨 HAP 共享，见 ADR-0021）；
+// 写实现留在 entry，本端口不涉及任何写入。
 export interface NoteReadPort {
   list(query: NoteQuery): Promise<NoteSummary[]>;
-  get(id: string): Promise<KnowledgeUnit | null>;
+  get(id: string): Promise<NoteDetail | null>;
   search(query: NoteQuery): Promise<NoteSummary[]>;
-  /** 按 id 批量取完整 note（证据扩展用）；去重、按 id 升序、缺失的 id 跳过 */
-  listByIds(ids: string[]): Promise<KnowledgeUnit[]>;
+  /** 按 id 批量取 note 详情（证据扩展用）；去重、按 id 升序、缺失的 id 跳过 */
+  listByIds(ids: string[]): Promise<NoteDetail[]>;
 }

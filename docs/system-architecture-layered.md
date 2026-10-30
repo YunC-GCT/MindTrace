@@ -594,7 +594,7 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 - **skill**：Want 解析、Intent Router、参数校验、调 `Dispatcher`、呈现结果、深链回 APP 确认；不写业务规则。
 - **cardservice**：只读 `CardSnapshotStore`，不调 Agent、不查库。
 
-**数据归属（10-27 评审补充）**：RDB schema 与平台实现（RDB / Preferences / 文件）归 `entry`；端口接口与 DTO 归 `common`；「App Store」不是独立模块，而是笔记 / 计划 / 视频三个领域的持久层——写入只经端口，且必须带审批结果与 `commitKey`。`agents` 与 `skill` 都不直接触碰 RDB。
+**数据归属（10-27 评审补充；10-30 按 ADR-0021 修订）**：RDB schema 与平台实现（RDB / Preferences / 文件）归 `entry`；端口接口与 DTO 归 `common`；**只读端口实现也归 `common`（`ports/impl/`，因为 `skill`/`cardservice` 无法依赖 `entry`，且 `common` 已持有 ArkData），写实现（事务 / `commitKey` / 审批）留在 `entry`**；「App Store」不是独立模块，而是笔记 / 计划 / 视频三个领域的持久层——写入只经端口，且必须带审批结果与 `commitKey`。`agents` 只依赖端口契约，**永不 import `ports/impl`**，也不直接触碰 RDB。
 
 ### 17.2 Dispatcher 主图与子图
 
@@ -661,7 +661,7 @@ APP 输入 / 小艺 Want
 | 契约 | 归属 | 现状 | 至少要定义 | 依据 |
 |---|---|---|---|---|
 | `Dispatcher.dispatch` | agents | 四分支已存在，返回扁平结果 | `NoteCommand`（capture / generation / regenerate / preparedCandidate / analysisOnly）+ discriminated `NoteOutcome`（needsInput / readyPreview / committed / failed(code, retryable) / cancelled） | ADR-0019（[0019](./adr/0019-note-command-and-outcome.md)） |
-| `NoteReadPort` / `NoteWritePort` | 接口 common，实现 entry | 直连 DAO，无端口 | `commitKey`、`expectedVersion`、`approvedCheckpointHash`（防 Agent 绕过 HITL）、幂等重放、`committed/cancelled` 判定 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `NoteReadPort` / `NoteWritePort` | 读实现 common（`ports/impl`）/ 写实现 entry（ADR-0021） | 直连 DAO，无端口 | `commitKey`、`expectedVersion`、`approvedCheckpointHash`（防 Agent 绕过 HITL）、幂等重放、`committed/cancelled` 判定 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 | `StudyPlanReadPort` / `StudyPlanWritePort` | 同上 | `StudyPlanDao` 裸 CRUD | **先定领域**：待办 vs 间隔复习；再定评分 / 掌握度 / 复习记录 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 | `ArtifactStorePort` | 同上 | 无 | `artifactId`、媒体类型、URI、校验和、保留与删除、部分失败的清理 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 | `CardSnapshotStore` | common | Preferences 静态读写，无 schema version | projection schema version、`updatedAt`、原子替换、刷新失败可重试 | 契约由 #238 落地；语义受 ADR-0019 约束 |
@@ -696,6 +696,6 @@ Token 事件只记数量与耗时，**不落正文**（沿用日志脱敏约束�
 | 是否新增 `AgentFacade` | 只在能隐藏多用例 / 版本时新增，不做 `Dispatcher` 的空转发壳 | 建议暂不新增 |
 | Subgraph 实现方式 | 共享 RunContext 的子图节点组合，**不要伪装成 Tool**（重试与输出语义不同） | 建议采纳 |
 | Checkpoint 层级 | 保持业务级；runtime checkpoint 单开 ADR 并先定序列化兼容 | 采纳 |
-| 笔记 / 计划的数据归属 | RDB 与平台实现归 entry，接口在 common，写操作经审批 + 幂等 Port | 建议采纳，需与「App Store 归谁」一并写进 §17.1 |
+| 笔记 / 计划的数据归属 | RDB 与平台实现归 entry，接口在 common，写操作经审批 + 幂等 Port | 建议采纳，需与「App Store 归谁」一并写进 §17.1；只读实现归属已由 ADR-0021 定为 common |
 | Video 是否端侧只产脚本 | 暂缓 mp4 renderer，先定「只产脚本」与产物隐私 / 存储 / 取消 | 待产品拍板 |
 | ReviewAgent 是否负责出题评分 | 不要直接展开 `study_plan`，先定待办 vs 间隔复习 | 待产品拍板 |

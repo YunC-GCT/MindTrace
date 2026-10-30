@@ -13,7 +13,6 @@
 
 import { relationalStore } from '@kit.ArkData';
 import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult } from 'common';
-import type { NoteReadStore } from 'common';
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitRevision,
@@ -34,7 +33,7 @@ const NOTE_METADATA_COLUMNS: string[] = [
   'ease_factor', 'repetitions', 'user_id', 'version',
 ];
 
-export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBaseProvider, NoteReadStore {
+export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBaseProvider {
   private store: relationalStore.RdbStore;
 
   constructor(store: relationalStore.RdbStore) {

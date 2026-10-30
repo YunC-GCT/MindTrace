@@ -14,17 +14,7 @@ class NotePortError extends Error {
   }
 }
 
-const mocks = {
-  common: {
-    NotePortError,
-    NOTE_READ_ERROR_INVALID_QUERY: 'INVALID_QUERY',
-    NOTE_READ_ERROR_READ_FAILED: 'NOTE_READ_FAILED',
-  },
-};
-const adapterModule = loadNoteReviewEtsModule(
-  'entry/src/main/ets/database/NoteReadPortAdapter.ets',
-  { mocks },
-);
+const adapterModule = loadNoteReviewEtsModule('common/src/main/ets/ports/impl/NoteReadPortAdapter.ets');
 const NoteReadPortAdapter = adapterModule.NoteReadPortAdapter;
 
 function unit(id, overrides = {}) {
