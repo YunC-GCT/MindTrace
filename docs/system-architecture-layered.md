@@ -4,6 +4,7 @@
 > v5 依据 Codex 高推理评审修正三处硬伤：StateGraph 并无 checkpoint/interrupt、文搜图与工程 API 版本冲突、白名单不可信。
 > §17 的 v7 目标态经 2026-10-27 第二轮外评审修订（§14.1），总体判定「有条件可落地」。
 > v1 范围仍是：**全面 Kit 化、复习移出、MCP 只留接口、卡片只读**。
+> **2026-10-30 口径**：项目处于**测试态，不推进上架**（P6 暂缓、P5 合规缓做），详见 §15 注。
 
 ---
 
@@ -342,7 +343,7 @@ v1 用 SM-2（间隔 × 难度因子），规则简单、可解释；v2 再考�
 
 | 层 | 已有 | 缺 |
 |---|---|---|
-| L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试、回执短路；7 个 action 声明 | A2A **不经过 Dispatcher**（直调 `ReplyService`），「小艺触发整理」是新增接线；skill 侧 7 个 action 仍只有声明 |
+| L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试；回执短路读 `receipts/last-capture.json`；7 个 action 声明 | A2A 文字/图片**已就地入库**（`AgentIngestService → OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService`，`64008c3`），不再直调 `ReplyService`；对话分支仍走 `ReplyService`；P4 结果回执未做；skill 侧 7 个 action 仍只有声明（测试态无法注册意图） |
 | L2 | `Dispatcher` 四分支 + `CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 已是 102 行 facade | 没有端口层：`skill/SkillAbility` 自己 `DatabaseHelper.init()` 并建只读 ToolRegistry，`entry` 的 `NoteEvidenceService` 直连 RDB 与 `kg_edge`；没有 RunContext / EventSink；没有统一 Trace |
 | L3 | Core Vision Kit OCR（`SERVER_FALLBACK_ENABLED=false`）、文搜图常驻 Worker、模型网关 catalog / resolver / discovery 多提供商 | MCP 只有 `OcrTool`，没有 schema 发现与权限；RAG 只有 `rag_embedding` 建表，没有检索实现 |
 | L4 | RDB 13 张表（`knowledge_unit` / `kg_edge` / `study_plan` / 生成 run） | `review_item` / `review_log` 未建表；`similar` 边未生成（`embedding: []`）；`study_plan` 是待办，不是复习计划 |
@@ -514,6 +515,10 @@ RDB 变更（`knowledge_unit` 表加三列，迁移版本 13 → 14）：
 
 小艺开放平台**不在运行时链路里**，它是注册、审核与分发面。代码写完不等于能用，最后必须走完这套：
 
+> **2026-10-30 注**：项目当前**测试态、不上架**。本节保留为「将来要上架时的清单」，不参与当前排期；
+> 测试态下只有「意图注册（Intents Kit）」与「Agent Framework Kit 拉起智能体」两项不可验证，
+> A2A 白名单链路与应用内链路不受影响。P5 / P6 的权威状态见 [`docs/agents/phase-tracker.md`](./agents/phase-tracker.md)。
+
 | 步骤 | 做什么 | 卡点 |
 |---|---|---|
 | 1 | AGC 上架应用（Release 签名，包名与工程一致） | 意图注册要求关联已上架应用 |
@@ -633,7 +638,7 @@ APP 输入 / 小艺 Want
 
 上图画的是目标态。现状有两处必须写清楚，否则会误判工作量：
 
-- **小艺这条不在这张图里**：`AgentExtAbility` 收到 A2A 请求后直调 `ReplyService`，回执命中则直接读 `receipts/last-capture.json` 返回，两条路径都**不经过 `Dispatcher`**。要让「小艺触发整理」走主图，是新增接线，得先定 request/result 映射。
+- **小艺这条已经进图了（2026-10-30 更新）**：`AgentExtAbility` 收到 A2A 请求后由 `AgentIngestService` 走 `OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService` 就地入库（`64008c3`）；回执命中仍是短路读 `receipts/last-capture.json`，纯对话仍走 `ReplyService`。**「A2A 不经过 Dispatcher」的旧结论作废**；剩余缺口是把 P4 结果回执（「本次整理 N 条」）接上。
 - **确认在图外**：预览 → 用户确认 → 提交是三次独立调用，不是 `interrupt()`；这正是 §3.0 说的「业务级 checkpoint + 图外确认」。
 
 分支：Review 走 `plan → ask → grade → StudyPlan → App Store`；Video 走 `outline → script → render → mp4 → App Store`。注意 `study_plan` 当前是待办不是复习计划，ReviewAgent 的领域模型要先定（见 §16.1）。

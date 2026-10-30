@@ -111,10 +111,12 @@
 | 阶段 | 状态 | 说明 |
 |---|---|---|
 | **P0 协议接入** | ✅ | 小艺可调起 `AgentExtAbility` 并渲染回复；验收命令 `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` 返回 `ok: true` |
-| **P1–P5** | ⬜ | 选图入口 / 批量 Picker / 真实编排 / 结果回执 / 合规标识，逐项验收口径见 phase-tracker |
-| **P6 上架** | 🟡 | 已提交审核；通过前只有白名单账号能调起 |
+| **P1 入口 / P2 选图 / P3 编排 / P3b 文搜图** | ✅ | 应用内 `+ → 批量`；A2A 已就地入库（`AgentIngestService → Dispatcher → KnowledgeUnitWriteService`）；逐项证据见 phase-tracker |
+| **P4 模型网关** | 🟡 | 云端真机已通（首字 741ms）；端侧 `localChatModel` 仅 PC/2in1 + 企业资质，手机平板不可用 |
+| **P4 结果回执 / P5 合规** | ⬜ / ⏸ | 回执条数未做；合规标识随 P6 缓做 |
+| **P6 上架** | ⏸ | **项目处于测试态，不推进上架**；只影响「意图注册」与「Agent Framework Kit 拉起智能体」两项验证，不影响应用内链路与 A2A 白名单链路 |
 
-**新功能一律按 P1–P5 推进。**
+**新功能一律按 P1–P5 推进；测试态下不排上架相关工作。**
 ---
 
 ## 关键架构 (30 秒读懂)
