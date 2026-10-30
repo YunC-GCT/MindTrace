@@ -21,9 +21,11 @@ import { DifficultyLevel, ReviewStatus } from '../../models/CommonTypes';
 import type { NoteDetail, NoteReadStore } from '../NoteReadPort';
 
 const DETAIL_COLUMNS: string = 'id, title, content, summary, tags, subject, category, chapter, difficulty,'
-  + ' source, source_image_id, source_region, ocr_confidence, updated_at, review_status, next_review_at, version';
+  + ' source, source_image_id, source_region, ocr_confidence, created_at, updated_at, review_status,'
+  + ' next_review_at, interval_days, ease_factor, repetitions, user_id, version';
 const META_COLUMNS: string = 'id, title, summary, tags, subject, category, chapter, difficulty,'
-  + ' source, source_image_id, source_region, ocr_confidence, updated_at, review_status, next_review_at, version';
+  + ' source, source_image_id, source_region, ocr_confidence, created_at, updated_at, review_status,'
+  + ' next_review_at, interval_days, ease_factor, repetitions, user_id, version';
 
 export class RdbNoteReadStore implements NoteReadStore {
   private readonly store: relationalStore.RdbStore;
@@ -87,6 +89,11 @@ export class RdbNoteReadStore implements NoteReadStore {
       difficulty: RdbNoteReadStore.readLong(rs, 'difficulty') as DifficultyLevel,
       reviewStatus: RdbNoteReadStore.readString(rs, 'review_status') as ReviewStatus,
       nextReviewAt: RdbNoteReadStore.readLong(rs, 'next_review_at'),
+      intervalDays: RdbNoteReadStore.readLong(rs, 'interval_days'),
+      easeFactor: RdbNoteReadStore.readLong(rs, 'ease_factor'),
+      repetitions: RdbNoteReadStore.readLong(rs, 'repetitions'),
+      userId: RdbNoteReadStore.readString(rs, 'user_id'),
+      createdAt: RdbNoteReadStore.readLong(rs, 'created_at'),
       updatedAt: RdbNoteReadStore.readLong(rs, 'updated_at'),
       version: RdbNoteReadStore.readLong(rs, 'version'),
       source: RdbNoteReadStore.readString(rs, 'source'),

@@ -63,6 +63,12 @@ export interface NoteDetail {
   difficulty: DifficultyLevel;
   reviewStatus: ReviewStatus;
   nextReviewAt: number;
+  /** 间隔重复状态与归属：详情页/导出需要，读投影一并带出 */
+  intervalDays: number;
+  easeFactor: number;
+  repetitions: number;
+  userId: string;
+  createdAt: number;
   updatedAt: number;
   version: number;
   source: string;

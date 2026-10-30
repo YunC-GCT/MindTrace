@@ -18,6 +18,9 @@ import { ReviewStatus } from '../models/CommonTypes';
 import { NOTE_SEARCH_DEFAULT_TOP_K, NOTE_SEARCH_MAX_TOP_K } from '../ports/NoteSearchPort';
 import type { NoteSearchHit, NoteSearchPort, NoteSearchQuery } from '../ports/NoteSearchPort';
 import { RdbNoteSearchAdapter } from '../ports/impl/RdbNoteSearchAdapter';
+import type { NoteDetail, NoteReadPort } from '../ports/NoteReadPort';
+import { NoteReadPortAdapter } from '../ports/impl/NoteReadPortAdapter';
+import { RdbNoteReadStore } from '../ports/impl/RdbNoteReadStore';
 import { AgentTool, ToolResult } from './ToolRegistry';
 
 const TABLE: string = 'knowledge_unit';
@@ -279,19 +282,21 @@ export class NoteQueryRagTool implements AgentTool {
   }
 }
 
-// 按 id 取单条笔记 (含全文 content)
+// 按 id 取单条笔记 (含全文 content) — 读取走 NoteReadPort（ADR-0021）
 export class NoteGetTool implements AgentTool {
   public name: string = 'note_get';
   public description: string = 'Fetch one saved math note by id, including full Markdown content. Returns a JSON object, or a "not found" message.';
   public parameters: Record<string, Object>;
+  private readonly readPort?: NoteReadPort;
 
-  constructor() {
+  constructor(readPort?: NoteReadPort) {
     const props: Record<string, Object> = {};
     props['id'] = stringProp('KnowledgeUnit id (required)');
     const schema: Record<string, Object> = objectSchema(props);
     const required: string[] = ['id'];
     schema['required'] = required;
     this.parameters = schema;
+    this.readPort = readPort;
   }
 
   async execute(args: Record<string, Object>): Promise<ToolResult> {
@@ -300,49 +305,54 @@ export class NoteGetTool implements AgentTool {
       const noId: ToolResult = { ok: false, content: 'note_get requires id' };
       return noId;
     }
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
+    const id: string = String(idArg);
+    let port: NoteReadPort | null = this.readPort === undefined ? null : this.readPort;
+    if (port === null) {
+      const readStore: RdbNoteReadStore | null = RdbNoteReadStore.fromDatabase();
+      if (readStore !== null) {
+        port = new NoteReadPortAdapter(readStore);
+      }
+    }
+    if (port === null) {
       const notReady: ToolResult = { ok: false, content: 'store not ready' };
       return notReady;
     }
-    const id: string = String(idArg);
-    const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(TABLE);
-    predicates.equalTo('id', id);
-    const columns: string[] = ['id', 'title', 'content', 'summary', 'tags', 'subject', 'category', 'chapter', 'difficulty', 'source', 'created_at', 'updated_at', 'review_status', 'next_review_at', 'interval_days', 'user_id', 'version'];
-    return new Promise<ToolResult>((resolve: (r: ToolResult) => void, reject: (e: Error) => void): void => {
-      store.query(predicates, columns, (err, rs) => {
-        if (err) {
-          reject(new Error('note_get failed: ' + err.message));
-          return;
-        }
-        const ok: ToolResult = { ok: true, content: '' };
-        if (rs.goToFirstRow()) {
-          const row: Record<string, Object> = {};
-          row['id'] = readStr(rs, 'id');
-          row['title'] = readStr(rs, 'title');
-          row['content'] = readStr(rs, 'content');
-          row['summary'] = readStr(rs, 'summary');
-          row['tags'] = readStr(rs, 'tags');
-          row['subject'] = readStr(rs, 'subject');
-          row['category'] = readStr(rs, 'category');
-          row['chapter'] = readStr(rs, 'chapter');
-          row['difficulty'] = readStr(rs, 'difficulty');
-          row['source'] = readStr(rs, 'source');
-          row['created_at'] = readLong(rs, 'created_at');
-          row['updated_at'] = readLong(rs, 'updated_at');
-          row['review_status'] = readStr(rs, 'review_status');
-          row['next_review_at'] = readLong(rs, 'next_review_at');
-          row['interval_days'] = readLong(rs, 'interval_days');
-          row['user_id'] = readStr(rs, 'user_id');
-          row['version'] = readLong(rs, 'version');
-          ok.content = JSON.stringify(row);
-        } else {
-          ok.content = 'not found: no note with id ' + id;
-        }
-        rs.close();
-        resolve(ok);
-      });
-    });
+    try {
+      const detail: NoteDetail | null = await port.get(id);
+      const ok: ToolResult = { ok: true, content: '' };
+      if (detail === null) {
+        ok.content = 'not found: no note with id ' + id;
+        return ok;
+      }
+      ok.content = JSON.stringify(NoteGetTool.toRecord(detail));
+      return ok;
+    } catch (e) {
+      const failed: ToolResult = { ok: false, content: 'note_get failed: ' + ((e as Error).message ?? String(e)) };
+      return failed;
+    }
+  }
+
+  // 保持旧 payload 形状：tags 为 JSON 字符串，difficulty 为字符串形式，字段名/顺序不变。
+  private static toRecord(detail: NoteDetail): Record<string, Object> {
+    const row: Record<string, Object> = {};
+    row['id'] = detail.id;
+    row['title'] = detail.title;
+    row['content'] = detail.content;
+    row['summary'] = detail.summary;
+    row['tags'] = JSON.stringify(detail.tags);
+    row['subject'] = detail.subject;
+    row['category'] = detail.category;
+    row['chapter'] = detail.chapter;
+    row['difficulty'] = String(detail.difficulty);
+    row['source'] = detail.source;
+    row['created_at'] = detail.createdAt;
+    row['updated_at'] = detail.updatedAt;
+    row['review_status'] = detail.reviewStatus;
+    row['next_review_at'] = detail.nextReviewAt;
+    row['interval_days'] = detail.intervalDays;
+    row['user_id'] = detail.userId;
+    row['version'] = detail.version;
+    return row;
   }
 }
 

@@ -25,7 +25,8 @@
 - [ ] **未决：RunStore 生产适配器需单开迁移票** — `parentRunId` / 事件序号 / 五终态落库三项目前**没有存储列**（`DatabaseHelper` 13 张表里没有 `run_event`）；本切片不实现生产适配器、不伪造持久化。
 - [x] **检索端口（Step 2a，ADR-0021）**：`NoteSearchPort` 契约（query / hit / TopK 上限 10）+ `NoteSearchRanking` 纯打分（title×4 / tags×3 / summary×2 / content×1，稳定排序）+ `RdbNoteSearchAdapter`（common，SQL 与 `note_query_rag` 等价）；契约测试 8 条
 - [x] **消费方接线 Step 2b-1**：`note_query_rag` 改走 `NoteSearchPort`（端口未就绪仍返回 `store not ready`；payload 字段与 tags 编码保持旧形状）；工具文件不再保留第二套打分算法，`keyword-search-tool` 的可读性断言改为指向端口实现
-- [ ] **消费方接线 Step 2b-2**：`note_get` 改走 `NoteReadPort.get`（需给 `NoteDetail` 补 `createdAt` / `intervalDays` / `easeFactor` / `repetitions` / `userId` 以保持 payload 等价）；`note_query` 的 keyword 含正文匹配，需定映射；`ToolCatalog` 注入默认实现后 `SkillAbility` 才能摘掉 `DatabaseHelper.init`；`NoteEvidenceService`（Step 3）通过构造参数接收端口
+- [x] **消费方接线 Step 2b-2**：`note_get` 改走 `NoteReadPort.get`；`NoteDetail` 补齐 `createdAt` / `intervalDays` / `easeFactor` / `repetitions` / `userId`，payload 字段名与 `tags`/`difficulty` 编码保持旧形状
+- [ ] **消费方接线 Step 2b-3**：`note_query` 的 keyword 含正文匹配，需定映射（扩端口过滤面或改走检索端口）；`ToolCatalog` 注入默认实现后 `SkillAbility` 才能摘掉 `DatabaseHelper.init`；`NoteEvidenceService`（Step 3）通过构造参数接收端口
 - [x] `NoteWritePort` + `CardSnapshotCodec` 契约测试：`scripts/arkts-lint/tests/v7-note-contracts.test.mjs`
       （19 条，`node --test` 实测 `pass 19 / fail 0`，覆盖 `decideWrite` 六分支 + codec 往返/版本/bad JSON/缺字段）
 - [x] 读侧契约测试（2026-10-30）：
