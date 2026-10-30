@@ -430,6 +430,17 @@ export { RdbNoteReadStore } from './ports/impl/RdbNoteReadStore';
 export { NOTE_SEARCH_DEFAULT_TOP_K, NOTE_SEARCH_MAX_TOP_K } from './ports/NoteSearchPort';
 export type { NoteSearchHit, NoteSearchPort, NoteSearchQuery } from './ports/NoteSearchPort';
 export { RdbNoteSearchAdapter } from './ports/impl/RdbNoteSearchAdapter';
+// 复习读端口（ADR-0022 / #238）：只读投影，SM-2 属 review.plan 工具。
+export {
+  ReviewPortError,
+  REVIEW_DUE_DEFAULT_LIMIT,
+  REVIEW_DUE_MAX_LIMIT,
+  REVIEW_READ_ERROR_INVALID_QUERY,
+  REVIEW_READ_ERROR_READ_FAILED,
+} from './ports/ReviewPorts';
+export type { ReviewItem, ReviewLogEntry, ReviewReadPort, ReviewReadStore } from './ports/ReviewPorts';
+export { ReviewReadPortAdapter } from './ports/impl/ReviewReadPortAdapter';
+export { RdbReviewReadStore } from './ports/impl/RdbReviewReadStore';
 export type { ArtifactDescriptor, ArtifactFileIo, ArtifactStorePort } from './ports/ArtifactStorePort';
 export {
   StudyPlanError,

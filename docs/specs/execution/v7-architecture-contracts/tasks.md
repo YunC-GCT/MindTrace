@@ -96,7 +96,8 @@
 ### 派生票（拍板后待开/待做）
 
 - [x] schema v15 迁移：`review_item` / `review_log` + 3 个索引（`DatabaseHelper` v14 → v15，`CREATE IF NOT EXISTS`，回滚 = DROP）；源码级契约测试 `v7-review-schema.test.mjs` 6 条
-- [ ] `ReviewReadPort` / `ReviewWritePort` 契约 + adapter + 契约测试（按 #238 六必填项）
+- [x] `ReviewReadPort` 契约 + 只读实现（ADR-0021/0022）：`listDue` / `getByUnit` / `history`，limit 夹取 + 结构化错误码；`ReviewReadPortAdapter` + `RdbReviewReadStore`（common）；契约测试 `v7-review-read-port.test.mjs` 6 条
+- [ ] `ReviewWritePort` 契约 + adapter + 契约测试（`schedule` / `record`，operationId 幂等；随 `ReviewAgent` 票定义，SM-2 在 `review.plan` 工具）
 - [ ] `ReviewAgent` 子图：`plan → ask → grade`，SM-2 落在 `review.plan` 工具
 - [ ] `MathVideoAgent` 脚本流水线：`outline → script`（产物落 App Store 文本产物）
 - [x] schema v16：`run_store` / `run_event` + 2 个索引（`RunStoreDao` 生产实现，`MAX(sequence)+1` 事务内递增）；随 v7-runstore 契约测试一起验证

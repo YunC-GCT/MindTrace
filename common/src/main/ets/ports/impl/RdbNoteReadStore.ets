@@ -90,7 +90,7 @@ export class RdbNoteReadStore implements NoteReadStore {
       reviewStatus: RdbNoteReadStore.readString(rs, 'review_status') as ReviewStatus,
       nextReviewAt: RdbNoteReadStore.readLong(rs, 'next_review_at'),
       intervalDays: RdbNoteReadStore.readLong(rs, 'interval_days'),
-      easeFactor: RdbNoteReadStore.readLong(rs, 'ease_factor'),
+      easeFactor: RdbNoteReadStore.readDouble(rs, 'ease_factor'),
       repetitions: RdbNoteReadStore.readLong(rs, 'repetitions'),
       userId: RdbNoteReadStore.readString(rs, 'user_id'),
       createdAt: RdbNoteReadStore.readLong(rs, 'created_at'),
@@ -124,6 +124,14 @@ export class RdbNoteReadStore implements NoteReadStore {
   private static readLong(rs: relationalStore.ResultSet, column: string): number {
     try {
       return rs.getLong(rs.getColumnIndex(column));
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  private static readDouble(rs: relationalStore.ResultSet, column: string): number {
+    try {
+      return rs.getDouble(rs.getColumnIndex(column));
     } catch (e) {
       return 0;
     }

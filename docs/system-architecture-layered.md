@@ -152,7 +152,7 @@ Agent **不许直接碰 RDB**，否则复习、搜索、导出每加一个场景
 | 端口 | 方法 | 给谁用 |
 |---|---|---|
 | NoteReadPort | `list(filter)` / `get(id)` / `search(query)` | 复习、对话、导出 |
-| ReviewPort | `due(now)` / `mastery(noteId)` / `record(...)` | 复习 |
+| ReviewPort | `listDue(now)` / `getByUnit(unitId)` / `history(unitId)`（读已落地）；写侧 `schedule/record` 随 ReviewAgent 票 | 复习 |
 | KnowledgePort | `units(topic)` / `related(id)` | 知识星系、RAG |
 
 写操作走 `NoteWritePort` / `ReviewWritePort`，必须经确认门禁。
