@@ -68,12 +68,14 @@
 
 ## #241 NoteAgent 薄包装 + 迁 capture
 
-- [ ] `NoteAgent` 只包现有节点与服务，不改 prompt、不重写 `TruthCheck`
-- [ ] `TruthCheck` 留在子图最后一个节点
-- [ ] `Dispatcher` 只改 capture 分支，其余三条保持原样
-- [ ] 同切片删旧 capture 装配，不留 flag / 双 runtime
-- [ ] #239 的 capture 快照逐字段等价
-- [ ] build 5/5、gate PASS、真机 capture 流程与迁移前一致（截图或日志）
+- [x] `NoteAgent` 只包现有节点与服务，不改 prompt、不重写 `TruthCheck` — 新增 `agents/src/main/ets/agents/NoteAgent.ets`
+- [x] `TruthCheck` 留在子图最后一个节点（`structure → truth_check → persist`）
+- [x] `Dispatcher` 只改 capture 分支，其余三条（generation / regenerate / prepared）未动
+- [x] 同切片删旧 capture 装配：`Dispatcher.buildGraph` 已删除，无 flag / 双 runtime
+- [x] #239 的 capture 快照逐字段等价 — `node --test scripts/arkts-lint/tests/v7-golden-dispatch.test.mjs` → `18 pass / 0 fail`，快照零重录
+- [x] build 5/5、gate PASS — `node scripts/build-hsp-hap.mjs` → 49 tasks **BUILD SUCCESSFUL**；`agent-gate` → `RESULT: PASS`（`pass=955 fail=0`）
+- [ ] A2A 回归：`python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"`（A2A 经同一 capture 分支，必须复测）
+- [ ] 真机 capture 流程与迁移前一致（截图或日志）
 
 ## #242 拍板：Video 范围 / ReviewAgent 领域
 

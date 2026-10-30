@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const dispatcher = readFileSync(resolve(root, 'agents/src/main/ets/core/Dispatcher.ets'), 'utf8');
+const noteAgent = readFileSync(resolve(root, 'agents/src/main/ets/agents/NoteAgent.ets'), 'utf8');
 const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiService.ets'), 'utf8');
 const agentsIndex = readFileSync(resolve(root, 'agents/src/main/ets/Index.ets'), 'utf8');
 const captureTypes = readFileSync(resolve(root, 'common/src/main/ets/models/CaptureChain.ets'), 'utf8');
@@ -16,19 +17,26 @@ test('Dispatcher exposes single dispatch entry only', () => {
   assert.equal((dispatcher.match(/async routeDispatch\(/g) || []).length, 0);
 });
 
-test('Dispatcher owns CaptureGraph construction and DAO injection internally', () => {
-  assert.match(dispatcher, /private buildGraph\(options: DispatchOptions = \{\}\): CaptureGraph/);
-  assert.match(dispatcher, /PersistNodeFactory\.create\(options\.dao\)/);
-  assert.match(dispatcher, /addConditionalEdge\('classify'/);
-  assert.match(dispatcher, /input\.analysisOnly \? 'END' : 'structure'/);
-  assert.match(dispatcher, /addConditionalEdge\('truth_check', .*persist \? 'persist' : 'END'\)/);
-  assert.match(dispatcher, /addEdge\('persist', 'END'\)/);
-  assert.match(dispatcher, /PERSIST_DAO_REQUIRED/);
-  assert.doesNotMatch(dispatcher, /addNode\('persist', async \(input: AgentState\) => \(\{ state: input \}\)\)/);
+test('NoteAgent owns CaptureGraph construction and DAO injection internally', () => {
+  assert.match(noteAgent, /private buildGraph\(\): CaptureGraph/);
+  assert.match(noteAgent, /PersistNodeFactory\.create\(dao\)/);
+  assert.match(noteAgent, /addConditionalEdge\('classify'/);
+  assert.match(noteAgent, /input\.analysisOnly \? 'END' : 'structure'/);
+  assert.match(noteAgent, /addConditionalEdge\('truth_check', .*persist \? 'persist' : 'END'\)/);
+  assert.match(noteAgent, /addEdge\('persist', 'END'\)/);
+  assert.match(noteAgent, /PERSIST_DAO_REQUIRED/);
+  assert.doesNotMatch(noteAgent, /addNode\('persist', async \(input: AgentState\) => \(\{ state: input \}\)\)/);
 });
 
-test('Dispatcher instantiates one shared TypeClassifier inside buildGraph', () => {
-  assert.equal((dispatcher.match(/new TypeClassifier\(/g) || []).length, 1);
+test('Dispatcher delegates capture to NoteAgent and no longer assembles the graph', () => {
+  assert.match(dispatcher, /new NoteAgent\(/);
+  assert.match(dispatcher, /noteAgent\.run\(initial, runContext\)/);
+  assert.doesNotMatch(dispatcher, /private buildGraph\(/);
+  assert.doesNotMatch(dispatcher, /new TypeClassifier\(/);
+});
+
+test('NoteAgent instantiates one shared TypeClassifier inside buildGraph', () => {
+  assert.equal((noteAgent.match(/new TypeClassifier\(/g) || []).length, 1);
 });
 
 test('AiService consumes Capture workflow only through Dispatcher.dispatch', () => {

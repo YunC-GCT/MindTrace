@@ -1,6 +1,7 @@
 // MindTrace - Dispatcher (主 Agent 调度中枢) · D2 CaptureGraph host
 // 2026-09-05 · D2 Ticket #6: 唯一最终公共入口 dispatch()
-import { TypeClassifier } from '../agents/TypeClassifier';
+import { NoteAgent } from '../agents/NoteAgent';
+import type { NoteAgentOptions } from '../agents/NoteAgent';
 import { KnowledgeModel } from '../agents/KnowledgeModel';
 import { TruthCheckService } from '../agents/TruthCheckService';
 import {
@@ -64,9 +65,6 @@ import {
 import type { DispatchPayload, CancellationToken } from 'common';
 import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
 import { CaptureGraph } from '../graph/CaptureGraph';
-import type { NodeTimingSink } from '../graph/CaptureGraph';
-import { OcrNodeFactory } from '../graph/nodes/OcrNode';
-import { ClassifyNodeFactory } from '../graph/nodes/ClassifyNode';
 import { StructureNodeFactory } from '../graph/nodes/StructureNode';
 import { TruthCheckNodeFactory } from '../graph/nodes/TruthCheckNode';
 import { PersistNodeFactory } from '../graph/nodes/PersistNode';
@@ -278,10 +276,16 @@ export class Dispatcher {
       analysisOnly: options.analysisOnly === true,
       subjectVocabulary: options.subjectVocabulary ?? [],
     };
-    const graph: CaptureGraph = this.buildGraph(options);
+    // #241：capture 由 NoteAgent 子 Agent 装配并执行，这里只负责 run 上下文与结果映射。
+    const noteOptions: NoteAgentOptions = {
+      dao: options.dao,
+      cancellationToken: options.cancellationToken,
+      onNodeTiming: options.onNodeTiming,
+    };
+    const noteAgent: NoteAgent = new NoteAgent(noteOptions);
     // #243：预算与取消是运行时属性，只走调用参数，不经 AgentState。
     const runContext: RunContext = this.resolveRunContext(options);
-    const finalState: AgentState = await graph.run(initial, runContext);
+    const finalState: AgentState = await noteAgent.run(initial, runContext);
     options.cancellationToken?.throwIfCancelled();
     const error: CaptureGraphError | undefined = finalState.error;
     if (error !== undefined) {
@@ -1781,46 +1785,6 @@ export class Dispatcher {
       lines.push('[source:' + fragment.id + '] ' + fragment.text);
     }
     return lines.join('\n');
-  }
-
-  private buildGraph(options: DispatchOptions = {}): CaptureGraph {
-    const sink = options.onNodeTiming;
-    const timing: NodeTimingSink | undefined = sink === undefined
-      ? undefined
-      : (step: CaptureStep, ms: number): void => sink(step, ms);
-    const graph: CaptureGraph = new CaptureGraph(timing);
-    const classifier: TypeClassifier = new TypeClassifier(options.cancellationToken);
-    const structure: KnowledgeModel = new KnowledgeModel(undefined, options.cancellationToken);
-    const truth: TruthCheckService = new TruthCheckService();
-    graph.addNode('capture', OcrNodeFactory.create(classifier));
-    graph.addNode('classify', ClassifyNodeFactory.create(classifier));
-    graph.addNode('structure', StructureNodeFactory.create(structure));
-    graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
-    if (options.dao !== undefined) {
-      graph.addNode('persist', PersistNodeFactory.create(options.dao));
-    } else {
-      graph.addNode('persist', async (input: AgentState): Promise<CaptureNodeResult> => {
-        const next: AgentState = copyAgentState(input);
-        const error: CaptureGraphError = {
-          kind: 'PERSIST_DAO_REQUIRED',
-          message: 'persist requested but no NoteDaoInterface was provided',
-          step: 'persist',
-          retriable: false,
-        };
-        next.error = error;
-        const result: CaptureNodeResult = { state: next };
-        return result;
-      });
-    }
-    graph.addEdge('START', 'capture');
-    graph.addEdge('capture', 'classify');
-    graph.addConditionalEdge('classify', (input: AgentState): CaptureStep => {
-      return input.analysisOnly ? 'END' : 'structure';
-    });
-    graph.addEdge('structure', 'truth_check');
-    graph.addConditionalEdge('truth_check', (input: AgentState): CaptureStep => input.persist ? 'persist' : 'END');
-    graph.addEdge('persist', 'END');
-    return graph;
   }
 
   private seedText(req: DispatchRequest): string {

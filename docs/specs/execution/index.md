@@ -24,7 +24,7 @@
 | [`ticket-0-3-chat-filesdir-seam/`](./ticket-0-3-chat-filesdir-seam/) | spec 021 §验证 | `#121` **closed** 2026-09-17 | spec / plan / tasks / verification-record | **`PASS`** |
 | [`ticket-0-5-customspan-placeholder-seam/`](./ticket-0-5-customspan-placeholder-seam/) | spec 021 §验证 | `#123` **closed** 2026-09-15 | spec / plan / tasks / verification-record | **`PASS`** |
 | [`ticket-0-6-chat-render-fixtures-budgets/`](./ticket-0-6-chat-render-fixtures-budgets/) | [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | `#124` **closed** 2026-09-17 | spec / plan / tasks / verification-record / `raw/*.jsonl` | **`PASS`**（4×20 raw 证据） |
-| [`v7-architecture-contracts/`](./v7-architecture-contracts/) | [#237–#242](https://github.com/YunC-GCT/MindTrace/issues/237) · [§17 目标态](../../system-architecture-layered.md) | `#237`–`#242` 全部 **open** | plan（含交接说明）/ tasks | `in-progress`（2026-10-30：#237/#239 完成 · #238 约 60% · #241 下一格） |
+| [`v7-architecture-contracts/`](./v7-architecture-contracts/) | [#237–#242](https://github.com/YunC-GCT/MindTrace/issues/237) · [§17 目标态](../../system-architecture-layered.md) | `#237`–`#242` 全部 **open** | plan（含交接说明）/ tasks | `in-progress`（2026-10-30：#237/#239 完成 · #238 约 60% · #241 切片 1 完成，待真机） |
 | [`archive-2026-09.md`](./archive-2026-09.md) | #97 / #98 / 编译修复 / 生成稳定性 | `#97` `#98` **closed** 2026-10-18（批量） | 合并记录（4 个残包） | — |
 
 `feature.json` 是 Spec-Kit 工具的元数据，不是 bundle。`archive-2026-09.md` 是 4 个残包的合并记录，不是在执行包。

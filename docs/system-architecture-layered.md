@@ -619,8 +619,8 @@ preflight → route → invoke → verify → HITL → publish
 
 ### 17.3 内核差距（按优先级）
 
-1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；现状 `CaptureGraph` 已是 `StateGraph` 实例，但由 `Dispatcher` 直接 `new` 并喂节点，还不是「子图作为节点」；
-2. **RunContext**：runId / parentRunId / cancel / budget（当前只有 `CancellationToken`）；
+1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；`CaptureGraph` 现已由 `NoteAgent` 装配并直调（#241 切片 1，薄包装），但还不是「子图作为节点」；
+2. **RunContext**：**已落地**（#243）——`runId` / `parentRunId` / `deadline` / `budget` / `token` 经 `DispatchOptions.runContext` 传入，父子图共享同一预算；
 3. **EventSink**：node / tool / token / approval 事件（当前只有 `progressSink` 与 #235 加的按节点耗时回调 `NodeTimingSink`）；
 4. **State / Reducer**：typed channel 取代手写 `copyAgentState`；
 5. **Checkpoint**：保持业务级（草稿 / 确认），要做 runtime checkpoint 需单独 ADR。
