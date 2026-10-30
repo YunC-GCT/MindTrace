@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 15;
+const DB_SCHEMA_VERSION: number = 16;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -265,6 +265,35 @@ const SQL_INDEX_REVIEW_ITEM_UNIT: string =
 const SQL_INDEX_REVIEW_LOG_ITEM: string =
   "CREATE INDEX IF NOT EXISTS idx_review_log_item ON review_log(review_item_id)";
 
+// RunStore 持久化（v15 → v16）：run 记录 + 事件流。
+// 事件序号由 DAO 在事务内 MAX(sequence)+1 生成，(run_id, sequence) 唯一递增。
+const SQL_CREATE_RUN_STORE: string = `
+CREATE TABLE IF NOT EXISTS run_store (
+  run_id TEXT PRIMARY KEY,
+  parent_run_id TEXT,
+  status TEXT NOT NULL,
+  checkpoint_id TEXT,
+  committed_note_id TEXT,
+  committed_version INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+
+const SQL_CREATE_RUN_EVENT: string = `
+CREATE TABLE IF NOT EXISTS run_event (
+  event_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+)`;
+
+const SQL_INDEX_RUN_STORE_STATUS: string =
+  "CREATE INDEX IF NOT EXISTS idx_run_store_status ON run_store(status)";
+const SQL_INDEX_RUN_EVENT_RUN_SEQ: string =
+  "CREATE INDEX IF NOT EXISTS idx_run_event_run_seq ON run_event(run_id, sequence)";
+
 const SQL_INDEX_KNOWLEDGE_CREATED: string =
   "CREATE INDEX IF NOT EXISTS idx_knowledge_unit_created_at ON knowledge_unit(created_at)";
 const SQL_INDEX_KNOWLEDGE_REVIEW: string =
@@ -424,6 +453,8 @@ export class DatabaseHelper {
       SQL_CREATE_RAG_EMBEDDING,
       SQL_CREATE_REVIEW_ITEM,
       SQL_CREATE_REVIEW_LOG,
+      SQL_CREATE_RUN_STORE,
+      SQL_CREATE_RUN_EVENT,
       SQL_INDEX_KNOWLEDGE_CREATED,
       SQL_INDEX_KNOWLEDGE_REVIEW,
       SQL_INDEX_NOTE_REVISION_NOTE,
@@ -442,6 +473,8 @@ export class DatabaseHelper {
       SQL_INDEX_REVIEW_ITEM_DUE,
       SQL_INDEX_REVIEW_ITEM_UNIT,
       SQL_INDEX_REVIEW_LOG_ITEM,
+      SQL_INDEX_RUN_STORE_STATUS,
+      SQL_INDEX_RUN_EVENT_RUN_SEQ,
     ];
 
     for (const sql of statements) {

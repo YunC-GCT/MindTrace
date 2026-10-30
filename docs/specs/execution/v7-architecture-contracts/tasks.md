@@ -21,8 +21,8 @@
 - [ ] `StudyPlanWritePort`（升级为复习计划前不定义，等 #242 拍板）
 - [x] `ArtifactStorePort`（artifactId 幂等 / 媒体类型 / URI / 校验和 / 删除 / 部分失败回滚）— 契约 `common/src/main/ets/ports/ArtifactStorePort.ets` + 适配器 `entry/src/main/ets/database/ArtifactStoreAdapter.ets`
 - [x] `CardSnapshotStore` 补 `schemaVersion` / `updatedAt` / 单 key 原子替换 / 失败返回 `false` 可重试 — 切片 A（`CardSnapshotCodec` + `loadResult`）
-- [x] `RunStore` 接口契约（runId / parentRunId / status / checkpoint / committedNoteId / committedVersion / updatedAt）— 切片 A，`common/src/main/ets/ports/RunStore.ets`
-- [ ] **未决：RunStore 生产适配器需单开迁移票** — `parentRunId` / 事件序号 / 五终态落库三项目前**没有存储列**（`DatabaseHelper` 13 张表里没有 `run_event`）；本切片不实现生产适配器、不伪造持久化。
+- [x] `RunStore` 契约 + 生产实现（2026-10-30）：`run_store` / `run_event`（schema v16）+ `RunStoreAdapter`（create 幂等、update 的 committed 保护、事件序号透传、错误分流）+ `RunStoreDao`（事务内 `MAX(sequence)+1`）；契约测试 `v7-runstore.test.mjs` 8 条
+- [ ] 仍缺的写侧维度：真 DAO 往返的「重复 `commitKey` 落库只生效一次」、投影落后可检测；`approvedCheckpointHash` 无持久化列，带哈希的写入当前被安全拒绝
 - [x] **检索端口（Step 2a，ADR-0021）**：`NoteSearchPort` 契约（query / hit / TopK 上限 10）+ `NoteSearchRanking` 纯打分（title×4 / tags×3 / summary×2 / content×1，稳定排序）+ `RdbNoteSearchAdapter`（common，SQL 与 `note_query_rag` 等价）；契约测试 8 条
 - [x] **消费方接线 Step 2b-1**：`note_query_rag` 改走 `NoteSearchPort`（端口未就绪仍返回 `store not ready`；payload 字段与 tags 编码保持旧形状）；工具文件不再保留第二套打分算法，`keyword-search-tool` 的可读性断言改为指向端口实现
 - [x] **消费方接线 Step 2b-2**：`note_get` 改走 `NoteReadPort.get`；`NoteDetail` 补齐 `createdAt` / `intervalDays` / `easeFactor` / `repetitions` / `userId`，payload 字段名与 `tags`/`difficulty` 编码保持旧形状
@@ -99,4 +99,4 @@
 - [ ] `ReviewReadPort` / `ReviewWritePort` 契约 + adapter + 契约测试（按 #238 六必填项）
 - [ ] `ReviewAgent` 子图：`plan → ask → grade`，SM-2 落在 `review.plan` 工具
 - [ ] `MathVideoAgent` 脚本流水线：`outline → script`（产物落 App Store 文本产物）
-- [ ] `RunStore` 迁移票（`run_event` 表 + 五终态列）—— #238 最后一个待自证缺口
+- [x] schema v16：`run_store` / `run_event` + 2 个索引（`RunStoreDao` 生产实现，`MAX(sequence)+1` 事务内递增）；随 v7-runstore 契约测试一起验证

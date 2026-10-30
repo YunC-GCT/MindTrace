@@ -15,8 +15,9 @@ const reviewItemBlock = db.match(/const SQL_CREATE_REVIEW_ITEM[\s\S]*?\)`;/);
 const reviewLogBlock = db.match(/const SQL_CREATE_REVIEW_LOG[\s\S]*?\)`;/);
 const studyPlanBlock = db.match(/const SQL_CREATE_STUDY_PLAN[\s\S]*?\)`;/);
 
-test('schema version is bumped to 15 by ADR-0022', () => {
-  assert.match(db, /const DB_SCHEMA_VERSION: number = 15;/);
+test('schema version is bumped to at least 15 by ADR-0022', () => {
+  const version = Number(db.match(/DB_SCHEMA_VERSION: number = (\d+)/)[1]);
+  assert.ok(version >= 15, 'review tables require schema >= 15, got ' + version);
 });
 
 test('review_item table carries the SM-2 fields', () => {

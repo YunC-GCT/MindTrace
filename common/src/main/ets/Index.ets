@@ -405,7 +405,16 @@ export {
   decodeCardSnapshot,
 } from './kit/CardSnapshotCodec';
 export type { CardSnapshotEnvelope, CardSnapshotDecodeResult } from './kit/CardSnapshotCodec';
-export type { RunStatus, RunRecord, RunStorePort } from './ports/RunStore';
+export {
+  RunStoreError,
+  RUN_STORE_ERROR_RUN_NOT_FOUND,
+  RUN_STORE_ERROR_RUN_EXISTS,
+  RUN_STORE_ERROR_INVALID_RUN,
+  RUN_STORE_ERROR_FAILED,
+  RUN_EVENTS_DEFAULT_LIMIT,
+  RUN_EVENTS_MAX_LIMIT,
+} from './ports/RunStore';
+export type { RunEvent, RunRecord, RunStatus, RunStorePort, RunStoreStore } from './ports/RunStore';
 export { NOTE_READ_ERROR_INVALID_QUERY, NOTE_READ_ERROR_READ_FAILED } from './ports/NoteReadPort';
 export type {
   NoteDetail,

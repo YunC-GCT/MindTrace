@@ -1,31 +1,25 @@
 /**
- * RunStore.ets — Run 持久化端口契约（接口 + 明确存储缺口）
+ * RunStore.ets — Run 持久化端口契约（记录 + 事件流）
  *
  * 路径: common/src/main/ets/ports/RunStore.ets
- * 职责: 只定义 run 记录与 Port 方法；本切片不实现生产适配器，也不伪造持久化。
+ * 职责: 定义 run 记录、事件流、端口与稳定错误类型；不含 SQL / Kit / 实现。
  * 依赖: 无（零 Kit、零模型依赖）
  *
- * 数据流（目标态，尚未接线）:
- *   Dispatcher / NoteAgent → RunStorePort.create / get / update → Run 持久化实现（待迁移票）
+ * 数据流（目标态）:
+ *   Dispatcher / NoteAgent → RunStorePort.create / update / appendEvent → entry 适配器 → run_store / run_event
  *
- * 明确缺口（必须先开迁移票，见 tasks.md #238 未决项）:
- *   1. parentRunId：note_generation_run 只有 parent_conversation_run_id（对话级），
- *      没有 parent_run_id（run 级父子图），父子图关系无处落库。
- *   2. 事件序号：没有 run_event 表（DatabaseHelper 现有 13 张表里没有 run_event），
- *      因此 eventId / 单调 sequence / 重放游标都无存储位置。
- *   3. 五终态落库：现有 run status 只有 NoteGenerationRepository 的运行态，没有
- *      running / readyPreview / cancelled / failed / timedOut 的统一终态列，也没有
- *      cancelled(committed=true) 所需的 committed_note_id / committed_version 组合。
- *   落地需要 ALTER TABLE 或新表 + 迁移/回滚方案；本切片只固定接口形状。
+ * 存储约定（schema v16，ADR-0022 之后的新迁移）:
+ *   - run_store：run_id 主键、parent_run_id、status、checkpoint_id、committed_note_id / committed_version、时间戳
+ *   - run_event：event_id 主键、(run_id, sequence) 唯一递增、kind、payload_json、created_at
+ *   - **committed 事实不可被 cancelled 覆盖**：update 时若已有 committedNoteId，取消态必须保留它
  *
  * ArkTS 1.1 strict 适配:
- *   - status 用字符串字面量联合类型（项目已有先例），调用方按值判别。
- *   - 可选字段显式声明，不使用索引签名。
+ *   - status 用字符串字面量联合类型；可选字段显式声明，不使用索引签名。
  */
 
 export type RunStatus = 'running' | 'readyPreview' | 'cancelled' | 'failed' | 'timedOut';
 
-// 一条 run 的最小可恢复记录。parentRunId / eventId / sequence 目标态需要新列或新表。
+// 一条 run 的最小可恢复记录。
 export interface RunRecord {
   runId: string;
   parentRunId?: string;
@@ -36,9 +30,51 @@ export interface RunRecord {
   updatedAt: number;
 }
 
+// 一条 run 事件：sequence 在同一 run 内单调递增（1 起），供重放与 Trace。
+export interface RunEvent {
+  eventId: string;
+  runId: string;
+  sequence: number;
+  kind: string;
+  payloadJson: string;
+  createdAt: number;
+}
+
+// 端口层稳定错误：code + retryable 供 UI / A2A 分流。
+export class RunStoreError extends Error {
+  readonly code: string;
+  readonly retryable: boolean;
+
+  constructor(code: string, message: string, retryable: boolean) {
+    super(message);
+    this.name = 'RunStoreError';
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
+
+export const RUN_STORE_ERROR_RUN_NOT_FOUND: string = 'RUN_NOT_FOUND';
+export const RUN_STORE_ERROR_RUN_EXISTS: string = 'RUN_EXISTS';
+export const RUN_STORE_ERROR_INVALID_RUN: string = 'INVALID_RUN';
+export const RUN_STORE_ERROR_FAILED: string = 'RUN_STORE_FAILED';
+
+// 存储缝：契约在 common，实现（RunStoreDao）在 entry。
+export interface RunStoreStore {
+  queryRecord(runId: string): Promise<RunRecord | null>;
+  insertRecord(record: RunRecord): Promise<void>;
+  updateRecord(record: RunRecord): Promise<void>;
+  listEvents(runId: string, afterSequence: number, limit: number): Promise<RunEvent[]>;
+  appendEvent(runId: string, kind: string, payloadJson: string, createdAt: number): Promise<RunEvent>;
+}
+
 // Run 持久化端口：create / get / update 都必须保留 committed 事实，不能被 cancelled 覆盖。
 export interface RunStorePort {
   create(record: RunRecord): Promise<void>;
   get(runId: string): Promise<RunRecord | null>;
   update(record: RunRecord): Promise<void>;
+  appendEvent(runId: string, kind: string, payloadJson: string): Promise<RunEvent>;
+  listEvents(runId: string, afterSequence?: number, limit?: number): Promise<RunEvent[]>;
 }
+
+export const RUN_EVENTS_DEFAULT_LIMIT: number = 50;
+export const RUN_EVENTS_MAX_LIMIT: number = 200;
