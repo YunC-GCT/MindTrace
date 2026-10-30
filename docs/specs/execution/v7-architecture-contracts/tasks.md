@@ -10,7 +10,7 @@
 - [x] 错误码表：OCR 失败、分类失败、校验失败、模型不可用（含降级标记）、版本冲突、审批哈希不匹配、取消
 - [x] 修订 `docs/adr/0008-*`：新增「Subgraph 放开范围」一节（允许共享 RunContext / 禁止 runtime checkpoint 与图内 HITL）
 - [x] §17.5 契约表回填 ADR 编号
-- [ ] `node scripts/agent-gate/index.mjs --all` PASS
+- [x] `node scripts/agent-gate/index.mjs --all` PASS（由 #238 切片 A 的 `--all` 覆盖，见下）
 
 ## #238 契约层：六个 Port + adapter + 契约测试
 
@@ -46,6 +46,8 @@
 > 默认模式读 [`raw/index.md`](./raw/index.md) 下的快照比对。生产 `.ets` 未改。
 
 ## #240 spike：父子图共享 RunContext
+
+> 以下四条是 **2026-10-27 的 spike 结论**（未勾选＝当时未通过，不是待办）。Q1–Q3 已由 #243 修复，见本节末尾「#243 落地后复核」。
 
 - [ ] 子图能拿到父图 `runId` / `deadline` / `CancellationToken`，且取消能冒泡 —— **FAIL**。卡在：`StateGraph` 不持 `runId` / `deadline`，全仓 workflow 层无 `RunContext`（`common/src/main/ets/workflow/StateGraph.ets:19-32`、`:55`）；token 只能靠 `AgentState.cancellationToken` 手工传递（`agents/src/main/ets/graph/AgentState.ets:52`）；`CaptureGraph` 把取消压成 `NODE_ERROR(retriable=false)`（`agents/src/main/ets/graph/CaptureGraph.ets:41-43`）。
 - [ ] `maxNodeRuns` 父子累计 —— **FAIL**。卡在：`StateGraph.run()` 每次重置 `nodeRuns`（`common/src/main/ets/workflow/StateGraph.ets:58`），父子各算各的；`CaptureGraph.run` 也没有预算透传入口（`:61-64`）。

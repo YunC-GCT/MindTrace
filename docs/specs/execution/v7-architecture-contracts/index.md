@@ -1,6 +1,6 @@
 # v7 契约层与 NoteAgent 迁移 · 执行包
 
-**Status:** `ready-to-execute`（2026-10-27，尚未开始写代码）
+**Status:** `in-progress`（2026-10-30 更新：#237 / #239 完成，#240 经 #243 解除，#238 约 60%，#241 未开工 = 下一格）
 **对应票：** [#237](https://github.com/YunC-GCT/MindTrace/issues/237) · [#238](https://github.com/YunC-GCT/MindTrace/issues/238) · [#239](https://github.com/YunC-GCT/MindTrace/issues/239) · [#240](https://github.com/YunC-GCT/MindTrace/issues/240) · [#241](https://github.com/YunC-GCT/MindTrace/issues/241) · [#242](https://github.com/YunC-GCT/MindTrace/issues/242)
 **设计来源：** [`docs/system-architecture-layered.md`](../../../system-architecture-layered.md) §17（v7 目标态，含 §17.5 契约与 §17.6 迁移顺序）；外评审 [`review-v7-2026-10-27.md`](../../../architecture/review-v7-2026-10-27.md)。
 
