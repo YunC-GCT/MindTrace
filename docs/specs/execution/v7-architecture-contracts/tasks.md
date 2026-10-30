@@ -95,7 +95,7 @@
 
 ### 派生票（拍板后待开/待做）
 
-- [ ] schema v15 迁移：`review_item` / `review_log` + 索引 + 回滚（`DatabaseHelper` v14 → v15）
+- [x] schema v15 迁移：`review_item` / `review_log` + 3 个索引（`DatabaseHelper` v14 → v15，`CREATE IF NOT EXISTS`，回滚 = DROP）；源码级契约测试 `v7-review-schema.test.mjs` 6 条
 - [ ] `ReviewReadPort` / `ReviewWritePort` 契约 + adapter + 契约测试（按 #238 六必填项）
 - [ ] `ReviewAgent` 子图：`plan → ask → grade`，SM-2 落在 `review.plan` 工具
 - [ ] `MathVideoAgent` 脚本流水线：`outline → script`（产物落 App Store 文本产物）

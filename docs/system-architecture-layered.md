@@ -219,7 +219,7 @@ ModelRouter                      入口：一次回答只能选一条路
 | **Vision Kit** | DocumentScanner | 拍纸质题自动裁边 | 是 UI 组件 | 可选 |
 | Vision Kit | AI 识图 | 图像理解 | — | 不用 |
 | **Data Augmentation Kit** | 知识库 / 知识检索 / RAG（`ChatLLM` 需应用自己实现，不含模型） | 端侧 RAG 框架 | 无内置生成模型，见 4.2 | ⚠️ |
-| **ArkData RelationalStore** | RDB | 笔记、复习计划 | 已有 13 张表 | ✅ |
+| **ArkData RelationalStore** | RDB | 笔记、复习计划 | 已有 15 张表（v15 新增 `review_item` / `review_log`） | ✅ |
 | **Form Kit** | 卡片 | 结果回显 | 已有 | ✅ |
 | **Intents Kit** | 意图声明与调用 | 小艺入口 | 需审核 | ✅ |
 | **Agent Framework Kit** | 拉起智能体 / A2A | 入口 | 仅手机平板 | 可选 |
@@ -291,7 +291,7 @@ query
 | RAG · `rag_chunk` / `rag_embedding` | 笔记文本与向量 | Agent 写，检索读 |
 | 文件 | 原图、附件 | 应用沙箱，App 只读 |
 
-**没有 `note` 表**：笔记就是 `knowledge_unit`。也没有 `note_link` 与 `review_item`——关系边是 `kg_edge`，复习字段内嵌在 `knowledge_unit` 里（`next_review_at`、`interval_days`、`ease_factor`、`repetitions`）。
+**没有 `note` 表**：笔记就是 `knowledge_unit`。也没有 `note_link`——关系边是 `kg_edge`。**复习已按 ADR-0022 独立建表**（schema v15：`review_item` / `review_log`），`knowledge_unit` 里那组复习字段保留为 v1 历史列，不再承载新的复习调度。
 
 **读写分离**：Agent 是唯一写入方，App 只读；用户动作（改笔记、标记已复习）是 App 唯一的写入口。
 
@@ -346,7 +346,7 @@ v1 用 SM-2（间隔 × 难度因子），规则简单、可解释；v2 再考�
 | L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试；回执短路读 `receipts/last-capture.json`；7 个 action 声明 | A2A 文字/图片**已就地入库**（`AgentIngestService → OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService`，`64008c3`），不再直调 `ReplyService`；对话分支仍走 `ReplyService`；P4 结果回执未做；skill 侧 7 个 action 仍只有声明（测试态无法注册意图） |
 | L2 | `Dispatcher` 四分支 + `CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 已是 102 行 facade | 没有端口层：`skill/SkillAbility` 自己 `DatabaseHelper.init()` 并建只读 ToolRegistry，`entry` 的 `NoteEvidenceService` 直连 RDB 与 `kg_edge`；没有 RunContext / EventSink；没有统一 Trace |
 | L3 | Core Vision Kit OCR（`SERVER_FALLBACK_ENABLED=false`）、文搜图常驻 Worker、模型网关 catalog / resolver / discovery 多提供商 | MCP 只有 `OcrTool`，没有 schema 发现与权限；RAG 只有 `rag_embedding` 建表，没有检索实现 |
-| L4 | RDB 13 张表（`knowledge_unit` / `kg_edge` / `study_plan` / 生成 run） | `review_item` / `review_log` 未建表；`similar` 边未生成（`embedding: []`）；`study_plan` 是待办，不是复习计划 |
+| L4 | RDB 15 张表（v15 加 `review_item` / `review_log`；`knowledge_unit` / `kg_edge` / `study_plan` / 生成 run） | `similar` 边未生成（`embedding: []`）；`study_plan` 仍是待办，不是复习计划；复习端口/子图未做 |
 | L5 | 分阶段日志（capture 五段耗时）、A2A 日志（requestId / taskId / attempts / 耗时） | 没有跨工作流统一 Trace：`runId` / `parentRunId` 串不起来，node / tool / approval / commit 事件不落盘 |
 
 「小艺真机未通」「观测为零」这两个说法已过期，别再引用。
@@ -549,7 +549,7 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 | 笔记列表与详情 | `knowledge_unit` | 分页；按时间、学科、章节过滤 |
 | 知识星系 | `kg_edge` + `knowledge_unit` | 只读预计算的边，渲染时不计算 |
 | 待办（当前叫「复习计划」） | `study_plan` | 标题、完成状态、优先级、关联笔记、due date；**是待办清单，不是间隔复习计划** |
-| 复习记录 | **已拍板新建（ADR-0022）** | `review_item` / `review_log` 走到 schema v15 迁移票；`study_plan` 仍是待办，不承载复习语义 |
+| 复习记录 | **已建表（ADR-0022，schema v15）** | `review_item` / `review_log` 已在 `DatabaseHelper` v15 落地；`study_plan` 仍是待办；复习端口/子图待开票 |
 
 ### 16.2 关系边怎么产生
 
@@ -567,7 +567,7 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 ### 16.4 v1 的取舍
 
 - 星系只出**一类**边：同知识点。相似边未生成（`embedding: []`），前后置留 v2。
-- `review_item` / `review_log` **未建表**，v1 不接 SM-2；`study_plan` 是待办。
+- `review_item` / `review_log` **已按 ADR-0022 建表（schema v15）**，但 v1 不接 SM-2（端口/子图未做）；`study_plan` 是待办。
 - 写入口不是「只有用户动作」：手工编辑与 AI 写入都走 `KnowledgeUnitWriteService`，AI 写入还会触发 `KnowledgeUnitPostCommitEffects` 的卡片刷新。口径应按 **数据 owner + 谁发起写 + 读投影** 三个维度描述，而不是「App 只读」。
 
 ---

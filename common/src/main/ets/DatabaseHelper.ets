@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 14;
+const DB_SCHEMA_VERSION: number = 15;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -227,6 +227,44 @@ CREATE TABLE IF NOT EXISTS rag_embedding (
   updated_at INTEGER NOT NULL
 )`;
 
+// ADR-0022：复习用独立表，study_plan 保持待办语义（v14 → v15）。
+// 测试态按本地开发数据处理：CREATE IF NOT EXISTS 即可，回滚 = DROP TABLE。
+const SQL_CREATE_REVIEW_ITEM: string = `
+CREATE TABLE IF NOT EXISTS review_item (
+  id TEXT PRIMARY KEY,
+  unit_id TEXT NOT NULL,
+  subject TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'new',
+  next_review_at INTEGER NOT NULL DEFAULT 0,
+  interval_days INTEGER NOT NULL DEFAULT 0,
+  ease_factor REAL NOT NULL DEFAULT 2.5,
+  repetitions INTEGER NOT NULL DEFAULT 0,
+  lapses INTEGER NOT NULL DEFAULT 0,
+  last_reviewed_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+
+const SQL_CREATE_REVIEW_LOG: string = `
+CREATE TABLE IF NOT EXISTS review_log (
+  id TEXT PRIMARY KEY,
+  review_item_id TEXT NOT NULL,
+  unit_id TEXT NOT NULL,
+  reviewed_at INTEGER NOT NULL,
+  grade TEXT NOT NULL,
+  correct INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  interval_before INTEGER NOT NULL DEFAULT 0,
+  interval_after INTEGER NOT NULL DEFAULT 0
+)`;
+
+const SQL_INDEX_REVIEW_ITEM_DUE: string =
+  "CREATE INDEX IF NOT EXISTS idx_review_item_due ON review_item(next_review_at)";
+const SQL_INDEX_REVIEW_ITEM_UNIT: string =
+  "CREATE INDEX IF NOT EXISTS idx_review_item_unit ON review_item(unit_id)";
+const SQL_INDEX_REVIEW_LOG_ITEM: string =
+  "CREATE INDEX IF NOT EXISTS idx_review_log_item ON review_log(review_item_id)";
+
 const SQL_INDEX_KNOWLEDGE_CREATED: string =
   "CREATE INDEX IF NOT EXISTS idx_knowledge_unit_created_at ON knowledge_unit(created_at)";
 const SQL_INDEX_KNOWLEDGE_REVIEW: string =
@@ -384,6 +422,8 @@ export class DatabaseHelper {
       SQL_CREATE_KG_EDGE,
       SQL_CREATE_RAG_CHUNK,
       SQL_CREATE_RAG_EMBEDDING,
+      SQL_CREATE_REVIEW_ITEM,
+      SQL_CREATE_REVIEW_LOG,
       SQL_INDEX_KNOWLEDGE_CREATED,
       SQL_INDEX_KNOWLEDGE_REVIEW,
       SQL_INDEX_NOTE_REVISION_NOTE,
@@ -399,6 +439,9 @@ export class DatabaseHelper {
       SQL_INDEX_KG_EDGE_RELATION,
       SQL_INDEX_RAG_CHUNK_UNIT,
       SQL_INDEX_RAG_EMBEDDING_CHUNK,
+      SQL_INDEX_REVIEW_ITEM_DUE,
+      SQL_INDEX_REVIEW_ITEM_UNIT,
+      SQL_INDEX_REVIEW_LOG_ITEM,
     ];
 
     for (const sql of statements) {
