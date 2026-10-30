@@ -14,21 +14,25 @@
 
 ## #238 契约层：六个 Port + adapter + 契约测试
 
-- [x] `NoteWritePort`（`commitKey` 必填、`expectedVersion` CAS、`approvedCheckpointHash`、`NotePortError`）— 切片 A，`common/src/main/ets/ports/NoteWritePort.ets`
-- [ ] `NoteReadPort`（切片 A 未覆盖，仍待做）
+- [x] `NoteWritePort`（`commitKey` 必填、`expectedVersion` CAS、`approvedCheckpointHash`、`NotePortError`）— 契约与纯判定在切片 A；**entry adapter 未做**（`NoteDao` 尚未实现 `commit`，单开切片）
+- [x] `NoteReadPort`（`list` / `get` / `search`；结构化错误码 `INVALID_QUERY` / `NOTE_READ_FAILED`；投影含复习字段）— 契约 `common/src/main/ets/ports/NoteReadPort.ets` + 适配器 `entry/src/main/ets/database/NoteReadPortAdapter.ets`
 - [x] `NoteWriteDecisions` 纯判定（insert / update / duplicate / conflict / reject + ADR-0019 错误码）— 切片 A，`common/src/main/ets/ports/NoteWriteDecisions.ets`
-- [x] `StudyPlanReadPort`（只承载现有待办语义；`subject` 现状无列，需由 linked note 派生）— 切片 A
+- [x] `StudyPlanReadPort`（只承载现有待办语义；`subject` 由注入的 resolver 从 linked note 派生）+ entry 适配器 `StudyPlanPortAdapter`
 - [ ] `StudyPlanWritePort`（升级为复习计划前不定义，等 #242 拍板）
-- [ ] `ArtifactStorePort`（artifactId / 媒体类型 / URI / 校验和 / 删除 / 部分失败清理）
+- [x] `ArtifactStorePort`（artifactId 幂等 / 媒体类型 / URI / 校验和 / 删除 / 部分失败回滚）— 契约 `common/src/main/ets/ports/ArtifactStorePort.ets` + 适配器 `entry/src/main/ets/database/ArtifactStoreAdapter.ets`
 - [x] `CardSnapshotStore` 补 `schemaVersion` / `updatedAt` / 单 key 原子替换 / 失败返回 `false` 可重试 — 切片 A（`CardSnapshotCodec` + `loadResult`）
 - [x] `RunStore` 接口契约（runId / parentRunId / status / checkpoint / committedNoteId / committedVersion / updatedAt）— 切片 A，`common/src/main/ets/ports/RunStore.ets`
 - [ ] **未决：RunStore 生产适配器需单开迁移票** — `parentRunId` / 事件序号 / 五终态落库三项目前**没有存储列**（`DatabaseHelper` 13 张表里没有 `run_event`）；本切片不实现生产适配器、不伪造持久化。
 - [ ] `skill/SkillAbility` 与 `entry/NoteEvidenceService` 去掉直连 RDB，改走 Port（行为不变）
 - [x] `NoteWritePort` + `CardSnapshotCodec` 契约测试：`scripts/arkts-lint/tests/v7-note-contracts.test.mjs`
       （19 条，`node --test` 实测 `pass 19 / fail 0`，覆盖 `decideWrite` 六分支 + codec 往返/版本/bad JSON/缺字段）
-- [ ] 其余 Port（`NoteReadPort` / `StudyPlanWritePort` / `ArtifactStorePort` / `RunStore` 持久化）四条契约测试：重复 `commitKey` 只生效一次、`expectedVersion` 落后返回冲突、取消提交前/后语义、投影落后可检测
-- [x] build 5/5、gate PASS、单测 ≥ 806 —— 编排会话实测：`node scripts/build-hsp-hap.mjs` 全 5 步成功；
-      `node scripts/agent-gate/index.mjs --all` → `RESULT: PASS`（407 `.ets`、212 docs、unit-tests `pass=843 fail=0`）
+- [x] 读侧契约测试（2026-10-30）：
+      `v7-note-read-port.test.mjs` 13 条（过滤/排序/分页/参数校验/错误码/tags 副本/不改 store 数组/元数据边界/空关键字先校验）、
+      `v7-studyplan-port.test.mjs` 6 条（排除已完成/due 排序/subject 派生/派生失败降级/错误码）、
+      `v7-artifact-store.test.mjs` 11 条（幂等/冲突/删除/manifest 写失败回滚/文件删失败回滚/路径穿越/读失败）——合计 30 条全绿
+- [ ] 写侧契约测试维度（重复 `commitKey` 落 DATABASE 只生效一次、`expectedVersion` 落后冲突、取消提交前/后语义、投影落后可检测）仍缺，等 `NoteWritePort` adapter 与 `RunStore` 持久化
+- [x] build 5/5、gate PASS、单测 ≥ 806 —— 2026-10-30 实测：`node scripts/build-hsp-hap.mjs` 49 tasks BUILD SUCCESSFUL；
+      `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（`pass=985 fail=0`）
 
 ## #239 行为基线：四条 dispatch 路径 golden 快照
 

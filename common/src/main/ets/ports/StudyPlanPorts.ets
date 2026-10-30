@@ -38,3 +38,22 @@ export interface StudyPlanReadPort {
   listPending(subject?: string): Promise<StudyPlanItem[]>;
   get(id: string): Promise<StudyPlanItem | null>;
 }
+
+// 持久层原始行：字段与 study_plan 表一致（isDone / dueDate 是存储名，不是端口名）。
+export interface StudyPlanRecord {
+  id: string;
+  title: string;
+  isDone: boolean;
+  priority: number;
+  linkedNoteId: string;
+  createdAt: number;
+  dueDate: number;
+}
+
+// DAO 需要满足的最小存储缝：契约在 common，实现（StudyPlanDao）在 entry。
+export interface StudyPlanReadStore {
+  queryAll(): Promise<StudyPlanRecord[]>;
+}
+
+// 读侧稳定错误码：结构与其他 Port 一致，供 UI / A2A 分流。
+export const STUDY_PLAN_ERROR_READ_FAILED: string = 'STUDY_PLAN_READ_FAILED';
