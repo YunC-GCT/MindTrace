@@ -1,7 +1,7 @@
 # MindTrace — AGENTS.md
 
 > **鸿蒙高校创新赛 · 复赛项目 → v1 端A2A 交付** — HarmonyOS 数学学习助手 (拍照 / OCR / 知识结构化 / 端侧 Agent)
-> 5 module: `entry` (HAP) + `common` / `agents` / `skill` / `cardservice` (4 HSP)
+> 5 module: 3 HAP (`entry` / `skill` / `cardservice`) + 2 HSP (`common` / `agents`)
 > **DevEco Studio 与 hvigor CLI 均为合法开发入口**; CLI 构建 + `hdc` 装机已跑通, AI 可自行验证
 > 当前主线: **v1 端A2A 接入小艺** (复赛版本冻结, 不再加功能) · 进度与验收口径见 [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md)
 > 项目: **MindTrace** (GitHub 仓库 `YunC-GCT/MindTrace`; 本地目录名因机器而异, 文档一律用相对路径)
@@ -133,7 +133,7 @@
 
 **LLM 截断处理**: 聊天回复在 `finish_reason === 'length'` 时**不再抛错**——流式在末尾追加 `*(回复因长度限制被截断)*`，非流式返回 partial + 同一标记（`LlmResponseParser` / `LlmClient`）。`ReplyService` 仍显式传 `CHAT_REPLY_MAX_TOKENS = 12000`。**注意**：note generation 的 JSON 路径（`GenerationJsonCaller`）遇到同一标记会抛 `LLM_TRUNCATED`，消息形如 `... response truncated by max_tokens`；这不是聊天回复的 StreamEvent 解析问题，修法是提高生成预算 / 压缩 prompt，而不是改流式解析。
 
-**5 module 拓扑**: 1 HAP (`entry`, `type:entry`) + 4 HSP (`common` / `agents` / `skill` / `cardservice`, `type:feature`); 跨 module import 必须完整路径
+**5 module 拓扑**: 3 HAP (`entry` `type:entry` / `skill` / `cardservice` `type:feature`) + 2 HSP (`common` / `agents` `type:shared`); 跨 module import 必须完整路径
 
 **共享原子件**: `entry/src/main/ets/shared/atoms/` 与 `shared/molecules/` (spec 012)
 

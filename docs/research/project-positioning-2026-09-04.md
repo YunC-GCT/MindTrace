@@ -18,7 +18,7 @@ MindTrace 是**鸿蒙高校创新赛复赛项目**:一个跑在 HarmonyOS 上的
 
 | 维度 | 值 |
 |---|---|
-| **项目名 / 包名** | MindTrace / `entry`(HAP) + `common` / `agents` / `skill` / `cardservice`(4 HSP) |
+| **项目名 / 包名** | MindTrace / 3 HAP (`entry` / `skill` / `cardservice`) + 2 HSP (`common` / `agents`) |
 | **比赛** | 鸿蒙高校创新赛 · 复赛 |
 | **平台** | HarmonyOS(`runtimeOS: HarmonyOS` / `targetSdkVersion: 6.1.1(24)` / `compatibleSdkVersion: 6.1.1(24)`) |
 | **核心能力** | 数学拍照 OCR → LLM 解析 → KaTeX 渲染回 ArkUI WebView;5 类题型(概念/定理/公式/证明题/计算题)自动分类;KnowledgeUnit 结构化 + 知识星系图谱可视化;AI 助手浮窗 + 复习浮窗 SSE 流式对话 |
@@ -76,7 +76,7 @@ MindTrace 是**鸿蒙高校创新赛复赛项目**:一个跑在 HarmonyOS 上的
 | `cardservice` | HSP (`type:shared`) | — | 58 / 6 文件 | `common`, `agents` |
 | **合计** | | | **23,301 / 162 文件** | |
 
-> 注:`module.json5` 中 `common/agents/skill/cardservice` 的 `type` 字段是 `"shared"`,而非字面 `"hsp"`;"4 HSP" 是行业统称,审计报告沿用。
+> 注:`module.json5` 的 `type` 有三值——`entry` / `shared` / `feature`,没有字面的 `hsp` / `hap`。按 `hvigorfile.ts` 的 `hspTasks` / `hapTasks` 判定:2 HSP 是 `common` / `agents`(`type: shared`),3 HAP 是 `entry`(`entry`) / `skill` / `cardservice`(`feature`)。早期文档的「1 HAP + 4 HSP」是错的。
 
 **依赖图(单向无环)**:
 

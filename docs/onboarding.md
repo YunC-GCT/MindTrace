@@ -17,7 +17,7 @@ This guide helps you orient quickly. After this, you'll know:
 
 MindTrace is a **HarmonyOS math learning assistant** for the **鸿蒙高校创新赛 semifinal (复赛)**. It has:
 
-- 5 modules (1 HAP + 4 HSP): `entry`, `common`, `agents`, `skill`, `cardservice`
+- 5 modules (3 HAP + 2 HSP): HAP `entry` / `skill` / `cardservice`, HSP `common` / `agents`
 - AI pipeline: photo → OCR → classify → structure → persist
 - Custom ArkTS lint engine (34 rules; test count grows — read the summary line)
 - Architecture: 4 layers + 5 modules (see `AGENTS.md`)
