@@ -29,14 +29,14 @@
 | 查当前做到哪一阶段 / 怎么验收 | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (唯一进度口径, P0–P6 + DoD) |
 | 真机验证 A2A 链路 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (自动起小艺 → 进智能体 → 发送 → 比对回复) |
 | 推进 agent 能力级工作 (工具层 / 调用协议 / 拆分) | [`docs/agents/patterns/capability-to-implementation.md`](./docs/agents/patterns/capability-to-implementation.md) (skill 链路) + [`docs/architecture/agent-tool-chain-2026-09-06.md`](./docs/architecture/agent-tool-chain-2026-09-06.md) (派发链总览) |
-| 接手后端架构迁移 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) (当前权威状态) → [`docs/legacy/mindtrace/handoffs/backend-migration-handoff.md`](./docs/legacy/mindtrace/handoffs/backend-migration-handoff.md) (历史推进背景) |
+| 接手后端架构迁移 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) (当前权威状态) → [`docs/legacy/mindtrace/backend-migration-handoff.md`](./docs/legacy/mindtrace/backend-migration-handoff.md) (历史推进背景) |
 | 改 entry UI 设计/动效/token | 先读 [`docs/research/frontend-component-audit-2026-09-06.md`](./docs/research/frontend-component-audit-2026-09-06.md) (分层裁决 + C1-C6 候选) → 设计/动效细节 [`docs/research/frontend-ui-design-inventory-2026-09-06.md`](./docs/research/frontend-ui-design-inventory-2026-09-06.md) (96 件三维档案: 令牌/布局/动效) |
 | 写 / 改 / 归档 doc | [`docs/index.md`](./docs/index.md) (文档导航) + [`docs/agents/document-control.md`](./docs/agents/document-control.md) (状态/追溯规则) + [`docs/agents/domain.md`](./docs/agents/domain.md) (workflow) + [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) (issue 模板) |
 | 记录执行 / 验收证据 | [`docs/specs/execution/index.md`](./docs/specs/execution/index.md) (bundle 文件词汇与状态口径) |
-| 查历史 session 交接 | [`docs/legacy/mindtrace/handoffs/`](./docs/legacy/mindtrace/handoffs/) (冻结, 非当前指引) |
+| 查历史 session 交接 | [`docs/legacy/mindtrace/`](./docs/legacy/mindtrace/) (冻结, 非当前指引) |
 | 写 issue / 改 spec | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) + [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) |
-| 排查 audit finding | [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md) |
-| 整体目录结构 | `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` §3 |
+| 排查 audit finding | [`docs/legacy/mindtrace/audit-full-2026-09-01.md`](./docs/legacy/mindtrace/audit-full-2026-09-01.md) |
+| 整体目录结构 | `docs/legacy/mindtrace/audit-full-2026-09-01.md` §3 |
 | 写新文件 / 改文件名 | [`docs/style/naming-conventions.md`](./docs/style/naming-conventions.md) (权威源) + `node scripts/naming-lint/index.mjs` (验证) |
 | 生成 HTML render / 配对 .md+.html 视觉稿 / 清理 docs/legacy/ | [`docs/style/html-in-docs.md`](./docs/style/html-in-docs.md) (决策树) + `.gitignore` + `.naminglintrc.json` skip.files |
 
@@ -104,7 +104,7 @@
 | **LlmClient 统一调用层** | `common/src/main/ets/llm/LlmClient.ets` | 唯一公共入口 `call(request)` (spec [`005`](./docs/specs/005-llm-client-consolidation.md)): JSON 与真 SSE 流式 (requestInStream) 双适配路径 |
 | **知识星系可视化** | `entry/src/main/ets/pages/KnowledgeGalaxy*` | 用户学情可视化 |
 | **ArkTS 严格 lint 引擎** | `scripts/arkts-lint/` | 自研 AST 引擎, 34 规则 · `npm --prefix scripts/arkts-lint test` **768 项全绿**（已取消 curated 白名单，跑全量 glob，约 40 s）· `agent-gate` 与 CI 同源 · **CI 已接入** |
-| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/architecture/` (历史审计) + `docs/adr/` + `docs/specs/` | 18 ADR + 22 设计 spec + 执行记录目录, 设计透明度高 |
+| **审计 + ADR + Spec 完整设计层** | `docs/legacy/mindtrace/` (历史审计) + `docs/adr/` + `docs/specs/` | 18 ADR + 22 设计 spec + 执行记录目录, 设计透明度高 |
 
 ### 演示路径 (5 分钟 walk-through · 复赛版)
 
@@ -114,7 +114,7 @@
 2. DevEco Studio `Run → Run 'entry'` (真机/模拟器)
 3. 主流程: 拍照 → OCR → AI 分类 → 知识结构化 → 持久化 → 复习浮窗对话 (SSE 流式)
 4. 5 Tab 流畅 / 知识星系无 "示例:*" 假学科 (ticket #16 已修)
-5. 源码: `agents/` (AI 业务) + `scripts/arkts-lint/` (工程亮点) + `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` (21 个 finding 的架构审计)
+5. 源码: `agents/` (AI 业务) + `scripts/arkts-lint/` (工程亮点) + `docs/legacy/mindtrace/audit-full-2026-09-01.md` (21 个 finding 的架构审计)
 
 ### 当前阶段 (v1 端A2A)
 

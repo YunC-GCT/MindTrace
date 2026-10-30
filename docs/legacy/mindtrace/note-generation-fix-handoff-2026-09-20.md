@@ -1,6 +1,6 @@
 # 笔记生成链路修复 Session 交接文档（2026-09-20）
 
-> **2026-09-29 更新**: 本文记录历史实现与取证；其中 evidence 回写、`repairStandardDraft` / `repairDeepDraft` 和 verifier 动态 ID 契约已由 [ADR-0018](../../../adr/0018-note-evidence-provenance.md) 取代，不再代表当前生产设计。
+> **2026-09-29 更新**: 本文记录历史实现与取证；其中 evidence 回写、`repairStandardDraft` / `repairDeepDraft` 和 verifier 动态 ID 契约已由 [ADR-0018](../../adr/0018-note-evidence-provenance.md) 取代，不再代表当前生产设计。
 
 > **Session 范围**: 2026-09-19 ~ 2026-09-20 · P1「JSON 生命周期统一」+ 冒烟期 P0-1~P0-7 修复 + 失败根因终局取证
 > **状态**: P0-7 已构建并部署到模拟器; 用户复测**仍失败** —— 两道 hard 闸门根因已实锤定位, 修复按用户指示冻结（"别修了, 告诉我原因"）
@@ -109,7 +109,7 @@ git 状态: 分支 `develop`, 基线 `4b40e9a`（Merge PR #138 multi-device-rese
 | agents/src/test/TruthCheckNode.test.ets | 3+2 用例（含 P0-6 integral_dx_patch） |
 | common/src/test/NoteGenerationModels.test.ets | 16 用例（tags 4 / deep 4 / 封顶 2 / standard 归一化 3 / pipeline origin 3） |
 | docs/plans/（整目录未跟踪） | 本计划文档 1733 行 + 上一 session 交接 mindtrace-agent-research-handoff-2026-09-18.md |
-| docs/legacy/mindtrace/handoffs/note-generation-fix-handoff-2026-09-20.md | 本文 |
+| docs/legacy/mindtrace/note-generation-fix-handoff-2026-09-20.md | 本文 |
 
 ### 验证状态
 
@@ -182,4 +182,4 @@ node "<DevEco 安装目录>\tools\hvigor\bin\hvigorw.js" --mode module -p produc
 2. 用户 GUI 跑全量 Hypium 56 用例。
 3. 按 §5 清单分批 commit（建议批次见 §6 第 5 条）, PR 合入 `develop`; `oh-package-lock.json5` ×5 与 `docs/plans/` 整目录提交前 review。
 4. 实施两道闸门修复（§4.4）时, 建议各配 Hypium 用例（空账本代造 / du 微元通过）, 并保持"管线代算 LLM 做不到的事, 不放松真值类校验"的既有哲学。
-5. 关联阅读: [AGENTS.md](../../../../AGENTS.md)（红线与命令）、[CONTEXT.md](../../../../CONTEXT.md)（词汇消歧）、[docs/specs/018-agent-workflow-architecture.md](../../../specs/018-agent-workflow-architecture.md)（workflow 架构权威态）、计划文档 §13（truth check 后续设计）、本机 AI 会话计划 `~/.local/share/deveco/plans/1789791628820-hidden-pixel.md`。
+5. 关联阅读: [AGENTS.md](../../../AGENTS.md)（红线与命令）、[CONTEXT.md](../../../CONTEXT.md)（词汇消歧）、[docs/specs/018-agent-workflow-architecture.md](../../specs/018-agent-workflow-architecture.md)（workflow 架构权威态）、计划文档 §13（truth check 后续设计）、本机 AI 会话计划 `~/.local/share/deveco/plans/1789791628820-hidden-pixel.md`。

@@ -205,14 +205,14 @@ README.md      # 状态条 + 维护手册
 ### 5.2 审计 + ADR + Spec 完整设计层(亮点 2)
 
 **审计基线**:
-- `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`:全代码库架构审计主报告,**162 文件 / 23,301 LOC**
+- `docs/legacy/mindtrace/audit-full-2026-09-01.md`:全代码库架构审计主报告,**162 文件 / 23,301 LOC**
 - 总评级 🟡 "可工作但分层混乱"
 - 21 个 finding,分类:
   - 🔴 P0(4 条):LLM 三套调用路径并行(§4.1)/ `KnowledgeModel` 870 LOC god class(§4.2)/ `AgentChatService` 802 LOC god class(§4.3)/ Production fixture data 泄漏(§4.20)
   - 🔴 其他: `AGENTS.md` 路径错误/过期(§4.16)、"禁 C 风格 for" 规约理解错(§4.17)
   - 🟡 P1(11 条): `LlmConfig` 静默覆盖(§4.4)/ `Dispatcher` 双入口(§4.5)/ `OcrTool` C-style for(§4.6)/ `ContentProtocol` 580 LOC(§4.7)/ `mcp/` 空壳(§4.8)/ `ReviewGraphView` 1880 LOC(§4.9)/ `KnowledgeGalaxyViewModel` 789 LOC + P0 BUG(§4.10)/ UTF-8 手写编码(§4.11)/ ArkTS 1.1 规则表覆盖率 ~10%(§4.18)/ `compatibleSdkVersion < 10` 不强制(§4.19)/ `extractJsonObject` 正则在嵌套 JSON 上截断(§4.21)
   - 🟢 P2: agent 术语重载(§4.12)/ 文件头模板覆盖不均(§4.13)/ 缺 `CONTEXT.md` + `docs/adr/`(§4.14,已部分解决)/ 模块命名误导(§4.15)
-- `docs/legacy/mindtrace/architecture/deep-dive-2026-09-01.md`:7 个最大文件的 deep-dive(§F1 ReviewGraphView、§F2 KnowledgeGalaxyViewModel、§F3 extractJsonObject 等)
+- `docs/legacy/mindtrace/deep-dive-2026-09-01.md`:7 个最大文件的 deep-dive(§F1 ReviewGraphView、§F2 KnowledgeGalaxyViewModel、§F3 extractJsonObject 等)
 
 **ADR 层**(`docs/adr/`,7 篇 + index):
 | ADR | 决定 |
@@ -255,7 +255,7 @@ README.md      # 状态条 + 维护手册
 | `docs/adr/` | 7 + index | 架构决策记录(why) | `docs/adr/index.md` |
 | `docs/specs/` | 6 + index | 实施 spec(how)— 6 个 ticket 对应 | `docs/specs/index.md` |
 | `docs/agents/` | 12 + `patterns/` | agent 工作流治理 | `docs/agents/agent-glossary.md`(通用 agent 术语) / `docs/agents/domain.md`(域文档消费规则) |
-| `docs/legacy/mindtrace/architecture/` | 7 | 审计基线 + deep-dive + lint baseline | `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` |
+| `docs/legacy/mindtrace/architecture/` | 7 | 审计基线 + deep-dive + lint baseline | `docs/legacy/mindtrace/audit-full-2026-09-01.md` |
 | `docs/legacy/mindtrace/plans/{w3,w4}/` | 多 | 阶段计划(W3 渲染协议 / W4 多 WebView 分块) | `README.md` 中提到的 plan 文件 |
 | `docs/legacy/mindtrace/research/` | 多 | 调研支撑(多 WebView 性能 / 公式渲染策略) | `README.md` 中提到的 research 文件 |
 | `docs/research/` | 4(2 md + 2 html) | 一手调研产物(agent framework / langgraph migration / 本报告) | `docs/research/` |
@@ -435,7 +435,7 @@ README.md      # 状态条 + 维护手册
 - `docs/adr/index.md` + 7 ADR
 - `docs/specs/index.md` + 6 spec
 - `docs/agents/`(12 文件 + `patterns/`)
-- `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` `deep-dive-2026-09-01.md` `lint-baseline-2026-09-01.json` `lint-baseline-ast-2026-09-01.json`
+- `docs/legacy/mindtrace/audit-full-2026-09-01.md` `deep-dive-2026-09-01.md` `lint-baseline-2026-09-01.json` `lint-baseline-ast-2026-09-01.json`
 - `docs/style/arkts-1.1.md` `naming-conventions.md`
 - `docs/template/` + `docs/index.md` + `docs/onboarding.md`
 - `docs/research/agent-framework-comparison-2026-09-02.md`

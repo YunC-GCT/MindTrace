@@ -49,10 +49,10 @@ docs/
 | **Describe how the current system is wired** | `docs/architecture/` — `{scope}-{YYYY-MM-DD}.md` |
 | **Set a coding rule** | `docs/style/naming-conventions.md` (the canonical spec) |
 | **Find an ArkTS rule** | [`docs/style/arkts-1.1.md`](./style/arkts-1.1.md) |
-| **Understand the current architecture** | `docs/adr/` (current decisions) — for historical audits see [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./legacy/mindtrace/architecture/audit-full-2026-09-01.md) |
+| **Understand the current architecture** | `docs/adr/` (current decisions) — for historical audits see [`docs/legacy/mindtrace/audit-full-2026-09-01.md`](./legacy/mindtrace/audit-full-2026-09-01.md) |
 | **Find an API contract** | `common/src/main/ets/models/` + `CONTEXT.md`（当前类型与术语契约） |
 | **Look up a workflow (issue tracking, triage)** | `docs/agents/` — see [`agents/index.md`](./agents/index.md) |
-| **Find an old session's decision trail** | `docs/legacy/mindtrace/handoffs/` (frozen; not current guidance) |
+| **Find an old session's decision trail** | `docs/legacy/mindtrace/` (frozen; not current guidance) |
 | **Understand the v1 layered architecture** | [`system-architecture-layered.md`](./system-architecture-layered.md) — 五层设计、能力选型、验收清单、小艺开放平台落地路径（唯一权威架构文档，含 §14 评审修正与 v7 目标态） |
 | **Read the v7 target-state review** | [`architecture/review-v7-2026-10-27.md`](./architecture/review-v7-2026-10-27.md) — 外评审：有条件可落地、端口与迁移顺序的硬依赖、五条风险 |
 | **Pick up the v7 contract work** | [`specs/execution/v7-architecture-contracts/plan.md`](./specs/execution/v7-architecture-contracts/plan.md) — 交接文档：票单 #237–#242、顺序、硬约束、环境命令 |
@@ -81,7 +81,7 @@ docs/
 1. Read top of `AGENTS.md` (project positioning + demo path)
 2. Skim the "项目亮点" table in `AGENTS.md` (5 highlights)
 3. Walk the demo path (5 minutes)
-4. Inspect `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` for the full audit
+4. Inspect `docs/legacy/mindtrace/audit-full-2026-09-01.md` for the full audit
 5. Inspect `docs/adr/` and `docs/specs/` for design decisions
 6. **New here?** Start with [`docs/onboarding.md`](./onboarding.md) for a 5/30-min reading path
 

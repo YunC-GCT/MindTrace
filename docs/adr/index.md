@@ -67,7 +67,7 @@ If a decision is easy to reverse, skip the ADR — you'll just reverse it. If it
 
 - **`docs/specs/`** — implementation specs derived from ADRs (the "what" + "how")
 - **`docs/style/arkts-1.1.md`** — ArkTS rules (technical, not architectural decisions)
-- **[`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](../legacy/mindtrace/architecture/audit-full-2026-09-01.md)** — original audit (2026-09-01, archived) that surfaced the design issues these ADRs resolve
+- **[`docs/legacy/mindtrace/audit-full-2026-09-01.md`](../legacy/mindtrace/audit-full-2026-09-01.md)** — original audit (2026-09-01, archived) that surfaced the design issues these ADRs resolve
 - **`CONTEXT.md`** — project glossary; ADRs reference terms defined there
 
 ## Numbering

@@ -6,7 +6,7 @@
 
 | 放这里 | 不放这里 |
 |---|---|
-| 团队约定（git / 命名 / 安全 / issue / triage） | 一次性 session 交接、执行轨迹 → `docs/legacy/mindtrace/handoffs/` |
+| 团队约定（git / 命名 / 安全 / issue / triage） | 一次性 session 交接、执行轨迹 → `docs/legacy/mindtrace/` |
 | 可复用流程（smoke test / CI 失败处理 / 调研模式） | 调研产物 → `docs/research/` |
 | 术语表与教学入口 | 设计决策 → `docs/adr/` |
 | 指向更深文档的指针 | 执行记录 → `docs/specs/execution/` |
@@ -39,7 +39,7 @@
 
 ## 已移出的交接文档
 
-以下文档是时间点交接或执行轨迹，2026-10-18 统一移入 [`docs/legacy/mindtrace/handoffs/`](../legacy/mindtrace/handoffs/)，只作历史记录：
+以下文档是时间点交接或执行轨迹，2026-10-18 统一移入 `docs/legacy/mindtrace/`（2026-10-30 起不再分子目录），只作历史记录：
 
 - `handoff-2026-09-06.md`、`handoff-langgraph-migration.md`（已 SUPERSEDED）
 - `backend-migration-handoff.md`（已被 spec 018 取代）

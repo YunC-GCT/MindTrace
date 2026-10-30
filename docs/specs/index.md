@@ -1,7 +1,7 @@
 # Specs index
 
 This directory holds **implementation specs** for the P0/P1 tickets identified in the
-2026-09-01 audit ([`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](../legacy/mindtrace/architecture/audit-full-2026-09-01.md)). Each spec is derived from
+2026-09-01 audit ([`docs/legacy/mindtrace/audit-full-2026-09-01.md`](../legacy/mindtrace/audit-full-2026-09-01.md)). Each spec is derived from
 an ADR (`docs/adr/`) and follows the same template.
 
 ## Coverage map
@@ -90,8 +90,8 @@ Each spec has these sections:
 
 ## Cross-references
 
-- [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](../legacy/mindtrace/architecture/audit-full-2026-09-01.md) — original audit (archived)
-- [`docs/legacy/mindtrace/architecture/deep-dive-2026-09-01.md`](../legacy/mindtrace/architecture/deep-dive-2026-09-01.md) — 7 largest files analyzed (archived)
+- [`docs/legacy/mindtrace/audit-full-2026-09-01.md`](../legacy/mindtrace/audit-full-2026-09-01.md) — original audit (archived)
+- [`docs/legacy/mindtrace/deep-dive-2026-09-01.md`](../legacy/mindtrace/deep-dive-2026-09-01.md) — 7 largest files analyzed (archived)
 - [`docs/adr/`](../adr/) — Architecture Decision Records (the "why")
 - [`docs/specs/`](./) — this directory (the "what" + "how")
 - [`CONTEXT.md`](../../CONTEXT.md) — project glossary

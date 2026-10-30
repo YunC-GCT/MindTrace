@@ -50,7 +50,7 @@
 
 ## Cross-reference
 
-- 关联审计: [`../legacy/mindtrace/architecture/audit-full-2026-09-01.md`](../legacy/mindtrace/architecture/audit-full-2026-09-01.md)
+- 关联审计: [`../legacy/mindtrace/audit-full-2026-09-01.md`](../legacy/mindtrace/audit-full-2026-09-01.md)
 - ADR / Spec: [`../adr/`](../adr/) / [`../specs/`](../specs/)
 - 执行记录: [`../specs/execution/`](../specs/execution/)
 

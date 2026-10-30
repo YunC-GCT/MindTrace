@@ -134,7 +134,7 @@
 - deep 路线仍未在真实虚拟机链路中确认跑通。
 - 当前工作区包含本轮 deep 稳定性修复的未提交代码和测试改动；未进行 commit 或 push。
 
-原计划中“standard 空 evidence、`du` 微元误判、摘要和保存问题未修复”的描述属于 2026-09-20 的历史状态，不能再当作当前状态。相关历史原因保留在 [`docs/legacy/mindtrace/handoffs/note-generation-fix-handoff-2026-09-20.md`](../../../legacy/mindtrace/handoffs/note-generation-fix-handoff-2026-09-20.md)。
+原计划中“standard 空 evidence、`du` 微元误判、摘要和保存问题未修复”的描述属于 2026-09-20 的历史状态，不能再当作当前状态。相关历史原因保留在 [`docs/legacy/mindtrace/note-generation-fix-handoff-2026-09-20.md`](../../../legacy/mindtrace/note-generation-fix-handoff-2026-09-20.md)。
 
 ## 2. Deep 路线实际流程
 

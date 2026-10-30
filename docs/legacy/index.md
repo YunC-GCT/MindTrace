@@ -6,7 +6,7 @@
 
 | Path | Project | Last updated |
 |---|---|---|
-| [`mindtrace/`](./mindtrace/) | MindTrace (HarmonyOS ArkTS) — audit evidence + frozen handoffs; pre-D2 plans/research purged 2026-10-18 | 2026-10-18 |
+| [`mindtrace/`](./mindtrace/) | MindTrace (HarmonyOS ArkTS) — audit evidence + frozen handoffs. Purged 2026-10-18; flattened 2026-10-30 to a single directory (10 files, no subdirs) | 2026-10-30 |
 
 ## When to add a new entry
 
@@ -27,6 +27,6 @@ docs/legacy/{project-name}/
 - `{project-name}` is the original project's name (e.g., `mindtrace`)
 - kebab-case
 - Single subdirectory per archived project
-- No deeper nesting (preserve original layout within)
+- Keep the original layout inside it **only when the archive is big enough to need it**; a handful of files stays flat (`docs/legacy/mindtrace/*.md`) — subdirectories holding 1–2 files plus their own `index.md` are noise, not structure
 
 See [`../style/naming-conventions.md`](../style/naming-conventions.md) §3.8 for the formal spec.

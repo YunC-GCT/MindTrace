@@ -83,11 +83,8 @@
 | `docs/specs/016-llm-settings-redesign.md` | 主 spec | 背景 / 目标 / 非目标 / 涉及文件 / 公共接口 / 测试 / 验收 / 顺序 / 可逆性 / OCR 约束 |
 | `docs/adr/0013-llm-provider-presets.md` | ADR | 5 厂商预设决策 + 候选方案(4 个)+ 影响 |
 | `docs/adr/0014-asset-store-kit-migration.md` | ADR | AssetStoreKit 迁移决策 + 候选方案(4 个)+ 影响 |
-| `docs/legacy/mindtrace/handoffs/llm-settings/pr0-fix-pro-model.md` | Ticket | PR0:1 行字串修复 |
-| `docs/legacy/mindtrace/handoffs/llm-settings/pr1-asset-store-kit-upgrade.md` | Ticket | PR1:ApiKeyVault 新建 + LlmConfig 委托改造 |
-| `docs/legacy/mindtrace/handoffs/llm-settings/pr2-t1-llm-config-data.md` | Ticket | PR2-T1:providers.ets + LlmConfig 新增 4 方法 |
-| `docs/legacy/mindtrace/handoffs/llm-settings/pr2-t2-ui-redesign.md` | Ticket | PR2-T2:UI 重组 + ViewModel 清理 |
-| `docs/legacy/mindtrace/handoffs/llm-settings-scope-2026-09-06.md`(本文) | 状态 | Q1-Q16 轨迹 + 调研摘要 + 文件清单 |
+| 原 `handoffs/llm-settings/` 4 篇操作单 | 已清理 | 2026-10-30 移除(PR0 / PR1 / PR2-T1 / PR2-T2 均已合并);决策见 ADR-0013 / ADR-0014,落地见 spec 016 |
+| `docs/legacy/mindtrace/llm-settings-scope-2026-09-06.md`(本文) | 状态 | Q1-Q16 轨迹 + 调研摘要 + 文件清单 |
 
 ---
 
@@ -218,7 +215,7 @@ if (
 
 **1 行删除**:`LlmConfig.ets:232` 的 `lower === DEFAULT_MODEL ||`。
 
-完整诊断报告 + 测试代码详见 `docs/legacy/mindtrace/handoffs/llm-settings/pr0-fix-pro-model.md`。
+完整诊断报告原见 `handoffs/llm-settings/pr0-fix-pro-model.md`(2026-10-30 随该目录清理,测试仍在 `scripts/arkts-lint/tests/`)。
 
 ### D.5 一手信源
 
@@ -229,7 +226,7 @@ if (
 - `LlmConfig.ets` line 232 — P0 bug 行(`lower === DEFAULT_MODEL ||`)
 - `AiSettingsViewModel.ets` line 7 — `PRO_MODEL = "deepseek-v4-pro"`
 - `AiSettingsViewModel.ets` line 135-163 — test() 流程(saveAll → normalizeModel 抛错)
-- [spec 009](../../../specs/009-llm-config-throw-on-silent-override.md) — ticket #9 原始修复精神
+- [spec 009](../../specs/009-llm-config-throw-on-silent-override.md) — ticket #9 原始修复精神
 
 ---
 

@@ -1,9 +1,9 @@
 # 后端架构推进交接 — 2026-09-07
 
-> **状态提示 (2026-09-10)**: 本文的推进清单已被 [`spec 018`](../../../specs/018-agent-workflow-architecture.md) 部分 supersede。Agent workflow、spec 007 PR3 终态、Kit P0 和 skill SearchNote 的当前状态以 spec 018 与 [`docs/specs/index.md`](../../../specs/index.md) 为准；本文仅保留历史 seam 背景。
+> **状态提示 (2026-09-10)**: 本文的推进清单已被 [`spec 018`](../../specs/018-agent-workflow-architecture.md) 部分 supersede。Agent workflow、spec 007 PR3 终态、Kit P0 和 skill SearchNote 的当前状态以 spec 018 与 [`docs/specs/index.md`](../../specs/index.md) 为准；本文仅保留历史 seam 背景。
 
 > **给谁**:接手后端(agents/ + common/llm,kit,tools)工作的下一个 session。
-> **不是**:本文不重复 [`docs/legacy/mindtrace/handoffs/handoff-2026-09-06.md`](./handoff-2026-09-06.md) 的一屏现状 / TBD / 已知坑 / 拼窗口 — 那里是**时间点交接**, 本文是**深度推进路线图**。与代码冲突时, **代码 + `docs/specs/index.md` §"Implementation status" 优先**。
+> **不是**:本文不重复一次性 session 交接(原 `handoff-2026-09-06.md`,2026-10-30 清理时移除)的一屏现状 / TBD / 已知坑 / 拼窗口 — 那里是**时间点交接**, 本文是**深度推进路线图**。与代码冲突时, **代码 + `docs/specs/index.md` §"Implementation status" 优先**。
 > **何时读**:接手 #7 AgentChatService 拆分 / Kit 集成 / Tool 写路径 / skill IntentRouter / ReviewGraphView 拆分(C3 后续)**之前**必读。
 
 ---
@@ -39,8 +39,8 @@ agents 不能 import entry      (持久化走 NoteDaoInterface 注入, ADR-0001)
 > **forward path**:完成 AgentChatService → facade 收敛,与 PR1 (IntentClassifier) + PR2 (ChatStatusMachine) 形成三件套。
 
 - **读**:
-  - [`docs/specs/007-agent-chat-service-decomposition.md` §"PR 3"](../../../specs/007-agent-chat-service-decomposition.md) — spec 写的设计
-  - [`docs/specs/007-agent-chat-service-decomposition.md` §"Progress (2026-09-07)"](../../../specs/007-agent-chat-service-decomposition.md) — 现状: PR1 + PR2 已合, AgentChatService 861 → 516 LOC
+  - [`docs/specs/007-agent-chat-service-decomposition.md` §"PR 3"](../../specs/007-agent-chat-service-decomposition.md) — spec 写的设计
+  - [`docs/specs/007-agent-chat-service-decomposition.md` §"Progress (2026-09-07)"](../../specs/007-agent-chat-service-decomposition.md) — 现状: PR1 + PR2 已合, AgentChatService 861 → 516 LOC
 - **范围**:`entry/src/main/ets/services/`
   - 新建 `ReplyService.ets` (~300 LOC) — `realReply` / `realReplyStream` / `captureReply` 编排 (classify → memory → prompt → LLM → normalize → memory-write)
   - 收敛 `AgentChatService.ets` 至 ≤ 100 LOC (纯 facade)
@@ -60,9 +60,9 @@ agents 不能 import entry      (持久化走 NoteDaoInterface 注入, ADR-0001)
 > **gated on**:F2 写库路径统一(项目当前有 3+ 处 note 写入路径,gating 不统一,inventory F2)— 这是赛前已知缺口,先做 F2 再开写工具。
 
 - **读**:
-  - [`docs/architecture/agent-tools-inventory-2026-09-06.md`](../../../architecture/agent-tools-inventory-2026-09-06.md) — F2 三入口列出
-  - [`docs/specs/014-tool-calling-protocol.md` §"Out of scope"](../../../specs/014-tool-calling-protocol.md) — 写路径不写的原因
-  - [`docs/adr/0012-tool-calling-protocol.md`](../../../adr/0012-tool-calling-protocol.md) §"Considered Options" §3 — rejected 的核心理由
+  - [`docs/architecture/agent-tools-inventory-2026-09-06.md`](../../architecture/agent-tools-inventory-2026-09-06.md) — F2 三入口列出
+  - [`docs/specs/014-tool-calling-protocol.md` §"Out of scope"](../../specs/014-tool-calling-protocol.md) — 写路径不写的原因
+  - [`docs/adr/0012-tool-calling-protocol.md`](../../adr/0012-tool-calling-protocol.md) §"Considered Options" §3 — rejected 的核心理由
 - **先做 F2**(在 spec 014 之外另立 spec):
   - 把 `entry/services/StudyPlanService` 等写库调用统一走**单一 validation gate**(`WritePathValidator`)
   - 干掉 inventory 列出的"双入口 Middle Man" + "normalize 哨兵三重复"
@@ -74,8 +74,8 @@ agents 不能 import entry      (持久化走 NoteDaoInterface 注入, ADR-0001)
 > **forward path**:完成 Kit 接线的 P0 三件套(Reminder 已闭环作为模板)。
 
 - **读**:
-  - [`docs/specs/013-kit-adoption-boundary.md` §"Priority matrix"](../../../specs/013-kit-adoption-boundary.md) — P0 三个 Kit 的接缝已写
-  - [`entry/src/main/ets/kit/ReminderFacadeImpl.ets`](../../../../entry/src/main/ets/kit/ReminderFacadeImpl.ets) — **唯一可参考实现**(81 行),**复制其模式**(契约 → impl → 组合根注入 AppStorage)
+  - [`docs/specs/013-kit-adoption-boundary.md` §"Priority matrix"](../../specs/013-kit-adoption-boundary.md) — P0 三个 Kit 的接缝已写
+  - [`entry/src/main/ets/kit/ReminderFacadeImpl.ets`](../../../entry/src/main/ets/kit/ReminderFacadeImpl.ets) — **唯一可参考实现**(81 行),**复制其模式**(契约 → impl → 组合根注入 AppStorage)
 - **范围**:
   - `common/src/main/ets/kit/BackgroundTaskFacade.ets` 契约已存在, 新建 `entry/src/main/ets/kit/BackgroundTaskFacadeImpl.ets`
   - `common/src/main/ets/kit/FormCardFacade.ets` 契约已存在, 新建 `entry/src/main/ets/kit/FormCardFacadeImpl.ets`
@@ -92,8 +92,8 @@ agents 不能 import entry      (持久化走 NoteDaoInterface 注入, ADR-0001)
 > **gated on**:**7 个 intent action 语义需队员确认**(spec L20, open item)。这是先决 blocker,不解决不能动。
 
 - **读**:
-  - [`docs/adr/0011-skill-xiaoyi-reservation.md`](../../../adr/0011-skill-xiaoyi-reservation.md) §"Consequences" — 7 个 intent action 名 + IntentRouter 路径
-  - [`docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md`](../../../research/agent-toolkit-and-skill-dispatch-2026-09-06.md) §4-5 — 实装细节(InsightIntent 装饰器, API 11+)
+  - [`docs/adr/0011-skill-xiaoyi-reservation.md`](../../adr/0011-skill-xiaoyi-reservation.md) §"Consequences" — 7 个 intent action 名 + IntentRouter 路径
+  - [`docs/research/agent-toolkit-and-skill-dispatch-2026-09-06.md`](../../research/agent-toolkit-and-skill-dispatch-2026-09-06.md) §4-5 — 实装细节(InsightIntent 装饰器, API 11+)
 - **范围**:
   - **先**与队员确认 7 个 intent action 的语义(写新 doc `docs/agents/skill-intent-semantics.md`,逐个写"输入 → 触发条件 → 落点工具")
   - 然后新建 `skill/src/main/ets/IntentRouter.ets` — `want.action` → ToolRegistry.execute()
@@ -107,11 +107,11 @@ agents 不能 import entry      (持久化走 NoteDaoInterface 注入, ADR-0001)
 > **优先级**:低 — 不挡 demo / 不挡 release; 审查看 C3 是 ReviewGraphView 1880 行 + 96 处 rgba 字面量 + 8 处 setInterval 硬编码 (与 PR-A 的 GradientRing 同病)。
 
 - **读**:
-  - [`docs/research/frontend-component-audit-2026-09-06.md`](../../../research/frontend-component-audit-2026-09-06.md) §"审核 1-原子化/分子化标准" + §"加深机会候选 C3"
+  - [`docs/research/frontend-component-audit-2026-09-06.md`](../../research/frontend-component-audit-2026-09-06.md) §"审核 1-原子化/分子化标准" + §"加深机会候选 C3"
 - **范围**(纯视觉拆分, 改 行为):
   - 把 1880 行按主题切 5 文件:`GalaxyCamera` / `KnowledgeOrbit` / `SubjectChip` / `NoteDetailPanel` / `PlanStats`
   - 共享子模块:`Camera`, `OrbitMath`, `SubjectColor`
-- **守门**:复用 spec 015 / PR-A 的**纯提取纪律**(字节级 diff 只允许"文件名/import/转发移除"三类差异)— 用户要求, 见 [`docs/legacy/mindtrace/handoffs/handoff-2026-09-06.md` §3.4](./handoff-2026-09-06.md)。
+- **守门**:复用 spec 015 / PR-A 的**纯提取纪律**(字节级 diff 只允许"文件名/import/转发移除"三类差异)— 用户要求(原引用的 `handoff-2026-09-06.md` §3.4 已随该文件清理)。
 - **completion criterion**:5 个新文件 ≤ 500 LOC each + ReviewGraphView ≤ 200 LOC(facade)+ Hypium 视觉测试覆盖 + 实机 demo 表现不变。
 
 ---
@@ -221,7 +221,7 @@ entry/src/main/ets/
 | spread | `[...arr, x]` 或 `f(...args)` | 显式列举 / `Object.assign` |
 | typed catch | `catch (e: ErrorType)` | `catch (e)` + `(e as Error).message` |
 
-**完整规则** [`docs/style/arkts-1.1.md`](../../../style/arkts-1.1.md) + 项目偏好 §"ArkUI 项目级约束"(struct 内禁普通方法 / 禁 get accessor / 字段名避开 CommonAttribute)。
+**完整规则** [`docs/style/arkts-1.1.md`](../../style/arkts-1.1.md) + 项目偏好 §"ArkUI 项目级约束"(struct 内禁普通方法 / 禁 get accessor / 字段名避开 CommonAttribute)。
 
 **血泪**:本次 PR-C 撞了 destructuring decl(PR-B commit 在 `Index.ets:144` 写了 `export const { ... } from` → hvigor 报 10605074 → 必须改 `export { ... } from`)。**Source-level 测试不抓语法**(我们只 grep 名字存在),arkts-lint Node v0.3 报 parse-error 静默忽略 — **必须 hvigor build 才能抓**。
 
@@ -243,7 +243,7 @@ entry/src/main/ets/
 - **ADR-0011**: `skill/` 是小艺预留位, **stub 状态是故意**
 - **ADR-0012**: Tool-calling OpenAI 兼容 + ToolRegistry 在 `common/`(不是 entry)— skill IntentRouter 也复用
 
-完整 12 ADR [`docs/adr/index.md`](../../../adr/index.md)。
+完整 12 ADR [`docs/adr/index.md`](../../adr/index.md)。
 
 ---
 
@@ -251,17 +251,17 @@ entry/src/main/ets/
 
 | 想知道 | 读 |
 |---|---|
-| 项目现状 / TBD / 已知坑 | [`docs/legacy/mindtrace/handoffs/handoff-2026-09-06.md`](./handoff-2026-09-06.md) |
-| 整体进度 (权威) | [`docs/specs/index.md`](../../../specs/index.md) §"Implementation status" |
-| 项目规则 (7 红线 + ArkTS 1.1 + 命名) | [`AGENTS.md`](../../../../AGENTS.md) + [`docs/style/arkts-1.1.md`](../../../style/arkts-1.1.md) |
-| 项目术语 (Order/KnowledgeUnit/NoteType/...) | [`CONTEXT.md`](../../../../CONTEXT.md) |
-| 通用 agent 术语 (Node/Edge/State/HITL) | [`docs/agents/agent-glossary.md`](../../../agents/agent-glossary.md) |
-| Spec 007 PR3 范围 | [`docs/specs/007-agent-chat-service-decomposition.md`](../../../specs/007-agent-chat-service-decomposition.md) |
-| Spec 013 Kit 范围 | [`docs/specs/013-kit-adoption-boundary.md`](../../../specs/013-kit-adoption-boundary.md) |
-| 工具库存盘点 (F1/F2) | [`docs/architecture/agent-tools-inventory-2026-09-06.md`](../../../architecture/agent-tools-inventory-2026-09-06.md) |
-| 前端审查 (C1/C2/C3/C4/C5/C6) | [`docs/research/frontend-component-audit-2026-09-06.md`](../../../research/frontend-component-audit-2026-09-06.md) |
-| git 工作流 | [`docs/agents/git-flow-lightweight-2026-09-04.md`](../../../agents/git-flow-lightweight-2026-09-04.md) + [`docs/agents/git-conventions.md`](../../../agents/git-conventions.md) |
-| D2 CaptureGraph 踩坑经验 | [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](../../../agents/d2-capturegraph-teaching-2026-09-05.md) §6 (尤其 §6.3 + §6.11) |
+| 项目现状 / TBD / 已知坑 | 原始交接已于 2026-10-30 清理;改读 [`docs/specs/index.md`](../../specs/index.md) §"Implementation status" |
+| 整体进度 (权威) | [`docs/specs/index.md`](../../specs/index.md) §"Implementation status" |
+| 项目规则 (7 红线 + ArkTS 1.1 + 命名) | [`AGENTS.md`](../../../AGENTS.md) + [`docs/style/arkts-1.1.md`](../../style/arkts-1.1.md) |
+| 项目术语 (Order/KnowledgeUnit/NoteType/...) | [`CONTEXT.md`](../../../CONTEXT.md) |
+| 通用 agent 术语 (Node/Edge/State/HITL) | [`docs/agents/agent-glossary.md`](../../agents/agent-glossary.md) |
+| Spec 007 PR3 范围 | [`docs/specs/007-agent-chat-service-decomposition.md`](../../specs/007-agent-chat-service-decomposition.md) |
+| Spec 013 Kit 范围 | [`docs/specs/013-kit-adoption-boundary.md`](../../specs/013-kit-adoption-boundary.md) |
+| 工具库存盘点 (F1/F2) | [`docs/architecture/agent-tools-inventory-2026-09-06.md`](../../architecture/agent-tools-inventory-2026-09-06.md) |
+| 前端审查 (C1/C2/C3/C4/C5/C6) | [`docs/research/frontend-component-audit-2026-09-06.md`](../../research/frontend-component-audit-2026-09-06.md) |
+| git 工作流 | [`docs/agents/git-flow-lightweight-2026-09-04.md`](../../agents/git-flow-lightweight-2026-09-04.md) + [`docs/agents/git-conventions.md`](../../agents/git-conventions.md) |
+| D2 CaptureGraph 踩坑经验 | [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](../../agents/d2-capturegraph-teaching-2026-09-05.md) §6 (尤其 §6.3 + §6.11) |
 
 ---
 
@@ -273,7 +273,7 @@ entry/src/main/ets/
 
 ## 7. Workstreams & 边界(2026-09-07, 并行 LLM 适配)
 
-> **为什么需要这一节**: YunCeH 正在并行做**新架构接入 + 大模型流式输出**(基础映射见 [`docs/research/langgraph-mapping-verification-2026-09-06.md`](../../../research/langgraph-mapping-verification-2026-09-06.md),49 行 LangGraph × 鸿蒙资源核查)。两条流**共享部分基础设施**,不画线会互踩。
+> **为什么需要这一节**: YunCeH 正在并行做**新架构接入 + 大模型流式输出**(基础映射见 [`docs/research/langgraph-mapping-verification-2026-09-06.md`](../../research/langgraph-mapping-verification-2026-09-06.md),49 行 LangGraph × 鸿蒙资源核查)。两条流**共享部分基础设施**,不画线会互踩。
 
 ### 7.1 双流责任一览
 

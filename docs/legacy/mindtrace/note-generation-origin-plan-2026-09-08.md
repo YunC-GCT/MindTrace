@@ -332,33 +332,33 @@ finalize / needs_input → END
 
 ### 现有核心文件
 
-- [docs/specs/018-agent-workflow-architecture.md](../../../specs/018-agent-workflow-architecture.md)
-- [docs/adr/0008-capturegraph-self-built-runtime.md](../../../adr/0008-capturegraph-self-built-runtime.md)
-- [entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets](../../../../entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets)
-- [entry/src/main/ets/workflows/conversation/ConversationState.ets](../../../../entry/src/main/ets/workflows/conversation/ConversationState.ets)
-- [entry/src/main/ets/services/AgentMemoryService.ets](../../../../entry/src/main/ets/services/AgentMemoryService.ets)
-- [entry/src/main/ets/services/ReplyService.ets](../../../../entry/src/main/ets/services/ReplyService.ets)
-- [entry/src/main/ets/services/AiService.ets](../../../../entry/src/main/ets/services/AiService.ets)
-- [agents/src/main/ets/core/Dispatcher.ets](../../../../agents/src/main/ets/core/Dispatcher.ets)
-- [agents/src/main/ets/graph/AgentState.ets](../../../../agents/src/main/ets/graph/AgentState.ets)
-- [agents/src/main/ets/graph/nodes/StructureNode.ets](../../../../agents/src/main/ets/graph/nodes/StructureNode.ets)
-- [agents/src/main/ets/graph/nodes/TruthCheckNode.ets](../../../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets)
-- [agents/src/main/ets/graph/nodes/PersistNode.ets](../../../../agents/src/main/ets/graph/nodes/PersistNode.ets)
-- [agents/src/main/ets/agents/KnowledgeModel.ets](../../../../agents/src/main/ets/agents/KnowledgeModel.ets)
-- [agents/src/main/ets/agents/PromptBuilder.ets](../../../../agents/src/main/ets/agents/PromptBuilder.ets)
-- [common/src/main/ets/llm/LlmGuard.ets](../../../../common/src/main/ets/llm/LlmGuard.ets)
-- [common/src/main/ets/llm/LlmTypes.ets](../../../../common/src/main/ets/llm/LlmTypes.ets)
-- [common/src/main/ets/DatabaseHelper.ets](../../../../common/src/main/ets/DatabaseHelper.ets)
-- [entry/src/main/ets/database/NoteDao.ets](../../../../entry/src/main/ets/database/NoteDao.ets)
-- [entry/src/main/ets/adapters/NoteDaoAdapter.ets](../../../../entry/src/main/ets/adapters/NoteDaoAdapter.ets)
-- [entry/src/main/ets/services/NoteEditService.ets](../../../../entry/src/main/ets/services/NoteEditService.ets)
-- [entry/src/main/ets/overlays/NoteDetailOverlay/NoteDetailOverlay.ets](../../../../entry/src/main/ets/overlays/NoteDetailOverlay/NoteDetailOverlay.ets)
-- [entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets](../../../../entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets)
+- [docs/specs/018-agent-workflow-architecture.md](../../specs/018-agent-workflow-architecture.md)
+- [docs/adr/0008-capturegraph-self-built-runtime.md](../../adr/0008-capturegraph-self-built-runtime.md)
+- [entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets](../../../entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets)
+- [entry/src/main/ets/workflows/conversation/ConversationState.ets](../../../entry/src/main/ets/workflows/conversation/ConversationState.ets)
+- [entry/src/main/ets/services/AgentMemoryService.ets](../../../entry/src/main/ets/services/AgentMemoryService.ets)
+- [entry/src/main/ets/services/ReplyService.ets](../../../entry/src/main/ets/services/ReplyService.ets)
+- [entry/src/main/ets/services/AiService.ets](../../../entry/src/main/ets/services/AiService.ets)
+- [agents/src/main/ets/core/Dispatcher.ets](../../../agents/src/main/ets/core/Dispatcher.ets)
+- [agents/src/main/ets/graph/AgentState.ets](../../../agents/src/main/ets/graph/AgentState.ets)
+- [agents/src/main/ets/graph/nodes/StructureNode.ets](../../../agents/src/main/ets/graph/nodes/StructureNode.ets)
+- [agents/src/main/ets/graph/nodes/TruthCheckNode.ets](../../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets)
+- [agents/src/main/ets/graph/nodes/PersistNode.ets](../../../agents/src/main/ets/graph/nodes/PersistNode.ets)
+- [agents/src/main/ets/agents/KnowledgeModel.ets](../../../agents/src/main/ets/agents/KnowledgeModel.ets)
+- [agents/src/main/ets/agents/PromptBuilder.ets](../../../agents/src/main/ets/agents/PromptBuilder.ets)
+- [common/src/main/ets/llm/LlmGuard.ets](../../../common/src/main/ets/llm/LlmGuard.ets)
+- [common/src/main/ets/llm/LlmTypes.ets](../../../common/src/main/ets/llm/LlmTypes.ets)
+- [common/src/main/ets/DatabaseHelper.ets](../../../common/src/main/ets/DatabaseHelper.ets)
+- [entry/src/main/ets/database/NoteDao.ets](../../../entry/src/main/ets/database/NoteDao.ets)
+- [entry/src/main/ets/adapters/NoteDaoAdapter.ets](../../../entry/src/main/ets/adapters/NoteDaoAdapter.ets)
+- [entry/src/main/ets/services/NoteEditService.ets](../../../entry/src/main/ets/services/NoteEditService.ets)
+- [entry/src/main/ets/overlays/NoteDetailOverlay/NoteDetailOverlay.ets](../../../entry/src/main/ets/overlays/NoteDetailOverlay/NoteDetailOverlay.ets)
+- [entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets](../../../entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets)
 
 ### 建议新增文件
 
 - `docs/specs/019-incremental-note-generation.md`
-- [common/src/main/ets/models/NoteGenerationModels.ets](../../../../common/src/main/ets/models/NoteGenerationModels.ets)
+- [common/src/main/ets/models/NoteGenerationModels.ets](../../../common/src/main/ets/models/NoteGenerationModels.ets)
 - `agents/src/main/ets/workflows/note-generation/NoteGenerationState.ets`
 - `agents/src/main/ets/workflows/note-generation/NoteGenerationWorkflow.ets`
 - `agents/src/main/ets/workflows/note-generation/NoteGenerationPolicy.ets`
@@ -367,7 +367,7 @@ finalize / needs_input → END
 - `agents/src/main/ets/workflows/note-generation/NoteChangePlanner.ets`
 - `agents/src/main/ets/workflows/note-generation/nodes/*.ets`：route、outline、evidence、draft-section、verify、repair、rollback、finalize Node factories。
 - `entry/src/main/ets/services/NoteSourceService.ets`
-- [entry/src/main/ets/services/KnowledgeUnitWriteService.ets](../../../../entry/src/main/ets/services/KnowledgeUnitWriteService.ets)
+- [entry/src/main/ets/services/KnowledgeUnitWriteService.ets](../../../entry/src/main/ets/services/KnowledgeUnitWriteService.ets)
 - `entry/src/main/ets/services/NoteGenerationRepository.ets`
 - `entry/src/main/ets/database/NoteGenerationDao.ets`
 - `entry/src/main/ets/database/NoteRevisionDao.ets`

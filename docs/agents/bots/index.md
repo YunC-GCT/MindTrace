@@ -1,6 +1,6 @@
 # Bot 派活单索引
 
-> 五个 Bot 的分工与本轮派活。**派活单是一次性工作指令**，做完归档到 `docs/legacy/mindtrace/handoffs/`；团队规则不在这里维护，仍在 `AGENTS.md`。
+> 五个 Bot 的分工与本轮派活。**派活单是一次性工作指令**，做完归档到 `docs/legacy/mindtrace/`；团队规则不在这里维护，仍在 `AGENTS.md`。
 > 建立：2026-10-30 · 基线 `feature/a2a-text-ingest` @ `dac64c3`
 
 ## 分工表

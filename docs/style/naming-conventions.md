@@ -141,7 +141,7 @@ If a file is not in the whitelist, it must be in a subdirectory (`docs/`, `scrip
 
 - Frozen subdirectory: old project's docs go here, no new docs added.
 - The `project` name identifies the project (e.g., `mindtrace`).
-- Subdirs preserve the original structure (`docs/legacy/mindtrace/adr/`, `…/specs/`, `…/research/`).
+- Subdirs preserve the original structure **only for a large archive** (`docs/legacy/mindtrace/adr/`, `…/specs/`, `…/research/`). A handful of leftover files stays flat (`docs/legacy/mindtrace/*.md`) with a single `index.md` — subdirectories holding 1–2 files, each with its own `index.md`, are noise.
 
 ### 3.9 Execution bundles — `docs/specs/execution/{slug}/`
 
