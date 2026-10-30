@@ -8,6 +8,13 @@
 |---|---|---|
 | [`mindtrace/`](./mindtrace/) | MindTrace (HarmonyOS ArkTS) — audit evidence + frozen handoffs. Purged 2026-10-18; flattened 2026-10-30 to a single directory (10 files, no subdirs) | 2026-10-30 |
 
+## Known stale facts in the frozen files
+
+Frozen text is not corrected in place — these notes exist so nobody copies the old wording into current docs:
+
+- `mindtrace/audit-full-2026-09-01.md` (§header, §2 注) 把模块拓扑写成「1 HAP + 4 HSP」。as-built 是 **3 HAP**（`entry` / `skill` / `cardservice`）+ **2 HSP**（`common` / `agents`），见 `AGENTS.md`。
+- 同一篇里的 `D:\HMgent\MathMind` 是当时的本地目录名；仓库现名 **MindTrace**。
+
 ## When to add a new entry
 
 Only when **archiving an entire project's docs** as a single unit. If you have just a few stale docs, use the git history or a one-line reference in the current docs — don't create a new project subdirectory.

@@ -90,7 +90,7 @@ A2A 的 LLM 调用永不返回：日志停在「LLM 调用开始」，60s 超时
 |---|---|---|
 | 只有主进程 UI 用 | 使用它的模块（`entry` / `cardservice`），不进 `common` | `@kit.ArkGraphics3D`（仅 entry 2 处）、`@kit.FormKit`（cardservice）、`@kit.CameraKit`、`@kit.MediaLibraryKit`、`@ohos.web.webview` |
 | 同一 HAP 的多进程用 | `entry`，各进程在自己的组合根 `install` 同一实现 | `@kit.CoreVisionKit` / `@kit.ImageKit` → `entry/services/CoreVisionOcrRecognizer.ets`，`EntryAbility.onCreate` 与 `AgentExtAbility.onCreate` 各自安装 |
-| 跨 HSP 复用（agents / skill / cardservice 也要） | 才搬 `common/<能力目录>`，**独立文件、不进 `Index.ets`**，使用方按文件路径 import | 现有先例：`agents` 里 16 处 `from 'common/src/main/ets/Index'`，说明子路径 import 可行 |
+| 跨模块复用（agents / skill / cardservice 也要） | 才搬 `common/<能力目录>`，**独立文件、不进 `Index.ets`**，使用方按文件路径 import | 现有先例：`agents` 里 16 处 `from 'common/src/main/ets/Index'`，说明子路径 import 可行 |
 
 两条附加规则：
 

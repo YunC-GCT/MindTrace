@@ -1,6 +1,6 @@
 # Bot 交接单 · architect（2026-10-30）
 
-> 交接人：Hermes 主线 session · 接收：architect（gpt-5.6-sol）· 状态：待接手
+> 交接人：Hermes 主线 session · 接收：architect（gpt-5.6-sol）· 状态：**任务 1 已完成**（`ae80f04`：全仓「1 HAP + 4 HSP」改为 3 HAP + 2 HSP，含 AGENTS.md / onboarding / ADR-0011·0012 / arkts-ai-coding / specs）；任务 2（ADR-0020）待接手
 > 基线：worktree `D:/HMgent/MindTrace-chat`，分支 `feature/a2a-text-ingest` @ `dac64c3`（**未 push**）
 > 本轮前情：端A2A 图片通道查证完毕（协议支持、客户端不填 `parts`），随后加了「对话内 UI 卡片 + 跳转」这套官方引导通道。结论与证据在 [`docs/research/a2a-image-input-feasibility-2026-10-29.md`](../../research/a2a-image-input-feasibility-2026-10-29.md)。
 
