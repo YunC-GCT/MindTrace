@@ -14,7 +14,7 @@
 
 ## #238 契约层：六个 Port + adapter + 契约测试
 
-- [x] `NoteWritePort`（`commitKey` 必填、`expectedVersion` CAS、`approvedCheckpointHash`、`NotePortError`）— 契约与纯判定在切片 A；**entry adapter 未做**（`NoteDao` 尚未实现 `commit`，单开切片）
+- [x] `NoteWritePort`（`commitKey` 必填、`expectedVersion` CAS、`approvedCheckpointHash`、`NotePortError`）— 契约与纯判定在切片 A；**entry adapter 已补**：`NoteWritePortAdapter`（幂等 / CAS / 审批哈希 / 错误分流）+ `NoteWriteStoreDao`（commit 查 `note_generation_commit`，写走 NoteDao 事务）。**已知缺口**：`approvedCheckpointHash` 没有任何持久化列，带哈希的写入会被安全拒绝；放行需先定存储位置并开迁移票
 - [x] `NoteReadPort`（`list` / `get` / `search`；结构化错误码 `INVALID_QUERY` / `NOTE_READ_FAILED`；投影含复习字段）— 契约 `common/src/main/ets/ports/NoteReadPort.ets` + 适配器 `entry/src/main/ets/database/NoteReadPortAdapter.ets`
 - [x] `NoteWriteDecisions` 纯判定（insert / update / duplicate / conflict / reject + ADR-0019 错误码）— 切片 A，`common/src/main/ets/ports/NoteWriteDecisions.ets`
 - [x] `StudyPlanReadPort`（只承载现有待办语义；`subject` 由注入的 resolver 从 linked note 派生）+ entry 适配器 `StudyPlanPortAdapter`
@@ -30,9 +30,10 @@
       `v7-note-read-port.test.mjs` 13 条（过滤/排序/分页/参数校验/错误码/tags 副本/不改 store 数组/元数据边界/空关键字先校验）、
       `v7-studyplan-port.test.mjs` 6 条（排除已完成/due 排序/subject 派生/派生失败降级/错误码）、
       `v7-artifact-store.test.mjs` 11 条（幂等/冲突/删除/manifest 写失败回滚/文件删失败回滚/路径穿越/读失败）——合计 30 条全绿
-- [ ] 写侧契约测试维度（重复 `commitKey` 落 DATABASE 只生效一次、`expectedVersion` 落后冲突、取消提交前/后语义、投影落后可检测）仍缺，等 `NoteWritePort` adapter 与 `RunStore` 持久化
+- [x] 写侧契约测试（2026-10-30）：`v7-note-write-port.test.mjs` 13 条（空 commitKey / commitKey 重放 / insert / store 侧 duplicate 竞态 / VERSION_CONFLICT / expectedVersion 缺省取快照版本 / APPROVAL_HASH_MISMATCH / NOTE_NOT_FOUND / store 失败包装 / 结构化错误不被压平 / 提交前取消 / 提交后取消 / committedAt 透传）——契约测试合计 43 条全绿
+- [ ] 仍缺的写侧维度：真 DAO 往返的「重复 `commitKey` 落库只生效一次」、投影落后可检测（`RunStore` 持久化迁移票）；`approvedCheckpointHash` 无持久化列，带哈希的写入当前被安全拒绝
 - [x] build 5/5、gate PASS、单测 ≥ 806 —— 2026-10-30 实测：`node scripts/build-hsp-hap.mjs` 49 tasks BUILD SUCCESSFUL；
-      `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（`pass=985 fail=0`）
+      `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（`pass=998 fail=0`）
 
 ## #239 行为基线：四条 dispatch 路径 golden 快照
 
