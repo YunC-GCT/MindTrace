@@ -6,7 +6,7 @@
 
 | 文件 | 作用 |
 |---|---|
-| `spec.md` | 冻结范围与验收条件（写实现前） |
+| `spec.md` | 冻结范围与验收条件（写实现前）。**头部的 `Status: Draft` 是 Spec-Kit 模板样板，不作为结论**；结论看 `verification-*` |
 | `plan.md` | 实施计划与文件级落点 |
 | `tasks.md` | 勾选式任务与逐项证据 |
 | `verification-record.md` / `verification-report.md` | 实际执行的验证结果（结论以它为准，不以 `spec.md` 的 Draft 字样为准） |
@@ -17,17 +17,17 @@
 
 | Bundle | 对应设计规格 / issue | 内容 | 状态（bundle 头部记录） |
 |---|---|---|---|
-| [`019-reasoning-process-display-p0/`](./019-reasoning-process-display-p0/) | [spec 019](../019-reasoning-process-display-p0.md) · #111 | spec / plan / tasks / verification-report / delivery-checklist / review-report | Draft（执行记录已归档） |
-| [`021-review-remediation/`](./021-review-remediation/) | [spec 021](../021-chat-streaming-incremental-rendering.md) · #140 / #141 | spec / plan / tasks | Draft |
-| [`097-knowledge-unit-write-service/`](./097-knowledge-unit-write-service/) | Issue #97 · [CONTEXT KnowledgeUnitWriteService](../../../CONTEXT.md) | spec / plan / tasks | 无 Status 行 |
-| [`098-light-note-generation/`](./098-light-note-generation/) | Issue #98 | spec / plan / tasks | 无 Status 行 |
-| [`entry-arkts-compile-fix/`](./entry-arkts-compile-fix/) | Entry ArkTS 编译修复 | verification-record | 仅验证记录 |
-| [`restore-arkweb-warmup/`](./restore-arkweb-warmup/) | #119 · [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | spec / plan / tasks | Draft |
-| [`ticket-0-2-stable-chat-key-refresh/`](./ticket-0-2-stable-chat-key-refresh/) | #120 | spec / plan / tasks / verification-record | `INCOMPLETE`（未放行） |
+| [`019-reasoning-process-display-p0/`](./019-reasoning-process-display-p0/) | [spec 019](../019-reasoning-process-display-p0.md) · #111 | spec / plan / tasks / verification-report / delivery-checklist / review-report | **`PASS`**（verification-report 末行；`spec.md` 的 Draft 是样板；#110–#114 已闭） |
+| [`021-review-remediation/`](./021-review-remediation/) | [spec 021](../021-chat-streaming-incremental-rendering.md) · #140 / #141 | spec / plan / tasks | Draft，**无 verification**（未收官） |
+| [`097-knowledge-unit-write-service/`](./097-knowledge-unit-write-service/) | Issue #97 · [CONTEXT KnowledgeUnitWriteService](../../../CONTEXT.md) | spec（16 行）/ plan（18 行）/ tasks（33 行） | **残包**：三个文件都是提纲，无 verification；实况见 `entry/src/main/ets/models/KnowledgeUnitWriteModels.ets` + `adapters/NoteDaoAdapter.ets` |
+| [`098-light-note-generation/`](./098-light-note-generation/) | Issue #98 | spec（23 行）/ plan（17 行）/ tasks（31 行） | **残包**：提纲级，无 verification |
+| [`entry-arkts-compile-fix/`](./entry-arkts-compile-fix/) | Entry ArkTS 编译修复（无 issue） | 仅 `verification-record.md`（158 行，`No errors found`） | **残包**：无 spec/plan/tasks，只剩一次编译结果 |
+| [`restore-arkweb-warmup/`](./restore-arkweb-warmup/) | #119 · [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | spec / plan / tasks | Draft，**无 verification**（#119 已闭，包未收尾） |
+| [`ticket-0-2-stable-chat-key-refresh/`](./ticket-0-2-stable-chat-key-refresh/) | #120 | spec / plan / tasks / verification-record | **`PASS`**（2026-09-14 复核覆盖了 spec 头部的 `INCOMPLETE`；仅放行「下游设计可考虑」，生产聊天路径未改） |
 | [`ticket-0-3-chat-filesdir-seam/`](./ticket-0-3-chat-filesdir-seam/) | chat filesDir seam | spec / plan / tasks / verification-record | `PASS` |
 | [`ticket-0-5-customspan-placeholder-seam/`](./ticket-0-5-customspan-placeholder-seam/) | CustomSpan placeholder seam | spec / plan / tasks / verification-record | Draft |
 | [`ticket-0-6-chat-render-fixtures-budgets/`](./ticket-0-6-chat-render-fixtures-budgets/) | #124 · [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | spec / plan / tasks / verification-record / `raw/*.jsonl` | Draft（ticket-0 证据完整） |
-| [`note-generation-stability/`](./note-generation-stability/) | 2026-09-21 笔记生成稳定性计划 | plan | 仅计划 |
+| [`note-generation-stability/`](./note-generation-stability/) | 2026-09-21 笔记生成稳定性计划（无 issue） | 仅 `plan.md`（588 行） | **残包**：无 spec/tasks/verification，计划本身完整 |
 | [`v7-architecture-contracts/`](./v7-architecture-contracts/) | #237–#242 · [§17 目标态](../../system-architecture-layered.md) · [外评审](../../architecture/review-v7-2026-10-27.md) | plan（含交接说明）/ tasks | `ready-to-execute`（未开始写代码） |
 
 `feature.json` 是 Spec-Kit 工具的元数据，不是 bundle。

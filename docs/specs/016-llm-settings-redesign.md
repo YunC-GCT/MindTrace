@@ -1,6 +1,6 @@
 # Spec 016 — LLM 设置页重构
 
-> **状态**: draft (2026-09-06)
+> **状态**: implemented via [017](./017-llm-settings-cleanup.md) (2026-09-06 设计 · 2026-09-08 六个 sub-task 落地; 代码 `pages/AiSettings/` + `viewmodels/AiSettingsViewModel.ets`)
 > **源 ADR**: [0013](../adr/0013-llm-provider-presets.md)、[0014](../adr/0014-asset-store-kit-migration.md)
 > **调研依据**: docs/research/llm-provider-patterns-2026-09-06.md（原文未随仓库保留）
 > **作者**: 主线程(grilling + research)
