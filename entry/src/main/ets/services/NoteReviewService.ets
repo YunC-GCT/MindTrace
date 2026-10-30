@@ -22,7 +22,16 @@ import {
   NoteEvidenceService,
   NoteEvidenceStreamFilter,
 } from './NoteEvidenceService';
+import type { NoteReadPort } from 'common';
 import { NoteRetrievalQuery } from './NoteRetrievalQuery';
+
+// ADR-0021 Step 3：组合根在 DB 初始化后注入只读端口；未注入时 NoteEvidenceService 走既有 SQL 路径
+// （保持测试与旧行为不变）。端口实现由 entry 组合根从 common 的 RdbNoteReadStore 构造。
+let evidenceReadPort: NoteReadPort | undefined = undefined;
+
+export function configureEvidenceReadPort(port: NoteReadPort | undefined): void {
+  evidenceReadPort = port;
+}
 
 const REVIEW_MAX_CALLS: number = 6;
 const REVIEW_MAX_CITATIONS: number = 10;
@@ -61,7 +70,7 @@ class DefaultNoteReviewEvidenceProvider extends NoteReviewEvidenceProvider {
 
   constructor(service?: NoteEvidenceService) {
     super();
-    this.service = service === undefined ? new NoteEvidenceService() : service;
+    this.service = service === undefined ? new NoteEvidenceService(evidenceReadPort) : service;
   }
 
   async build(query: string, options?: NoteEvidenceOptions): Promise<NoteEvidenceContext> {

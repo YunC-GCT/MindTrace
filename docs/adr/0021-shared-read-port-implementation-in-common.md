@@ -28,7 +28,8 @@ accepted（2026-10-30）
 
 1. **`agents` 只能 import `ports/`，永不 import `ports/impl/`** —— 编排层不碰 RDB，写路径必须由调用方注入。
 2. 只读端口返回**投影**（`NoteSummary` / `NoteDetail`），不返回整行 `KnowledgeUnit`；避免把写模型泄漏给只读消费者。
-3. 全文检索（`note_query_rag`）**不进 `NoteReadPort`**，另行定义 `NoteSearchPort`；读端口的 `search` 只匹配元数据。
+3. 全文检索（`note_query_rag`）**不进 `NoteReadPort`**，由独立 `NoteSearchPort` 承载（已落地，`ports/impl/NoteSearchRanking` + `RdbNoteSearchAdapter`）；读端口的 `search` 只匹配元数据。
+4. **`note_query` 暂留工具层特例**（2026-10-30 决策）：它的 keyword 同时命中 `title` 与 `content`，横跨「读端口（元数据）」与「检索端口（必须有关键词）」的语义边界，硬映射会改变行为。现状保留直查并在文件头标注；若将来需要复用，应新增 `NoteFilterPort`（带 `reviewStatus` 等过滤面的查询端口），而不是扩宽 `NoteReadPort`。
 
 ## Consequences
 

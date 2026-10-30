@@ -12,6 +12,7 @@
 
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper, ToolCatalog, ToolRegistry, ToolResult } from 'common';
+import type { NoteDetail, NoteReadPort } from 'common';
 import { KnowledgeRelationDao, GraphExpansion, GraphExpansionLimits } from '../database/KnowledgeRelationDao';
 import { NoteRetrievalQuery } from './NoteRetrievalQuery';
 import {
@@ -62,6 +63,14 @@ export interface CitationVersionRef {
 }
 
 export class NoteEvidenceService {
+  // ADR-0021 Step 3：注入只读端口后，证据扩展的 note 读取走 NoteReadPort；
+  // 未注入（测试 / 未配置组合根）时退回既有 SQL 路径，行为不变。
+  private readonly readPort?: NoteReadPort;
+
+  constructor(readPort?: NoteReadPort) {
+    this.readPort = readPort;
+  }
+
   // 构建证据上下文; 任何失败都降级为 degraded 上下文, 不阻断回答
   async build(query: string, options?: NoteEvidenceOptions): Promise<NoteEvidenceContext> {
     const normalizedQuery: string = NoteRetrievalQuery.normalize(query);
@@ -334,10 +343,32 @@ export class NoteEvidenceService {
     }
   }
 
-  private queryLiveRows(store: relationalStore.RdbStore, unitIds: string[]): Promise<NoteEvidenceRow[]> {
+  private async queryLiveRows(store: relationalStore.RdbStore, unitIds: string[]): Promise<NoteEvidenceRow[]> {
     if (unitIds.length === 0) {
       const empty: NoteEvidenceRow[] = [];
-      return Promise.resolve(empty);
+      return empty;
+    }
+    const port: NoteReadPort | undefined = this.readPort;
+    if (port !== undefined) {
+      try {
+        const details: NoteDetail[] = await port.listByIds(unitIds);
+        const rows: NoteEvidenceRow[] = [];
+        for (const detail of details) {
+          rows.push({
+            noteId: detail.id,
+            title: detail.title,
+            version: detail.version,
+            subject: detail.subject,
+            chapter: detail.chapter,
+            summary: detail.summary,
+            content: detail.content,
+          });
+        }
+        return rows;
+      } catch (e) {
+        const message: string = e instanceof Error ? e.message : String(e);
+        throw new Error('NoteEvidenceService.queryLiveRows failed: ' + message);
+      }
     }
     const placeholders: string = NoteEvidenceService.placeholders(unitIds.length);
     const sql: string = 'SELECT id, title, version, subject, chapter, summary, content FROM knowledge_unit'

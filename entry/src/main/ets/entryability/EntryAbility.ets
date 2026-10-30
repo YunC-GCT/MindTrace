@@ -15,7 +15,7 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry, KnowledgeUnit } from 'common';
+import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry, KnowledgeUnit, NoteReadPortAdapter, RdbNoteReadStore } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
@@ -23,6 +23,7 @@ import { DebugCaptureRunner } from '../services/DebugCaptureRunner';
 import { ImageSearchWorkerProbe } from '../services/ImageSearchWorkerProbe';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
+import { configureEvidenceReadPort } from '../services/NoteReviewService';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
 import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFilesDirSeam';
 import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';
@@ -100,7 +101,12 @@ export default class EntryAbility extends UIAbility {
     }
     // 初始化数据库
     DatabaseHelper.init(this.context)
-      .then((): Promise<void> => CardSnapshotService.refresh(this.context))
+      .then((): Promise<void> => {
+        // ADR-0021 Step 3：DB 就绪后把只读端口注入证据服务组合根（未就绪则保持既有 SQL 路径）
+        const readStore: RdbNoteReadStore | null = RdbNoteReadStore.fromDatabase();
+        configureEvidenceReadPort(readStore === null ? undefined : new NoteReadPortAdapter(readStore));
+        return CardSnapshotService.refresh(this.context);
+      })
       .catch((e: Error) => {
         hilog.error(DOMAIN, 'testTag', 'DB/card init failed: %{public}s', e.message);
       });
