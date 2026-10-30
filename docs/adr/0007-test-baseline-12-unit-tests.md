@@ -25,6 +25,10 @@ MindTrace currently has only 2 Hypium test files in `agents/src/test/`. The audi
 
 All 12 are unit tests (mock external dependencies). They do not require a real DB or real LLM API.
 
+## 现状（2026-10-30 回填）
+
+12 条是**下限**，不是总量，而且早已被超过：`*.test.mjs` **145 个**（`find . -name "*.test.mjs" -not -path "*/node_modules/*" -not -path "*/build/*" | wc -l`），`agent-gate --all` 报 `pass=953 fail=0`（425 个 `.ets`）。本 ADR 里「2 → 14」那组数字是 2026-09 的历史，不要当成当前覆盖率读；「4+4+2+2 分四个单元」的分法也已被 `scripts/arkts-lint/tests/` 下按能力组织的用例取代。
+
 ## Reversibility
 
 **Easy**. The 12 tests are additive; deleting one or more is a separate commit. Adopting a higher bar (e.g. 20) is also additive.

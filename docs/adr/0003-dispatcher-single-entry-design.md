@@ -14,6 +14,15 @@
 - Reject (2): `routeDispatch` is dead code; keeping it as "API surface" is misleading. `analyze` as public method encourages callers to skip persistence, which is a leaky abstraction.
 - Reject (3): the `persist: false` option is a 1-line difference. Two methods for a 1-line difference is API bloat.
 
+## 现状（2026-10-30 回填）
+
+公开入口现在是**两个**，不是三个：
+
+- `dispatch(req, options)` — `agents/src/main/ets/core/Dispatcher.ets:145`
+- `dispatchSet(req, options)` — 同文件 `:153`，批量 capture set 的循环入口，逐条转调 `dispatch`
+
+本 ADR 的核心结论仍然成立：`analyze` 已降为私有步骤，`routeDispatch` 已删，持久化语义只有 `dispatch` 一处定义。`dispatchSet` 是 2026-10 为「一次多图」加的第二入口，它不暴露分析能力、也不绕过 `dispatch` 的写路径，因此不构成对本 ADR 的回退；但「Dispatcher 只暴露一个动词」这句话已经不再字面为真，引用时按「一个语义入口 + 一个批量包装」理解。
+
 ## Reversibility
 
 Low. `dispatch` signature is the natural API; restoring two methods is additive. The only risk is that two existing callers (`AiService.analyzeImage`, `services/AgentChatService.captureReply`) currently call `analyze` and `dispatch` separately and need to migrate to `dispatch(req, { persist: false | true })`. ~4 line change per caller.

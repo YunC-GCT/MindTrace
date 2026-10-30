@@ -24,6 +24,11 @@ The 2026-09-06 agent-tools audit ([F4](../architecture/agent-tools-inventory-202
 
 **Low** — keeping an empty module costs nothing; what would be hard to reverse is deleting it and losing the declared intent actions and the team's recorded intent.
 
+## 现状（2026-10-30 回填）
+
+- **模块类型写错了**：`skill/` 不是 HSP，而是 **HAP** —— `skill/src/main/module.json5` 是 `"type": "feature"`，`hvigorfile.ts` 用 `hapTasks`。全仓只有 `common` / `agents` 是 HSP（`type: "shared"`）。
+- 其余判断仍成立：`SKILL_VERSION = 'v0.0.1'`（`skill/src/main/ets/Index.ets:4`）还在，`SkillAbility` 仍声明 `entity.system.intent` 与 7 个 action，`SkillIntentWorkflow` 已从 `skill/src/main/ets/Index.ets:6` 导出。预留位的结论不变——**不要删这个模块**。
+
 ## Related
 
 - [agent-tools inventory 2026-09-06](../architecture/agent-tools-inventory-2026-09-06.md) — finding F4 (withdrawn by this ADR)

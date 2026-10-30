@@ -14,6 +14,19 @@
 - Reject (2): a class that does only JSON schema validation should be a function or a small module, not a sibling class. The 4th class adds DI complexity.
 - Reject (3): 870 LOC is past the "I can hold it all in my head" threshold. Code review cost grows superlinearly.
 
+## 实际落地（2026-10-30 回填）
+
+拆分做了，但和本 ADR 的计划表有两处偏差，按事实记录（不粉饰）：
+
+| 计划 | 实际 | 说明 |
+|---|---|---|
+| `StructureService`（~300 行） | **没有这个类**。结构化逻辑在 `agents/src/main/ets/agents/CaptureStructurer.ets`（**643 行**，`export class CaptureStructurer` @ `:65`） | 名字没沿用，职责也没压到 300 行以内 |
+| `TruthCheckService`（~250 行） | `agents/src/main/ets/agents/TruthCheckService.ets` ✓ | 与计划一致 |
+| `PromptBuilder`（~200 行） | `agents/src/main/ets/agents/PromptBuilder.ets` ✓ | 与计划一致 |
+| `KnowledgeModel` 只做编排 | `KnowledgeModel.ets` 从 870 行降到 **105 行** | 拆分目标达成 |
+
+结论：**拆分的意图成立，命名与行数承诺没兑现**。Consequences 里「each class ≤ 300 LOC」应视为未达成的期望，不再当约束引用；真要压 `CaptureStructurer`，那是一张新的重构票，不是本 ADR 的欠账。
+
 ## Reversibility
 
 **Hard**. The class is consumed by `Dispatcher.dispatch` and `KnowledgeGalaxyViewModel`. Splitting changes the import graph. Migration is mechanical (one PR) but rollback is also mechanical (one revert). Once split, the parts don't have a strong reason to merge back.
