@@ -62,4 +62,6 @@ export interface NoteReadPort {
   list(query: NoteQuery): Promise<NoteSummary[]>;
   get(id: string): Promise<KnowledgeUnit | null>;
   search(query: NoteQuery): Promise<NoteSummary[]>;
+  /** 按 id 批量取完整 note（证据扩展用）；去重、按 id 升序、缺失的 id 跳过 */
+  listByIds(ids: string[]): Promise<KnowledgeUnit[]>;
 }

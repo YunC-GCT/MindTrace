@@ -65,6 +65,24 @@ export class NoteReadPortAdapter implements NoteReadPort {
     return await this.list(query);
   }
 
+  async listByIds(ids: string[]): Promise<KnowledgeUnit[]> {
+    const unique: string[] = [];
+    for (const id of ids) {
+      if (id.length > 0 && unique.indexOf(id) < 0) {
+        unique.push(id);
+      }
+    }
+    unique.sort();
+    const found: KnowledgeUnit[] = [];
+    for (const id of unique) {
+      const unit: KnowledgeUnit | null = await this.get(id);
+      if (unit !== null) {
+        found.push(unit);
+      }
+    }
+    return found;
+  }
+
   private async readAll(): Promise<KnowledgeUnit[]> {
     try {
       return await this.store.queryAllMetadata();

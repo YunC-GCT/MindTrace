@@ -169,6 +169,18 @@ test('NoteReadPort.search returns empty for a blank keyword without scanning', a
   assert.equal(hits.length, 0, 'a blank keyword must not scan the table');
 });
 
+test('NoteReadPort.listByIds dedupes, sorts by id and skips missing ids', async () => {
+  const units = [unit('b', { title: 'B' }), unit('a', { title: 'A' })];
+  const port = new NoteReadPortAdapter(storeOf(units));
+  const found = await port.listByIds(['b', 'a', 'b', 'missing', '']);
+  assert.deepEqual(Array.from(found).map((item) => item.id), ['a', 'b']);
+});
+
+test('NoteReadPort.listByIds returns an empty list without touching the store for empty input', async () => {
+  const port = new NoteReadPortAdapter(storeOf([unit('a')]));
+  assert.equal((await port.listByIds([])).length, 0);
+});
+
 test('NoteReadPort.search paginates on the sorted result set', async () => {
   const units = [
     unit('q-old', { title: 'quadratic old', updatedAt: 1 }),
