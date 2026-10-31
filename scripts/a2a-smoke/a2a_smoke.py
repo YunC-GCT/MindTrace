@@ -41,6 +41,9 @@ REPLY_NOISE_PATTERNS = (
 )
 
 
+CLOCK_CHROME_PATTERN = re.compile(r"^[\d\s,，:：.]+$")
+
+
 class Hdc:
     def __init__(self, path: str):
         self.path = path
@@ -256,6 +259,9 @@ def wait_reply(hdc, before, sent="", timeout=45.0):
         fresh = [n["text"] for n in nodes if n["text"] and n["text"] not in before]
         # 去掉自己发出去的那条和过短噪声
         fresh = [t for t in fresh if len(t) > 2 and t.strip() != sent.strip()]
+        # 状态栏时钟与相对时间不能当回复；去掉噪声后要求仍有 >=4 字实质内容。
+        fresh = [t for t in fresh if not CLOCK_CHROME_PATTERN.match(t.strip())]
+        fresh = [t for t in fresh if len(clean_reply_text(t)) >= 4]
         if fresh:
             return fresh
     return []
