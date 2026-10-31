@@ -56,9 +56,6 @@ import {
   buildDeepOutline,
   validateDeepOutline,
   captureProvenanceFromFragments,
-  CaptureSetRequest,
-  CaptureSetItemResult,
-  CaptureSetResult,
 } from 'common';
 import type {
   DispatchPayload,
@@ -73,7 +70,7 @@ import { StructureNodeFactory } from '../graph/nodes/StructureNode';
 import { TruthCheckNodeFactory } from '../graph/nodes/TruthCheckNode';
 import { NoteDaoInterface } from '../models/NoteDaoInterface';
 import type { CaptureSetOptions, DispatchOptions } from './dispatch/DispatchOptions';
-import { isBatchCancelled, skippedItem, withRunContext } from './dispatch/BatchSupport';
+import { isBatchCancelled, withRunContext } from './dispatch/BatchSupport';
 import { CaptureBranch } from './dispatch/CaptureBranch';
 import { PreparedBranch } from './dispatch/PreparedBranch';
 import { GenerationEvaluator } from './dispatch/GenerationEvaluator';
@@ -292,89 +289,6 @@ export class Dispatcher {
     return outcome;
   }
 
-  // spec 036 阶段 1：一个 set 一个 run。
-  // 顺序执行 req.items，全部共享同一个 RunContext（预算与取消）；单项失败不打断整批；
-  // 取消后未开始/未完成的项单独记 cancelled，不混进 failed。
-  // 切题（一图多题）与跨图合并留给阶段 2/3，这一层只把「多张图 = 一次整理」立住。
-  async dispatchSet(req: CaptureSetRequest, options: CaptureSetOptions = {}): Promise<CaptureSetResult> {
-    const startedAt: number = Date.now();
-    const shared: RunContext = this.resolveRunContext(options);
-    const items: CaptureSetItemResult[] = [];
-    let done: number = 0;
-    let failed: number = 0;
-    let cancelled: number = 0;
-    let stop: boolean = false;
-    for (let i = 0; i < req.items.length; i++) {
-      const payload: DispatchPayload = req.items[i];
-      const itemStart: number = Date.now();
-      if (stop || isBatchCancelled(options)) {
-        cancelled += 1;
-        const skipped: CaptureSetItemResult = skippedItem(i, payload);
-        items.push(skipped);
-        if (options.onItem !== undefined) { options.onItem(skipped); }
-        continue;
-      }
-      try {
-        const result: DispatchResult = await this.dispatch(
-          { source: req.source, payload: payload },
-          withRunContext(options, shared),
-        );
-        const item: CaptureSetItemResult = {
-          index: i,
-          kind: payload.kind,
-          success: result.success,
-          cancelled: false,
-          durationMs: Date.now() - itemStart,
-        };
-        if (result.data !== undefined) {
-          item.noteId = result.data.id;
-          item.title = result.data.title;
-        }
-        if (result.classification !== undefined) { item.category = result.classification.type; }
-        if (!result.success) {
-          failed += 1;
-          if (result.errorMessage !== undefined) { item.errorMessage = result.errorMessage; }
-          if (result.errorCode !== undefined) { item.errorCode = result.errorCode; }
-        } else {
-          done += 1;
-        }
-        items.push(item);
-        if (options.onItem !== undefined) { options.onItem(item); }
-      } catch (error) {
-        if (isBatchCancelled(options)) {
-          cancelled += 1;
-          const skipped: CaptureSetItemResult = skippedItem(i, payload);
-          items.push(skipped);
-          if (options.onItem !== undefined) { options.onItem(skipped); }
-          stop = true;
-          continue;
-        }
-        failed += 1;
-        const failedItem: CaptureSetItemResult = {
-          index: i,
-          kind: payload.kind,
-          success: false,
-          errorMessage: (error as Error).message,
-          cancelled: false,
-          durationMs: Date.now() - itemStart,
-        };
-        items.push(failedItem);
-        if (options.onItem !== undefined) { options.onItem(failedItem); }
-      }
-    }
-    const totalMs: number = Date.now() - startedAt;
-    log.info('dispatchSet done total=' + req.items.length.toString() + ' ok=' + done.toString()
-      + ' failed=' + failed.toString() + ' cancelled=' + cancelled.toString()
-      + ' totalMs=' + totalMs.toString());
-    return {
-      total: req.items.length,
-      done: done,
-      failed: failed,
-      cancelled: cancelled,
-      items: items,
-      durationMs: totalMs,
-    };
-  }
 
   private async dispatchRequest(req: BranchRequest, options: DispatchOptions): Promise<DispatchResult> {
     options.cancellationToken?.throwIfCancelled();

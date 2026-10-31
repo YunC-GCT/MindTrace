@@ -99,7 +99,9 @@
       - [x] `GenerationBranch` 完成（dispatchGeneration / dispatchStandardGeneration / dispatchDeepGeneration 全转 NoteOutcome；6 个 evaluator 调用点去适配器；needsInput 带 generation+issues）
       - [x] `CaptureBranch` 完成（committed／failed(code+retryable)／readyPreview(analysisOnly)／cancelled(committed 信封)；旧 `dispatch()` 的取消抛错语义由 `reportCancellation` 保持）
     - **Step 1 全部完成**：五个组件（PreparedBranch / IncrementalBranch / GenerationEvaluator / GenerationBranch / CaptureBranch）均返回 `NoteOutcome`，旧外观仅剩 Dispatcher 出口处过渡适配
-    - [ ] Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`，映射逻辑下放 branch
+    - [~] Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`
+      - [x] **`dispatchSet()` 已删除**（旧批量入口；`v7-capture-set` 6 条测试迁移到 `dispatchSetCommand`/`NoteBatchOutcome`）
+      - [ ] `dispatch()` 删除（依赖 golden/baseline/capturegraph 测试迁移，与 Step 4 联动）
     - [ ] Step 3：common 删 `DispatchResult` 与迁移字段
     - [ ] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态）
       - [x] `v7-dispatch-run-context` 迁移到 `dispatchCommand`（4 条；语义变化：无 context 时 LLM 边界失败 = failed 终态，不再静默 success）
