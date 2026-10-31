@@ -96,6 +96,7 @@
     - [ ] Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`，映射逻辑下放 branch
     - [ ] Step 3：common 删 `DispatchResult` 与迁移字段
     - [ ] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态）
+      - [x] `v7-dispatch-run-context` 迁移到 `dispatchCommand`（4 条；语义变化：无 context 时 LLM 边界失败 = failed 终态，不再静默 success）
     - [ ] Step 5：build + 全量 gate + 真机回归（e2e-capture / a2a_smoke / 手动确认）
     - [ ] Step 6：ADR-0019 状态更新 + tasks 打勾
     - 遗留：`entry/src/main/ets/utils/NoteItemMapper.ets` 为历史非 UTF-8 文件（0xa1 字节），待单独修
