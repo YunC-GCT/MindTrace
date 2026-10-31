@@ -28,6 +28,6 @@ test('photo conversation performs analysis only and stores OCR material', () => 
 
 test('explicit conversation note generation creates a persistence-disabled draft', () => {
   assert.match(conversation, /\.generateNoteDraft\(/);
-  assert.match(aiService, /generation: request/);
+  assert.match(readFileSync(resolve(root, 'entry/src/main/ets/services/ai/DraftPipeline.ets'), 'utf8'), /generation: request/);
   const mapper = readFileSync(resolve(root, 'agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets'), 'utf8'); assert.match(mapper, /copy\.persist = command\.kind === 'capture'/);
 });

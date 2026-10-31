@@ -53,7 +53,8 @@ test('note progress updates one stable card per phase', () => {
 test('conversation forwards real note progress without legacy note status steps', () => {
   assert.match(ports, /NoteGenerationProgressSink/);
   assert.match(ports, /progressSink\?: NoteGenerationProgressSink/);
-  assert.match(aiService, /progressSink: progressSink/);
+  const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
+  assert.match(pipeline, /progressSink: progressSink/);
   assert.match(types, /onNoteGenerationProgress\(ref: ConversationRunRef, event: NoteGenerationProgressEvent\): void/);
   assert.match(workflow, /this\.cbs\.onNoteGenerationProgress\(ref, event\)/);
   assert.match(adapter, /progressKey: 'note-generation:' \+ progress\.phase/);

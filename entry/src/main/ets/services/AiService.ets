@@ -61,12 +61,13 @@ import { AgentMemoryService } from './AgentMemoryService';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
 import { CaptureTiming } from './ai/CaptureTiming';
 import { AiServicePorts } from './ai/AiServicePorts';
+import { ClarificationRegistry } from './ai/ClarificationRegistry';
 import { DraftCommitService } from './ai/DraftCommitService';
+import { DraftPipeline } from './ai/DraftPipeline';
 import { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
 export class AiService {
-  private static readonly activeClarificationRuns: Map<string, CancellationToken> = new Map<string, CancellationToken>();
 
   // UIAbilityContext 引用,capture() 准备图片文件时用
   private context?: common.Context;
@@ -353,8 +354,9 @@ export class AiService {
    * 装配在 services 层工厂里完成，AiService 不直连 DAO（ownership 规则）。
    */
 
+  // ===== 草稿生成 / 恢复 / 取消（实现已拆到 services/ai/DraftPipeline，AiService 拆分切片 4）=====
   async generateNoteDraft(runId: string, instruction: string, sourceText: string): Promise<NoteDraftReadyEvent> {
-    return await this.generateNoteDraftWithSources(runId, instruction, sourceText, []);
+    return await new DraftPipeline(this.context, this.includeUiEffects).generateNoteDraft(runId, instruction, sourceText);
   }
 
   async generateNoteDraftWithSources(
@@ -368,38 +370,57 @@ export class AiService {
     route: NoteGenerationRoute = 'standard',
     progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
-    cancellationToken?.throwIfCancelled();
-    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
-    const fragments: SourceFragment[] = [{
-      id: 'conversation:' + runId,
-      kind: 'conversation',
-      originId: runId,
-      sequence: 0,
-      fingerprint: sourceFingerprint(sourceText),
-      text: sourceText,
-    }];
-    for (const pendingSource of pendingSources) {
-      fragments.push(pendingSource);
-    }
-    const request: NoteGenerationRequest = {
-      runId: runId,
-      originSessionId: originSessionId,
-      parentConversationRunId: parentConversationRunId,
-      instruction: instruction,
-      mode: 'create',
-      sources: {
-        fragments: fragments,
-      },
-      pendingSourceIds: pendingSources.map((fragment): string => fragment.id),
-      route: route,
-    };
-    return await this.dispatchNoteDraft(
-      request,
-      sourceText,
-      request.pendingSourceIds ?? [],
-      cancellationToken,
-      progressSink,
-    );
+    return await new DraftPipeline(this.context, this.includeUiEffects).generateNoteDraftWithSources(
+      runId, instruction, sourceText, pendingSources, cancellationToken,
+      originSessionId, parentConversationRunId, route, progressSink);
+  }
+
+  async generateNoteDraftWithBundle(
+    runId: string,
+    instruction: string,
+    bundle: SourceBundle,
+    pendingSourceIds: string[],
+    contextBudgetTokens: number,
+    cancellationToken?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
+    route: NoteGenerationRoute = 'standard',
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    return await new DraftPipeline(this.context, this.includeUiEffects).generateNoteDraftWithBundle(
+      runId, instruction, bundle, pendingSourceIds, contextBudgetTokens, cancellationToken,
+      originSessionId, parentConversationRunId, route, progressSink);
+  }
+
+  async regenerateNoteDraft(
+    runId: string,
+    noteId: string,
+    instruction: string,
+    sourceText: string,
+    cancellationToken?: CancellationToken,
+    originSessionId?: string,
+    parentConversationRunId?: string,
+    progressSink?: NoteGenerationProgressSink,
+  ): Promise<NoteDraftReadyEvent> {
+    return await new DraftPipeline(this.context, this.includeUiEffects).regenerateNoteDraft(
+      runId, noteId, instruction, sourceText, cancellationToken,
+      originSessionId, parentConversationRunId, progressSink);
+  }
+
+  async restoreDraft(runId: string): Promise<NoteDraftReadyEvent> {
+    return await new DraftPipeline(this.context, this.includeUiEffects).restoreDraft(runId);
+  }
+
+  async cancelDraft(runId: string): Promise<void> {
+    return await new DraftPipeline(this.context, this.includeUiEffects).cancelDraft(runId);
+  }
+
+  async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
+    return await new DraftPipeline(this.context, this.includeUiEffects).listRecoverableDrafts();
+  }
+
+  async cancelDraftsByParentRun(sessionId: string, parentConversationRunId: string): Promise<void> {
+    return await new DraftPipeline(this.context, this.includeUiEffects).cancelDraftsByParentRun(sessionId, parentConversationRunId);
   }
 
   async resumeNoteContextClarification(
@@ -409,7 +430,7 @@ export class AiService {
     progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     // restore() marks running jobs interrupted; reject duplicates before reading.
-    if (AiService.activeClarificationRuns.has(runId)) {
+    if (ClarificationRegistry.activeRuns.has(runId)) {
       throw new Error('TOPIC_CLARIFICATION_IN_PROGRESS');
     }
     const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
@@ -479,11 +500,11 @@ export class AiService {
     cancellationToken?: CancellationToken,
     progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
-    if (AiService.activeClarificationRuns.has(recovery.run.id)) {
+    if (ClarificationRegistry.activeRuns.has(recovery.run.id)) {
       throw new Error('TOPIC_CLARIFICATION_IN_PROGRESS');
     }
     const token: CancellationToken = cancellationToken ?? new CancellationToken();
-    AiService.activeClarificationRuns.set(recovery.run.id, token);
+    ClarificationRegistry.activeRuns.set(recovery.run.id, token);
     try {
       if (persistSelection) {
         recovery.run.updatedAt = Date.now();
@@ -496,31 +517,15 @@ export class AiService {
       if (token.isCancelled()) {
         await repository.cancelRun(recovery.run.id);
       } else {
-        await this.markClarificationGenerationFailed(repository, recovery);
+        await ClarificationRegistry.markGenerationFailed(repository, recovery);
       }
       if (error instanceof Error) {
         throw new Error(error.message);
       }
       throw new Error(JSON.stringify(error));
     } finally {
-      AiService.activeClarificationRuns.delete(recovery.run.id);
+      ClarificationRegistry.activeRuns.delete(recovery.run.id);
     }
-  }
-
-  private async markClarificationGenerationFailed(
-    repository: NoteGenerationRepositoryContract,
-    recovery: NoteGenerationRecovery,
-  ): Promise<void> {
-    const clarification: NoteContextClarification | undefined = recovery.run.clarification;
-    if (clarification === undefined || clarification.status !== 'selected') { return; }
-    const latest: NoteGenerationRecovery | undefined = await repository.restore(recovery.run.id);
-    if (latest === undefined || latest.run.status === 'cancelled' || latest.run.status === 'committed') { return; }
-    // A failed execution does not revoke the user's confirmed topic.
-    latest.run.status = 'failed';
-    latest.run.stopReason = latest.run.stopReason ?? 'topic_generation_failed';
-    latest.run.updatedAt = Date.now();
-    await repository.saveRun(latest.run, latest.sources);
-    recovery.run = latest.run;
   }
 
   private async generateSelectedClarificationDraft(
@@ -547,7 +552,7 @@ export class AiService {
     if (fragments.length === 0) { throw new Error('TOPIC_CLARIFICATION_SOURCE_MISSING'); }
     const selectedBundle: SourceBundle = NoteGenerationContextBuilder.trimBundleToBudget(
       { fragments: fragments },
-      AiService.contextBudgetForRecovery(recovery.run),
+      DraftPipeline.contextBudgetForRecovery(recovery.run),
     );
     if (selectedBundle.fragments.length === 0) { throw new Error('TOPIC_CLARIFICATION_SOURCE_MISSING'); }
     const pendingSourceIds: string[] = [];
@@ -559,113 +564,13 @@ export class AiService {
       clarification.instruction + '\n用户已确认主题：' + topicName + '。仅整理该主题的内容。',
       selectedBundle,
       pendingSourceIds,
-      AiService.contextBudgetForRecovery(recovery.run),
+      DraftPipeline.contextBudgetForRecovery(recovery.run),
       cancellationToken,
       recovery.run.originSessionId,
       recovery.run.parentConversationRunId,
       recovery.run.route,
       progressSink,
     );
-  }
-
-  private async dispatchNoteDraft(
-    request: NoteGenerationRequest,
-    payloadText: string,
-    pendingSourceIds: string[],
-    cancellationToken?: CancellationToken,
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteDraftReadyEvent> {
-    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
-    // A3c：草稿生成走命令 seam；readyPreview 携带 draft + checkpointId + runId。
-    const command: NoteCommand = {
-      kind: 'generation',
-      operationId: 'draft-' + request.runId,
-      generation: request,
-      payload: { kind: 'text', text: payloadText },
-    };
-    const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
-      generationRepository: repository,
-      cancellationToken: cancellationToken,
-      progressSink: progressSink,
-    });
-    const previewDraft: KnowledgeUnit | undefined = outcome.draft;
-    const previewGeneration: NoteGenerationResult | undefined = outcome.generation;
-    const previewCheckpoint: string | undefined = outcome.checkpointId;
-    if (outcome.kind !== 'readyPreview' || previewDraft === undefined || previewGeneration === undefined
-      || previewCheckpoint === undefined || previewCheckpoint.length === 0) {
-      const message: string = outcome.message !== undefined ? outcome.message
-        : (outcome.reason !== undefined ? outcome.reason : '草稿生成失败');
-      throw new Error(message);
-    }
-    const candidate: KnowledgeUnit = previewDraft;
-    const generation: NoteGenerationResult = previewGeneration;
-    const generatedSections: IncrementalSection[] = parseIncrementalSections(candidate.content);
-    if (generation.draft !== undefined) {
-      for (let index: number = 0; index < generatedSections.length; index += 1) {
-        const draftSection = generation.draft.sections[index];
-        if (draftSection !== undefined) {
-          generatedSections[index].sourceIds = draftSection.sourceIds.slice(0);
-        }
-      }
-    }
-    const incrementalManifest: IncrementalManifest = buildIncrementalManifest(
-      candidate.id,
-      candidate.version,
-      generatedSections,
-      request.sources.fragments.map((fragment): string => fragment.id),
-    );
-    generation.incrementalManifest = incrementalManifest;
-    const issues = generation.issues;
-    let softIssueCount: number = 0;
-    for (const issue of issues) {
-      if (issue.severity === 'soft') {
-        softIssueCount += 1;
-      }
-    }
-    return {
-      runId: request.runId,
-      originSessionId: request.originSessionId,
-      parentConversationRunId: request.parentConversationRunId,
-      checkpointId: previewCheckpoint,
-      candidateHash: sourceFingerprint(JSON.stringify(candidate)),
-      candidate: candidate,
-      result: generation,
-      sourceCount: request.sources.fragments.length,
-      softIssueCount: softIssueCount,
-      sourceIds: request.sources.fragments.map((fragment): string => fragment.id),
-      pendingSourceIds: this.referencedPendingSourceIdsFromIds(generation, pendingSourceIds),
-      incrementalManifest: incrementalManifest,
-      expectedVersion: candidate.version,
-      incrementalInstruction: request.instruction,
-    };
-  }
-
-  async generateNoteDraftWithBundle(
-    runId: string,
-    instruction: string,
-    bundle: SourceBundle,
-    pendingSourceIds: string[],
-    _contextBudgetTokens: number,
-    cancellationToken?: CancellationToken,
-    originSessionId?: string,
-    parentConversationRunId?: string,
-    route: NoteGenerationRoute = 'standard',
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteDraftReadyEvent> {
-    cancellationToken?.throwIfCancelled();
-    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
-    const request: NoteGenerationRequest = {
-      runId: runId,
-      originSessionId: originSessionId,
-      parentConversationRunId: parentConversationRunId,
-      instruction: instruction,
-      mode: 'create',
-      sources: bundle,
-      pendingSourceIds: pendingSourceIds,
-      route: route,
-    };
-    const sourceText: string = AiService.bundleText(bundle);
-    return await this.dispatchNoteDraft(request, sourceText, pendingSourceIds, cancellationToken, progressSink);
   }
 
   async saveNoteContextClarification(
@@ -679,7 +584,7 @@ export class AiService {
     parentConversationRunId?: string,
     route: NoteGenerationRoute = 'standard',
   ): Promise<NoteContextClarification> {
-    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
+    DraftPipeline.validateConversationOrigin(originSessionId, parentConversationRunId);
     const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     const existing: NoteGenerationRecovery | undefined = await repository.restore(runId);
     if (existing !== undefined && existing.run.clarification !== undefined) {
@@ -712,122 +617,6 @@ export class AiService {
     };
     await repository.saveRun(run, bundle);
     return clarification;
-  }
-
-  async regenerateNoteDraft(
-    runId: string,
-    noteId: string,
-    instruction: string,
-    sourceText: string,
-    cancellationToken?: CancellationToken,
-    originSessionId?: string,
-    parentConversationRunId?: string,
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteDraftReadyEvent> {
-    cancellationToken?.throwIfCancelled();
-    AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
-    if (noteId.trim().length === 0) {
-      throw new Error('增量重生成需要明确 noteId');
-    }
-    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
-    if (repository.getRegenerationBase === undefined) {
-      throw new Error('增量重生成基础资料不可用');
-    }
-    const base = await repository.getRegenerationBase(noteId);
-    if (base === undefined) {
-      throw new Error('找不到指定 KnowledgeUnit');
-    }
-    const request: NoteGenerationRequest = {
-      runId: runId,
-      originSessionId: originSessionId,
-      parentConversationRunId: parentConversationRunId,
-      instruction: instruction,
-      mode: 'regenerate',
-      targetNoteId: noteId,
-      baseVersion: base.baseVersion,
-      sources: { fragments: [{
-        id: 'conversation:' + runId,
-        kind: 'conversation',
-        originId: runId,
-        sequence: 0,
-        fingerprint: sourceFingerprint(sourceText),
-        text: sourceText,
-      }] },
-    };
-    // A3c：增量重生成走命令 seam；readyPreview 携带 draft + checkpointId + runId。
-    const command: NoteCommand = {
-      kind: 'regenerate',
-      operationId: 'regenerate-' + runId,
-      generation: request,
-      payload: { kind: 'text', text: sourceText },
-    };
-    const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
-      generationRepository: repository,
-      cancellationToken: cancellationToken,
-      progressSink: progressSink,
-    });
-    const regenerateDraft: KnowledgeUnit | undefined = outcome.draft;
-    const regenerateGeneration: NoteGenerationResult | undefined = outcome.generation;
-    const regenerateCheckpoint: string | undefined = outcome.checkpointId;
-    if (outcome.kind !== 'readyPreview' || regenerateDraft === undefined
-      || regenerateGeneration === undefined || regenerateCheckpoint === undefined
-      || regenerateCheckpoint.length === 0) {
-      const message: string = outcome.message !== undefined ? outcome.message
-        : (outcome.reason !== undefined ? outcome.reason : '增量重生成失败');
-      throw new Error(message);
-    }
-    return {
-      runId: runId,
-      originSessionId: originSessionId,
-      parentConversationRunId: parentConversationRunId,
-      checkpointId: regenerateCheckpoint,
-      candidateHash: sourceFingerprint(JSON.stringify(regenerateDraft)),
-      candidate: regenerateDraft,
-      result: regenerateGeneration,
-      sourceCount: request.sources.fragments.length,
-      softIssueCount: 0,
-      sourceIds: regenerateGeneration.sourceIds,
-      pendingSourceIds: [],
-      incrementalManifest: regenerateGeneration.incrementalManifest,
-      incrementalDiff: regenerateGeneration.incrementalDiff,
-      expectedVersion: base.baseVersion,
-      incrementalInstruction: instruction,
-    };
-  }
-
-  async restoreDraft(runId: string): Promise<NoteDraftReadyEvent> {
-    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
-    const recovery: NoteGenerationRecovery | undefined = await repository.restore(runId);
-    if (recovery === undefined || recovery.bestCheckpoint === undefined) {
-      throw new Error('没有可恢复的笔记草稿');
-    }
-    if (recovery.run.status === 'cancelled') {
-      throw new Error('笔记草稿已取消');
-    }
-    const checkpoint: NoteGenerationCheckpoint = recovery.bestCheckpoint;
-    const candidate: KnowledgeUnit = JSON.parse(checkpoint.documentJson) as KnowledgeUnit;
-    const commitKey: string = runId + ':' + checkpoint.id + ':' + checkpoint.candidateHash;
-    const committed = await repository.getCommitResult(commitKey);
-    if (committed !== undefined && committed.candidateJson !== undefined && committed.candidateJson.length > 0) {
-      const committedCandidate: KnowledgeUnit = JSON.parse(committed.candidateJson) as KnowledgeUnit;
-      await repository.appendLifecycleLog({ runId: runId, event: 'resumed', checkpointId: checkpoint.id });
-      return AiService.recoveryEvent(recovery, checkpoint, committedCandidate, 'committed');
-    }
-    await repository.appendLifecycleLog({
-      runId: runId,
-      event: 'resumed',
-      checkpointId: checkpoint.id,
-      issueCount: recovery.softIssueCodes.length,
-      sourceCount: recovery.sources.fragments.length,
-    });
-    return AiService.recoveryEvent(recovery, checkpoint, candidate, recovery.run.status);
-  }
-
-  async cancelDraft(runId: string): Promise<void> {
-    AiService.activeClarificationRuns.get(runId)?.cancel();
-    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
-    await repository.cancelRun(runId);
-    await repository.appendLifecycleLog({ runId: runId, event: 'cancelled' });
   }
 
   async retryDraft(runId: string): Promise<NoteDraftReadyEvent> {
@@ -867,122 +656,12 @@ export class AiService {
     );
   }
 
-  async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
-    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
-    const runs: NoteGenerationRun[] = await repository.listRecoverableRuns();
-    for (let index: number = 0; index < runs.length; index += 1) {
-      const run: NoteGenerationRun = runs[index];
-      const clarification: NoteContextClarification | undefined = run.clarification;
-      const interruptedSelection: boolean = run.status === 'needs-input'
-        && clarification !== undefined
-        && clarification.status === 'selected'
-        && run.bestCheckpointId === undefined
-        && !AiService.activeClarificationRuns.has(run.id);
-      if (!interruptedSelection) { continue; }
-      const recovery: NoteGenerationRecovery | undefined = await repository.restore(run.id);
-      if (recovery === undefined) { continue; }
-      await this.markClarificationGenerationFailed(repository, recovery);
-      runs[index] = recovery.run;
-    }
-    return runs;
-  }
-
-  async cancelDraftsByParentRun(sessionId: string, parentConversationRunId: string): Promise<void> {
-    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
-    await repository.cancelIncompleteByParentRun(sessionId, parentConversationRunId);
-  }
-
   /**
    * 确认草稿（A3 命令入口：preparedCandidate → committed）。
    * 实现已拆到 services/ai/DraftCommitService（AiService 拆分切片 3）。
    */
   async confirmDraft(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
     return await new DraftCommitService(this.context, this.includeUiEffects).confirmDraft(event, candidate);
-  }
-
-  private referencedPendingSourceIdsFromIds(result: NoteGenerationResult, pendingSourceIds: string[]): string[] {
-    const referenced: string[] = [];
-    if (result.draft !== undefined) {
-      for (const section of result.draft.sections) {
-        for (const sourceId of section.sourceIds) {
-          if (pendingSourceIds.includes(sourceId) && !referenced.includes(sourceId)) {
-            referenced.push(sourceId);
-          }
-        }
-      }
-    }
-    return referenced;
-  }
-
-  private static bundleText(bundle: SourceBundle): string {
-    const lines: string[] = [];
-    for (const fragment of bundle.fragments) {
-      lines.push('[source:' + fragment.id + ']');
-      lines.push(fragment.text);
-    }
-    return lines.join('\n\n');
-  }
-
-  private static contextBudgetForRecovery(run: NoteGenerationRun): number {
-    if (run.contextBudgetTokens !== undefined && run.contextBudgetTokens > 0) {
-      return run.contextBudgetTokens;
-    }
-    return run.tokenBudget;
-  }
-
-  private static recoveryEvent(
-    recovery: NoteGenerationRecovery,
-    checkpoint: NoteGenerationCheckpoint,
-    candidate: KnowledgeUnit,
-    status: string,
-  ): NoteDraftReadyEvent {
-    const sourceIds: string[] = recovery.run.sourceIds ?? [];
-    const pendingSourceIds: string[] = [];
-    for (const fragment of recovery.sources.fragments) {
-      if (fragment.kind === 'ocr' && sourceIds.includes(fragment.id)
-        && (recovery.run.pendingSourceIds ?? []).includes(fragment.id)) {
-        pendingSourceIds.push(fragment.id);
-      }
-    }
-    const result: NoteGenerationResult = {
-      runId: recovery.run.id,
-      route: recovery.run.route,
-      status: status as 'running' | 'incomplete' | 'ready-preview' | 'needs-input' | 'failed' | 'cancelled' | 'committed',
-      candidate: candidate,
-      bestCheckpointId: checkpoint.id,
-      issues: [],
-      questions: [],
-      stopReason: recovery.run.stopReason,
-      promptTokens: 0,
-      completionTokens: 0,
-      sourceIds: sourceIds,
-    };
-    return {
-      runId: recovery.run.id,
-      originSessionId: recovery.run.originSessionId,
-      parentConversationRunId: recovery.run.parentConversationRunId,
-      checkpointId: checkpoint.id,
-      candidateHash: checkpoint.candidateHash,
-      candidate: candidate,
-      result: result,
-      sourceCount: recovery.sources.fragments.length,
-      softIssueCount: recovery.softIssueCodes.length,
-      sourceIds: sourceIds,
-      pendingSourceIds: pendingSourceIds,
-      incrementalInstruction: recovery.run.instruction,
-    };
-  }
-
-  private static validateConversationOrigin(
-    originSessionId: string | undefined,
-    parentConversationRunId: string | undefined,
-  ): void {
-    if (originSessionId === undefined && parentConversationRunId === undefined) { return; }
-    if (originSessionId === undefined || parentConversationRunId === undefined) {
-      throw new Error('INCOMPLETE_CONVERSATION_DRAFT_ORIGIN');
-    }
-    SessionIdPolicy.requireValid(originSessionId);
-    ConversationRunIdPolicy.requireValid(parentConversationRunId);
   }
 
   // 内部: 调度 -> 校验 -> 入库（命令终态版本；A2A 回执直接消费它）

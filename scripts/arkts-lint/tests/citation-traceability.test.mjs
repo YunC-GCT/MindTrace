@@ -52,13 +52,15 @@ test('IncrementalManifestSection preserves per-section sourceIds', () => {
   assert.match(models, /interface IncrementalManifestSection[\s\S]*?sourceIds: string\[\]/);
 });
 
-test('AiService copies draft section sourceIds into generated sections', () => {
-  assert.match(aiService, /sourceIds/);
-  assert.match(aiService, /draft\.sections/);
+test('DraftPipeline copies draft section sourceIds into generated sections', () => {
+  const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
+  assert.match(pipeline, /sourceIds/);
+  assert.match(pipeline, /draft\.sections/);
 });
 
-test('AiService builds IncrementalManifest with fragment IDs from the request', () => {
-  assert.match(aiService, /request\.sources\.fragments\.map/);
+test('DraftPipeline builds IncrementalManifest with fragment IDs from the request', () => {
+  const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
+  assert.match(pipeline, /request\.sources\.fragments\.map/);
   assert.match(aiService, /sourceIds:/);
 });
 

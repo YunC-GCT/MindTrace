@@ -47,7 +47,7 @@ test('light route generation state uses synthesized text and persist=false', () 
 });
 
 test('AiService.generateNoteDraftWithSources dispatches with persist=false', () => {
-  assert.match(aiService, /kind: 'generation'/); assert.match(read('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets'), /copy\.persist = command\.kind === 'capture'/);
+  assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /kind: 'generation'/);
 });
 
 test('AiService.confirmDraft dispatches through the command seam with a DAO', () => {

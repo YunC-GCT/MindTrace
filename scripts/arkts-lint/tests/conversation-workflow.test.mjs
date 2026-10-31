@@ -200,11 +200,11 @@ test('Issue 99 note intent produces a typed preview and confirms the exact check
   assert.match(workflowTypes, /onDraftReady/);
   assert.match(state, /draftStatus\?: 'ready-preview'/);
   assert.match(workflow, /onDraftReady/);
-  assert.match(aiService, /result: generation/);
+  assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /result: generation/);
   assert.doesNotMatch(workflow, /summarizeNoteMaterial/);
   assert.doesNotMatch(workflow, /captureText\(/);
-  assert.match(aiService, /generation:/);
-  assert.match(aiService, /kind: 'generation'/); assert.match(read('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets'), /copy\.persist = command\.kind === 'capture'/);
+  assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /generation:/);
+  assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /kind: 'generation'/);
   assert.match(dispatcher, /preparedCandidate/);
   // 2026-10-31：确认提交的 checkpointId / candidateHash 逻辑在 PreparedBranch。
   const preparedBranch = read('agents/src/main/ets/core/dispatch/PreparedBranch.ets');

@@ -227,9 +227,11 @@ test('AiService capture and confirm paths use the command seam', () => {
 
 test('AiService analysis / generation / regenerate consumers use the command seam (A3c)', () => {
   const ai = read('entry/src/main/ets/services/AiService.ets');
+  const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
   assert.match(ai, /kind: 'analysisOnly'/);
-  assert.match(ai, /kind: 'generation'/);
-  assert.match(ai, /kind: 'regenerate'/);
-  assert.ok((ai.match(/dispatchCommand\(command/g) ?? []).length >= 4, 'capture/analyze/draft/regenerate 四处（confirm 在 DraftCommitService）');
-  assert.ok((ai.match(/outcome\.kind !== 'readyPreview'/g) ?? []).length >= 3);
+  assert.match(pipeline, /kind: 'generation'/);
+  assert.match(pipeline, /kind: 'regenerate'/);
+  assert.ok((ai.match(/dispatchCommand\(command/g) ?? []).length >= 1, 'capture/analyze 在 AiService');
+  assert.ok((pipeline.match(/dispatchCommand\(command/g) ?? []).length >= 2, 'draft/regenerate 在 DraftPipeline');
+  assert.ok(((ai + pipeline).match(/outcome\.kind !== 'readyPreview'/g) ?? []).length >= 3);
 });

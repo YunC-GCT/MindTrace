@@ -80,7 +80,7 @@
 - [x] **切片 1（2026-10-31）**：抽出 `entry/src/main/ets/services/ai/CaptureTiming.ets`（序号分配 + `CAPTURE_TIMING` / `CAPTURE_SET_TIMING` 汇总日志）；AiService **1174 → 1142 行**
 - [x] **切片 2（2026-10-31）**：抽出 `services/ai/AiServicePorts.ets` —— `requireContext` / `buildNoteDao` / `buildNoteWritePort` 组合根；AiService 删除三个私有装配方法，14 处 `requireContext`、3 处 DAO、3 处写端口调用改走 ports；AiService **1142 → 1096 行**
 - [x] **切片 3（2026-10-31）**：抽出 `services/ai/DraftCommitService.ets`（`confirmDraft` / `updateDraftCheckpoint` / `resolvePendingMemoryIds` + pending 清理）；AiService 只留同名 facade 委托，**1096 → 1029 行**
-- [ ] **切片 4**：`services/ai/DraftPipeline.ets` —— `generateNoteDraft*` / `dispatchNoteDraft` / `regenerateNoteDraft` / `restoreDraft` / `retryDraft` / `contextBudgetForRecovery` / `referencedPendingSourceIdsFromIds`
+- [x] **切片 4（2026-10-31）**：抽出 `services/ai/DraftPipeline.ets`（生成命令装配 / readyPreview 映射 / 恢复 / 取消 / 预算 / run 恢复事件，14 个方法，464 行）+ `services/ai/ClarificationRegistry.ets`（澄清 run 活跃表 + 失败落库，草稿与澄清两条链路共享）；AiService 只留同名 facade，**1029 → 707 行**。`retryDraft` 与澄清方法留给切片 5
 - [ ] **切片 5**：`services/ai/ClarificationPipeline.ets` —— 澄清草稿生成 / 保存 / 恢复 / 回滚（约 200 行）
 - [ ] **切片 6**：`services/ai/CapturePipeline.ets` —— `capture` / `captureSet` / `analyzeImage` / `ingestText*` / `processAndPersist*` / `captureItemFromOutcome`；`AiService` 只留 facade（目标 <200 行）
 
