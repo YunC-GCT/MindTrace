@@ -70,7 +70,7 @@
   - 测试：`v7-note-command` 12 条（新增批量终态计数、A2A 回执读 `NoteOutcome`）
   - **真机验证（2026-10-31，设备 3XTYD24C16203663）**：重装 common/agents HSP + entry HAP 后，`python scripts/a2a-smoke/a2a_smoke.py --no-restart --text "存笔记：向量的内积" --min-reply-chars 10` 返回 `ok: true`，reply_text=`已整理入库：向量的内积（线性代数）`（17 字）；hilog `INGEST_DIRECT done subject=线性代数 title=向量的内积` + `A2A_REPLY_SENT chars=17`。冷启动首个请求受扩展进程网络栈初始化失败影响（`proxy SendRequest failed 201`，60–90s 后才返回/小艺先显示拥堵），warm 进程 17s 完成；冷启动复测（2026-10-31 14:05，重装最新产物 + `aa force-stop`）：两次冷启动 ingest 分别 16.7s / 20.0s 并均 `ok:true`；`proxy SendRequest failed 201` + `http handover manager init fail` 仍会出现但属**非致命**（随后 HTTP 200 正常）；瓶颈是 LLM 生成本身（classify ~2.3s + structure ~14s，completionTokens ~2500），此前 60–90s 挂起未复现，判断为设备网络瞬时 handover / 偶发。**结论：不是代码回归，不作阻塞项**
   - **应用内链路真机回归（2026-10-31 14:10，`node scripts/e2e-capture/run.mjs`）**：判定 **PASS** —— 2 张图采集（cold 14838ms / warm 23541ms，persist 388/426ms）、2 条 note 落库（`数学练习（一）…` / `数学练习（二）计算题`）、卡片刷新 OK、图搜 2 组查询各 hits=5；安装最新 HSP/HAP 后跑，覆盖 `CaptureBranch → NoteAgent → NoteWritePort` 与命令 seam
-  - 首页 `最近笔记` 41 条，两条 E2E 新笔记置顶 → 写入 → 列表读路径真机可见；HITL 草稿确认（对话入口）未自动化（`AI 助手` tab 经 `uitest` 点击未进入浮窗，需人工点或后续补 e2e 模式）；若要改善 A2A 体验，走「先回执已收到、后台整理完再推回执」的异步回执方案
+  - 首页 `最近笔记` 41 条，两条 E2E 新笔记置顶 → 写入 → 列表读路径真机可见；HITL 草稿确认（对话入口）：**2026-10-31 手动真机验证通过** —— AI 助手 → 发送「存笔记：洛必达法则」→ 草稿卡 → 确认入库 → 首页「最近笔记」+1（自动化仍缺 e2e 模式，`AI 助手` tab 经 `uitest` 点击未进入浮窗）；若要改善 A2A 体验，走「先回执已收到、后台整理完再推回执」的异步回执方案
   - smoke 脚本修复：`wait_reply` 过滤状态栏时钟碎片与相对时间（此前 `01, :, 35` 被误判为回复导致 `ok:false`）
 - **A3 系列完成**：旧 `dispatch()` / `dispatchSet()` / `DispatchResult` 作为迁移适配器保留，等 A4 接线 `EventSink`/`RunStore` 时再统一清理
 - [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
