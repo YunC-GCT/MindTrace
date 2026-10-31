@@ -80,7 +80,9 @@
   - [x] **A4 切片 3b（2026-10-31）**：`dispatchCommand` 改由 `DispatchGraph` 编排 —— preflight（取消检查）→ route → invoke（`invokeCommand`：现有分支 + 旧结果→终态映射）→ 拿到终态即返回；verify/hitl/publish 已留 handler 位置待接线；旧 `dispatch()` 路径不变，#239 golden 零重录
   - [x] **A4 切片 4a（2026-10-31）**：六阶段全部真实执行 —— invoke 产出终态后由主图携带到 publish，verify/hitl 透传（留待 4b 接真），publish 发 `dispatch.terminal` 事件并落定终态；旧 `dispatch()` 路径不变、golden 零重录
   - [x] **A4 切片 4b-1（2026-10-31）：v18 审批哈希落位（用户拍板方案 2）** —— `note_generation_checkpoint.approved_at`（schema v18，幂等 ALTER）+ 模型 `approvedAt` + 仓储 `markCheckpointApproved`/`getCheckpoint` + `confirmDraft` 确认时标记 + `PersistNode` 端口路径下发 `approvedCheckpointHash` + `KnowledgeUnitNoteWriteStore.validateApproval`（未审批/哈希不符 → `APPROVAL_HASH_MISMATCH`, retryable=false）；测试 `v7-approval-hash` 5 条
-  - [ ] 切片 4b-2：verify=committed 信封完整性/降级校验，publish 终态回写 `run_store`；之后清理旧 `dispatch()/dispatchSet()/DispatchResult`
+  - **v18 真机复测（2026-10-31 14:49，设备 3XTYD24C16203663）**：重装 HSP/HAP 后 DB 幂等迁移成功；`e2e-capture` 判定 PASS（冷启 84.3s／热态 12.9s，persist 510/517ms）、`a2a_smoke`（存笔记：洛必达法则）返回 `ok:true`（17 字回执）——无回归
+  - [x] **A4 切片 4b-2a（2026-10-31）**：`verify` 接真 —— committed 终态必须带 noteId + version + commitKey，缺失 → `PERSIST_ERROR`（ADR-0019 (d)）；补源码守护测试
+  - [ ] 切片 4b-2b：`publish` 终态回写 `run_store`（status/committedNoteId/committedVersion），与 `RunStoreEventSink` 配合；之后清理旧 `dispatch()/dispatchSet()/DispatchResult`
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
 

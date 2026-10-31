@@ -228,8 +228,20 @@ export class Dispatcher {
       invoke: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
         return { outcome: await self.invokeCommand(command, request, effective) };
       },
-      verify: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
-        // 切片 4 待接：结果校验（committed 信封完整性 / 降级标记）。当前透传。
+      verify: async (context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        // ADR-0019 (d)：committed 必须带 noteId + version + commitKey（写端口/事务结果），否则不得算成功。
+        const settled: NoteOutcome | undefined = context.outcome;
+        if (settled !== undefined && settled.kind === 'committed') {
+          const noteId: string = settled.noteId !== undefined ? settled.noteId : '';
+          const commitKey: string = settled.commitKey !== undefined ? settled.commitKey : '';
+          if (noteId.length === 0 || settled.version === undefined || commitKey.length === 0) {
+            return {
+              errorCode: 'PERSIST_ERROR',
+              errorMessage: 'committed 终态缺少 noteId/version/commitKey 信封',
+              retryable: false,
+            };
+          }
+        }
         return { next: 'hitl' };
       },
       hitl: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {

@@ -114,3 +114,11 @@ test('dispatchCommand is orchestrated by the main graph (A4 slice 3b)', () => {
   assert.match(dispatcher, /invoke: async/);
   assert.match(dispatcher, /private async invokeCommand\(/);
 });
+
+
+test('verify stage enforces the committed envelope (A4 slice 4b-2)', () => {
+  const dispatcher = readFileSync(resolve(import.meta.dirname, '../../..', 'agents/src/main/ets/core/Dispatcher.ets'), 'utf8');
+  assert.match(dispatcher, /committed 终态缺少 noteId\/version\/commitKey 信封/);
+  assert.match(dispatcher, /errorCode: 'PERSIST_ERROR'/);
+  assert.match(dispatcher, /settled\.version === undefined/);
+});
