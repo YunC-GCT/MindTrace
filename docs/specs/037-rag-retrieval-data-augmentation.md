@@ -58,8 +58,10 @@ NoteEvidenceService.build(query)
 ## 5. 真机探针状态（2026-10-31）
 
 - 设备：`3XTYD24C16203663`（MRO-W00 / HarmonyOS 7.0.0，API 26）；项目 `compatibleSdkVersion 6.1.1(24)`，API 覆盖 `@since 6.0.0(20)`。
-- 已观测：`retrieval.getRetriever(config)` 在该设备上**超过 240s 未 resolve**（无异常、无返回）；已改为「FTS5 诊断 + Kit 诊断」双路并各自 15s 超时，避免探针阻塞。
-- 下一步：先确认自管 SQLite FTS5（建 `note_fts` + `MATCH`）是否可用；可用则不依赖 Kit 也能落地 RAG 检索（Kit 作为可选加速通道，Kit 恢复后一行开关切回）。
+- 已观测（修正）：此前的「getRetriever 挂起」实为**锁屏后应用被冻结**（JS 定时器停摆）；解锁后 `getRetriever` **14ms 成功**。已修 `scripts/device-runner.mjs`：e2e 前 `power-shell wakeup` + 把休眠时间拉到 30 分钟；`--cold` 改为「先正常启动预热 6s，再带 `--ps` 走 onNewWant 触发」，避免冷启动早期 IO 竞争卡住。
+- **自管 FTS5 可用（结论）**：`note_fts` FTS5 表 + `tokenize='trigram'`，真机查询 `MATCH '连续性'` 命中 1 条、耗时 58ms。注意 trigram 要求查询 ≥3 字符（2 字查询需 LIKE fallback）。
+- **Kit `retrieveRdb` 尚未可用**：`getRetriever` OK，但 `retrieveRdb` 两种参数档均报 `1021201002 Retrieval: The value of the numerical parameter is outside the constrained range`（默认策略 / 显式 BM25 策略都复现）；根因待查（可能与 FTS 表结构/UNINDEXED 列/策略权重范围有关）。
+- **决策**：RAG 检索一期走**自管 FTS5**（可控、已验证）；Kit 保留为可选加速通道（恢复后一行开关切回），不阻塞主链路。
 
 ## 6. 风险
 

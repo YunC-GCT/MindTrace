@@ -25,7 +25,7 @@ const log: Logger = new Logger('RagRetrieval');
 const DB_NAME: string = 'MindTrace.db';
 const FTS_TABLE: string = 'note_fts';
 const PROBE_SEED_TEXT: string = '函数在一点的连续性 极限 连续函数';
-const PROBE_QUERY: string = '连续';
+const PROBE_QUERY: string = '连续性';
 const KIT_PROBE_TIMEOUT_MS: number = 8000;
 
 export interface RagProbeResult {
@@ -57,11 +57,71 @@ export class RagRetrievalService {
       : 'fts5Ok=' + (result.fts5Ok ? '1' : '0') + ' ftsHits=' + result.ftsHits.toString();
   }
 
-  /** 只测 Kit getRetriever（供带超时的真机探针单独调用）。 */
+  /** 只测 Kit（getRetriever + retrieveRdb 真查询），供带超时的真机探针单独调用。 */
   static async kitDiagnostic(context: common.UIAbilityContext): Promise<string> {
-    const result: RagProbeResult = { fts5Ok: false, ftsHits: 0, kitRetrieverOk: false, kitMessage: '' };
-    await RagRetrievalService.probeKit(context, result);
-    return 'kitRetrieverOk=' + (result.kitRetrieverOk ? '1' : '0') + ' kit=' + result.kitMessage;
+    try {
+      const dbConfig: retrieval.DbConfig = {
+        name: DB_NAME,
+        securityLevel: relationalStore.SecurityLevel.S1,
+      };
+      const channel: retrieval.ChannelConfig = {
+        channelType: retrieval.ChannelType.INVERTED_INDEX_DATABASE,
+        context: context,
+        dbConfig: dbConfig,
+      };
+      const config: retrieval.RetrievalConfig = { channelConfigs: [channel] };
+      const retriever: retrieval.Retriever = await retrieval.getRetriever(config);
+      const bm25: retrieval.Bm25Strategy = { bm25Weight: 1.0 };
+      const recall: retrieval.InvertedIndexRecallCondition = {
+        ftsTableName: FTS_TABLE,
+        fromClause: FTS_TABLE,
+        primaryKey: ['unit_id'],
+        responseColumns: ['title', 'content', 'subject', 'chapter'],
+        invertedIndexStrategies: [bm25],
+        recallName: 'note-bm25',
+      };
+      const condition: retrieval.RetrievalCondition = {
+        recallConditions: [recall],
+        resultCount: 5,
+      };
+      let records: retrieval.RdbRecords | undefined = undefined;
+      let firstError: string = '';
+      try {
+        // 档1：只给召回条件，不显式指定策略（默认策略）
+        const plainCondition: retrieval.RetrievalCondition = { recallConditions: [recall], resultCount: 5 };
+        records = await retriever.retrieveRdb(PROBE_QUERY, plainCondition);
+      } catch (error1) {
+        const e1: Error = error1 as Error;
+        firstError = e1.message;
+      }
+      if (records === undefined) {
+        // 档2：显式 BM25 策略（权重 0.5，避开 1.0 边界）
+        const bm25Half: retrieval.Bm25Strategy = { bm25Weight: 0.5 };
+        const recall2: retrieval.InvertedIndexRecallCondition = {
+          ftsTableName: FTS_TABLE,
+          fromClause: FTS_TABLE,
+          primaryKey: ['unit_id'],
+          responseColumns: ['title', 'content', 'subject', 'chapter'],
+          invertedIndexStrategies: [bm25Half],
+          recallName: 'note-bm25',
+        };
+        const condition2: retrieval.RetrievalCondition = { recallConditions: [recall2], resultCount: 5 };
+        try {
+          records = await retriever.retrieveRdb(PROBE_QUERY, condition2);
+        } catch (error2) {
+          const e2: Error = error2 as Error;
+          return 'kitOk=0 err1=' + firstError + ' err2=' + e2.message;
+        }
+      }
+      let firstKey: string = '';
+      if (records.records.length > 0) {
+        firstKey = records.records[0].primaryKey;
+      }
+      return 'kitOk=1 hits=' + records.records.length.toString() + ' first=' + firstKey;
+    } catch (error) {
+      const e: Error = error as Error;
+      return 'kitOk=0 err=' + e.message;
+    }
   }
 
   /** 自管 FTS5 探针：证明不依赖 Kit 也能做全文检索。 */
@@ -72,8 +132,9 @@ export class RagRetrievalService {
       return;
     }
     try {
-      await store.executeSql('CREATE VIRTUAL TABLE IF NOT EXISTS ' + FTS_TABLE
-        + ' USING fts5(title, content, unit_id UNINDEXED, subject UNINDEXED, chapter UNINDEXED)');
+      await store.executeSql('DROP TABLE IF EXISTS ' + FTS_TABLE);
+      await store.executeSql('CREATE VIRTUAL TABLE ' + FTS_TABLE
+        + " USING fts5(title, content, unit_id UNINDEXED, subject UNINDEXED, chapter UNINDEXED, tokenize='trigram')");
       await store.executeSql('DELETE FROM ' + FTS_TABLE);
       await store.executeSql('INSERT INTO ' + FTS_TABLE
         + ' (title, content, unit_id, subject, chapter) VALUES (?, ?, ?, ?, ?)',

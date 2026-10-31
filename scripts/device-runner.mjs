@@ -74,6 +74,11 @@ async function startE2e(mode, { cold, debug, waitMs, markers }) {
   if (cold) {
     log('→ force-stop ' + BUNDLE);
     await hdc(['shell', 'aa force-stop ' + BUNDLE]);
+    // 冷启动先让应用正常起来（RDB/端口初始化完成），再用 onNewWant 带 --ps 触发自检：
+    // 避免在 onCreate/onWindowStageCreate 早期跑 IO 型自检（RDB 初始化与自检竞争会卡住）。
+    log('→ 预热启动应用（不带 e2e 参数）');
+    await hdc(['shell', `aa start -a ${ABILITY} -b ${BUNDLE}`]);
+    await new Promise((r) => setTimeout(r, 6000));
   }
   const stream = spawn(HDC, ['shell', 'hilog'], { stdio: ['ignore', 'pipe', 'pipe'] });
   const collected = [];
@@ -197,6 +202,9 @@ async function main() {
       const waitIdx = rest.indexOf('--wait');
       const waitMs = waitIdx >= 0 ? Number(rest[waitIdx + 1]) * 1000 : 300000;
       if (!(await requireDevice())) return 2;
+      // 真机 e2e 会长时间等待模型/OCR：先唤醒并临时把休眠时间拉长，避免跑一半锁屏冻结 JS 定时器。
+      await hdc(['shell', 'power-shell wakeup']);
+      await hdc(['shell', 'power-shell timeout -o 1800000']);
       return (await startE2e(mode, { cold, debug, waitMs })).code;
     }
     case 'capture': {
