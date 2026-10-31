@@ -55,7 +55,7 @@ test('study mode selection reaches note generation without changing ordinary rep
   assert.match(workflow, /this\.noteRoute\.select\(input\.runRef\)/);
   assert.match(workflow, /generateNoteDraftWithSources\(/);
   assert.match(aiService, /route: NoteGenerationRoute = 'standard'/);
-  assert.match(aiService, /route: route/);
+  assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /route: route/);
 });
 
 test('study mode option components remain presentation-only', () => {

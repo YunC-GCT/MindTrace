@@ -61,7 +61,7 @@ test('DraftPipeline copies draft section sourceIds into generated sections', () 
 test('DraftPipeline builds IncrementalManifest with fragment IDs from the request', () => {
   const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
   assert.match(pipeline, /request\.sources\.fragments\.map/);
-  assert.match(aiService, /sourceIds:/);
+  assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /sourceIds:/);
 });
 
 test('NoteGenerationRepository getRegenerationBase reconstructs SourceFragments from manifest', () => {
