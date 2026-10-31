@@ -51,7 +51,7 @@ NoteEvidenceService.build(query)
 |---|---|---|
 | R1 ✅ | `RagRetrievalService.probe`（getRetriever + FTS5 建表/插入/检索）+ `e2e=ragProbe` 真机探针 | 真机：FTS5 命中 1 条 / 58ms；Kit getRetriever OK，retrieveRdb 报 1021201002（暂缓） |
 | R2 ✅ | schema v19：`note_fts`（trigram FTS5）+ 迁移回填；写路径同步（create/update/delete）；`RagRetrievalService.search`（≥3 字 MATCH / <3 字 LIKE）；`e2e=ragSearch` | 单测 6 条（v7-rag-retrieval）+ 真机：97 条历史笔记回填后 `连续性` FTS 命中 5 条、`极限` LIKE 命中 5 条 / 17ms |
-| R3 | `NoteEvidenceService.queryHits` 切换到 Kit（保留 fallback） | 单测（映射/降级）+ 真机问「我之前记的极限题」命中引用 |
+| R3 ✅ | `NoteEvidenceService.queryHits` 切到本地 FTS（`RagRetrievalService.search`）→ join `knowledge_unit` 补 version → `NoteEvidenceCitation`；FTS 不可用/无命中回退 `note.search`；Kit 探针拆到 `RagKitProbe.ets`（生产链路不依赖受限 Kit） | 单测 8 条（v7-rag-retrieval + evidence-port 全绿）；真机 `e2e=ragSearch`：`citations=7 degraded=0 contextChars=1603`，20ms |
 | R4 | 生成侧注入：`NoteGenerationContextBuilder` 加入相关笔记片段 | 生成笔记时 prompt 含检索片段 |
 | R5 | `knowledgeProcessor`/向量通道评估（需先解决 embedding 来源） | 文档结论 |
 
@@ -80,3 +80,11 @@ NoteEvidenceService.build(query)
   - `q=极限`（2 字，LIKE fallback）→ **hits=5**，首条 `数列与函数极限定义`
   - 总耗时 17ms。
 - 写路径同步：`KnowledgeUnitWriteService.create/update` 后 upsert、`NoteDao.deleteById` commit 后 remove（失败只 warn，不阻塞主写）。
+
+### R3 真机验证（2026-10-31，`d45059c` 之后）
+
+- `e2e=ragSearch --cold`（设备 3XTYD24C16203663）：
+  - FTS 命中：`连续性` → 5 条（首条《函数在一点连续的定义》）；`极限`（2 字 LIKE）→ 5 条（首条《数列与函数极限定义》）
+  - **证据管线**：`stage=rag-evidence citations=7 degraded=0 contextChars=1603`，总耗时 20ms
+- 分层修正：`RagRetrievalService` 改为「调用方传 RdbStore」，去掉 `common` 值依赖与受限 Kit import；Kit 探针独立为 `RagKitProbe.ets`（仅调试 harness），生产证据/聊天链路不再依赖 `@kit.DataAugmentationKit`。
+- 降级链：FTS 不可用（表未就绪/异常）→ 空数组 → `queryHits` 回退既有 `note_query_rag` 工具，回答不阻塞。

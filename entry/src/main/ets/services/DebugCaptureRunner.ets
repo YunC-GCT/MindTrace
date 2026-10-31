@@ -9,15 +9,19 @@
  */
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { relationalStore } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { ImageSearchIndexRegistry } from 'common';
+import { DatabaseHelper, ImageSearchIndexRegistry } from 'common';
 import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ImageSearchHit, KnowledgeUnit } from 'common';
 import { AiService } from './AiService';
 import { CardSnapshotService } from './CardSnapshotService';
 import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
 import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
 import { RagHit, RagRetrievalService } from './RagRetrievalService';
+import { RagKitProbe } from './RagKitProbe';
+import { NoteEvidenceService } from './NoteEvidenceService';
+import { NoteEvidenceContext } from '../models/NoteEvidenceModels';
 
 const TAG: string = 'E2E';
 const DOMAIN: number = 0xE2E0;
@@ -126,9 +130,14 @@ export class DebugCaptureRunner {
     const startedAt: number = Date.now();
     const queries: string[] = ['连续性', '极限'];
     try {
+      const searchStore: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      if (searchStore === null) {
+        hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSearch=0 err=store-null');
+        return;
+      }
       for (let i = 0; i < queries.length; i++) {
         const query: string = queries[i];
-        const hits: RagHit[] = await RagRetrievalService.search(query, 5);
+        const hits: RagHit[] = await RagRetrievalService.search(searchStore, query, 5);
         let firstId: string = '';
         let firstTitle: string = '';
         if (hits.length > 0) {
@@ -139,6 +148,13 @@ export class DebugCaptureRunner {
           'stage=rag-hit q=' + query + ' hits=' + hits.length.toString()
             + ' first=' + firstId + ' title=' + firstTitle);
       }
+      const evidenceService: NoteEvidenceService = new NoteEvidenceService();
+      const evidence: NoteEvidenceContext = await evidenceService.build('连续性', { topK: 3 });
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=rag-evidence citations=' + evidence.citations.length.toString()
+          + ' degraded=' + (evidence.degraded ? '1' : '0')
+          + ' reason=' + evidence.reason
+          + ' contextChars=' + evidence.contextText.length.toString());
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=done ragSearch=1 ms=' + (Date.now() - startedAt).toString());
     } catch (error) {
@@ -153,8 +169,11 @@ export class DebugCaptureRunner {
     const startedAt: number = Date.now();
     let ftsResult: string = 'timeout';
     try {
-      ftsResult = await DebugCaptureRunner.withTimeout(
-        RagRetrievalService.fts5Diagnostic(), 15000, 'fts5');
+      const probeStore: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      ftsResult = probeStore === null
+        ? 'fts5Ok=0 err=store-null'
+        : await DebugCaptureRunner.withTimeout(
+          RagRetrievalService.fts5Diagnostic(probeStore), 15000, 'fts5');
     } catch (error) {
       ftsResult = 'timeout-or-error: ' + (error as Error).message;
     }
@@ -162,7 +181,7 @@ export class DebugCaptureRunner {
     let kitResult: string = 'timeout';
     try {
       kitResult = await DebugCaptureRunner.withTimeout(
-        RagRetrievalService.kitDiagnostic(ctx), 15000, 'kit');
+        RagKitProbe.kitDiagnostic(ctx), 15000, 'kit');
     } catch (error) {
       kitResult = 'timeout-or-error: ' + (error as Error).message;
     }

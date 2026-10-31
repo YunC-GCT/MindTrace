@@ -56,8 +56,19 @@ test('note_fts is kept in sync on create/update/delete, best-effort only', () =>
 
 test('RagRetrievalService.search uses the plan and returns empty on failure', () => {
   const service = read('entry/src/main/ets/services/RagRetrievalService.ets');
-  assert.match(service, /static async search\(query: string, topK: number\): Promise<RagHit\[\]>/);
+  assert.match(service, /static async search\(store: relationalStore\.RdbStore, query: string, topK: number\): Promise<RagHit\[\]>/);
   assert.match(service, /const plan: RagQueryPlan = planRagQuery\(trimmed\)/);
   assert.match(service, /plan\.mode === 'fts'/);
   assert.match(service, /return \[\];/);
+});
+
+
+test('NoteEvidenceService prefers local FTS recall and falls back to note.search', () => {
+  const evidence = read('entry/src/main/ets/services/NoteEvidenceService.ets');
+  assert.match(evidence, /RagRetrievalService\.search\(store, query, topK\)/);
+  assert.match(evidence, /private async queryHitsByFts\(/);
+  assert.match(evidence, /queryLiveRows\(store, ids\)/);
+  assert.match(evidence, /matchedFields: \['content'\]/);
+  // fallback：FTS 不可用/无命中时仍走既有 note.search 工具
+  assert.match(evidence, /EVIDENCE_TOOL_NAME/);
 });

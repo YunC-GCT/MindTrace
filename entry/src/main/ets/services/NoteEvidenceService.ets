@@ -15,6 +15,7 @@ import { DatabaseHelper, ToolCatalog, ToolRegistry, ToolResult } from 'common';
 import type { NoteDetail, NoteReadPort } from 'common';
 import { KnowledgeRelationDao, GraphExpansion, GraphExpansionLimits } from '../database/KnowledgeRelationDao';
 import { NoteRetrievalQuery } from './NoteRetrievalQuery';
+import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import {
   NoteEvidenceCitation,
   NoteEvidenceContext,
@@ -206,6 +207,11 @@ export class NoteEvidenceService {
     topK: number,
     options?: NoteEvidenceOptions,
   ): Promise<NoteEvidenceCitation[]> {
+    // R3：优先用本地 FTS 检索（自管 note_fts，trigram/LIKE），失败或无命中回退既有 note.search。
+    const ragCitations: NoteEvidenceCitation[] | undefined = await this.queryHitsByFts(query, topK, options);
+    if (ragCitations !== undefined && ragCitations.length > 0) {
+      return ragCitations;
+    }
     const registry: ToolRegistry = ToolCatalog.createReadOnlyRegistry();
     const args: Record<string, Object> = {};
     args['query'] = query;
@@ -229,6 +235,74 @@ export class NoteEvidenceService {
       throw new Error('note_query_rag failed: ' + result.content);
     }
     return NoteEvidenceService.parseHits(result.content);
+  }
+
+  /**
+   * R3：本地 FTS 召回 → join knowledge_unit（取 version）→ NoteEvidenceCitation。
+   * 返回 undefined 表示「无法使用 FTS」（表未就绪/查询异常），调用方回退 note.search；
+   * 返回空数组表示 FTS 可用但无命中。
+   */
+  private async queryHitsByFts(
+    query: string,
+    topK: number,
+    options?: NoteEvidenceOptions,
+  ): Promise<NoteEvidenceCitation[] | undefined> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      return undefined;
+    }
+    let hits: RagHit[] = [];
+    try {
+      hits = await RagRetrievalService.search(store, query, topK);
+    } catch (e) {
+      return undefined;
+    }
+    if (hits.length === 0) {
+      return [];
+    }
+    const ids: string[] = [];
+    for (const hit of hits) {
+      NoteEvidenceService.addUnique(ids, hit.unitId);
+    }
+    let rows: NoteEvidenceRow[] = [];
+    try {
+      rows = await this.queryLiveRows(store, ids);
+    } catch (e) {
+      return undefined;
+    }
+    const subjectFilter: string = options !== undefined && options.subject !== undefined ? options.subject.trim() : '';
+    const chapterFilter: string = options !== undefined && options.chapter !== undefined ? options.chapter.trim() : '';
+    const citations: NoteEvidenceCitation[] = [];
+    for (const hit of hits) {
+      let row: NoteEvidenceRow | undefined = undefined;
+      for (const candidate of rows) {
+        if (candidate.noteId === hit.unitId) {
+          row = candidate;
+          break;
+        }
+      }
+      if (row === undefined) {
+        continue;
+      }
+      if (subjectFilter.length > 0 && row.subject !== subjectFilter) {
+        continue;
+      }
+      if (chapterFilter.length > 0 && row.chapter !== chapterFilter) {
+        continue;
+      }
+      citations.push({
+        noteId: row.noteId,
+        version: row.version,
+        title: row.title,
+        excerpt: NoteEvidenceService.buildExcerpt(row.content, row.summary),
+        role: 'hit',
+        score: 0,
+        matchedFields: ['content'],
+        subject: row.subject,
+        chapter: row.chapter,
+      });
+    }
+    return citations;
   }
 
   private async expandGraph(
