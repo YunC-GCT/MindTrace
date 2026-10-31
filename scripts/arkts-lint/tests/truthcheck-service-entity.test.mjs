@@ -14,6 +14,7 @@ const draftVerifier = read('agents/src/main/ets/agents/NoteDraftVerifier.ets');
 const tcsTestPath = resolve(root, 'agents/src/test/TruthCheckService.test.ets');
 
 // Execute production service, node, graph and dispatcher, not a mirror of their rules.
+// 2026-10-31：Dispatcher 拆分出 dispatch/ 分支模块，运行时束要一起拼接（文件内 import 会被剥离）。
 const runtimeSources = [
   'common/src/main/ets/workflow/StateGraph.ets',
   'agents/src/main/ets/graph/AgentState.ets',
@@ -21,6 +22,9 @@ const runtimeSources = [
   'agents/src/main/ets/graph/nodes/TruthCheckNode.ets',
   'agents/src/main/ets/graph/CaptureGraph.ets',
   'common/src/main/ets/models/CaptureChain.ets',
+  'agents/src/main/ets/core/dispatch/DispatchOptions.ets',
+  'agents/src/main/ets/core/dispatch/UnitSupport.ets',
+  'agents/src/main/ets/core/dispatch/PreparedBranch.ets',
   'agents/src/main/ets/core/Dispatcher.ets',
 ].map((path) => read(path).replace(/^import[\s\S]*?;\r?\n/gm, '')).join('\n');
 const compiled = ts.transpileModule('class Logger {}\n' + runtimeSources, {

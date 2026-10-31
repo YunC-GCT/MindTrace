@@ -46,6 +46,15 @@
 - [ ] **A3：调用方切 `NoteCommand`/`NoteOutcome`**（ADR-0019）：`DispatchResult` 降级为迁移适配器
 - [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
 
+### Dispatcher 拆分（A3 的前置重构，2026-10-31 开始）
+
+> 动因：`Dispatcher.ets` 约 1790 行，`dispatchGeneration` 单方法 301 行、`dispatchIncrementalGeneration` 165 行，四个分支与生成评估逻辑混在一个类里。A3 直接加契约只会更糟，所以先按分支拆模块；每片以 #239 golden 18 条「零重录」作为等价判据。
+
+- [x] **切片 1（2026-10-31）**：抽出 `core/dispatch/DispatchOptions`（共享选项契约）、`UnitSupport`（`copyRegeneratedUnit` / `seedTextFromRequest`）、`PreparedBranch`（preparedCandidate 全流程 + `buildGraph`）；Dispatcher **1790 → 1643 行**；golden 18 条零重录；相关源码断言测试同步指向新模块
+- [ ] **切片 2**：`CaptureBranch`（capture 分支 + `dispatchSet` 编排 + 结果映射）
+- [ ] **切片 3**：`GenerationBranch` + `IncrementalBranch` + `GenerationEvaluator`（`evaluateStandardCandidate` / `evaluateDeepCandidate` / `finishStandardGeneration` / `deepMergeIssues` 等，最大一片）
+- [ ] **切片 4**：Dispatcher 只留 `dispatch` / `dispatchSet` 入口、路由与结果外壳（目标 ≤400 行）；随后 A3 在此薄壳上落 `NoteCommand` / `NoteOutcome`
+
 ## #239 行为基线：四条 dispatch 路径 golden 快照
 
 - [x] capture 快照（成功 / 模型不可用 / 空输入 / 入口取消 / 图内取消；审批哈希不匹配由 `prepared-candidate-hash-mismatch` 覆盖）

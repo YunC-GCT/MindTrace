@@ -208,7 +208,7 @@ test('Issue 99 note intent produces a typed preview and confirms the exact check
   assert.match(dispatcher, /preparedCandidate/);
   assert.match(dispatcher, /checkpointId/);
   assert.match(dispatcher, /candidateHash/);
-  assert.match(dispatcher, /buildPreparedGraph/);
+  assert.match(dispatcher, /PreparedBranch/);
 });
 
 test('Conversation workflow owns typed intent classification and routes from its state', () => {

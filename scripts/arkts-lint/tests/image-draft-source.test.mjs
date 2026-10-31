@@ -64,7 +64,7 @@ test('OcrNode reads input.payload for image kind but does not run in the generat
 });
 
 test('image source does not leak into generation candidate evaluation truth check', () => {
-  const evalBlock = dispatcher.match(/buildPreparedGraph[\s\S]*?captureText: this\.bundleText\(bundle\)/);
+  const evalBlock = dispatcher.match(/PreparedBranch\.buildGraph[\s\S]*?captureText: this\.bundleText\(bundle\)/);
   assert.ok(evalBlock !== null, 'evaluateStandardCandidate must use bundleText, not image URI');
 });
 

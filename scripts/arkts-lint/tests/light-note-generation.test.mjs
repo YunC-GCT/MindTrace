@@ -23,6 +23,9 @@ test('Issue 98 exposes typed light generation through Dispatcher.dispatch', () =
 
 test('note generation exposes coarse progress through the Dispatcher seam', () => {
   const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  // 2026-10-31：DispatchOptions 抽到独立模块，字段断言改为「两份合起来」满足。
+  const dispatchOptions = read('agents/src/main/ets/core/dispatch/DispatchOptions.ets')
+  const optionsSource = dispatcher + '\n' + dispatchOptions
   const models = read('common/src/main/ets/models/NoteGenerationModels.ets')
   const commonIndex = read('common/src/main/ets/Index.ets')
 
@@ -31,7 +34,7 @@ test('note generation exposes coarse progress through the Dispatcher seam', () =
   assert.match(models, /type NoteGenerationProgressSink = \(event: NoteGenerationProgressEvent\) => void/)
   assert.match(commonIndex, /NoteGenerationProgressEvent/)
   assert.match(commonIndex, /NoteGenerationProgressSink/)
-  assert.match(dispatcher, /progressSink\?: NoteGenerationProgressSink/)
+  assert.match(optionsSource, /progressSink\?: NoteGenerationProgressSink/)
   assert.match(dispatcher, /activity: 'collect_sources'/)
   assert.match(dispatcher, /activity: 'write_draft'/)
 })

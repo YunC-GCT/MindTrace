@@ -62,40 +62,22 @@ import {
   CaptureSetItemResult,
   CaptureSetResult,
 } from 'common';
-import type { DispatchPayload, CancellationToken, NoteWritePort } from 'common';
-import { AgentState, CaptureGraphError, CaptureNodeResult, CaptureStep, copyAgentState } from '../graph/AgentState';
+import type { DispatchPayload, CancellationToken } from 'common';
+import { AgentState, CaptureGraphError, CaptureStep } from '../graph/AgentState';
 import { CaptureGraph } from '../graph/CaptureGraph';
 import { StructureNodeFactory } from '../graph/nodes/StructureNode';
 import { TruthCheckNodeFactory } from '../graph/nodes/TruthCheckNode';
-import { PersistNodeFactory } from '../graph/nodes/PersistNode';
 import { NoteDaoInterface } from '../models/NoteDaoInterface';
+import type { CaptureSetOptions, DispatchOptions } from './dispatch/DispatchOptions';
+import { PreparedBranch } from './dispatch/PreparedBranch';
+import { copyRegeneratedUnit, seedTextFromRequest } from './dispatch/UnitSupport';
+
+// DispatchOptions / CaptureSetOptions 已抽到 ./dispatch/DispatchOptions，这里重导出保持既有 import 路径。
+export type { CaptureSetOptions, DispatchOptions } from './dispatch/DispatchOptions';
 
 const log = new Logger('Dispatcher');
 
-export interface DispatchOptions {
-  persist?: boolean;
-  includeRawText?: boolean;
-  analysisOnly?: boolean;
-  dao?: NoteDaoInterface;
-  /** #238 切片 A1：capture 持久化端口；提供时优先于 dao（幂等 / CAS / 结构化错误） */
-  noteWritePort?: NoteWritePort;
-  generationRepository?: NoteGenerationRepository;
-  knowledgeModel?: KnowledgeModel;
-  cancellationToken?: CancellationToken;
-  /** #243：调用方自带的 run 上下文；不传则捕获路径自建一个根上下文 */
-  runContext?: RunContext;
-  progressSink?: NoteGenerationProgressSink;
-  onNodeTiming?: (step: string, elapsedMs: number) => void;
-  /** 库里已有的学科名（含内置学科）；structure 用它决定复用还是新建 */
-  subjectVocabulary?: string[];
-}
-
-// spec 036 阶段 1：集合级整理的可选项。
-// DispatchOptions 定义在 agents，common 不能反向依赖 agents，所以这里承载 onItem；
-// 每完成一项就回调一次，UI 用它原地更新对话记录。
-export interface CaptureSetOptions extends DispatchOptions {
-  onItem?: (item: CaptureSetItemResult) => void;
-}
+// DispatchOptions / CaptureSetOptions 已抽到 ./dispatch/DispatchOptions（分支模块共享契约）。
 
 interface GenerationCandidateEvaluation {
   result: NoteGenerationStandardResult;
@@ -272,7 +254,7 @@ export class Dispatcher {
     }
     log.info('dispatch enter, source=' + req.source + ', payload.kind=' + req.payload.kind);
     const initial: AgentState = {
-      captureText: this.seedText(req),
+      captureText: seedTextFromRequest(req),
       source: Dispatcher.sourceFromPayload(req.payload),
       payload: req.payload,
       currentStep: 'START',
@@ -480,7 +462,7 @@ export class Dispatcher {
       return { success: false, route: 'D1', generation: result, errorMessage: merged.issues.join(';'), durationMs: Date.now() - startedAt };
     }
     const nextContent: string = renderIncrementalSections(merged.sections);
-    const candidate: KnowledgeUnit = this.copyRegeneratedUnit(base.unit, nextContent);
+    const candidate: KnowledgeUnit = copyRegeneratedUnit(base.unit, nextContent);
     const checkpointId: string = request.runId + ':incremental';
     const checkpoint: NoteGenerationCheckpoint = {
       id: checkpointId,
@@ -535,17 +517,6 @@ export class Dispatcher {
       promptTokens: 0, completionTokens: 0, stopReason: 'incremental_complete',
       incrementalPlan: plan, incrementalManifest: manifest, incrementalDiff: diff,
       baseVersion: plan.baseVersion,
-    };
-  }
-
-  private copyRegeneratedUnit(unit: KnowledgeUnit, content: string): KnowledgeUnit {
-    return {
-      id: unit.id, title: unit.title, content: content, summary: unit.summary, tags: unit.tags,
-      subject: unit.subject, category: unit.category, chapter: unit.chapter, difficulty: unit.difficulty,
-      source: unit.source, createdAt: unit.createdAt, updatedAt: Date.now(), reviewStatus: unit.reviewStatus,
-      nextReviewAt: unit.nextReviewAt, intervalDays: unit.intervalDays, easeFactor: unit.easeFactor,
-      repetitions: unit.repetitions, prerequisites: unit.prerequisites, related: unit.related,
-      embedding: unit.embedding, userId: unit.userId, version: unit.version,
     };
   }
 
@@ -1087,7 +1058,7 @@ export class Dispatcher {
     for (const issue of result.verification.issues) {
       issues.push(issue);
     }
-    const truthState: AgentState = await this.buildPreparedGraph(undefined).run({
+    const truthState: AgentState = await PreparedBranch.buildGraph(undefined).run({
       captureText: this.bundleText(bundle),
       source: 'note_generation',
       payload: { kind: 'text', text: this.bundleText(bundle) },
@@ -1596,120 +1567,8 @@ export class Dispatcher {
     options: DispatchOptions,
     startedAt: number,
   ): Promise<DispatchResult> {
-    const actualHash: string = sourceFingerprint(JSON.stringify(prepared.candidate));
-    if (actualHash !== prepared.candidateHash) {
-      return { success: false, route: 'D1', errorMessage: '候选内容已变化', durationMs: Date.now() - startedAt };
-    }
-    if (options.generationRepository === undefined) {
-      return { success: false, route: 'D1', errorMessage: '缺少草稿检查点', durationMs: Date.now() - startedAt };
-    }
-    const commitKey: string = prepared.commitKey ?? prepared.runId + ':' + prepared.checkpointId + ':' + prepared.candidateHash;
-    const existingCommit: NoteGenerationCommitResult | undefined = await options.generationRepository.getCommitResult(commitKey);
-    if (existingCommit !== undefined && existingCommit.candidateJson !== undefined && existingCommit.candidateJson.length > 0) {
-      const restoredCandidate: KnowledgeUnit = JSON.parse(existingCommit.candidateJson) as KnowledgeUnit;
-      // Re-saving an idempotent commit also heals a stale ready-preview run left
-      // by a process interruption between the durable note commit and run update.
-      await options.generationRepository.saveCommitResult(existingCommit);
-      await options.generationRepository.appendLifecycleLog({
-        runId: prepared.runId,
-        event: 'duplicate-confirm',
-        checkpointId: prepared.checkpointId,
-        sourceCount: prepared.pendingSourceIds?.length ?? 0,
-      });
-      return { success: true, route: 'D1', data: restoredCandidate, durationMs: Date.now() - startedAt };
-    }
-    const recovery = await options.generationRepository.restore(prepared.runId);
-    if (recovery === undefined) {
-      return { success: false, route: 'D1', errorMessage: '草稿运行不存在', durationMs: Date.now() - startedAt };
-    }
-    let checkpoint: NoteGenerationCheckpoint | undefined = undefined;
-    for (const item of recovery.checkpoints) {
-      if (item.id === prepared.checkpointId) {
-        checkpoint = item;
-        break;
-      }
-    }
-    if (checkpoint === undefined || checkpoint.runId !== prepared.runId || checkpoint.candidateHash !== prepared.candidateHash) {
-      return { success: false, route: 'D1', errorMessage: '草稿检查点不匹配', durationMs: Date.now() - startedAt };
-    }
-    const initial: AgentState = {
-      captureText: this.seedText(req),
-      source: 'note_generation',
-      payload: req.payload,
-      currentStep: 'START',
-      persist: true,
-      analysisOnly: false,
-      preparedCandidate: prepared,
-      knowledgeUnit: prepared.candidate,
-    };
-    const graph: CaptureGraph = this.buildPreparedGraph(options.dao, options.noteWritePort);
-    const finalState: AgentState = await graph.run(initial, this.resolveRunContext(options));
-    if (finalState.error !== undefined) {
-      const conflict: boolean = finalState.error.message.indexOf('VERSION_CONFLICT') >= 0;
-      return {
-        success: false,
-        route: 'D1',
-        errorCode: conflict ? 'VERSION_CONFLICT' : undefined,
-        errorMessage: finalState.error.message,
-        durationMs: Date.now() - startedAt,
-      };
-    }
-    let committedCandidate: KnowledgeUnit = prepared.candidate;
-    if (finalState.commitResult !== undefined) {
-      committedCandidate = this.copyRegeneratedUnit(prepared.candidate, prepared.candidate.content);
-      committedCandidate.version = finalState.commitResult.version;
-      const contentChanged: boolean = prepared.incrementalDiff?.some(
-        (item: IncrementalDiffItem): boolean => item.kind === 'changed' || item.kind === 'added',
-      ) === true;
-      if (prepared.updateExisting === true && contentChanged) {
-        committedCandidate.embedding = [];
-      }
-      const commit: NoteGenerationCommitResult = {
-        commitKey: commitKey,
-        runId: prepared.runId,
-        checkpointId: prepared.checkpointId,
-        noteId: finalState.commitResult.noteId,
-        version: finalState.commitResult.version,
-        sourceIds: prepared.pendingSourceIds ?? prepared.sourceIds ?? [],
-        candidateJson: JSON.stringify(committedCandidate),
-        committedAt: Date.now(),
-      };
-      await options.generationRepository.saveCommitResult(commit);
-      await options.generationRepository.appendLifecycleLog({
-        runId: prepared.runId,
-        event: finalState.commitResult.duplicate ? 'duplicate-confirm' : 'committed',
-        checkpointId: prepared.checkpointId,
-        sourceCount: commit.sourceIds.length,
-      });
-    }
-    return { success: true, route: 'D1', data: committedCandidate, durationMs: Date.now() - startedAt };
-  }
-
-  private buildPreparedGraph(dao?: NoteDaoInterface, noteWritePort?: NoteWritePort): CaptureGraph {
-    const graph: CaptureGraph = new CaptureGraph();
-    const truth: TruthCheckService = new TruthCheckService();
-    graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
-    if (noteWritePort !== undefined) {
-      // #238 链路迁移 A2：preparedCandidate 的持久化也走端口（commitKey / CAS / 结构化错误）。
-      graph.addNode('persist', PersistNodeFactory.createWithWritePort(noteWritePort));
-    } else if (dao !== undefined) {
-      graph.addNode('persist', PersistNodeFactory.create(dao));
-    } else {
-      graph.addNode('persist', async (input: AgentState): Promise<CaptureNodeResult> => {
-        const next: AgentState = copyAgentState(input);
-        next.error = {
-          kind: 'PERSIST_DAO_REQUIRED',
-          message: 'persist requested but no NoteDaoInterface was provided',
-          step: 'persist',
-          retriable: false,
-        };
-        return { state: next };
-      });
-    }
-    graph.addEdge('START', 'truth_check');
-    graph.addConditionalEdge('truth_check', (input: AgentState): CaptureStep => input.persist ? 'persist' : 'END');
-    graph.addEdge('persist', 'END');
-    return graph;
+    // 分支已抽出到 ./dispatch/PreparedBranch（2026-10-31 拆分 Dispatcher，收敛文件体积）。
+    return await PreparedBranch.dispatch(req, prepared, options, startedAt, this.resolveRunContext(options));
   }
 
   private buildGenerationGraph(model?: KnowledgeModel, cancellationToken?: CancellationToken): CaptureGraph {
@@ -1793,12 +1652,5 @@ export class Dispatcher {
       lines.push('[source:' + fragment.id + '] ' + fragment.text);
     }
     return lines.join('\n');
-  }
-
-  private seedText(req: DispatchRequest): string {
-    if (req.payload.kind === 'text') {
-      return req.payload.text;
-    }
-    return '';
   }
 }
