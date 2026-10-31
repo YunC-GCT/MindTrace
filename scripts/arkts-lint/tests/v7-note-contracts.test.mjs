@@ -56,27 +56,17 @@ test('ADR-0019 (d) step 4: stale expectedVersion is a non-retryable VERSION_CONF
   assert.equal(result.retryable, false, 'ADR-0019 (c): the same expectedVersion cannot succeed on replay');
 });
 
-test('ADR-0019 (d) step 5: approved hash mismatch is a non-retryable APPROVAL_HASH_MISMATCH', () => {
-  const existing = { noteId: 'note-1', version: 2, approvedCheckpointHash: 'hash-old' };
+test('ADR-0019 (d) step 5 (v18): approval hash is validated by the write store, not the pure decision', () => {
+  const existing = { noteId: 'note-1', version: 2 };
   const result = decideWrite(existing, { commitKey: 'commit-2', approvedCheckpointHash: 'hash-new' });
-  assert.equal(result.kind, 'reject', 'ADR-0019 (d) step 5: HITL approval hash must match');
-  assert.equal(result.code, 'APPROVAL_HASH_MISMATCH', 'ADR-0019 (c) APPROVAL_HASH_MISMATCH');
-  assert.equal(result.retryable, false, 'ADR-0019 (c): a stale candidate must be re-previewed, not resent');
-});
-
-test('ADR-0019 (d) step 5: approval hash on a missing note is rejected, never inserted', () => {
-  const result = decideWrite(null, { commitKey: 'commit-2', approvedCheckpointHash: 'hash-new' });
-  assert.equal(result.kind, 'reject', 'ADR-0019 (d) step 5 runs before the insert fallback');
-  assert.equal(result.code, 'APPROVAL_HASH_MISMATCH', 'no existing hash can never match a supplied hash');
-  assert.equal(result.retryable, false, 'ADR-0019 (c): a stale candidate must be re-previewed, not resent');
-});
-
-test('ADR-0019 (d) step 5: matching approved hash does not block an update', () => {
-  const existing = { noteId: 'note-1', version: 2, approvedCheckpointHash: 'hash-1' };
-  const result = decideWrite(existing, { commitKey: 'commit-2', approvedCheckpointHash: 'hash-1' });
-  assert.equal(result.kind, 'update', 'matching approval hash keeps the normal update path');
+  assert.equal(result.kind, 'update', 'decideWrite no longer compares the note snapshot hash');
   assert.equal(result.code, '', 'a successful decision carries an empty code');
-  assert.equal(result.retryable, false, 'a successful decision is not retryable');
+});
+
+test('ADR-0019 (d) step 5 (v18): approval hash on a missing note falls through to insert', () => {
+  const result = decideWrite(null, { commitKey: 'commit-2', approvedCheckpointHash: 'hash-new' });
+  assert.equal(result.kind, 'insert', 'approval enforcement lives in the store (checkpoint.approved_at)');
+  assert.equal(result.code, '', 'insert is a success shape');
 });
 
 test('ADR-0019 (d) step 6: missing note without expectedVersion is insert', () => {

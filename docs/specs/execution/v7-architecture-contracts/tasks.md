@@ -85,6 +85,8 @@
   - [x] **A4 切片 4b-2b（2026-10-31）**：`publish` 终态回写 `run_store` —— `RunEventSink.settle?()` 可选方法；`RunStoreEventSink.settle` 按终态映射 `RunRecord`（failed/cancelled→对应状态，readyPreview/needsInput→readyPreview；**committed 的 status 仍为 running**，committed 事实由 `committedNoteId`/`committedVersion` 承载）；`Dispatcher.settleRun` 尽力而为（失败仅 log）
     - 遗留：`RunStatus` 尚无 `'committed'` 值（改契约前先按字段承载；后续清理旧适配器时一起评估）
     - 测试：`v7-run-event-sink` 6 条（新增 settle 运行时调用 + 源码映射守护）
+  - **HITL 真机失败排查与修复（2026-10-31 15:5x）**：真机「确认保存失败」根因 = `decideWrite` 仍按 v2 契约用 **note 快照**比对 `approvedCheckpointHash`，而 v18 审批事实落在 **checkpoint.approved_at**（快照不带审批）→ 必拒。修复：`NoteWriteDecisions` 删除该规则（纯判定不再碰审批），审批统一由 `KnowledgeUnitNoteWriteStore.validateApproval` 按检查点校验；同步更新 `v7-note-contracts` / `v7-note-write-port` 断言；另修 `getCheckpoint` 空列数组查询
+  - **HITL e2e 自检入口（2026-10-31）**：新增 `DebugDraftRunner` + `--ps e2e draft`（生成草稿 → 确认入库，逐阶段打 `[E2E] stage=` 日志）；已加入 `onNewWant` 触发。设备侧 `aa start --ps e2e` 触发不稳定（首次成功、后续未再触发），HITL v18 端到端仍待验证（可手动确认复测）
   - [ ] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）

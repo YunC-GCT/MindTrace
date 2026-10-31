@@ -19,6 +19,7 @@ import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearc
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
+import { DebugDraftRunner } from '../services/DebugDraftRunner';
 import { DebugCaptureRunner } from '../services/DebugCaptureRunner';
 import { ImageSearchWorkerProbe } from '../services/ImageSearchWorkerProbe';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
@@ -128,6 +129,13 @@ export default class EntryAbility extends UIAbility {
 
   /** 应用已在前台时又被分享 / 卡片拉起 */
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // e2e 调试入口：aa start --ps e2e <mode> 在已有实例上也要触发（无需重建窗口）。
+    if (want.parameters !== undefined && want.parameters['e2e'] !== undefined) {
+      this.launchWant = want;
+      this.runE2eIfRequested().catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'e2e(onNewWant) 异常: ' + e.message);
+      });
+    }
     this.ingestSharedImage(want);
     this.readCardAction(want);
     this.consumeCardAction();
@@ -251,6 +259,12 @@ export default class EntryAbility extends UIAbility {
         const e: Error = error as Error;
         hilog.error(0xE2E0, 'E2E', '%{public}s', 'stage=worker-probe ok=false err=' + e.message);
       }
+      return;
+    }
+    if (mode === 'draft') {
+      DebugDraftRunner.run(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'HITL 自检异常: ' + e.message);
+      });
       return;
     }
     if (mode !== 'true') {

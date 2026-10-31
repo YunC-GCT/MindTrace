@@ -152,15 +152,12 @@ test('NoteWritePort updates against the current version when expectedVersion is 
   assert.equal(outcome.version, 4, 'update must CAS on the snapshot version, not 0');
 });
 
-test('NoteWritePort rejects a stale approval hash without writing', async () => {
+test('NoteWritePort forwards the approval hash to the store (v18: store validates checkpoints)', async () => {
   const store = makeStore({ snapshot: { noteId: 'n1', version: 3 } });
   const port = new NoteWritePortAdapter(store);
-  await assert.rejects(port.commit(unit('n1'), { commitKey: 'c7', approvedCheckpointHash: 'hash-new' }), (error) => {
-    assert.equal(error.code, 'APPROVAL_HASH_MISMATCH');
-    assert.equal(error.retryable, false);
-    return true;
-  });
-  assert.equal(store.calls.update, 0);
+  const outcome = await port.commit(unit('n1'), { commitKey: 'c7', approvedCheckpointHash: 'hash-new' });
+  assert.equal(store.calls.update, 1, 'approval enforcement moved to KnowledgeUnitNoteWriteStore.validateApproval');
+  assert.equal(outcome.version, 4);
 });
 
 test('NoteWritePort reports NOTE_NOT_FOUND for a positive expectedVersion on a missing note', async () => {
