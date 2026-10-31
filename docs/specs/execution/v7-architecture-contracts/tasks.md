@@ -76,7 +76,8 @@
 - [~] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
   - [x] **A4 切片 1（2026-10-31）**：`RunEventSink` seam（`agents/core/dispatch/RunEventSink.ets`）—— `dispatch.start` / `dispatch.terminal` 两事件、payload 口径固定、**写出尽力而为**（sink 抛错不影响命令）；`DispatchOptions.runEventSink?` 可选注入，旧路径零变化；测试 `v7-run-event-sink` 3 条
   - [x] **A4 切片 2（2026-10-31）**：entry 侧 `RunStoreEventSink`（首次事件自动建 run 记录 → `appendEvent` 落 `run_store`/`run_event`；写失败只 log）；`AiServicePorts.buildRunEventSink` 组合根；`CapturePipeline` 的 capture 命令与批量 set 两处注入。顺带修 `RunStoreDao.queryMaxSequence` 的 Transaction.querySql 重载（此前未被 import 编译到）
-  - [ ] 切片 3：主图骨架（preflight/route/invoke/verify/HITL/publish 六阶段 StateGraph）迁 capture 分支
+  - [x] **A4 切片 3a（2026-10-31）**：主图骨架 `DispatchGraph`（六阶段推进器 + 阶段契约 + 非法跳转/缺终态错误），测试 `v7-dispatch-graph` 5 条；尚未接管运行时（capture 仍走旧路由，行为零变化）
+  - [ ] 切片 3b：capture 分支迁入 DispatchGraph（preflight=校验命令/取消，route=capture，invoke=CaptureBranch，verify=结果校验，hitl=透传，publish=终态+事件）并保持 #239 golden 零重录
   - [ ] 切片 4：其余四条命令迁入主图 + 旧 `dispatch()/dispatchSet()/DispatchResult` 清理
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
