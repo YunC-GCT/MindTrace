@@ -23,11 +23,11 @@ test('photo send enters captureReply instead of text-only streaming', () => {
 test('photo conversation performs analysis only and stores OCR material', () => {
   assert.match(conversation, /this\.capturePort\.analyzeImage\([\s\S]*?imageUri,[\s\S]*?userText/);
   assert.match(conversation, /safeSaveOcrResult\(ref, imageUri, userText, result\)/);
-  assert.match(aiService, /analysisOnly: true/);
+  assert.match(aiService, /kind: 'analysisOnly'/);
 });
 
 test('explicit conversation note generation creates a persistence-disabled draft', () => {
   assert.match(conversation, /\.generateNoteDraft\(/);
   assert.match(aiService, /generation: request/);
-  assert.match(aiService, /persist: false/);
+  const mapper = readFileSync(resolve(root, 'agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets'), 'utf8'); assert.match(mapper, /copy\.persist = command\.kind === 'capture'/);
 });

@@ -191,3 +191,12 @@ test('AiService capture and confirm paths use the command seam', () => {
   assert.match(mapper, /APPROVAL_HASH_MISMATCH/);
   assert.match(mapper, /PREPARED_CHECKPOINT_MISSING/);
 });
+
+test('AiService analysis / generation / regenerate consumers use the command seam (A3c)', () => {
+  const ai = read('entry/src/main/ets/services/AiService.ets');
+  assert.match(ai, /kind: 'analysisOnly'/);
+  assert.match(ai, /kind: 'generation'/);
+  assert.match(ai, /kind: 'regenerate'/);
+  assert.ok((ai.match(/dispatchCommand\(command/g) ?? []).length >= 5, 'capture/confirm/analyze/draft/regenerate 五处');
+  assert.ok((ai.match(/outcome\.kind !== 'readyPreview'/g) ?? []).length >= 3);
+});

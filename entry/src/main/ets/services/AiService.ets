@@ -309,26 +309,25 @@ export class AiService {
     }
 
     const resolved: ResolvedImageFile = await new ImageUriResolver(this.context as common.UIAbilityContext).resolve(imageUri);
-    const req: DispatchRequest = {
-      source: 'app',
-      payload: {
-        kind: 'image',
-        imageUri: resolved.localPath,
-        userText: userText,
-      },
-    };
 
     const dispatcher: Dispatcher = new Dispatcher();
-    const result: DispatchResult = await dispatcher.dispatch(req, {
-      persist: false,
+    // A3c：分析入口也走命令 seam；analysisOnly 的终态是 readyPreview（不落库）。
+    const command: NoteCommand = {
+      kind: 'analysisOnly',
+      operationId: 'analyze-' + Date.now().toString() + '-' + (++AiService.captureSeq).toString(),
+      source: 'app',
+      payload: { kind: 'image', imageUri: resolved.localPath, userText: userText },
       includeRawText: true,
-      analysisOnly: true,
+    };
+    const outcome: NoteOutcome = await dispatcher.dispatchCommand(command, {
       cancellationToken: cancellationToken,
     });
-    if (!result.success || result.classification === undefined) {
-      throw new Error(result.errorMessage ?? '识别失败');
+    if (outcome.kind !== 'readyPreview' || outcome.classification === undefined) {
+      const message: string = outcome.message !== undefined ? outcome.message
+        : (outcome.reason !== undefined ? outcome.reason : '识别失败');
+      throw new Error(message);
     }
-    return result.classification;
+    return outcome.classification;
   }
 
   // 内部: 把 entry 端 NoteDao 适配成 agents 端 NoteDaoInterface
@@ -572,21 +571,29 @@ export class AiService {
     progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
     const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
-    const result: DispatchResult = await new Dispatcher().dispatch({
-      source: 'app',
-      payload: { kind: 'text', text: payloadText },
+    // A3c：草稿生成走命令 seam；readyPreview 携带 draft + checkpointId + runId。
+    const command: NoteCommand = {
+      kind: 'generation',
+      operationId: 'draft-' + request.runId,
       generation: request,
-    }, {
-      persist: false,
+      payload: { kind: 'text', text: payloadText },
+    };
+    const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
       generationRepository: repository,
       cancellationToken: cancellationToken,
       progressSink: progressSink,
     });
-    if (!result.success || result.generation === undefined || result.data === undefined || result.generation.bestCheckpointId === undefined) {
-      throw new Error(result.errorMessage ?? '草稿生成失败');
+    const previewDraft: KnowledgeUnit | undefined = outcome.draft;
+    const previewGeneration: NoteGenerationResult | undefined = outcome.generation;
+    const previewCheckpoint: string | undefined = outcome.checkpointId;
+    if (outcome.kind !== 'readyPreview' || previewDraft === undefined || previewGeneration === undefined
+      || previewCheckpoint === undefined || previewCheckpoint.length === 0) {
+      const message: string = outcome.message !== undefined ? outcome.message
+        : (outcome.reason !== undefined ? outcome.reason : '草稿生成失败');
+      throw new Error(message);
     }
-    const candidate: KnowledgeUnit = result.data;
-    const generation: NoteGenerationResult = result.generation;
+    const candidate: KnowledgeUnit = previewDraft;
+    const generation: NoteGenerationResult = previewGeneration;
     const generatedSections: IncrementalSection[] = parseIncrementalSections(candidate.content);
     if (generation.draft !== undefined) {
       for (let index: number = 0; index < generatedSections.length; index += 1) {
@@ -603,7 +610,7 @@ export class AiService {
       request.sources.fragments.map((fragment): string => fragment.id),
     );
     generation.incrementalManifest = incrementalManifest;
-    const issues = result.generation.issues;
+    const issues = generation.issues;
     let softIssueCount: number = 0;
     for (const issue of issues) {
       if (issue.severity === 'soft') {
@@ -614,7 +621,7 @@ export class AiService {
       runId: request.runId,
       originSessionId: request.originSessionId,
       parentConversationRunId: request.parentConversationRunId,
-      checkpointId: result.generation.bestCheckpointId,
+      checkpointId: previewCheckpoint,
       candidateHash: sourceFingerprint(JSON.stringify(candidate)),
       candidate: candidate,
       result: generation,
@@ -742,34 +749,42 @@ export class AiService {
         text: sourceText,
       }] },
     };
-    const result: DispatchResult = await new Dispatcher().dispatch({
-      source: 'app',
-      payload: { kind: 'text', text: sourceText },
+    // A3c：增量重生成走命令 seam；readyPreview 携带 draft + checkpointId + runId。
+    const command: NoteCommand = {
+      kind: 'regenerate',
+      operationId: 'regenerate-' + runId,
       generation: request,
-    }, {
-      persist: false,
+      payload: { kind: 'text', text: sourceText },
+    };
+    const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
       generationRepository: repository,
       cancellationToken: cancellationToken,
       progressSink: progressSink,
     });
-    if (!result.success || result.data === undefined || result.generation === undefined
-      || result.generation.bestCheckpointId === undefined) {
-      throw new Error(result.errorMessage ?? '增量重生成失败');
+    const regenerateDraft: KnowledgeUnit | undefined = outcome.draft;
+    const regenerateGeneration: NoteGenerationResult | undefined = outcome.generation;
+    const regenerateCheckpoint: string | undefined = outcome.checkpointId;
+    if (outcome.kind !== 'readyPreview' || regenerateDraft === undefined
+      || regenerateGeneration === undefined || regenerateCheckpoint === undefined
+      || regenerateCheckpoint.length === 0) {
+      const message: string = outcome.message !== undefined ? outcome.message
+        : (outcome.reason !== undefined ? outcome.reason : '增量重生成失败');
+      throw new Error(message);
     }
     return {
       runId: runId,
       originSessionId: originSessionId,
       parentConversationRunId: parentConversationRunId,
-      checkpointId: result.generation.bestCheckpointId,
-      candidateHash: sourceFingerprint(JSON.stringify(result.data)),
-      candidate: result.data,
-      result: result.generation,
+      checkpointId: regenerateCheckpoint,
+      candidateHash: sourceFingerprint(JSON.stringify(regenerateDraft)),
+      candidate: regenerateDraft,
+      result: regenerateGeneration,
       sourceCount: request.sources.fragments.length,
       softIssueCount: 0,
-      sourceIds: result.generation.sourceIds,
+      sourceIds: regenerateGeneration.sourceIds,
       pendingSourceIds: [],
-      incrementalManifest: result.generation.incrementalManifest,
-      incrementalDiff: result.generation.incrementalDiff,
+      incrementalManifest: regenerateGeneration.incrementalManifest,
+      incrementalDiff: regenerateGeneration.incrementalDiff,
       expectedVersion: base.baseVersion,
       incrementalInstruction: instruction,
     };

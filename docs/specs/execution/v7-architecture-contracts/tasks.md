@@ -56,7 +56,13 @@
   - `CaptureBranch` 命令路径回填 `cancelledCommitted/cancelledNoteId/cancelledVersion/cancelledCommitKey`；`NoteOutcomeMapper` 映射成 `cancelled(committed=true, noteId, version, commitKey)`
   - 旧 `dispatch()` 路径（`reportCancellation` 未置位）仍按 #239 golden 抛错；golden 18 条零重录
   - 测试 `v7-note-command` 9 条：新增「图内取消未写 → committed=false」「写成功后取消 → committed=true + 信封」
-- [ ] **A3c**：generation/regenerate 消费方切 `NoteOutcome`、`dispatchSet` 批量终态、A2A 回执 / HITL 读 `NoteOutcome`
+- [x] **A3c：generation / regenerate / analysisOnly 消费方切 `NoteOutcome`（2026-10-31）**
+  - `AiService.dispatchNoteDraft` → `kind:'generation'` 命令，只认 `readyPreview`（draft + checkpointId + generation），失败/needsInput 用 `message`/`reason` 抛出；`persist` 由 mapper 按命令形状决定（不再手写 `persist: false`）
+  - `AiService.regenerate…` → `kind:'regenerate'` 命令，同样只认 `readyPreview`
+  - `AiService.analyzeImage` → `kind:'analysisOnly'` 命令，`readyPreview + classification`（不落库）
+  - 测试：`v7-note-command` 10 条（新增消费方接线断言：五处 `dispatchCommand`、三处 `readyPreview` 判别）
+  - 相关源码断言测试同步从「`persist: false` / `dispatcher.dispatch(` / `analysisOnly: true`」改为「命令 kind + mapper 规则」
+- [ ] **A3d**：`dispatchSet` 批量终态、A2A 回执 / HITL 直接读 `NoteOutcome`
 - [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
 
 ### Dispatcher 拆分（A3 的前置重构，2026-10-31 开始）

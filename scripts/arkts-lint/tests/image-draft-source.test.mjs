@@ -47,7 +47,7 @@ test('light route generation state uses synthesized text and persist=false', () 
 });
 
 test('AiService.generateNoteDraftWithSources dispatches with persist=false', () => {
-  assert.match(aiService, /generateNoteDraftWithSources[\s\S]*?persist: false/);
+  assert.match(aiService, /kind: 'generation'/); assert.match(read('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets'), /copy\.persist = command\.kind === 'capture'/);
 });
 
 test('AiService.confirmDraft dispatches through the command seam with a DAO', () => {
@@ -155,8 +155,8 @@ test('ConversationWorkflow handleImageReply handles empty OCR text gracefully (A
 });
 
 test('AiService.analyzeImage dispatches with persist:false and analysisOnly:true (no write)', () => {
-  assert.match(aiService, /analyzeImage[\s\S]*?persist: false/);
-  assert.match(aiService, /analyzeImage[\s\S]*?analysisOnly: true/);
+  assert.match(aiService, /analyzeImage[\s\S]*?kind: 'analysisOnly'/);
+  assert.match(aiService, /analyzeImage[\s\S]*?dispatchCommand\(command/);
 });
 
 // ConversationStep must include image_reply

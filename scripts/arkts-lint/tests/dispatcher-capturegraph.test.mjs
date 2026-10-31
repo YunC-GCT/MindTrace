@@ -46,8 +46,8 @@ test('AiService consumes Capture workflow only through Dispatcher.dispatch', () 
   assert.doesNotMatch(aiService, /import \{[^}]*\bCaptureGraph\b/);
   assert.doesNotMatch(aiService, /import \{[^}]*\bAgentState\b/);
   assert.doesNotMatch(aiService, /\.buildGraph\(/);
-  assert.match(aiService, /dispatcher\.dispatch\(/);
-  assert.match(aiService, /analysisOnly: true/);
+  assert.match(aiService, /dispatchCommand\(command/);
+  assert.match(aiService, /kind: 'analysisOnly'/);
 });
 
 test('Capture graph and state stay internal to agents module', () => {
