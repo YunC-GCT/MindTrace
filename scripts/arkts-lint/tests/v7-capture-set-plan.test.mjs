@@ -100,3 +100,15 @@ test('CapturePipeline wires OCR → planCaptureSet → per-problem capture comma
   assert.match(pipeline, /problemItemFromOutcome/);
   assert.match(pipeline, /kind: 'problem'/);
 });
+
+
+test('page header without anchor is skipped as preamble, not a problem', () => {
+  const plan = planCaptureSet([
+    { imageIndex: 0, text: '数学练习（一）\n1. 第一题\n2. 第二题' },
+    { imageIndex: 1, text: '数学练习（二）\n3. 第三题' },
+  ]);
+  assert.equal(plan.preambleSkipped, 2, '两张图的页首抬头都应被跳过');
+  assert.equal(plan.problems.length, 3, '抬头不算题；题数 = 3');
+  assert.equal(plan.problems[0].text.indexOf('数学练习'), -1, '抬头文本不得混入第一题');
+  assert.deepEqual(arr(plan.problems.map((p) => p.anchors)).map(String), ['1.', '2.', '3.'].map(String));
+});

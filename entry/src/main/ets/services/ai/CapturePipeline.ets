@@ -275,8 +275,14 @@ export class CapturePipeline {
       cancelled: batch.cancelled,
       items: merged,
       durationMs: Date.now() - startedAt,
+      setId: 'set-' + seq.toString(),
+      imageCount: imageUris.length,
+      problemCount: problems.length,
+      preambleSkipped: plan.preambleSkipped,
+      degradedImageCount: plan.degradedImageIndexes.length,
     };
-    log.info('captureSet done, images=' + imageUris.length.toString()
+    log.info('captureSet done, setId=' + result.setId
+      + ' images=' + imageUris.length.toString()
       + ' problems=' + problems.length.toString()
       + ' done=' + result.done.toString() + ' failed=' + failed.toString()
       + ' cancelled=' + result.cancelled.toString()

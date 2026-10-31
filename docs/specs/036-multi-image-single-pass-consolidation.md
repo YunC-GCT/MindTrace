@@ -235,3 +235,16 @@ awaiting_confirm → discarded（用户不勾）
 | 修正 | segmenter 单主锚点页面此前返回 `anchor:''`，跨图合并会把单题页当成「无题号续页」吞进上一题（S4 多图多题会串题）；现保留锚点，`v7-problem-segmenter` 期望同步更新 |
 | 已接线（2026-10-31） | `CapturePipeline.captureSet`：逐图 OCR（`OcrService.recognizeUri`）→ `planCaptureSet` → 逐题 capture 命令（`payload.text = problem.text`，不再二次 OCR）→ `CaptureSetResult` 按题回执（`kind:"problem"` + `sourceImageIndexes/anchors/needsReview`）；图片 OCR 失败/空图单独回执 |
 | 未做 | RAG（`rag_chunk`/`rag_embedding` 仅建表，无运行时服务）——独立轨道，见任务清单 |
+
+### 阶段 2/3 真机验证（2026-10-31，commit `1735791` + 抬头修复）
+
+设备 `3XTYD24C16203663`，`node scripts/device-runner.mjs e2e captureSet --cold`（bundle 内 `debug/math-1.png` / `math-2.png`，真实 OCR）：
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| 图片数 → 题数 | 2 张 → 7 条（含 1 条页首抬头被当题） | **2 张 → 6 题**（`preambleSkipped=2`） |
+| 页首抬头 | 「数学练习（一）」独立成笔记；「数学练习（二）」被跨页合并粘进第 3 题 | 两页抬头均跳过，题目正文干净 |
+| 题号 | 部分段 anchor 为空 | anchors = `["1."]…["6."]` 全保留，`sources=[0]×3 + [1]×3` |
+| 入库 | 7/7 但含脏笔记 | **6/6 committed，0 failed**，耗时 154.6s（逐题 LLM 分类+结构化） |
+
+S2（单图多题）/ S4（多图多题）在真机按 036 §11 口径通过；S3（跨页同题）由 planner 单元测试覆盖，真机待真实「题干预览 + 解答下一页」样本；S5（重拍去重）待补真机样本。

@@ -163,6 +163,12 @@ export interface CaptureSetResult {
   cancelled: number;
   items: CaptureSetItemResult[];
   durationMs: number;
+  // 036：集合级可观测量（一次整理 = 一个 setId）
+  setId?: string;
+  imageCount?: number;
+  problemCount?: number;
+  preambleSkipped?: number;
+  degradedImageCount?: number;
 }
 
 // ==================== 通用 API 响应包装 ====================

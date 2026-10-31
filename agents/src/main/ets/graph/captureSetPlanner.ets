@@ -39,6 +39,19 @@ export interface SetPlan {
   degradedImageIndexes: number[];
   emptyImageIndexes: number[];
   totalSegments: number;
+  /** 被识别为页面抬头（数学练习/姓名/班级…）而跳过的无题号段数。 */
+  preambleSkipped: number;
+}
+
+// 页首抬头判定：无题号、短行、含试卷/练习/姓名等词汇 → 不是题目。
+const PAGE_HEADER_PATTERN: RegExp = /(数学练习|练习|试卷|测试|姓名|班级|得分|考试|第[一二三四五六七八九十\d]+页)/;
+
+function isPageHeader(text: string): boolean {
+  const trimmed: string = text.trim();
+  if (trimmed.length === 0 || trimmed.length > 40) {
+    return false;
+  }
+  return PAGE_HEADER_PATTERN.test(trimmed);
 }
 
 // 逐图切题 → 扁平化 SourceSegment → 跨图合并 → PlannedProblem[]。
@@ -48,6 +61,7 @@ export function planCaptureSet(images: SetImageText[]): SetPlan {
   const degradedImageIndexes: number[] = [];
   const emptyImageIndexes: number[] = [];
   let totalSegments: number = 0;
+  let preambleSkipped: number = 0;
 
   for (let i: number = 0; i < images.length; i += 1) {
     const image: SetImageText = images[i];
@@ -62,12 +76,29 @@ export function planCaptureSet(images: SetImageText[]): SetPlan {
     }
     for (let j: number = 0; j < segmented.segments.length; j += 1) {
       const segment: ProblemSegment = segmented.segments[j];
+      let segmentText: string = segment.rawText;
+      // 页首无题号抬头（“数学练习（二）…”）不是题目：跳过；单锚点页的抬头会被并进唯一一段，需在锚点处剥掉。
+      if (j === 0 && segment.anchor === '') {
+        if (isPageHeader(segmentText)) {
+          preambleSkipped += 1;
+          continue;
+        }
+      } else if (j === 0 && segment.anchor !== '') {
+        const anchorIndex: number = segmentText.indexOf(segment.anchor);
+        if (anchorIndex > 0) {
+          const leading: string = segmentText.substring(0, anchorIndex);
+          if (isPageHeader(leading)) {
+            preambleSkipped += 1;
+            segmentText = segmentText.substring(anchorIndex);
+          }
+        }
+      }
       totalSegments += 1;
       const source: SourceSegment = {
         imageIndex: image.imageIndex,
         segmentIndex: segment.index,
         anchor: segment.anchor,
-        text: segment.rawText,
+        text: segmentText,
         needsReview: segment.needsReview || segmented.degraded,
       };
       sources.push(source);
@@ -105,6 +136,7 @@ export function planCaptureSet(images: SetImageText[]): SetPlan {
     degradedImageIndexes: degradedImageIndexes,
     emptyImageIndexes: emptyImageIndexes,
     totalSegments: totalSegments,
+    preambleSkipped: preambleSkipped,
   };
   return plan;
 }

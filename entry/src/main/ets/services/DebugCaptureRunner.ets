@@ -12,7 +12,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { ImageSearchIndexRegistry } from 'common';
-import type { ImageSearchHit, KnowledgeUnit } from 'common';
+import type { CaptureSetItemResult, CaptureSetResult, ImageSearchHit, KnowledgeUnit } from 'common';
 import { AiService } from './AiService';
 import { CardSnapshotService } from './CardSnapshotService';
 import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
@@ -119,6 +119,64 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /**
+   * 036 阶段 2/3 真机自检：把 debug 图放进 captureSet（逐图 OCR → 切题 → 跨图合并 → 按题入库）。
+   * 关键日志：stage=set-start images=N / stage=set-item（每题一行，含 kind/sourceImageIndexes/anchors/review）/ stage=done total/done/failed。
+   */
+  static async runCaptureSet(ctx: common.UIAbilityContext): Promise<void> {
+    const rawPaths: string[] = ['debug/math-1.png', 'debug/math-2.png'];
+    const uris: string[] = [];
+    for (let i = 0; i < rawPaths.length; i++) {
+      try {
+        const uri: string = await DebugCaptureRunner.materialize(ctx, rawPaths[i]);
+        uris.push(uri);
+        hilog.info(DOMAIN, TAG, '%{public}s', 'stage=set-pick idx=' + i.toString() + ' uri=' + uri);
+      } catch (error) {
+        const e: BusinessError = error as BusinessError;
+        hilog.error(DOMAIN, TAG, '%{public}s',
+          'stage=set-pick idx=' + i.toString() + ' ok=0 err=' + e.message);
+      }
+    }
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=set-start images=' + uris.length.toString());
+    const startedAt: number = Date.now();
+    const service: AiService = new AiService(ctx);
+    try {
+      const result: CaptureSetResult = await service.captureSet(uris, undefined, undefined);
+      for (let k = 0; k < result.items.length; k++) {
+        const item: CaptureSetItemResult = result.items[k];
+        const title: string = item.title !== undefined ? item.title : '';
+        const noteId: string = item.noteId !== undefined ? item.noteId : '';
+        const sources: number[] = item.sourceImageIndexes !== undefined ? item.sourceImageIndexes : [];
+        const anchors: string[] = item.anchors !== undefined ? item.anchors : [];
+        const review: string = item.needsReview === true ? '1' : '0';
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=set-item idx=' + item.index.toString() + ' kind=' + item.kind
+            + ' ok=' + (item.success ? '1' : '0') + ' noteId=' + noteId
+            + ' title=' + title + ' sources=' + JSON.stringify(sources)
+            + ' anchors=' + JSON.stringify(anchors) + ' review=' + review
+            + ' ms=' + item.durationMs.toString());
+      }
+      const setId: string = result.setId !== undefined ? result.setId : '';
+      const preambleSkipped: number = result.preambleSkipped !== undefined ? result.preambleSkipped : 0;
+      const degraded: number = result.degradedImageCount !== undefined ? result.degradedImageCount : 0;
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=plan setId=' + setId + ' images=' + uris.length.toString()
+          + ' problems=' + result.total.toString()
+          + ' preambleSkipped=' + preambleSkipped.toString()
+          + ' degradedImages=' + degraded.toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done total=' + result.total.toString() + ' done=' + result.done.toString()
+          + ' failed=' + result.failed.toString() + ' cancelled=' + result.cancelled.toString()
+          + ' images=' + uris.length.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      const e: Error = error as Error;
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=fail ms=' + (Date.now() - startedAt).toString() + ' err=' + e.message);
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done total=0 done=0 failed=1 cancelled=0');
+    }
+  }
+
   static async runSearchProbe(): Promise<void> {
     if (!ImageSearchIndexRegistry.isInstalled()) {
       hilog.warn(DOMAIN, TAG, '%{public}s', 'probe: 端口未安装');

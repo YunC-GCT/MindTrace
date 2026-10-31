@@ -263,6 +263,12 @@ export default class EntryAbility extends UIAbility {
       }
       return;
     }
+    if (mode === 'captureSet') {
+      DebugCaptureRunner.runCaptureSet(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'captureSet 自检异常: ' + e.message);
+      });
+      return;
+    }
     if (mode === 'draft') {
       DebugDraftRunner.run(this.context).catch((e: Error) => {
         hilog.error(0xE2E0, 'E2E', '%{public}s', 'HITL 自检异常: ' + e.message);
