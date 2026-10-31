@@ -47,6 +47,9 @@ export class LegacyDispatchAdapter {
       }
     } else if (outcome.kind === 'needsInput') {
       result.errorMessage = outcome.reason;
+      if (outcome.generation !== undefined) {
+        result.generation = outcome.generation;
+      }
     } else if (outcome.kind === 'cancelled') {
       result.errorCode = 'CANCELLED';
       result.errorMessage = 'CONVERSATION_CANCELLED';

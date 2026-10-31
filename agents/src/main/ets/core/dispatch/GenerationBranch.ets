@@ -78,6 +78,7 @@ import { TruthCheckService } from '../../agents/TruthCheckService';
 import { StructureNodeFactory } from '../../graph/nodes/StructureNode';
 import { TruthCheckNodeFactory } from '../../graph/nodes/TruthCheckNode';
 import { GenerationEvaluator } from './GenerationEvaluator';
+import { LegacyDispatchAdapter } from './LegacyDispatchAdapter';
 import type { GenerationCandidateEvaluation } from './GenerationEvaluator';
 import type { DispatchOptions } from './DispatchOptions';
 
@@ -413,13 +414,13 @@ export class GenerationBranch {
     try {
       current = await model.structureStandardDraft(budgetedRequest, options.progressSink);
     } catch (e) {
-      return await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
+      return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
         round: 0,
         stopReason: 'initial_generation_failed',
         rollback: false,
         tokenBudget: budget.maxTokens,
         estimatedTokenCost: 0,
-      }, 'initial generation failed: ' + (e as Error).message);
+      }, 'initial generation failed: ' + (e as Error).message));
     }
 
     const finalEvaluation: GenerationCandidateEvaluation = await GenerationEvaluator.evaluateStandardCandidate(
@@ -472,7 +473,7 @@ export class GenerationBranch {
       estimatedTokenCost: finalEvaluation.tokenCost,
     };
     if (finalEvaluation.hardIssueCount > 0) {
-      return await GenerationEvaluator.finishStandardGeneration(
+      return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(
         request,
         GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
         bundle,
@@ -483,10 +484,10 @@ export class GenerationBranch {
         progress,
         GenerationEvaluator.generationFailureMessage('standard', finalEvaluation.issues, progress),
         finalEvaluation.result,
-      );
+      ));
     }
     const finalCandidate: KnowledgeUnit = finalEvaluation.candidate;
-    return await GenerationEvaluator.finishStandardGeneration(
+    return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(
       request,
       GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
       bundle,
@@ -497,7 +498,7 @@ export class GenerationBranch {
       progress,
       undefined,
       finalEvaluation.result,
-    );
+    ));
   }
 
   static async dispatchDeepGeneration(
@@ -520,13 +521,13 @@ export class GenerationBranch {
     try {
       current = await model.structureDeepDraft(budgetedRequest, options.progressSink);
     } catch (e) {
-      return await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
+      return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
         round: 0,
         stopReason: 'initial_deep_generation_failed',
         rollback: false,
         tokenBudget: budget.maxTokens,
         estimatedTokenCost: 0,
-      }, 'initial deep generation failed: ' + (e as Error).message, undefined, 'deep');
+      }, 'initial deep generation failed: ' + (e as Error).message, undefined, 'deep'));
     }
     const finalEvaluation: GenerationCandidateEvaluation = await GenerationEvaluator.evaluateDeepCandidate(
       current,
@@ -579,7 +580,7 @@ export class GenerationBranch {
     };
     const deepResult: NoteGenerationDeepResult | undefined = finalEvaluation.deepResult;
     if (finalEvaluation.hardIssueCount > 0) {
-      return await GenerationEvaluator.finishStandardGeneration(
+      return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(
         request,
         GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
         bundle,
@@ -591,9 +592,9 @@ export class GenerationBranch {
         GenerationEvaluator.generationFailureMessage('deep', finalEvaluation.issues, progress),
         deepResult,
         'deep',
-      );
+      ));
     }
-    return await GenerationEvaluator.finishStandardGeneration(
+    return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(
       request,
       GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
       bundle,
@@ -605,7 +606,7 @@ export class GenerationBranch {
       undefined,
       deepResult,
       'deep',
-    );
+    ));
   }
 
   static buildGenerationGraph(model?: KnowledgeModel, cancellationToken?: CancellationToken): CaptureGraph {

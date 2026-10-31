@@ -72,6 +72,7 @@ import { KnowledgeModel } from '../../agents/KnowledgeModel';
 import { AgentState } from '../../graph/AgentState';
 import { PreparedBranch } from './PreparedBranch';
 import type { DispatchOptions } from './DispatchOptions';
+import type { NoteOutcome } from 'common';
 
 const evaluatorLog = new Logger('GenerationEvaluator');
 
@@ -469,7 +470,8 @@ export class GenerationEvaluator {
     errorMessage?: string,
     standardResult?: NoteGenerationStandardResult,
     route: NoteGenerationRoute = 'standard',
-  ): Promise<DispatchResult> {
+  ): Promise<NoteOutcome> {
+    const operationId: string = request.runId + ':' + route;
     const status = candidate === undefined ? 'needs-input' : 'ready-preview';
     const deepResult: NoteGenerationDeepResult | undefined = route === 'deep' && standardResult !== undefined
       ? standardResult as NoteGenerationDeepResult : undefined;
@@ -541,14 +543,22 @@ export class GenerationEvaluator {
         + ' estimatedTokenCost=' + (progress.estimatedTokenCost ?? 0).toString());
       GenerationEvaluator.logDiagnosticIssues(request.runId, issues);
     }
-    return {
-      success: candidate !== undefined,
-      route: 'D1',
-      data: candidate,
-      generation: result,
-      errorMessage: errorMessage,
-      durationMs: Date.now() - startedAt,
+    if (candidate === undefined) {
+      const needsInput: NoteOutcome = {
+        kind: 'needsInput', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+        reason: errorMessage !== undefined ? errorMessage : '生成未完成，需要补充信息',
+        issues: issues,
+        generation: result,
+      };
+      return needsInput;
+    }
+    const preview: NoteOutcome = {
+      kind: 'readyPreview', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+      runId: request.runId,
+      checkpointId: run.bestCheckpointId !== undefined ? run.bestCheckpointId : '',
+      draft: candidate, generation: result,
     };
+    return preview;
   }
 
   static logDiagnosticIssues(runId: string, issues: NoteGenerationIssue[]): void {
