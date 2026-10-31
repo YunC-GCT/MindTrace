@@ -448,9 +448,8 @@ const CASES = [
       return { runtime, storage, ...outcome };
     },
     assert(obs) {
-      // 命令 seam 把图内取消表达为 cancelled 终态（reportCancellation），legacy helper
-      // 再按旧 dispatch() 语义抛 Error('CONVERSATION_CANCELLED')，因此 cancelled 终态
-      // 不会出现在 golden 的 result 记录里。
+      // 命令 seam 把图内取消表达为 cancelled 终态；legacy helper 再按旧 dispatch() 语义抛
+      // Error('CONVERSATION_CANCELLED')，因此 cancelled 终态不会出现在 golden 的 result 记录里。
       assert.match(obs.error.message, /CONVERSATION_CANCELLED/);
       assert.equal(obs.runtime.requests.length, 1);
       assert.equal(obs.storage.writes.length, 0);

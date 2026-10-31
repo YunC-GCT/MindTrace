@@ -13,6 +13,15 @@
 > **取消语义**：`PersistNode` 写成功后检查停止条件，把 `commitResult` 留在 state 里返回（不再抛出丢掉事务结果）；`CaptureGraph` 图级取消用最后节点 state 作基底，`CaptureBranch` 在命令路径回填 `cancelled(committed=true, noteId, version, commitKey)`，旧 `dispatch()` 路径仍按 #239 golden 抛错。
 > **消费方**：A3c 已把 `AiService` 的 generation / regenerate / analysisOnly 三个入口切到 `dispatchCommand`，只认 `readyPreview`/`needsInput`/`failed`/`cancelled` 终态；`persist`/`analysisOnly` 由 mapper 按命令形状决定。**A3d 已落**：`NoteBatchOutcome` + `Dispatcher.dispatchSetCommand`（逐项 `NoteOutcome`，取消后剩余项 `cancelled(committed=false)`）、`AiService.captureSet` 切批量命令入口、`AgentIngestService.ingestOutcome` + `AgentExtAbility.ingestDirectly` 直接按 `committed/failed/cancelled` 回执。**A4 4c 已落（2026-10-31）**：旧 `dispatch()`/`dispatchSet()` 与 `DispatchResult` 已从 common/agents 删除，prepared/generation/incremental/capture 四条分支直接返回 `NoteOutcome`（`normalizeInvokedOutcome` 补 committed 幂等信封与 retryable 缺省）；golden 按方案 A 重基线（18/18 记录 + 18/18 比对，快照仅 4 case 各 1 行变化）；HITL v18 审批哈希（`note_generation_checkpoint.approved_at`）真机闭环；真机回归 `e2e-capture` PASS、`a2a_smoke` ok:true。
 
+
+### 实现口径（A4 4c 收尾，2026-10-31）
+
+- **入口仅两条**：`Dispatcher.dispatchCommand(command)` / `dispatchSetCommand(commands)`；旧 `dispatch()` / `dispatchSet()` 已删除，生产代码不再 import `DispatchResult`（common 中该接口亦删除）。
+- **分支直接产出终态**：capture / generation / incremental / prepared 四条分支返回 `NoteOutcome`；`committed` 的 `noteId/version` 由分支构造，`commitKey` 由 `Dispatcher.normalizeInvokedOutcome` 补齐（`command.commitKey` → prepared 键 → `capture:<noteId>`），`failed.retryable` 缺省按 `isRetryableNoteErrorCode` 归一。
+- **主图六阶段**：`preflight → route → invoke → verify → hitl → publish`（`DispatchGraph`）。`verify` 校验 committed 信封（noteId + version + commitKey），`publish` 发 `dispatch.terminal` 事件并把终态回写 `run_store`（`RunEventSink.settle`）；`hitl` 阶段保持透传，**审批哈希校验归写端口**（`KnowledgeUnitNoteWriteStore.validateApproval`，schema v18 `note_generation_checkpoint.approved_at`）。
+- **取消语义**：取消一律返回 `cancelled` 终态（`committed=true` 时带完整信封），不再以异常表达；测试侧 `legacy-dispatch-helper` 保留旧 `dispatch()` 的 throw 外观，仅用于 golden 对照。
+- **golden 基线**：`#239` 18 条按方案 A 重基线为命令 seam 外观（快照仅 4 case 各 1 行变化）；`V7_GOLDEN=record` 可重录。
+
 ## Context
 
 The five shapes already exist, but only as control flow:

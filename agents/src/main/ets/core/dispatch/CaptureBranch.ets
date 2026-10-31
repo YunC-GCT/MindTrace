@@ -2,7 +2,7 @@
  * CaptureBranch.ets — capture 分支（从 Dispatcher.ets 抽出）
  *
  * 路径: agents/src/main/ets/core/dispatch/CaptureBranch.ets
- * 职责: 组装 AgentState → 交给 NoteAgent 跑 capture 图 → 把 AgentState 映射成 DispatchResult
+ * 职责: 组装 AgentState → 交给 NoteAgent 跑 capture 图 → 把 AgentState 映射成 NoteOutcome 终态
  *       （失败 / analysisOnly / 缺 unit / 成功四种外壳）。
  * 依赖: NoteAgent（子 Agent 装配）、DispatchOptions、UnitSupport。
  *
@@ -69,17 +69,12 @@ export class CaptureBranch {
     const cancelledTerminal: boolean = requestCancelled
       || (error !== undefined && error.kind === 'CANCELLED');
     if (cancelledTerminal) {
-      if (options.reportCancellation === true) {
-        // ADR-0019 (e)：先看事务结果，再看 token —— 已落库的写必须报 committed=true。
-        return CaptureBranch.cancelledResult(finalState, error, options, startedAt);
-      }
-      // 旧 dispatch()：保持 #239 golden 锁定的旧外观（capture 图内取消仍抛错）。
-      options.cancellationToken?.throwIfCancelled();
+      // ADR-0019 (e)：先看事务结果，再看 token —— 已落库的写必须报 committed=true。
+      return CaptureBranch.cancelledResult(req, finalState, error, options, startedAt);
     }
     if (error !== undefined) {
       log.error('capture graph failed: ' + error.kind + ' step=' + error.step + ' msg=' + error.message);
-      const failed: NoteOutcome = failedOutcome(error.message,
-        options.reportCancellation === true ? error.kind : '', error.retriable === true);
+      const failed: NoteOutcome = failedOutcome(error.message, error.kind, error.retriable === true);
       if (finalState.classification !== undefined) {
         failed.classification = finalState.classification;
       }
@@ -131,6 +126,7 @@ export class CaptureBranch {
    * commitResult 存在 → committed=true 并带 noteId/version/commitKey；否则 committed=false。
    */
   private static cancelledResult(
+    req: BranchRequest,
     finalState: AgentState,
     error: CaptureGraphError | undefined,
     options: DispatchOptions,
@@ -138,7 +134,10 @@ export class CaptureBranch {
   ): NoteOutcome {
     const commitResult = finalState.commitResult;
     const cancelled: NoteOutcome = {
-      kind: 'cancelled', operationId: '', route: 'D1', durationMs: Date.now() - startedAt,
+      kind: 'cancelled',
+      operationId: req.operationId !== undefined ? req.operationId : 'legacy',
+      route: 'D1',
+      durationMs: Date.now() - startedAt,
       committed: commitResult !== undefined,
     };
     if (commitResult !== undefined) {

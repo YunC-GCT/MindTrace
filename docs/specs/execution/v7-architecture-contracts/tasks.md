@@ -133,7 +133,13 @@
   - [x] **真机复验（2026-10-31 21:40，设备 3XTYD24C16203663，`node scripts/device-runner.mjs`）**：冷启动 `e2e=draft` 全链 **PASS**（`stage=draft ok ms=7218` → `stage=confirm ok ms=917 noteId=KB-mvwg7ojo-7tk87m` → `stage=done ok=1 totalMs=8135`，验证 v18 审批 + run sink + 冷启动触发）；`capture` 判定 PASS（2 张图，persist 824/509ms，图搜 hits=5×2）；`smoke` **ok:true**（存笔记：柯西中值定理）
   - [x] 新增一键真机验证脚本 `scripts/device-runner.mjs`（install/status/capture/smoke/e2e 子命令；锁屏预检、hilog 流式捕获防缓冲刷新、结果判定；日志落 `.device-logs/`）
   - 验证：build 49 tasks SUCCESSFUL；`agent-gate --all` PASS（pass=1085 fail=0）
-  - [ ] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
+  - [x] **A4 4d 收尾清理（2026-10-31，commit 待记）**：
+    - 删除迁移期死开关 `DispatchOptions.reportCancellation`（旧 `dispatch()` 删除后恒为 true）：`CaptureBranch` 取消/失败分支改为无条件终态化；`cancelledResult` 补 `operationId`（run 事件/settle 的 runId 正确）
+    - 清理 `DispatchResult` 过期注释（common models / CaptureBranch / PreparedBranch / NoteOutcomeMapper 头部）
+    - `a2a_smoke.py` 回复过滤加固：只认小艺 bundle 内文本，过滤运营商/系统通知（修复误把短信当回复的假阳性）
+    - 真机复验：`device-runner e2e draft --cold` PASS（draft 80.7s → confirm 855ms → done ok=1）；`smoke`（罗尔定理）ok:true
+    - 证据：build 49 tasks SUCCESSFUL；agent-gate --all PASS（pass=1085 fail=0）
+  - [x] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
 

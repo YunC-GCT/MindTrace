@@ -143,7 +143,7 @@ export interface CaptureSetItemResult {
   success: boolean;
   noteId?: string;
   category?: string;
-  // 笔记标题(取 DispatchResult.data.title；准备失败/无 data 时留空)
+  // 笔记标题（准备失败 / 无 unit 时留空）
   title?: string;
   errorMessage?: string;
   errorCode?: string;

@@ -3,7 +3,7 @@
  *
  * 路径: common/src/main/ets/models/NoteCommandModels.ets
  * 职责: 定义 `NoteCommand`（五种命令形状）与 `NoteOutcome`（五种终态）。
- *       调用方只读 `outcome.kind` 做穷举 switch；`DispatchResult` 退化为旧调用方的迁移适配器。
+ *       调用方只读 `outcome.kind` 做穷举 switch；旧 `DispatchResult` 已在 A4 4c 下线。
  * 依赖: CaptureChain（DispatchPayload / DispatchSource 口径）、NoteGenerationModels（生成请求/问题）。
  *
  * ArkTS 1.1 约束（与 ADR-0019 的 TS 伪码差异）:
@@ -85,7 +85,7 @@ export interface NoteOutcome {
   retryable?: boolean;
   // cancelled
   committed?: boolean;
-  // 兼容字段（旧 DispatchResult 的透传，供迁移期调用方使用）
+  // 迁移期兼容字段（A4 4c 后仅作为 NoteOutcome 的可选伴随字段）
   classification?: ClassificationResult;
   recognizedText?: string;
   generation?: NoteGenerationResult;

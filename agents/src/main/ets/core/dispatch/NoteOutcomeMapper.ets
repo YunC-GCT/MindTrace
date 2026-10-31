@@ -1,15 +1,14 @@
 /**
- * NoteOutcomeMapper.ets — 旧 BranchRequest/DispatchResult ↔ 新 NoteCommand/NoteOutcome 的迁移适配器
+ * NoteOutcomeMapper.ets — NoteCommand ↔ BranchRequest 的入口映射（A4 4c 后旧 DispatchResult 已下线）
  *
  * 路径: agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets
  * 职责: ① NoteCommand → 旧 BranchRequest/DispatchOptions（复用现有分支实现）；
- *       ② 旧 DispatchResult → NoteOutcome（补稳定错误码、retryable、needsInput/readyPreview/committed 判别）；
  *       ③ 抛错 → cancelled(committed=false) / failed(NODE_ERROR)。
- * 依赖: common 的 BranchRequest/DispatchResult（旧契约）+ NoteCommand/NoteOutcome（新契约）。
+ * 依赖: common 的 BranchRequest + NoteCommand/NoteOutcome。
  *
  * 边界（A3 迁移期）:
  *   - 只在这一个文件里做语义映射；分支模块不感知 NoteCommand/NoteOutcome。
- *   - committed 的 noteId/version 取自 DispatchResult.data（迁移期尽力而为）；commitKey 优先命令携带值，
+ *   - committed 的 noteId/version 由分支直接构造；commitKey 优先命令携带值，
  *     其次 preparedCandidate.commitKey，capture 用持久层合成的 `capture:<noteId>` 口径。
  *   - cancelled(committed=true) 还拿不到：持久层尚未把事务结果回传给分支（记在 tasks.md 未勾选项）。
  */
@@ -64,8 +63,6 @@ export class NoteOutcomeMapper {
     copy.progressSink = options.progressSink;
     copy.onNodeTiming = options.onNodeTiming;
     copy.subjectVocabulary = options.subjectVocabulary;
-    // 新 seam 需要分支回填迁移字段（cancelled(committed) / 稳定错误码 / retriable）。
-    copy.reportCancellation = true;
     return copy;
   }
 

@@ -251,17 +251,34 @@ def send_message(hdc, text):
     return True
 
 
+NON_AGENT_REPLY_PATTERN = re.compile(
+    r"尊敬的客户|中国移动|中国联通|中国电信|余额|流量|话费|套餐|积分|验证码|停机|欠费|退订"
+)
+
+
 def wait_reply(hdc, before, sent="", timeout=45.0):
+    """轮询等待小艺回复：只认小艺窗口里、且不像运营商/系统通知的新文本。"""
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(2)
         nodes = walk(dump_layout(hdc))
-        fresh = [n["text"] for n in nodes if n["text"] and n["text"] not in before]
-        # 去掉自己发出去的那条和过短噪声
-        fresh = [t for t in fresh if len(t) > 2 and t.strip() != sent.strip()]
-        # 状态栏时钟与相对时间不能当回复；去掉噪声后要求仍有 >=4 字实质内容。
-        fresh = [t for t in fresh if not CLOCK_CHROME_PATTERN.match(t.strip())]
-        fresh = [t for t in fresh if len(clean_reply_text(t)) >= 4]
+        fresh = []
+        for node in nodes:
+            text = node["text"]
+            if not text or text in before:
+                continue
+            if len(text) <= 2 or text.strip() == sent.strip():
+                continue
+            if CLOCK_CHROME_PATTERN.match(text.strip()):
+                continue
+            if len(clean_reply_text(text)) < 4:
+                continue
+            if NON_AGENT_REPLY_PATTERN.search(text):
+                continue
+            bundle = node.get("bundle") or ""
+            if bundle and bundle != YIXIAO_BUNDLE:
+                continue
+            fresh.append(text)
         if fresh:
             return fresh
     return []
