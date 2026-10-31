@@ -6,7 +6,7 @@
  * 依赖: common 类型（仅类型）。
  */
 
-import type { DispatchRequest, KnowledgeUnit } from 'common';
+import type { DispatchPayload, DispatchRequest, KnowledgeUnit } from 'common';
 
 // 重新生成时保留原 unit 的元数据、只换正文并刷新 updatedAt。
 export function copyRegeneratedUnit(unit: KnowledgeUnit, content: string): KnowledgeUnit {
@@ -26,4 +26,11 @@ export function seedTextFromRequest(req: DispatchRequest): string {
     return req.payload.text;
   }
   return '';
+}
+
+// payload 形态 → KnowledgeUnit.source 口径（capture 分支用）。
+export function sourceFromPayload(payload: DispatchPayload): string {
+  if (payload.kind === 'image') { return 'camera_capture'; }
+  if (payload.kind === 'text') { return 'manual'; }
+  return 'file_import';
 }

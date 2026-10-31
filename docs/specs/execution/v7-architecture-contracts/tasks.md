@@ -51,8 +51,8 @@
 > 动因：`Dispatcher.ets` 约 1790 行，`dispatchGeneration` 单方法 301 行、`dispatchIncrementalGeneration` 165 行，四个分支与生成评估逻辑混在一个类里。A3 直接加契约只会更糟，所以先按分支拆模块；每片以 #239 golden 18 条「零重录」作为等价判据。
 
 - [x] **切片 1（2026-10-31）**：抽出 `core/dispatch/DispatchOptions`（共享选项契约）、`UnitSupport`（`copyRegeneratedUnit` / `seedTextFromRequest`）、`PreparedBranch`（preparedCandidate 全流程 + `buildGraph`）；Dispatcher **1790 → 1643 行**；golden 18 条零重录；相关源码断言测试同步指向新模块
-- [ ] **切片 2**：`CaptureBranch`（capture 分支 + `dispatchSet` 编排 + 结果映射）
-- [ ] **切片 3**：`GenerationBranch` + `IncrementalBranch` + `GenerationEvaluator`（`evaluateStandardCandidate` / `evaluateDeepCandidate` / `finishStandardGeneration` / `deepMergeIssues` 等，最大一片）
+- [x] **切片 2（2026-10-31）**：抽出 `CaptureBranch`（AgentState 组装 + NoteAgent 执行 + 四种 `DispatchResult` 外壳）与 `BatchSupport`（批量取消判定 / 跳过回执 / 共享 RunContext 选项复制）；`sourceFromPayload` 并入 `UnitSupport`；Dispatcher **1643 → 1528 行**；golden 零重录
+- [ ] **切片 3**：`GenerationBranch` + `IncrementalBranch` + `GenerationEvaluator`（`evaluateStandardCandidate` / `evaluateDeepCandidate` / `finishStandardGeneration` / `deepMergeIssues` 等，最大一片，约 700 行）
 - [ ] **切片 4**：Dispatcher 只留 `dispatch` / `dispatchSet` 入口、路由与结果外壳（目标 ≤400 行）；随后 A3 在此薄壳上落 `NoteCommand` / `NoteOutcome`
 
 ## #239 行为基线：四条 dispatch 路径 golden 快照

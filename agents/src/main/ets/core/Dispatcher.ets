@@ -1,7 +1,5 @@
 // MindTrace - Dispatcher (主 Agent 调度中枢) · D2 CaptureGraph host
 // 2026-09-05 · D2 Ticket #6: 唯一最终公共入口 dispatch()
-import { NoteAgent } from '../agents/NoteAgent';
-import type { NoteAgentOptions } from '../agents/NoteAgent';
 import { KnowledgeModel } from '../agents/KnowledgeModel';
 import { TruthCheckService } from '../agents/TruthCheckService';
 import {
@@ -69,8 +67,10 @@ import { StructureNodeFactory } from '../graph/nodes/StructureNode';
 import { TruthCheckNodeFactory } from '../graph/nodes/TruthCheckNode';
 import { NoteDaoInterface } from '../models/NoteDaoInterface';
 import type { CaptureSetOptions, DispatchOptions } from './dispatch/DispatchOptions';
+import { isBatchCancelled, skippedItem, withRunContext } from './dispatch/BatchSupport';
+import { CaptureBranch } from './dispatch/CaptureBranch';
 import { PreparedBranch } from './dispatch/PreparedBranch';
-import { copyRegeneratedUnit, seedTextFromRequest } from './dispatch/UnitSupport';
+import { copyRegeneratedUnit } from './dispatch/UnitSupport';
 
 // DispatchOptions / CaptureSetOptions 已抽到 ./dispatch/DispatchOptions，这里重导出保持既有 import 路径。
 export type { CaptureSetOptions, DispatchOptions } from './dispatch/DispatchOptions';
@@ -117,12 +117,6 @@ export class Dispatcher {
     );
   }
 
-  private static sourceFromPayload(payload: DispatchPayload): string {
-    if (payload.kind === 'image') { return 'camera_capture'; }
-    if (payload.kind === 'text') { return 'manual'; }
-    return 'file_import';
-  }
-
   // D2 唯一最终公共入口: 跑 CaptureGraph, 失败返回结构化错误。
   async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
     return await this.dispatchRequest(req, options);
@@ -143,9 +137,9 @@ export class Dispatcher {
     for (let i = 0; i < req.items.length; i++) {
       const payload: DispatchPayload = req.items[i];
       const itemStart: number = Date.now();
-      if (stop || Dispatcher.isCancelled(options)) {
+      if (stop || isBatchCancelled(options)) {
         cancelled += 1;
-        const skipped: CaptureSetItemResult = Dispatcher.skippedItem(i, payload);
+        const skipped: CaptureSetItemResult = skippedItem(i, payload);
         items.push(skipped);
         if (options.onItem !== undefined) { options.onItem(skipped); }
         continue;
@@ -153,7 +147,7 @@ export class Dispatcher {
       try {
         const result: DispatchResult = await this.dispatch(
           { source: req.source, payload: payload },
-          Dispatcher.withRunContext(options, shared),
+          withRunContext(options, shared),
         );
         const item: CaptureSetItemResult = {
           index: i,
@@ -177,9 +171,9 @@ export class Dispatcher {
         items.push(item);
         if (options.onItem !== undefined) { options.onItem(item); }
       } catch (error) {
-        if (Dispatcher.isCancelled(options)) {
+        if (isBatchCancelled(options)) {
           cancelled += 1;
-          const skipped: CaptureSetItemResult = Dispatcher.skippedItem(i, payload);
+          const skipped: CaptureSetItemResult = skippedItem(i, payload);
           items.push(skipped);
           if (options.onItem !== undefined) { options.onItem(skipped); }
           stop = true;
@@ -212,34 +206,6 @@ export class Dispatcher {
     };
   }
 
-  private static isCancelled(options: DispatchOptions): boolean {
-    const token: CancellationToken | undefined = options.cancellationToken;
-    return token !== undefined && token.isCancelled();
-  }
-
-  private static skippedItem(index: number, payload: DispatchPayload): CaptureSetItemResult {
-    return { index: index, kind: payload.kind, success: false, cancelled: true, durationMs: 0 };
-  }
-
-  // 逐字段搬运而不是 {...options}：ArkTS 1.1 对对象展开有限制，且显式列举能让
-  // DispatchOptions 新增字段时在这里编译报错，而不是静默丢参数。
-  private static withRunContext(options: DispatchOptions, runContext: RunContext): DispatchOptions {
-    const copy: DispatchOptions = {};
-    copy.persist = options.persist;
-    copy.includeRawText = options.includeRawText;
-    copy.analysisOnly = options.analysisOnly;
-    copy.dao = options.dao;
-    copy.noteWritePort = options.noteWritePort;
-    copy.generationRepository = options.generationRepository;
-    copy.knowledgeModel = options.knowledgeModel;
-    copy.cancellationToken = options.cancellationToken;
-    copy.runContext = runContext;
-    copy.progressSink = options.progressSink;
-    copy.onNodeTiming = options.onNodeTiming;
-    copy.subjectVocabulary = options.subjectVocabulary;
-    return copy;
-  }
-
   private async dispatchRequest(req: DispatchRequest, options: DispatchOptions): Promise<DispatchResult> {
     options.cancellationToken?.throwIfCancelled();
     const t0: number = Date.now();
@@ -252,92 +218,8 @@ export class Dispatcher {
       }
       return await this.dispatchGeneration(req.generation, req, options, t0);
     }
-    log.info('dispatch enter, source=' + req.source + ', payload.kind=' + req.payload.kind);
-    const initial: AgentState = {
-      captureText: seedTextFromRequest(req),
-      source: Dispatcher.sourceFromPayload(req.payload),
-      payload: req.payload,
-      currentStep: 'START',
-      persist: options.persist !== false,
-      analysisOnly: options.analysisOnly === true,
-      subjectVocabulary: options.subjectVocabulary ?? [],
-    };
-    // #241：capture 由 NoteAgent 子 Agent 装配并执行，这里只负责 run 上下文与结果映射。
-    const noteOptions: NoteAgentOptions = {
-      dao: options.dao,
-      noteWritePort: options.noteWritePort,
-      cancellationToken: options.cancellationToken,
-      onNodeTiming: options.onNodeTiming,
-    };
-    const noteAgent: NoteAgent = new NoteAgent(noteOptions);
-    // #243：预算与取消是运行时属性，只走调用参数，不经 AgentState。
-    const runContext: RunContext = this.resolveRunContext(options);
-    const finalState: AgentState = await noteAgent.run(initial, runContext);
-    options.cancellationToken?.throwIfCancelled();
-    const error: CaptureGraphError | undefined = finalState.error;
-    if (error !== undefined) {
-      log.error('capture graph failed: ' + error.kind + ' step=' + error.step + ' msg=' + error.message);
-      const failed: DispatchResult = {
-        success: false,
-        route: 'D1',
-        errorMessage: error.message,
-        durationMs: Date.now() - t0,
-      };
-      if (finalState.classification !== undefined) {
-        failed.classification = finalState.classification;
-      }
-      if (options.includeRawText === true) {
-        failed.recognizedText = finalState.captureText;
-      }
-      return failed;
-    }
-    if (finalState.analysisOnly) {
-      const analysis: DispatchResult = {
-        success: finalState.classification !== undefined,
-        route: 'D1',
-        durationMs: Date.now() - t0,
-      };
-      if (finalState.classification !== undefined) {
-        analysis.classification = finalState.classification;
-      } else {
-        analysis.errorMessage = 'capture workflow did not produce a classification';
-      }
-      if (options.includeRawText === true) {
-        analysis.recognizedText = finalState.captureText;
-      }
-      log.info('dispatch analysis completed');
-      return analysis;
-    }
-    const unit: KnowledgeUnit | undefined = finalState.knowledgeUnit;
-    if (unit === undefined) {
-      const missing: DispatchResult = {
-        success: false,
-        route: 'D1',
-        errorMessage: 'capture graph did not produce a knowledge unit',
-        durationMs: Date.now() - t0,
-      };
-      if (finalState.classification !== undefined) {
-        missing.classification = finalState.classification;
-      }
-      if (options.includeRawText === true) {
-        missing.recognizedText = finalState.captureText;
-      }
-      return missing;
-    }
-    const success: DispatchResult = {
-      success: true,
-      route: 'D1',
-      data: unit,
-      durationMs: Date.now() - t0,
-    };
-    if (finalState.classification !== undefined) {
-      success.classification = finalState.classification;
-    }
-    if (options.includeRawText === true) {
-      success.recognizedText = finalState.captureText;
-    }
-    log.info('dispatch completed persisted=' + finalState.persist.toString() + ' category=' + unit.category);
-    return success;
+    // capture 分支已抽出到 ./dispatch/CaptureBranch（2026-10-31 拆分 Dispatcher）。
+    return await CaptureBranch.dispatchCapture(req, options, this.resolveRunContext(options), t0);
   }
 
   private async dispatchIncrementalGeneration(

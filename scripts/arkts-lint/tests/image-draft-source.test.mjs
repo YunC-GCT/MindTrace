@@ -22,8 +22,11 @@ const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 // === Legacy tests preserved ===
 
 test('image payload maps to camera_capture source in the capture flow', () => {
-  assert.match(dispatcher, /payload\.kind === 'image'/);
-  assert.match(dispatcher, /return 'camera_capture'/);
+  // 2026-10-31：capture 分支拆到 CaptureBranch，source 映射抽到 UnitSupport.sourceFromPayload。
+  const unitSupport = read('agents/src/main/ets/core/dispatch/UnitSupport.ets');
+  assert.match(unitSupport, /payload\.kind === 'image'/);
+  assert.match(unitSupport, /return 'camera_capture'/);
+  assert.match(dispatcher, /CaptureBranch\.dispatchCapture\(/);
 });
 
 test('generation pipeline always synthesizes a text payload from the source bundle', () => {

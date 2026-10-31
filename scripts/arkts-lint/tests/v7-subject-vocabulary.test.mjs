@@ -20,8 +20,9 @@ test('PromptBuilder turns the known subjects into a closed vocabulary', () => {
 
 test('the vocabulary travels from the dispatcher down to the prompt', () => {
   const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
-  // 2026-10-31：DispatchOptions 抽到独立模块，字段断言改为「两份合起来」满足。
+  // 2026-10-31：DispatchOptions 抽到独立模块、capture 分支抽到 CaptureBranch，字段断言按拆分后的归属分别检查。
   const dispatchOptions = read('agents/src/main/ets/core/dispatch/DispatchOptions.ets');
+  const captureBranch = read('agents/src/main/ets/core/dispatch/CaptureBranch.ets');
   const optionsSource = dispatcher + '\n' + dispatchOptions;
   const state = read('agents/src/main/ets/graph/AgentState.ets');
   const node = read('agents/src/main/ets/graph/nodes/StructureNode.ets');
@@ -29,7 +30,7 @@ test('the vocabulary travels from the dispatcher down to the prompt', () => {
   const structurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
 
   assert.match(optionsSource, /subjectVocabulary\?: string\[\];/);
-  assert.match(dispatcher, /subjectVocabulary: options\.subjectVocabulary \?\? \[\]/);
+  assert.match(captureBranch, /subjectVocabulary: options\.subjectVocabulary \?\? \[\]/);
   assert.match(state, /subjectVocabulary\?: string\[\];/);
   assert.match(state, /copied\.subjectVocabulary = input\.subjectVocabulary/);
   assert.match(node, /input\.subjectVocabulary \?\? \[\]/);

@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const dispatcher = readFileSync(resolve(root, 'agents/src/main/ets/core/Dispatcher.ets'), 'utf8');
+const captureBranch = readFileSync(resolve(root, 'agents/src/main/ets/core/dispatch/CaptureBranch.ets'), 'utf8');
 const noteAgent = readFileSync(resolve(root, 'agents/src/main/ets/agents/NoteAgent.ets'), 'utf8');
 const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiService.ets'), 'utf8');
 const agentsIndex = readFileSync(resolve(root, 'agents/src/main/ets/Index.ets'), 'utf8');
@@ -28,11 +29,13 @@ test('NoteAgent owns CaptureGraph construction and DAO injection internally', ()
   assert.doesNotMatch(noteAgent, /addNode\('persist', async \(input: AgentState\) => \(\{ state: input \}\)\)/);
 });
 
-test('Dispatcher delegates capture to NoteAgent and no longer assembles the graph', () => {
-  assert.match(dispatcher, /new NoteAgent\(/);
-  assert.match(dispatcher, /noteAgent\.run\(initial, runContext\)/);
+test('Dispatcher delegates capture to CaptureBranch which runs NoteAgent (2026-10-31 拆分)', () => {
+  assert.match(dispatcher, /CaptureBranch\.dispatchCapture\(req, options, this\.resolveRunContext\(options\), t0\)/);
+  assert.match(captureBranch, /new NoteAgent\(/);
+  assert.match(captureBranch, /noteAgent\.run\(initial, runContext\)/);
   assert.doesNotMatch(dispatcher, /private buildGraph\(/);
   assert.doesNotMatch(dispatcher, /new TypeClassifier\(/);
+  assert.doesNotMatch(captureBranch, /private buildGraph\(/);
 });
 
 test('NoteAgent instantiates one shared TypeClassifier inside buildGraph', () => {
