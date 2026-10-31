@@ -206,8 +206,10 @@ test('Issue 99 note intent produces a typed preview and confirms the exact check
   assert.match(aiService, /generation:/);
   assert.match(aiService, /persist: false/);
   assert.match(dispatcher, /preparedCandidate/);
-  assert.match(dispatcher, /checkpointId/);
-  assert.match(dispatcher, /candidateHash/);
+  // 2026-10-31：确认提交的 checkpointId / candidateHash 逻辑在 PreparedBranch。
+  const preparedBranch = read('agents/src/main/ets/core/dispatch/PreparedBranch.ets');
+  assert.match(preparedBranch, /checkpointId/);
+  assert.match(preparedBranch, /candidateHash/);
   assert.match(dispatcher, /PreparedBranch/);
 });
 

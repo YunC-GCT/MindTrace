@@ -66,8 +66,10 @@ test('standard and deep generation receive the normalized source bundle', () => 
 });
 
 test('incremental generation concatenates base and new sources', () => {
-  assert.match(dispatcher, /base\.sources\.fragments\.concat\(request\.sources\.fragments\)/);
-  assert.match(dispatcher, /base\.manifest\.sourceIds\.concat\(plan\.newSourceIds\)/);
+  // 2026-10-31：增量分支抽到 IncrementalBranch。
+  const incrementalBranch = read('agents/src/main/ets/core/dispatch/IncrementalBranch.ets');
+  assert.match(incrementalBranch, /base\.sources\.fragments\.concat\(request\.sources\.fragments\)/);
+  assert.match(incrementalBranch, /base\.manifest\.sourceIds\.concat\(plan\.newSourceIds\)/);
 });
 
 test('NoteGenerationRepository persists each SourceFragment in a separate table', () => {

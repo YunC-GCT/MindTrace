@@ -28,6 +28,7 @@ test('note generation exposes coarse progress through the Dispatcher seam', () =
   // 2026-10-31：DispatchOptions 抽到独立模块、生成分支抽到 GenerationBranch，断言按归属分开。
   const dispatchOptions = read('agents/src/main/ets/core/dispatch/DispatchOptions.ets')
   const generationBranch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets')
+  const incrementalBranch = read('agents/src/main/ets/core/dispatch/IncrementalBranch.ets')
   const optionsSource = dispatcher + '\n' + dispatchOptions
   const models = read('common/src/main/ets/models/NoteGenerationModels.ets')
   const commonIndex = read('common/src/main/ets/Index.ets')
@@ -38,7 +39,7 @@ test('note generation exposes coarse progress through the Dispatcher seam', () =
   assert.match(commonIndex, /NoteGenerationProgressEvent/)
   assert.match(commonIndex, /NoteGenerationProgressSink/)
   assert.match(optionsSource, /progressSink\?: NoteGenerationProgressSink/)
-  assert.match(dispatcher, /activity: 'collect_sources'/)
+  assert.match(incrementalBranch, /activity: 'collect_sources'/)
   assert.match(generationBranch, /activity: 'write_draft'/)
 })
 
