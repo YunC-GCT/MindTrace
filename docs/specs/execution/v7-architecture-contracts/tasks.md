@@ -89,6 +89,15 @@
   - **HITL e2e 自检入口（2026-10-31）**：新增 `DebugDraftRunner` + `--ps e2e draft`（生成草稿 → 确认入库，逐阶段打 `[E2E] stage=` 日志）；已加入 `onNewWant` 触发。设备侧 `aa start --ps e2e` 触发不稳定（首次成功、后续未再触发），HITL v18 端到端仍待验证（可手动确认复测）
   - **HITL 设计优化（2026-10-31 18:xx，真机三连问题反馈）**：① 未编辑草稿不再新建 `user-edit` 检查点，直接审批 generation 检查点本身（`checkpointId` 与草稿事件一致）；② `markCheckpointApproved` 改为「先读行校验 hash → 按 id+run_id 更新」，避免复合谓词不命中，并显式区分 checkpoint 不存在 / hash 变化；③ 旧草稿（approved_at=0）走 ① 后补标记，消除偶发「伪造点未批准」类错误
   - **HITL v18 真机闭环（2026-10-31 18:2x，设备 3XTYD24C16203663）**：重装四包后手动 `存笔记 → 草稿卡 → 确认入库` **提示保存成功**；hilog 无 `approval mismatch`（审批校验通过、`approved_at` 生效）；并发 A2A 回归 `a2a_smoke`（存笔记：泰勒公式）返回 `ok:true`（31 字回执）
+  - **A4 4c 执行中（2026-10-31 起，golden 选 A / `DispatchRequest` → `BranchRequest`）**：
+    - [x] **Step 2-prep：`DispatchRequest` → `BranchRequest` 更名** —— 16 个 .ets + 2 个测试断言；语义收敛为「命令到分支的中间请求结构」
+    - [ ] Step 1：`CaptureBranch` / `GenerationBranch` / `GenerationEvaluator` / `IncrementalBranch` / `PreparedBranch` 返回 `NoteOutcome`
+    - [ ] Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`，映射逻辑下放 branch
+    - [ ] Step 3：common 删 `DispatchResult` 与迁移字段
+    - [ ] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态）
+    - [ ] Step 5：build + 全量 gate + 真机回归（e2e-capture / a2a_smoke / 手动确认）
+    - [ ] Step 6：ADR-0019 状态更新 + tasks 打勾
+    - 遗留：`entry/src/main/ets/utils/NoteItemMapper.ets` 为历史非 UTF-8 文件（0xa1 字节），待单独修
   - [ ] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
