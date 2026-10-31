@@ -194,6 +194,32 @@ export function mergeProblems(inputs: SourceSegment[]): MergedProblem[] {
     const previous: MergedProblem = merged[merged.length - 1];
     const previousAnchor: string = lastSource(previous).anchor;
 
+    // 1.5 全局重拍去重：同一张图被重复选中（非相邻）或歪斜重拍时，不能生成重复笔记。
+    //     命中条件：归一化文本相同（指纹），或「题号相同 + 相似度 >= 0.85」。
+    const currentFpForDedupe: string = normalizeForFingerprint(current.text);
+    let duplicateOf: number = -1;
+    for (let m: number = 0; m < merged.length; m += 1) {
+      const candidate: MergedProblem = merged[m];
+      if (candidate.fingerprint === currentFpForDedupe) {
+        duplicateOf = m;
+        break;
+      }
+      const candidateAnchor: string = lastSource(candidate).anchor;
+      if (current.anchor !== '' && candidateAnchor === current.anchor
+        && similarity(candidate.text, current.text) >= 0.85) {
+        duplicateOf = m;
+        break;
+      }
+    }
+    if (duplicateOf >= 0) {
+      const target: MergedProblem = merged[duplicateOf];
+      target.text = current.text.length > target.text.length ? current.text : target.text;
+      target.sources.push(copySource(current));
+      target.needsReview = target.needsReview || current.needsReview;
+      target.fingerprint = normalizeForFingerprint(target.text);
+      continue;
+    }
+
     // 1. 续页：拼接正文 + 追加来源；任一侧需复核则结果需复核。
     if (isContinuation(previous, current)) {
       previous.text = previous.text + '\n' + current.text;

@@ -123,8 +123,11 @@ export class DebugCaptureRunner {
    * 036 阶段 2/3 真机自检：把 debug 图放进 captureSet（逐图 OCR → 切题 → 跨图合并 → 按题入库）。
    * 关键日志：stage=set-start images=N / stage=set-item（每题一行，含 kind/sourceImageIndexes/anchors/review）/ stage=done total/done/failed。
    */
-  static async runCaptureSet(ctx: common.UIAbilityContext): Promise<void> {
-    const rawPaths: string[] = ['debug/math-1.png', 'debug/math-2.png'];
+  static async runCaptureSet(ctx: common.UIAbilityContext, withDuplicate?: boolean): Promise<void> {
+    // S5：withDuplicate=true 时把第一张图再选一次，验证重拍去重。
+    const rawPaths: string[] = withDuplicate === true
+      ? ['debug/math-1.png', 'debug/math-2.png', 'debug/math-1.png']
+      : ['debug/math-1.png', 'debug/math-2.png'];
     const uris: string[] = [];
     for (let i = 0; i < rawPaths.length; i++) {
       try {
