@@ -65,6 +65,14 @@ If a decision is easy to reverse, skip the ADR — you'll just reverse it. If it
 - **Constraints not visible in the code.** "We can't use async here because DevEco Studio's ArkTS runtime doesn't support top-level await."
 - **Rejected alternatives when the rejection is non-obvious.** If you considered GraphQL and picked REST for subtle reasons, record it.
 
+## ADR 列表（近期）
+
+- [`0018-note-evidence-provenance.md`](./0018-note-evidence-provenance.md) — 证据可溯源（noteId/version 引用校验）
+- [`0019-note-command-and-outcome.md`](./0019-note-command-and-outcome.md) — NoteCommand/NoteOutcome 命令 seam
+- [`0021-shared-read-port-implementation-in-common.md`](./0021-shared-read-port-implementation-in-common.md) — 读端口实现位置
+- [`0022-review-and-video-scope.md`](./0022-review-and-video-scope.md) — 复习/视频范围
+- [`0023-rag-local-fts-retrieval.md`](./0023-rag-local-fts-retrieval.md) — RAG 一期：本机 FTS5 + 证据注入（Kit retrieveRdb 暂缓）
+
 ## Relationship to other docs
 
 - **`docs/specs/`** — implementation specs derived from ADRs (the "what" + "how")
