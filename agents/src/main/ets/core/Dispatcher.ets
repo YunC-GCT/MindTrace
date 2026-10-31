@@ -384,7 +384,8 @@ export class Dispatcher {
     }
     if (req.generation !== undefined) {
       if (req.generation.mode === 'regenerate') {
-        return await IncrementalBranch.dispatchIncrementalGeneration(req.generation, req, options, t0);
+        const incrementalOutcome: NoteOutcome = await IncrementalBranch.dispatchIncrementalGeneration(req.generation, req, options, t0);
+    return LegacyDispatchAdapter.toDispatchResult(incrementalOutcome);
       }
       return await GenerationBranch.dispatchGeneration(req.generation, req, options, this.resolveRunContext(options), t0);
     }

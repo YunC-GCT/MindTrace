@@ -68,7 +68,7 @@ import {
   CaptureSetItemResult,
   CaptureSetResult,
 } from 'common';
-import type { DispatchPayload, CancellationToken } from 'common';
+import type { DispatchPayload, CancellationToken, NoteOutcome } from 'common';
 
 import { GenerationBranch } from './GenerationBranch';
 import { KnowledgeModel } from '../../agents/KnowledgeModel';
@@ -83,15 +83,24 @@ export class IncrementalBranch {
     req: BranchRequest,
     options: DispatchOptions,
     startedAt: number,
-  ): Promise<DispatchResult> {
+  ): Promise<NoteOutcome> {
+    const operationId: string = req.operationId !== undefined ? req.operationId : 'legacy';
+    const failedOutcome = (message: string, code: string, generation?: NoteGenerationResult): NoteOutcome => {
+      const outcome: NoteOutcome = {
+        kind: 'failed', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+        code: code, message: message,
+      };
+      if (generation !== undefined) { outcome.generation = generation; }
+      return outcome;
+    };
     if (request.targetNoteId === undefined || request.targetNoteId.trim().length === 0) {
-      return { success: false, route: 'D1', errorCode: 'NOTE_ID_REQUIRED', errorMessage: '增量重生成需要明确的 noteId', durationMs: Date.now() - startedAt };
+      return failedOutcome('增量重生成需要明确的 noteId', 'NOTE_ID_REQUIRED');
     }
     if (request.baseVersion === undefined) {
-      return { success: false, route: 'D1', errorCode: 'BASE_VERSION_REQUIRED', errorMessage: '增量重生成需要 baseVersion', durationMs: Date.now() - startedAt };
+      return failedOutcome('增量重生成需要 baseVersion', 'BASE_VERSION_REQUIRED');
     }
     if (options.generationRepository === undefined || options.generationRepository.getRegenerationBase === undefined) {
-      return { success: false, route: 'D1', errorCode: 'REGENERATION_REPOSITORY_REQUIRED', errorMessage: '增量重生成基础资料不可用', durationMs: Date.now() - startedAt };
+      return failedOutcome('增量重生成基础资料不可用', 'REGENERATION_REPOSITORY_REQUIRED');
     }
     GenerationBranch.emitGenerationProgress(options, {
       phase: 'prepare',
@@ -105,10 +114,10 @@ export class IncrementalBranch {
         state: 'failed',
         activity: 'collect_sources',
       });
-      return { success: false, route: 'D1', errorCode: 'NOTE_NOT_FOUND', errorMessage: '找不到指定 KnowledgeUnit', durationMs: Date.now() - startedAt };
+      return failedOutcome('找不到指定 KnowledgeUnit', 'NOTE_NOT_FOUND');
     }
     if (base.baseVersion !== request.baseVersion) {
-      return { success: false, route: 'D1', errorCode: 'VERSION_CONFLICT', errorMessage: '笔记版本已变化，请重新预览', durationMs: Date.now() - startedAt };
+      return failedOutcome('笔记版本已变化，请重新预览', 'VERSION_CONFLICT');
     }
     const parsed: IncrementalSection[] = parseIncrementalSections(base.unit.content);
     const locked: IncrementalSection[] = detectIncrementalLocks(parsed, base.manifest);
@@ -134,7 +143,7 @@ export class IncrementalBranch {
       });
       const result: NoteGenerationResult = IncrementalBranch.incrementalResult(request, base.manifest, plan, [], 'needs-input');
       result.issues.push({ stage: 'plan', code: 'NO_UNLOCKED_TARGET', severity: 'hard', message: '没有可安全重生成的未锁定目标章节', repairable: false });
-      return { success: false, route: 'D1', generation: result, errorCode: 'NO_UNLOCKED_TARGET', errorMessage: '没有可安全重生成的未锁定目标章节', durationMs: Date.now() - startedAt };
+      return failedOutcome('没有可安全重生成的未锁定目标章节', 'NO_UNLOCKED_TARGET', result);
     }
     const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
     const sourceBundle: SourceBundle = {
@@ -197,7 +206,7 @@ export class IncrementalBranch {
       for (const issue of merged.issues) {
         result.issues.push({ stage: 'merge', code: issue, severity: 'hard', message: issue, repairable: false });
       }
-      return { success: false, route: 'D1', generation: result, errorMessage: merged.issues.join(';'), durationMs: Date.now() - startedAt };
+      return failedOutcome(merged.issues.join(';'), '', result);
     }
     const nextContent: string = renderIncrementalSections(merged.sections);
     const candidate: KnowledgeUnit = copyRegeneratedUnit(base.unit, nextContent);
@@ -240,7 +249,11 @@ export class IncrementalBranch {
       state: 'success',
       activity: 'check_accuracy',
     });
-    return { success: true, route: 'D1', data: candidate, generation: generation, durationMs: Date.now() - startedAt };
+    const ready: NoteOutcome = {
+      kind: 'readyPreview', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+      runId: request.runId, checkpointId: checkpointId, draft: candidate, generation: generation,
+    };
+    return ready;
   }
 
   static incrementalResult(

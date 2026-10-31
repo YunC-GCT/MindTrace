@@ -94,7 +94,8 @@
     - [x] **Step 1-prep：`LegacyDispatchAdapter`**（NoteOutcome → 旧 DispatchResult 的唯一过渡转换点，含 5 条映射测试；golden 的重基线基线靠它把旧外观完整还原）
     - [~] Step 1：branch 返回 `NoteOutcome`
       - [x] `PreparedBranch` 完成（committed 信封 / failed code-message / operationId 透传；旧路由过渡期由 `LegacyDispatchAdapter` 还原）
-      - [ ] `CaptureBranch` / `GenerationBranch` / `GenerationEvaluator` / `IncrementalBranch`
+      - [x] `IncrementalBranch` 完成（failed code／readyPreview(draft+generation)／operationId 透传）
+      - [ ] `CaptureBranch` / `GenerationBranch` / `GenerationEvaluator`
     - [ ] Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`，映射逻辑下放 branch
     - [ ] Step 3：common 删 `DispatchResult` 与迁移字段
     - [ ] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态）
