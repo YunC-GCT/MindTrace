@@ -10,12 +10,17 @@
  * 与业务编排分离后，AiService 只依赖本文件的静态方法。
  */
 import { common } from '@kit.AbilityKit';
+import { relationalStore } from '@kit.ArkData';
+import { DatabaseHelper } from 'common';
 import type { NoteWritePort } from 'common';
-import type { NoteDaoInterface } from 'agents';
+import type { NoteDaoInterface, RunEventSink } from 'agents';
 import { NoteDaoAdapter } from '../../adapters/NoteDaoAdapter';
 import { KnowledgeUnitWriteService } from '../KnowledgeUnitWriteService';
 import { KnowledgeUnitWriteServiceFactory } from '../KnowledgeUnitWriteServiceFactory';
 import { NoteWritePortFactory } from '../NoteWritePortFactory';
+import { RunStoreDao } from '../../database/RunStoreDao';
+import { RunStoreAdapter } from '../../database/RunStoreAdapter';
+import { RunStoreEventSink } from './RunStoreEventSink';
 
 export class AiServicePorts {
   /** 取 UIAbilityContext：未注入时直接抛配置错误，调用方不做空判断。 */
@@ -34,6 +39,16 @@ export class AiServicePorts {
     const service: KnowledgeUnitWriteService = await KnowledgeUnitWriteServiceFactory.create(context, includeUiEffects);
     const adapter: NoteDaoAdapter = new NoteDaoAdapter(service);
     return adapter;
+  }
+
+  /** A4：run 事件 sink 装配（run_store / run_event）。 */
+  static async buildRunEventSink(
+    context: common.UIAbilityContext,
+  ): Promise<RunEventSink> {
+    const existing: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    const store: relationalStore.RdbStore = existing !== null ? existing : await DatabaseHelper.init(context);
+    const adapter: RunStoreAdapter = new RunStoreAdapter(new RunStoreDao(store));
+    return new RunStoreEventSink(adapter);
   }
 
   /** NoteWritePort 生产装配（commitKey 幂等 / CAS；装配细节在 NoteWritePortFactory）。 */

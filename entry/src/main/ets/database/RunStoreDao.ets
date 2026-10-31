@@ -127,22 +127,20 @@ export class RunStoreDao implements RunStoreStore {
     }
   }
 
-  private static queryMaxSequence(transaction: relationalStore.Transaction, runId: string): Promise<number> {
-    return new Promise<number>((resolve, reject) => {
-      transaction.querySql('SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM run_event WHERE run_id = ?',
-        [runId], (err, resultSet) => {
-          if (err) {
-            reject(new Error('RunStoreDao.queryMaxSequence failed: ' + err.message));
-            return;
-          }
-          let maxSequence: number = 0;
-          if (resultSet.goToFirstRow()) {
-            maxSequence = resultSet.getLong(resultSet.getColumnIndex('max_seq'));
-          }
-          resultSet.close();
-          resolve(maxSequence);
-        });
-    });
+  private static async queryMaxSequence(transaction: relationalStore.Transaction, runId: string): Promise<number> {
+    const resultSet: relationalStore.ResultSet = await transaction.querySql(
+      'SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM run_event WHERE run_id = ?',
+      [runId],
+    );
+    try {
+      let maxSequence: number = 0;
+      if (resultSet.goToFirstRow()) {
+        maxSequence = resultSet.getLong(resultSet.getColumnIndex('max_seq'));
+      }
+      return maxSequence;
+    } finally {
+      resultSet.close();
+    }
   }
 
   private static toRecord(rs: relationalStore.ResultSet): RunRecord {

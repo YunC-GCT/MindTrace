@@ -84,3 +84,16 @@ test('RunEventSink seam stays in the dispatch layer and is optional', () => {
   assert.match(options, /runEventSink\?: RunEventSink/);
   assert.match(read('agents/src/main/ets/core/Dispatcher.ets'), /emitRunEvent\(options, command\.operationId/);
 });
+
+test('entry side RunStoreEventSink persists events through RunStorePort (A4 slice 2)', () => {
+  const sink = read('entry/src/main/ets/services/ai/RunStoreEventSink.ets');
+  const ports = read('entry/src/main/ets/services/ai/AiServicePorts.ets');
+  const capture = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.match(sink, /implements RunEventSink/);
+  assert.match(sink, /this\.port\.appendEvent\(runId, event\.kind, event\.payloadJson\)/);
+  assert.match(sink, /status: 'running'/);
+  assert.match(ports, /static async buildRunEventSink\(/);
+  assert.match(ports, /new RunStoreAdapter\(new RunStoreDao\(store\)\)/);
+  assert.ok((capture.match(/runEventSink: await AiServicePorts\.buildRunEventSink\(/g) ?? []).length >= 2,
+    'capture 命令与批量 set 两处都注入 sink');
+});

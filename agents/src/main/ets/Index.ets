@@ -10,6 +10,8 @@ export const AGENTS_VERSION = 'v0.0.3';
 // 主 Agent 调度中枢(Z)
 export { Dispatcher } from './core/Dispatcher';
 export type { DispatchOptions } from './core/Dispatcher';
+export { NullRunEventSink } from './core/dispatch/RunEventSink';
+export type { DispatchRunEvent, RunEventSink } from './core/dispatch/RunEventSink';
 
 // 子 Agent(D 责任 - 写真实现,L 责任 - 写真实现)
 //   当前为 stub,接 DispatchPayload discriminated union
