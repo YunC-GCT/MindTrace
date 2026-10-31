@@ -141,6 +141,10 @@ export interface CaptureSetItemResult {
   index: number;
   kind: string;
   success: boolean;
+  // 036 阶段 2/3：题目级回执（kind='problem' 时由 planner 填；图片准备/OCR 失败时 kind='image'）
+  sourceImageIndexes?: number[];
+  anchors?: string[];
+  needsReview?: boolean;
   noteId?: string;
   category?: string;
   // 笔记标题（准备失败 / 无 unit 时留空）

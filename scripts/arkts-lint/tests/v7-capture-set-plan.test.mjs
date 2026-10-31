@@ -4,6 +4,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const mod = loadNoteReviewEtsModule('agents/src/main/ets/graph/captureSetPlanner.ets');
 const planCaptureSet = mod.planCaptureSet;
@@ -83,4 +86,17 @@ test('duplicate reshoot of the same problem collapses to one problem', () => {
   ]);
   assert.equal(plan.problems.length, 1);
   assert.equal(plan.problems[0].sourceImageIndexes.length, 2);
+});
+
+
+test('CapturePipeline wires OCR → planCaptureSet → per-problem capture commands (036 阶段2/3)', () => {
+  const pipeline = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../../entry/src/main/ets/services/ai/CapturePipeline.ets'),
+    'utf8',
+  );
+  assert.match(pipeline, /OcrService\.recognizeUri\(localPaths\[i\]\)/);
+  assert.match(pipeline, /const plan: SetPlan = planCaptureSet\(imageTexts\)/);
+  assert.match(pipeline, /payload: \{ kind: 'text', text: problems\[k\]\.text \}/);
+  assert.match(pipeline, /problemItemFromOutcome/);
+  assert.match(pipeline, /kind: 'problem'/);
 });
