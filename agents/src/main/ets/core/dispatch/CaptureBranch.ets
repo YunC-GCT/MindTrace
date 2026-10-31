@@ -13,7 +13,7 @@
  */
 import { Logger } from 'common';
 import type {
-  DispatchRequest,
+  BranchRequest,
   DispatchResult,
   KnowledgeUnit,
   RunContext,
@@ -29,7 +29,7 @@ const log = new Logger('CaptureBranch');
 
 export class CaptureBranch {
   static async dispatchCapture(
-    req: DispatchRequest,
+    req: BranchRequest,
     options: DispatchOptions,
     runContext: RunContext,
     startedAt: number,

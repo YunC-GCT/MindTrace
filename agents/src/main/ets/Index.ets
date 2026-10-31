@@ -4,7 +4,7 @@
 // 当前版本
 //   v0.0.1 (2026-07-13 骨架)
 //   v0.0.2 (2026-07-14 LLM 共享基础设施 LlmConfig/LlmClient)
-//   v0.0.3 (2026-07-14 DispatchRequest.payload 升级 DispatchPayload discriminated union)
+//   v0.0.3 (2026-07-14 BranchRequest.payload 升级 DispatchPayload discriminated union)
 export const AGENTS_VERSION = 'v0.0.3';
 
 // 主 Agent 调度中枢(Z)

@@ -16,7 +16,7 @@ import {
   RunContext,
   createRootRunContext,
   KnowledgeUnit,
-  DispatchRequest,
+  BranchRequest,
   DispatchResult,
   NoteGenerationRepository,
   NoteGenerationRequest,
@@ -86,7 +86,7 @@ const generationLog = new Logger('GenerationBranch');
 export class GenerationBranch {
   static async dispatchGeneration(
     request: NoteGenerationRequest,
-    req: DispatchRequest,
+    req: BranchRequest,
     options: DispatchOptions,
     runContext: RunContext,
     startedAt: number,
@@ -224,7 +224,7 @@ export class GenerationBranch {
       return { success: false, route: 'D1', generation: generation, errorMessage: questions.join('; '), durationMs: Date.now() - startedAt };
     }
 
-    const generationPayload: DispatchRequest = {
+    const generationPayload: BranchRequest = {
       source: req.source,
       payload: { kind: 'text', text: GenerationEvaluator.bundleText(bundle) },
     };
@@ -394,7 +394,7 @@ export class GenerationBranch {
 
   static async dispatchStandardGeneration(
     request: NoteGenerationRequest,
-    req: DispatchRequest,
+    req: BranchRequest,
     options: DispatchOptions,
     startedAt: number,
     run: NoteGenerationRun,

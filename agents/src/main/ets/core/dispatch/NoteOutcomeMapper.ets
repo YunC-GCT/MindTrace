@@ -1,11 +1,11 @@
 /**
- * NoteOutcomeMapper.ets — 旧 DispatchRequest/DispatchResult ↔ 新 NoteCommand/NoteOutcome 的迁移适配器
+ * NoteOutcomeMapper.ets — 旧 BranchRequest/DispatchResult ↔ 新 NoteCommand/NoteOutcome 的迁移适配器
  *
  * 路径: agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets
- * 职责: ① NoteCommand → 旧 DispatchRequest/DispatchOptions（复用现有分支实现）；
+ * 职责: ① NoteCommand → 旧 BranchRequest/DispatchOptions（复用现有分支实现）；
  *       ② 旧 DispatchResult → NoteOutcome（补稳定错误码、retryable、needsInput/readyPreview/committed 判别）；
  *       ③ 抛错 → cancelled(committed=false) / failed(NODE_ERROR)。
- * 依赖: common 的 DispatchRequest/DispatchResult（旧契约）+ NoteCommand/NoteOutcome（新契约）。
+ * 依赖: common 的 BranchRequest/DispatchResult（旧契约）+ NoteCommand/NoteOutcome（新契约）。
  *
  * 边界（A3 迁移期）:
  *   - 只在这一个文件里做语义映射；分支模块不感知 NoteCommand/NoteOutcome。
@@ -16,7 +16,7 @@
 import { NOTE_CANCELLED_MESSAGE, isRetryableNoteErrorCode } from 'common';
 import type {
   DispatchPayload,
-  DispatchRequest,
+  BranchRequest,
   DispatchResult,
   KnowledgeUnit,
   NoteCommand,
@@ -26,8 +26,8 @@ import type {
 import type { DispatchOptions } from './DispatchOptions';
 
 export class NoteOutcomeMapper {
-  /** NoteCommand → 旧 DispatchRequest（generation/prepared 走原有分支）。 */
-  static toRequest(command: NoteCommand): DispatchRequest {
+  /** NoteCommand → 旧 BranchRequest（generation/prepared 走原有分支）。 */
+  static toRequest(command: NoteCommand): BranchRequest {
     const source = command.source !== undefined ? command.source : 'app';
     if (command.kind === 'preparedCandidate') {
       const candidate: KnowledgeUnit | undefined = command.preparedCandidate !== undefined

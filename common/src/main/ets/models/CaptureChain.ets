@@ -113,7 +113,7 @@ export function captureProvenanceFromFragments(fragments: SourceFragment[]): Cap
   };
 }
 
-export interface DispatchRequest {
+export interface BranchRequest {
   // 来源标识
   source: 'app' | 'skill' | 'card';
   // 调度入参(2026-07-14 改:从 string 升级为 DispatchPayload)
@@ -153,7 +153,7 @@ export interface DispatchResult {
 // 顺序执行每一项、共享同一个 RunContext（预算 + 取消），逐项隔离失败、逐项回执。
 // 切题（一图多题）与跨图合并不在本切片，见 docs/specs/036-* 阶段 2/3。
 export interface CaptureSetRequest {
-  // 与 DispatchRequest.source 同域，避免在 dispatchSet 里静默收窄/放宽
+  // 与 BranchRequest.source 同域，避免在 dispatchSet 里静默收窄/放宽
   source: 'app' | 'skill' | 'card';
   items: DispatchPayload[];
 }

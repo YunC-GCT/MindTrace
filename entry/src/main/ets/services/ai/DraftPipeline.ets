@@ -32,7 +32,7 @@
 import {
   KnowledgeUnit,
   ClassificationResult,
-  DispatchRequest,
+  BranchRequest,
   DispatchPayload,
   DispatchResult,
   Logger,

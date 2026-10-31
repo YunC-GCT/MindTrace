@@ -77,7 +77,7 @@ export {
   ClassificationResult,
   TruthFlag,
   TruthCheckResult,
-  DispatchRequest,
+  BranchRequest,
   DispatchResult,
   CaptureSetRequest,
   CaptureSetItemResult,

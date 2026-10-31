@@ -15,7 +15,7 @@ import {
   RunContext,
   createRootRunContext,
   KnowledgeUnit,
-  DispatchRequest,
+  BranchRequest,
   DispatchResult,
   NoteGenerationRepository,
   NoteGenerationRequest,
@@ -80,7 +80,7 @@ const incrementalLog = new Logger('IncrementalBranch');
 export class IncrementalBranch {
   static async dispatchIncrementalGeneration(
     request: NoteGenerationRequest,
-    req: DispatchRequest,
+    req: BranchRequest,
     options: DispatchOptions,
     startedAt: number,
   ): Promise<DispatchResult> {

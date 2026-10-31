@@ -7,7 +7,7 @@ import {
   RunContext,
   createRootRunContext,
   KnowledgeUnit,
-  DispatchRequest,
+  BranchRequest,
   DispatchResult,
   NoteGenerationRepository,
   NoteGenerationRequest,
@@ -109,7 +109,7 @@ export class Dispatcher {
   }
 
   // D2 唯一最终公共入口: 跑 CaptureGraph, 失败返回结构化错误。
-  async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
+  async dispatch(req: BranchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
     return await this.dispatchRequest(req, options);
   }
 
@@ -117,7 +117,7 @@ export class Dispatcher {
   // A4：invoke 阶段 = 现有分支执行 + 旧结果 → 终态映射（失败不抛出，交给终态）。
   private async invokeCommand(
     command: NoteCommand,
-    request: DispatchRequest,
+    request: BranchRequest,
     effective: DispatchOptions,
   ): Promise<NoteOutcome> {
     try {
@@ -222,7 +222,7 @@ export class Dispatcher {
   }
 
   async dispatchCommand(command: NoteCommand, options: DispatchOptions = {}): Promise<NoteOutcome> {
-    const request: DispatchRequest = NoteOutcomeMapper.toRequest(command);
+    const request: BranchRequest = NoteOutcomeMapper.toRequest(command);
     const effective: DispatchOptions = NoteOutcomeMapper.toOptions(command, options);
     await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_START, dispatchStartPayload(command));
     // A4 切片 3b：dispatchCommand 由主图编排（preflight 取消检查 → route → invoke 现有分支 → verify/hitl/publish 待接）。
@@ -375,7 +375,7 @@ export class Dispatcher {
     };
   }
 
-  private async dispatchRequest(req: DispatchRequest, options: DispatchOptions): Promise<DispatchResult> {
+  private async dispatchRequest(req: BranchRequest, options: DispatchOptions): Promise<DispatchResult> {
     options.cancellationToken?.throwIfCancelled();
     const t0: number = Date.now();
     if (req.preparedCandidate !== undefined) {
@@ -392,7 +392,7 @@ export class Dispatcher {
   }
 
   private async dispatchPreparedCandidate(
-    req: DispatchRequest,
+    req: BranchRequest,
     prepared: PreparedCandidate,
     options: DispatchOptions,
     startedAt: number,

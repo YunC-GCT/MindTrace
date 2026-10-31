@@ -6,7 +6,7 @@
  * 依赖: common 类型（仅类型）。
  */
 
-import type { DispatchPayload, DispatchRequest, KnowledgeUnit } from 'common';
+import type { DispatchPayload, BranchRequest, KnowledgeUnit } from 'common';
 
 // 重新生成时保留原 unit 的元数据、只换正文并刷新 updatedAt。
 export function copyRegeneratedUnit(unit: KnowledgeUnit, content: string): KnowledgeUnit {
@@ -21,7 +21,7 @@ export function copyRegeneratedUnit(unit: KnowledgeUnit, content: string): Knowl
 }
 
 // capture 图的种子文本：只有 text payload 才有输入文本。
-export function seedTextFromRequest(req: DispatchRequest): string {
+export function seedTextFromRequest(req: BranchRequest): string {
   if (req.payload.kind === 'text') {
     return req.payload.text;
   }

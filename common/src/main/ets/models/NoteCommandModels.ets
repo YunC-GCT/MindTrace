@@ -20,7 +20,7 @@ import type {
   PreparedCandidate,
 } from './NoteGenerationModels';
 
-// 与 DispatchRequest.source 同域（ADR-0019 (a) 的 DispatchSource）。
+// 与 BranchRequest.source 同域（ADR-0019 (a) 的 DispatchSource）。
 export type DispatchSource = 'app' | 'skill' | 'card';
 
 export type NoteCommandKind = 'capture' | 'generation' | 'regenerate' | 'preparedCandidate' | 'analysisOnly';

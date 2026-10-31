@@ -14,7 +14,7 @@ import {
   sourceFingerprint,
 } from 'common';
 import type {
-  DispatchRequest,
+  BranchRequest,
   DispatchResult,
   IncrementalDiffItem,
   KnowledgeUnit,
@@ -36,7 +36,7 @@ import { copyRegeneratedUnit, seedTextFromRequest } from './UnitSupport';
 
 export class PreparedBranch {
   static async dispatch(
-    req: DispatchRequest,
+    req: BranchRequest,
     prepared: PreparedCandidate,
     options: DispatchOptions,
     startedAt: number,

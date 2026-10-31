@@ -14,7 +14,7 @@ import {
   RunContext,
   createRootRunContext,
   KnowledgeUnit,
-  DispatchRequest,
+  BranchRequest,
   DispatchResult,
   NoteGenerationRepository,
   NoteGenerationRequest,
