@@ -72,8 +72,11 @@
   - **应用内链路真机回归（2026-10-31 14:10，`node scripts/e2e-capture/run.mjs`）**：判定 **PASS** —— 2 张图采集（cold 14838ms / warm 23541ms，persist 388/426ms）、2 条 note 落库（`数学练习（一）…` / `数学练习（二）计算题`）、卡片刷新 OK、图搜 2 组查询各 hits=5；安装最新 HSP/HAP 后跑，覆盖 `CaptureBranch → NoteAgent → NoteWritePort` 与命令 seam
   - 首页 `最近笔记` 41 条，两条 E2E 新笔记置顶 → 写入 → 列表读路径真机可见；HITL 草稿确认（对话入口）：**2026-10-31 手动真机验证通过** —— AI 助手 → 发送「存笔记：洛必达法则」→ 草稿卡 → 确认入库 → 首页「最近笔记」+1（自动化仍缺 e2e 模式，`AI 助手` tab 经 `uitest` 点击未进入浮窗）；若要改善 A2A 体验，走「先回执已收到、后台整理完再推回执」的异步回执方案
   - smoke 脚本修复：`wait_reply` 过滤状态栏时钟碎片与相对时间（此前 `01, :, 35` 被误判为回复导致 `ok:false`）
-- **A3 系列完成**：旧 `dispatch()` / `dispatchSet()` / `DispatchResult` 作为迁移适配器保留，等 A4 接线 `EventSink`/`RunStore` 时再统一清理
-- [~] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
+- **A3 系列完成**：旧 `dispatch()` / `dispatchSet()` / `DispatchResult` 已在 A4 4c（2026-10-31）全部下线（生产零引用）
+- [x] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线（2026-10-31 完成）
+  - [x] **A4 4e：P4 回执条数 + 审批前置**：A2A 就地入库写 `CaptureReceipt`（source=a2a）并在回执里报「本次整理 1 条」；`Dispatcher.preflight` 增加 preparedCandidate 审批/检查点前置校验（`PREPARED_CHECKPOINT_MISSING` / `APPROVAL_HASH_MISMATCH`，写端口仍为最终裁决）
+  - [x] **不做（已拍板）**：A2A 异步多帧回执 —— 受 032 §2 单帧契约限制（真机已证伪），文档已记录
+  - 证据：build 49 tasks SUCCESSFUL；agent-gate --all PASS（pass=1087）；真机 `e2e draft --cold` PASS（draft 8.6s / confirm 976ms）、`a2a_smoke`（费马引理）`ok:true` 且回执含「本次整理 1 条」、回执意图回「本次整理 3 条：成功 3 条，失败 0 条」
   - [x] **A4 切片 1（2026-10-31）**：`RunEventSink` seam（`agents/core/dispatch/RunEventSink.ets`）—— `dispatch.start` / `dispatch.terminal` 两事件、payload 口径固定、**写出尽力而为**（sink 抛错不影响命令）；`DispatchOptions.runEventSink?` 可选注入，旧路径零变化；测试 `v7-run-event-sink` 3 条
   - [x] **A4 切片 2（2026-10-31）**：entry 侧 `RunStoreEventSink`（首次事件自动建 run 记录 → `appendEvent` 落 `run_store`/`run_event`；写失败只 log）；`AiServicePorts.buildRunEventSink` 组合根；`CapturePipeline` 的 capture 命令与批量 set 两处注入。顺带修 `RunStoreDao.queryMaxSequence` 的 Transaction.querySql 重载（此前未被 import 编译到）
   - [x] **A4 切片 3a（2026-10-31）**：主图骨架 `DispatchGraph`（六阶段推进器 + 阶段契约 + 非法跳转/缺终态错误），测试 `v7-dispatch-graph` 5 条；尚未接管运行时（capture 仍走旧路由，行为零变化）

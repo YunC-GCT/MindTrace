@@ -80,3 +80,22 @@ test('markCheckpointApproved fails loudly when no row matches', () => {
   assert.match(repo, /markCheckpointApproved matched no checkpoint row/);
   assert.match(repo, /const updatedRows: number = await this\.store\.update\(bucket, predicates\)/);
 });
+
+
+test('main graph preflight enforces approval before write (A4 4e)', () => {
+  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+  assert.match(dispatcher, /private static async preflightApproval\(/);
+  assert.match(dispatcher, /await Dispatcher\.preflightApproval\(command, options\)/);
+  assert.match(dispatcher, /PREPARED_CHECKPOINT_MISSING/);
+  assert.match(dispatcher, /'APPROVAL_HASH_MISMATCH'/);
+  assert.match(dispatcher, /approvedAt !== undefined && approvedAt <= 0/);
+});
+
+test('A2A ingest records a receipt and reports the count (P4)', () => {
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.match(ability, /private recordA2aIngestReceipt\(\): void/);
+  assert.match(ability, /source: 'a2a'/);
+  assert.match(ability, /本次整理 1 条/);
+  const receipt = read('entry/src/main/ets/services/CaptureReceipt.ets');
+  assert.match(receipt, /本次整理 ' \+ receipt\.total\.toString\(\) \+ ' 条/);
+});

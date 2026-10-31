@@ -139,6 +139,50 @@ export class Dispatcher {
     return outcome;
   }
 
+  /**
+   * A4 4e：preparedCandidate 命令的写前审批前置校验。
+   * - 检查点不存在 / hash 不符 → 拒绝（不再走到写入才失败）
+   * - approvedAt 缺省（v18 前的历史检查点 / 测试桩）放行，由写端口兜底
+   */
+  private static async preflightApproval(
+    command: NoteCommand,
+    options: DispatchOptions,
+  ): Promise<DispatchStageResult | undefined> {
+    if (command.kind !== 'preparedCandidate') {
+      return undefined;
+    }
+    const prepared: PreparedCandidate | undefined = command.preparedCandidate;
+    if (prepared === undefined) {
+      return undefined;
+    }
+    const repository: NoteGenerationRepository | undefined = options.generationRepository;
+    if (repository === undefined) {
+      return undefined;
+    }
+    const recovery = await repository.restore(prepared.runId);
+    if (recovery === undefined) {
+      return { errorCode: 'PREPARED_CHECKPOINT_MISSING', errorMessage: '草稿检查点不存在，请重新预览确认', retryable: false };
+    }
+    let checkpoint: NoteGenerationCheckpoint | undefined = undefined;
+    for (const item of recovery.checkpoints) {
+      if (item.id === prepared.checkpointId) {
+        checkpoint = item;
+        break;
+      }
+    }
+    if (checkpoint === undefined) {
+      return { errorCode: 'PREPARED_CHECKPOINT_MISSING', errorMessage: '草稿检查点不存在，请重新预览确认', retryable: false };
+    }
+    if (checkpoint.candidateHash !== prepared.candidateHash) {
+      return { errorCode: 'APPROVAL_HASH_MISMATCH', errorMessage: '候选内容已变化，请重新预览确认', retryable: false };
+    }
+    const approvedAt: number | undefined = checkpoint.approvedAt;
+    if (approvedAt !== undefined && approvedAt <= 0) {
+      return { errorCode: 'APPROVAL_HASH_MISMATCH', errorMessage: '该检查点尚未审批，无法写入', retryable: false };
+    }
+    return undefined;
+  }
+
   // A4：invoke 阶段 = 现有分支执行 + 终态字段补齐（失败不抛出，交给终态）。
   private async invokeCommand(
     command: NoteCommand,
@@ -253,10 +297,16 @@ export class Dispatcher {
     // A4 切片 3b：dispatchCommand 由主图编排（preflight 取消检查 → route → invoke 现有分支 → verify/hitl/publish 待接）。
     const self: Dispatcher = this;
     const handlers: DispatchStageHandlers = {
-      preflight: async (context: DispatchGraphContext): Promise<DispatchStageResult> => {
+      preflight: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
         const token = options.cancellationToken;
         if (token !== undefined && token.isCancelled()) {
           return { outcome: NoteOutcomeMapper.fromThrown(command, new Error('CONVERSATION_CANCELLED')) };
+        }
+        // A4 4e：审批哈希在写前前置校验（防御纵深；写端口仍是最终裁决）。
+        const approval: DispatchStageResult | undefined =
+          await Dispatcher.preflightApproval(command, options);
+        if (approval !== undefined) {
+          return approval;
         }
         return { next: 'route' };
       },
@@ -283,7 +333,7 @@ export class Dispatcher {
         return { next: 'hitl' };
       },
       hitl: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
-        // 切片 4 待接：审批哈希校验（需 v18 持久化列）。当前透传。
+        // 审批哈希校验已在 preflight（写前）执行；此处保留阶段位用于后续审批审计事件。
         return { next: 'publish' };
       },
       publish: async (context: DispatchGraphContext): Promise<DispatchStageResult> => {

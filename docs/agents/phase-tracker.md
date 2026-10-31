@@ -28,7 +28,7 @@
 | **P3 真实编排** | `handleTask` 接 `OcrNode → StructureNode → PersistNode` | ✅ | 生成的笔记杀掉应用重启后仍在 | `node scripts/e2e-capture/run.mjs` → `stage=done ok=2 failed=0 totalMs=87860`，两张图 `insert ok=1`，卡片 `units=20 due=12 new=9` |
 | **P3b 文搜图** | 落库图片建索引，按文字检索命中 | ✅ | 两条 query 各命中 5 张 | `stage=search q=一元二次方程 hits=5 ms=61`、`q=平方根 hits=5 ms=30`（spec 034 §8；Worker 化后不再阻塞主线程） |
 | **P4 模型网关** | 端侧优先；端侧不可用则走用户模型并标注「已降级」 | 🟡 云端 ✅ / 端侧待 2in1 | 两种路径都能给出可区分的结果 | 云端真机：App 首字 741ms（#226 后）、小艺 1347ms / 54 字 / 341 字节快照；端侧 `localChatModel` 限 PC/2in1，待设备验证 |
-| **P4 结果回执** | 对话/卡片报「本次整理 N 条」 | ⬜ | 小艺里能问到刚生成的条数 | `a2a_smoke.py` 的 `reply_text`（当前回复不含条数） |
+| **P4 结果回执** | 对话/卡片报「本次整理 N 条」 | ✅ | 小艺里能问到刚生成的条数 | 2026-10-31：A2A 就地入库后回「已整理入库：…（学科）· 本次整理 1 条」并写入 receipt；问「本次整理了几条」回「本次整理 3 条：成功 3 条，失败 0 条」，a2a_smoke 双用例 `ok:true` |
 | **P5 合规落地** | AI 标识 + 导出元数据 | ⏸ 随 P6 缓做 | 导出的文件带 `AI生成 / MindTrace / mindtrace-note-agent` | 测试态不产出发布包，暂不验收 |
 | **P6 上架运营** | 平台审核通过并发布 | ⏸ 暂缓（测试态不上架） | 恢复上架时按 `system-architecture-layered.md` §15 清单重新走；当前不验收 | 曾提交过一次审核，结果不阻塞开发 |
 

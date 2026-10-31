@@ -283,7 +283,9 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           const unit: KnowledgeUnit = outcome.unit;
           hilog.info(DOMAIN, TAG, 'INGEST_DIRECT done subject=%{public}s title=%{public}s',
             unit.subject, unit.title);
-          this.sendAnswer(taskId, '已整理入库：' + unit.title + '（' + unit.subject + '）', 0,
+          this.recordA2aIngestReceipt();
+          this.sendAnswer(taskId,
+            '已整理入库：' + unit.title + '（' + unit.subject + '）· 本次整理 1 条', 0,
             request.text);
           return;
         }
@@ -319,6 +321,27 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         }
         this.enqueueForIngest(taskId, request.text);
       });
+  }
+
+  /**
+   * P4 结果回执：A2A 就地入库也计入最近一次整理回执（小艺问「整理了几条」能给真实数字）。
+   * 尽力而为：读写失败只记日志，不影响本次回复。
+   */
+  private recordA2aIngestReceipt(): void {
+    CaptureReceiptStore.read(this.context).then((prev: CaptureReceipt | null): void => {
+      const receipt: CaptureReceipt = {
+        done: (prev !== null ? prev.done : 0) + 1,
+        failed: prev !== null ? prev.failed : 0,
+        total: (prev !== null ? prev.total : 0) + 1,
+        at: Date.now(),
+        source: 'a2a',
+      };
+      CaptureReceiptStore.save(this.context, receipt).catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'RECEIPT_SAVE_FAILED %{public}s', e.message);
+      });
+    }).catch((e: Error): void => {
+      hilog.warn(DOMAIN, TAG, 'RECEIPT_READ_FAILED %{public}s', e.message);
+    });
   }
 
   private enqueueForIngest(taskId: string, query: string): void {
