@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 17;
+const DB_SCHEMA_VERSION: number = 18;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -296,6 +296,9 @@ const SQL_INDEX_RUN_EVENT_RUN_SEQ: string =
 
 // StudyPlanWritePort（v16 → v17）：study_plan 加 version 列做 CAS，另建幂等操作表。
 // 语义仍是待办（ADR-0022）：只加版本与操作记录，不加评分/掌握度字段。
+// v18：HITL 审批哈希落位（ADR-0019 (d)）——审批属于检查点，用 approved_at 标记。
+const SQL_MIGRATE_CHECKPOINT_APPROVED: string =
+  'ALTER TABLE note_generation_checkpoint ADD COLUMN approved_at INTEGER NOT NULL DEFAULT 0';
 const SQL_MIGRATE_STUDY_PLAN_VERSION: string =
   "ALTER TABLE study_plan ADD COLUMN version INTEGER NOT NULL DEFAULT 1";
 
@@ -607,6 +610,9 @@ export class DatabaseHelper {
     // v17：待办写端口需要 CAS 版本列（ADR-0022 仍保持待办语义，不加复习字段）
     const hasStudyPlanVersion: boolean = await DatabaseHelper.hasColumn(store, "study_plan", "version");
     if (!hasStudyPlanVersion) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_STUDY_PLAN_VERSION); }
+    // v18：检查点审批标记列（幂等）。
+    const hasCheckpointApproved: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "approved_at");
+    if (!hasCheckpointApproved) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_APPROVED); }
 
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_MESSAGE_KEY);
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_SEQUENCE);

@@ -141,6 +141,10 @@ export class PersistNodeFactory {
         if (candidate.updateExisting === true && candidate.expectedVersion !== undefined) {
           command.expectedVersion = candidate.expectedVersion;
         }
+        // v18：HITL 审批哈希随命令下发，端口写前校验（ADR-0019 (d)）。
+        if (candidate.candidateHash.length > 0) {
+          command.approvedCheckpointHash = candidate.candidateHash;
+        }
       }
       try {
         const outcome: NoteWriteOutcome = await port.commit(input.knowledgeUnit, command);

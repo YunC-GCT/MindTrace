@@ -301,6 +301,8 @@ export interface NoteGenerationCheckpoint {
   changeScope?: number;
   decision?: NoteGenerationCheckpointDecision;
   createdAt?: number;
+  /** HITL 审批标记（v18）：0/缺省 = 未审批；>0 = 该检查点被用户批准的时间戳。 */
+  approvedAt?: number;
 }
 
 export interface NoteDraftReadyEvent {

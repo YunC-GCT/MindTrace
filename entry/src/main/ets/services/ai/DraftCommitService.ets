@@ -73,10 +73,12 @@ export class DraftCommitService {
     const checkpoint: NoteGenerationCheckpoint = await this.updateDraftCheckpoint(event, candidate);
     const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
+    const approvedHash: string = sourceFingerprint(JSON.stringify(candidate));
+    await repository.markCheckpointApproved(event.runId, checkpoint.id, approvedHash, Date.now());
     const prepared: PreparedCandidate = {
       runId: event.runId,
       checkpointId: checkpoint.id,
-      candidateHash: sourceFingerprint(JSON.stringify(candidate)),
+      candidateHash: approvedHash,
       candidate: candidate,
       commitKey: event.runId + ':' + checkpoint.id + ':' + sourceFingerprint(JSON.stringify(candidate)),
       sourceIds: event.sourceIds,

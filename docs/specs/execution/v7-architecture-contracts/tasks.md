@@ -79,7 +79,8 @@
   - [x] **A4 切片 3a（2026-10-31）**：主图骨架 `DispatchGraph`（六阶段推进器 + 阶段契约 + 非法跳转/缺终态错误），测试 `v7-dispatch-graph` 5 条；尚未接管运行时（capture 仍走旧路由，行为零变化）
   - [x] **A4 切片 3b（2026-10-31）**：`dispatchCommand` 改由 `DispatchGraph` 编排 —— preflight（取消检查）→ route → invoke（`invokeCommand`：现有分支 + 旧结果→终态映射）→ 拿到终态即返回；verify/hitl/publish 已留 handler 位置待接线；旧 `dispatch()` 路径不变，#239 golden 零重录
   - [x] **A4 切片 4a（2026-10-31）**：六阶段全部真实执行 —— invoke 产出终态后由主图携带到 publish，verify/hitl 透传（留待 4b 接真），publish 发 `dispatch.terminal` 事件并落定终态；旧 `dispatch()` 路径不变、golden 零重录
-  - [ ] 切片 4b：verify=committed 信封完整性/降级校验，hitl=审批哈希（需 v18 列），publish 终态回写 `run_store`；之后清理旧 `dispatch()/dispatchSet()/DispatchResult`
+  - [x] **A4 切片 4b-1（2026-10-31）：v18 审批哈希落位（用户拍板方案 2）** —— `note_generation_checkpoint.approved_at`（schema v18，幂等 ALTER）+ 模型 `approvedAt` + 仓储 `markCheckpointApproved`/`getCheckpoint` + `confirmDraft` 确认时标记 + `PersistNode` 端口路径下发 `approvedCheckpointHash` + `KnowledgeUnitNoteWriteStore.validateApproval`（未审批/哈希不符 → `APPROVAL_HASH_MISMATCH`, retryable=false）；测试 `v7-approval-hash` 5 条
+  - [ ] 切片 4b-2：verify=committed 信封完整性/降级校验，publish 终态回写 `run_store`；之后清理旧 `dispatch()/dispatchSet()/DispatchResult`
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
 

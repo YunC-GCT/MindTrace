@@ -64,6 +64,7 @@ export class KnowledgeUnitNoteWriteStore implements NoteWriteStore {
   }
 
   async insert(unit: KnowledgeUnit, command: NoteWriteCommand): Promise<NoteWriteSnapshot> {
+    await this.validateApproval(command);
     const commit: NoteGenerationCommitResult = KnowledgeUnitNoteWriteStore.buildCommit(unit, command, unit.version);
     const metadata: string = command.generationMetadata !== undefined ? command.generationMetadata : '';
     const result: KnowledgeUnitWriteResult = await this.service.createWithCommitKey(unit, metadata, commit);
@@ -71,6 +72,7 @@ export class KnowledgeUnitNoteWriteStore implements NoteWriteStore {
   }
 
   async update(unit: KnowledgeUnit, expectedVersion: number, command: NoteWriteCommand): Promise<NoteWriteSnapshot> {
+    await this.validateApproval(command);
     const commit: NoteGenerationCommitResult = KnowledgeUnitNoteWriteStore.buildCommit(unit, command, expectedVersion + 1);
     const metadata: string = command.generationMetadata !== undefined ? command.generationMetadata : '';
     const result: KnowledgeUnitWriteResult =
@@ -82,6 +84,24 @@ export class KnowledgeUnitNoteWriteStore implements NoteWriteStore {
       throw new NotePortError(code, result.errorMessage !== undefined ? result.errorMessage : code, retryable);
     }
     return KnowledgeUnitNoteWriteStore.toSnapshot(result, command.commitKey, commit);
+  }
+
+  /** v18：命令携带审批哈希时，要求对应检查点已审批且 candidate_hash 一致。 */
+  private async validateApproval(command: NoteWriteCommand): Promise<void> {
+    const hash: string | undefined = command.approvedCheckpointHash;
+    if (hash === undefined || hash.length === 0) {
+      return;
+    }
+    const runId: string = command.runId !== undefined ? command.runId : '';
+    const checkpointId: string = command.checkpointId !== undefined ? command.checkpointId : '';
+    if (runId.length === 0 || checkpointId.length === 0) {
+      throw new NotePortError('APPROVAL_HASH_MISMATCH', '审批哈希缺少运行/检查点标识', false);
+    }
+    const checkpoint = await this.repository.getCheckpoint(runId, checkpointId);
+    const approvedAt: number = checkpoint !== null && checkpoint.approvedAt !== undefined ? checkpoint.approvedAt : 0;
+    if (checkpoint === null || approvedAt <= 0 || checkpoint.candidateHash !== hash) {
+      throw new NotePortError('APPROVAL_HASH_MISMATCH', '候选内容已变化或检查点未批准', false);
+    }
   }
 
   private static toSnapshot(result: KnowledgeUnitWriteResult, commitKey: string,

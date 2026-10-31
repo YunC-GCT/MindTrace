@@ -116,6 +116,7 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       'change_scope': checkpoint.changeScope ?? 0,
       'decision': checkpoint.decision ?? 'rejected',
       'created_at': checkpoint.createdAt ?? Date.now(),
+      'approved_at': checkpoint.approvedAt ?? 0,
     };
     const exists: boolean = await this.hasRow('note_generation_checkpoint', 'id', checkpoint.id);
     if (exists) {
@@ -124,6 +125,29 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       return;
     }
     await this.insertRow('note_generation_checkpoint', bucket);
+  }
+
+  /** v18：标记检查点已审批（HITL 确认点）；只对 hash 匹配的检查点生效。 */
+  async markCheckpointApproved(runId: string, checkpointId: string, candidateHash: string, approvedAt: number): Promise<void> {
+    const predicates = new relationalStore.RdbPredicates('note_generation_checkpoint');
+    predicates.equalTo('id', checkpointId).and().equalTo('run_id', runId).and().equalTo('candidate_hash', candidateHash);
+    const bucket: relationalStore.ValuesBucket = { 'approved_at': approvedAt };
+    await this.store.update(bucket, predicates);
+  }
+
+  /** v18：按 (runId, checkpointId) 读检查点（审批校验用）。 */
+  async getCheckpoint(runId: string, checkpointId: string): Promise<NoteGenerationCheckpoint | null> {
+    const predicates = new relationalStore.RdbPredicates('note_generation_checkpoint');
+    predicates.equalTo('id', checkpointId).and().equalTo('run_id', runId);
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, []);
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      return NoteGenerationRepository.rowToCheckpoint(resultSet);
+    } finally {
+      resultSet.close();
+    }
   }
 
   private async hasRow(table: string, column: string, value: string): Promise<boolean> {
@@ -652,6 +676,7 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       changeScope: NoteGenerationRepository.readOptionalNumber(rs, 'change_scope'),
       decision: NoteGenerationRepository.readOptionalString(rs, 'decision') as 'best' | 'rejected' | 'initial' | undefined,
       createdAt: rs.getLong(rs.getColumnIndex('created_at')),
+      approvedAt: NoteGenerationRepository.readOptionalNumber(rs, 'approved_at'),
     };
   }
 
