@@ -78,9 +78,9 @@ import { TruthCheckService } from '../../agents/TruthCheckService';
 import { StructureNodeFactory } from '../../graph/nodes/StructureNode';
 import { TruthCheckNodeFactory } from '../../graph/nodes/TruthCheckNode';
 import { GenerationEvaluator } from './GenerationEvaluator';
-import { LegacyDispatchAdapter } from './LegacyDispatchAdapter';
 import type { GenerationCandidateEvaluation } from './GenerationEvaluator';
 import type { DispatchOptions } from './DispatchOptions';
+import type { NoteOutcome } from 'common';
 
 const generationLog = new Logger('GenerationBranch');
 
@@ -91,7 +91,16 @@ export class GenerationBranch {
     options: DispatchOptions,
     runContext: RunContext,
     startedAt: number,
-  ): Promise<DispatchResult> {
+  ): Promise<NoteOutcome> {
+    const operationId: string = req.operationId !== undefined ? req.operationId : request.runId;
+    const failedOutcome = (message: string, code: string, generation?: NoteGenerationResult): NoteOutcome => {
+      const outcome: NoteOutcome = {
+        kind: 'failed', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+        code: code, message: message,
+      };
+      if (generation !== undefined) { outcome.generation = generation; }
+      return outcome;
+    };
     const bundle: SourceBundle = GenerationBranch.normalizeBundle(request);
     GenerationBranch.emitGenerationProgress(options, {
       phase: 'prepare',
@@ -222,7 +231,11 @@ export class GenerationBranch {
       }
       generationLog.info('generation run=' + request.runId + ' route=' + route + ' sources=' + bundle.fragments.length.toString()
         + ' issues=' + missing.length.toString() + ' tokens=0');
-      return { success: false, route: 'D1', generation: generation, errorMessage: questions.join('; '), durationMs: Date.now() - startedAt };
+      const needs: NoteOutcome = {
+        kind: 'needsInput', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+        reason: questions.join('; '), issues: missing, generation: generation,
+      };
+      return needs;
     }
 
     const generationPayload: BranchRequest = {
@@ -376,15 +389,22 @@ export class GenerationBranch {
     }
     generationLog.info('generation run=' + request.runId + ' route=' + route + ' sources=' + bundle.fragments.length.toString()
       + ' issues=' + errors.length.toString() + ' tokens=0');
-    return {
-      success: candidate !== undefined,
-      route: 'D1',
-      data: candidate,
-      generation: result,
+    if (candidate === undefined) {
+      const reason: string = errors.length > 0 ? errors[0].message : 'generation failed';
+      const needs: NoteOutcome = {
+        kind: 'needsInput', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+        reason: reason, issues: errors, generation: result,
+      };
+      return needs;
+    }
+    const preview: NoteOutcome = {
+      kind: 'readyPreview', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+      runId: request.runId,
+      checkpointId: result.bestCheckpointId !== undefined ? result.bestCheckpointId : '',
+      draft: candidate, generation: result,
       recognizedText: options.includeRawText === true ? finalState.captureText : undefined,
-      errorMessage: candidate === undefined ? (errors.length > 0 ? errors[0].message : 'generation failed') : undefined,
-      durationMs: Date.now() - startedAt,
     };
+    return preview;
   }
 
   static emitGenerationProgress(options: DispatchOptions, event: NoteGenerationProgressEvent): void {
@@ -402,7 +422,7 @@ export class GenerationBranch {
     bundle: SourceBundle,
     budget: NoteGenerationBudget,
     requirement: NoteGenerationRequirement,
-  ): Promise<DispatchResult> {
+  ): Promise<NoteOutcome> {
     const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
     const budgetedRequest: NoteGenerationRequest = GenerationEvaluator.withTokenBudget(
       request,
@@ -414,13 +434,13 @@ export class GenerationBranch {
     try {
       current = await model.structureStandardDraft(budgetedRequest, options.progressSink);
     } catch (e) {
-      return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
+      return await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
         round: 0,
         stopReason: 'initial_generation_failed',
         rollback: false,
         tokenBudget: budget.maxTokens,
         estimatedTokenCost: 0,
-      }, 'initial generation failed: ' + (e as Error).message));
+      }, 'initial generation failed: ' + (e as Error).message);
     }
 
     const finalEvaluation: GenerationCandidateEvaluation = await GenerationEvaluator.evaluateStandardCandidate(
@@ -473,7 +493,7 @@ export class GenerationBranch {
       estimatedTokenCost: finalEvaluation.tokenCost,
     };
     if (finalEvaluation.hardIssueCount > 0) {
-      return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(
+      return await GenerationEvaluator.finishStandardGeneration(
         request,
         GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
         bundle,
@@ -484,10 +504,10 @@ export class GenerationBranch {
         progress,
         GenerationEvaluator.generationFailureMessage('standard', finalEvaluation.issues, progress),
         finalEvaluation.result,
-      ));
+      );
     }
     const finalCandidate: KnowledgeUnit = finalEvaluation.candidate;
-    return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(
+    return await GenerationEvaluator.finishStandardGeneration(
       request,
       GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
       bundle,
@@ -498,7 +518,7 @@ export class GenerationBranch {
       progress,
       undefined,
       finalEvaluation.result,
-    ));
+    );
   }
 
   static async dispatchDeepGeneration(
@@ -509,7 +529,7 @@ export class GenerationBranch {
     run: NoteGenerationRun,
     budget: NoteGenerationBudget,
     requirement: NoteGenerationRequirement,
-  ): Promise<DispatchResult> {
+  ): Promise<NoteOutcome> {
     const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
     const budgetedRequest: NoteGenerationRequest = GenerationEvaluator.withTokenBudget(
       request,
@@ -521,13 +541,13 @@ export class GenerationBranch {
     try {
       current = await model.structureDeepDraft(budgetedRequest, options.progressSink);
     } catch (e) {
-      return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
+      return await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
         round: 0,
         stopReason: 'initial_deep_generation_failed',
         rollback: false,
         tokenBudget: budget.maxTokens,
         estimatedTokenCost: 0,
-      }, 'initial deep generation failed: ' + (e as Error).message, undefined, 'deep'));
+      }, 'initial deep generation failed: ' + (e as Error).message, undefined, 'deep');
     }
     const finalEvaluation: GenerationCandidateEvaluation = await GenerationEvaluator.evaluateDeepCandidate(
       current,
@@ -580,7 +600,7 @@ export class GenerationBranch {
     };
     const deepResult: NoteGenerationDeepResult | undefined = finalEvaluation.deepResult;
     if (finalEvaluation.hardIssueCount > 0) {
-      return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(
+      return await GenerationEvaluator.finishStandardGeneration(
         request,
         GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
         bundle,
@@ -592,9 +612,9 @@ export class GenerationBranch {
         GenerationEvaluator.generationFailureMessage('deep', finalEvaluation.issues, progress),
         deepResult,
         'deep',
-      ));
+      );
     }
-    return LegacyDispatchAdapter.toDispatchResult(await GenerationEvaluator.finishStandardGeneration(
+    return await GenerationEvaluator.finishStandardGeneration(
       request,
       GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
       bundle,
@@ -606,7 +626,7 @@ export class GenerationBranch {
       undefined,
       deepResult,
       'deep',
-    ));
+    );
   }
 
   static buildGenerationGraph(model?: KnowledgeModel, cancellationToken?: CancellationToken): CaptureGraph {

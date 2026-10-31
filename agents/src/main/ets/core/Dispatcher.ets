@@ -387,7 +387,8 @@ export class Dispatcher {
         const incrementalOutcome: NoteOutcome = await IncrementalBranch.dispatchIncrementalGeneration(req.generation, req, options, t0);
     return LegacyDispatchAdapter.toDispatchResult(incrementalOutcome);
       }
-      return await GenerationBranch.dispatchGeneration(req.generation, req, options, this.resolveRunContext(options), t0);
+      const generationOutcome: NoteOutcome = await GenerationBranch.dispatchGeneration(req.generation, req, options, this.resolveRunContext(options), t0);
+    return LegacyDispatchAdapter.toDispatchResult(generationOutcome);;
     }
     // capture 分支已抽出到 ./dispatch/CaptureBranch（2026-10-31 拆分 Dispatcher）。
     return await CaptureBranch.dispatchCapture(req, options, this.resolveRunContext(options), t0);
