@@ -78,7 +78,8 @@
   - [x] **A4 切片 2（2026-10-31）**：entry 侧 `RunStoreEventSink`（首次事件自动建 run 记录 → `appendEvent` 落 `run_store`/`run_event`；写失败只 log）；`AiServicePorts.buildRunEventSink` 组合根；`CapturePipeline` 的 capture 命令与批量 set 两处注入。顺带修 `RunStoreDao.queryMaxSequence` 的 Transaction.querySql 重载（此前未被 import 编译到）
   - [x] **A4 切片 3a（2026-10-31）**：主图骨架 `DispatchGraph`（六阶段推进器 + 阶段契约 + 非法跳转/缺终态错误），测试 `v7-dispatch-graph` 5 条；尚未接管运行时（capture 仍走旧路由，行为零变化）
   - [x] **A4 切片 3b（2026-10-31）**：`dispatchCommand` 改由 `DispatchGraph` 编排 —— preflight（取消检查）→ route → invoke（`invokeCommand`：现有分支 + 旧结果→终态映射）→ 拿到终态即返回；verify/hitl/publish 已留 handler 位置待接线；旧 `dispatch()` 路径不变，#239 golden 零重录
-  - [ ] 切片 4：verify/hitl/publish 阶段接真（结果校验 / HITL 审批哈希 / 终态回写 run_store）+ 旧 `dispatch()/dispatchSet()/DispatchResult` 清理
+  - [x] **A4 切片 4a（2026-10-31）**：六阶段全部真实执行 —— invoke 产出终态后由主图携带到 publish，verify/hitl 透传（留待 4b 接真），publish 发 `dispatch.terminal` 事件并落定终态；旧 `dispatch()` 路径不变、golden 零重录
+  - [ ] 切片 4b：verify=committed 信封完整性/降级校验，hitl=审批哈希（需 v18 列），publish 终态回写 `run_store`；之后清理旧 `dispatch()/dispatchSet()/DispatchResult`
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
 

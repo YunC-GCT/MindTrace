@@ -229,13 +229,20 @@ export class Dispatcher {
         return { outcome: await self.invokeCommand(command, request, effective) };
       },
       verify: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        // 切片 4 待接：结果校验（committed 信封完整性 / 降级标记）。当前透传。
         return { next: 'hitl' };
       },
       hitl: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        // 切片 4 待接：审批哈希校验（需 v18 持久化列）。当前透传。
         return { next: 'publish' };
       },
-      publish: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
-        return { errorCode: 'DISPATCH_GRAPH_NO_TERMINAL', errorMessage: 'publish stage not wired yet' };
+      publish: async (context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        const settled: NoteOutcome | undefined = context.outcome;
+        if (settled === undefined) {
+          return { errorCode: 'DISPATCH_GRAPH_NO_TERMINAL', errorMessage: 'publish received no outcome' };
+        }
+        await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(settled));
+        return { outcome: settled };
       },
     };
     const outcome: NoteOutcome = await DispatchGraph.run(
@@ -255,7 +262,6 @@ export class Dispatcher {
         return failed;
       },
     );
-    await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(outcome));
     return outcome;
   }
 

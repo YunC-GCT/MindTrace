@@ -30,6 +30,8 @@ export interface DispatchGraphContext {
   command: NoteCommand;
   runId: string;
   stage: DispatchStage;
+  /** 上游阶段已产生的终态：后续阶段（verify/hitl/publish）仍会执行，publish 负责最终落定。 */
+  outcome?: NoteOutcome;
 }
 
 // 阶段返回：next 继续；outcome 终止；error 走兜底失败（code/retryable 由 handler 给）。
@@ -72,27 +74,38 @@ export class DispatchGraph {
     fallbackOutcome: (code: string, message: string, retryable: boolean) => NoteOutcome,
   ): Promise<NoteOutcome> {
     let index: number = 0;
+    let terminal: NoteOutcome | undefined = undefined;
     while (index < DISPATCH_STAGE_ORDER.length) {
       const stage: DispatchStage = DISPATCH_STAGE_ORDER[index];
       const context: DispatchGraphContext = { command: command, runId: command.operationId, stage: stage };
+      if (terminal !== undefined) {
+        context.outcome = terminal;
+      }
       const result: DispatchStageResult = await DispatchGraph.callStage(stage, handlers, context);
       if (result.outcome !== undefined) {
-        return result.outcome;
-      }
-      if (result.errorCode !== undefined) {
+        if (stage === 'publish') {
+          return result.outcome;
+        }
+        // 终态由 publish 落定：先携带继续走完 verify/hitl/publish。
+        terminal = result.outcome;
+      } else if (result.errorCode !== undefined) {
         const message: string = result.errorMessage !== undefined ? result.errorMessage : result.errorCode;
         return fallbackOutcome(result.errorCode, message, result.retryable === true);
-      }
-      if (result.next === undefined) {
+      } else if (result.next === undefined) {
         throw new DispatchGraphError(DISPATCH_GRAPH_ERROR_NO_TERMINAL,
           'stage ' + stage + ' returned neither outcome nor next');
-      }
-      if (result.next !== DISPATCH_STAGE_ORDER[index + 1]) {
+      } else if (result.next !== DISPATCH_STAGE_ORDER[index + 1]) {
         throw new DispatchGraphError(DISPATCH_GRAPH_ERROR_INVALID_STAGE,
           'stage ' + stage + ' may only advance to ' + (DISPATCH_STAGE_ORDER[index + 1] ?? 'END')
           + ', got ' + result.next);
       }
+      if (stage === 'publish' && terminal !== undefined) {
+        return terminal;
+      }
       index += 1;
+    }
+    if (terminal !== undefined) {
+      return terminal;
     }
     throw new DispatchGraphError(DISPATCH_GRAPH_ERROR_NO_TERMINAL,
       'graph finished without terminal outcome after ' + (Date.now() - startedAt).toString() + 'ms');

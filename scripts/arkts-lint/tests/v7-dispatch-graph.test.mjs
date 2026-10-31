@@ -23,6 +23,10 @@ function handlersOf(log, terminals) {
     if (terminals[stage] !== undefined) {
       return { outcome: terminals[stage] };
     }
+    if (stage === 'publish' && context.outcome !== undefined) {
+      // publish 负责落定上游携带的终态。
+      return { outcome: context.outcome };
+    }
     return { next: ORDER[ORDER.indexOf(stage) + 1] };
   };
   return {
@@ -47,12 +51,26 @@ test('main graph advances through all six stages and returns the terminal outcom
   assert.equal(result.kind, 'committed');
 });
 
-test('a stage outcome short-circuits remaining stages', async () => {
+test('a terminal produced before publish is carried through verify/hitl to publish', async () => {
   const log = [];
   const terminal = outcome('needsInput');
   const result = await DispatchGraph.run(COMMAND, handlersOf(log, { verify: terminal }), Date.now(), fallback);
-  assert.deepEqual(Array.from(log), ['preflight', 'route', 'invoke', 'verify']);
+  // 终态由 publish 落定：verify 产出终态后仍要走完 hitl/publish。
+  assert.deepEqual(Array.from(log), ['preflight', 'route', 'invoke', 'verify', 'hitl', 'publish']);
   assert.equal(result.kind, 'needsInput');
+});
+
+test('publish receives the upstream outcome via context', async () => {
+  const seen = [];
+  const handlers = handlersOf([], {});
+  handlers.invoke = async () => ({ outcome: outcome('committed') });
+  handlers.publish = async (context) => {
+    seen.push(context.outcome === undefined ? 'missing' : context.outcome.kind);
+    return { outcome: context.outcome };
+  };
+  const result = await DispatchGraph.run(COMMAND, handlers, Date.now(), fallback);
+  assert.deepEqual(Array.from(seen), ['committed']);
+  assert.equal(result.kind, 'committed');
 });
 
 test('a stage error becomes the fallback failed outcome', async () => {
