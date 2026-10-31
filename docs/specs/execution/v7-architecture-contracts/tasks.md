@@ -88,6 +88,7 @@
   - **HITL 真机失败排查与修复（2026-10-31 15:5x）**：真机「确认保存失败」根因 = `decideWrite` 仍按 v2 契约用 **note 快照**比对 `approvedCheckpointHash`，而 v18 审批事实落在 **checkpoint.approved_at**（快照不带审批）→ 必拒。修复：`NoteWriteDecisions` 删除该规则（纯判定不再碰审批），审批统一由 `KnowledgeUnitNoteWriteStore.validateApproval` 按检查点校验；同步更新 `v7-note-contracts` / `v7-note-write-port` 断言；另修 `getCheckpoint` 空列数组查询
   - **HITL e2e 自检入口（2026-10-31）**：新增 `DebugDraftRunner` + `--ps e2e draft`（生成草稿 → 确认入库，逐阶段打 `[E2E] stage=` 日志）；已加入 `onNewWant` 触发。设备侧 `aa start --ps e2e` 触发不稳定（首次成功、后续未再触发），HITL v18 端到端仍待验证（可手动确认复测）
   - **HITL 设计优化（2026-10-31 18:xx，真机三连问题反馈）**：① 未编辑草稿不再新建 `user-edit` 检查点，直接审批 generation 检查点本身（`checkpointId` 与草稿事件一致）；② `markCheckpointApproved` 改为「先读行校验 hash → 按 id+run_id 更新」，避免复合谓词不命中，并显式区分 checkpoint 不存在 / hash 变化；③ 旧草稿（approved_at=0）走 ① 后补标记，消除偶发「伪造点未批准」类错误
+  - **HITL v18 真机闭环（2026-10-31 18:2x，设备 3XTYD24C16203663）**：重装四包后手动 `存笔记 → 草稿卡 → 确认入库` **提示保存成功**；hilog 无 `approval mismatch`（审批校验通过、`approved_at` 生效）；并发 A2A 回归 `a2a_smoke`（存笔记：泰勒公式）返回 `ok:true`（31 字回执）
   - [ ] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
