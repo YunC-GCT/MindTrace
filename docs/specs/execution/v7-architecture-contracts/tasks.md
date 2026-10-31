@@ -42,7 +42,7 @@
 ## 链路迁移（§17.6 步 5–7）
 
 - [x] **A1：capture 持久化接端口（2026-10-30）**：`PersistNodeFactory.createWithWritePort`、`NoteAgentOptions/DispatchOptions.noteWritePort` 透传、`AiService` 经 `NoteWritePortFactory` 装配（**不直连 DAO**，写服务保留 post-commit effects）。普通 capture 合成 `capture:<noteId>` 幂等键；测试 `v7-persist-port.test.mjs` 6 条
-- [ ] **A2：preparedCandidate 写路径接端口**：`Dispatcher.buildPreparedGraph` 的 PersistNode 换端口；HITL 审批哈希需先有持久化列（v18 待拍板）
+- [x] **A2：preparedCandidate 写路径接端口（2026-10-31）**：`Dispatcher.buildPreparedGraph(dao?, noteWritePort?)` 端口优先；`AiService` 的 prepared dispatch 注入端口（`capture` / `captureSet` / `preparedCandidate` 三处统一）。**HITL 审批哈希仍未接**：没有持久化列，传了会全拒，等 v18 拍板；测试 `v7-persist-port` 8 条
 - [ ] **A3：调用方切 `NoteCommand`/`NoteOutcome`**（ADR-0019）：`DispatchResult` 降级为迁移适配器
 - [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
 

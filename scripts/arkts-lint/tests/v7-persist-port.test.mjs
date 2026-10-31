@@ -1,8 +1,13 @@
-// #238 切片 A1：PersistNode 走 NoteWritePort 的节点级契约测试。
+// #238 切片 A1/A2：PersistNode 走 NoteWritePort 的节点级契约测试。
 // 装载真实 PersistNode 源码；端口用 fake，不碰 RDB。
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
+
+const root = resolve(import.meta.dirname, '../../..');
+const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 class NotePortError extends Error {
   constructor(code, message, retryable) {
@@ -117,4 +122,21 @@ test('NotePortError maps to a structured node error with retryable preserved', a
   assert.equal(result.state.error.kind, 'VERSION_CONFLICT');
   assert.equal(result.state.error.retriable, false);
   assert.equal(result.state.error.step, 'persist');
+});
+
+// ==================== A2：preparedCandidate 写路径接端口 ====================
+
+test('Dispatcher.buildPreparedGraph accepts and prefers noteWritePort (A2)', () => {
+  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+  assert.match(dispatcher, /private buildPreparedGraph\(dao\?: NoteDaoInterface, noteWritePort\?: NoteWritePort\)/);
+  assert.match(dispatcher, /buildPreparedGraph\(options\.dao, options\.noteWritePort\)/);
+  assert.match(dispatcher, /PersistNodeFactory\.createWithWritePort\(noteWritePort\)/);
+});
+
+test('AiService wires the port on capture, captureSet and prepared dispatch (A1+A2)', () => {
+  const aiService = read('entry/src/main/ets/services/AiService.ets');
+  const wired = aiService.match(/noteWritePort: await this\.buildNoteWritePort\(\)/g) ?? [];
+  assert.equal(Array.from(wired).length, 3, 'capture / captureSet / preparedCandidate 三处都要注入端口');
+  assert.match(aiService, /NoteWritePortFactory\.create\(/);
+  assert.doesNotMatch(aiService, /new NoteDao\(|from ['"]\.\.\/database/);
 });

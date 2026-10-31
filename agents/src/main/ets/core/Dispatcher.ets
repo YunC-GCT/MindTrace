@@ -1642,7 +1642,7 @@ export class Dispatcher {
       preparedCandidate: prepared,
       knowledgeUnit: prepared.candidate,
     };
-    const graph: CaptureGraph = this.buildPreparedGraph(options.dao);
+    const graph: CaptureGraph = this.buildPreparedGraph(options.dao, options.noteWritePort);
     const finalState: AgentState = await graph.run(initial, this.resolveRunContext(options));
     if (finalState.error !== undefined) {
       const conflict: boolean = finalState.error.message.indexOf('VERSION_CONFLICT') >= 0;
@@ -1685,11 +1685,14 @@ export class Dispatcher {
     return { success: true, route: 'D1', data: committedCandidate, durationMs: Date.now() - startedAt };
   }
 
-  private buildPreparedGraph(dao?: NoteDaoInterface): CaptureGraph {
+  private buildPreparedGraph(dao?: NoteDaoInterface, noteWritePort?: NoteWritePort): CaptureGraph {
     const graph: CaptureGraph = new CaptureGraph();
     const truth: TruthCheckService = new TruthCheckService();
     graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
-    if (dao !== undefined) {
+    if (noteWritePort !== undefined) {
+      // #238 链路迁移 A2：preparedCandidate 的持久化也走端口（commitKey / CAS / 结构化错误）。
+      graph.addNode('persist', PersistNodeFactory.createWithWritePort(noteWritePort));
+    } else if (dao !== undefined) {
       graph.addNode('persist', PersistNodeFactory.create(dao));
     } else {
       graph.addNode('persist', async (input: AgentState): Promise<CaptureNodeResult> => {

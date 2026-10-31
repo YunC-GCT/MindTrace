@@ -925,7 +925,12 @@ export class AiService {
       source: 'app',
       payload: { kind: 'text', text: candidate.content },
       preparedCandidate: prepared,
-    }, { persist: true, dao: dao, generationRepository: repository });
+    }, {
+      persist: true,
+      dao: dao,
+      noteWritePort: await this.buildNoteWritePort(),
+      generationRepository: repository,
+    });
     if (!result.success || result.data === undefined) {
       const prefix: string = result.errorCode === 'VERSION_CONFLICT' ? 'VERSION_CONFLICT: ' : '';
       throw new Error(prefix + (result.errorMessage ?? '笔记确认失败'));
