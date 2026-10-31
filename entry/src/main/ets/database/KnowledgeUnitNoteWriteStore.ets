@@ -15,7 +15,7 @@
  *
  * 已知缺口：approvedCheckpointHash 没有持久化列，querySnapshot 只能返回 noteId / version。
  */
-import { NotePortError } from 'common';
+import { Logger, NotePortError } from 'common';
 import type {
   KnowledgeUnit,
   NoteGenerationCommitResult,
@@ -29,6 +29,7 @@ import type { NoteDao } from './NoteDao';
 import type { NoteGenerationRepository } from './NoteGenerationRepository';
 
 const WRITE_PORT_RUN_ID: string = 'note-write-port';
+const log: Logger = new Logger('KnowledgeUnitNoteWriteStore');
 
 export class KnowledgeUnitNoteWriteStore implements NoteWriteStore {
   private readonly service: KnowledgeUnitWriteService;
@@ -100,6 +101,10 @@ export class KnowledgeUnitNoteWriteStore implements NoteWriteStore {
     const checkpoint = await this.repository.getCheckpoint(runId, checkpointId);
     const approvedAt: number = checkpoint !== null && checkpoint.approvedAt !== undefined ? checkpoint.approvedAt : 0;
     if (checkpoint === null || approvedAt <= 0 || checkpoint.candidateHash !== hash) {
+      log.warn('approval mismatch runId=' + runId + ' checkpointId=' + checkpointId
+        + ' approvedAt=' + approvedAt.toString()
+        + ' rowHash=' + (checkpoint !== null ? checkpoint.candidateHash.substring(0, 12) : 'none')
+        + ' cmdHash=' + hash.substring(0, 12));
       throw new NotePortError('APPROVAL_HASH_MISMATCH', '候选内容已变化或检查点未批准', false);
     }
   }

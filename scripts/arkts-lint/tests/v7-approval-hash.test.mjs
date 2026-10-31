@@ -46,3 +46,13 @@ test('write store rejects mismatched or unapproved checkpoints', () => {
   const insertIdx = store.indexOf('await this.validateApproval(command);');
   assert.ok(insertIdx >= 0);
 });
+
+
+test('getCheckpoint queries an explicit column list and logs mismatches (device-safe)', () => {
+  const repo = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
+  assert.match(repo, /const columns: string\[\] = \[/);
+  assert.match(repo, /'approved_at',/);
+  assert.doesNotMatch(repo, /store\.query\(predicates, \[\]\)/);
+  const store = read('entry/src/main/ets/database/KnowledgeUnitNoteWriteStore.ets');
+  assert.match(store, /approval mismatch runId=/);
+});

@@ -139,7 +139,12 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
   async getCheckpoint(runId: string, checkpointId: string): Promise<NoteGenerationCheckpoint | null> {
     const predicates = new relationalStore.RdbPredicates('note_generation_checkpoint');
     predicates.equalTo('id', checkpointId).and().equalTo('run_id', runId);
-    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, []);
+    const columns: string[] = [
+      'id', 'run_id', 'iteration', 'stage', 'parent_id', 'candidate_hash', 'document_json',
+      'accepted', 'issue_codes', 'outline_json', 'evidence_json', 'verification_json',
+      'issue_fingerprint', 'coverage_json', 'token_cost', 'change_scope', 'decision', 'created_at', 'approved_at',
+    ];
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, columns);
     try {
       if (!resultSet.goToFirstRow()) {
         return null;
