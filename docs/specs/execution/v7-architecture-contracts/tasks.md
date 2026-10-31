@@ -99,14 +99,19 @@
       - [x] `GenerationBranch` 完成（dispatchGeneration / dispatchStandardGeneration / dispatchDeepGeneration 全转 NoteOutcome；6 个 evaluator 调用点去适配器；needsInput 带 generation+issues）
       - [x] `CaptureBranch` 完成（committed／failed(code+retryable)／readyPreview(analysisOnly)／cancelled(committed 信封)；旧 `dispatch()` 的取消抛错语义由 `reportCancellation` 保持）
     - **Step 1 全部完成**：五个组件（PreparedBranch / IncrementalBranch / GenerationEvaluator / GenerationBranch / CaptureBranch）均返回 `NoteOutcome`，旧外观仅剩 Dispatcher 出口处过渡适配
-    - [~] Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`
-      - [x] **`dispatchSet()` 已删除**（旧批量入口；`v7-capture-set` 6 条测试迁移到 `dispatchSetCommand`/`NoteBatchOutcome`）
-      - [ ] `dispatch()` 删除（依赖 golden/baseline/capturegraph 测试迁移，与 Step 4 联动）
+    - [x] **Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`，映射下放（2026-10-31 完成，commit `4cce12a`）**
+      - `dispatchSet()` 删除；`dispatch()` 删除，`dispatchRequest` 直接返回 `NoteOutcome`
+      - `invokeCommand` 新增 `normalizeInvokedOutcome`：补 committed 幂等信封（commitKey）与 failed.retryable 缺省（等价旧 mapper 的两项归一化）
+      - 命令 seam 的 `toOptions` 仍会置 `reportCancellation=true`（分支错误码透传是 v19 契约的一部分）
     - [ ] Step 3：common 删 `DispatchResult` 与迁移字段
     - [ ] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态）
       - [x] `v7-dispatch-run-context` 迁移到 `dispatchCommand`（4 条；语义变化：无 context 时 LLM 边界失败 = failed 终态，不再静默 success）
       - [x] `v7-capture-set` 迁移到 `dispatchSetCommand`（6 条）
       - [x] `v7-note-command` 迁移到命令 seam + 新增 `legacy-dispatch-helper.mjs`（BranchRequest→NoteCommand→NoteOutcome→旧外观，供 baseline/golden 在旧入口删除后继续用）
+      - [x] `knowledge-dispatch-baseline`（19 处）迁移到 helper；incremental 越权用例按新契约断言 failed/NODE_ERROR
+      - [x] `v7-golden-dispatch`（4 处）迁移到 helper；**golden 方案 A 重基线完成**：18/18 记录通过 + 18/18 比对通过
+      - [x] `dispatcher-capturegraph` 源码断言：旧 `async dispatch(` 计数 1→0，断言 `async dispatchCommand(` 存在
+      - **Step 4 完成（6/6 测试文件）**；快照变化仅 4 个 case 各 1 行（2 个 cancel 的 throws.name → Error；2 个 errorCode → STRUCTURE_ERROR）
     - **Step 2/4 尝试记录（2026-10-31 18:5x，已回滚）**：直接删 `Dispatcher.dispatch()` + 把 baseline/golden 调用切到 `dispatchLegacy` 后，golden 的 6 个 capture 用例失败 —— 两个根因：
       1) **取消语义**：旧 `dispatch()` 在入口取消/图内取消时**抛错**（golden 断言 rejects），helper 把 `cancelled` 终态转成 `failed(CANCELLED)` 外观而不是 throw；
       2) **失败码外观**：命令 seam 的 `toOptions` 强制 `reportCancellation=true`，分支会填入节点 `error.kind` 作为 errorCode，而旧 `dispatch()` 的对应快照里 `errorCode` 是 undefined → adapter 还原后多出字段。
