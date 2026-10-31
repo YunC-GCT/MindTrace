@@ -6,11 +6,12 @@
 
 `accepted`（目标契约；2026-10-27 定稿于 ticket #237）
 
-> 实现进度（2026-10-31，链路迁移 A3）：契约与迁移适配器已落地。
+> 实现进度（2026-10-31，链路迁移 A3 / A3b）：契约、迁移适配器与取消语义已落地。
 > `common/src/main/ets/models/NoteCommandModels.ets` 定义 `NoteCommand` / `NoteOutcome`（单一 interface + `kind` 判别，替代本文伪码的对象联合——ArkTS 1.1 不支持对象字面量联合类型）；
 > `agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets` 负责旧 `DispatchResult` ↔ 新 `NoteOutcome` 映射（补 `APPROVAL_HASH_MISMATCH` / `PREPARED_CHECKPOINT_MISSING` 等稳定码、`retryable`、needsInput/readyPreview/committed 判别）；
 > `Dispatcher.dispatchCommand(command, options)` 是新的命令入口，旧 `dispatch()` 原样保留为迁移适配器；`AiService` 的文本/A2A capture 与确认提交已切到命令入口。
-> **尚未落地**：`cancelled(committed=true)`（持久层还没把事务结果回传给分支）、generation/regenerate 消费方切换、`dispatchSet` 批量终态、A2A 回执直接读 `NoteOutcome`。这些记在 [tasks.md](../specs/execution/v7-architecture-contracts/tasks.md) 的 A3 后续项。
+> **取消语义**：`PersistNode` 写成功后检查停止条件，把 `commitResult` 留在 state 里返回（不再抛出丢掉事务结果）；`CaptureGraph` 图级取消用最后节点 state 作基底，`CaptureBranch` 在命令路径回填 `cancelled(committed=true, noteId, version, commitKey)`，旧 `dispatch()` 路径仍按 #239 golden 抛错。
+> **尚未落地**：generation/regenerate 消费方切换、`dispatchSet` 批量终态、A2A 回执直接读 `NoteOutcome`。这些记在 [tasks.md](../specs/execution/v7-architecture-contracts/tasks.md) 的 A3c。
 
 ## Context
 

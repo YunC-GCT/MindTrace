@@ -49,8 +49,14 @@
   - `Dispatcher.dispatchCommand(command, options)` 新入口；旧 `dispatch()` 保留为迁移适配器（行为不变，#239 golden 零重录）
   - 消费方切换：`AiService.processAndPersist`（app 拍照文本 + 小艺 A2A 文本）与 `confirmDraft`（preparedCandidate）改走命令入口 + `committed` 终态
   - 测试：`v7-note-command.test.mjs` 7 条（capture committed / failed / 入口取消 / analysisOnly / generation readyPreview / 旧入口适配器 / 消费方接线）
-  - **未完成**：`cancelled(committed=true)`（持久层未回传事务结果）、generation/regenerate 消费方切换、`dispatchSet` 批量终态、A2A 回执直接读 `NoteOutcome` → 见 A3b
-- [ ] **A3b**：`cancelled(committed=true)` + generation/regenerate 消费方 + A2A 回执 / HITL 读 `NoteOutcome`
+  - **未完成**：generation/regenerate 消费方切换、`dispatchSet` 批量终态、A2A 回执直接读 `NoteOutcome` → 见 A3c
+- [x] **A3b：`cancelled(committed=true)`（2026-10-31）**：ADR-0019 (e) 三位置取消落地
+  - `PersistNode` 两条写路径（`NoteWritePort` / legacy DAO）写成功后检查停止条件，把 `commitResult` 留在 state 并返回 `CANCELLED`，不再抛出丢掉事务结果
+  - `CaptureGraph` 图级取消用「最后节点 state（带 commitResult）」作基底；`StateGraph` 行为保持原样（未改通用内核）
+  - `CaptureBranch` 命令路径回填 `cancelledCommitted/cancelledNoteId/cancelledVersion/cancelledCommitKey`；`NoteOutcomeMapper` 映射成 `cancelled(committed=true, noteId, version, commitKey)`
+  - 旧 `dispatch()` 路径（`reportCancellation` 未置位）仍按 #239 golden 抛错；golden 18 条零重录
+  - 测试 `v7-note-command` 9 条：新增「图内取消未写 → committed=false」「写成功后取消 → committed=true + 信封」
+- [ ] **A3c**：generation/regenerate 消费方切 `NoteOutcome`、`dispatchSet` 批量终态、A2A 回执 / HITL 读 `NoteOutcome`
 - [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
 
 ### Dispatcher 拆分（A3 的前置重构，2026-10-31 开始）

@@ -35,6 +35,12 @@ export interface DispatchOptions {
   onNodeTiming?: (step: string, elapsedMs: number) => void;
   /** 库里已有的学科名（含内置学科）；structure 用它决定复用还是新建 */
   subjectVocabulary?: string[];
+  /**
+   * ADR-0019 迁移期内部开关：只有 dispatchCommand（NoteOutcomeMapper）置 true。
+   * 为 true 时分支把 cancelled(committed) / 节点错误码与 retriable 填进 DispatchResult 的迁移字段；
+   * 旧 dispatch() 不置位，保持 #239 golden 锁定的旧外观。
+   */
+  reportCancellation?: boolean;
 }
 
 // spec 036 阶段 1：集合级整理的可选项。

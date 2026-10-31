@@ -54,8 +54,19 @@ export class CaptureBranch {
     const noteAgent: NoteAgent = new NoteAgent(noteOptions);
     // #243：预算与取消是运行时属性，只走调用参数，不经 AgentState。
     const finalState: AgentState = await noteAgent.run(initial, runContext);
-    options.cancellationToken?.throwIfCancelled();
     const error: CaptureGraphError | undefined = finalState.error;
+    const requestCancelled: boolean = options.cancellationToken !== undefined
+      && options.cancellationToken.isCancelled();
+    const cancelledTerminal: boolean = requestCancelled
+      || (error !== undefined && error.kind === 'CANCELLED');
+    if (cancelledTerminal) {
+      if (options.reportCancellation === true) {
+        // ADR-0019 (e)：先看事务结果，再看 token —— 已落库的写必须报 committed=true。
+        return CaptureBranch.cancelledResult(finalState, error, options, startedAt);
+      }
+      // 旧 dispatch()：保持 #239 golden 锁定的旧外观（capture 图内取消仍抛错）。
+      options.cancellationToken?.throwIfCancelled();
+    }
     if (error !== undefined) {
       log.error('capture graph failed: ' + error.kind + ' step=' + error.step + ' msg=' + error.message);
       const failed: DispatchResult = {
@@ -64,6 +75,10 @@ export class CaptureBranch {
         errorMessage: error.message,
         durationMs: Date.now() - startedAt,
       };
+      if (options.reportCancellation === true) {
+        failed.errorCode = error.kind;
+        failed.errorRetryable = error.retriable;
+      }
       if (finalState.classification !== undefined) {
         failed.classification = finalState.classification;
       }
@@ -119,5 +134,41 @@ export class CaptureBranch {
     }
     log.info('dispatch completed persisted=' + finalState.persist.toString() + ' category=' + unit.category);
     return success;
+  }
+
+  /**
+   * ADR-0019 (e)：cancelled 终态。先读事务结果再读 token：
+   * commitResult 存在 → committed=true 并带 noteId/version/commitKey；否则 committed=false。
+   */
+  private static cancelledResult(
+    finalState: AgentState,
+    error: CaptureGraphError | undefined,
+    options: DispatchOptions,
+    startedAt: number,
+  ): DispatchResult {
+    const commitResult = finalState.commitResult;
+    const cancelled: DispatchResult = {
+      success: false,
+      route: 'D1',
+      errorCode: 'CANCELLED',
+      errorMessage: error !== undefined ? error.message : 'CONVERSATION_CANCELLED',
+      durationMs: Date.now() - startedAt,
+      cancelledCommitted: commitResult !== undefined,
+    };
+    if (commitResult !== undefined) {
+      cancelled.cancelledNoteId = commitResult.noteId;
+      cancelled.cancelledVersion = commitResult.version;
+      cancelled.cancelledCommitKey = commitResult.commitKey;
+      if (finalState.knowledgeUnit !== undefined) {
+        cancelled.data = finalState.knowledgeUnit;
+      }
+    }
+    if (finalState.classification !== undefined) {
+      cancelled.classification = finalState.classification;
+    }
+    if (options.includeRawText === true) {
+      cancelled.recognizedText = finalState.captureText;
+    }
+    return cancelled;
   }
 }

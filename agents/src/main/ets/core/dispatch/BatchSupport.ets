@@ -35,5 +35,6 @@ export function withRunContext(options: DispatchOptions, runContext: RunContext)
   copy.progressSink = options.progressSink;
   copy.onNodeTiming = options.onNodeTiming;
   copy.subjectVocabulary = options.subjectVocabulary;
+  copy.reportCancellation = options.reportCancellation;
   return copy;
 }

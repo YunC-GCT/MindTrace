@@ -136,6 +136,14 @@ export interface DispatchResult {
   durationMs: number;
   generation?: NoteGenerationResult;
   errorCode?: string;
+  // ADR-0019 (e) 迁移期：cancelled 终态需要报告「取消前是否已落库」。
+  // 仅 dispatchCommand（reportCancellation）路径填充；旧 dispatch 保持原样。
+  cancelledCommitted?: boolean;
+  cancelledNoteId?: string;
+  cancelledVersion?: number;
+  cancelledCommitKey?: string;
+  // ADR-0019 (c) 迁移期：节点错误的 retriable 原样带到 seam（旧路径不填充）。
+  errorRetryable?: boolean;
 }
 
 // ==================== 集合级整理（spec 036 阶段 1）====================

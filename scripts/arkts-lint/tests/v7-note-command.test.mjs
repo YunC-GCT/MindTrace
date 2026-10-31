@@ -33,6 +33,12 @@ const alternating = () => (_request, index) => (index % 2 === 1 ? CLASSIFICATION
 
 const TEXT_PAYLOAD = { kind: 'text', text: '函数在一点连续。' };
 
+// 用运行时加载的真实 CancellationToken（common barrel 由 runtime proxy 惰性解析）。
+function runtimeCancellationToken() {
+  const runtime = createRuntime();
+  return new runtime.common.CancellationToken();
+}
+
 function captureCommand(operationId) {
   return { kind: 'capture', operationId, source: 'app', payload: TEXT_PAYLOAD };
 }
@@ -79,6 +85,46 @@ test('entry cancellation is a cancelled outcome, not a throw', async () => {
   assert.equal(outcome.kind, 'cancelled');
   assert.equal(outcome.committed, false);
   assert.equal(outcome.noteId, undefined);
+});
+
+test('in-graph cancellation before any write is cancelled(committed=false)', async () => {
+  const token = new runtimeCancellationToken();
+  const runtime = createRuntime((request, index) => {
+    token.cancel();
+    return index % 2 === 1 ? CLASSIFICATION : NOTE_JSON;
+  });
+  const storage = memoryStorage();
+  const outcome = await runtime.dispatcher.dispatchCommand(captureCommand('op-capture-4'), {
+    cancellationToken: token,
+    dao: storage.dao,
+  });
+  assert.equal(outcome.kind, 'cancelled');
+  assert.equal(outcome.committed, false);
+  assert.equal(storage.writes.length, 0);
+});
+
+test('cancellation after the write reports cancelled(committed=true) with commit envelope', async () => {
+  // 写入在 dao.insert 里发生；写成功后 token 才被取消 —— 必须如实报 committed=true（ADR-0019 (e)）。
+  const token = new runtimeCancellationToken();
+  const runtime = createRuntime(alternating());
+  const storage = memoryStorage();
+  const cancellingDao = {
+    async insert(value) {
+      const rowId = await storage.dao.insert(value);
+      token.cancel();
+      return rowId;
+    },
+  };
+  const outcome = await runtime.dispatcher.dispatchCommand(captureCommand('op-capture-5'), {
+    cancellationToken: token,
+    dao: cancellingDao,
+  });
+  assert.equal(outcome.kind, 'cancelled');
+  assert.equal(outcome.committed, true);
+  assert.ok(typeof outcome.noteId === 'string' && outcome.noteId.length > 0);
+  assert.equal(typeof outcome.version, 'number');
+  assert.equal(outcome.commitKey, 'capture:' + outcome.noteId);
+  assert.equal(storage.writes.length, 1);
 });
 
 test('analysisOnly command yields a preview outcome without a committed note', async () => {

@@ -64,6 +64,8 @@ export class NoteOutcomeMapper {
     copy.progressSink = options.progressSink;
     copy.onNodeTiming = options.onNodeTiming;
     copy.subjectVocabulary = options.subjectVocabulary;
+    // 新 seam 需要分支回填迁移字段（cancelled(committed) / 稳定错误码 / retriable）。
+    copy.reportCancellation = true;
     return copy;
   }
 
@@ -75,6 +77,28 @@ export class NoteOutcomeMapper {
       const code: string = result.errorCode !== undefined
         ? result.errorCode
         : NoteOutcomeMapper.codeFromMessage(message);
+      if (result.cancelledCommitted !== undefined) {
+        const cancelledUnit: KnowledgeUnit | undefined = result.cancelledCommitted === true ? result.data : undefined;
+        const knownKey: string | undefined = result.cancelledCommitKey !== undefined
+          && result.cancelledCommitKey.length > 0 ? result.cancelledCommitKey : undefined;
+        return {
+          kind: 'cancelled',
+          operationId: command.operationId,
+          route: 'D1',
+          durationMs: durationMs,
+          committed: result.cancelledCommitted,
+          noteId: result.cancelledNoteId,
+          version: result.cancelledVersion !== undefined
+            ? result.cancelledVersion
+            : (cancelledUnit !== undefined ? cancelledUnit.version : undefined),
+          commitKey: knownKey !== undefined
+            ? knownKey
+            : (cancelledUnit !== undefined ? NoteOutcomeMapper.resolveCommitKey(command, cancelledUnit) : undefined),
+          unit: cancelledUnit,
+          classification: result.classification,
+          recognizedText: result.recognizedText,
+        };
+      }
       if (code === 'CANCELLED' || message.indexOf(NOTE_CANCELLED_MESSAGE) >= 0) {
         return {
           kind: 'cancelled',
@@ -103,7 +127,10 @@ export class NoteOutcomeMapper {
         durationMs: durationMs,
         code: code,
         message: message,
-        retryable: isRetryableNoteErrorCode(code),
+        retryable: result.errorRetryable !== undefined
+          ? result.errorRetryable : isRetryableNoteErrorCode(code),
+        classification: result.classification,
+        recognizedText: result.recognizedText,
         generation: generation,
       };
     }

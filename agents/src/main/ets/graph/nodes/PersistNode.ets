@@ -50,7 +50,7 @@ export class PersistNodeFactory {
           return { state: next };
         }
         next.commitResult = commitResult;
-        return { state: next };
+        return PersistNodeFactory.withStopCheck(context, next);
       }
       if (input.preparedCandidate?.updateExisting === true) {
         const next: AgentState = copyAgentState(input);
@@ -88,12 +88,20 @@ export class PersistNodeFactory {
           return { state: next };
         }
         next.commitResult = commitResult;
-        return { state: next };
+        return PersistNodeFactory.withStopCheck(context, next);
       } else {
-        await dao.insert(input.knowledgeUnit);
-        context?.throwIfStopped();
+        const rowId: number = await dao.insert(input.knowledgeUnit);
+        const next: AgentState = copyAgentState(input);
+        next.commitResult = {
+          commitKey: '',
+          rowId: rowId,
+          noteId: input.knowledgeUnit.id,
+          version: input.knowledgeUnit.version,
+          duplicate: false,
+          success: true,
+        };
+        return PersistNodeFactory.withStopCheck(context, next);
       }
-      return { state: input };
     };
   }
 
@@ -136,7 +144,6 @@ export class PersistNodeFactory {
       }
       try {
         const outcome: NoteWriteOutcome = await port.commit(input.knowledgeUnit, command);
-        context?.throwIfStopped();
         const next: AgentState = copyAgentState(input);
         const commitResult: NoteCommitResult = {
           commitKey: outcome.commitKey,
@@ -147,7 +154,7 @@ export class PersistNodeFactory {
           success: true,
         };
         next.commitResult = commitResult;
-        return { state: next };
+        return PersistNodeFactory.withStopCheck(context, next);
       } catch (e) {
         const next: AgentState = copyAgentState(input);
         if (e instanceof NotePortError) {
@@ -168,6 +175,27 @@ export class PersistNodeFactory {
         return { state: next };
       }
     };
+  }
+
+  /**
+   * ADR-0019 (e)：写成功后再检查取消。命中时把「已落库」的 commitResult 留在 state 里并返回
+   * CANCELLED 错误，而不是抛出去丢掉事务结果 —— 这样命令 seam 才能报 cancelled(committed=true)。
+   */
+  private static withStopCheck(context: RunContext | null | undefined, next: AgentState): CaptureNodeResult {
+    try {
+      context?.throwIfStopped();
+      return { state: next };
+    } catch (e) {
+      const message: string = e instanceof Error ? e.message : String(e);
+      const kind: string = message.indexOf('deadline') >= 0 ? 'DEADLINE_EXCEEDED' : 'CANCELLED';
+      next.error = {
+        kind: kind,
+        message: message,
+        step: 'persist',
+        retriable: false,
+      };
+      return { state: next };
+    }
   }
 
   private static deriveCommitKey(input: AgentState): string {
