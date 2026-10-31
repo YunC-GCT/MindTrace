@@ -33,7 +33,7 @@ test('generation pipeline always synthesizes a text payload from the source bund
   // 2026-10-31：dispatchGeneration 抽到 GenerationBranch。
   const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
   const genPayloadBlock = branch.match(
-    /const generationPayload: DispatchRequest = \{[\s\S]*?payload: \{ kind: 'text', text: (?:this|GenerationEvaluator)\.bundleText\(bundle\) \}/,
+    /const generationPayload: BranchRequest = \{[\s\S]*?payload: \{ kind: 'text', text: (?:this|GenerationEvaluator)\.bundleText\(bundle\) \}/,
   );
   assert.ok(genPayloadBlock !== null, 'dispatchGeneration must replace image payload with synthesized text');
 });

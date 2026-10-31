@@ -13,7 +13,7 @@ const captureTypes = readFileSync(resolve(root, 'common/src/main/ets/models/Capt
 
 test('Dispatcher exposes single dispatch entry only', () => {
   assert.equal((dispatcher.match(/async dispatch\(/g) || []).length, 1);
-  assert.match(dispatcher, /async dispatch\(req: DispatchRequest, options: DispatchOptions = \{\}\)/);
+  assert.match(dispatcher, /async dispatch\(req: BranchRequest, options: DispatchOptions = \{\}\)/);
   assert.equal((dispatcher.match(/async analyze\(/g) || []).length, 0);
   assert.equal((dispatcher.match(/async routeDispatch\(/g) || []).length, 0);
 });
