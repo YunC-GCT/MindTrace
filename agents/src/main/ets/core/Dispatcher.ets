@@ -60,7 +60,13 @@ import {
   CaptureSetItemResult,
   CaptureSetResult,
 } from 'common';
-import type { DispatchPayload, CancellationToken, NoteCommand, NoteOutcome } from 'common';
+import type {
+  DispatchPayload,
+  CancellationToken,
+  NoteBatchOutcome,
+  NoteCommand,
+  NoteOutcome,
+} from 'common';
 import { AgentState, CaptureGraphError, CaptureStep } from '../graph/AgentState';
 import { CaptureGraph } from '../graph/CaptureGraph';
 import { StructureNodeFactory } from '../graph/nodes/StructureNode';
@@ -105,11 +111,65 @@ export class Dispatcher {
   }
 
   /**
-   * ADR-0019 / 链路迁移 A3：命令式入口，返回 NoteOutcome（调用方按 kind 穷举）。
-   * 旧 `dispatch()` 保留为迁移适配器（行为不变），新调用方优先用本入口。
-   * 入口取消（图启动前）返回 cancelled(committed=false)；图内取消当前仍是 failed(NODE_ERROR)，
-   * 等持久层把事务结果回传给分支后再补 cancelled(committed=true)（见 tasks.md）。
+   * ADR-0019 / A3d：批量命令入口（一个 set 一个 run）。
+   * 顺序执行 commands，共享同一个 RunContext；逐项仍是 NoteOutcome，单项失败不打断整批；
+   * 取消后剩余项记 cancelled(committed=false)，不混进 failed。
+   * 旧 `dispatchSet()` 保留为迁移适配器（UI 回执契约不变）。
    */
+  async dispatchSetCommand(
+    commands: NoteCommand[],
+    options: DispatchOptions = {},
+    onOutcome?: (index: number, outcome: NoteOutcome) => void,
+  ): Promise<NoteBatchOutcome> {
+    const startedAt: number = Date.now();
+    const shared: RunContext = this.resolveRunContext(options);
+    const items: NoteOutcome[] = [];
+    let committed: number = 0;
+    let failed: number = 0;
+    let cancelled: number = 0;
+    let needsInput: number = 0;
+    let stop: boolean = false;
+    for (let i = 0; i < commands.length; i++) {
+      const command: NoteCommand = commands[i];
+      if (stop || isBatchCancelled(options)) {
+        const skipped: NoteOutcome = {
+          kind: 'cancelled',
+          operationId: command.operationId,
+          route: 'D1',
+          durationMs: 0,
+          committed: false,
+        };
+        items.push(skipped);
+        cancelled += 1;
+        if (onOutcome !== undefined) { onOutcome(i, skipped); }
+        continue;
+      }
+      const outcome: NoteOutcome = await this.dispatchCommand(command, withRunContext(options, shared));
+      items.push(outcome);
+      if (outcome.kind === 'committed') {
+        committed += 1;
+      } else if (outcome.kind === 'cancelled') {
+        cancelled += 1;
+        stop = true;
+      } else if (outcome.kind === 'needsInput') {
+        needsInput += 1;
+      } else {
+        failed += 1;
+      }
+      if (onOutcome !== undefined) { onOutcome(i, outcome); }
+    }
+    const result: NoteBatchOutcome = {
+      total: commands.length,
+      committed: committed,
+      failed: failed,
+      cancelled: cancelled,
+      needsInput: needsInput,
+      items: items,
+      durationMs: Date.now() - startedAt,
+    };
+    return result;
+  }
+
   async dispatchCommand(command: NoteCommand, options: DispatchOptions = {}): Promise<NoteOutcome> {
     const request: DispatchRequest = NoteOutcomeMapper.toRequest(command);
     const effective: DispatchOptions = NoteOutcomeMapper.toOptions(command, options);

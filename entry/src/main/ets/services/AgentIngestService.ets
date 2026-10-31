@@ -18,6 +18,7 @@
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DatabaseHelper, KnowledgeUnit } from 'common';
+import type { NoteOutcome } from 'common';
 import { AiService } from './AiService';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest } from './AgentIngestRequest';
@@ -31,8 +32,22 @@ const MAX_IMAGES: number = 3;
 const NEWLINE: string = String.fromCharCode(10);
 
 export class AgentIngestService {
-  /** 端口入口：文字、图片、混合都从这里进；失败向上抛，由调用方决定是否退回队列。 */
+  /** 端口入口（旧适配器）：失败向上抛，由调用方决定是否退回队列。 */
   static async ingest(context: common.Context, request: AgentIngestRequest): Promise<KnowledgeUnit> {
+    const outcome: NoteOutcome = await AgentIngestService.ingestOutcome(context, request);
+    if (outcome.kind !== 'committed' || outcome.unit === undefined) {
+      const code: string = outcome.code !== undefined ? outcome.code : 'INGEST_FAILED';
+      const message: string = outcome.message !== undefined
+        ? outcome.message : (outcome.reason !== undefined ? outcome.reason : 'ingest failed');
+      throw new Error(code + ': ' + message);
+    }
+    return outcome.unit;
+  }
+
+  /**
+   * A3d：端口入口的命令终态版本。A2A 回执直接消费 NoteOutcome，不再靠异常文本猜状态。
+   */
+  static async ingestOutcome(context: common.Context, request: AgentIngestRequest): Promise<NoteOutcome> {
     hilog.info(DOMAIN, TAG, 'INGEST source=%{public}s textChars=%{public}d images=%{public}d',
       request.source, request.text.length, request.images.length);
     const text: string = request.images.length > 0
@@ -43,7 +58,7 @@ export class AgentIngestService {
     }
     await DatabaseHelper.init(context);
     const service: AiService = new AiService(context, false);
-    return await service.ingestText(text);
+    return await service.ingestTextOutcome(text);
   }
 
   /** 图片 → 文本（单张失败不拖垮整批；全失败抛错，不写空笔记） */

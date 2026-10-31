@@ -167,6 +167,37 @@ test('light generation command yields readyPreview with checkpoint metadata', as
   assert.equal(outcome.noteId, undefined);
 });
 
+test('dispatchSetCommand returns per-item outcomes with aggregate counts (A3d)', async () => {
+  const runtime = createRuntime(alternating());
+  const storage = memoryStorage();
+  const commands = [
+    { kind: 'capture', operationId: 'set-0', source: 'app', payload: TEXT_PAYLOAD },
+    { kind: 'capture', operationId: 'set-1', source: 'app', payload: { kind: 'text', text: '数列收敛的定义。' } },
+  ];
+  const batch = await runtime.dispatcher.dispatchSetCommand(commands, { dao: storage.dao });
+  assert.equal(batch.total, 2);
+  assert.equal(batch.committed, 2);
+  assert.equal(batch.failed, 0);
+  assert.equal(batch.cancelled, 0);
+  assert.equal(batch.items.length, 2);
+  assert.equal(batch.items[0].kind, 'committed');
+  assert.equal(batch.items[1].kind, 'committed');
+  assert.ok(typeof batch.items[0].noteId === 'string');
+  assert.notEqual(batch.items[0].noteId, batch.items[1].noteId);
+  assert.equal(storage.writes.length, 2);
+});
+
+test('A2A ingest receipt consumes NoteOutcome instead of exception text (A3d)', () => {
+  const ingest = read('entry/src/main/ets/services/AgentIngestService.ets');
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.match(ingest, /static async ingestOutcome/);
+  assert.match(ingest, /service\.ingestTextOutcome/);
+  assert.match(ability, /ingestOutcome\(this\.context, request\)/);
+  assert.match(ability, /outcome\.kind === 'committed'/);
+  assert.match(ability, /outcome\.kind === 'cancelled'/);
+  assert.match(ability, /retryable/);
+});
+
 test('legacy dispatch entry is preserved as the migration adapter', async () => {
   const runtime = createRuntime(alternating());
   const storage = memoryStorage();

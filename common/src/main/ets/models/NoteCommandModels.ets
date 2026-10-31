@@ -95,6 +95,20 @@ export interface NoteOutcome {
 // 入口取消：CancellationToken 抛出的错误消息（ADR-0019 (e) 位置 1）。
 export const NOTE_CANCELLED_MESSAGE: string = 'CONVERSATION_CANCELLED';
 
+/**
+ * NoteBatchOutcome — 批量命令（一个 set 一个 run）的终态集合。
+ * 逐项仍是 NoteOutcome；计数只做聚合，不替代逐项终态。
+ */
+export interface NoteBatchOutcome {
+  total: number;
+  committed: number;
+  failed: number;
+  cancelled: number;
+  needsInput: number;
+  items: NoteOutcome[];
+  durationMs: number;
+}
+
 // 允许重试的错误码：传输层瞬时失败与输入可重拍（ADR-0019 (c)）。
 const RETRYABLE_CODES: string[] = [
   'NETWORK_ERROR',

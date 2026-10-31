@@ -62,7 +62,13 @@
   - `AiService.analyzeImage` → `kind:'analysisOnly'` 命令，`readyPreview + classification`（不落库）
   - 测试：`v7-note-command` 10 条（新增消费方接线断言：五处 `dispatchCommand`、三处 `readyPreview` 判别）
   - 相关源码断言测试同步从「`persist: false` / `dispatcher.dispatch(` / `analysisOnly: true`」改为「命令 kind + mapper 规则」
-- [ ] **A3d**：`dispatchSet` 批量终态、A2A 回执 / HITL 直接读 `NoteOutcome`
+- [x] **A3d：批量终态 + A2A 回执读 `NoteOutcome`（2026-10-31）**
+  - 新 `NoteBatchOutcome`（total/committed/failed/cancelled/needsInput/items）+ `Dispatcher.dispatchSetCommand(commands, options, onOutcome)`：一个 set 一个 run、逐项 `NoteOutcome`、共享 RunContext、单项失败隔离、取消后剩余项记 `cancelled(committed=false)`
+  - `AiService.captureSet` 切批量命令入口，UI 回执仍由 `captureItemFromOutcome` 适配 `CaptureSetItemResult`（含 code 字段）
+  - `AiService.processAndPersistOutcome` + `ingestTextOutcome`：文本/A2A 入口返回终态；旧 `processAndPersist`/`ingestText` 保留为适配器
+  - `AgentIngestService.ingestOutcome`；`AgentExtAbility.ingestDirectly` 直接按 `committed/failed/cancelled` 分支回执（failed 带 code/retryable，cancelled 带「是否已落库」文案）
+  - 测试：`v7-note-command` 12 条（新增批量终态计数、A2A 回执读 `NoteOutcome`）
+- **A3 系列完成**：旧 `dispatch()` / `dispatchSet()` / `DispatchResult` 作为迁移适配器保留，等 A4 接线 `EventSink`/`RunStore` 时再统一清理
 - [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
 
 ### Dispatcher 拆分（A3 的前置重构，2026-10-31 开始）

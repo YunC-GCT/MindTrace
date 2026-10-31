@@ -100,6 +100,7 @@ export { NOTE_CANCELLED_MESSAGE, isRetryableNoteErrorCode } from './models/NoteC
 export type {
   DegradedMarker,
   DispatchSource,
+  NoteBatchOutcome,
   NoteCommand,
   NoteCommandKind,
   NoteOutcome,

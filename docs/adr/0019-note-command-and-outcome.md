@@ -11,7 +11,7 @@
 > `agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets` 负责旧 `DispatchResult` ↔ 新 `NoteOutcome` 映射（补 `APPROVAL_HASH_MISMATCH` / `PREPARED_CHECKPOINT_MISSING` 等稳定码、`retryable`、needsInput/readyPreview/committed 判别）；
 > `Dispatcher.dispatchCommand(command, options)` 是新的命令入口，旧 `dispatch()` 原样保留为迁移适配器；`AiService` 的文本/A2A capture 与确认提交已切到命令入口。
 > **取消语义**：`PersistNode` 写成功后检查停止条件，把 `commitResult` 留在 state 里返回（不再抛出丢掉事务结果）；`CaptureGraph` 图级取消用最后节点 state 作基底，`CaptureBranch` 在命令路径回填 `cancelled(committed=true, noteId, version, commitKey)`，旧 `dispatch()` 路径仍按 #239 golden 抛错。
-> **消费方**：A3c 已把 `AiService` 的 generation / regenerate / analysisOnly 三个入口切到 `dispatchCommand`，只认 `readyPreview`/`needsInput`/`failed`/`cancelled` 终态；`persist`/`analysisOnly` 由 mapper 按命令形状决定。**尚未落地**：`dispatchSet` 批量终态、A2A 回执直接读 `NoteOutcome`（记在 tasks.md 的 A3d）。
+> **消费方**：A3c 已把 `AiService` 的 generation / regenerate / analysisOnly 三个入口切到 `dispatchCommand`，只认 `readyPreview`/`needsInput`/`failed`/`cancelled` 终态；`persist`/`analysisOnly` 由 mapper 按命令形状决定。**A3d 已落**：`NoteBatchOutcome` + `Dispatcher.dispatchSetCommand`（逐项 `NoteOutcome`，取消后剩余项 `cancelled(committed=false)`）、`AiService.captureSet` 切批量命令入口、`AgentIngestService.ingestOutcome` + `AgentExtAbility.ingestDirectly` 直接按 `committed/failed/cancelled` 回执。旧 `dispatch()`/`dispatchSet()`/`DispatchResult` 作为迁移适配器保留到 A4 清理。
 
 ## Context
 

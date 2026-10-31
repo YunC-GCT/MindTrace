@@ -30,7 +30,7 @@
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { CancellationToken, getProviderCatalog, KnowledgeUnit, LlmConfig, LlmError, OcrRecognizerRegistry, resolveModel } from 'common';
-import type { ProviderCatalog, ResolvedModel } from 'common';
+import type { NoteOutcome, ProviderCatalog, ResolvedModel } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
 import type { LlmCallPolicy } from '../services/ReplyService';
@@ -276,17 +276,44 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   private ingestDirectly(taskId: string, request: AgentIngestRequest): void {
     hilog.info(DOMAIN, TAG, 'INGEST_DIRECT start source=%{public}s chars=%{public}d images=%{public}d',
       request.source, request.text.length, request.images.length);
-    AgentIngestService.ingest(this.context, request)
-      .then((unit: KnowledgeUnit): void => {
-        hilog.info(DOMAIN, TAG, 'INGEST_DIRECT done subject=%{public}s title=%{public}s',
-          unit.subject, unit.title);
-        this.sendAnswer(taskId, '已整理入库：' + unit.title + '（' + unit.subject + '）', 0,
-          request.text);
+    // A3d：A2A 回执直接消费 NoteOutcome（committed / failed / cancelled），不再靠异常文本判断。
+    AgentIngestService.ingestOutcome(this.context, request)
+      .then((outcome: NoteOutcome): void => {
+        if (outcome.kind === 'committed' && outcome.unit !== undefined) {
+          const unit: KnowledgeUnit = outcome.unit;
+          hilog.info(DOMAIN, TAG, 'INGEST_DIRECT done subject=%{public}s title=%{public}s',
+            unit.subject, unit.title);
+          this.sendAnswer(taskId, '已整理入库：' + unit.title + '（' + unit.subject + '）', 0,
+            request.text);
+          return;
+        }
+        if (outcome.kind === 'cancelled') {
+          hilog.info(DOMAIN, TAG, 'INGEST_DIRECT cancelled committed=%{public}s',
+            outcome.committed === true ? 'true' : 'false');
+          const cancelledText: string = outcome.committed === true
+            ? '这次整理已落库，但随后被取消了；笔记已保存，可在应用里查看。'
+            : '这次整理已取消，没有写入笔记。';
+          this.sendAnswer(taskId, cancelledText, 0);
+          return;
+        }
+        const code: string = outcome.code !== undefined ? outcome.code : 'INGEST_FAILED';
+        const retryable: boolean = outcome.retryable === true;
+        hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed code=%{public}s retryable=%{public}s',
+          code, retryable ? 'true' : 'false');
+        if (request.images.length > 0) {
+          // 队列只存文本；图片识别失败就把提示原样排进队列，至少留下用户意图
+          this.sendAnswer(taskId, '这几张图没认出文字，换张清晰点的，或直接把题目文字发我。', 0);
+          return;
+        }
+        if (!retryable) {
+          this.sendAnswer(taskId, '这次没整理成（' + code + '），换个说法再发一次试试。', 0);
+          return;
+        }
+        this.enqueueForIngest(taskId, request.text);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed %{public}s', e.message);
         if (request.images.length > 0) {
-          // 队列只存文本；图片识别失败就把提示原样排进队列，至少留下用户意图
           this.sendAnswer(taskId, '这几张图没认出文字，换张清晰点的，或直接把题目文字发我。', 0);
           return;
         }
