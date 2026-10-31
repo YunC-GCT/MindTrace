@@ -28,7 +28,7 @@ import {
 } from 'common';
 import type { RunEvent, RunRecord, RunStorePort, RunStoreStore } from 'common';
 
-const LEGAL_STATUSES: string[] = ['running', 'readyPreview', 'cancelled', 'failed', 'timedOut'];
+const LEGAL_STATUSES: string[] = ['running', 'readyPreview', 'committed', 'cancelled', 'failed', 'timedOut'];
 
 export class RunStoreAdapter implements RunStorePort {
   private readonly store: RunStoreStore;

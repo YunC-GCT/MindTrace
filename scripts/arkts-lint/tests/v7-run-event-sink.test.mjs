@@ -92,9 +92,9 @@ test('entry side RunStoreEventSink persists events through RunStorePort (A4 slic
   assert.match(sink, /implements RunEventSink/);
   assert.match(sink, /this\.port\.appendEvent\(runId, event\.kind, event\.payloadJson\)/);
   assert.match(sink, /status: 'running'/);
-  assert.match(ports, /static async buildRunEventSink\(/);
-  assert.match(ports, /new RunStoreAdapter\(new RunStoreDao\(store\)\)/);
-  assert.ok((capture.match(/runEventSink: await AiServicePorts\.buildRunEventSink\(/g) ?? []).length >= 2,
+  assert.match(ports, /static buildRunEventSinkIfReady\(\): RunEventSink \| undefined/);
+  assert.match(ports, /new RunStoreAdapter\(new RunStoreDao\(existing\)\)/);
+  assert.ok((capture.match(/runEventSink: AiServicePorts\.buildRunEventSinkIfReady\(\)/g) ?? []).length >= 2,
     'capture 命令与批量 set 两处都注入 sink');
 });
 
@@ -128,4 +128,22 @@ test('entry sink maps outcome kinds onto RunRecord status and committed facts', 
   assert.match(sink, /await this\.port\.update\(updated\)/);
   const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
   assert.match(dispatcher, /await Dispatcher\.settleRun\(options, command\.operationId, settled\)/);
+});
+
+
+test('leftovers: RunStatus has committed, run sink injected into draft pipelines, cold-start e2e hook', () => {
+  const runStore = read('common/src/main/ets/ports/RunStore.ets');
+  assert.match(runStore, /'committed'/);
+  const adapter = read('entry/src/main/ets/database/RunStoreAdapter.ets');
+  assert.match(adapter, /LEGAL_STATUSES: string\[\] = \[[^\]]*'committed'/);
+  const sink = read('entry/src/main/ets/services/ai/RunStoreEventSink.ets');
+  assert.match(sink, /if \(outcome\.kind === 'committed'\) \{ return 'committed'; \}/);
+  const draft = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
+  assert.ok((draft.match(/runEventSink: AiServicePorts\.buildRunEventSinkIfReady\(\)/g) ?? []).length >= 2,
+    'DraftPipeline 预览/重生成两处都要注入 sink');
+  const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
+  assert.match(commit, /runEventSink: AiServicePorts\.buildRunEventSinkIfReady\(\)/);
+  const ability = read('entry/src/main/ets/entryability/EntryAbility.ets');
+  const onCreate = ability.slice(ability.indexOf('onCreate('), ability.indexOf('onNewWant('));
+  assert.match(onCreate, /this\.launchWant = want;/, '冷启动必须保存 launchWant，e2e 才能触发');
 });

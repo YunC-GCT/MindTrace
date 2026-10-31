@@ -203,7 +203,7 @@ export class CapturePipeline {
       noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
       cancellationToken: token,
       subjectVocabulary: await SubjectVocabularyService.list(),
-      runEventSink: await AiServicePorts.buildRunEventSink(AiServicePorts.requireContext(this.context)),
+      runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
     }, (index: number, outcome: NoteOutcome): void => {
       if (canStreamItems && onItem !== undefined) {
         onItem(CapturePipeline.captureItemFromOutcome(index, items[index], outcome));
@@ -356,7 +356,7 @@ export class CapturePipeline {
       noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
       subjectVocabulary: await SubjectVocabularyService.list(),
       onNodeTiming: onNodeTiming,
-      runEventSink: await AiServicePorts.buildRunEventSink(AiServicePorts.requireContext(this.context)),
+      runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
     });
   }
 

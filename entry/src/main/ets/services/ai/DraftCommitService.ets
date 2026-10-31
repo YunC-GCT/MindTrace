@@ -105,6 +105,7 @@ export class DraftCommitService {
       dao: dao,
       noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
       generationRepository: repository,
+      runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
     });
     const committedUnit: KnowledgeUnit | undefined = outcome.unit;
     if (outcome.kind !== 'committed' || committedUnit === undefined) {

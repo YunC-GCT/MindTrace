@@ -43,8 +43,8 @@ export class RunStoreEventSink implements RunEventSink {
     }
   }
 
-  // RunStatus 尚无 'committed'：committed 事实由 committedNoteId/Version 承载，status 保持 running（记在 tasks.md 4b-2b 遗留）。
   private static statusOf(outcome: NoteOutcome): RunStatus {
+    if (outcome.kind === 'committed') { return 'committed'; }
     if (outcome.kind === 'failed') { return 'failed'; }
     if (outcome.kind === 'cancelled') { return 'cancelled'; }
     if (outcome.kind === 'readyPreview' || outcome.kind === 'needsInput') { return 'readyPreview'; }

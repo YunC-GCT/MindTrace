@@ -154,6 +154,7 @@ export class DraftPipeline {
       generationRepository: repository,
       cancellationToken: cancellationToken,
       progressSink: progressSink,
+      runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
     });
     const previewDraft: KnowledgeUnit | undefined = outcome.draft;
     const previewGeneration: NoteGenerationResult | undefined = outcome.generation;
@@ -286,6 +287,7 @@ export class DraftPipeline {
       generationRepository: repository,
       cancellationToken: cancellationToken,
       progressSink: progressSink,
+      runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
     });
     const regenerateDraft: KnowledgeUnit | undefined = outcome.draft;
     const regenerateGeneration: NoteGenerationResult | undefined = outcome.generation;

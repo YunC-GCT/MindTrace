@@ -41,6 +41,21 @@ export class AiServicePorts {
     return adapter;
   }
 
+  /** A4：run 事件 sink（仅在 RDB 已初始化时装配；测试/早期启动不装配，避免 await init 挂起）。 */
+  static buildRunEventSinkIfReady(): RunEventSink | undefined {
+    try {
+      const existing: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      if (existing === null || existing === undefined) {
+        return undefined;
+      }
+      const adapter: RunStoreAdapter = new RunStoreAdapter(new RunStoreDao(existing));
+      return new RunStoreEventSink(adapter);
+    } catch (e) {
+      // 测试/启动早期 RDB 未就绪时静默跳过可观测性装配，不影响命令本身。
+      return undefined;
+    }
+  }
+
   /** A4：run 事件 sink 装配（run_store / run_event）。 */
   static async buildRunEventSink(
     context: common.UIAbilityContext,

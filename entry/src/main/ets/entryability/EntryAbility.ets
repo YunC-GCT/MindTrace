@@ -62,6 +62,8 @@ export default class EntryAbility extends UIAbility {
   /** 窗口内容是否已加载：Picker 必须在 UI 起来后再拉 */
   private windowReady: boolean = false;
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // e2e 调试入口：冷启动也要保存 launchWant，onWindowStageCreate 里才能读到 --ps e2e。
+    this.launchWant = want;
     // 卡片刷新这类 UI 副作用只能在主进程加载：注册一次，共享写路径按注册表取用
     KnowledgeUnitUiEffects.register(new CardUiEffectProvider());
     const benchmarkConfig: NoteDetailBenchmarkLaunchConfig =

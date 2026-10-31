@@ -17,7 +17,7 @@
  *   - status 用字符串字面量联合类型；可选字段显式声明，不使用索引签名。
  */
 
-export type RunStatus = 'running' | 'readyPreview' | 'cancelled' | 'failed' | 'timedOut';
+export type RunStatus = 'running' | 'readyPreview' | 'committed' | 'cancelled' | 'failed' | 'timedOut';
 
 // 一条 run 的最小可恢复记录。
 export interface RunRecord {
