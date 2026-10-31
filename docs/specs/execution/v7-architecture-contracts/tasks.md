@@ -129,7 +129,9 @@
   - [x] `NoteItemMapper.ets` 由 GBK 转为 UTF-8（内容逐字保留，ets-hygiene 通过）
   - [x] `RunStatus` 增加 `'committed'`；`RunStoreAdapter` 白名单同步；`RunStoreEventSink.settle` 把 committed 终态写为 committed
   - [x] run 事件/settle 注入 `DraftPipeline`（预览/重生成）与 `DraftCommitService`（确认提交）；改为「RDB 就绪才装配」的同步工厂（`buildRunEventSinkIfReady`），避免测试/启动早期 await 挂起（`note-topic-resume` 曾因此挂起，修复后 7/7）
-  - [x] `EntryAbility.onCreate` 保存 `launchWant`，修复 `--ps e2e` 冷启动不触发（真机复验待解锁设备后执行）
+  - [x] `EntryAbility.onCreate` 保存 `launchWant`，修复 `--ps e2e` 冷启动不触发
+  - [x] **真机复验（2026-10-31 21:40，设备 3XTYD24C16203663，`node scripts/device-runner.mjs`）**：冷启动 `e2e=draft` 全链 **PASS**（`stage=draft ok ms=7218` → `stage=confirm ok ms=917 noteId=KB-mvwg7ojo-7tk87m` → `stage=done ok=1 totalMs=8135`，验证 v18 审批 + run sink + 冷启动触发）；`capture` 判定 PASS（2 张图，persist 824/509ms，图搜 hits=5×2）；`smoke` **ok:true**（存笔记：柯西中值定理）
+  - [x] 新增一键真机验证脚本 `scripts/device-runner.mjs`（install/status/capture/smoke/e2e 子命令；锁屏预检、hilog 流式捕获防缓冲刷新、结果判定；日志落 `.device-logs/`）
   - 验证：build 49 tasks SUCCESSFUL；`agent-gate --all` PASS（pass=1085 fail=0）
   - [ ] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
 

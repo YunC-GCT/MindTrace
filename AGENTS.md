@@ -160,6 +160,7 @@
 | CLI 构建 HAP (独立构建第 3 步) | `node "<DevEco>/tools/hvigor/bin/hvigorw.js" --mode module -p product=default -p module=entry@default assembleHap --no-daemon` |
 | 装机 | `hdc install -r entry/build/default/outputs/default/entry-default-signed.hap` |
 | 端A2A 真机冒烟 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (`ok` / `reply_text` / `hilog`) |
+| 一键真机验证（锁屏预检 + hilog 流式捕获） | `node scripts/device-runner.mjs <install\|status\|capture\|smoke\|e2e <mode> [--cold] [--wait 秒]>`；日志落 `.device-logs/` |
 | 创建新 module | `cp common/oh-package.json5 <new>/oh-package.json5` (必须含 `main` 字段) |
 | 验 .ets 无 BOM | PowerShell: `[System.IO.File]::ReadAllBytes(path)[0..2]` (应为 `0x69 0x6D 0x70`) |
 
