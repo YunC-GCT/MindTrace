@@ -91,6 +91,7 @@
   - **HITL v18 真机闭环（2026-10-31 18:2x，设备 3XTYD24C16203663）**：重装四包后手动 `存笔记 → 草稿卡 → 确认入库` **提示保存成功**；hilog 无 `approval mismatch`（审批校验通过、`approved_at` 生效）；并发 A2A 回归 `a2a_smoke`（存笔记：泰勒公式）返回 `ok:true`（31 字回执）
   - **A4 4c 执行中（2026-10-31 起，golden 选 A / `DispatchRequest` → `BranchRequest`）**：
     - [x] **Step 2-prep：`DispatchRequest` → `BranchRequest` 更名** —— 16 个 .ets + 2 个测试断言；语义收敛为「命令到分支的中间请求结构」
+    - [x] **Step 1-prep：`LegacyDispatchAdapter`**（NoteOutcome → 旧 DispatchResult 的唯一过渡转换点，含 5 条映射测试；golden 的重基线基线靠它把旧外观完整还原）
     - [ ] Step 1：`CaptureBranch` / `GenerationBranch` / `GenerationEvaluator` / `IncrementalBranch` / `PreparedBranch` 返回 `NoteOutcome`
     - [ ] Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`，映射逻辑下放 branch
     - [ ] Step 3：common 删 `DispatchResult` 与迁移字段
