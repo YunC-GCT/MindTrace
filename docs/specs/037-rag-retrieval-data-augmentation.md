@@ -55,7 +55,13 @@ NoteEvidenceService.build(query)
 | R4 | 生成侧注入：`NoteGenerationContextBuilder` 加入相关笔记片段 | 生成笔记时 prompt 含检索片段 |
 | R5 | `knowledgeProcessor`/向量通道评估（需先解决 embedding 来源） | 文档结论 |
 
-## 5. 风险
+## 5. 真机探针状态（2026-10-31）
+
+- 设备：`3XTYD24C16203663`（MRO-W00 / HarmonyOS 7.0.0，API 26）；项目 `compatibleSdkVersion 6.1.1(24)`，API 覆盖 `@since 6.0.0(20)`。
+- 已观测：`retrieval.getRetriever(config)` 在该设备上**超过 240s 未 resolve**（无异常、无返回）；已改为「FTS5 诊断 + Kit 诊断」双路并各自 15s 超时，避免探针阻塞。
+- 下一步：先确认自管 SQLite FTS5（建 `note_fts` + `MATCH`）是否可用；可用则不依赖 Kit 也能落地 RAG 检索（Kit 作为可选加速通道，Kit 恢复后一行开关切回）。
+
+## 6. 风险
 
 | 风险 | 处理 |
 |---|---|

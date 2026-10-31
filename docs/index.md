@@ -43,6 +43,7 @@ docs/
 | **Write the design spec for a ticket** | `docs/specs/` — create `NNN-{slug}.md` from [`docs/template/spec-template.md`](./template/spec-template.md) |
 | **Read an implementation design plan** | [`plans/`](./plans/index.md) — implementation designs pending formal spec |
 | **Record how a ticket was executed / verified** | `docs/specs/execution/{slug}/` — see [`execution/index.md`](./specs/execution/index.md) |
+| **看 RAG 检索方案（DataAugmentationKit 复用）** | [`specs/037-rag-retrieval-data-augmentation.md`](./specs/037-rag-retrieval-data-augmentation.md) — retrieval(FTS/BM25) + 现有 LLM，含真机探针结论 |
 | **看 v1 端A2A 的设计** | [`specs/031-xiaoyi-batch-capture-entry.md`](./specs/031-xiaoyi-batch-capture-entry.md) — 小艺唤起批量整理（浮窗 / 多选 / 落库） |
 | **知道当前做到哪一阶段 / 怎么验收** | [`agents/phase-tracker.md`](./agents/phase-tracker.md) — P0–P6 状态、DoD、证据命令 |
 | **Investigate a question (e.g. "should we use X?")** | `docs/research/` — `{topic-slug}-{YYYY-MM-DD}.md` from [`docs/template/research-template.md`](./template/research-template.md) |

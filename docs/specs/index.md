@@ -86,6 +86,11 @@ Each spec has these sections:
 8. **Sequence** — concrete commit list
 9. **Out of scope** — explicit non-goals
 
+## Specs
+
+- [`036-multi-image-single-pass-consolidation.md`](./036-multi-image-single-pass-consolidation.md) — 一次整理：1..N 张图 → 多题汇总（一图多题/多图多题/确认页）
+- [`037-rag-retrieval-data-augmentation.md`](./037-rag-retrieval-data-augmentation.md) — RAG 检索：复用 DataAugmentationKit retrieval（FTS/BM25）+ 现有 LLM
+
 ## Conventions in these specs
 
 - **Atomic PRs only** — each commit is revertable
