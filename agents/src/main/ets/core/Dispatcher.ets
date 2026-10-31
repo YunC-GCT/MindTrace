@@ -81,6 +81,8 @@ import { GenerationBranch } from './dispatch/GenerationBranch';
 import { IncrementalBranch } from './dispatch/IncrementalBranch';
 import { NoteOutcomeMapper } from './dispatch/NoteOutcomeMapper';
 import { DISPATCH_EVENT_START, DISPATCH_EVENT_TERMINAL, dispatchStartPayload, dispatchTerminalPayload } from './dispatch/RunEventSink';
+import { DispatchGraph } from './dispatch/DispatchGraph';
+import type { DispatchGraphContext, DispatchStageHandlers, DispatchStageResult } from './dispatch/DispatchGraph';
 import type { GenerationCandidateEvaluation } from './dispatch/GenerationEvaluator';
 import { copyRegeneratedUnit } from './dispatch/UnitSupport';
 
@@ -111,6 +113,21 @@ export class Dispatcher {
     return await this.dispatchRequest(req, options);
   }
 
+
+  // A4：invoke 阶段 = 现有分支执行 + 旧结果 → 终态映射（失败不抛出，交给终态）。
+  private async invokeCommand(
+    command: NoteCommand,
+    request: DispatchRequest,
+    effective: DispatchOptions,
+  ): Promise<NoteOutcome> {
+    try {
+      const result: DispatchResult = await this.dispatchRequest(request, effective);
+      return NoteOutcomeMapper.toOutcome(command, result);
+    } catch (e) {
+      const error: Error = e instanceof Error ? e : new Error(String(e));
+      return NoteOutcomeMapper.fromThrown(command, error);
+    }
+  }
 
   // A4：run 事件写出是尽力而为的 —— sink 抛错只记日志，不影响命令结果。
   private static async emitRunEvent(
@@ -195,17 +212,51 @@ export class Dispatcher {
     const request: DispatchRequest = NoteOutcomeMapper.toRequest(command);
     const effective: DispatchOptions = NoteOutcomeMapper.toOptions(command, options);
     await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_START, dispatchStartPayload(command));
-    try {
-      const result: DispatchResult = await this.dispatchRequest(request, effective);
-      const outcome: NoteOutcome = NoteOutcomeMapper.toOutcome(command, result);
-      await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(outcome));
-      return outcome;
-    } catch (e) {
-      const error: Error = e instanceof Error ? e : new Error(String(e));
-      const outcome: NoteOutcome = NoteOutcomeMapper.fromThrown(command, error);
-      await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(outcome));
-      return outcome;
-    }
+    // A4 切片 3b：dispatchCommand 由主图编排（preflight 取消检查 → route → invoke 现有分支 → verify/hitl/publish 待接）。
+    const self: Dispatcher = this;
+    const handlers: DispatchStageHandlers = {
+      preflight: async (context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        const token = options.cancellationToken;
+        if (token !== undefined && token.isCancelled()) {
+          return { outcome: NoteOutcomeMapper.fromThrown(command, new Error('CONVERSATION_CANCELLED')) };
+        }
+        return { next: 'route' };
+      },
+      route: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        return { next: 'invoke' };
+      },
+      invoke: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        return { outcome: await self.invokeCommand(command, request, effective) };
+      },
+      verify: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        return { next: 'hitl' };
+      },
+      hitl: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        return { next: 'publish' };
+      },
+      publish: async (_context: DispatchGraphContext): Promise<DispatchStageResult> => {
+        return { errorCode: 'DISPATCH_GRAPH_NO_TERMINAL', errorMessage: 'publish stage not wired yet' };
+      },
+    };
+    const outcome: NoteOutcome = await DispatchGraph.run(
+      command,
+      handlers,
+      Date.now(),
+      (code: string, message: string, retryable: boolean): NoteOutcome => {
+        const failed: NoteOutcome = {
+          kind: 'failed',
+          operationId: command.operationId,
+          route: 'D1',
+          durationMs: 0,
+          code: code,
+          message: message,
+          retryable: retryable,
+        };
+        return failed;
+      },
+    );
+    await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(outcome));
+    return outcome;
   }
 
   // spec 036 阶段 1：一个 set 一个 run。

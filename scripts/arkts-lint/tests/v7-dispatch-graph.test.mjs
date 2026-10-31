@@ -1,6 +1,8 @@
 // A4 切片 3：DispatchGraph 主图骨架的推进语义测试（纯 handler，不碰 RDB/LLM）。
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 
 const mod = loadNoteReviewEtsModule('agents/src/main/ets/core/dispatch/DispatchGraph.ets');
@@ -83,4 +85,14 @@ test('illegal stage jumps and missing terminals are rejected', async () => {
 
 test('stage order constant matches the A4 contract', () => {
   assert.deepEqual(Array.from(ORDER), ['preflight', 'route', 'invoke', 'verify', 'hitl', 'publish']);
+});
+
+
+test('dispatchCommand is orchestrated by the main graph (A4 slice 3b)', () => {
+  const dispatcher = readFileSync(resolve(import.meta.dirname, '../../..', 'agents/src/main/ets/core/Dispatcher.ets'), 'utf8');
+  assert.match(dispatcher, /DispatchGraph\.run\(/);
+  assert.match(dispatcher, /preflight: async/);
+  assert.match(dispatcher, /route: async/);
+  assert.match(dispatcher, /invoke: async/);
+  assert.match(dispatcher, /private async invokeCommand\(/);
 });
