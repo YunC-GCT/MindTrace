@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createRuntime, memoryStorage, draft } from './knowledge-dispatch-runtime.mjs';
+import { dispatchLegacy } from './legacy-dispatch-helper.mjs';
 
 const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
@@ -198,16 +199,28 @@ test('A2A ingest receipt consumes NoteOutcome instead of exception text (A3d)', 
   assert.match(ability, /retryable/);
 });
 
-test('legacy dispatch entry is preserved as the migration adapter', async () => {
+test('legacy DispatchResult appearance is reproducible from the command seam (4c migration)', async () => {
   const runtime = createRuntime(alternating());
   const storage = memoryStorage();
-  const result = await runtime.dispatcher.dispatch({ source: 'app', payload: TEXT_PAYLOAD }, {
+  const result = await dispatchLegacy(runtime, { source: 'app', payload: TEXT_PAYLOAD }, {
     persist: true,
     dao: storage.dao,
   });
   assert.equal(result.success, true);
   assert.equal(result.route, 'D1');
   assert.equal(typeof result.durationMs, 'number');
+
+  const storage2 = memoryStorage();
+  const outcome = await runtime.dispatcher.dispatchCommand({
+    kind: 'capture',
+    operationId: 'op-equivalence',
+    source: 'app',
+    payload: TEXT_PAYLOAD,
+  }, { persist: true, dao: storage2.dao });
+  assert.equal(outcome.kind, 'committed');
+  assert.ok(outcome.noteId.length > 0, '命令 seam 必须返回 noteId');
+  assert.ok(result.data.id.length > 0, 'adapter 还原的 data.id 必须存在');
+  assert.equal(result.data.title.length > 0, true, 'adapter 还原的 data 保留标题（旧外观）');
 });
 
 test('AiService capture and confirm paths use the command seam', () => {
