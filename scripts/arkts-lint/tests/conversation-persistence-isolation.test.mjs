@@ -44,10 +44,11 @@ test('conversation note runs persist origin and deletion includes cancelled unco
 });
 
 test('completed note-generation runs retain conversation ownership metadata', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
-  const start = dispatcher.indexOf('private completedRun(');
+  // 2026-10-31：completedRun 随评估/终态逻辑抽到 GenerationEvaluator。
+  const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
+  const start = evaluator.indexOf('static completedRun(');
   assert.notEqual(start, -1);
-  const completedRun = dispatcher.slice(start, start + 900);
+  const completedRun = evaluator.slice(start, start + 900);
   assert.match(completedRun, /originSessionId: run\.originSessionId,/);
   assert.match(completedRun, /parentConversationRunId: run\.parentConversationRunId,/);
 });

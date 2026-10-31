@@ -49,13 +49,15 @@ test('normalizeBundle re-sequences fragments and fills missing IDs', () => {
 });
 
 test('standard and deep generation receive the normalized source bundle', () => {
+  // 2026-10-31：withTokenBudget 随评估/终态逻辑抽到 GenerationEvaluator（静态方法）。
+  const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
   const calls = dispatcher.match(
     /withTokenBudget\(\s*request,\s*budget\.maxTokens,\s*bundle,\s*requirement,\s*\)/g,
   ) ?? [];
   assert.equal(calls.length, 2);
-  assert.match(dispatcher, /private withTokenBudget\([\s\S]*?bundle: SourceBundle[\s\S]*?sources: bundle/);
-  assert.match(dispatcher, /private withTokenBudget\([\s\S]*?requirement: NoteGenerationRequirement[\s\S]*?requirement: requirement/);
-  assert.doesNotMatch(dispatcher, /private withTokenBudget\([\s\S]*?sources: request\.sources/);
+  assert.match(evaluator, /static withTokenBudget\([\s\S]*?bundle: SourceBundle[\s\S]*?sources: bundle/);
+  assert.match(evaluator, /static withTokenBudget\([\s\S]*?requirement: NoteGenerationRequirement[\s\S]*?requirement: requirement/);
+  assert.doesNotMatch(evaluator, /static withTokenBudget\([\s\S]*?sources: request\.sources/);
 });
 
 test('incremental generation concatenates base and new sources', () => {

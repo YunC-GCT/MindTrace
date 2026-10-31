@@ -15,7 +15,9 @@ test('Issue 103 wires a real deep route through Dispatcher and KnowledgeModel', 
   assert.match(dispatcher, /dispatchDeepGeneration/)
   assert.match(dispatcher, /structureDeepDraft/)
   assert.doesNotMatch(dispatcher, /repairDeepDraft/)
-  assert.match(dispatcher, /deepMergeIssues/)
+  // 2026-10-31：deepMergeIssues 随评估逻辑抽到 GenerationEvaluator（Dispatcher 只留分支编排）。
+  const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets')
+  assert.match(evaluator, /deepMergeIssues/)
   assert.doesNotMatch(dispatcher, /DEEP_ROUTE_UNSUPPORTED/)
   const facade = read('agents/src/main/ets/agents/KnowledgeModel.ets')
   assert.match(facade, /this\.deepDraftComposer\.compose\(request, progressSink\)/)

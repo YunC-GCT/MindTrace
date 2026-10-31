@@ -25,12 +25,13 @@ const runtimeSources = [
   'agents/src/main/ets/core/dispatch/DispatchOptions.ets',
   'agents/src/main/ets/core/dispatch/UnitSupport.ets',
   'agents/src/main/ets/core/dispatch/PreparedBranch.ets',
+  'agents/src/main/ets/core/dispatch/GenerationEvaluator.ets',
   'agents/src/main/ets/core/Dispatcher.ets',
 ].map((path) => read(path).replace(/^import[\s\S]*?;\r?\n/gm, '')).join('\n');
 const compiled = ts.transpileModule('class Logger {}\n' + runtimeSources, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
-const { TruthCheckService, TruthCheckNodeFactory, Dispatcher } = await import(
+const { TruthCheckService, TruthCheckNodeFactory, Dispatcher, GenerationEvaluator } = await import(
   'data:text/javascript;base64,' + Buffer.from(compiled).toString('base64')
 );
 
@@ -72,7 +73,7 @@ test('candidate check preserves source state but does not validate raw source as
 test('dispatcher retains the actual local failure detail through the real prepared graph', async () => {
   const dispatcher = new Dispatcher();
   const result = { draft: { sections: [] }, evidence: [], verification: { issues: [], decisions: [] } };
-  const evaluation = await dispatcher.evaluateStandardCandidate(result,
+  const evaluation = await GenerationEvaluator.evaluateStandardCandidate(result,
     { fragments: [{ id: 's1', text: 'original' }] }, { mustInclude: [] },
     { draftToKnowledgeUnit: () => ({ content: String.raw`\frac{1}{2` }) });
   assert.equal(evaluation.hardIssueCount, 1);
@@ -83,7 +84,7 @@ test('diagnostics retain long reasons, section locations and all distinct issues
   const dispatcher = new Dispatcher();
   const issues = Array.from({ length: 5 }, (_, index) => ({ code: 'MATH_ERROR', stage: 'verifier',
     severity: 'hard', sectionId: 'section-' + index, message: '原因'.repeat(60) + '关键结论', repairable: false }));
-  const summary = dispatcher.issueSummary(issues);
+  const summary = GenerationEvaluator.issueSummary(issues);
   assert.match(summary, /section-4/);
   assert.equal(summary.match(/关键结论/g).length, 5);
 });
@@ -94,11 +95,11 @@ test('soft verifier advice does not mislabel a hard local gate failure', () => {
     { stage: 'verifier', code: 'OPTIONAL_EXPLANATION', severity: 'soft', message: '可补充解释' },
     { stage: 'truth_check', code: 'TRUTH_CHECK_ERROR', severity: 'hard', message: 'missing closing brace' },
   ];
-  assert.equal(dispatcher.readOnlyVerificationStopReason(issues), 'artifact_validation_failed');
+  assert.equal(GenerationEvaluator.readOnlyVerificationStopReason(issues), 'artifact_validation_failed');
   issues[0].severity = 'hard';
-  assert.equal(dispatcher.readOnlyVerificationStopReason(issues), 'content_verification_failed');
+  assert.equal(GenerationEvaluator.readOnlyVerificationStopReason(issues), 'content_verification_failed');
   issues[0].code = 'VERIFIER_UNAVAILABLE';
-  assert.equal(dispatcher.readOnlyVerificationStopReason(issues), 'verifier_unavailable');
+  assert.equal(GenerationEvaluator.readOnlyVerificationStopReason(issues), 'verifier_unavailable');
 });
 
 test('generation and verification prompts separate derived math from source quotations and metadata', () => {

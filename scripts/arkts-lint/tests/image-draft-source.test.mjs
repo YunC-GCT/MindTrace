@@ -31,14 +31,14 @@ test('image payload maps to camera_capture source in the capture flow', () => {
 
 test('generation pipeline always synthesizes a text payload from the source bundle', () => {
   const genPayloadBlock = dispatcher.match(
-    /const generationPayload: DispatchRequest = \{[\s\S]*?payload: \{ kind: 'text', text: this\.bundleText\(bundle\) \}/,
+    /const generationPayload: DispatchRequest = \{[\s\S]*?payload: \{ kind: 'text', text: (?:this|GenerationEvaluator)\.bundleText\(bundle\) \}/,
   );
   assert.ok(genPayloadBlock !== null, 'dispatchGeneration must replace image payload with synthesized text');
 });
 
 test('light route generation state uses synthesized text and persist=false', () => {
   const lightStateBlock = dispatcher.match(
-    /const initial: AgentState = \{[\s\S]*?captureText: this\.bundleText\(bundle\)[\s\S]*?source: 'note_generation'[\s\S]*?persist: false/,
+    /const initial: AgentState = \{[\s\S]*?captureText: (?:this|GenerationEvaluator)\.bundleText\(bundle\)[\s\S]*?source: 'note_generation'[\s\S]*?persist: false/,
   );
   assert.ok(lightStateBlock !== null, 'light route must set persist=false');
 });
@@ -67,7 +67,11 @@ test('OcrNode reads input.payload for image kind but does not run in the generat
 });
 
 test('image source does not leak into generation candidate evaluation truth check', () => {
-  const evalBlock = dispatcher.match(/PreparedBranch\.buildGraph[\s\S]*?captureText: this\.bundleText\(bundle\)/);
+  // 2026-10-31：evaluateStandardCandidate 抽到 GenerationEvaluator，bundleText 也随之外移。
+  const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
+  const evalBlock = evaluator.match(
+    /PreparedBranch\.buildGraph[\s\S]*?captureText: (?:this|GenerationEvaluator)\.bundleText\(bundle\)/,
+  );
   assert.ok(evalBlock !== null, 'evaluateStandardCandidate must use bundleText, not image URI');
 });
 
