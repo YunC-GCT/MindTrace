@@ -17,6 +17,7 @@ import { AiService } from './AiService';
 import { CardSnapshotService } from './CardSnapshotService';
 import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
 import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
+import { RagRetrievalService } from './RagRetrievalService';
 
 const TAG: string = 'E2E';
 const DOMAIN: number = 0xE2E0;
@@ -119,6 +120,30 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /** RAG 能力探针：FTS5 与 Kit 各自带超时，保证一定给出结论。 */
+  static async runRagProbe(ctx: common.UIAbilityContext): Promise<void> {
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-probe start');
+    const startedAt: number = Date.now();
+    let ftsResult: string = 'timeout';
+    try {
+      ftsResult = await DebugCaptureRunner.withTimeout(
+        RagRetrievalService.fts5Diagnostic(), 15000, 'fts5');
+    } catch (error) {
+      ftsResult = 'timeout-or-error: ' + (error as Error).message;
+    }
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-fts ' + ftsResult);
+    let kitResult: string = 'timeout';
+    try {
+      kitResult = await DebugCaptureRunner.withTimeout(
+        RagRetrievalService.kitDiagnostic(ctx), 15000, 'kit');
+    } catch (error) {
+      kitResult = 'timeout-or-error: ' + (error as Error).message;
+    }
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-kit ' + kitResult);
+    hilog.info(DOMAIN, TAG, '%{public}s',
+      'stage=done ragProbe=1 ms=' + (Date.now() - startedAt).toString());
+  }
+
   /**
    * 036 阶段 4 预览自检：真实 OCR + 切题 + 合并，**零落库**。
    * 关键日志：stage=preview-start / stage=preview-item（题号/来源图/复核标记）/ stage=done previewOnly=1。
