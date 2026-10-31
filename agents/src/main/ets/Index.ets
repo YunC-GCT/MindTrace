@@ -24,6 +24,8 @@ export { PromptBuilder } from './agents/PromptBuilder';
 export { TruthCheckService } from './agents/TruthCheckService';
 export { normalizeSubjectName, sanitizeNoteTitle, CANONICAL_SUBJECTS } from './agents/KnowledgeTaxonomy';
 export type { SubjectNormalization, TitleSanitization } from './agents/KnowledgeTaxonomy';
+export { planCaptureSet } from './graph/captureSetPlanner';
+export type { PlannedProblem, SetImageText, SetPlan } from './graph/captureSetPlanner';
 export { OcrTool } from './mcp/tools/OcrTool';
 export type { OcrRecognitionResult } from './mcp/tools/OcrTool';
 

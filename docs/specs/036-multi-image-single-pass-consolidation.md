@@ -225,3 +225,13 @@ awaiting_confirm → discarded（用户不勾）
 | D2 | Stage A 并行度 | 1 / 2 / N | **2**（端侧 OCR 内存敏感） |
 | D3 | 灰区合并 | 保留两条待复核 / 自动合并 | **保留两条**（让用户删，别让用户拆） |
 | D4 | 确认页默认勾选 | 全选 / 全不选 / 按置信度 | **按置信度**：无 flag 默认勾，有 flag 默认不勾 |
+
+## 14. 阶段 2/3 接线记录（2026-10-31）
+
+| 项 | 内容 |
+|---|---|
+| 已就绪 | `problemSegmenter.segmentProblems`（220 行）/ `problemMerger.mergeProblems`（219 行）+ 契约测试（`v7-problem-segmenter` / `v7-problem-merger`） |
+| 新增编排件 | `agents/graph/captureSetPlanner.planCaptureSet(SetImageText[]) → SetPlan`：逐图切题 → 扁平化 `SourceSegment` → 跨图合并 → `PlannedProblem[]`（含 `sourceImageIndexes` / `needsReview` / `fingerprint`）；`emptyImageIndexes` / `degradedImageIndexes` 单独回执 |
+| 修正 | segmenter 单主锚点页面此前返回 `anchor:''`，跨图合并会把单题页当成「无题号续页」吞进上一题（S4 多图多题会串题）；现保留锚点，`v7-problem-segmenter` 期望同步更新 |
+| 待接线 | `CapturePipeline.captureSet`：逐图 OCR（`OcrService.recognizeUri`）→ `planCaptureSet` → 逐题 capture 命令（`payload.text = problem.text`，不再二次 OCR）→ `CaptureSetResult` 按题回执；UI 确认页（阶段 4）随后 |
+| 未做 | RAG（`rag_chunk`/`rag_embedding` 仅建表，无运行时服务）——独立轨道，见任务清单 |
