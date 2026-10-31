@@ -247,7 +247,15 @@ awaiting_confirm → discarded（用户不勾）
 | 题号 | 部分段 anchor 为空 | anchors = `["1."]…["6."]` 全保留，`sources=[0]×3 + [1]×3` |
 | 入库 | 7/7 但含脏笔记 | **6/6 committed，0 failed**，耗时 154.6s（逐题 LLM 分类+结构化） |
 
-S2（单图多题）/ S4（多图多题）在真机按 036 §11 口径通过；S3（跨页同题）由 planner 单元测试覆盖，真机待真实「题干预览 + 解答下一页」样本。
+S2（单图多题）/ S4（多图多题）在真机按 036 §11 口径通过；S3（跨页同题）真机验证（2026-11-01，`e2e=captureSetS3`，bundle 新增 `debug/cross-1.png`（题干预览，无终止符）+ `debug/cross-2.png`（解答页，无题号））：
+
+```
+stage=s3 plan problems=1 sources=[0,1] merged=1 preambleSkipped=1
+stage=s3 commit done=1 failed=0 ms=71007
+stage=done s3=1
+```
+
+即两页被正确合并为 **1 道题**（来源图 [0,1]），确认页只会出现 1 条。
 
 S5（重拍/重复选图去重）真机验证（2026-10-31，`e2e=captureSet5`：`[math-1, math-2, math-1]`）：
 
@@ -280,3 +288,15 @@ S5（重拍/重复选图去重）真机验证（2026-10-31，`e2e=captureSet5`�
 - 真机 `e2e=captureSetIdem`（同一预览提交两次）：
   - firstDone=6，secondDone=6，`duplicates=6`，`idsEqual=1`（两次 noteId 完全一致），第二次 3.4s 且无新增写入。
 - 已知问题：**装新包后首次冷启动立刻提交**曾出现 commit 卡死（draft confirm 也复现过），重跑正常；疑似首启迁移/初始化与写事务竞争，后续可加「RAG/DB ready 标记 + e2e 等待」缓解。
+
+## 15. 验收矩阵总览（2026-11-01）
+
+| 场景 | 真机证据 | 结果 |
+|---|---|---|
+| S1 单图单题 | `e2e-capture` / 历史 capture | ✅ |
+| S2 单图多题 | `e2e=captureSet`：2 图 → 6 题（sources=[0]×3） | ✅ |
+| S3 跨页同题 | `e2e=captureSetS3`：2 页 → 1 题（sources=[0,1]） | ✅ |
+| S4 多图多题 | `e2e=captureSet`：2 图 → 6 题（sources=[0]×3+[1]×3） | ✅ |
+| S5 重拍去重 | `e2e=captureSet5`：3 图（含重复页）→ 6 题，重复页 sources=[0,2] | ✅ |
+| 确认页 UI | `CaptureSetConfirmOverlay` 已接线；手动点选待用户验证 | 🟡 |
+| 幂等 | `e2e=captureSetIdem`：两次提交 idsEqual=1 / duplicates=6 | ✅ |

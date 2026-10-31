@@ -124,6 +124,46 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /** 036 S3 自检：题干页 + 解答页应合并为 1 题（sources=[0,1]）。 */
+  static async runCaptureSetS3(ctx: common.UIAbilityContext): Promise<void> {
+    const rawPaths: string[] = ['debug/cross-1.png', 'debug/cross-2.png'];
+    const uris: string[] = [];
+    for (let i = 0; i < rawPaths.length; i++) {
+      uris.push(await DebugCaptureRunner.materialize(ctx, rawPaths[i]));
+    }
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=s3 start images=' + uris.length.toString());
+    const startedAt: number = Date.now();
+    const service: AiService = new AiService(ctx);
+    try {
+      const preview: CaptureSetPreview = await service.previewCaptureSet(uris);
+      let sourcesText: string = '';
+      let firstSources: number[] = [];
+      if (preview.problems.length > 0) {
+        firstSources = preview.problems[0].sourceImageIndexes;
+        sourcesText = JSON.stringify(firstSources);
+      }
+      const merged: string = preview.problems.length === 1
+        && firstSources.length === 2 && firstSources[0] === 0 && firstSources[1] === 1 ? '1' : '0';
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=s3 plan problems=' + preview.problems.length.toString()
+          + ' sources=' + sourcesText + ' merged=' + merged
+          + ' preambleSkipped=' + preview.preambleSkipped.toString());
+      const all: number[] = [];
+      for (let i = 0; i < preview.problems.length; i++) {
+        all.push(preview.problems[i].index);
+      }
+      const result: CaptureSetResult = await service.commitCaptureSet(preview, all);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=s3 commit done=' + result.done.toString() + ' failed=' + result.failed.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=done s3=' + merged);
+    } catch (error) {
+      const e: Error = error as Error;
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=s3 fail err=' + e.message);
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done s3=0');
+    }
+  }
+
   /** 036 幂等自检：同一预览提交两次，第二次应命中 commit 记录（duplicate，不重复写笔记）。 */
   static async runCaptureSetIdem(ctx: common.UIAbilityContext): Promise<void> {
     const rawPaths: string[] = ['debug/math-1.png', 'debug/math-2.png'];
