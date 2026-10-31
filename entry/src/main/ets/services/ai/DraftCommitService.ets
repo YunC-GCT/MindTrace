@@ -54,7 +54,8 @@ export class DraftCommitService {
       throw new Error('草稿检查点已变化');
     }
     const updated: NoteGenerationCheckpoint = {
-      id: event.runId + ':user-edit',
+      // 候选哈希进 id：同一 run 内换候选/重试时每个候选都有独立不可变检查点行。
+      id: event.runId + ':user-edit:' + sourceFingerprint(JSON.stringify(candidate)).substring(0, 8),
       runId: previous.runId,
       iteration: previous.iteration + 1,
       stage: previous.stage,

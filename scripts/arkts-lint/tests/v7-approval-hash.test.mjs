@@ -56,3 +56,15 @@ test('getCheckpoint queries an explicit column list and logs mismatches (device-
   const store = read('entry/src/main/ets/database/KnowledgeUnitNoteWriteStore.ets');
   assert.match(store, /approval mismatch runId=/);
 });
+
+
+test('user-edit checkpoints are keyed by candidate hash (re-edit safe)', () => {
+  const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
+  assert.match(commit, /id: event\.runId \+ ':user-edit:' \+ sourceFingerprint/);
+});
+
+test('markCheckpointApproved fails loudly when no row matches', () => {
+  const repo = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
+  assert.match(repo, /markCheckpointApproved matched no checkpoint row/);
+  assert.match(repo, /const updatedRows: number = await this\.store\.update\(bucket, predicates\)/);
+});

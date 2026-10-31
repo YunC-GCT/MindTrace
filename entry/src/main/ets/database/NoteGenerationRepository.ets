@@ -132,7 +132,10 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
     const predicates = new relationalStore.RdbPredicates('note_generation_checkpoint');
     predicates.equalTo('id', checkpointId).and().equalTo('run_id', runId).and().equalTo('candidate_hash', candidateHash);
     const bucket: relationalStore.ValuesBucket = { 'approved_at': approvedAt };
-    await this.store.update(bucket, predicates);
+    const updatedRows: number = await this.store.update(bucket, predicates);
+    if (updatedRows <= 0) {
+      throw new Error('markCheckpointApproved matched no checkpoint row: ' + checkpointId);
+    }
   }
 
   /** v18：按 (runId, checkpointId) 读检查点（审批校验用）。 */
