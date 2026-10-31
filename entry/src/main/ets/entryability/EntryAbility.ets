@@ -263,6 +263,12 @@ export default class EntryAbility extends UIAbility {
       }
       return;
     }
+    if (mode === 'ragSearch') {
+      DebugCaptureRunner.runRagSearch(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'RAG 检索自检异常: ' + e.message);
+      });
+      return;
+    }
     if (mode === 'ragProbe') {
       DebugCaptureRunner.runRagProbe(this.context).catch((e: Error) => {
         hilog.error(0xE2E0, 'E2E', '%{public}s', 'RAG 探针异常: ' + e.message);

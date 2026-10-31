@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 18;
+const DB_SCHEMA_VERSION: number = 19;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -213,6 +213,16 @@ CREATE TABLE IF NOT EXISTS rag_chunk (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 )`;
+
+// v19：RAG 检索 FTS 表（trigram 分词，中文子串可命中；≥3 字查询走 MATCH，2 字走 LIKE fallback）
+const SQL_CREATE_NOTE_FTS: string = `
+  CREATE VIRTUAL TABLE IF NOT EXISTS note_fts USING fts5(
+    title, content, unit_id UNINDEXED, subject UNINDEXED, chapter UNINDEXED, tokenize='trigram'
+  )`;
+
+const SQL_BACKFILL_NOTE_FTS: string =
+  "INSERT INTO note_fts (title, content, unit_id, subject, chapter) " +
+  "SELECT title, content, id, subject, chapter FROM knowledge_unit";
 
 const SQL_CREATE_RAG_EMBEDDING: string = `
 CREATE TABLE IF NOT EXISTS rag_embedding (
@@ -471,6 +481,7 @@ export class DatabaseHelper {
       SQL_CREATE_KG_EDGE,
       SQL_CREATE_RAG_CHUNK,
       SQL_CREATE_RAG_EMBEDDING,
+      SQL_CREATE_NOTE_FTS,
       SQL_CREATE_REVIEW_ITEM,
       SQL_CREATE_REVIEW_LOG,
       SQL_CREATE_RUN_STORE,
@@ -613,6 +624,12 @@ export class DatabaseHelper {
     // v18：检查点审批标记列（幂等）。
     const hasCheckpointApproved: boolean = await DatabaseHelper.hasColumn(store, "note_generation_checkpoint", "approved_at");
     if (!hasCheckpointApproved) { await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_CHECKPOINT_APPROVED); }
+
+    // v19：RAG 检索 FTS 回填（从 knowledge_unit 全量重建，仅首次迁移执行）。
+    if (store.version < 19) {
+      await DatabaseHelper.executeSql(store, "DELETE FROM note_fts");
+      await DatabaseHelper.executeSql(store, SQL_BACKFILL_NOTE_FTS);
+    }
 
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_MESSAGE_KEY);
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_SEQUENCE);

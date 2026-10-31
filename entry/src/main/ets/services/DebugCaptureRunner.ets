@@ -17,7 +17,7 @@ import { AiService } from './AiService';
 import { CardSnapshotService } from './CardSnapshotService';
 import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
 import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
-import { RagRetrievalService } from './RagRetrievalService';
+import { RagHit, RagRetrievalService } from './RagRetrievalService';
 
 const TAG: string = 'E2E';
 const DOMAIN: number = 0xE2E0;
@@ -120,6 +120,33 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /** RAG 检索自检：对既有笔记跑 FTS（≥3字）/ LIKE（2字）两种查询。 */
+  static async runRagSearch(ctx: common.UIAbilityContext): Promise<void> {
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-search start');
+    const startedAt: number = Date.now();
+    const queries: string[] = ['连续性', '极限'];
+    try {
+      for (let i = 0; i < queries.length; i++) {
+        const query: string = queries[i];
+        const hits: RagHit[] = await RagRetrievalService.search(query, 5);
+        let firstId: string = '';
+        let firstTitle: string = '';
+        if (hits.length > 0) {
+          firstId = hits[0].unitId;
+          firstTitle = hits[0].title;
+        }
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=rag-hit q=' + query + ' hits=' + hits.length.toString()
+            + ' first=' + firstId + ' title=' + firstTitle);
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done ragSearch=1 ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      const e: Error = error as Error;
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSearch=0 err=' + e.message);
+    }
+  }
+
   /** RAG 能力探针：FTS5 与 Kit 各自带超时，保证一定给出结论。 */
   static async runRagProbe(ctx: common.UIAbilityContext): Promise<void> {
     hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-probe start');

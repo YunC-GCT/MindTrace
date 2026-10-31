@@ -9,6 +9,7 @@
  *   manual / AI adapter → create / update → repository commit → post-commit effects
  */
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
+import { NoteFtsIndex } from '../database/NoteFtsIndex';
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitPostCommitEffect,
@@ -32,6 +33,7 @@ export class KnowledgeUnitWriteService {
     WritePathValidator.validateKnowledgeUnit(unit);
     const persisted: KnowledgeUnitPersistenceResult =
       await this.repository.createWithRevision(unit, generationMetadata);
+    await NoteFtsIndex.upsert(persisted.unit);
     const warnings: string[] = await this.runPostCommit(persisted.unit, true);
     const result: KnowledgeUnitWriteResult = {
       committed: true,
@@ -51,6 +53,7 @@ export class KnowledgeUnitWriteService {
     try {
       const persisted: KnowledgeUnitPersistenceResult =
         await this.repository.updateWithRevision(unit, expectedVersion, generationMetadata);
+      await NoteFtsIndex.upsert(persisted.unit);
       const warnings: string[] = await this.runPostCommit(persisted.unit, false);
       const result: KnowledgeUnitWriteResult = {
         committed: true,

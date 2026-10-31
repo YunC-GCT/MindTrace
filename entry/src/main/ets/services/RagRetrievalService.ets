@@ -20,6 +20,7 @@ import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DatabaseHelper, Logger } from 'common';
+import { planRagQuery, RagQueryPlan } from './RagQueryPlan';
 
 const log: Logger = new Logger('RagRetrieval');
 const DB_NAME: string = 'MindTrace.db';
@@ -27,6 +28,15 @@ const FTS_TABLE: string = 'note_fts';
 const PROBE_SEED_TEXT: string = '函数在一点的连续性 极限 连续函数';
 const PROBE_QUERY: string = '连续性';
 const KIT_PROBE_TIMEOUT_MS: number = 8000;
+
+export interface RagHit {
+  unitId: string;
+  title: string;
+  content: string;
+  subject: string;
+  chapter: string;
+  score?: number;
+}
 
 export interface RagProbeResult {
   fts5Ok: boolean;
@@ -182,6 +192,52 @@ export class RagRetrievalService {
       result.kitRetrieverOk = false;
       result.kitMessage = 'getRetriever failed: ' + e.message;
       log.warn('rag kit probe failed: ' + result.kitMessage);
+    }
+  }
+
+  /**
+   * RAG 检索一期：自管 FTS5（trigram）。
+   * - ≥3 字：MATCH（rank 排序）
+   * - <3 字：LIKE 子串 fallback
+   * 任何失败返回空数组（由调用方回退 note.search）。
+   */
+  static async search(query: string, topK: number): Promise<RagHit[]> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      return [];
+    }
+    const trimmed: string = query.trim();
+    if (trimmed.length === 0 || topK <= 0) {
+      return [];
+    }
+    const plan: RagQueryPlan = planRagQuery(trimmed);
+    let resultSet: relationalStore.ResultSet | undefined = undefined;
+    try {
+      if (plan.mode === 'fts') {
+        resultSet = await store.querySql(plan.sql, [trimmed, topK]);
+      } else {
+        const pattern: string = '%' + trimmed + '%';
+        resultSet = await store.querySql(plan.sql, [pattern, pattern, topK]);
+      }
+      const hits: RagHit[] = [];
+      while (resultSet.goToNextRow()) {
+        const hit: RagHit = {
+          unitId: resultSet.getString(resultSet.getColumnIndex('unit_id')),
+          title: resultSet.getString(resultSet.getColumnIndex('title')),
+          content: resultSet.getString(resultSet.getColumnIndex('content')),
+          subject: resultSet.getString(resultSet.getColumnIndex('subject')),
+          chapter: resultSet.getString(resultSet.getColumnIndex('chapter')),
+        };
+        hits.push(hit);
+      }
+      return hits;
+    } catch (error) {
+      log.warn('rag search failed query=' + trimmed + ' err=' + (error as Error).message);
+      return [];
+    } finally {
+      if (resultSet !== undefined) {
+        resultSet.close();
+      }
     }
   }
 

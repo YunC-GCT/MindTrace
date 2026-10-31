@@ -49,8 +49,8 @@ NoteEvidenceService.build(query)
 
 | 切片 | 内容 | 验收 |
 |---|---|---|
-| R1 | `RagRetrievalService.probe`（getRetriever + FTS5 建表/插入/检索）+ `e2e=ragProbe` 真机探针 | 真机日志：`stage=rag-probe ok=1 hits>=1` |
-| R2 | schema v19：`note_fts` + 迁移回填；写路径同步（create/update/delete） | 单测（schema/同步 SQL）+ 真机笔记写入后检索命中 |
+| R1 ✅ | `RagRetrievalService.probe`（getRetriever + FTS5 建表/插入/检索）+ `e2e=ragProbe` 真机探针 | 真机：FTS5 命中 1 条 / 58ms；Kit getRetriever OK，retrieveRdb 报 1021201002（暂缓） |
+| R2 ✅ | schema v19：`note_fts`（trigram FTS5）+ 迁移回填；写路径同步（create/update/delete）；`RagRetrievalService.search`（≥3 字 MATCH / <3 字 LIKE）；`e2e=ragSearch` | 单测 6 条（v7-rag-retrieval）+ 真机：97 条历史笔记回填后 `连续性` FTS 命中 5 条、`极限` LIKE 命中 5 条 / 17ms |
 | R3 | `NoteEvidenceService.queryHits` 切换到 Kit（保留 fallback） | 单测（映射/降级）+ 真机问「我之前记的极限题」命中引用 |
 | R4 | 生成侧注入：`NoteGenerationContextBuilder` 加入相关笔记片段 | 生成笔记时 prompt 含检索片段 |
 | R5 | `knowledgeProcessor`/向量通道评估（需先解决 embedding 来源） | 文档结论 |
@@ -71,3 +71,12 @@ NoteEvidenceService.build(query)
 | Kit 在扩展进程不可用/崩溃 | 只在 entry import；A2A 链路不调用 |
 | 数据库被 Kit 独立打开导致锁 | Kit 使用同一 `StoreConfig`（name/securityLevel）；写入路径短事务，失败降级 |
 | 检索结果与 `note.search` 语义差异 | 保留 fallback + `degraded/reason` 标记，UI 可见 |
+
+### R2 真机验证（2026-10-31，`51e46b2` 之后）
+
+- schema v19 迁移在设备上完成 `note_fts` 建表 + 从 `knowledge_unit` 全量回填（97 条笔记）。
+- `e2e=ragSearch`（`node scripts/device-runner.mjs e2e ragSearch --cold`）：
+  - `q=连续性`（≥3 字，trigram MATCH）→ **hits=5**，首条 `函数在一点连续的定义`
+  - `q=极限`（2 字，LIKE fallback）→ **hits=5**，首条 `数列与函数极限定义`
+  - 总耗时 17ms。
+- 写路径同步：`KnowledgeUnitWriteService.create/update` 后 upsert、`NoteDao.deleteById` commit 后 remove（失败只 warn，不阻塞主写）。

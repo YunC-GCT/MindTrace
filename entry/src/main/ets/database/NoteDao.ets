@@ -13,6 +13,7 @@
 
 import { relationalStore } from '@kit.ArkData';
 import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult } from 'common';
+import { NoteFtsIndex } from './NoteFtsIndex';
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitRevision,
@@ -298,6 +299,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       const store: relationalStore.Transaction = transaction;
       await store.delete(predicates);
       await transaction.commit();
+      await NoteFtsIndex.remove(id);
     } catch (e) {
       await NoteDao.rollback(transaction);
       const message: string = e instanceof Error ? e.message : String(e);
