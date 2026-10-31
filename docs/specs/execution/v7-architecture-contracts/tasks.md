@@ -97,7 +97,8 @@
       - [x] `IncrementalBranch` 完成（failed code／readyPreview(draft+generation)／operationId 透传）
       - [x] `GenerationEvaluator.finishStandardGeneration` 完成（readyPreview(draft+generation)／needsInput(issues+generation)；6 个调用点过渡期用适配器）
       - [x] `GenerationBranch` 完成（dispatchGeneration / dispatchStandardGeneration / dispatchDeepGeneration 全转 NoteOutcome；6 个 evaluator 调用点去适配器；needsInput 带 generation+issues）
-      - [ ] `CaptureBranch`（最后一块）
+      - [x] `CaptureBranch` 完成（committed／failed(code+retryable)／readyPreview(analysisOnly)／cancelled(committed 信封)；旧 `dispatch()` 的取消抛错语义由 `reportCancellation` 保持）
+    - **Step 1 全部完成**：五个组件（PreparedBranch / IncrementalBranch / GenerationEvaluator / GenerationBranch / CaptureBranch）均返回 `NoteOutcome`，旧外观仅剩 Dispatcher 出口处过渡适配
     - [ ] Step 2：Dispatcher 删旧 `dispatch()` / `dispatchSet()`，映射逻辑下放 branch
     - [ ] Step 3：common 删 `DispatchResult` 与迁移字段
     - [ ] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态）

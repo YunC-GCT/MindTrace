@@ -23,6 +23,7 @@ import type { CaptureGraphError } from '../../graph/AgentState';
 import { NoteAgent } from '../../agents/NoteAgent';
 import type { NoteAgentOptions } from '../../agents/NoteAgent';
 import type { DispatchOptions } from './DispatchOptions';
+import type { NoteOutcome } from 'common';
 import { seedTextFromRequest, sourceFromPayload } from './UnitSupport';
 
 const log = new Logger('CaptureBranch');
@@ -33,7 +34,16 @@ export class CaptureBranch {
     options: DispatchOptions,
     runContext: RunContext,
     startedAt: number,
-  ): Promise<DispatchResult> {
+  ): Promise<NoteOutcome> {
+    const operationId: string = req.operationId !== undefined ? req.operationId : 'legacy';
+    const failedOutcome = (message: string, code: string, retryable: boolean): NoteOutcome => {
+      const outcome: NoteOutcome = {
+        kind: 'failed', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+        code: code, message: message,
+      };
+      if (retryable) { outcome.retryable = true; }
+      return outcome;
+    };
     log.info('dispatch enter, source=' + req.source + ', payload.kind=' + req.payload.kind);
     const initial: AgentState = {
       captureText: seedTextFromRequest(req),
@@ -69,16 +79,8 @@ export class CaptureBranch {
     }
     if (error !== undefined) {
       log.error('capture graph failed: ' + error.kind + ' step=' + error.step + ' msg=' + error.message);
-      const failed: DispatchResult = {
-        success: false,
-        route: 'D1',
-        errorMessage: error.message,
-        durationMs: Date.now() - startedAt,
-      };
-      if (options.reportCancellation === true) {
-        failed.errorCode = error.kind;
-        failed.errorRetryable = error.retriable;
-      }
+      const failed: NoteOutcome = failedOutcome(error.message,
+        options.reportCancellation === true ? error.kind : '', error.retriable === true);
       if (finalState.classification !== undefined) {
         failed.classification = finalState.classification;
       }
@@ -88,30 +90,21 @@ export class CaptureBranch {
       return failed;
     }
     if (finalState.analysisOnly) {
-      const analysis: DispatchResult = {
-        success: finalState.classification !== undefined,
-        route: 'D1',
-        durationMs: Date.now() - startedAt,
+      if (finalState.classification === undefined) {
+        log.info('dispatch analysis completed');
+        return failedOutcome('capture workflow did not produce a classification', '', false);
+      }
+      const classificationOutcome: NoteOutcome = {
+        kind: 'readyPreview', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+        runId: '', checkpointId: '', classification: finalState.classification,
+        recognizedText: options.includeRawText === true ? finalState.captureText : undefined,
       };
-      if (finalState.classification !== undefined) {
-        analysis.classification = finalState.classification;
-      } else {
-        analysis.errorMessage = 'capture workflow did not produce a classification';
-      }
-      if (options.includeRawText === true) {
-        analysis.recognizedText = finalState.captureText;
-      }
       log.info('dispatch analysis completed');
-      return analysis;
+      return classificationOutcome;
     }
     const unit: KnowledgeUnit | undefined = finalState.knowledgeUnit;
     if (unit === undefined) {
-      const missing: DispatchResult = {
-        success: false,
-        route: 'D1',
-        errorMessage: 'capture graph did not produce a knowledge unit',
-        durationMs: Date.now() - startedAt,
-      };
+      const missing: NoteOutcome = failedOutcome('capture graph did not produce a knowledge unit', '', false);
       if (finalState.classification !== undefined) {
         missing.classification = finalState.classification;
       }
@@ -120,11 +113,9 @@ export class CaptureBranch {
       }
       return missing;
     }
-    const success: DispatchResult = {
-      success: true,
-      route: 'D1',
-      data: unit,
-      durationMs: Date.now() - startedAt,
+    const success: NoteOutcome = {
+      kind: 'committed', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
+      noteId: unit.id, version: unit.version, unit: unit,
     };
     if (finalState.classification !== undefined) {
       success.classification = finalState.classification;
@@ -145,22 +136,18 @@ export class CaptureBranch {
     error: CaptureGraphError | undefined,
     options: DispatchOptions,
     startedAt: number,
-  ): DispatchResult {
+  ): NoteOutcome {
     const commitResult = finalState.commitResult;
-    const cancelled: DispatchResult = {
-      success: false,
-      route: 'D1',
-      errorCode: 'CANCELLED',
-      errorMessage: error !== undefined ? error.message : 'CONVERSATION_CANCELLED',
-      durationMs: Date.now() - startedAt,
-      cancelledCommitted: commitResult !== undefined,
+    const cancelled: NoteOutcome = {
+      kind: 'cancelled', operationId: '', route: 'D1', durationMs: Date.now() - startedAt,
+      committed: commitResult !== undefined,
     };
     if (commitResult !== undefined) {
-      cancelled.cancelledNoteId = commitResult.noteId;
-      cancelled.cancelledVersion = commitResult.version;
-      cancelled.cancelledCommitKey = commitResult.commitKey;
+      cancelled.noteId = commitResult.noteId;
+      cancelled.version = commitResult.version;
+      cancelled.commitKey = commitResult.commitKey;
       if (finalState.knowledgeUnit !== undefined) {
-        cancelled.data = finalState.knowledgeUnit;
+        cancelled.unit = finalState.knowledgeUnit;
       }
     }
     if (finalState.classification !== undefined) {

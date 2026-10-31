@@ -391,7 +391,8 @@ export class Dispatcher {
     return LegacyDispatchAdapter.toDispatchResult(generationOutcome);;
     }
     // capture 分支已抽出到 ./dispatch/CaptureBranch（2026-10-31 拆分 Dispatcher）。
-    return await CaptureBranch.dispatchCapture(req, options, this.resolveRunContext(options), t0);
+    const captureOutcome: NoteOutcome = await CaptureBranch.dispatchCapture(req, options, this.resolveRunContext(options), t0);
+    return LegacyDispatchAdapter.toDispatchResult(captureOutcome);;
   }
 
   private async dispatchPreparedCandidate(
