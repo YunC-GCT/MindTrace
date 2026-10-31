@@ -97,3 +97,35 @@ test('entry side RunStoreEventSink persists events through RunStorePort (A4 slic
   assert.ok((capture.match(/runEventSink: await AiServicePorts\.buildRunEventSink\(/g) ?? []).length >= 2,
     'capture 命令与批量 set 两处都注入 sink');
 });
+
+
+test('publish settles the run record through the sink (A4 4b-2b)', async () => {
+  const runtime = createRuntime(alternating());
+  const storage = memoryStorage();
+  const settled = [];
+  const sink = {
+    async emit() {},
+    async settle(runId, outcome) {
+      settled.push({ runId, kind: outcome.kind, noteId: outcome.noteId });
+    },
+  };
+  const outcome = await runtime.dispatcher.dispatchCommand(captureCommand('op-settle-1'), {
+    dao: storage.dao,
+    runEventSink: sink,
+  });
+  assert.equal(outcome.kind, 'committed');
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].runId, 'op-settle-1');
+  assert.equal(settled[0].kind, 'committed');
+  assert.equal(settled[0].noteId, outcome.noteId);
+});
+
+test('entry sink maps outcome kinds onto RunRecord status and committed facts', () => {
+  const sink = read('entry/src/main/ets/services/ai/RunStoreEventSink.ets');
+  assert.match(sink, /async settle\(runId: string, outcome: NoteOutcome\)/);
+  assert.match(sink, /committedNoteId: outcome\.kind === 'committed' \? outcome\.noteId/);
+  assert.match(sink, /committedVersion: outcome\.kind === 'committed' \? outcome\.version/);
+  assert.match(sink, /await this\.port\.update\(updated\)/);
+  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+  assert.match(dispatcher, /await Dispatcher\.settleRun\(options, command\.operationId, settled\)/);
+});

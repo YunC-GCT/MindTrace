@@ -20,6 +20,8 @@ export interface DispatchRunEvent {
 
 export interface RunEventSink {
   emit(runId: string, event: DispatchRunEvent): Promise<void>;
+  /** 可选：终态回写 run 记录（status / committed 事实）。未实现则只写事件。 */
+  settle?(runId: string, outcome: NoteOutcome): Promise<void>;
 }
 
 // 默认 sink：不写出（旧调用方 / 未装配时使用，行为零变化）。

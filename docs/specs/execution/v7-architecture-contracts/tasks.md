@@ -82,7 +82,10 @@
   - [x] **A4 切片 4b-1（2026-10-31）：v18 审批哈希落位（用户拍板方案 2）** —— `note_generation_checkpoint.approved_at`（schema v18，幂等 ALTER）+ 模型 `approvedAt` + 仓储 `markCheckpointApproved`/`getCheckpoint` + `confirmDraft` 确认时标记 + `PersistNode` 端口路径下发 `approvedCheckpointHash` + `KnowledgeUnitNoteWriteStore.validateApproval`（未审批/哈希不符 → `APPROVAL_HASH_MISMATCH`, retryable=false）；测试 `v7-approval-hash` 5 条
   - **v18 真机复测（2026-10-31 14:49，设备 3XTYD24C16203663）**：重装 HSP/HAP 后 DB 幂等迁移成功；`e2e-capture` 判定 PASS（冷启 84.3s／热态 12.9s，persist 510/517ms）、`a2a_smoke`（存笔记：洛必达法则）返回 `ok:true`（17 字回执）——无回归
   - [x] **A4 切片 4b-2a（2026-10-31）**：`verify` 接真 —— committed 终态必须带 noteId + version + commitKey，缺失 → `PERSIST_ERROR`（ADR-0019 (d)）；补源码守护测试
-  - [ ] 切片 4b-2b：`publish` 终态回写 `run_store`（status/committedNoteId/committedVersion），与 `RunStoreEventSink` 配合；之后清理旧 `dispatch()/dispatchSet()/DispatchResult`
+  - [x] **A4 切片 4b-2b（2026-10-31）**：`publish` 终态回写 `run_store` —— `RunEventSink.settle?()` 可选方法；`RunStoreEventSink.settle` 按终态映射 `RunRecord`（failed/cancelled→对应状态，readyPreview/needsInput→readyPreview；**committed 的 status 仍为 running**，committed 事实由 `committedNoteId`/`committedVersion` 承载）；`Dispatcher.settleRun` 尽力而为（失败仅 log）
+    - 遗留：`RunStatus` 尚无 `'committed'` 值（改契约前先按字段承载；后续清理旧适配器时一起评估）
+    - 测试：`v7-run-event-sink` 6 条（新增 settle 运行时调用 + 源码映射守护）
+  - [ ] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
 

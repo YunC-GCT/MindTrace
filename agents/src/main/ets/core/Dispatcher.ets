@@ -129,6 +129,19 @@ export class Dispatcher {
     }
   }
 
+  // A4：终态回写 run 记录（RunStorePort），同样尽力而为。
+  private static async settleRun(options: DispatchOptions, runId: string, outcome: NoteOutcome): Promise<void> {
+    const sink = options.runEventSink;
+    if (sink === undefined || sink.settle === undefined) {
+      return;
+    }
+    try {
+      await sink.settle(runId, outcome);
+    } catch (e) {
+      log.warn('run settle failed runId=' + runId + ' err=' + (e instanceof Error ? e.message : String(e)));
+    }
+  }
+
   // A4：run 事件写出是尽力而为的 —— sink 抛错只记日志，不影响命令结果。
   private static async emitRunEvent(
     options: DispatchOptions,
@@ -254,6 +267,7 @@ export class Dispatcher {
           return { errorCode: 'DISPATCH_GRAPH_NO_TERMINAL', errorMessage: 'publish received no outcome' };
         }
         await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(settled));
+        await Dispatcher.settleRun(options, command.operationId, settled);
         return { outcome: settled };
       },
     };
