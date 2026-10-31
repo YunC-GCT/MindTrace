@@ -122,6 +122,8 @@ export interface BranchRequest {
   payload: DispatchPayload;
   generation?: NoteGenerationRequest;
   preparedCandidate?: PreparedCandidate;
+  /** 036 幂等键：capture-set:<setId>:<problemFingerprint>（capture 路径透传到写端口） */
+  commitKey?: string;
 }
 
 
@@ -145,6 +147,8 @@ export interface CaptureSetItemResult {
   sourceImageIndexes?: number[];
   anchors?: string[];
   needsReview?: boolean;
+  // 036 幂等：同一 set 同一题重复确认时命中已有笔记（未重复写入）
+  duplicate?: boolean;
   noteId?: string;
   category?: string;
   // 笔记标题（准备失败 / 无 unit 时留空）
@@ -164,6 +168,8 @@ export interface CaptureSetProblem {
   sourceImageIndexes: number[];
   // 退化/灰区题目：确认页默认不勾选
   needsReview: boolean;
+  // 幂等键组成：归一化文本指纹（同一题重复确认不双写）
+  fingerprint: string;
 }
 
 export interface CaptureSetPreview {

@@ -203,6 +203,10 @@ export class PersistNodeFactory {
   }
 
   private static deriveCommitKey(input: AgentState): string {
+    // 036 幂等：命令层显式 commitKey（capture-set:<setId>:<fingerprint>）优先。
+    if (input.commitKey !== undefined && input.commitKey.length > 0) {
+      return input.commitKey;
+    }
     const candidate = input.preparedCandidate;
     if (candidate !== undefined && candidate.commitKey !== undefined && candidate.commitKey.length > 0) {
       return candidate.commitKey;

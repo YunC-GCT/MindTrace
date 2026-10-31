@@ -124,6 +124,51 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /** 036 幂等自检：同一预览提交两次，第二次应命中 commit 记录（duplicate，不重复写笔记）。 */
+  static async runCaptureSetIdem(ctx: common.UIAbilityContext): Promise<void> {
+    const rawPaths: string[] = ['debug/math-1.png', 'debug/math-2.png'];
+    const uris: string[] = [];
+    for (let i = 0; i < rawPaths.length; i++) {
+      uris.push(await DebugCaptureRunner.materialize(ctx, rawPaths[i]));
+    }
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=idem start images=' + uris.length.toString());
+    const startedAt: number = Date.now();
+    const service: AiService = new AiService(ctx);
+    try {
+      const preview: CaptureSetPreview = await service.previewCaptureSet(uris);
+      const all: number[] = [];
+      for (let i = 0; i < preview.problems.length; i++) {
+        all.push(preview.problems[i].index);
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=idem preview setId=' + preview.setId + ' problems=' + preview.problems.length.toString());
+      const first: CaptureSetResult = await service.commitCaptureSet(preview, all);
+      const firstIds: string = CaptureSetResultScanner.noteIds(first);
+      const second: CaptureSetResult = await service.commitCaptureSet(preview, all);
+      const secondIds: string = CaptureSetResultScanner.noteIds(second);
+      let duplicates: number = 0;
+      for (let i = 0; i < second.items.length; i++) {
+        if (second.items[i].duplicate === true) {
+          duplicates += 1;
+        }
+      }
+      const equal: string = firstIds === secondIds ? '1' : '0';
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=idem firstDone=' + first.done.toString() + ' firstIds=' + firstIds);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=idem secondDone=' + second.done.toString() + ' secondIds=' + secondIds
+          + ' duplicates=' + duplicates.toString() + ' idsEqual=' + equal);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done idem=' + equal + ' duplicates=' + duplicates.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      const e: Error = error as Error;
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=idem fail ms=' + (Date.now() - startedAt).toString() + ' err=' + e.message);
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done idem=0');
+    }
+  }
+
   /** RAG 检索自检：对既有笔记跑 FTS（≥3字）/ LIKE（2字）两种查询。 */
   static async runRagSearch(ctx: common.UIAbilityContext): Promise<void> {
     hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-search start');
@@ -371,5 +416,19 @@ export class DebugCaptureRunner {
       fileIo.closeSync(file);
     }
     return 'file://' + path;
+  }
+}
+
+// 036 幂等自检辅助：按题目顺序拼 noteId 串（空值跳过，便于两次提交对比）。
+class CaptureSetResultScanner {
+  static noteIds(result: CaptureSetResult): string {
+    const ids: string[] = [];
+    for (let i = 0; i < result.items.length; i++) {
+      const item = result.items[i];
+      if (item.kind === 'problem' && item.noteId !== undefined && item.noteId.length > 0) {
+        ids.push(item.noteId);
+      }
+    }
+    return ids.join(',');
   }
 }

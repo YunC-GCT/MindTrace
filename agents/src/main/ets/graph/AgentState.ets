@@ -70,6 +70,8 @@ export interface AgentState {
   /** 采集链路可复用的学科词表（来自库里已有学科）；structure 用它做「复用 vs 新建」裁决 */
   subjectVocabulary?: string[];
   preparedCandidate?: PreparedCandidate;
+  // 036 幂等：命令层 commitKey（capture-set:<setId>:<fingerprint>）透传到 PersistNode
+  commitKey?: string;
   commitResult?: NoteCommitResult;
 }
 
@@ -116,6 +118,9 @@ export function copyAgentState(input: AgentState): AgentState {
   }
   if (input.preparedCandidate !== undefined) {
     copied.preparedCandidate = input.preparedCandidate;
+  }
+  if (input.commitKey !== undefined) {
+    copied.commitKey = input.commitKey;
   }
   if (input.commitResult !== undefined) {
     copied.commitResult = input.commitResult;

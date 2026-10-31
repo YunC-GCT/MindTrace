@@ -171,3 +171,18 @@ test('确认页默认勾选非复核题，复核题需用户主动放行（036 �
   assert.ok(overlay.includes('确认整理'), '确认按钮存在');
   assert.ok(overlay.includes('onConfirm(this.selected)'), '确认回调携带勾选列表');
 });
+
+
+test('036 幂等：capture-set commitKey 透传到写端口，重复确认命中已有笔记', () => {
+  const pipeline = readRepoFile('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.ok(pipeline.includes("'capture-set:' + preview.setId + ':' + problem.fingerprint"), 'commitKey = setId+fingerprint');
+  assert.ok(pipeline.includes('getCommitResult(commitKey)'), '提交前查历史 commit 记录');
+  assert.ok(pipeline.includes('saveCommitResult(commit)'), '提交成功后落 commit 记录');
+  assert.ok(pipeline.includes('problemItemOfDuplicate'), '重复命中项标记 duplicate 并复用 noteId');
+  const mapper = readRepoFile('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets');
+  assert.ok(mapper.includes('commitKey: command.commitKey'), '分支请求透传 commitKey');
+  const branch = readRepoFile('agents/src/main/ets/core/dispatch/CaptureBranch.ets');
+  assert.ok(branch.includes('commitKey: req.commitKey'), 'AgentState 携带 commitKey');
+  const persist = readRepoFile('agents/src/main/ets/graph/nodes/PersistNode.ets');
+  assert.ok(persist.includes('if (input.commitKey !== undefined && input.commitKey.length > 0)'), '写端口优先用命令 commitKey');
+});

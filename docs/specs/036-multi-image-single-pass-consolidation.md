@@ -271,3 +271,12 @@ S5（重拍/重复选图去重）真机验证（2026-10-31，`e2e=captureSet5`�
 - `AgentFloatWindow.runCaptureSet` 改为：`previewCaptureSet`（零落库）→ 弹确认页 → `commitCaptureSet(preview, selectedIndexes)`；取消则整批不写入；结果仍写 `CaptureReceipt` 并在会话里逐题回执。
 - 服务端能力（preview/commit 拆分）已在 `74f6566` 落地并真机验证（预览 3.2s / 6 题 / 零写入）。
 - 验证：build 49 tasks SUCCESSFUL；agent-gate --all PASS（pass=1107）；确认页 UI 交互待真机手动点选验证（相册多选 → 确认页 → 勾选 → 确认整理）。
+
+### 阶段 5 幂等落地（2026-10-31）
+
+- `CaptureSetProblem` 增加 `fingerprint`；`commitCaptureSet` 为每题生成 `commitKey = capture-set:<setId>:<fingerprint>`。
+- 提交前查 `note_generation_commit`（`getCommitResult`）：已存在则**跳过写入**，回执标 `duplicate=true` 并复用原 `noteId`；提交成功后落 commit 记录。
+- 链路透传：`NoteCommand.commitKey` → `BranchRequest.commitKey` → `AgentState.commitKey` → `PersistNode` 端口 `commitKey`（优先于 `capture:<noteId>` 合成键）。
+- 真机 `e2e=captureSetIdem`（同一预览提交两次）：
+  - firstDone=6，secondDone=6，`duplicates=6`，`idsEqual=1`（两次 noteId 完全一致），第二次 3.4s 且无新增写入。
+- 已知问题：**装新包后首次冷启动立刻提交**曾出现 commit 卡死（draft confirm 也复现过），重跑正常；疑似首启迁移/初始化与写事务竞争，后续可加「RAG/DB ready 标记 + e2e 等待」缓解。

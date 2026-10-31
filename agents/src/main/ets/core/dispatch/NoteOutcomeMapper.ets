@@ -34,18 +34,18 @@ export class NoteOutcomeMapper {
       const payload: DispatchPayload = command.payload !== undefined
         ? command.payload
         : { kind: 'text', text: candidate !== undefined ? candidate.content : '' };
-      return { source: source, payload: payload, preparedCandidate: command.preparedCandidate };
+      return { source: source, payload: payload, preparedCandidate: command.preparedCandidate, commitKey: command.commitKey };
     }
     if (command.kind === 'generation' || command.kind === 'regenerate') {
       const payload: DispatchPayload = command.payload !== undefined
         ? command.payload
         : { kind: 'text', text: '' };
-      return { source: source, payload: payload, generation: command.generation };
+      return { source: source, payload: payload, generation: command.generation, commitKey: command.commitKey };
     }
     const payload: DispatchPayload = command.payload !== undefined
       ? command.payload
       : { kind: 'text', text: '' };
-    return { source: source, payload: payload };
+    return { source: source, payload: payload, commitKey: command.commitKey };
   }
 
   /** NoteCommand → 旧 DispatchOptions：按命令形状决定 persist / analysisOnly，其余字段透传。 */

@@ -1205,6 +1205,9 @@ export struct AgentFloatWindow {
     if (title.length > 0) {
       line += ' · ' + title;
     }
+    if (item.duplicate === true) {
+      return line + ' · 已存在（未重复写入）';
+    }
     if (item.cancelled) {
       return line + ' ⊘ 已取消';
     }

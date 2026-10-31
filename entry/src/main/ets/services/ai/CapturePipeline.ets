@@ -42,6 +42,7 @@ import {
   NoteGenerationProgressSink,
   PreparedCandidate,
   NoteGenerationCheckpoint,
+  NoteGenerationCommitResult,
   NoteGenerationResult,
   NoteGenerationRun,
   NoteGenerationRepository as NoteGenerationRepositoryContract,
@@ -221,6 +222,7 @@ export class CapturePipeline {
         anchors: planned.anchors,
         sourceImageIndexes: planned.sourceImageIndexes,
         needsReview: planned.needsReview,
+        fingerprint: planned.fingerprint,
       });
     }
     const preview: CaptureSetPreview = {
@@ -245,15 +247,22 @@ export class CapturePipeline {
 
   /**
    * 036 阶段 4：确认提交。selectedIndexes 为空 = 全选；逐题 capture 命令落库。
-   * 一图多题 → 一题一条笔记；needsReview 的题由调用方决定是否勾选。
+   * 幂等：commitKey = capture-set:<setId>:<problemFingerprint>，已存在 commit 记录时跳过写入并复用原 noteId。
    */
   async commitCaptureSet(preview: CaptureSetPreview, selectedIndexes?: number[],
     token?: CancellationToken, onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
     const startedAt: number = Date.now();
     const seq: number = CaptureTiming.nextSeq();
-    const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
+    const context: common.UIAbilityContext = AiServicePorts.requireContext(this.context);
+    const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(context, this.includeUiEffects);
+    log.info('captureSet commit step=repo-begin setId=' + preview.setId);
+    const commitRepository = await NoteGenerationRepositoryFactory.create(context);
+    log.info('captureSet commit step=repo-ok setId=' + preview.setId);
     const dispatcher: Dispatcher = new Dispatcher();
+    const selectedProblems: CaptureSetProblem[] = [];
+    const duplicateItems: CaptureSetItemResult[] = [];
     const picked: CaptureSetProblem[] = [];
+    const pickedSlotOf: number[] = [];
     const commands: NoteCommand[] = [];
     for (let k = 0; k < preview.problems.length; k++) {
       const problem: CaptureSetProblem = preview.problems[k];
@@ -264,35 +273,102 @@ export class CapturePipeline {
       if (!selected) {
         continue;
       }
+      selectedProblems.push(problem);
+      const commitKey: string = 'capture-set:' + preview.setId + ':' + problem.fingerprint;
+      let existing: NoteGenerationCommitResult | undefined = undefined;
+      try {
+        existing = await commitRepository.getCommitResult(commitKey);
+      } catch (e) {
+        existing = undefined;
+      }
+      if (existing !== undefined && existing.noteId.length > 0) {
+        const duplicate: CaptureSetItemResult = CapturePipeline.problemItemOfDuplicate(problem, existing.noteId);
+        duplicateItems.push(duplicate);
+        pickedSlotOf.push(-1);
+        continue;
+      }
+      pickedSlotOf.push(picked.length);
       picked.push(problem);
       commands.push({
         kind: 'capture',
         operationId: preview.setId + '-p' + problem.index.toString(),
         source: 'app',
         payload: { kind: 'text', text: problem.text },
+        commitKey: commitKey,
       });
     }
-    const batch: NoteBatchOutcome = await dispatcher.dispatchSetCommand(commands, {
-      dao: dao,
-      noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
-      cancellationToken: token,
-      subjectVocabulary: await SubjectVocabularyService.list(),
-      runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
-    }, (index: number, outcome: NoteOutcome): void => {
-      if (onItem !== undefined) {
-        onItem(CapturePipeline.problemItemFromOutcome(index, picked, outcome));
-      }
-    });
+    log.info('captureSet commit step=dedupe-ok selected=' + selectedProblems.length.toString()
+      + ' picked=' + picked.length.toString() + ' duplicates=' + duplicateItems.length.toString()
+      + ' commands=' + commands.length.toString());
+    const canStreamItems: boolean = duplicateItems.length === 0;
+    const batch: NoteBatchOutcome = commands.length === 0
+      ? { total: 0, committed: 0, failed: 0, cancelled: 0, needsInput: 0, items: [], durationMs: 0 }
+      : await dispatcher.dispatchSetCommand(commands, {
+        dao: dao,
+        noteWritePort: await AiServicePorts.buildNoteWritePort(context, this.includeUiEffects),
+        cancellationToken: token,
+        subjectVocabulary: await SubjectVocabularyService.list(),
+        runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
+      }, (index: number, outcome: NoteOutcome): void => {
+        if (canStreamItems && onItem !== undefined) {
+          onItem(CapturePipeline.problemItemFromOutcome(index, picked, outcome));
+        }
+      });
+
+    log.info('captureSet commit step=dispatch-ok committed=' + batch.committed.toString()
+      + ' failed=' + batch.failed.toString());
+    // 合并逐题结果（保留原题顺序；重复命中项直接复用已有 noteId）
     const merged: CaptureSetItemResult[] = [];
-    for (let k = 0; k < picked.length; k++) {
-      merged.push(CapturePipeline.problemItemFromOutcome(k, picked, batch.items[k]));
+    let duplicateCount: number = 0;
+    for (let k = 0; k < selectedProblems.length; k += 1) {
+      const problem: CaptureSetProblem = selectedProblems[k];
+      const slot: number = pickedSlotOf[k];
+      if (slot < 0) {
+        const duplicate: CaptureSetItemResult = CapturePipeline.problemItemOfDuplicate(problem, '');
+        for (let d = 0; d < duplicateItems.length; d += 1) {
+          if (duplicateItems[d].index === problem.index) {
+            merged.push(duplicateItems[d]);
+            break;
+          }
+        }
+        duplicateCount += 1;
+        continue;
+      }
+      merged.push(CapturePipeline.problemItemFromOutcome(slot, picked, batch.items[slot]));
     }
     for (let k = 0; k < preview.failedItems.length; k++) {
       merged.push(preview.failedItems[k]);
     }
+
+    log.info('captureSet commit step=merge-ok merged=' + merged.length.toString());
+    // 成功后写 commit 记录（下次同 set 同题直接复用；写失败只记日志）
     for (let k = 0; k < picked.length; k += 1) {
+      const item: CaptureSetItemResult | undefined = merged.find((candidate: CaptureSetItemResult): boolean =>
+        candidate.index === picked[k].index && candidate.success === true);
+      if (item === undefined || item.noteId === undefined || item.noteId.length === 0 || item.duplicate === true) {
+        continue;
+      }
+      const commit: NoteGenerationCommitResult = {
+        commitKey: 'capture-set:' + preview.setId + ':' + picked[k].fingerprint,
+        runId: preview.setId,
+        checkpointId: 'p' + picked[k].index.toString(),
+        noteId: item.noteId,
+        version: 1,
+        sourceIds: [],
+        candidateJson: JSON.stringify({ text: picked[k].text }),
+        committedAt: Date.now(),
+      };
+      try {
+        await commitRepository.saveCommitResult(commit);
+      } catch (e) {
+        log.warn('captureSet commit record save failed: ' + (e as Error).message);
+      }
+    }
+
+    // 落库成功的题按来源图建文搜图索引（同一张图可对应多题）
+    for (let k = 0; k < merged.length; k += 1) {
       const item: CaptureSetItemResult = merged[k];
-      if (!item.success || item.noteId === undefined || item.noteId.length === 0) {
+      if (!item.success || item.noteId === undefined || item.noteId.length === 0 || item.duplicate === true) {
         continue;
       }
       const imageIndexes: number[] = item.sourceImageIndexes !== undefined ? item.sourceImageIndexes : [];
@@ -303,10 +379,11 @@ export class CapturePipeline {
         }
       }
     }
+
     const failed: number = batch.failed + preview.failedItems.length;
     const result: CaptureSetResult = {
-      total: picked.length + preview.failedItems.length,
-      done: batch.committed,
+      total: selectedProblems.length + preview.failedItems.length,
+      done: batch.committed + duplicateCount,
       failed: failed,
       cancelled: batch.cancelled,
       items: merged,
@@ -318,14 +395,32 @@ export class CapturePipeline {
       degradedImageCount: preview.degradedImageCount,
     };
     log.info('captureSet commit, setId=' + preview.setId
-      + ' images=' + preview.imageCount.toString()
-      + ' problems=' + preview.problems.length.toString()
-      + ' selected=' + picked.length.toString()
-      + ' done=' + result.done.toString() + ' failed=' + failed.toString()
-      + ' cancelled=' + result.cancelled.toString()
+      + ' selected=' + selectedProblems.length.toString()
+      + ' done=' + result.done.toString() + ' duplicates=' + duplicateCount.toString()
+      + ' failed=' + failed.toString() + ' cancelled=' + result.cancelled.toString()
       + ' ms=' + result.durationMs.toString());
     CaptureTiming.logCaptureSet(seq, result.total, result.done, failed, result.cancelled, result.durationMs);
     return result;
+  }
+
+  // 幂等命中项：不写库，复用已有 noteId 并标记 duplicate。
+  private static problemItemOfDuplicate(problem: CaptureSetProblem, noteId: string): CaptureSetItemResult {
+    const item: CaptureSetItemResult = {
+      index: problem.index,
+      kind: 'problem',
+      success: true,
+      cancelled: false,
+      durationMs: 0,
+      sourceImageIndexes: problem.sourceImageIndexes,
+      anchors: problem.anchors,
+      needsReview: problem.needsReview,
+      duplicate: true,
+    };
+    if (noteId.length > 0) {
+      item.noteId = noteId;
+      item.title = '已存在（本批次已确认过）';
+    }
+    return item;
   }
 
   /** 兼容入口：预览 + 全选提交（批量/单张共用；确认页走 previewCaptureSet + commitCaptureSet）。 */

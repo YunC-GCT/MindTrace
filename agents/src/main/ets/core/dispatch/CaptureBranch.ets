@@ -52,6 +52,7 @@ export class CaptureBranch {
       persist: options.persist !== false,
       analysisOnly: options.analysisOnly === true,
       subjectVocabulary: options.subjectVocabulary ?? [],
+      commitKey: req.commitKey,
     };
     // #241：capture 由 NoteAgent 子 Agent 装配并执行，这里只负责 run 上下文与结果映射。
     const noteOptions: NoteAgentOptions = {
