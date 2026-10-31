@@ -119,8 +119,12 @@
       1) **取消语义**：旧 `dispatch()` 在入口取消/图内取消时**抛错**（golden 断言 rejects），helper 把 `cancelled` 终态转成 `failed(CANCELLED)` 外观而不是 throw；
       2) **失败码外观**：命令 seam 的 `toOptions` 强制 `reportCancellation=true`，分支会填入节点 `error.kind` 作为 errorCode，而旧 `dispatch()` 的对应快照里 `errorCode` 是 undefined → adapter 还原后多出字段。
       下一步：helper 对 cancelled 终态按旧语义 throw（message 用 CONVERSATION_CANCELLED / 图错误消息），并给 adapter 增加「legacy 外观模式」在 legacy 路径屏蔽 reportCancellation 引入的错误码（或 golden 只对比语义子集）。
-    - [ ] Step 5：build + 全量 gate + 真机回归（e2e-capture / a2a_smoke / 手动确认）
-    - [ ] Step 6：ADR-0019 状态更新 + tasks 打勾
+    - [x] **Step 5：build + 全量 gate + 真机回归（2026-10-31 完成）**
+      - build-hsp-hap：49 tasks SUCCESSFUL（common HSP / agents HSP / entry HAP / cardservice HAP）
+      - `agent-gate --all`：RESULT: PASS（pass=1084 fail=0）
+      - 真机 `3XTYD24C16203663`（重装三包后）：`e2e-capture` 判定 **PASS**（cold 74.4s / warm 20.6s，persist 654/484ms，图搜 hits=5×2，卡片刷新）；`a2a_smoke`（存笔记：微分中值定理）**ok:true**（29 字回执）
+    - [x] **Step 6：ADR-0019 状态更新 + tasks 打勾（2026-10-31 完成）**
+      - ADR-0019 Status 追加 A4 4c 落地结论（旧入口删除 / 分支直接返回 NoteOutcome / golden 方案 A / HITL v18 真机闭环 / 真机回归）
     - 遗留：`entry/src/main/ets/utils/NoteItemMapper.ets` 为历史非 UTF-8 文件（0xa1 字节），待单独修
   - [ ] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
 
