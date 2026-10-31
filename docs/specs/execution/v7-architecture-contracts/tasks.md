@@ -110,7 +110,7 @@
       - `dispatch()` 下线后生产已无消费者：删除 `common` 的 `DispatchResult` 接口/导出、各模块导入清理、`NoteOutcomeMapper.toOutcome` 下线、`agents/LegacyDispatchAdapter.ets` 删除
       - 旧外观映射搬到测试侧 `legacy-dispatch-helper.mjs` 的 `toLegacyDispatchResult`（仅供 baseline/golden 断言），生产代码不再出现 `DispatchResult`
       - 证据：build 49 tasks SUCCESSFUL；agent-gate --all PASS（pass=1084 fail=0）
-    - [ ] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态）
+    - [x] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态，2026-10-31 完成）
       - [x] `v7-dispatch-run-context` 迁移到 `dispatchCommand`（4 条；语义变化：无 context 时 LLM 边界失败 = failed 终态，不再静默 success）
       - [x] `v7-capture-set` 迁移到 `dispatchSetCommand`（6 条）
       - [x] `v7-note-command` 迁移到命令 seam + 新增 `legacy-dispatch-helper.mjs`（BranchRequest→NoteCommand→NoteOutcome→旧外观，供 baseline/golden 在旧入口删除后继续用）
@@ -212,8 +212,8 @@
 - [x] 同切片删旧 capture 装配：`Dispatcher.buildGraph` 已删除，无 flag / 双 runtime
 - [x] #239 的 capture 快照逐字段等价 — `node --test scripts/arkts-lint/tests/v7-golden-dispatch.test.mjs` → `18 pass / 0 fail`，快照零重录
 - [x] build 5/5、gate PASS — `node scripts/build-hsp-hap.mjs` → 49 tasks **BUILD SUCCESSFUL**；`agent-gate` → `RESULT: PASS`（`pass=955 fail=0`）
-- [ ] A2A 回归：`python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"`（A2A 经同一 capture 分支，必须复测）
-- [ ] 真机 capture 流程与迁移前一致（截图或日志）
+- [x] A2A 回归：`a2a_smoke.py` 多轮通过（2026-10-31 最后：费马引理 `ok:true`；`device-runner smoke` 可一键复跑）
+- [x] 真机 capture 流程与迁移前一致（2026-10-31 `e2e-capture` 判定 PASS：2 张图 / persist 824·509ms / 图搜 hits=5×2）
 
 ## #242 拍板：Video 范围 / ReviewAgent 领域
 
