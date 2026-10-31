@@ -18,6 +18,7 @@ import type {
 } from 'common';
 import type { KnowledgeModel } from '../../agents/KnowledgeModel';
 import type { NoteDaoInterface } from '../../models/NoteDaoInterface';
+import type { RunEventSink } from './RunEventSink';
 
 export interface DispatchOptions {
   persist?: boolean;
@@ -41,6 +42,8 @@ export interface DispatchOptions {
    * 旧 dispatch() 不置位，保持 #239 golden 锁定的旧外观。
    */
   reportCancellation?: boolean;
+  /** A4：run 级事件流（start/terminal）；未装配时行为零变化（NullRunEventSink）。 */
+  runEventSink?: RunEventSink;
 }
 
 // spec 036 阶段 1：集合级整理的可选项。

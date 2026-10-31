@@ -73,7 +73,11 @@
   - 首页 `最近笔记` 41 条，两条 E2E 新笔记置顶 → 写入 → 列表读路径真机可见；HITL 草稿确认（对话入口）：**2026-10-31 手动真机验证通过** —— AI 助手 → 发送「存笔记：洛必达法则」→ 草稿卡 → 确认入库 → 首页「最近笔记」+1（自动化仍缺 e2e 模式，`AI 助手` tab 经 `uitest` 点击未进入浮窗）；若要改善 A2A 体验，走「先回执已收到、后台整理完再推回执」的异步回执方案
   - smoke 脚本修复：`wait_reply` 过滤状态栏时钟碎片与相对时间（此前 `01, :, 35` 被误判为回复导致 `ok:false`）
 - **A3 系列完成**：旧 `dispatch()` / `dispatchSet()` / `DispatchResult` 作为迁移适配器保留，等 A4 接线 `EventSink`/`RunStore` 时再统一清理
-- [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
+- [~] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
+  - [x] **A4 切片 1（2026-10-31）**：`RunEventSink` seam（`agents/core/dispatch/RunEventSink.ets`）—— `dispatch.start` / `dispatch.terminal` 两事件、payload 口径固定、**写出尽力而为**（sink 抛错不影响命令）；`DispatchOptions.runEventSink?` 可选注入，旧路径零变化；测试 `v7-run-event-sink` 3 条
+  - [ ] 切片 2：entry 侧 `RunStoreEventSink`（落 `run_store`/`run_event`，复用 `RunStorePort`）并在组合根装配
+  - [ ] 切片 3：主图骨架（preflight/route/invoke/verify/HITL/publish 六阶段 StateGraph）迁 capture 分支
+  - [ ] 切片 4：其余四条命令迁入主图 + 旧 `dispatch()/dispatchSet()/DispatchResult` 清理
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
 

@@ -80,6 +80,7 @@ import { GenerationEvaluator } from './dispatch/GenerationEvaluator';
 import { GenerationBranch } from './dispatch/GenerationBranch';
 import { IncrementalBranch } from './dispatch/IncrementalBranch';
 import { NoteOutcomeMapper } from './dispatch/NoteOutcomeMapper';
+import { DISPATCH_EVENT_START, DISPATCH_EVENT_TERMINAL, dispatchStartPayload, dispatchTerminalPayload } from './dispatch/RunEventSink';
 import type { GenerationCandidateEvaluation } from './dispatch/GenerationEvaluator';
 import { copyRegeneratedUnit } from './dispatch/UnitSupport';
 
@@ -108,6 +109,26 @@ export class Dispatcher {
   // D2 唯一最终公共入口: 跑 CaptureGraph, 失败返回结构化错误。
   async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
     return await this.dispatchRequest(req, options);
+  }
+
+
+  // A4：run 事件写出是尽力而为的 —— sink 抛错只记日志，不影响命令结果。
+  private static async emitRunEvent(
+    options: DispatchOptions,
+    runId: string,
+    kind: string,
+    payloadJson: string,
+  ): Promise<void> {
+    const sink = options.runEventSink;
+    if (sink === undefined) {
+      return;
+    }
+    try {
+      await sink.emit(runId, { kind: kind, payloadJson: payloadJson });
+    } catch (e) {
+      log.warn('run event sink failed kind=' + kind + ' runId=' + runId
+        + ' err=' + (e instanceof Error ? e.message : String(e)));
+    }
   }
 
   /**
@@ -173,12 +194,17 @@ export class Dispatcher {
   async dispatchCommand(command: NoteCommand, options: DispatchOptions = {}): Promise<NoteOutcome> {
     const request: DispatchRequest = NoteOutcomeMapper.toRequest(command);
     const effective: DispatchOptions = NoteOutcomeMapper.toOptions(command, options);
+    await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_START, dispatchStartPayload(command));
     try {
       const result: DispatchResult = await this.dispatchRequest(request, effective);
-      return NoteOutcomeMapper.toOutcome(command, result);
+      const outcome: NoteOutcome = NoteOutcomeMapper.toOutcome(command, result);
+      await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(outcome));
+      return outcome;
     } catch (e) {
       const error: Error = e instanceof Error ? e : new Error(String(e));
-      return NoteOutcomeMapper.fromThrown(command, error);
+      const outcome: NoteOutcome = NoteOutcomeMapper.fromThrown(command, error);
+      await Dispatcher.emitRunEvent(options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(outcome));
+      return outcome;
     }
   }
 
