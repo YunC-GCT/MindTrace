@@ -58,9 +58,21 @@ test('getCheckpoint queries an explicit column list and logs mismatches (device-
 });
 
 
-test('user-edit checkpoints are keyed by candidate hash (re-edit safe)', () => {
+test('unedited draft approves the generation checkpoint in place (design fix)', () => {
   const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
-  assert.match(commit, /id: event\.runId \+ ':user-edit:' \+ sourceFingerprint/);
+  assert.match(commit, /if \(previous\.candidateHash === editedHash\) \{\s*return previous;/);
+});
+
+test('edited draft creates a hash-keyed checkpoint row (re-edit safe)', () => {
+  const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
+  assert.match(commit, /id: event\.runId \+ ':user-edit:' \+ editedHash\.substring\(0, 8\)/);
+});
+
+test('markCheckpointApproved reads the row first, then updates by id+run_id', () => {
+  const repo = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
+  assert.match(repo, /const checkpoint: NoteGenerationCheckpoint \| null = await this\.getCheckpoint\(runId, checkpointId\)/);
+  assert.match(repo, /checkpoint\.candidateHash !== candidateHash/);
+  assert.match(repo, /predicates\.equalTo\('id', checkpointId\)\.and\(\)\.equalTo\('run_id', runId\)/);
 });
 
 test('markCheckpointApproved fails loudly when no row matches', () => {

@@ -127,10 +127,23 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
     await this.insertRow('note_generation_checkpoint', bucket);
   }
 
-  /** v18：标记检查点已审批（HITL 确认点）；只对 hash 匹配的检查点生效。 */
+  /**
+   * v18：标记检查点已审批（HITL 确认点）。
+   * 先读行校验 hash（语义清晰），再按 id+run_id 更新（避免复合谓词在部分版本上不命中）。
+   */
   async markCheckpointApproved(runId: string, checkpointId: string, candidateHash: string, approvedAt: number): Promise<void> {
+    const checkpoint: NoteGenerationCheckpoint | null = await this.getCheckpoint(runId, checkpointId);
+    if (checkpoint === null) {
+      throw new Error('markCheckpointApproved: checkpoint not found ' + checkpointId);
+    }
+    if (checkpoint.candidateHash !== candidateHash) {
+      throw new Error('markCheckpointApproved: candidate hash changed for checkpoint ' + checkpointId);
+    }
+    if (checkpoint.approvedAt !== undefined && checkpoint.approvedAt > 0) {
+      return;
+    }
     const predicates = new relationalStore.RdbPredicates('note_generation_checkpoint');
-    predicates.equalTo('id', checkpointId).and().equalTo('run_id', runId).and().equalTo('candidate_hash', candidateHash);
+    predicates.equalTo('id', checkpointId).and().equalTo('run_id', runId);
     const bucket: relationalStore.ValuesBucket = { 'approved_at': approvedAt };
     const updatedRows: number = await this.store.update(bucket, predicates);
     if (updatedRows <= 0) {

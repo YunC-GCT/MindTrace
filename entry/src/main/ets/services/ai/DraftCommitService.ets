@@ -53,14 +53,19 @@ export class DraftCommitService {
     if (previous === undefined || previous.candidateHash !== event.candidateHash) {
       throw new Error('草稿检查点已变化');
     }
+    const editedHash: string = sourceFingerprint(JSON.stringify(candidate));
+    // 设计修正：用户没改候选 → 直接审批 generation 检查点（不新增行，checkpointId 与草稿事件一致）。
+    if (previous.candidateHash === editedHash) {
+      return previous;
+    }
+    // 真编辑 → 新建 hash-keyed 检查点行（同一 run 换候选/重试互不覆盖）。
     const updated: NoteGenerationCheckpoint = {
-      // 候选哈希进 id：同一 run 内换候选/重试时每个候选都有独立不可变检查点行。
-      id: event.runId + ':user-edit:' + sourceFingerprint(JSON.stringify(candidate)).substring(0, 8),
+      id: event.runId + ':user-edit:' + editedHash.substring(0, 8),
       runId: previous.runId,
       iteration: previous.iteration + 1,
       stage: previous.stage,
       parentId: previous.id,
-      candidateHash: sourceFingerprint(JSON.stringify(candidate)),
+      candidateHash: editedHash,
       documentJson: JSON.stringify(candidate),
       accepted: previous.accepted,
       issueCodes: previous.issueCodes,
