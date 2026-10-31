@@ -43,7 +43,14 @@
 
 - [x] **A1：capture 持久化接端口（2026-10-30）**：`PersistNodeFactory.createWithWritePort`、`NoteAgentOptions/DispatchOptions.noteWritePort` 透传、`AiService` 经 `NoteWritePortFactory` 装配（**不直连 DAO**，写服务保留 post-commit effects）。普通 capture 合成 `capture:<noteId>` 幂等键；测试 `v7-persist-port.test.mjs` 6 条
 - [x] **A2：preparedCandidate 写路径接端口（2026-10-31）**：`Dispatcher.buildPreparedGraph(dao?, noteWritePort?)` 端口优先；`AiService` 的 prepared dispatch 注入端口（`capture` / `captureSet` / `preparedCandidate` 三处统一）。**HITL 审批哈希仍未接**：没有持久化列，传了会全拒，等 v18 拍板；测试 `v7-persist-port` 8 条
-- [ ] **A3：调用方切 `NoteCommand`/`NoteOutcome`**（ADR-0019）：`DispatchResult` 降级为迁移适配器
+- [x] **A3：调用方切 `NoteCommand`/`NoteOutcome`（2026-10-31）**：ADR-0019 契约落地
+  - `common/src/main/ets/models/NoteCommandModels.ets`：`NoteCommand`（capture / generation / regenerate / preparedCandidate / analysisOnly）+ `NoteOutcome`（needsInput / readyPreview / committed / failed / cancelled）+ `DegradedMarker` + `isRetryableNoteErrorCode`（ArkTS 1.1 无对象联合，用单一 interface + `kind` 判别）
+  - `agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets`：命令→旧请求 / 旧结果→终态 / 抛错→cancelled|failed；补 `APPROVAL_HASH_MISMATCH`、`PREPARED_CHECKPOINT_MISSING` 稳定码
+  - `Dispatcher.dispatchCommand(command, options)` 新入口；旧 `dispatch()` 保留为迁移适配器（行为不变，#239 golden 零重录）
+  - 消费方切换：`AiService.processAndPersist`（app 拍照文本 + 小艺 A2A 文本）与 `confirmDraft`（preparedCandidate）改走命令入口 + `committed` 终态
+  - 测试：`v7-note-command.test.mjs` 7 条（capture committed / failed / 入口取消 / analysisOnly / generation readyPreview / 旧入口适配器 / 消费方接线）
+  - **未完成**：`cancelled(committed=true)`（持久层未回传事务结果）、generation/regenerate 消费方切换、`dispatchSet` 批量终态、A2A 回执直接读 `NoteOutcome` → 见 A3b
+- [ ] **A3b**：`cancelled(committed=true)` + generation/regenerate 消费方 + A2A 回执 / HITL 读 `NoteOutcome`
 - [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
 
 ### Dispatcher 拆分（A3 的前置重构，2026-10-31 开始）

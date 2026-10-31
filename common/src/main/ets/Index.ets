@@ -95,6 +95,16 @@ export type {
   NoteCategory,
   CaptureProvenance,
 } from './models/CaptureChain';
+// ========== ADR-0019：NoteCommand / NoteOutcome 契约 ==========
+export { NOTE_CANCELLED_MESSAGE, isRetryableNoteErrorCode } from './models/NoteCommandModels';
+export type {
+  DegradedMarker,
+  DispatchSource,
+  NoteCommand,
+  NoteCommandKind,
+  NoteOutcome,
+  NoteOutcomeKind,
+} from './models/NoteCommandModels';
 export { captureProvenanceFromFragments } from './models/CaptureChain';
 export type {
   NoteGenerationMode,

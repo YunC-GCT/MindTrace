@@ -50,9 +50,12 @@ test('AiService.generateNoteDraftWithSources dispatches with persist=false', () 
   assert.match(aiService, /generateNoteDraftWithSources[\s\S]*?persist: false/);
 });
 
-test('AiService.confirmDraft dispatches with persist=true and a DAO', () => {
-  assert.match(aiService, /confirmDraft[\s\S]*?persist: true/);
+test('AiService.confirmDraft dispatches through the command seam with a DAO', () => {
+  // 2026-10-31 (A3)：确认提交走 dispatchCommand；persist 由 mapper 按命令形状决定（preparedCandidate → true）。
+  const mapper = read('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets');
+  assert.match(aiService, /confirmDraft[\s\S]*?dispatchCommand\(command/);
   assert.match(aiService, /confirmDraft[\s\S]*?dao:/);
+  assert.match(mapper, /copy\.persist = command\.kind === 'capture' \|\| command\.kind === 'preparedCandidate'/);
 });
 
 test('CaptureChain defines ImagePayload with imageUri and optional userText', () => {

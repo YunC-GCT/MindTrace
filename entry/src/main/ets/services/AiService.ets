@@ -50,7 +50,7 @@ import {
   CaptureSetItemResult,
   TextPayload,
 } from 'common';
-import type { NoteWritePort } from 'common';
+import type { NoteCommand, NoteOutcome, NoteWritePort } from 'common';
 import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
@@ -921,19 +921,23 @@ export class AiService {
       incrementalManifest: event.incrementalManifest,
       incrementalDiff: event.incrementalDiff,
     };
-    const result: DispatchResult = await new Dispatcher().dispatch({
-      source: 'app',
-      payload: { kind: 'text', text: candidate.content },
+    // A3：确认提交走命令式入口，终态从 NoteOutcome 读（committed 必须带 noteId/version/commitKey）。
+    const command: NoteCommand = {
+      kind: 'preparedCandidate',
+      operationId: 'confirm-' + event.runId,
       preparedCandidate: prepared,
-    }, {
-      persist: true,
+      payload: { kind: 'text', text: candidate.content },
+    };
+    const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
       dao: dao,
       noteWritePort: await this.buildNoteWritePort(),
       generationRepository: repository,
     });
-    if (!result.success || result.data === undefined) {
-      const prefix: string = result.errorCode === 'VERSION_CONFLICT' ? 'VERSION_CONFLICT: ' : '';
-      throw new Error(prefix + (result.errorMessage ?? '笔记确认失败'));
+    const committedUnit: KnowledgeUnit | undefined = outcome.unit;
+    if (outcome.kind !== 'committed' || committedUnit === undefined) {
+      const prefix: string = outcome.code === 'VERSION_CONFLICT' ? 'VERSION_CONFLICT: ' : '';
+      const message: string = outcome.message !== undefined ? outcome.message : '笔记确认失败';
+      throw new Error(prefix + message);
     }
     if (event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0) {
       try {
@@ -947,7 +951,7 @@ export class AiService {
         log.warn('pending source cleanup warning runId=' + event.runId + ' count=' + event.pendingSourceIds.length.toString());
       }
     }
-    return result.data;
+    return committedUnit;
   }
 
   private async resolvePendingMemoryIds(
@@ -1062,28 +1066,27 @@ export class AiService {
     payload: DispatchPayload,
     onNodeTiming?: (step: string, elapsedMs: number) => void,
   ): Promise<KnowledgeUnit> {
-    // 1) 构造调度请求
-    const req: DispatchRequest = { source: 'app', payload };
-
-    // 2) 准备 NoteDao 适配器, 注入到 Dispatcher 持久化选项
+    // A3：命令式入口。app 文本与小艺 A2A 文本都走这里，统一 NoteOutcome 终态（ADR-0019）。
+    const operationId: string = 'capture-' + Date.now().toString() + '-' + (++AiService.captureSeq).toString();
+    const command: NoteCommand = {
+      kind: 'capture',
+      operationId: operationId,
+      source: 'app',
+      payload: payload,
+    };
     const dao: NoteDaoInterface = await this.buildNoteDao();
-
-    // 3) 通过 Dispatcher 公共入口执行整链并显式注入 dao
     const dispatcher: Dispatcher = new Dispatcher();
-    const result: DispatchResult = await dispatcher.dispatch(req, {
-      persist: true,
+    const outcome: NoteOutcome = await dispatcher.dispatchCommand(command, {
       dao: dao,
       noteWritePort: await this.buildNoteWritePort(),
       subjectVocabulary: await SubjectVocabularyService.list(),
       onNodeTiming: onNodeTiming,
     });
-    if (!result.success) {
-      throw new Error('处理失败: ' + (result.errorMessage ?? 'Capture workflow failed'));
+    if (outcome.kind !== 'committed' || outcome.unit === undefined) {
+      const message: string = outcome.message !== undefined ? outcome.message : 'Capture workflow failed';
+      throw new Error('处理失败: ' + message);
     }
-    const unit: KnowledgeUnit | undefined = result.data;
-    if (unit === undefined) {
-      throw new Error('处理失败: Dispatcher 未生成 KnowledgeUnit');
-    }
+    const unit: KnowledgeUnit = outcome.unit;
 
     // 4) Only metadata is logged; note content never enters production logs.
     log.info('done, noteId=' + unit.id + ', category=' + unit.category);

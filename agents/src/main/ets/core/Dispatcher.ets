@@ -60,7 +60,7 @@ import {
   CaptureSetItemResult,
   CaptureSetResult,
 } from 'common';
-import type { DispatchPayload, CancellationToken } from 'common';
+import type { DispatchPayload, CancellationToken, NoteCommand, NoteOutcome } from 'common';
 import { AgentState, CaptureGraphError, CaptureStep } from '../graph/AgentState';
 import { CaptureGraph } from '../graph/CaptureGraph';
 import { StructureNodeFactory } from '../graph/nodes/StructureNode';
@@ -73,6 +73,7 @@ import { PreparedBranch } from './dispatch/PreparedBranch';
 import { GenerationEvaluator } from './dispatch/GenerationEvaluator';
 import { GenerationBranch } from './dispatch/GenerationBranch';
 import { IncrementalBranch } from './dispatch/IncrementalBranch';
+import { NoteOutcomeMapper } from './dispatch/NoteOutcomeMapper';
 import type { GenerationCandidateEvaluation } from './dispatch/GenerationEvaluator';
 import { copyRegeneratedUnit } from './dispatch/UnitSupport';
 
@@ -101,6 +102,24 @@ export class Dispatcher {
   // D2 唯一最终公共入口: 跑 CaptureGraph, 失败返回结构化错误。
   async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
     return await this.dispatchRequest(req, options);
+  }
+
+  /**
+   * ADR-0019 / 链路迁移 A3：命令式入口，返回 NoteOutcome（调用方按 kind 穷举）。
+   * 旧 `dispatch()` 保留为迁移适配器（行为不变），新调用方优先用本入口。
+   * 入口取消（图启动前）返回 cancelled(committed=false)；图内取消当前仍是 failed(NODE_ERROR)，
+   * 等持久层把事务结果回传给分支后再补 cancelled(committed=true)（见 tasks.md）。
+   */
+  async dispatchCommand(command: NoteCommand, options: DispatchOptions = {}): Promise<NoteOutcome> {
+    const request: DispatchRequest = NoteOutcomeMapper.toRequest(command);
+    const effective: DispatchOptions = NoteOutcomeMapper.toOptions(command, options);
+    try {
+      const result: DispatchResult = await this.dispatchRequest(request, effective);
+      return NoteOutcomeMapper.toOutcome(command, result);
+    } catch (e) {
+      const error: Error = e instanceof Error ? e : new Error(String(e));
+      return NoteOutcomeMapper.fromThrown(command, error);
+    }
   }
 
   // spec 036 阶段 1：一个 set 一个 run。
