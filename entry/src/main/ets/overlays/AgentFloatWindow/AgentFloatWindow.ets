@@ -55,12 +55,13 @@ import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputPanel } from './AgentInputPanel';
 import { agentSheetBottomInset } from './AgentFloatWindowLayout';
 import { NoteReviewSourceOverlay } from './NoteReviewSourceOverlay';
+import { CaptureSetConfirmOverlay } from './CaptureSetConfirmOverlay';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
 import { SessionsPanelController } from '../../services/SessionsPanelController';
 import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
-import { CaptureSetItemResult, CaptureSetResult } from 'common';
+import { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult } from 'common';
 import {
   ConversationRunRef,
   chatMessageIdPolicy,
@@ -133,6 +134,17 @@ export struct AgentFloatWindow {
   @State sourceOverlayLoading: boolean = false;
   @State sourceOverlayCitation: NoteEvidenceCitation | null = null;
   @State sourceOverlayResult: NoteReviewSourceResult | null = null;
+  // 036 阶段 4：入库前确认页（一图多题/多图多题逐题勾选）
+  @State captureConfirmVisible: boolean = false;
+  @State captureConfirmProblems: CaptureSetProblem[] = [];
+  @State captureConfirmImageCount: number = 0;
+  @State captureConfirmFailedCount: number = 0;
+  private pendingCapturePreview: CaptureSetPreview | null = null;
+  private pendingCaptureMessageId: number = 0;
+  private pendingCaptureRunId: string = '';
+  private pendingCaptureContent: string = '';
+  private pendingCaptureService: AiService | null = null;
+  private pendingCaptureOnItem: ((item: CaptureSetItemResult) => void) | null = null;
   private generatedDraftSessionId: string = '';
   private motionSeq: number = 0;
   private sourceRequestSeq: number = 0;
@@ -1019,7 +1031,90 @@ export struct AgentFloatWindow {
     };
     const service: AiService = new AiService(ctx);
     try {
-      const result: CaptureSetResult = await service.captureSet(uris, undefined, undefined, onItem);
+      // 036 阶段 4：先只做 OCR+切题+跨图合并（零落库），让用户确认边界后再入库。
+      const preview: CaptureSetPreview = await service.previewCaptureSet(uris);
+      if (preview.problems.length === 0) {
+        const failDetail: string = preview.failedItems.length > 0
+          ? '没有识别到可整理的题目（' + preview.failedItems.length.toString() + ' 张图未识别）'
+          : '没有识别到可整理的题目';
+        this.finishCaptureRecord(messageId, content + '\n' + failDetail, 'failed', runId);
+        this.sm.flush(this.sessions).catch((error: Error): void => {
+          console.warn('[CaptureSet] conversation flush failed: ' + error.message);
+        });
+        return;
+      }
+      content = '正在整理 ' + uris.length.toString() + ' 张图片（识别出 '
+        + preview.problems.length.toString() + ' 道题，等待确认）…';
+      this.updateMessageById(messageId, (message: ChatMsg): ChatMsg => {
+        const next: ChatMsg = {
+          id: message.id,
+          role: message.role,
+          content: content,
+          ts: message.ts,
+          streaming: true,
+          reasoning: message.reasoning ?? '',
+          origin: 'image',
+          runId: runId,
+        };
+        return next;
+      });
+      this.pendingCapturePreview = preview;
+      this.pendingCaptureMessageId = messageId;
+      this.pendingCaptureRunId = runId;
+      this.pendingCaptureContent = content;
+      this.pendingCaptureService = service;
+      this.pendingCaptureOnItem = onItem;
+      this.captureConfirmProblems = preview.problems;
+      this.captureConfirmImageCount = preview.imageCount;
+      this.captureConfirmFailedCount = preview.failedItems.length;
+      this.captureConfirmVisible = true;
+      console.info('[CaptureSet] preview problems=' + preview.problems.length.toString()
+        + ' failedImages=' + preview.failedItems.length.toString());
+    } catch (error) {
+      const detail: string = error instanceof Error ? error.message : String(error);
+      console.warn('[CaptureSet] code=CAPTURE_SET_PREVIEW_FAILED; ' + detail);
+      this.finishCaptureRecord(messageId, content + '\n识别失败：' + detail, 'failed', runId);
+      this.sm.flush(this.sessions).catch((error2: Error): void => {
+        console.warn('[CaptureSet] conversation flush failed: ' + error2.message);
+      });
+    }
+  }
+
+  // 036 阶段 4：确认页回调 —— 逐题勾选后提交（未入库的题不会产生笔记）。
+  private onCaptureConfirm = (selected: number[]): void => {
+    this.captureConfirmVisible = false;
+    this.commitPendingCapture(selected).catch((error: Error): void => {
+      console.warn('[CaptureSet] code=COMMIT_PENDING_FAILED; ' + error.message);
+    });
+  };
+
+  private onCaptureCancel = (): void => {
+    this.captureConfirmVisible = false;
+    const messageId: number = this.pendingCaptureMessageId;
+    const runId: string = this.pendingCaptureRunId;
+    const content: string = this.pendingCaptureContent;
+    this.resetCaptureConfirmState();
+    this.finishCaptureRecord(messageId, content + '\n已取消整理，未写入任何笔记。', 'cancelled', runId);
+    this.sm.flush(this.sessions).catch((error: Error): void => {
+      console.warn('[CaptureSet] conversation flush failed: ' + error.message);
+    });
+  };
+
+  private async commitPendingCapture(selected: number[]): Promise<void> {
+    const preview: CaptureSetPreview | null = this.pendingCapturePreview;
+    const messageId: number = this.pendingCaptureMessageId;
+    const runId: string = this.pendingCaptureRunId;
+    const content: string = this.pendingCaptureContent;
+    const service: AiService | null = this.pendingCaptureService;
+    const onItem: ((item: CaptureSetItemResult) => void) | null = this.pendingCaptureOnItem;
+    this.resetCaptureConfirmState();
+    if (preview === null || service === null) {
+      return;
+    }
+    const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    try {
+      const result: CaptureSetResult = await service.commitCaptureSet(
+        preview, selected, undefined, onItem === null ? undefined : onItem);
       const receipt: CaptureReceipt = {
         done: result.done,
         // 取消不算失败，但回执只有 done/failed 两个格子，这里并入 failed 以便用户看到"没成"
@@ -1046,12 +1141,24 @@ export struct AgentFloatWindow {
         + ' failed=' + result.failed.toString() + ' cancelled=' + result.cancelled.toString());
     } catch (error) {
       const detail: string = error instanceof Error ? error.message : String(error);
-      console.warn('[CaptureSet] code=CAPTURE_SET_FAILED; ' + detail);
+      console.warn('[CaptureSet] code=CAPTURE_SET_COMMIT_FAILED; ' + detail);
       this.finishCaptureRecord(messageId, content + '\n整理失败：' + detail, 'failed', runId);
     }
     this.sm.flush(this.sessions).catch((error: Error): void => {
       console.warn('[CaptureSet] conversation flush failed: ' + error.message);
     });
+  }
+
+  private resetCaptureConfirmState(): void {
+    this.pendingCapturePreview = null;
+    this.pendingCaptureMessageId = 0;
+    this.pendingCaptureRunId = '';
+    this.pendingCaptureContent = '';
+    this.pendingCaptureService = null;
+    this.pendingCaptureOnItem = null;
+    this.captureConfirmProblems = [];
+    this.captureConfirmImageCount = 0;
+    this.captureConfirmFailedCount = 0;
   }
 
   // 追加记录消息：只改 activeSid 对应的 session，再按 updateMessageById 的写法回写 sessions/messages。
@@ -1354,6 +1461,15 @@ export struct AgentFloatWindow {
             this.generatedDraft = null;
             this.generatedDraftSessionId = '';
           },
+        })
+      }
+      if (this.captureConfirmVisible) {
+        CaptureSetConfirmOverlay({
+          imageCount: this.captureConfirmImageCount,
+          failedCount: this.captureConfirmFailedCount,
+          problems: this.captureConfirmProblems,
+          onConfirm: this.onCaptureConfirm,
+          onCancel: this.onCaptureCancel,
         })
       }
       if (this.sourceOverlayVisible) {

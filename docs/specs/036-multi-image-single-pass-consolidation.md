@@ -175,7 +175,7 @@ awaiting_confirm → discarded（用户不勾）
 | 1 | payload 支持 `kind:'images'`（N 张）+ Stage A 串行，不切题（等价今天的批量，但一个 run） | 无 |
 | 2 | Segmenter（切题）+ S2 验收 | 阶段 1 |
 | 3 | Merger（跨页合并 / 去重）+ S3/S5 验收 | 阶段 2 |
-| 4 | 确认页 + 进度订阅（S2–S5 UI） | 阶段 2（可与 3 并行） |
+| 4 ✅ | 确认页（`CaptureSetConfirmOverlay`）+ `runCaptureSet` 改为 preview → 确认 → commit；needsReview 默认不勾选 | 阶段 2/3 完成 |
 | 5 | 幂等 + 逐条回执 + 计费预估 | 阶段 3、4 |
 
 阶段 1 就能把「一个 set 一个 run」立住，是后面全部工作的地基；阶段 4 是用户直接感知的那层。
@@ -264,3 +264,10 @@ S5（重拍/重复选图去重）真机验证（2026-10-31，`e2e=captureSet5`�
 - `AiService` 门面同步暴露 `previewCaptureSet` / `commitCaptureSet`；`commitCaptureSet(preview, selectedIndexes)` 支持逐题勾选（空 = 全选）。
 - 真机自检：`e2e=captureSetPreview` 2 图 → 6 题（preambleSkipped=2），**3.2s、零 LLM/零写入**；`e2e=captureSet5` 回归 6/6 committed（sources=[0,2] 去重保持）。
 - 待做：确认页 UI（overlay 逐题勾选 + needsReview 默认不勾）+ 幂等 commitKey（setId+problemFingerprint）。
+
+### 阶段 4 确认页落地（2026-10-31）
+
+- 新组件 `overlays/AgentFloatWindow/CaptureSetConfirmOverlay.ets`：列出识别出的「题」（题号/来源图/文本预览/待复核标记），逐题勾选；`needsReview` 默认不勾；底部「确认整理（N 题）/取消」。
+- `AgentFloatWindow.runCaptureSet` 改为：`previewCaptureSet`（零落库）→ 弹确认页 → `commitCaptureSet(preview, selectedIndexes)`；取消则整批不写入；结果仍写 `CaptureReceipt` 并在会话里逐题回执。
+- 服务端能力（preview/commit 拆分）已在 `74f6566` 落地并真机验证（预览 3.2s / 6 题 / 零写入）。
+- 验证：build 49 tasks SUCCESSFUL；agent-gate --all PASS（pass=1107）；确认页 UI 交互待真机手动点选验证（相册多选 → 确认页 → 勾选 → 确认整理）。

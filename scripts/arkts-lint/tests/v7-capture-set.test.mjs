@@ -118,7 +118,9 @@ test('dispatchSetCommand: 取消后剩余项记 cancelled，不混进 failed', a
 
 test('采集入口：UI 不再自己 for 循环 capture，统一走 captureSet', () => {
   const source = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
-  assert.ok(source.includes('service.captureSet('), '整理入口必须调用 captureSet');
+  assert.ok(source.includes('service.previewCaptureSet('), '整理入口必须先用 previewCaptureSet 做边界确认');
+  assert.ok(source.includes('service.commitCaptureSet('), '确认后逐题提交 commitCaptureSet');
+  assert.ok(source.includes('CaptureSetConfirmOverlay('), '必须有入库前确认页');
   assert.ok(!source.includes('service.capture('), '不得再逐张调用 capture（会退化成 N 个独立任务）');
 });
 
@@ -159,4 +161,13 @@ test('入口守卫：批量入口合并进图片图标（spec 036）', () => {
     /AlbumPickerLauncher\.pick\([\s\S]{0,160}?,\s*20\)/.test(floatWindow),
     '图片入口必须固定最多 20 张',
   );
+});
+
+
+test('确认页默认勾选非复核题，复核题需用户主动放行（036 阶段 4）', () => {
+  const overlay = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/CaptureSetConfirmOverlay.ets');
+  assert.ok(overlay.includes('if (!this.problems[i].needsReview)'), '初始勾选 = 非 needsReview 题');
+  assert.ok(overlay.includes('待复核'), '复核题要有显式标记');
+  assert.ok(overlay.includes('确认整理'), '确认按钮存在');
+  assert.ok(overlay.includes('onConfirm(this.selected)'), '确认回调携带勾选列表');
 });
