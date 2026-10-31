@@ -143,7 +143,7 @@ test('ConversationWorkflow handleImageReply handles empty OCR text without crash
 });
 
 test('AiService.analyzeImage uses persist:false — no database write on image recognition only (AC-SRC-04)', () => {
-  assert.match(aiService, /analyzeImage[\s\S]*?kind: 'analysisOnly'/);
+  assert.match(read('entry/src/main/ets/services/ai/CapturePipeline.ets'), /analyzeImage[\s\S]*?kind: 'analysisOnly'/);
 });
 
 // SourceFragment kind must support 'ocr' for image-originated sources

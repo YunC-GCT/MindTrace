@@ -42,7 +42,7 @@ test('the entry side reads the vocabulary through a read-only seam, not the writ
   const ai = read('entry/src/main/ets/services/AiService.ets');
   const vocabulary = read('entry/src/main/ets/services/SubjectVocabularyService.ets');
 
-  assert.match(ai, /SubjectVocabularyService\.list\(\)/);
+  assert.match(read('entry/src/main/ets/services/ai/CapturePipeline.ets'), /SubjectVocabularyService\.list\(\)/);
   assert.doesNotMatch(ai, /new NoteDao\(|from ['"]\.\.\/database\/NoteDao['"]/);
   assert.match(vocabulary, /queryAllMetadata\(\)/);
   assert.match(vocabulary, /subjects\.indexOf\(subject\) < 0/);

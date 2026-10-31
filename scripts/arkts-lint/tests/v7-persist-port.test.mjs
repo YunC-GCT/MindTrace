@@ -139,7 +139,8 @@ test('AiService wires the port on capture, captureSet and prepared dispatch (A1+
   // 2026-10-31：端口装配抽到 services/ai/AiServicePorts（AiService 拆分切片 2）。
   const ports = read('entry/src/main/ets/services/ai/AiServicePorts.ets');
   const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
-  const wired = aiService.match(/noteWritePort: await AiServicePorts\.buildNoteWritePort\(/g) ?? [];
+  const capture = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  const wired = capture.match(/noteWritePort: await AiServicePorts\.buildNoteWritePort\(/g) ?? [];
   const wiredCommit = commit.match(/noteWritePort: await AiServicePorts\.buildNoteWritePort\(/g) ?? [];
   assert.equal(Array.from(wired).length, 2, 'capture / captureSet 两处注入端口（preparedCandidate 在 DraftCommitService）');
   assert.equal(Array.from(wiredCommit).length, 1, 'preparedCandidate 注入端口');

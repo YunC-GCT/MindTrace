@@ -20,7 +20,7 @@ test('manual and AI KnowledgeUnit writes share one entry-side service', () => {
   assert.match(adapter, /KnowledgeUnitWriteService/);
   // 形状：工厂可能带第二个参数（includeUiEffects），扩展进程里要关掉 UI 副作用
   assert.match(ports, /KnowledgeUnitWriteServiceFactory\.create\(context, includeUiEffects\)/);
-  assert.match(ai, /AiServicePorts\.buildNoteDao\(/);
+  assert.match(read('entry/src/main/ets/services/ai/CapturePipeline.ets'), /AiServicePorts\.buildNoteDao\(/);
   assert.doesNotMatch(manual, /new NoteDao|dao\.insert|dao\.update/);
   assert.doesNotMatch(adapter, /WritePathValidator|insertUnit/);
   assert.doesNotMatch(ai, /from ['"]\.\.\/database\/NoteDao['"]|new NoteDao\(|noteDao\.insert/);

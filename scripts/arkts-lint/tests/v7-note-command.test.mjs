@@ -215,7 +215,8 @@ test('AiService capture and confirm paths use the command seam', () => {
   const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
   const mapper = read('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets');
   // 调用方：文本/A2A capture 走 AiService，确认提交走 DraftCommitService（AiService 切片 3）。
-  assert.match(ai, /dispatchCommand\(command/);
+  const capture = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.match(capture, /dispatchCommand\(command/);
   assert.match(ai, /new DraftCommitService\(/);
   assert.ok((commit.match(/outcome\.kind !== 'committed'/g) ?? []).length >= 1);
   assert.match(commit, /kind: 'preparedCandidate'/);
@@ -228,10 +229,11 @@ test('AiService capture and confirm paths use the command seam', () => {
 test('AiService analysis / generation / regenerate consumers use the command seam (A3c)', () => {
   const ai = read('entry/src/main/ets/services/AiService.ets');
   const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
-  assert.match(ai, /kind: 'analysisOnly'/);
+  assert.match(read('entry/src/main/ets/services/ai/CapturePipeline.ets'), /kind: 'analysisOnly'/);
   assert.match(pipeline, /kind: 'generation'/);
   assert.match(pipeline, /kind: 'regenerate'/);
-  assert.ok((ai.match(/dispatchCommand\(command/g) ?? []).length >= 1, 'capture/analyze 在 AiService');
+  const capture = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.ok((capture.match(/dispatchCommand\(command/g) ?? []).length >= 1, 'capture/analyze 在 CapturePipeline');
   assert.ok((pipeline.match(/dispatchCommand\(command/g) ?? []).length >= 2, 'draft/regenerate 在 DraftPipeline');
-  assert.ok(((ai + pipeline).match(/outcome\.kind !== 'readyPreview'/g) ?? []).length >= 3);
+  assert.ok(((capture + pipeline).match(/outcome\.kind !== 'readyPreview'/g) ?? []).length >= 3);
 });

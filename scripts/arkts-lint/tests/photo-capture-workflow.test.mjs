@@ -23,7 +23,7 @@ test('photo send enters captureReply instead of text-only streaming', () => {
 test('photo conversation performs analysis only and stores OCR material', () => {
   assert.match(conversation, /this\.capturePort\.analyzeImage\([\s\S]*?imageUri,[\s\S]*?userText/);
   assert.match(conversation, /safeSaveOcrResult\(ref, imageUri, userText, result\)/);
-  assert.match(aiService, /kind: 'analysisOnly'/);
+  assert.match(readFileSync(resolve(root, 'entry/src/main/ets/services/ai/CapturePipeline.ets'), 'utf8'), /kind: 'analysisOnly'/);
 });
 
 test('explicit conversation note generation creates a persistence-disabled draft', () => {

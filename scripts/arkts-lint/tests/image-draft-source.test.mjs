@@ -53,8 +53,9 @@ test('AiService.generateNoteDraftWithSources dispatches with persist=false', () 
 test('AiService.confirmDraft dispatches through the command seam with a DAO', () => {
   // 2026-10-31 (A3)：确认提交走 dispatchCommand；persist 由 mapper 按命令形状决定（preparedCandidate → true）。
   const mapper = read('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets');
-  assert.match(aiService, /confirmDraft[\s\S]*?dispatchCommand\(command/);
-  assert.match(aiService, /confirmDraft[\s\S]*?dao:/);
+  const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
+  assert.match(commit, /async confirmDraft[\s\S]*?dispatchCommand\(command/);
+  assert.match(commit, /dao:/);
   assert.match(mapper, /copy\.persist = command\.kind === 'capture' \|\| command\.kind === 'preparedCandidate'/);
 });
 
@@ -155,8 +156,9 @@ test('ConversationWorkflow handleImageReply handles empty OCR text gracefully (A
 });
 
 test('AiService.analyzeImage dispatches with persist:false and analysisOnly:true (no write)', () => {
-  assert.match(aiService, /analyzeImage[\s\S]*?kind: 'analysisOnly'/);
-  assert.match(aiService, /analyzeImage[\s\S]*?dispatchCommand\(command/);
+  const capture = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.match(capture, /analyzeImage[\s\S]*?kind: 'analysisOnly'/);
+  assert.match(capture, /analyzeImage[\s\S]*?dispatchCommand\(command/);
 });
 
 // ConversationStep must include image_reply

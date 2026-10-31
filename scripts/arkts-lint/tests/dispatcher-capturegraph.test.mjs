@@ -46,8 +46,9 @@ test('AiService consumes Capture workflow only through Dispatcher.dispatch', () 
   assert.doesNotMatch(aiService, /import \{[^}]*\bCaptureGraph\b/);
   assert.doesNotMatch(aiService, /import \{[^}]*\bAgentState\b/);
   assert.doesNotMatch(aiService, /\.buildGraph\(/);
-  assert.match(aiService, /dispatchCommand\(command/);
-  assert.match(aiService, /kind: 'analysisOnly'/);
+  const capture = readFileSync(resolve(root, 'entry/src/main/ets/services/ai/CapturePipeline.ets'), 'utf8');
+  assert.match(capture, /dispatchCommand\(command/);
+  assert.match(capture, /kind: 'analysisOnly'/);
 });
 
 test('Capture graph and state stay internal to agents module', () => {
