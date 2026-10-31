@@ -212,11 +212,13 @@ test('legacy dispatch entry is preserved as the migration adapter', async () => 
 
 test('AiService capture and confirm paths use the command seam', () => {
   const ai = read('entry/src/main/ets/services/AiService.ets');
+  const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
   const mapper = read('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets');
-  // 调用方：文本/A2A capture 与确认提交都走 dispatchCommand + committed 终态。
+  // 调用方：文本/A2A capture 走 AiService，确认提交走 DraftCommitService（AiService 切片 3）。
   assert.match(ai, /dispatchCommand\(command/);
-  assert.ok((ai.match(/outcome\.kind !== 'committed'/g) ?? []).length >= 2);
-  assert.match(ai, /kind: 'preparedCandidate'/);
+  assert.match(ai, /new DraftCommitService\(/);
+  assert.ok((commit.match(/outcome\.kind !== 'committed'/g) ?? []).length >= 1);
+  assert.match(commit, /kind: 'preparedCandidate'/);
   // mapper：错误码 / retryable / 终态判别集中在一处。
   assert.match(mapper, /static toOutcome\(/);
   assert.match(mapper, /APPROVAL_HASH_MISMATCH/);
@@ -228,6 +230,6 @@ test('AiService analysis / generation / regenerate consumers use the command sea
   assert.match(ai, /kind: 'analysisOnly'/);
   assert.match(ai, /kind: 'generation'/);
   assert.match(ai, /kind: 'regenerate'/);
-  assert.ok((ai.match(/dispatchCommand\(command/g) ?? []).length >= 5, 'capture/confirm/analyze/draft/regenerate 五处');
+  assert.ok((ai.match(/dispatchCommand\(command/g) ?? []).length >= 4, 'capture/analyze/draft/regenerate 四处（confirm 在 DraftCommitService）');
   assert.ok((ai.match(/outcome\.kind !== 'readyPreview'/g) ?? []).length >= 3);
 });
