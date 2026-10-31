@@ -98,7 +98,7 @@ export struct CaptureSetConfirmOverlay {
           }
           .width('100%')
         }
-        .layoutWeight(1)
+        .constraintSize({ maxHeight: 520 })
         .scrollBar(BarState.Off)
 
         Row() {

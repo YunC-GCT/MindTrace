@@ -186,3 +186,14 @@ test('036 幂等：capture-set commitKey 透传到写端口，重复确认命中
   const persist = readRepoFile('agents/src/main/ets/graph/nodes/PersistNode.ets');
   assert.ok(persist.includes('if (input.commitKey !== undefined && input.commitKey.length > 0)'), '写端口优先用命令 commitKey');
 });
+
+
+test('整理回执的「张图」用 imageCount（total 是题数），确认页滚动区限高', () => {
+  const ui = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
+  const summary = ui.substring(ui.indexOf('private captureSetSummary'), ui.indexOf('private finishCaptureRecord'));
+  assert.ok(summary.includes('result.imageCount !== undefined'), '张图数取 imageCount（带兜底）');
+  assert.ok(summary.includes("images.toString() + ' 张图"), '文案用 imageCount 渲染张图');
+  assert.ok(!summary.includes("result.total.toString() + ' 张图"), '不得用 total 当张图');
+  const overlay = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/CaptureSetConfirmOverlay.ets');
+  assert.ok(overlay.includes('.constraintSize({ maxHeight: 520 })'), '确认列表限高，卡片不被拉伸');
+});

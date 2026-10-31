@@ -1229,15 +1229,17 @@ export struct AgentFloatWindow {
   }
 
   private captureSetSummary(result: CaptureSetResult): string {
+    const images: number = result.imageCount !== undefined ? result.imageCount : 0;
     if (result.cancelled > 0) {
-      return '整理已取消：完成 ' + result.done.toString() + '/' + result.total.toString() + ' 张';
+      return '整理已取消：已整理 ' + result.done.toString() + '/' + result.total.toString() + ' 题';
     }
     if (result.failed > 0) {
-      return '整理完成：' + result.total.toString() + ' 张图 → ' + result.done.toString()
-        + ' 条笔记，' + result.failed.toString() + ' 张失败';
+      return '整理完成：' + images.toString() + ' 张图 → ' + result.done.toString()
+        + ' 条笔记，' + result.failed.toString() + ' 道失败';
     }
-    return '整理完成：' + result.total.toString() + ' 张图 → ' + result.done.toString() + ' 条笔记';
+    return '整理完成：' + images.toString() + ' 张图 → ' + result.done.toString() + ' 条笔记';
   }
+
 
   private finishCaptureRecord(
     messageId: number,
