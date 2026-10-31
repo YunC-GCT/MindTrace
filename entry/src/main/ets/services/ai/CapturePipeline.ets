@@ -57,6 +57,8 @@ import {
   buildIncrementalManifest,
   CaptureSetResult,
   CaptureSetItemResult,
+  CaptureSetPreview,
+  CaptureSetProblem,
   TextPayload,
 } from 'common';
 import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
@@ -153,23 +155,24 @@ export class CapturePipeline {
     return await this.processAndPersistOutcome(payload);
   }
 
-  async captureSet(imageUris: string[], userText?: string, token?: CancellationToken,
-    onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
+  /**
+   * 036 阶段 4：预览。逐图复制 → OCR → 切题 → 跨图合并，**零落库**。
+   * 返回的 problems 就是确认页要展示的「题」；failedItems 是图片级失败（复制/OCR/空图）。
+   */
+  async previewCaptureSet(imageUris: string[]): Promise<CaptureSetPreview> {
     const startedAt: number = Date.now();
     const seq: number = CaptureTiming.nextSeq();
     const context: common.UIAbilityContext = AiServicePorts.requireContext(this.context);
     const resolver: ImageUriResolver = new ImageUriResolver(context);
-
-    // 1) 逐张把 file:// URI 复制到沙箱（单张失败不拖垮整批）
     const localPaths: string[] = [];
-    const preFailed: CaptureSetItemResult[] = [];
+    const failedItems: CaptureSetItemResult[] = [];
     for (let i = 0; i < imageUris.length; i++) {
       try {
         const resolved: ResolvedImageFile = await resolver.resolve(imageUris[i]);
         localPaths[i] = resolved.localPath;
       } catch (error) {
         localPaths[i] = '';
-        preFailed.push({
+        failedItems.push({
           index: i,
           kind: 'image',
           success: false,
@@ -179,8 +182,6 @@ export class CapturePipeline {
         });
       }
     }
-
-    // 2) 036 阶段 2/3 Stage A：逐图 OCR → 切题；Stage B：跨图合并
     const imageTexts: SetImageText[] = [];
     for (let i = 0; i < imageUris.length; i++) {
       if (localPaths[i].length === 0) {
@@ -190,7 +191,7 @@ export class CapturePipeline {
         const text: string = await OcrService.recognizeUri(localPaths[i]);
         imageTexts.push({ imageIndex: i, text: text });
       } catch (error) {
-        preFailed.push({
+        failedItems.push({
           index: i,
           kind: 'image',
           success: false,
@@ -202,7 +203,7 @@ export class CapturePipeline {
     }
     const plan: SetPlan = planCaptureSet(imageTexts);
     for (let k = 0; k < plan.emptyImageIndexes.length; k++) {
-      preFailed.push({
+      failedItems.push({
         index: plan.emptyImageIndexes[k],
         kind: 'image',
         success: false,
@@ -211,21 +212,66 @@ export class CapturePipeline {
         durationMs: Date.now() - startedAt,
       });
     }
-
-    // 3) 按题下发 capture 命令（payload 已是 OCR 原文，不再二次 OCR）
-    const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
-    const dispatcher: Dispatcher = new Dispatcher();
-    const problems: PlannedProblem[] = plan.problems;
-    const commands: NoteCommand[] = [];
-    for (let k = 0; k < problems.length; k++) {
-      commands.push({
-        kind: 'capture',
-        operationId: 'capture-set-' + seq.toString() + '-p' + k.toString(),
-        source: 'app',
-        payload: { kind: 'text', text: problems[k].text },
+    const problems: CaptureSetProblem[] = [];
+    for (let k = 0; k < plan.problems.length; k++) {
+      const planned: PlannedProblem = plan.problems[k];
+      problems.push({
+        index: planned.index,
+        text: planned.text,
+        anchors: planned.anchors,
+        sourceImageIndexes: planned.sourceImageIndexes,
+        needsReview: planned.needsReview,
       });
     }
-    const canStreamItems: boolean = preFailed.length === 0;
+    const preview: CaptureSetPreview = {
+      setId: 'set-' + seq.toString(),
+      imageCount: imageUris.length,
+      localPaths: localPaths,
+      problems: problems,
+      failedItems: failedItems,
+      emptyImageIndexes: plan.emptyImageIndexes,
+      preambleSkipped: plan.preambleSkipped,
+      degradedImageCount: plan.degradedImageIndexes.length,
+    };
+    log.info('captureSet preview, setId=' + preview.setId
+      + ' images=' + imageUris.length.toString()
+      + ' problems=' + problems.length.toString()
+      + ' failedImages=' + failedItems.length.toString()
+      + ' preambleSkipped=' + preview.preambleSkipped.toString()
+      + ' degraded=' + preview.degradedImageCount.toString()
+      + ' ms=' + (Date.now() - startedAt).toString());
+    return preview;
+  }
+
+  /**
+   * 036 阶段 4：确认提交。selectedIndexes 为空 = 全选；逐题 capture 命令落库。
+   * 一图多题 → 一题一条笔记；needsReview 的题由调用方决定是否勾选。
+   */
+  async commitCaptureSet(preview: CaptureSetPreview, selectedIndexes?: number[],
+    token?: CancellationToken, onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
+    const startedAt: number = Date.now();
+    const seq: number = CaptureTiming.nextSeq();
+    const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
+    const dispatcher: Dispatcher = new Dispatcher();
+    const picked: CaptureSetProblem[] = [];
+    const commands: NoteCommand[] = [];
+    for (let k = 0; k < preview.problems.length; k++) {
+      const problem: CaptureSetProblem = preview.problems[k];
+      let selected: boolean = selectedIndexes === undefined;
+      if (selectedIndexes !== undefined) {
+        selected = selectedIndexes.indexOf(problem.index) >= 0;
+      }
+      if (!selected) {
+        continue;
+      }
+      picked.push(problem);
+      commands.push({
+        kind: 'capture',
+        operationId: preview.setId + '-p' + problem.index.toString(),
+        source: 'app',
+        payload: { kind: 'text', text: problem.text },
+      });
+    }
     const batch: NoteBatchOutcome = await dispatcher.dispatchSetCommand(commands, {
       dao: dao,
       noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
@@ -233,27 +279,18 @@ export class CapturePipeline {
       subjectVocabulary: await SubjectVocabularyService.list(),
       runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
     }, (index: number, outcome: NoteOutcome): void => {
-      if (canStreamItems && onItem !== undefined) {
-        onItem(CapturePipeline.problemItemFromOutcome(index, problems, outcome));
+      if (onItem !== undefined) {
+        onItem(CapturePipeline.problemItemFromOutcome(index, picked, outcome));
       }
     });
-
-    // 4) 合并逐题回执 + 图片级失败项
     const merged: CaptureSetItemResult[] = [];
-    for (let k = 0; k < problems.length; k++) {
-      merged.push(CapturePipeline.problemItemFromOutcome(k, problems, batch.items[k]));
+    for (let k = 0; k < picked.length; k++) {
+      merged.push(CapturePipeline.problemItemFromOutcome(k, picked, batch.items[k]));
     }
-    for (let k = 0; k < preFailed.length; k++) {
-      merged.push(preFailed[k]);
+    for (let k = 0; k < preview.failedItems.length; k++) {
+      merged.push(preview.failedItems[k]);
     }
-    if (!canStreamItems && onItem !== undefined) {
-      for (let i = 0; i < merged.length; i++) {
-        onItem(merged[i]);
-      }
-    }
-
-    // 5) 落库成功的题按来源图建文搜图索引（同一张图可对应多题）
-    for (let k = 0; k < problems.length; k += 1) {
+    for (let k = 0; k < picked.length; k += 1) {
       const item: CaptureSetItemResult = merged[k];
       if (!item.success || item.noteId === undefined || item.noteId.length === 0) {
         continue;
@@ -261,43 +298,50 @@ export class CapturePipeline {
       const imageIndexes: number[] = item.sourceImageIndexes !== undefined ? item.sourceImageIndexes : [];
       for (let s = 0; s < imageIndexes.length; s += 1) {
         const imageIndex: number = imageIndexes[s];
-        if (imageIndex >= 0 && imageIndex < localPaths.length && localPaths[imageIndex].length > 0) {
-          await this.indexForSearch(localPaths[imageIndex], item.noteId);
+        if (imageIndex >= 0 && imageIndex < preview.localPaths.length && preview.localPaths[imageIndex].length > 0) {
+          await this.indexForSearch(preview.localPaths[imageIndex], item.noteId);
         }
       }
     }
-
-    const failed: number = batch.failed + preFailed.length;
+    const failed: number = batch.failed + preview.failedItems.length;
     const result: CaptureSetResult = {
-      total: problems.length + preFailed.length,
+      total: picked.length + preview.failedItems.length,
       done: batch.committed,
       failed: failed,
       cancelled: batch.cancelled,
       items: merged,
       durationMs: Date.now() - startedAt,
-      setId: 'set-' + seq.toString(),
-      imageCount: imageUris.length,
-      problemCount: problems.length,
-      preambleSkipped: plan.preambleSkipped,
-      degradedImageCount: plan.degradedImageIndexes.length,
+      setId: preview.setId,
+      imageCount: preview.imageCount,
+      problemCount: preview.problems.length,
+      preambleSkipped: preview.preambleSkipped,
+      degradedImageCount: preview.degradedImageCount,
     };
-    log.info('captureSet done, setId=' + result.setId
-      + ' images=' + imageUris.length.toString()
-      + ' problems=' + problems.length.toString()
+    log.info('captureSet commit, setId=' + preview.setId
+      + ' images=' + preview.imageCount.toString()
+      + ' problems=' + preview.problems.length.toString()
+      + ' selected=' + picked.length.toString()
       + ' done=' + result.done.toString() + ' failed=' + failed.toString()
       + ' cancelled=' + result.cancelled.toString()
-      + (userText !== undefined && userText.length > 0 ? ' userTextLen=' + userText.length.toString() : ''));
+      + ' ms=' + result.durationMs.toString());
     CaptureTiming.logCaptureSet(seq, result.total, result.done, failed, result.cancelled, result.durationMs);
     return result;
+  }
+
+  /** 兼容入口：预览 + 全选提交（批量/单张共用；确认页走 previewCaptureSet + commitCaptureSet）。 */
+  async captureSet(imageUris: string[], userText?: string, token?: CancellationToken,
+    onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
+    const preview: CaptureSetPreview = await this.previewCaptureSet(imageUris);
+    return await this.commitCaptureSet(preview, undefined, token, onItem);
   }
 
   // 036 阶段 2/3：题目级回执（携带来源图片下标 / 题号 / 复核标记）
   static problemItemFromOutcome(
     index: number,
-    problems: PlannedProblem[],
+    problems: CaptureSetProblem[],
     outcome: NoteOutcome,
   ): CaptureSetItemResult {
-    const problem: PlannedProblem = problems[index];
+    const problem: CaptureSetProblem = problems[index];
     const item: CaptureSetItemResult = {
       index: index,
       kind: 'problem',

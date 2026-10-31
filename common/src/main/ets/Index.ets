@@ -79,6 +79,8 @@ export {
   TruthCheckResult,
   BranchRequest,
   CaptureSetRequest,
+  CaptureSetPreview,
+  CaptureSetProblem,
   CaptureSetItemResult,
   CaptureSetResult,
   ApiResponse,

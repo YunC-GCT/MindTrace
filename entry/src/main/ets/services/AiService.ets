@@ -47,6 +47,7 @@ import {
   buildIncrementalManifest,
   CaptureSetResult,
   CaptureSetItemResult,
+  CaptureSetPreview,
   TextPayload,
 } from 'common';
 import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
@@ -92,6 +93,17 @@ export class AiService {
 
   async ingestTextOutcome(text: string): Promise<NoteOutcome> {
     return await new CapturePipeline(this.context, this.includeUiEffects).ingestTextOutcome(text);
+  }
+
+  // 036 阶段 4：预览（OCR+切题+合并，零落库）与确认提交（逐题勾选）
+  async previewCaptureSet(imageUris: string[]): Promise<CaptureSetPreview> {
+    return await new CapturePipeline(this.context, this.includeUiEffects).previewCaptureSet(imageUris);
+  }
+
+  async commitCaptureSet(preview: CaptureSetPreview, selectedIndexes?: number[],
+    token?: CancellationToken, onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
+    return await new CapturePipeline(this.context, this.includeUiEffects)
+      .commitCaptureSet(preview, selectedIndexes, token, onItem);
   }
 
   async captureSet(imageUris: string[], userText?: string, token?: CancellationToken,

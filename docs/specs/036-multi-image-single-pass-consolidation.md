@@ -257,3 +257,10 @@ S5（重拍/重复选图去重）真机验证（2026-10-31，`e2e=captureSet5`�
 | 入库 | 9/9（含 3 条重复） | **6/6 committed**，无重复笔记，74.9s |
 
 根因：`mergeProblems` 只与「上一条」比较，重复选图（非相邻）未做全局去重；已加「归一化文本相同」或「同题号+相似度≥0.85」的全局重拍去重，并补 2 条契约测试。
+
+### 阶段 4 预览数据就绪（2026-10-31）
+
+- `CapturePipeline` 拆成 **`previewCaptureSet`（OCR+切题+合并，零落库）/ `commitCaptureSet`（逐题勾选落库）/ `captureSet`（兼容 = 预览+全选）**；`CaptureSetPreview` 携带 `setId / localPaths / problems / failedItems`，确认页可直接消费。
+- `AiService` 门面同步暴露 `previewCaptureSet` / `commitCaptureSet`；`commitCaptureSet(preview, selectedIndexes)` 支持逐题勾选（空 = 全选）。
+- 真机自检：`e2e=captureSetPreview` 2 图 → 6 题（preambleSkipped=2），**3.2s、零 LLM/零写入**；`e2e=captureSet5` 回归 6/6 committed（sources=[0,2] 去重保持）。
+- 待做：确认页 UI（overlay 逐题勾选 + needsReview 默认不勾）+ 幂等 commitKey（setId+problemFingerprint）。

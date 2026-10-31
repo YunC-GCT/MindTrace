@@ -156,6 +156,29 @@ export interface CaptureSetItemResult {
   durationMs: number;
 }
 
+// 036 阶段 4：确认页数据（预览阶段零写入）
+export interface CaptureSetProblem {
+  index: number;
+  text: string;
+  anchors: string[];
+  sourceImageIndexes: number[];
+  // 退化/灰区题目：确认页默认不勾选
+  needsReview: boolean;
+}
+
+export interface CaptureSetPreview {
+  setId: string;
+  imageCount: number;
+  // 沙箱本地路径（预览→确认落库复用，不重新复制/OCR）
+  localPaths: string[];
+  problems: CaptureSetProblem[];
+  // 图片级失败（复制/OCR/空图）：确认页直接展示，不进 problems
+  failedItems: CaptureSetItemResult[];
+  emptyImageIndexes: number[];
+  preambleSkipped: number;
+  degradedImageCount: number;
+}
+
 export interface CaptureSetResult {
   total: number;
   done: number;

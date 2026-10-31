@@ -96,7 +96,9 @@ test('CapturePipeline wires OCR → planCaptureSet → per-problem capture comma
   );
   assert.match(pipeline, /OcrService\.recognizeUri\(localPaths\[i\]\)/);
   assert.match(pipeline, /const plan: SetPlan = planCaptureSet\(imageTexts\)/);
-  assert.match(pipeline, /payload: \{ kind: 'text', text: problems\[k\]\.text \}/);
+  assert.match(pipeline, /async previewCaptureSet\(imageUris: string\[\]\): Promise<CaptureSetPreview>/);
+  assert.match(pipeline, /async commitCaptureSet\(preview: CaptureSetPreview/);
+  assert.match(pipeline, /payload: \{ kind: 'text', text: problem\.text \}/);
   assert.match(pipeline, /problemItemFromOutcome/);
   assert.match(pipeline, /kind: 'problem'/);
 });

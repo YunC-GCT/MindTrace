@@ -12,7 +12,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { ImageSearchIndexRegistry } from 'common';
-import type { CaptureSetItemResult, CaptureSetResult, ImageSearchHit, KnowledgeUnit } from 'common';
+import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ImageSearchHit, KnowledgeUnit } from 'common';
 import { AiService } from './AiService';
 import { CardSnapshotService } from './CardSnapshotService';
 import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
@@ -119,6 +119,47 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /**
+   * 036 阶段 4 预览自检：真实 OCR + 切题 + 合并，**零落库**。
+   * 关键日志：stage=preview-start / stage=preview-item（题号/来源图/复核标记）/ stage=done previewOnly=1。
+   */
+  static async runCaptureSetPreview(ctx: common.UIAbilityContext): Promise<void> {
+    const rawPaths: string[] = ['debug/math-1.png', 'debug/math-2.png'];
+    const uris: string[] = [];
+    for (let i = 0; i < rawPaths.length; i++) {
+      const uri: string = await DebugCaptureRunner.materialize(ctx, rawPaths[i]);
+      uris.push(uri);
+    }
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=preview-start images=' + uris.length.toString());
+    const startedAt: number = Date.now();
+    const service: AiService = new AiService(ctx);
+    try {
+      const preview: CaptureSetPreview = await service.previewCaptureSet(uris);
+      for (let k = 0; k < preview.problems.length; k++) {
+        const problem: CaptureSetProblem = preview.problems[k];
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=preview-item idx=' + problem.index.toString()
+            + ' anchors=' + JSON.stringify(problem.anchors)
+            + ' sources=' + JSON.stringify(problem.sourceImageIndexes)
+            + ' review=' + (problem.needsReview ? '1' : '0')
+            + ' textLen=' + problem.text.length.toString());
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done previewOnly=1 setId=' + preview.setId
+          + ' images=' + preview.imageCount.toString()
+          + ' problems=' + preview.problems.length.toString()
+          + ' failedImages=' + preview.failedItems.length.toString()
+          + ' preambleSkipped=' + preview.preambleSkipped.toString()
+          + ' degraded=' + preview.degradedImageCount.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      const e: Error = error as Error;
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=fail ms=' + (Date.now() - startedAt).toString() + ' err=' + e.message);
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done previewOnly=1 problems=0');
+    }
+  }
+
   /**
    * 036 阶段 2/3 真机自检：把 debug 图放进 captureSet（逐图 OCR → 切题 → 跨图合并 → 按题入库）。
    * 关键日志：stage=set-start images=N / stage=set-item（每题一行，含 kind/sourceImageIndexes/anchors/review）/ stage=done total/done/failed。
