@@ -233,6 +233,10 @@ export class DebugCaptureRunner {
           'stage=rag-hit q=' + query + ' hits=' + hits.length.toString()
             + ' first=' + firstId + ' title=' + firstTitle);
       }
+      const chunkCount: number = await DebugCaptureRunner.countRows(searchStore, 'rag_chunk');
+      const ftsCount: number = await DebugCaptureRunner.countRows(searchStore, 'note_fts');
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=rag-index ragChunks=' + chunkCount.toString() + ' ftsRows=' + ftsCount.toString());
       const evidenceService: NoteEvidenceService = new NoteEvidenceService();
       const evidence: NoteEvidenceContext = await evidenceService.build('连续性', { topK: 3 });
       hilog.info(DOMAIN, TAG, '%{public}s',
@@ -245,6 +249,23 @@ export class DebugCaptureRunner {
     } catch (error) {
       const e: Error = error as Error;
       hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSearch=0 err=' + e.message);
+    }
+  }
+
+  /** e2e 辅助：统计表行数（仅调试）。 */
+  private static async countRows(store: relationalStore.RdbStore, table: string): Promise<number> {
+    try {
+      const rs: relationalStore.ResultSet = await store.querySql('SELECT COUNT(*) AS c FROM ' + table, []);
+      try {
+        if (rs.goToFirstRow()) {
+          return rs.getLong(rs.getColumnIndex('c'));
+        }
+        return 0;
+      } finally {
+        rs.close();
+      }
+    } catch (error) {
+      return -1;
     }
   }
 

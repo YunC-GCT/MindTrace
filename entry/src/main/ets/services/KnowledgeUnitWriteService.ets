@@ -98,6 +98,9 @@ export class KnowledgeUnitWriteService {
       generationMetadata,
       commit,
     );
+    if (persisted.duplicate !== true) {
+      await NoteFtsIndex.upsert(persisted.unit);
+    }
     const warnings: string[] = await this.runPostCommit(persisted.unit, persisted.duplicate !== true);
     return {
       committed: true,
@@ -125,6 +128,7 @@ export class KnowledgeUnitWriteService {
         generationMetadata,
         commit,
       );
+      await NoteFtsIndex.upsert(persisted.unit);
       const warnings: string[] = await this.runPostCommit(persisted.unit, false);
       return {
         committed: true,

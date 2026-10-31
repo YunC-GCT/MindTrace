@@ -82,3 +82,13 @@ test('note generation injects related existing_note fragments (R4)', () => {
   assert.match(draft, /const related: SourceFragment\[\] = await this\.relatedNoteFragments\(/);
   assert.match(draft, /body\.length > 400 \? body\.substring\(0, 400\) : body/);
 });
+
+
+test('rag_chunk runtime sync: deterministic chunks written on note upsert (037)', () => {
+  const index = read('entry/src/main/ets/database/NoteFtsIndex.ets');
+  assert.match(index, /private static async syncChunks\(/);
+  assert.match(index, /private static splitChunks\(unitId: string, content: string\): ChunkRow\[\]/);
+  assert.match(index, /INSERT INTO rag_chunk \(id, unit_id, chunk_index, title, content, content_hash, token_count, created_at, updated_at\)/);
+  assert.match(index, /DELETE FROM rag_embedding WHERE chunk_id = \?/);
+  assert.match(index, /const CHUNK_SIZE: number = 400/);
+});

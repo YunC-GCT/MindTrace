@@ -94,3 +94,11 @@ NoteEvidenceService.build(query)
 - 实现：`DraftPipeline.relatedNoteFragments()` —— 指令+原文长度 ≥8 时，`RagRetrievalService.search(store, query, 2)` 取相关旧笔记，`title + content` clip 400 字，`kind:'existing_note'` 片段追加到生成 source bundle（失败静默、不影响生成）。
 - 真机 `e2e=draft --cold`：draft **8.9s** → confirm **1.2s** → `done ok=1`（total 10.1s）。
 - 已知风险：**新装/首次冷启动**（v19 迁移回填 97 条笔记）期间立刻跑 confirm 曾出现一次 >300s 卡住，重跑正常；疑似一次性迁移与写入的 RDB 竞争。缓解方向：迁移完成后置标记 + 自检入口等待 RAG 就绪（后续切片）。
+
+### R2+ 增量：rag_chunk 运行时读写 + 提交键路径同步（2026-11-01）
+
+- `NoteFtsIndex` 写同步扩展：`note_fts` 之外同时重建 `rag_chunk`（400 字确定性切块，`content_hash = sourceFingerprint(chunk)`；更新时先清旧块及其 `rag_embedding` 行）。`rag_embedding` 本身待 embedding 来源接入（一期不写入）。
+- 修关键缺口：写端口 commit-key 路径（`KnowledgeUnitWriteService.createWithCommitKey/updateWithCommitKey`）此前**未同步索引**（真机表现为历史 97 条 → 新笔记后仍 97）。已补 `NoteFtsIndex.upsert`。
+- 真机验证：`e2e=draft` 确认写入新笔记 `KB-mvwmdmgd-s7p7yf` → `e2e=ragSearch` 输出
+  `stage=rag-index ragChunks=4 ftsRows=98`（97+1；4 个 chunk），证明 write→index 同步生效。
+- 备注：`captureSetS3` 二次运行 3.4s 完成属幂等命中（同 set+同题 commitKey 已存在），非漏写。
