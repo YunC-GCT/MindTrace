@@ -107,6 +107,10 @@
       - [x] `v7-dispatch-run-context` 迁移到 `dispatchCommand`（4 条；语义变化：无 context 时 LLM 边界失败 = failed 终态，不再静默 success）
       - [x] `v7-capture-set` 迁移到 `dispatchSetCommand`（6 条）
       - [x] `v7-note-command` 迁移到命令 seam + 新增 `legacy-dispatch-helper.mjs`（BranchRequest→NoteCommand→NoteOutcome→旧外观，供 baseline/golden 在旧入口删除后继续用）
+    - **Step 2/4 尝试记录（2026-10-31 18:5x，已回滚）**：直接删 `Dispatcher.dispatch()` + 把 baseline/golden 调用切到 `dispatchLegacy` 后，golden 的 6 个 capture 用例失败 —— 两个根因：
+      1) **取消语义**：旧 `dispatch()` 在入口取消/图内取消时**抛错**（golden 断言 rejects），helper 把 `cancelled` 终态转成 `failed(CANCELLED)` 外观而不是 throw；
+      2) **失败码外观**：命令 seam 的 `toOptions` 强制 `reportCancellation=true`，分支会填入节点 `error.kind` 作为 errorCode，而旧 `dispatch()` 的对应快照里 `errorCode` 是 undefined → adapter 还原后多出字段。
+      下一步：helper 对 cancelled 终态按旧语义 throw（message 用 CONVERSATION_CANCELLED / 图错误消息），并给 adapter 增加「legacy 外观模式」在 legacy 路径屏蔽 reportCancellation 引入的错误码（或 golden 只对比语义子集）。
     - [ ] Step 5：build + 全量 gate + 真机回归（e2e-capture / a2a_smoke / 手动确认）
     - [ ] Step 6：ADR-0019 状态更新 + tasks 打勾
     - 遗留：`entry/src/main/ets/utils/NoteItemMapper.ets` 为历史非 UTF-8 文件（0xa1 字节），待单独修
