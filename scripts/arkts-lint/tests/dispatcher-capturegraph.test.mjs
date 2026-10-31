@@ -11,9 +11,9 @@ const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiServ
 const agentsIndex = readFileSync(resolve(root, 'agents/src/main/ets/Index.ets'), 'utf8');
 const captureTypes = readFileSync(resolve(root, 'common/src/main/ets/models/CaptureChain.ets'), 'utf8');
 
-test('Dispatcher exposes single dispatch entry only', () => {
-  assert.equal((dispatcher.match(/async dispatch\(/g) || []).length, 1);
-  assert.match(dispatcher, /async dispatch\(req: BranchRequest, options: DispatchOptions = \{\}\)/);
+test('Dispatcher exposes only the command entry (A4 4c Step2)', () => {
+  assert.equal((dispatcher.match(/async dispatch\(/g) || []).length, 0);
+  assert.match(dispatcher, /async dispatchCommand\(/);
   assert.equal((dispatcher.match(/async analyze\(/g) || []).length, 0);
   assert.equal((dispatcher.match(/async routeDispatch\(/g) || []).length, 0);
 });

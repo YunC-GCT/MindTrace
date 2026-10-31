@@ -56,6 +56,7 @@ import {
   buildDeepOutline,
   validateDeepOutline,
   captureProvenanceFromFragments,
+  isRetryableNoteErrorCode,
 } from 'common';
 import type {
   DispatchPayload,
@@ -78,7 +79,6 @@ import { GenerationBranch } from './dispatch/GenerationBranch';
 import { IncrementalBranch } from './dispatch/IncrementalBranch';
 import { NoteOutcomeMapper } from './dispatch/NoteOutcomeMapper';
 import { DISPATCH_EVENT_START, DISPATCH_EVENT_TERMINAL, dispatchStartPayload, dispatchTerminalPayload } from './dispatch/RunEventSink';
-import { LegacyDispatchAdapter } from './dispatch/LegacyDispatchAdapter';
 import { DispatchGraph } from './dispatch/DispatchGraph';
 import type { DispatchGraphContext, DispatchStageHandlers, DispatchStageResult } from './dispatch/DispatchGraph';
 import type { GenerationCandidateEvaluation } from './dispatch/GenerationEvaluator';
@@ -106,21 +106,49 @@ export class Dispatcher {
     );
   }
 
-  // D2 唯一最终公共入口: 跑 CaptureGraph, 失败返回结构化错误。
-  async dispatch(req: BranchRequest, options: DispatchOptions = {}): Promise<DispatchResult> {
-    return await this.dispatchRequest(req, options);
+
+  // A4 4c Step2：分支直接返回 NoteOutcome 后，旧出口由 NoteOutcomeMapper 补的字段要在这里补回：
+  // ① committed 幂等信封（noteId + version + commitKey，ADR-0019 (d)）——capture 走 legacy DAO
+  //    时持久层只回 noteId/version，commitKey 沿用 `capture:<noteId>` 口径；
+  // ② failed.retryable 缺省值（ADR-0019 (c)：由稳定错误码决定能否重试）。
+  private static normalizeInvokedOutcome(command: NoteCommand, outcome: NoteOutcome): NoteOutcome {
+    if (outcome.kind === 'failed' && outcome.retryable === undefined) {
+      outcome.retryable = isRetryableNoteErrorCode(outcome.code !== undefined ? outcome.code : '');
+    }
+    const needsEnvelope: boolean = outcome.kind === 'committed'
+      || (outcome.kind === 'cancelled' && outcome.committed === true);
+    if (!needsEnvelope || (outcome.commitKey !== undefined && outcome.commitKey.length > 0)) {
+      return outcome;
+    }
+    if (command.commitKey !== undefined && command.commitKey.length > 0) {
+      outcome.commitKey = command.commitKey;
+      return outcome;
+    }
+    if (command.kind === 'preparedCandidate' && command.preparedCandidate !== undefined) {
+      const prepared: PreparedCandidate = command.preparedCandidate;
+      if (prepared.commitKey !== undefined && prepared.commitKey.length > 0) {
+        outcome.commitKey = prepared.commitKey;
+      } else {
+        outcome.commitKey = prepared.runId + ':' + prepared.checkpointId + ':' + prepared.candidateHash;
+      }
+      return outcome;
+    }
+    const noteId: string = outcome.noteId !== undefined ? outcome.noteId : '';
+    if (noteId.length > 0) {
+      outcome.commitKey = 'capture:' + noteId;
+    }
+    return outcome;
   }
 
-
-  // A4：invoke 阶段 = 现有分支执行 + 旧结果 → 终态映射（失败不抛出，交给终态）。
+  // A4：invoke 阶段 = 现有分支执行 + 终态字段补齐（失败不抛出，交给终态）。
   private async invokeCommand(
     command: NoteCommand,
     request: BranchRequest,
     effective: DispatchOptions,
   ): Promise<NoteOutcome> {
     try {
-      const result: DispatchResult = await this.dispatchRequest(request, effective);
-      return NoteOutcomeMapper.toOutcome(command, result);
+      const invoked: NoteOutcome = await this.dispatchRequest(request, effective);
+      return Dispatcher.normalizeInvokedOutcome(command, invoked);
     } catch (e) {
       const error: Error = e instanceof Error ? e : new Error(String(e));
       return NoteOutcomeMapper.fromThrown(command, error);
@@ -290,7 +318,7 @@ export class Dispatcher {
   }
 
 
-  private async dispatchRequest(req: BranchRequest, options: DispatchOptions): Promise<DispatchResult> {
+  private async dispatchRequest(req: BranchRequest, options: DispatchOptions): Promise<NoteOutcome> {
     options.cancellationToken?.throwIfCancelled();
     const t0: number = Date.now();
     if (req.preparedCandidate !== undefined) {
@@ -298,15 +326,12 @@ export class Dispatcher {
     }
     if (req.generation !== undefined) {
       if (req.generation.mode === 'regenerate') {
-        const incrementalOutcome: NoteOutcome = await IncrementalBranch.dispatchIncrementalGeneration(req.generation, req, options, t0);
-    return LegacyDispatchAdapter.toDispatchResult(incrementalOutcome);
+        return await IncrementalBranch.dispatchIncrementalGeneration(req.generation, req, options, t0);
       }
-      const generationOutcome: NoteOutcome = await GenerationBranch.dispatchGeneration(req.generation, req, options, this.resolveRunContext(options), t0);
-    return LegacyDispatchAdapter.toDispatchResult(generationOutcome);;
+      return await GenerationBranch.dispatchGeneration(req.generation, req, options, this.resolveRunContext(options), t0);
     }
     // capture 分支已抽出到 ./dispatch/CaptureBranch（2026-10-31 拆分 Dispatcher）。
-    const captureOutcome: NoteOutcome = await CaptureBranch.dispatchCapture(req, options, this.resolveRunContext(options), t0);
-    return LegacyDispatchAdapter.toDispatchResult(captureOutcome);;
+    return await CaptureBranch.dispatchCapture(req, options, this.resolveRunContext(options), t0);
   }
 
   private async dispatchPreparedCandidate(
@@ -314,11 +339,9 @@ export class Dispatcher {
     prepared: PreparedCandidate,
     options: DispatchOptions,
     startedAt: number,
-  ): Promise<DispatchResult> {
+  ): Promise<NoteOutcome> {
     // 分支已抽出到 ./dispatch/PreparedBranch（2026-10-31 拆分 Dispatcher，收敛文件体积）。
-    const preparedOutcome: NoteOutcome = await PreparedBranch.dispatch(
-      req, prepared, options, startedAt, this.resolveRunContext(options));
-    return LegacyDispatchAdapter.toDispatchResult(preparedOutcome);
+    return await PreparedBranch.dispatch(req, prepared, options, startedAt, this.resolveRunContext(options));
   }
 
 }

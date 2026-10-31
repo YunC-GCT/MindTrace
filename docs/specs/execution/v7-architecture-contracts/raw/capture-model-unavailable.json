@@ -31,7 +31,7 @@
       "type": "概念"
     },
     "data": null,
-    "errorCode": null,
+    "errorCode": "STRUCTURE_ERROR",
     "errorMessage": "AI 结构化失败: model unavailable",
     "generation": null,
     "route": "D1",

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRuntime, generationRequest, draft, memoryStorage } from './knowledge-dispatch-runtime.mjs';
+import { dispatchLegacy } from './legacy-dispatch-helper.mjs';
 
 test('incremental merge permits a general derivative and a chapter-local worked example without patches', () => {
   const { common } = createRuntime();
@@ -75,7 +76,7 @@ test('light preview keeps source fallback, transport budget and zero DAO writes'
   const runtime = createRuntime(() => draft(''));
   const storage = memoryStorage();
   const progress = [];
-  const result = await runtime.dispatcher.dispatch(generationRequest(), {
+  const result = await dispatchLegacy(runtime, generationRequest(), {
     generationRepository: storage.repository, dao: storage.dao, progressSink: e => progress.push(e),
   });
   assert.equal(result.success, true, JSON.stringify(result));
@@ -109,7 +110,7 @@ test(`${route} preview confirmation persists before commit receipt and duplicate
   const options = { generationRepository: storage.repository, dao: storage.dao };
   const previewRequest = generationRequest(route);
   previewRequest.generation.instruction = '整理材料';
-  const preview = await runtime.dispatcher.dispatch(previewRequest, options);
+  const preview = await dispatchLegacy(runtime, previewRequest, options);
   assert.equal(preview.success, true, JSON.stringify(preview));
   assert.equal(preview.generation.status, 'ready-preview');
   assert.equal(storage.writes.length, 0);
@@ -118,12 +119,12 @@ test(`${route} preview confirmation persists before commit receipt and duplicate
   const preparedCandidate = { runId: 'baseline-run', checkpointId: checkpoint.id,
     candidate: preview.data, candidateHash: checkpoint.candidateHash, commitKey: 'baseline-commit' };
   const request = { ...generationRequest(), generation: undefined, preparedCandidate };
-  const saved = await runtime.dispatcher.dispatch(request, options);
+  const saved = await dispatchLegacy(runtime, request, options);
   assert.equal(saved.success, true, JSON.stringify(saved));
   assert.equal(storage.writes.length, 1);
   assert.ok(storage.events.indexOf('insert') < storage.events.indexOf('commit'));
   assert.equal(storage.commits[0].candidateJson, JSON.stringify(saved.data));
-  const duplicate = await runtime.dispatcher.dispatch(request, options);
+  const duplicate = await dispatchLegacy(runtime, request, options);
   assert.equal(duplicate.success, true);
   assert.equal(duplicate.data.id, saved.data.id);
   assert.equal(storage.writes.length, 1);
@@ -135,11 +136,11 @@ test('TruthCheck rejects an authenticated but invalid checkpoint before any dura
   const runtime = createRuntime(() => draft());
   const storage = memoryStorage();
   const options = { generationRepository: storage.repository, dao: storage.dao };
-  const preview = await runtime.dispatcher.dispatch(generationRequest(), options);
+  const preview = await dispatchLegacy(runtime, generationRequest(), options);
   const candidate = { ...preview.data, content: '' };
   const candidateHash = runtime.common.sourceFingerprint(JSON.stringify(candidate));
   storage.checkpoints[0] = { ...storage.checkpoints[0], candidateHash };
-  const result = await runtime.dispatcher.dispatch({ ...generationRequest(), generation: undefined,
+  const result = await dispatchLegacy(runtime, { ...generationRequest(), generation: undefined,
     preparedCandidate: { runId: 'baseline-run', checkpointId: storage.checkpoints[0].id,
       candidate, candidateHash, commitKey: 'bad-commit' } }, options);
   assert.equal(result.success, false);
@@ -160,7 +161,7 @@ test('standard recovers from incomplete verifier coverage without regenerating t
   const runtime = createRuntime((_request, index) => index === 1 ? standardResponse() : {
     status: 'supported', issues: [], evidenceStatuses: index === 2 ? [] : ['supported'],
   });
-  const result = await runtime.dispatcher.dispatch(generationRequest('standard'));
+  const result = await dispatchLegacy(runtime, generationRequest('standard'));
   assert.equal(result.success, true, JSON.stringify(result));
   assert.equal(result.generation.status, 'ready-preview');
   assert.equal(result.generation.verification.decisions.length, 1);
@@ -186,7 +187,7 @@ test('deep dispatch retains multi-source attribution and bounded section transpo
     sequence: 1, fingerprint: 'fp-2', text: '$$\n\\pi\n$$' });
   const storage = memoryStorage();
   const progress = [];
-  const result = await runtime.dispatcher.dispatch(request, { generationRepository: storage.repository,
+  const result = await dispatchLegacy(runtime, request, { generationRepository: storage.repository,
     dao: storage.dao, progressSink: e => progress.push(e) });
   assert.equal(result.success, true, JSON.stringify(result));
   assert.equal(result.generation.route, 'deep');
@@ -236,7 +237,7 @@ for (const analysisOnly of [true, false]) {
   test(`Capture ${analysisOnly ? 'analysis' : 'persist'} keeps classification and write contract`, async () => {
     const runtime = createRuntime((_request, index) => index === 1 ? classification : captureJson);
     const storage = memoryStorage();
-    const result = await runtime.dispatcher.dispatch({ source: 'app',
+    const result = await dispatchLegacy(runtime, { source: 'app',
       payload: { kind: 'text', text: '函数在一点连续。' } },
     { analysisOnly, includeRawText: true, dao: storage.dao });
     assert.equal(result.success, true, JSON.stringify(result));
@@ -259,7 +260,7 @@ for (const analysisOnly of [true, false]) {
 
 test('Capture surfaces DAO failure without returning a successful KnowledgeUnit', async () => {
   const runtime = createRuntime((_request, index) => index === 1 ? classification : captureJson);
-  const result = await runtime.dispatcher.dispatch({ source: 'app', payload: { kind: 'text', text: '连续函数' } },
+  const result = await dispatchLegacy(runtime, { source: 'app', payload: { kind: 'text', text: '连续函数' } },
     { dao: { async insert() { throw new Error('disk unavailable'); } } });
   assert.equal(result.success, false);
   assert.match(result.errorMessage, /disk unavailable/);
@@ -273,7 +274,7 @@ test('Capture falls back from classifier LLM failure and still preserves write b
     return captureJson;
   });
   const storage = memoryStorage();
-  const result = await runtime.dispatcher.dispatch({ source: 'app',
+  const result = await dispatchLegacy(runtime, { source: 'app',
     payload: { kind: 'text', text: '函数在一点连续。' } }, { dao: storage.dao });
   assert.equal(result.success, true, JSON.stringify(result));
   assert.equal(result.classification.type, '概念');
@@ -287,7 +288,7 @@ test('Capture falls back from classifier LLM failure and still preserves write b
 test('Capture returns structure errors with classification context and zero writes', async () => {
   const runtime = createRuntime((_request, index) => index === 1 ? classification : 'not json');
   const storage = memoryStorage();
-  const result = await runtime.dispatcher.dispatch({ source: 'app',
+  const result = await dispatchLegacy(runtime, { source: 'app',
     payload: { kind: 'text', text: '函数在一点连续。' } }, { dao: storage.dao });
   assert.equal(result.success, false);
   assert.match(result.errorMessage, /AI 结构化失败/);
@@ -304,7 +305,7 @@ test('cancellation at dispatch entry prevents LLM and storage side effects', asy
   const token = new runtime.common.CancellationToken();
   token.cancel();
   const storage = memoryStorage();
-  await assert.rejects(runtime.dispatcher.dispatch(generationRequest(), {
+  await assert.rejects(dispatchLegacy(runtime, generationRequest(), {
     cancellationToken: token, dao: storage.dao, generationRepository: storage.repository,
   }), /CONVERSATION_CANCELLED/);
   assert.equal(runtime.requests.length, 0);
@@ -320,7 +321,7 @@ test('mid-flight cancellation propagates token and prevents preview/DAO commit',
   });
   token = new runtime.common.CancellationToken();
   const storage = memoryStorage();
-  const result = await runtime.dispatcher.dispatch(generationRequest(), {
+  const result = await dispatchLegacy(runtime, generationRequest(), {
     cancellationToken: token, dao: storage.dao, generationRepository: storage.repository,
   });
   assert.equal(result.success, false);
@@ -345,7 +346,7 @@ for (const [kind, retriable] of [
       return true;
     });
     assert.equal(runtime.requests.length, 1); // transport failure is not guard-retried
-    const result = await runtime.dispatcher.dispatch(generationRequest());
+    const result = await dispatchLegacy(runtime, generationRequest());
     assert.equal(result.success, false);
     assert.equal(result.generation.issues[0].code, 'STRUCTURE_ERROR');
     assert.match(result.errorMessage, /provider unavailable/);
@@ -377,7 +378,7 @@ test('truncation is non-retriable and never becomes a partial preview', async ()
     return true;
   });
   assert.equal(runtime.requests.length, 1);
-  const result = await runtime.dispatcher.dispatch(generationRequest());
+  const result = await dispatchLegacy(runtime, generationRequest());
   assert.equal(result.success, false);
   assert.equal(result.data, undefined);
   assert.match(result.errorMessage, /truncated/);
@@ -430,15 +431,16 @@ for (const attackLocked of [false, true]) {
       parentConversationRunId: 'conversation-incremental' });
     const options = { generationRepository: storage.repository, dao: storage.dao };
     if (attackLocked) {
-      // Existing incremental dispatch propagates the domain error instead of wrapping it.
-      await assert.rejects(runtime.dispatcher.dispatch(request, options), error => {
-        assert.equal(error.kind, 'DOMAIN_VALIDATION_ERROR');
-        assert.equal(error.retriable, false);
-        return true;
-      });
+      // A4 4c Step4：命令 seam 把分支抛出的领域错误收敛成 failed 终态（旧 dispatch() 会把
+      // GenerationJsonError 原样抛出）。越权 patch 仍必须被拒、不可重试且不落检查点。
+      const result = await dispatchLegacy(runtime, request, options);
+      assert.equal(result.success, false);
+      assert.equal(result.errorCode, 'NODE_ERROR');
+      assert.equal(result.errorRetryable, false);
+      assert.match(result.errorMessage, /unplanned patch/);
       assert.equal(storage.checkpoints.length, 0);
     } else {
-      const result = await runtime.dispatcher.dispatch(request, options);
+      const result = await dispatchLegacy(runtime, request, options);
       assert.equal(result.success, true, JSON.stringify(result));
       assert.equal(result.generation.status, 'ready-preview');
       const recovered = await storage.repository.restore(request.generation.runId);
@@ -466,7 +468,7 @@ for (const complete of [true, false]) {
       status: 'supported', issues: [], evidenceStatuses: complete ? ['supported'] : [],
     });
     const storage = memoryStorage();
-    const result = await runtime.dispatcher.dispatch(generationRequest('standard'), {
+    const result = await dispatchLegacy(runtime, generationRequest('standard'), {
       generationRepository: storage.repository, dao: storage.dao,
     });
     assert.equal(result.generation.status, complete ? 'ready-preview' : 'needs-input', JSON.stringify(result));

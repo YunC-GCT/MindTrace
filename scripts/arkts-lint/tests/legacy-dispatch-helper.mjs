@@ -34,5 +34,9 @@ export async function dispatchLegacy(runtime, request, options = {}) {
     command.includeRawText = true;
   }
   const outcome = await runtime.dispatcher.dispatchCommand(command, options);
+  // 旧 dispatch() 语义：取消以异常结束（入口取消 / capture 图内取消均抛错）。
+  if (outcome.kind === 'cancelled') {
+    throw new Error('CONVERSATION_CANCELLED');
+  }
   return LegacyDispatchAdapter.toDispatchResult(outcome);
 }
