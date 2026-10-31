@@ -51,6 +51,8 @@ import {
   NoteTopicCandidate,
   NoteGenerationRecovery,
   sourceFingerprint,
+  DatabaseHelper,
+  buildSourceId,
   IncrementalManifest,
   IncrementalSection,
   parseIncrementalSections,
@@ -62,11 +64,13 @@ import {
 import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
 import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
+import { relationalStore } from '@kit.ArkData';
 import { ImageUriResolver, ResolvedImageFile } from '../ImageUriResolver';
 import { SubjectVocabularyService } from '../SubjectVocabularyService';
 import { ConversationRunIdPolicy, SessionIdPolicy } from '../ConversationIdentity';
 import { NoteGenerationRepositoryFactory } from '../NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from '../AgentMemoryService';
+import { RagHit, RagRetrievalService } from '../RagRetrievalService';
 import { NoteGenerationContextBuilder } from '../NoteGenerationContextBuilder';
 import { CaptureTiming } from './CaptureTiming';
 import { AiServicePorts } from './AiServicePorts';
@@ -84,6 +88,45 @@ export class DraftPipeline {
   constructor(context: common.Context | undefined, includeUiEffects: boolean) {
     this.context = context;
     this.includeUiEffects = includeUiEffects;
+  }
+
+  /**
+   * R4：生成前注入「相关旧笔记」片段（本地 FTS 检索，topK=2，单条 clip=400 字）。
+   * 失败/未就绪返回空数组，不影响生成。
+   */
+  private async relatedNoteFragments(query: string, cancellationToken?: CancellationToken): Promise<SourceFragment[]> {
+    const fragments: SourceFragment[] = [];
+    const trimmed: string = query.trim();
+    if (trimmed.length < 8 || cancellationToken?.isCancelled() === true) {
+      return fragments;
+    }
+    try {
+      const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      if (store === null) {
+        return fragments;
+      }
+      const hits: RagHit[] = await RagRetrievalService.search(store, trimmed, 2);
+      for (let i = 0; i < hits.length; i++) {
+        const hit: RagHit = hits[i];
+        const body: string = (hit.title + '\n' + hit.content).trim();
+        if (body.length < 12) {
+          continue;
+        }
+        const clipped: string = body.length > 400 ? body.substring(0, 400) : body;
+        const fragment: SourceFragment = {
+          id: buildSourceId('existing_note', hit.unitId, i),
+          kind: 'existing_note',
+          originId: hit.unitId,
+          sequence: i,
+          fingerprint: sourceFingerprint(clipped),
+          text: clipped,
+        };
+        fragments.push(fragment);
+      }
+    } catch (e) {
+      console.warn('[DraftPipeline] related notes retrieval failed: ' + (e as Error).message);
+    }
+    return fragments;
   }
 
   async generateNoteDraft(runId: string, instruction: string, sourceText: string): Promise<NoteDraftReadyEvent> {
@@ -113,6 +156,11 @@ export class DraftPipeline {
     }];
     for (const pendingSource of pendingSources) {
       fragments.push(pendingSource);
+    }
+    const related: SourceFragment[] = await this.relatedNoteFragments(
+      instruction + '\n' + sourceText, cancellationToken);
+    for (const relatedFragment of related) {
+      fragments.push(relatedFragment);
     }
     const request: NoteGenerationRequest = {
       runId: runId,

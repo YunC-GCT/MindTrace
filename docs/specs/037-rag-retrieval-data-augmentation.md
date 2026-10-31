@@ -52,7 +52,7 @@ NoteEvidenceService.build(query)
 | R1 ✅ | `RagRetrievalService.probe`（getRetriever + FTS5 建表/插入/检索）+ `e2e=ragProbe` 真机探针 | 真机：FTS5 命中 1 条 / 58ms；Kit getRetriever OK，retrieveRdb 报 1021201002（暂缓） |
 | R2 ✅ | schema v19：`note_fts`（trigram FTS5）+ 迁移回填；写路径同步（create/update/delete）；`RagRetrievalService.search`（≥3 字 MATCH / <3 字 LIKE）；`e2e=ragSearch` | 单测 6 条（v7-rag-retrieval）+ 真机：97 条历史笔记回填后 `连续性` FTS 命中 5 条、`极限` LIKE 命中 5 条 / 17ms |
 | R3 ✅ | `NoteEvidenceService.queryHits` 切到本地 FTS（`RagRetrievalService.search`）→ join `knowledge_unit` 补 version → `NoteEvidenceCitation`；FTS 不可用/无命中回退 `note.search`；Kit 探针拆到 `RagKitProbe.ets`（生产链路不依赖受限 Kit） | 单测 8 条（v7-rag-retrieval + evidence-port 全绿）；真机 `e2e=ragSearch`：`citations=7 degraded=0 contextChars=1603`，20ms |
-| R4 | 生成侧注入：`NoteGenerationContextBuilder` 加入相关笔记片段 | 生成笔记时 prompt 含检索片段 |
+| R4 ✅ | 生成侧注入：`DraftPipeline.generateNoteDraftWithSources` 生成前用本地 FTS 检索相关旧笔记（topK=2、单条 clip 400 字），作为 `existing_note` SourceFragment 注入 source bundle | 单测守卫 + 真机 `e2e=draft` 生成/确认回归通过（draft 8.9s / confirm 1.2s，total 10.1s） |
 | R5 | `knowledgeProcessor`/向量通道评估（需先解决 embedding 来源） | 文档结论 |
 
 ## 5. 真机探针状态（2026-10-31）
@@ -88,3 +88,9 @@ NoteEvidenceService.build(query)
   - **证据管线**：`stage=rag-evidence citations=7 degraded=0 contextChars=1603`，总耗时 20ms
 - 分层修正：`RagRetrievalService` 改为「调用方传 RdbStore」，去掉 `common` 值依赖与受限 Kit import；Kit 探针独立为 `RagKitProbe.ets`（仅调试 harness），生产证据/聊天链路不再依赖 `@kit.DataAugmentationKit`。
 - 降级链：FTS 不可用（表未就绪/异常）→ 空数组 → `queryHits` 回退既有 `note_query_rag` 工具，回答不阻塞。
+
+### R4 真机回归（2026-10-31）
+
+- 实现：`DraftPipeline.relatedNoteFragments()` —— 指令+原文长度 ≥8 时，`RagRetrievalService.search(store, query, 2)` 取相关旧笔记，`title + content` clip 400 字，`kind:'existing_note'` 片段追加到生成 source bundle（失败静默、不影响生成）。
+- 真机 `e2e=draft --cold`：draft **8.9s** → confirm **1.2s** → `done ok=1`（total 10.1s）。
+- 已知风险：**新装/首次冷启动**（v19 迁移回填 97 条笔记）期间立刻跑 confirm 曾出现一次 >300s 卡住，重跑正常；疑似一次性迁移与写入的 RDB 竞争。缓解方向：迁移完成后置标记 + 自检入口等待 RAG 就绪（后续切片）。

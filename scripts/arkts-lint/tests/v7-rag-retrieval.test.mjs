@@ -72,3 +72,13 @@ test('NoteEvidenceService prefers local FTS recall and falls back to note.search
   // fallback：FTS 不可用/无命中时仍走既有 note.search 工具
   assert.match(evidence, /EVIDENCE_TOOL_NAME/);
 });
+
+
+test('note generation injects related existing_note fragments (R4)', () => {
+  const draft = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
+  assert.match(draft, /private async relatedNoteFragments\(query: string, cancellationToken\?: CancellationToken\)/);
+  assert.match(draft, /RagRetrievalService\.search\(store, trimmed, 2\)/);
+  assert.match(draft, /buildSourceId\('existing_note', hit\.unitId, i\)/);
+  assert.match(draft, /const related: SourceFragment\[\] = await this\.relatedNoteFragments\(/);
+  assert.match(draft, /body\.length > 400 \? body\.substring\(0, 400\) : body/);
+});
