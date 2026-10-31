@@ -26,10 +26,12 @@ const withoutComments = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('Issue 105 removes the old summarize-then-persist route and duplicate source gate', () => {
+  // 2026-10-31：生成分支抽到 GenerationBranch，source gate 数量断言随之迁移。
+  const generationBranch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
   assert.doesNotMatch(workflow, /summarizeNoteMaterial|material_summary/);
   assert.doesNotMatch(aiService, /summarizeNoteMaterial|material_summary/);
   assert.doesNotMatch(dispatcher, /inputSourceIssues/);
-  assert.equal((dispatcher.match(/validateSourceBundle\(/g) || []).length, 1);
+  assert.equal((generationBranch.match(/validateSourceBundle\(/g) || []).length, 1);
 });
 
 test('Issue 105 consumes only explicitly referenced pending source ids', () => {

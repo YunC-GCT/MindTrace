@@ -30,14 +30,17 @@ test('image payload maps to camera_capture source in the capture flow', () => {
 });
 
 test('generation pipeline always synthesizes a text payload from the source bundle', () => {
-  const genPayloadBlock = dispatcher.match(
+  // 2026-10-31：dispatchGeneration 抽到 GenerationBranch。
+  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  const genPayloadBlock = branch.match(
     /const generationPayload: DispatchRequest = \{[\s\S]*?payload: \{ kind: 'text', text: (?:this|GenerationEvaluator)\.bundleText\(bundle\) \}/,
   );
   assert.ok(genPayloadBlock !== null, 'dispatchGeneration must replace image payload with synthesized text');
 });
 
 test('light route generation state uses synthesized text and persist=false', () => {
-  const lightStateBlock = dispatcher.match(
+  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  const lightStateBlock = branch.match(
     /const initial: AgentState = \{[\s\S]*?captureText: (?:this|GenerationEvaluator)\.bundleText\(bundle\)[\s\S]*?source: 'note_generation'[\s\S]*?persist: false/,
   );
   assert.ok(lightStateBlock !== null, 'light route must set persist=false');
@@ -60,8 +63,10 @@ test('CaptureChain defines ImagePayload with imageUri and optional userText', ()
 
 test('OcrNode reads input.payload for image kind but does not run in the generation graph', () => {
   assert.match(ocrNode, /input\.payload/);
-  assert.match(dispatcher, /buildGenerationGraph/);
-  const genBlock = dispatcher.match(/private.*buildGenerationGraph[\s\S]*?return graph/);
+  // 2026-10-31：buildGenerationGraph 抽到 GenerationBranch（静态方法）。
+  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  assert.match(branch, /buildGenerationGraph/);
+  const genBlock = branch.match(/static .*buildGenerationGraph[\s\S]*?return graph/);
   assert.ok(genBlock !== null, 'buildGenerationGraph must exist and return');
   assert.doesNotMatch(genBlock[0], /OcrNode/);
 });

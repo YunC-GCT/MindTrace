@@ -8,13 +8,15 @@ const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'u
 
 test('Issue 103 wires a real deep route through Dispatcher and KnowledgeModel', () => {
   const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  // 2026-10-31：生成分支编排抽到 GenerationBranch。
+  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets')
   const model = read('agents/src/main/ets/agents/DeepDraftComposer.ets')
   const contracts = read('common/src/main/ets/models/NoteGenerationModels.ets')
 
-  assert.match(dispatcher, /route === 'deep'/)
-  assert.match(dispatcher, /dispatchDeepGeneration/)
-  assert.match(dispatcher, /structureDeepDraft/)
-  assert.doesNotMatch(dispatcher, /repairDeepDraft/)
+  assert.match(branch, /route === 'deep'/)
+  assert.match(branch, /dispatchDeepGeneration/)
+  assert.match(branch, /structureDeepDraft/)
+  assert.doesNotMatch(branch, /repairDeepDraft/)
   // 2026-10-31：deepMergeIssues 随评估逻辑抽到 GenerationEvaluator（Dispatcher 只留分支编排）。
   const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets')
   assert.match(evaluator, /deepMergeIssues/)
@@ -49,7 +51,8 @@ test('deep generation reports real section and verification activity', () => {
   assert.match(model, /total: outline\.sections\.length/)
   assert.match(model, /activity: 'check_accuracy'/)
   assert.doesNotMatch(dispatcher, /repairDeepDraft/)
-  assert.match(dispatcher, /structureDeepDraft\(budgetedRequest, options\.progressSink\)/)
+  const branchSrc = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets')
+  assert.match(branchSrc, /structureDeepDraft\(budgetedRequest, options\.progressSink\)/)
   assert.match(model, /this\.verifier\.verify\(/)
   assert.match(read('agents/src/main/ets/agents/NoteDraftVerifier.ets'), /evidenceStatuses/)
 })

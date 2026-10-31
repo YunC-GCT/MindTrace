@@ -71,6 +71,7 @@ import { isBatchCancelled, skippedItem, withRunContext } from './dispatch/BatchS
 import { CaptureBranch } from './dispatch/CaptureBranch';
 import { PreparedBranch } from './dispatch/PreparedBranch';
 import { GenerationEvaluator } from './dispatch/GenerationEvaluator';
+import { GenerationBranch } from './dispatch/GenerationBranch';
 import type { GenerationCandidateEvaluation } from './dispatch/GenerationEvaluator';
 import { copyRegeneratedUnit } from './dispatch/UnitSupport';
 
@@ -195,7 +196,7 @@ export class Dispatcher {
       if (req.generation.mode === 'regenerate') {
         return await this.dispatchIncrementalGeneration(req.generation, req, options, t0);
       }
-      return await this.dispatchGeneration(req.generation, req, options, t0);
+      return await GenerationBranch.dispatchGeneration(req.generation, req, options, this.resolveRunContext(options), t0);
     }
     // capture 分支已抽出到 ./dispatch/CaptureBranch（2026-10-31 拆分 Dispatcher）。
     return await CaptureBranch.dispatchCapture(req, options, this.resolveRunContext(options), t0);
@@ -216,14 +217,14 @@ export class Dispatcher {
     if (options.generationRepository === undefined || options.generationRepository.getRegenerationBase === undefined) {
       return { success: false, route: 'D1', errorCode: 'REGENERATION_REPOSITORY_REQUIRED', errorMessage: '增量重生成基础资料不可用', durationMs: Date.now() - startedAt };
     }
-    this.emitGenerationProgress(options, {
+    GenerationBranch.emitGenerationProgress(options, {
       phase: 'prepare',
       state: 'running',
       activity: 'collect_sources',
     });
     const base: IncrementalBase | undefined = await options.generationRepository.getRegenerationBase(request.targetNoteId);
     if (base === undefined) {
-      this.emitGenerationProgress(options, {
+      GenerationBranch.emitGenerationProgress(options, {
         phase: 'prepare',
         state: 'failed',
         activity: 'collect_sources',
@@ -250,7 +251,7 @@ export class Dispatcher {
     };
     const plan: IncrementalPlan = planIncrementalChange(requirement, locked, planningManifest, request.sources.fragments);
     if (plan.targetSectionIds.length === 0) {
-      this.emitGenerationProgress(options, {
+      GenerationBranch.emitGenerationProgress(options, {
         phase: 'prepare',
         state: 'failed',
         activity: 'collect_sources',
@@ -277,12 +278,12 @@ export class Dispatcher {
       updatedAt: Date.now(),
     };
     await options.generationRepository.saveRun(run, sourceBundle);
-    this.emitGenerationProgress(options, {
+    GenerationBranch.emitGenerationProgress(options, {
       phase: 'prepare',
       state: 'success',
       activity: 'collect_sources',
     });
-    this.emitGenerationProgress(options, {
+    GenerationBranch.emitGenerationProgress(options, {
       phase: 'compose',
       state: 'running',
       activity: 'repair_draft',
@@ -293,12 +294,12 @@ export class Dispatcher {
       locked,
       sourceBundle.fragments,
     );
-    this.emitGenerationProgress(options, {
+    GenerationBranch.emitGenerationProgress(options, {
       phase: 'compose',
       state: 'success',
       activity: 'repair_draft',
     });
-    this.emitGenerationProgress(options, {
+    GenerationBranch.emitGenerationProgress(options, {
       phase: 'verify',
       state: 'running',
       activity: 'check_accuracy',
@@ -311,7 +312,7 @@ export class Dispatcher {
       base.manifest.sourceIds.concat(plan.newSourceIds),
     );
     if (!merged.ok) {
-      this.emitGenerationProgress(options, {
+      GenerationBranch.emitGenerationProgress(options, {
         phase: 'verify',
         state: 'failed',
         activity: 'check_accuracy',
@@ -358,7 +359,7 @@ export class Dispatcher {
       createdAt: run.createdAt,
       updatedAt: Date.now(),
     }, sourceBundle);
-    this.emitGenerationProgress(options, {
+    GenerationBranch.emitGenerationProgress(options, {
       phase: 'verify',
       state: 'success',
       activity: 'check_accuracy',
@@ -381,529 +382,6 @@ export class Dispatcher {
     };
   }
 
-  private async dispatchGeneration(
-    request: NoteGenerationRequest,
-    req: DispatchRequest,
-    options: DispatchOptions,
-    startedAt: number,
-  ): Promise<DispatchResult> {
-    const bundle: SourceBundle = this.normalizeBundle(request);
-    this.emitGenerationProgress(options, {
-      phase: 'prepare',
-      state: 'running',
-      activity: 'collect_sources',
-    });
-    let route = request.route ?? selectGenerationRoute(bundle, request.instruction);
-    // 2026-09-20 P0-7: deep 源预算超限时自动降级 standard — 原先 preflight 直接
-    // needs-input 终止 (dbpull5 实测 3 连 missing_facts, 用户反复重试均 25ms 拒绝);
-    // standard 单次调用可承载长源, 降级优于中断问询
-    if (route === 'deep') {
-      const deepSourceLimit: number = deepBudget().maxSourceChars ?? 0;
-      if (deepSourceLimit > 0) {
-        let sourceChars: number = 0;
-        for (const fragment of bundle.fragments) {
-          sourceChars += fragment.text.length;
-        }
-        if (sourceChars > deepSourceLimit) {
-          log.info('generation run=' + request.runId + ' downgrade deep->standard: sourceChars='
-            + sourceChars.toString() + ' > ' + deepSourceLimit.toString());
-          route = 'standard';
-        }
-      }
-    }
-    const budget = route === 'deep' ? deepBudget() : route === 'standard' ? standardBudget() : lightBudget();
-    const requirement = request.requirement ?? defaultRequirement(request.instruction);
-    const run: NoteGenerationRun = {
-      id: request.runId,
-      originSessionId: request.originSessionId,
-      parentConversationRunId: request.parentConversationRunId,
-      route: route,
-      status: 'running',
-      instruction: request.instruction,
-      sourceCount: bundle.fragments.length,
-      tokenBudget: budget.maxTokens,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      sourceIds: bundle.fragments.map((fragment): string => fragment.id),
-      pendingSourceIds: request.pendingSourceIds ?? [],
-      sourceSummary: this.sourceSummary(bundle),
-    };
-    if (options.generationRepository !== undefined) {
-      await options.generationRepository.saveRun(run, bundle);
-    }
-    const missing: NoteGenerationIssue[] = [];
-    let processBlocked: boolean = false;
-    const sourceGateIssues: NoteGenerationIssue[] = validateSourceBundle(bundle);
-    for (const issue of sourceGateIssues) {
-      missing.push(issue);
-      processBlocked = true;
-    }
-    if (bundle.fragments.length === 0) {
-      missing.push({ stage: 'source', code: 'MISSING_SOURCE', severity: 'hard', message: '请提供一段对话或一份 OCR 材料', repairable: false });
-    }
-    if (request.instruction.trim().length === 0) {
-      missing.push({ stage: 'requirement', code: 'MISSING_INSTRUCTION', severity: 'hard', message: '请说明希望生成的笔记内容', repairable: false });
-    }
-    if (request.instruction.indexOf('缺少') >= 0 || request.instruction.indexOf('未知') >= 0) {
-      missing.push({ stage: 'requirement', code: 'MISSING_USER_FACT', severity: 'hard', message: '请补充题目中的关键已知条件', repairable: false });
-    }
-    if (route === 'deep' && budget.maxSourceChars !== undefined) {
-      let sourceChars: number = 0;
-      for (const fragment of bundle.fragments) {
-        sourceChars += fragment.text.length;
-      }
-      if (sourceChars > budget.maxSourceChars) {
-        missing.push({
-          stage: 'source',
-          code: 'SOURCE_BUDGET_EXCEEDED',
-          severity: 'hard',
-          message: '材料总量超过 deep route 来源预算，请缩小范围: ' + bundle.fragments.map((item): string => item.id).join(','),
-          repairable: false,
-        });
-      }
-    }
-    if (route === 'deep' && missing.length === 0) {
-      const segments = segmentSourceBundle(bundle);
-      const plannedOutline = buildDeepOutline(segments, requirement);
-      const outlineIssues = validateDeepOutline(plannedOutline, segments, bundle, requirement);
-      for (const issue of outlineIssues) {
-        missing.push(issue);
-        processBlocked = true;
-      }
-    }
-    if (missing.length > 0) {
-      this.emitGenerationProgress(options, {
-        phase: 'prepare',
-        state: 'failed',
-        activity: 'collect_sources',
-      });
-      const questions: string[] = [];
-      if (!processBlocked) {
-        for (const issue of missing) {
-          questions.push(issue.message);
-        }
-      }
-      const preflightStatus = processBlocked ? 'failed' : 'needs-input';
-      const preflightStopReason: string = processBlocked ? 'process_gate' : 'missing_facts';
-      const generation: NoteGenerationResult = {
-        runId: request.runId,
-        route: route,
-        status: preflightStatus,
-        issues: missing,
-        questions: questions,
-        stopReason: preflightStopReason,
-        promptTokens: 0,
-        completionTokens: 0,
-      };
-      if (options.generationRepository !== undefined) {
-        const completedRun: NoteGenerationRun = {
-          id: run.id,
-          originSessionId: run.originSessionId,
-          parentConversationRunId: run.parentConversationRunId,
-          route: run.route,
-          status: preflightStatus,
-          instruction: run.instruction,
-          sourceCount: run.sourceCount,
-          tokenBudget: run.tokenBudget,
-          stopReason: preflightStopReason,
-          issueCount: missing.length,
-          createdAt: run.createdAt,
-          updatedAt: Date.now(),
-          sourceIds: run.sourceIds,
-          pendingSourceIds: run.pendingSourceIds,
-          sourceSummary: run.sourceSummary,
-        };
-        await options.generationRepository.saveRun(completedRun, bundle);
-      }
-      log.info('generation run=' + request.runId + ' route=' + route + ' sources=' + bundle.fragments.length.toString()
-        + ' issues=' + missing.length.toString() + ' tokens=0');
-      return { success: false, route: 'D1', generation: generation, errorMessage: questions.join('; '), durationMs: Date.now() - startedAt };
-    }
-
-    const generationPayload: DispatchRequest = {
-      source: req.source,
-      payload: { kind: 'text', text: GenerationEvaluator.bundleText(bundle) },
-    };
-    this.emitGenerationProgress(options, {
-      phase: 'prepare',
-      state: 'success',
-      activity: 'collect_sources',
-    });
-    if (route === 'standard') {
-      this.emitGenerationProgress(options, {
-        phase: 'compose',
-        state: 'running',
-        activity: 'write_draft',
-      });
-      return await this.dispatchStandardGeneration(
-        request,
-        generationPayload,
-        options,
-        startedAt,
-        run,
-        bundle,
-        budget,
-        requirement,
-      );
-    }
-    if (route === 'deep') {
-      this.emitGenerationProgress(options, {
-        phase: 'compose',
-        state: 'running',
-        activity: 'plan_structure',
-      });
-      return await this.dispatchDeepGeneration(
-        request,
-        bundle,
-        options,
-        startedAt,
-        run,
-        budget,
-        requirement,
-      );
-    }
-    const initial: AgentState = {
-      captureText: GenerationEvaluator.bundleText(bundle),
-      source: 'note_generation',
-      payload: generationPayload.payload,
-      generationRequest: {
-        runId: request.runId,
-        instruction: request.instruction,
-        mode: request.mode,
-        sources: bundle,
-        requirement: requirement,
-        targetNoteId: request.targetNoteId,
-        baseVersion: request.baseVersion,
-        pendingSourceIds: request.pendingSourceIds,
-        route: route,
-      },
-      currentStep: 'START',
-      persist: false,
-      analysisOnly: false,
-    };
-    this.emitGenerationProgress(options, {
-      phase: 'compose',
-      state: 'running',
-      activity: 'write_draft',
-    });
-    const graph: CaptureGraph = this.buildGenerationGraph(options.knowledgeModel, options.cancellationToken);
-    const finalState: AgentState = await graph.run(initial, this.resolveRunContext(options));
-    this.emitGenerationProgress(options, {
-      phase: 'compose',
-      state: finalState.error === undefined ? 'success' : 'failed',
-      activity: 'write_draft',
-    });
-    const errors: NoteGenerationIssue[] = [];
-    if (finalState.error !== undefined) {
-      errors.push({ stage: finalState.error.step, code: finalState.error.kind, severity: 'hard', message: finalState.error.message, repairable: false });
-    }
-    const candidate: KnowledgeUnit | undefined = finalState.error === undefined ? finalState.knowledgeUnit : undefined;
-    const draft = finalState.draft;
-    const standardResult = finalState.standardResult;
-    if (standardResult !== undefined) {
-      for (const issue of standardResult.verification.issues) {
-        if (!errors.some((existing: NoteGenerationIssue): boolean => existing.code === issue.code && existing.sectionId === issue.sectionId && existing.sourceId === issue.sourceId)) {
-          errors.push(issue);
-        }
-      }
-    }
-    const checkpointId: string = request.runId + ':0';
-    const candidateHash: string = candidate === undefined ? '' : sourceFingerprint(JSON.stringify(candidate));
-    if (draft !== undefined && options.generationRepository !== undefined) {
-      const checkpoint: NoteGenerationCheckpoint = {
-        id: checkpointId,
-        runId: request.runId,
-        iteration: 0,
-        stage: 'truth_check',
-        candidateHash: candidateHash,
-        documentJson: candidate === undefined ? JSON.stringify(draft) : JSON.stringify(candidate),
-        accepted: candidate !== undefined && finalState.truthCheck?.passed === true,
-        issueCodes: errors.map((issue: NoteGenerationIssue): string => issue.code),
-        outlineJson: standardResult === undefined ? undefined : JSON.stringify(standardResult.outline),
-        evidenceJson: standardResult === undefined ? undefined : JSON.stringify(standardResult.evidence),
-        verificationJson: standardResult === undefined ? undefined : JSON.stringify(standardResult.verification),
-        createdAt: Date.now(),
-      };
-      await options.generationRepository.saveCheckpoint(checkpoint);
-    }
-    const status = candidate !== undefined ? 'ready-preview' : 'failed';
-    const referencedPendingSourceIds: string[] = this.referencedPendingSourceIds(
-      draft,
-      request.pendingSourceIds ?? [],
-    );
-    const result: NoteGenerationResult = {
-      runId: request.runId,
-      route: route,
-      status: status,
-      candidate: candidate,
-      draft: draft,
-      bestCheckpointId: candidate !== undefined && finalState.truthCheck?.passed === true ? checkpointId : undefined,
-      issues: errors,
-      questions: [],
-      stopReason: candidate !== undefined ? 'light_complete' : 'workflow_error',
-      promptTokens: 0,
-      completionTokens: 0,
-      sourceIds: run.sourceIds,
-      outline: standardResult?.outline,
-      evidence: standardResult?.evidence,
-      verification: standardResult?.verification,
-    };
-    if (options.generationRepository !== undefined) {
-      const completedRun: NoteGenerationRun = {
-        id: run.id,
-        originSessionId: run.originSessionId,
-        parentConversationRunId: run.parentConversationRunId,
-        route: run.route,
-        status: status,
-        instruction: run.instruction,
-        sourceCount: run.sourceCount,
-        tokenBudget: run.tokenBudget,
-        bestCheckpointId: result.bestCheckpointId,
-        stopReason: result.stopReason,
-        issueCount: errors.length,
-        createdAt: run.createdAt,
-        updatedAt: Date.now(),
-        sourceIds: run.sourceIds,
-        pendingSourceIds: referencedPendingSourceIds,
-        sourceSummary: run.sourceSummary,
-      };
-      await options.generationRepository.saveRun(completedRun, bundle);
-    }
-    log.info('generation run=' + request.runId + ' route=' + route + ' sources=' + bundle.fragments.length.toString()
-      + ' issues=' + errors.length.toString() + ' tokens=0');
-    return {
-      success: candidate !== undefined,
-      route: 'D1',
-      data: candidate,
-      generation: result,
-      recognizedText: options.includeRawText === true ? finalState.captureText : undefined,
-      errorMessage: candidate === undefined ? (errors.length > 0 ? errors[0].message : 'generation failed') : undefined,
-      durationMs: Date.now() - startedAt,
-    };
-  }
-
-  private emitGenerationProgress(options: DispatchOptions, event: NoteGenerationProgressEvent): void {
-    if (options.progressSink !== undefined) {
-      options.progressSink(event);
-    }
-  }
-
-  private async dispatchStandardGeneration(
-    request: NoteGenerationRequest,
-    req: DispatchRequest,
-    options: DispatchOptions,
-    startedAt: number,
-    run: NoteGenerationRun,
-    bundle: SourceBundle,
-    budget: NoteGenerationBudget,
-    requirement: NoteGenerationRequirement,
-  ): Promise<DispatchResult> {
-    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
-    const budgetedRequest: NoteGenerationRequest = GenerationEvaluator.withTokenBudget(
-      request,
-      budget.maxTokens,
-      bundle,
-      requirement,
-    );
-    let current: NoteGenerationStandardResult;
-    try {
-      current = await model.structureStandardDraft(budgetedRequest, options.progressSink);
-    } catch (e) {
-      return await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
-        round: 0,
-        stopReason: 'initial_generation_failed',
-        rollback: false,
-        tokenBudget: budget.maxTokens,
-        estimatedTokenCost: 0,
-      }, 'initial generation failed: ' + (e as Error).message);
-    }
-
-    const finalEvaluation: GenerationCandidateEvaluation = await GenerationEvaluator.evaluateStandardCandidate(
-      current,
-      bundle,
-      requirement,
-      model,
-    );
-    const checkpointId: string = request.runId + ':0';
-    const bestCheckpointId: string = checkpointId;
-    const checkpoint: NoteGenerationCheckpoint = {
-      id: checkpointId,
-      runId: request.runId,
-      iteration: 0,
-      stage: 'truth_check',
-      candidateHash: sourceFingerprint(JSON.stringify(finalEvaluation.candidate)),
-      documentJson: JSON.stringify(finalEvaluation.candidate),
-      accepted: finalEvaluation.hardIssueCount === 0,
-      issueCodes: finalEvaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
-      outlineJson: JSON.stringify(finalEvaluation.result.outline),
-      evidenceJson: JSON.stringify(finalEvaluation.result.evidence),
-      verificationJson: JSON.stringify(finalEvaluation.result.verification),
-      issueFingerprint: finalEvaluation.issueFingerprint,
-      coverage: finalEvaluation.coverage,
-      tokenCost: finalEvaluation.tokenCost,
-      changeScope: finalEvaluation.changeScope,
-      decision: 'initial',
-      createdAt: Date.now(),
-    };
-    if (options.generationRepository !== undefined) {
-      await options.generationRepository.saveCheckpoint(checkpoint);
-    }
-    let stopReason: string = 'standard_complete';
-    if (finalEvaluation.hardIssueCount === 0) {
-      this.emitGenerationProgress(options, {
-        phase: 'verify', state: 'success', activity: 'check_accuracy',
-      });
-    } else {
-      stopReason = GenerationEvaluator.readOnlyVerificationStopReason(finalEvaluation.issues);
-    }
-    const round: number = 0;
-    const rollback: boolean = false;
-    const progress: NoteGenerationProgress = {
-      round: round,
-      stopReason: stopReason,
-      rollback: rollback,
-      issueCount: finalEvaluation?.issues.length ?? 0,
-      issueFingerprint: finalEvaluation?.issueFingerprint,
-      tokenBudget: budget.maxTokens,
-      estimatedTokenCost: finalEvaluation.tokenCost,
-    };
-    if (finalEvaluation.hardIssueCount > 0) {
-      return await GenerationEvaluator.finishStandardGeneration(
-        request,
-        GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
-        bundle,
-        options,
-        startedAt,
-        finalEvaluation.issues,
-        undefined,
-        progress,
-        GenerationEvaluator.generationFailureMessage('standard', finalEvaluation.issues, progress),
-        finalEvaluation.result,
-      );
-    }
-    const finalCandidate: KnowledgeUnit = finalEvaluation.candidate;
-    return await GenerationEvaluator.finishStandardGeneration(
-      request,
-      GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
-      bundle,
-      options,
-      startedAt,
-      finalEvaluation.issues,
-      finalCandidate,
-      progress,
-      undefined,
-      finalEvaluation.result,
-    );
-  }
-
-  private async dispatchDeepGeneration(
-    request: NoteGenerationRequest,
-    bundle: SourceBundle,
-    options: DispatchOptions,
-    startedAt: number,
-    run: NoteGenerationRun,
-    budget: NoteGenerationBudget,
-    requirement: NoteGenerationRequirement,
-  ): Promise<DispatchResult> {
-    const model: KnowledgeModel = options.knowledgeModel ?? new KnowledgeModel(undefined, options.cancellationToken);
-    const budgetedRequest: NoteGenerationRequest = GenerationEvaluator.withTokenBudget(
-      request,
-      budget.maxTokens,
-      bundle,
-      requirement,
-    );
-    let current: NoteGenerationDeepResult;
-    try {
-      current = await model.structureDeepDraft(budgetedRequest, options.progressSink);
-    } catch (e) {
-      return await GenerationEvaluator.finishStandardGeneration(request, run, bundle, options, startedAt, [], undefined, {
-        round: 0,
-        stopReason: 'initial_deep_generation_failed',
-        rollback: false,
-        tokenBudget: budget.maxTokens,
-        estimatedTokenCost: 0,
-      }, 'initial deep generation failed: ' + (e as Error).message, undefined, 'deep');
-    }
-    const finalEvaluation: GenerationCandidateEvaluation = await GenerationEvaluator.evaluateDeepCandidate(
-      current,
-      bundle,
-      requirement,
-      model,
-    );
-    const checkpointId: string = request.runId + ':0';
-    const bestCheckpointId: string = checkpointId;
-    const checkpoint: NoteGenerationCheckpoint = {
-      id: checkpointId,
-      runId: request.runId,
-      iteration: 0,
-      stage: 'truth_check',
-      candidateHash: sourceFingerprint(JSON.stringify(finalEvaluation.candidate)),
-      documentJson: JSON.stringify(finalEvaluation.candidate),
-      accepted: finalEvaluation.hardIssueCount === 0,
-      issueCodes: finalEvaluation.issues.map((issue: NoteGenerationIssue): string => issue.code),
-      outlineJson: JSON.stringify(finalEvaluation.result.outline),
-      evidenceJson: JSON.stringify(finalEvaluation.result.evidence),
-      verificationJson: JSON.stringify(finalEvaluation.result.verification),
-      issueFingerprint: finalEvaluation.issueFingerprint,
-      coverage: finalEvaluation.coverage,
-      tokenCost: finalEvaluation.tokenCost,
-      changeScope: finalEvaluation.changeScope,
-      decision: 'initial',
-      createdAt: Date.now(),
-    };
-    if (options.generationRepository !== undefined) {
-      await options.generationRepository.saveCheckpoint(checkpoint);
-    }
-    let stopReason: string = 'deep_complete';
-    if (finalEvaluation.hardIssueCount === 0) {
-      this.emitGenerationProgress(options, {
-        phase: 'verify', state: 'success', activity: 'check_accuracy',
-      });
-    } else {
-      stopReason = GenerationEvaluator.readOnlyVerificationStopReason(finalEvaluation.issues);
-    }
-    const round: number = 0;
-    const rollback: boolean = false;
-    const progress: NoteGenerationProgress = {
-      round: round,
-      stopReason: stopReason,
-      rollback: rollback,
-      issueCount: finalEvaluation.issues.length,
-      issueFingerprint: finalEvaluation.issueFingerprint,
-      tokenBudget: budget.maxTokens,
-      estimatedTokenCost: finalEvaluation.tokenCost,
-    };
-    const deepResult: NoteGenerationDeepResult | undefined = finalEvaluation.deepResult;
-    if (finalEvaluation.hardIssueCount > 0) {
-      return await GenerationEvaluator.finishStandardGeneration(
-        request,
-        GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
-        bundle,
-        options,
-        startedAt,
-        finalEvaluation.issues,
-        undefined,
-        progress,
-        GenerationEvaluator.generationFailureMessage('deep', finalEvaluation.issues, progress),
-        deepResult,
-        'deep',
-      );
-    }
-    return await GenerationEvaluator.finishStandardGeneration(
-      request,
-      GenerationEvaluator.completedRun(run, bestCheckpointId, stopReason),
-      bundle,
-      options,
-      startedAt,
-      finalEvaluation.issues,
-      finalEvaluation.candidate,
-      progress,
-      undefined,
-      deepResult,
-      'deep',
-    );
-  }
-
   private async dispatchPreparedCandidate(
     req: DispatchRequest,
     prepared: PreparedCandidate,
@@ -912,81 +390,6 @@ export class Dispatcher {
   ): Promise<DispatchResult> {
     // 分支已抽出到 ./dispatch/PreparedBranch（2026-10-31 拆分 Dispatcher，收敛文件体积）。
     return await PreparedBranch.dispatch(req, prepared, options, startedAt, this.resolveRunContext(options));
-  }
-
-  private buildGenerationGraph(model?: KnowledgeModel, cancellationToken?: CancellationToken): CaptureGraph {
-    const graph: CaptureGraph = new CaptureGraph();
-    const structure: KnowledgeModel = model ?? new KnowledgeModel(undefined, cancellationToken);
-    const truth: TruthCheckService = new TruthCheckService();
-    graph.addNode('structure', StructureNodeFactory.create(structure));
-    graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
-    graph.addEdge('START', 'structure');
-    graph.addEdge('structure', 'truth_check');
-    graph.addConditionalEdge('truth_check', (_input: AgentState): CaptureStep => 'END');
-    return graph;
-  }
-
-  private normalizeBundle(request: NoteGenerationRequest): SourceBundle {
-    const fragments = request.sources.fragments.slice(0);
-    fragments.sort((left, right): number => left.sequence - right.sequence);
-    const normalized: SourceBundle = { fragments: [] };
-    let sequence: number = 0;
-    for (const fragment of fragments) {
-      const id: string = fragment.id.length > 0 ? fragment.id : buildSourceId(fragment.kind, fragment.originId, sequence);
-      normalized.fragments.push({
-        id: id,
-        kind: fragment.kind,
-        originId: fragment.originId,
-        sequence: sequence,
-        // Source text is the authority at the Dispatcher boundary. Never trust a
-        // caller-supplied fingerprint that may actually be a record or OCR ID.
-        fingerprint: sourceFingerprint(fragment.text),
-        text: fragment.text,
-        provenanceIds: this.normalizeProvenanceIds(fragment),
-      });
-      sequence += 1;
-    }
-    return normalized;
-  }
-
-  private normalizeProvenanceIds(fragment: SourceFragment): string[] {
-    const result: string[] = [];
-    const candidates: string[] = fragment.provenanceIds ?? [fragment.id];
-    for (const value of candidates) {
-      const normalized: string = value.trim();
-      if (normalized.length > 0 && !result.includes(normalized)) {
-        result.push(normalized);
-      }
-    }
-    if (result.length === 0 && fragment.id.trim().length > 0) {
-      result.push(fragment.id.trim());
-    }
-    return result;
-  }
-
-  private sourceSummary(bundle: SourceBundle): string {
-    const kinds: string[] = [];
-    for (const fragment of bundle.fragments) {
-      if (!kinds.includes(fragment.kind)) {
-        kinds.push(fragment.kind);
-      }
-    }
-    return 'count=' + bundle.fragments.length.toString() + ';kinds=' + kinds.join(',');
-  }
-
-  private referencedPendingSourceIds(draft: NoteDraftDocument | undefined, pendingSourceIds: string[]): string[] {
-    const referenced: string[] = [];
-    if (draft === undefined) {
-      return referenced;
-    }
-    for (const section of draft.sections) {
-      for (const sourceId of section.sourceIds) {
-        if (pendingSourceIds.includes(sourceId) && !referenced.includes(sourceId)) {
-          referenced.push(sourceId);
-        }
-      }
-    }
-    return referenced;
   }
 
 }

@@ -53,9 +53,9 @@
 - [x] **切片 1（2026-10-31）**：抽出 `core/dispatch/DispatchOptions`（共享选项契约）、`UnitSupport`（`copyRegeneratedUnit` / `seedTextFromRequest`）、`PreparedBranch`（preparedCandidate 全流程 + `buildGraph`）；Dispatcher **1790 → 1643 行**；golden 18 条零重录；相关源码断言测试同步指向新模块
 - [x] **切片 2（2026-10-31）**：抽出 `CaptureBranch`（AgentState 组装 + NoteAgent 执行 + 四种 `DispatchResult` 外壳）与 `BatchSupport`（批量取消判定 / 跳过回执 / 共享 RunContext 选项复制）；`sourceFromPayload` 并入 `UnitSupport`；Dispatcher **1643 → 1528 行**；golden 零重录
 - [x] **切片 3a（2026-10-31）**：抽出 `GenerationEvaluator`（`evaluateStandardCandidate` / `evaluateDeepCandidate` / `deepMergeIssues` / `finishStandardGeneration` / 诊断 / 终态 / 预算包装 / `bundleText`，全部静态方法）+ 三个内部接口；Dispatcher **1528 → 992 行**；golden 零重录
-- [ ] **切片 3b**：`GenerationBranch`（`dispatchGeneration` 300 行 + `dispatchStandardGeneration` / `dispatchDeepGeneration` + `buildGenerationGraph` / `normalizeBundle` / `emitGenerationProgress` / `sourceSummary` 等，约 590 行）
-- [ ] **切片 3c**：`IncrementalBranch`（`dispatchIncrementalGeneration` 164 行 + `incrementalResult`，约 180 行）
-- [ ] **切片 4**：Dispatcher 只留 `dispatch` / `dispatchSet` 入口、路由与结果外壳（目标 ≤400 行）；随后 A3 在此薄壳上落 `NoteCommand` / `NoteOutcome`
+- [x] **切片 3b（2026-10-31）**：抽出 `GenerationBranch`（`dispatchGeneration` + `dispatchStandardGeneration` / `dispatchDeepGeneration` + `buildGenerationGraph` / `normalizeBundle` / `normalizeProvenanceIds` / `referencedPendingSourceIds` / `sourceSummary` / `emitGenerationProgress`，共 9 个静态方法，约 590 行）；Dispatcher **992 → 395 行**（≤400 目标已达成，但增量分支仍在内）；golden 零重录
+- [ ] **切片 3c**：`IncrementalBranch`（`dispatchIncrementalGeneration` 164 行 + `incrementalResult`，约 180 行）→ Dispatcher 预计 ~215 行
+- [ ] **切片 4**：Dispatcher 只留 `dispatch` / `dispatchSet` 入口、路由与结果外壳；随后 **A3** 在此薄壳上落 `NoteCommand` / `NoteOutcome`
 
 ## #239 行为基线：四条 dispatch 路径 golden 快照
 

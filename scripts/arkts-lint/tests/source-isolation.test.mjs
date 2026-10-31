@@ -35,7 +35,9 @@ test('NoteGenerationRun carries sourceIds and pendingSourceIds arrays', () => {
 });
 
 test('Dispatcher builds sourceIds from bundle fragments in generation run', () => {
-  assert.match(dispatcher, /sourceIds: bundle\.fragments\.map\(\(fragment\): string => fragment\.id\)/);
+  // 2026-10-31：生成分支抽到 GenerationBranch。
+  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  assert.match(branch, /sourceIds: bundle\.fragments\.map\(\(fragment\): string => fragment\.id\)/);
 });
 
 test('buildSourceId creates stable composite IDs from kind, originId, sequence', () => {
@@ -44,14 +46,17 @@ test('buildSourceId creates stable composite IDs from kind, originId, sequence',
 });
 
 test('normalizeBundle re-sequences fragments and fills missing IDs', () => {
-  assert.match(dispatcher, /private normalizeBundle/);
-  assert.match(dispatcher, /fragment\.id\.length > 0 \? fragment\.id : buildSourceId/);
+  // 2026-10-31：normalizeBundle 抽到 GenerationBranch（静态方法）。
+  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  assert.match(branch, /static normalizeBundle/);
+  assert.match(branch, /fragment\.id\.length > 0 \? fragment\.id : buildSourceId/);
 });
 
 test('standard and deep generation receive the normalized source bundle', () => {
-  // 2026-10-31：withTokenBudget 随评估/终态逻辑抽到 GenerationEvaluator（静态方法）。
+  // 2026-10-31：withTokenBudget 随评估/终态逻辑抽到 GenerationEvaluator（静态方法），调用点在 GenerationBranch。
   const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
-  const calls = dispatcher.match(
+  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  const calls = branch.match(
     /withTokenBudget\(\s*request,\s*budget\.maxTokens,\s*bundle,\s*requirement,\s*\)/g,
   ) ?? [];
   assert.equal(calls.length, 2);
@@ -76,9 +81,10 @@ test('NoteGenerationRepository restore reconstructs fragments ordered by sequenc
 });
 
 test('referencedPendingSourceIds tracks which pending sources appear in draft sections', () => {
-  assert.match(dispatcher, /private referencedPendingSourceIds/);
-  assert.match(dispatcher, /draft\.sections/);
-  assert.match(dispatcher, /pendingSourceIds/);
+  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  assert.match(branch, /static referencedPendingSourceIds/);
+  assert.match(branch, /draft\.sections/);
+  assert.match(branch, /pendingSourceIds/);
 });
 
 test('validateSourceBundle checks fragment IDs and text for structural validity', () => {
