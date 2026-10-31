@@ -71,6 +71,17 @@
 - **A3 系列完成**：旧 `dispatch()` / `dispatchSet()` / `DispatchResult` 作为迁移适配器保留，等 A4 接线 `EventSink`/`RunStore` 时再统一清理
 - [ ] **A4：主图** `preflight → route → invoke → verify → HITL → publish` + `EventSink`/`RunStore` 接线
 
+### AiService 拆分（第二个 god-service，2026-10-31 开始）
+
+> 动因：`AiService.ets` 1142 行，同时承担「compose 端口 / 图片准备 / capture 编排 / 批量 / A2A 入库 / 草稿生成 / 增量重生成 / 澄清 / 确认提交 / 索引 / 耗时日志」十余种职责。按 Dispatcher 同样手法分片，每片以 `agent-gate` 全绿 + `e2e-capture` 可跑为判据。
+
+- [x] **切片 1（2026-10-31）**：抽出 `entry/src/main/ets/services/ai/CaptureTiming.ets`（序号分配 + `CAPTURE_TIMING` / `CAPTURE_SET_TIMING` 汇总日志）；AiService **1174 → 1142 行**
+- [ ] **切片 2**：`services/ai/AiServicePorts.ets` —— `requireContext` / `buildNoteDao` / `buildNoteWritePort` 组合根（三处端口装配集中，服务层不重复造）
+- [ ] **切片 3**：`services/ai/DraftCommitService.ets` —— `confirmDraft` / `updateDraftCheckpoint` / `resolvePendingMemoryIds` + pending 清理
+- [ ] **切片 4**：`services/ai/DraftPipeline.ets` —— `generateNoteDraft*` / `dispatchNoteDraft` / `regenerateNoteDraft` / `restoreDraft` / `retryDraft` / `contextBudgetForRecovery` / `referencedPendingSourceIdsFromIds`
+- [ ] **切片 5**：`services/ai/ClarificationPipeline.ets` —— 澄清草稿生成 / 保存 / 恢复 / 回滚（约 200 行）
+- [ ] **切片 6**：`services/ai/CapturePipeline.ets` —— `capture` / `captureSet` / `analyzeImage` / `ingestText*` / `processAndPersist*` / `captureItemFromOutcome`；`AiService` 只留 facade（目标 <200 行）
+
 ### Dispatcher 拆分（A3 的前置重构，2026-10-31 开始）
 
 > 动因：`Dispatcher.ets` 约 1790 行，`dispatchGeneration` 单方法 301 行、`dispatchIncrementalGeneration` 165 行，四个分支与生成评估逻辑混在一个类里。A3 直接加契约只会更糟，所以先按分支拆模块；每片以 #239 golden 18 条「零重录」作为等价判据。

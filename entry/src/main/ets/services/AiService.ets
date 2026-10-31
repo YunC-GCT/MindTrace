@@ -63,13 +63,12 @@ import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFacto
 import { AgentMemoryService } from './AgentMemoryService';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
 import { NoteWritePortFactory } from './NoteWritePortFactory';
+import { CaptureTiming } from './ai/CaptureTiming';
 import { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
-const captureLog: Logger = new Logger('AICapture');
 export class AiService {
   private static readonly activeClarificationRuns: Map<string, CancellationToken> = new Map<string, CancellationToken>();
-  private static captureSeq: number = 0;
 
   // UIAbilityContext 引用,capture() 准备图片文件时用
   private context?: common.Context;
@@ -84,7 +83,7 @@ export class AiService {
   // 拍照/相册入口:把图片处理成 KnowledgeUnit 并持久化
   async capture(imageUri: string, userText?: string): Promise<KnowledgeUnit> {
     const startedAt: number = Date.now();
-    const seq: number = ++AiService.captureSeq;
+    const seq: number = CaptureTiming.nextSeq();
     let resolveMs: number = 0;
     let outcome: string = 'ok';
     const nodeTotals: Map<string, number> = new Map<string, number>();
@@ -123,7 +122,7 @@ export class AiService {
       throw new Error(String(error));
     } finally {
       const totalMs: number = Date.now() - startedAt;
-      captureLog.info(AiService.formatCaptureTiming(seq, outcome, resolveMs, nodeTotals, nodeVisits, totalMs));
+      CaptureTiming.logCapture(seq, outcome, resolveMs, nodeTotals, nodeVisits, totalMs);
     }
   }
 
@@ -163,7 +162,7 @@ export class AiService {
   async captureSet(imageUris: string[], userText?: string, token?: CancellationToken,
     onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
     const startedAt: number = Date.now();
-    const seq: number = ++AiService.captureSeq;
+    const seq: number = CaptureTiming.nextSeq();
     const context: common.UIAbilityContext = this.requireContext();
     const resolver: ImageUriResolver = new ImageUriResolver(context);
     const items: DispatchPayload[] = [];
@@ -263,9 +262,7 @@ export class AiService {
     };
     log.info('captureSet done, total=' + result.total.toString() + ', done=' + result.done.toString()
       + ', failed=' + failed.toString() + ', cancelled=' + result.cancelled.toString());
-    captureLog.info('CAPTURE_SET_TIMING seq=' + seq.toString() + ' total=' + result.total.toString()
-      + ' done=' + result.done.toString() + ' failed=' + failed.toString()
-      + ' cancelled=' + result.cancelled.toString() + ' totalMs=' + result.durationMs.toString());
+    CaptureTiming.logCaptureSet(seq, result.total, result.done, failed, result.cancelled, result.durationMs);
     return result;
   }
 
@@ -303,37 +300,6 @@ export class AiService {
     }
     return item;
   }
-  private static formatCaptureTiming(
-    seq: number,
-    outcome: string,
-    resolveMs: number,
-    nodeTotals: Map<string, number>,
-    nodeVisits: Map<string, number>,
-    totalMs: number,
-  ): string {
-    const ocrMs: number = nodeTotals.get('capture') ?? 0;
-    const classifyMs: number = nodeTotals.get('classify') ?? 0;
-    const draftMs: number = nodeTotals.get('structure') ?? 0;
-    const truthCheckMs: number = nodeTotals.get('truth_check') ?? 0;
-    const persistMs: number = nodeTotals.get('persist') ?? 0;
-    const accountedMs: number = resolveMs + ocrMs + classifyMs + draftMs + truthCheckMs + persistMs;
-    const otherMs: number = Math.max(0, totalMs - accountedMs);
-    return 'CAPTURE_TIMING seq=' + seq.toString()
-      + ' outcome=' + outcome
-      + ' resolveMs=' + resolveMs.toString()
-      + ' ocrMs=' + ocrMs.toString()
-      + ' classifyMs=' + classifyMs.toString()
-      + ' draftMs=' + draftMs.toString()
-      + ' truthCheckMs=' + truthCheckMs.toString()
-      + ' persistMs=' + persistMs.toString()
-      + ' otherMs=' + otherMs.toString()
-      + ' totalMs=' + totalMs.toString()
-      + ' visits=capture:' + (nodeVisits.get('capture') ?? 0).toString()
-      + ',classify:' + (nodeVisits.get('classify') ?? 0).toString()
-      + ',structure:' + (nodeVisits.get('structure') ?? 0).toString()
-      + ',truth_check:' + (nodeVisits.get('truth_check') ?? 0).toString()
-      + ',persist:' + (nodeVisits.get('persist') ?? 0).toString();
-  }
 
   /** 把已落库的图片写进 textSearchImage 索引；端口未安装时静默跳过。 */
   private async indexForSearch(localPath: string, unitId: string): Promise<void> {
@@ -366,7 +332,7 @@ export class AiService {
     // A3c：分析入口也走命令 seam；analysisOnly 的终态是 readyPreview（不落库）。
     const command: NoteCommand = {
       kind: 'analysisOnly',
-      operationId: 'analyze-' + Date.now().toString() + '-' + (++AiService.captureSeq).toString(),
+      operationId: 'analyze-' + Date.now().toString() + '-' + CaptureTiming.nextSeq().toString(),
       source: 'app',
       payload: { kind: 'image', imageUri: resolved.localPath, userText: userText },
       includeRawText: true,
@@ -1133,7 +1099,7 @@ export class AiService {
     payload: DispatchPayload,
     onNodeTiming?: (step: string, elapsedMs: number) => void,
   ): Promise<NoteOutcome> {
-    const operationId: string = 'capture-' + Date.now().toString() + '-' + (++AiService.captureSeq).toString();
+    const operationId: string = 'capture-' + Date.now().toString() + '-' + CaptureTiming.nextSeq().toString();
     const command: NoteCommand = {
       kind: 'capture',
       operationId: operationId,
