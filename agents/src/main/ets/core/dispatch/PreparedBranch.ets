@@ -32,6 +32,7 @@ import { PersistNodeFactory } from '../../graph/nodes/PersistNode';
 import { TruthCheckService } from '../../agents/TruthCheckService';
 import type { NoteDaoInterface } from '../../models/NoteDaoInterface';
 import type { DispatchOptions } from './DispatchOptions';
+import type { NoteOutcome } from 'common';
 import { copyRegeneratedUnit, seedTextFromRequest } from './UnitSupport';
 
 export class PreparedBranch {
@@ -41,13 +42,21 @@ export class PreparedBranch {
     options: DispatchOptions,
     startedAt: number,
     runContext: RunContext,
-  ): Promise<DispatchResult> {
+  ): Promise<NoteOutcome> {
+    const operationId: string = req.operationId !== undefined ? req.operationId : 'legacy';
+    const failedOutcome = (message: string, code: string): NoteOutcome => {
+      const outcome: NoteOutcome = {
+        kind: 'failed', operationId: operationId, route: 'D1',
+        durationMs: Date.now() - startedAt, code: code, message: message,
+      };
+      return outcome;
+    };
     const actualHash: string = sourceFingerprint(JSON.stringify(prepared.candidate));
     if (actualHash !== prepared.candidateHash) {
-      return { success: false, route: 'D1', errorMessage: '候选内容已变化', durationMs: Date.now() - startedAt };
+      return failedOutcome('候选内容已变化', '');
     }
     if (options.generationRepository === undefined) {
-      return { success: false, route: 'D1', errorMessage: '缺少草稿检查点', durationMs: Date.now() - startedAt };
+      return failedOutcome('缺少草稿检查点', '');
     }
     const commitKey: string = prepared.commitKey ?? prepared.runId + ':' + prepared.checkpointId + ':' + prepared.candidateHash;
     const existingCommit: NoteGenerationCommitResult | undefined =
@@ -64,11 +73,16 @@ export class PreparedBranch {
         checkpointId: prepared.checkpointId,
         sourceCount: prepared.pendingSourceIds?.length ?? 0,
       });
-      return { success: true, route: 'D1', data: restoredCandidate, durationMs: Date.now() - startedAt };
+      const duplicate: NoteOutcome = {
+        kind: 'committed', operationId: operationId, route: 'D1',
+        durationMs: Date.now() - startedAt, noteId: restoredCandidate.id,
+        version: restoredCandidate.version, commitKey: commitKey, unit: restoredCandidate,
+      };
+      return duplicate;
     }
     const recovery = await options.generationRepository.restore(prepared.runId);
     if (recovery === undefined) {
-      return { success: false, route: 'D1', errorMessage: '草稿运行不存在', durationMs: Date.now() - startedAt };
+      return failedOutcome('草稿运行不存在', '');
     }
     let checkpoint: NoteGenerationCheckpoint | undefined = undefined;
     for (const item of recovery.checkpoints) {
@@ -79,7 +93,7 @@ export class PreparedBranch {
     }
     if (checkpoint === undefined || checkpoint.runId !== prepared.runId
       || checkpoint.candidateHash !== prepared.candidateHash) {
-      return { success: false, route: 'D1', errorMessage: '草稿检查点不匹配', durationMs: Date.now() - startedAt };
+      return failedOutcome('草稿检查点不匹配', '');
     }
     const initial: AgentState = {
       captureText: seedTextFromRequest(req),
@@ -95,13 +109,7 @@ export class PreparedBranch {
     const finalState: AgentState = await graph.run(initial, runContext);
     if (finalState.error !== undefined) {
       const conflict: boolean = finalState.error.message.indexOf('VERSION_CONFLICT') >= 0;
-      return {
-        success: false,
-        route: 'D1',
-        errorCode: conflict ? 'VERSION_CONFLICT' : undefined,
-        errorMessage: finalState.error.message,
-        durationMs: Date.now() - startedAt,
-      };
+      return failedOutcome(finalState.error.message, conflict ? 'VERSION_CONFLICT' : '');
     }
     let committedCandidate: KnowledgeUnit = prepared.candidate;
     if (finalState.commitResult !== undefined) {
@@ -131,7 +139,12 @@ export class PreparedBranch {
         sourceCount: commit.sourceIds.length,
       });
     }
-    return { success: true, route: 'D1', data: committedCandidate, durationMs: Date.now() - startedAt };
+    const committed: NoteOutcome = {
+      kind: 'committed', operationId: operationId, route: 'D1',
+      durationMs: Date.now() - startedAt, noteId: committedCandidate.id,
+      version: committedCandidate.version, commitKey: commitKey, unit: committedCandidate,
+    };
+    return committed;
   }
 
   static buildGraph(dao?: NoteDaoInterface, noteWritePort?: NoteWritePort): CaptureGraph {

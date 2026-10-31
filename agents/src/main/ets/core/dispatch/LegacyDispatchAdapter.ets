@@ -37,7 +37,10 @@ export class LegacyDispatchAdapter {
       result.generation = outcome.generation;
     }
     if (outcome.kind === 'failed') {
-      result.errorCode = outcome.code;
+      const failedCode: string = outcome.code !== undefined ? outcome.code : '';
+      if (failedCode.length > 0) {
+        result.errorCode = failedCode;
+      }
       result.errorMessage = outcome.message;
       if (outcome.retryable !== undefined) {
         result.errorRetryable = outcome.retryable;

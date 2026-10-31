@@ -28,6 +28,7 @@ import type { DispatchOptions } from './DispatchOptions';
 export class NoteOutcomeMapper {
   /** NoteCommand → 旧 BranchRequest（generation/prepared 走原有分支）。 */
   static toRequest(command: NoteCommand): BranchRequest {
+    // operationId 透传给分支，供 NoteOutcome 构造。
     const source = command.source !== undefined ? command.source : 'app';
     if (command.kind === 'preparedCandidate') {
       const candidate: KnowledgeUnit | undefined = command.preparedCandidate !== undefined

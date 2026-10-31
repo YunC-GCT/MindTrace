@@ -81,6 +81,7 @@ import { GenerationBranch } from './dispatch/GenerationBranch';
 import { IncrementalBranch } from './dispatch/IncrementalBranch';
 import { NoteOutcomeMapper } from './dispatch/NoteOutcomeMapper';
 import { DISPATCH_EVENT_START, DISPATCH_EVENT_TERMINAL, dispatchStartPayload, dispatchTerminalPayload } from './dispatch/RunEventSink';
+import { LegacyDispatchAdapter } from './dispatch/LegacyDispatchAdapter';
 import { DispatchGraph } from './dispatch/DispatchGraph';
 import type { DispatchGraphContext, DispatchStageHandlers, DispatchStageResult } from './dispatch/DispatchGraph';
 import type { GenerationCandidateEvaluation } from './dispatch/GenerationEvaluator';
@@ -398,7 +399,9 @@ export class Dispatcher {
     startedAt: number,
   ): Promise<DispatchResult> {
     // 分支已抽出到 ./dispatch/PreparedBranch（2026-10-31 拆分 Dispatcher，收敛文件体积）。
-    return await PreparedBranch.dispatch(req, prepared, options, startedAt, this.resolveRunContext(options));
+    const preparedOutcome: NoteOutcome = await PreparedBranch.dispatch(
+      req, prepared, options, startedAt, this.resolveRunContext(options));
+    return LegacyDispatchAdapter.toDispatchResult(preparedOutcome);
   }
 
 }

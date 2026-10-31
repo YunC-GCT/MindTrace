@@ -114,6 +114,8 @@ export function captureProvenanceFromFragments(fragments: SourceFragment[]): Cap
 }
 
 export interface BranchRequest {
+  /** A4 4c：命令 seam 传入的操作 id（旧 dispatch() 调用可缺省）。 */
+  operationId?: string;
   // 来源标识
   source: 'app' | 'skill' | 'card';
   // 调度入参(2026-07-14 改:从 string 升级为 DispatchPayload)
