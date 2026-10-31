@@ -234,9 +234,12 @@ test('AiService capture and confirm paths use the command seam', () => {
   assert.ok((commit.match(/outcome\.kind !== 'committed'/g) ?? []).length >= 1);
   assert.match(commit, /kind: 'preparedCandidate'/);
   // mapper：错误码 / retryable / 终态判别集中在一处。
-  assert.match(mapper, /static toOutcome\(/);
-  assert.match(mapper, /APPROVAL_HASH_MISMATCH/);
-  assert.match(mapper, /PREPARED_CHECKPOINT_MISSING/);
+  // A4 4c Step3：旧 DispatchResult 与 toOutcome 已下线；mapper 只保留命令→请求/选项。
+  assert.ok(!mapper.includes('static toOutcome('), 'toOutcome 必须已下线');
+  assert.match(mapper, /static toRequest\(/);
+  assert.match(mapper, /static toOptions\(/);
+  const dispatcherSource = read('agents/src/main/ets/core/Dispatcher.ets');
+  assert.match(dispatcherSource, /normalizeInvokedOutcome/, 'committed 信封归一化在 Dispatcher 内');
 });
 
 test('AiService analysis / generation / regenerate consumers use the command seam (A3c)', () => {

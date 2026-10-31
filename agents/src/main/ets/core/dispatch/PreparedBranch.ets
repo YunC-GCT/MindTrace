@@ -15,7 +15,6 @@ import {
 } from 'common';
 import type {
   BranchRequest,
-  DispatchResult,
   IncrementalDiffItem,
   KnowledgeUnit,
   NoteGenerationCheckpoint,

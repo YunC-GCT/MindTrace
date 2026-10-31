@@ -14,7 +14,6 @@
 import { Logger } from 'common';
 import type {
   BranchRequest,
-  DispatchResult,
   KnowledgeUnit,
   RunContext,
 } from 'common';

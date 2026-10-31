@@ -17,7 +17,6 @@ import { NOTE_CANCELLED_MESSAGE, isRetryableNoteErrorCode } from 'common';
 import type {
   DispatchPayload,
   BranchRequest,
-  DispatchResult,
   KnowledgeUnit,
   NoteCommand,
   NoteGenerationResult,
@@ -70,130 +69,6 @@ export class NoteOutcomeMapper {
     return copy;
   }
 
-  /** 旧 DispatchResult → NoteOutcome。错误码/retryable/终态判别集中在这里。 */
-  static toOutcome(command: NoteCommand, result: DispatchResult): NoteOutcome {
-    const durationMs: number = result.durationMs;
-    if (!result.success) {
-      const message: string = result.errorMessage !== undefined ? result.errorMessage : '';
-      const code: string = result.errorCode !== undefined
-        ? result.errorCode
-        : NoteOutcomeMapper.codeFromMessage(message);
-      if (result.cancelledCommitted !== undefined) {
-        const cancelledUnit: KnowledgeUnit | undefined = result.cancelledCommitted === true ? result.data : undefined;
-        const knownKey: string | undefined = result.cancelledCommitKey !== undefined
-          && result.cancelledCommitKey.length > 0 ? result.cancelledCommitKey : undefined;
-        return {
-          kind: 'cancelled',
-          operationId: command.operationId,
-          route: 'D1',
-          durationMs: durationMs,
-          committed: result.cancelledCommitted,
-          noteId: result.cancelledNoteId,
-          version: result.cancelledVersion !== undefined
-            ? result.cancelledVersion
-            : (cancelledUnit !== undefined ? cancelledUnit.version : undefined),
-          commitKey: knownKey !== undefined
-            ? knownKey
-            : (cancelledUnit !== undefined ? NoteOutcomeMapper.resolveCommitKey(command, cancelledUnit) : undefined),
-          unit: cancelledUnit,
-          classification: result.classification,
-          recognizedText: result.recognizedText,
-        };
-      }
-      if (code === 'CANCELLED' || message.indexOf(NOTE_CANCELLED_MESSAGE) >= 0) {
-        return {
-          kind: 'cancelled',
-          operationId: command.operationId,
-          route: 'D1',
-          durationMs: durationMs,
-          committed: false,
-        };
-      }
-      const generation: NoteGenerationResult | undefined = result.generation;
-      if (generation !== undefined && generation.status === 'needs-input') {
-        return {
-          kind: 'needsInput',
-          operationId: command.operationId,
-          route: 'D1',
-          durationMs: durationMs,
-          reason: message.length > 0 ? message : NoteOutcomeMapper.firstQuestion(generation),
-          issues: generation.issues !== undefined ? generation.issues : [],
-          generation: generation,
-        };
-      }
-      return {
-        kind: 'failed',
-        operationId: command.operationId,
-        route: 'D1',
-        durationMs: durationMs,
-        code: code,
-        message: message,
-        retryable: result.errorRetryable !== undefined
-          ? result.errorRetryable : isRetryableNoteErrorCode(code),
-        classification: result.classification,
-        recognizedText: result.recognizedText,
-        generation: generation,
-      };
-    }
-    const unit: KnowledgeUnit | undefined = result.data;
-    const generation: NoteGenerationResult | undefined = result.generation;
-    if (command.kind === 'generation' || command.kind === 'regenerate') {
-      const runId: string = generation !== undefined
-        ? generation.runId
-        : (command.generation !== undefined ? command.generation.runId : '');
-      const checkpointId: string = generation !== undefined && generation.bestCheckpointId !== undefined
-        ? generation.bestCheckpointId : '';
-      return {
-        kind: 'readyPreview',
-        operationId: command.operationId,
-        route: 'D1',
-        durationMs: durationMs,
-        runId: runId,
-        checkpointId: checkpointId,
-        draft: unit,
-        classification: result.classification,
-        recognizedText: result.recognizedText,
-        generation: generation,
-      };
-    }
-    if (command.kind === 'analysisOnly') {
-      return {
-        kind: 'readyPreview',
-        operationId: command.operationId,
-        route: 'D1',
-        durationMs: durationMs,
-        runId: '',
-        checkpointId: '',
-        classification: result.classification,
-        recognizedText: result.recognizedText,
-      };
-    }
-    // ADR-0019 (d)：没有写结果不得返回 committed。
-    if (unit === undefined) {
-      return {
-        kind: 'failed',
-        operationId: command.operationId,
-        route: 'D1',
-        durationMs: durationMs,
-        code: 'PERSIST_ERROR',
-        message: '命令要求持久化，但分支没有返回写入结果',
-        retryable: false,
-      };
-    }
-    return {
-      kind: 'committed',
-      operationId: command.operationId,
-      route: 'D1',
-      durationMs: durationMs,
-      noteId: unit.id,
-      version: unit.version,
-      commitKey: NoteOutcomeMapper.resolveCommitKey(command, unit),
-      unit: unit,
-      classification: result.classification,
-      recognizedText: result.recognizedText,
-      generation: generation,
-    };
-  }
 
   /** 抛错 → 入口取消 / 兜底失败。 */
   static fromThrown(command: NoteCommand, error: Error): NoteOutcome {

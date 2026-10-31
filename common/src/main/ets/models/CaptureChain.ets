@@ -124,29 +124,6 @@ export interface BranchRequest {
   preparedCandidate?: PreparedCandidate;
 }
 
-// 调度结果出参
-export interface DispatchResult {
-  success: boolean;
-  // 当前固定 'D1' — 未来加 D2 复习 / D3 问答
-  route: 'D1';
-  data?: KnowledgeUnit;
-  classification?: ClassificationResult;
-  recognizedText?: string;
-  // 失败时填描述
-  errorMessage?: string;
-  // 处理耗时(毫秒)
-  durationMs: number;
-  generation?: NoteGenerationResult;
-  errorCode?: string;
-  // ADR-0019 (e) 迁移期：cancelled 终态需要报告「取消前是否已落库」。
-  // 仅 dispatchCommand（reportCancellation）路径填充；旧 dispatch 保持原样。
-  cancelledCommitted?: boolean;
-  cancelledNoteId?: string;
-  cancelledVersion?: number;
-  cancelledCommitKey?: string;
-  // ADR-0019 (c) 迁移期：节点错误的 retriable 原样带到 seam（旧路径不填充）。
-  errorRetryable?: boolean;
-}
 
 // ==================== 集合级整理（spec 036 阶段 1）====================
 // 集合级选项 CaptureSetOptions 定义在 agents/core/Dispatcher.ets：它 extends 那里的

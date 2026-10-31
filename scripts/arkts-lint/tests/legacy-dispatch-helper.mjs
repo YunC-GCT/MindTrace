@@ -1,12 +1,41 @@
 // A4 4c Step4 过渡工具：旧 `dispatcher.dispatch(request, options)` 的测试替身。
 // 把 BranchRequest 反向映射成 NoteCommand 走命令 seam，再用 LegacyDispatchAdapter 还原 DispatchResult 外观，
 // 供尚未迁移的 baseline / golden 测试在旧入口删除后继续锁定「旧外观」。
-import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
-
-const adapterModule = loadNoteReviewEtsModule('agents/src/main/ets/core/dispatch/LegacyDispatchAdapter.ets');
-const LegacyDispatchAdapter = adapterModule.LegacyDispatchAdapter;
-
 let seq = 0;
+
+// NoteOutcome → 旧 DispatchResult 外观（原 agents/LegacyDispatchAdapter 迁到测试侧；Step 3 生产不再需要）。
+export function toLegacyDispatchResult(outcome) {
+  const result = {
+    success: outcome.kind === 'committed' || outcome.kind === 'readyPreview',
+    route: 'D1',
+    durationMs: outcome.durationMs,
+  };
+  if (outcome.unit !== undefined) {
+    result.data = outcome.unit;
+  } else if (outcome.draft !== undefined) {
+    result.data = outcome.draft;
+  }
+  if (outcome.classification !== undefined) { result.classification = outcome.classification; }
+  if (outcome.recognizedText !== undefined) { result.recognizedText = outcome.recognizedText; }
+  if (outcome.generation !== undefined) { result.generation = outcome.generation; }
+  if (outcome.kind === 'failed') {
+    const code = outcome.code !== undefined ? outcome.code : '';
+    if (code.length > 0) { result.errorCode = code; }
+    result.errorMessage = outcome.message;
+    if (outcome.retryable !== undefined) { result.errorRetryable = outcome.retryable; }
+  } else if (outcome.kind === 'needsInput') {
+    result.errorMessage = outcome.reason;
+    if (outcome.generation !== undefined) { result.generation = outcome.generation; }
+  } else if (outcome.kind === 'cancelled') {
+    result.errorCode = 'CANCELLED';
+    result.errorMessage = 'CONVERSATION_CANCELLED';
+    result.cancelledCommitted = outcome.committed === true;
+    if (outcome.noteId !== undefined) { result.cancelledNoteId = outcome.noteId; }
+    if (outcome.version !== undefined) { result.cancelledVersion = outcome.version; }
+    if (outcome.commitKey !== undefined) { result.cancelledCommitKey = outcome.commitKey; }
+  }
+  return result;
+}
 
 export async function dispatchLegacy(runtime, request, options = {}) {
   const regenerating = request.generation !== undefined && request.generation.mode === 'regenerate';
@@ -38,5 +67,5 @@ export async function dispatchLegacy(runtime, request, options = {}) {
   if (outcome.kind === 'cancelled') {
     throw new Error('CONVERSATION_CANCELLED');
   }
-  return LegacyDispatchAdapter.toDispatchResult(outcome);
+  return toLegacyDispatchResult(outcome);
 }

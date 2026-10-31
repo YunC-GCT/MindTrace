@@ -33,7 +33,6 @@ import {
   ClassificationResult,
   BranchRequest,
   DispatchPayload,
-  DispatchResult,
   Logger,
   ImageSearchIndexRegistry,
   NoteDraftReadyEvent,

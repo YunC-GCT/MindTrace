@@ -78,7 +78,6 @@ export {
   TruthFlag,
   TruthCheckResult,
   BranchRequest,
-  DispatchResult,
   CaptureSetRequest,
   CaptureSetItemResult,
   CaptureSetResult,

@@ -57,7 +57,4 @@ test('Capture graph and state stay internal to agents module', () => {
   assert.doesNotMatch(agentsIndex, /CaptureNode/);
 });
 
-test('DispatchResult carries analysis channels for persist false callers', () => {
-  assert.match(captureTypes, /interface DispatchResult \{[^}]*classification\?: ClassificationResult/);
-  assert.match(captureTypes, /interface DispatchResult \{[^}]*recognizedText\?: string/);
-});
+;

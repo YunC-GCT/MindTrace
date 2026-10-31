@@ -103,7 +103,10 @@
       - `dispatchSet()` 删除；`dispatch()` 删除，`dispatchRequest` 直接返回 `NoteOutcome`
       - `invokeCommand` 新增 `normalizeInvokedOutcome`：补 committed 幂等信封（commitKey）与 failed.retryable 缺省（等价旧 mapper 的两项归一化）
       - 命令 seam 的 `toOptions` 仍会置 `reportCancellation=true`（分支错误码透传是 v19 契约的一部分）
-    - [ ] Step 3：common 删 `DispatchResult` 与迁移字段
+    - [x] **Step 3：common 删 `DispatchResult` 与迁移字段（2026-10-31 完成）**
+      - `dispatch()` 下线后生产已无消费者：删除 `common` 的 `DispatchResult` 接口/导出、各模块导入清理、`NoteOutcomeMapper.toOutcome` 下线、`agents/LegacyDispatchAdapter.ets` 删除
+      - 旧外观映射搬到测试侧 `legacy-dispatch-helper.mjs` 的 `toLegacyDispatchResult`（仅供 baseline/golden 断言），生产代码不再出现 `DispatchResult`
+      - 证据：build 49 tasks SUCCESSFUL；agent-gate --all PASS（pass=1084 fail=0）
     - [ ] Step 4：6 个测试文件迁移 + golden 按方案 A 重基线（golden 快照改为 `NoteOutcome` 终态）
       - [x] `v7-dispatch-run-context` 迁移到 `dispatchCommand`（4 条；语义变化：无 context 时 LLM 边界失败 = failed 终态，不再静默 success）
       - [x] `v7-capture-set` 迁移到 `dispatchSetCommand`（6 条）
