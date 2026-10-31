@@ -50,20 +50,17 @@ import {
   CaptureSetItemResult,
   TextPayload,
 } from 'common';
-import type { NoteBatchOutcome, NoteCommand, NoteOutcome, NoteWritePort } from 'common';
+import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
 import { Dispatcher, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
-import { NoteDaoAdapter } from '../adapters/NoteDaoAdapter';
 import { SubjectVocabularyService } from './SubjectVocabularyService';
 import { ConversationRunIdPolicy, SessionIdPolicy } from './ConversationIdentity';
-import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
-import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFactory';
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from './AgentMemoryService';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
-import { NoteWritePortFactory } from './NoteWritePortFactory';
 import { CaptureTiming } from './ai/CaptureTiming';
+import { AiServicePorts } from './ai/AiServicePorts';
 import { CancellationToken } from 'common';
 
 const log: Logger = new Logger('AiService');
@@ -163,7 +160,7 @@ export class AiService {
     onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
     const startedAt: number = Date.now();
     const seq: number = CaptureTiming.nextSeq();
-    const context: common.UIAbilityContext = this.requireContext();
+    const context: common.UIAbilityContext = AiServicePorts.requireContext(this.context);
     const resolver: ImageUriResolver = new ImageUriResolver(context);
     const items: DispatchPayload[] = [];
     // items[i] 对应用户选中的第几张；准备失败的图不进 items，但必须回到原始下标
@@ -195,7 +192,7 @@ export class AiService {
     // 行序会与本图下标交错。于是全部准备成功时直接透传（逐项真进度）；一旦有准备失败项，
     // 就收集到 merged 后按原始 index 统一回调一次，保证 ①②③ 的编号与顺序一致。
     const canStreamItems: boolean = preFailed.length === 0;
-    const dao: NoteDaoInterface = await this.buildNoteDao();
+    const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
     const dispatcher: Dispatcher = new Dispatcher();
     const commands: NoteCommand[] = [];
     for (let k = 0; k < items.length; k++) {
@@ -208,7 +205,7 @@ export class AiService {
     }
     const batch: NoteBatchOutcome = await dispatcher.dispatchSetCommand(commands, {
       dao: dao,
-      noteWritePort: await this.buildNoteWritePort(),
+      noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
       cancellationToken: token,
       subjectVocabulary: await SubjectVocabularyService.list(),
     }, (index: number, outcome: NoteOutcome): void => {
@@ -349,22 +346,11 @@ export class AiService {
   }
 
   // 内部: 把 entry 端 NoteDao 适配成 agents 端 NoteDaoInterface
-  private async buildNoteDao(): Promise<NoteDaoInterface> {
-    if (this.context === undefined) {
-      throw new Error('AiService.buildNoteDao 需要 UIAbilityContext');
-    }
-    const service: KnowledgeUnitWriteService = await KnowledgeUnitWriteServiceFactory.create(this.context, this.includeUiEffects);
-    const adapter: NoteDaoAdapter = new NoteDaoAdapter(service);
-    return adapter;
-  }
 
   /**
    * #238 切片 A1：capture 持久化走 NoteWritePort（commitKey 幂等 / CAS / 结构化错误）。
    * 装配在 services 层工厂里完成，AiService 不直连 DAO（ownership 规则）。
    */
-  private async buildNoteWritePort(): Promise<NoteWritePort> {
-    return await NoteWritePortFactory.create(this.requireContext(), this.includeUiEffects);
-  }
 
   async generateNoteDraft(runId: string, instruction: string, sourceText: string): Promise<NoteDraftReadyEvent> {
     return await this.generateNoteDraftWithSources(runId, instruction, sourceText, []);
@@ -425,7 +411,7 @@ export class AiService {
     if (AiService.activeClarificationRuns.has(runId)) {
       throw new Error('TOPIC_CLARIFICATION_IN_PROGRESS');
     }
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     const recovery: NoteGenerationRecovery | undefined = await repository.restore(runId);
     if (recovery === undefined) {
       throw new Error('TOPIC_CLARIFICATION_NOT_PENDING');
@@ -588,7 +574,7 @@ export class AiService {
     cancellationToken?: CancellationToken,
     progressSink?: NoteGenerationProgressSink,
   ): Promise<NoteDraftReadyEvent> {
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     // A3c：草稿生成走命令 seam；readyPreview 携带 draft + checkpointId + runId。
     const command: NoteCommand = {
       kind: 'generation',
@@ -693,7 +679,7 @@ export class AiService {
     route: NoteGenerationRoute = 'standard',
   ): Promise<NoteContextClarification> {
     AiService.validateConversationOrigin(originSessionId, parentConversationRunId);
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     const existing: NoteGenerationRecovery | undefined = await repository.restore(runId);
     if (existing !== undefined && existing.run.clarification !== undefined) {
       return existing.run.clarification;
@@ -742,7 +728,7 @@ export class AiService {
     if (noteId.trim().length === 0) {
       throw new Error('增量重生成需要明确 noteId');
     }
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     if (repository.getRegenerationBase === undefined) {
       throw new Error('增量重生成基础资料不可用');
     }
@@ -809,7 +795,7 @@ export class AiService {
   }
 
   async restoreDraft(runId: string): Promise<NoteDraftReadyEvent> {
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     const recovery: NoteGenerationRecovery | undefined = await repository.restore(runId);
     if (recovery === undefined || recovery.bestCheckpoint === undefined) {
       throw new Error('没有可恢复的笔记草稿');
@@ -838,13 +824,13 @@ export class AiService {
 
   async cancelDraft(runId: string): Promise<void> {
     AiService.activeClarificationRuns.get(runId)?.cancel();
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     await repository.cancelRun(runId);
     await repository.appendLifecycleLog({ runId: runId, event: 'cancelled' });
   }
 
   async retryDraft(runId: string): Promise<NoteDraftReadyEvent> {
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     const recovery: NoteGenerationRecovery | undefined = await repository.restore(runId);
     if (recovery === undefined) {
       throw new Error('没有可重试的笔记运行');
@@ -881,7 +867,7 @@ export class AiService {
   }
 
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     const runs: NoteGenerationRun[] = await repository.listRecoverableRuns();
     for (let index: number = 0; index < runs.length; index += 1) {
       const run: NoteGenerationRun = runs[index];
@@ -901,12 +887,12 @@ export class AiService {
   }
 
   async cancelDraftsByParentRun(sessionId: string, parentConversationRunId: string): Promise<void> {
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     await repository.cancelIncompleteByParentRun(sessionId, parentConversationRunId);
   }
 
   async updateDraftCheckpoint(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<NoteGenerationCheckpoint> {
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
     const recovery = await repository.restore(event.runId);
     if (recovery === undefined) {
       throw new Error('草稿运行不存在');
@@ -939,8 +925,8 @@ export class AiService {
 
   async confirmDraft(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
     const checkpoint: NoteGenerationCheckpoint = await this.updateDraftCheckpoint(event, candidate);
-    const repository = await NoteGenerationRepositoryFactory.create(this.requireContext());
-    const dao: NoteDaoInterface = await this.buildNoteDao();
+    const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
+    const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
     const prepared: PreparedCandidate = {
       runId: event.runId,
       checkpointId: checkpoint.id,
@@ -963,7 +949,7 @@ export class AiService {
     };
     const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
       dao: dao,
-      noteWritePort: await this.buildNoteWritePort(),
+      noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
       generationRepository: repository,
     });
     const committedUnit: KnowledgeUnit | undefined = outcome.unit;
@@ -979,7 +965,7 @@ export class AiService {
           event.runId,
           event.pendingSourceIds,
         );
-        await new AgentMemoryService(this.requireContext()).markPendingMaterialsUsed(pendingMemoryIds);
+        await new AgentMemoryService(AiServicePorts.requireContext(this.context)).markPendingMaterialsUsed(pendingMemoryIds);
       } catch (e) {
         log.warn('pending source cleanup warning runId=' + event.runId + ' count=' + event.pendingSourceIds.length.toString());
       }
@@ -1106,11 +1092,11 @@ export class AiService {
       source: 'app',
       payload: payload,
     };
-    const dao: NoteDaoInterface = await this.buildNoteDao();
+    const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
     const dispatcher: Dispatcher = new Dispatcher();
     return await dispatcher.dispatchCommand(command, {
       dao: dao,
-      noteWritePort: await this.buildNoteWritePort(),
+      noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
       subjectVocabulary: await SubjectVocabularyService.list(),
       onNodeTiming: onNodeTiming,
     });
@@ -1134,10 +1120,4 @@ export class AiService {
     return unit;
   }
 
-  private requireContext(): common.UIAbilityContext {
-    if (this.context === undefined) {
-      throw new Error('AiService 需要 UIAbilityContext');
-    }
-    return this.context as common.UIAbilityContext;
-  }
 }

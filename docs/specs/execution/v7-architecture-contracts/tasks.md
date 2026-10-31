@@ -76,7 +76,7 @@
 > 动因：`AiService.ets` 1142 行，同时承担「compose 端口 / 图片准备 / capture 编排 / 批量 / A2A 入库 / 草稿生成 / 增量重生成 / 澄清 / 确认提交 / 索引 / 耗时日志」十余种职责。按 Dispatcher 同样手法分片，每片以 `agent-gate` 全绿 + `e2e-capture` 可跑为判据。
 
 - [x] **切片 1（2026-10-31）**：抽出 `entry/src/main/ets/services/ai/CaptureTiming.ets`（序号分配 + `CAPTURE_TIMING` / `CAPTURE_SET_TIMING` 汇总日志）；AiService **1174 → 1142 行**
-- [ ] **切片 2**：`services/ai/AiServicePorts.ets` —— `requireContext` / `buildNoteDao` / `buildNoteWritePort` 组合根（三处端口装配集中，服务层不重复造）
+- [x] **切片 2（2026-10-31）**：抽出 `services/ai/AiServicePorts.ets` —— `requireContext` / `buildNoteDao` / `buildNoteWritePort` 组合根；AiService 删除三个私有装配方法，14 处 `requireContext`、3 处 DAO、3 处写端口调用改走 ports；AiService **1142 → 1096 行**
 - [ ] **切片 3**：`services/ai/DraftCommitService.ets` —— `confirmDraft` / `updateDraftCheckpoint` / `resolvePendingMemoryIds` + pending 清理
 - [ ] **切片 4**：`services/ai/DraftPipeline.ets` —— `generateNoteDraft*` / `dispatchNoteDraft` / `regenerateNoteDraft` / `restoreDraft` / `retryDraft` / `contextBudgetForRecovery` / `referencedPendingSourceIdsFromIds`
 - [ ] **切片 5**：`services/ai/ClarificationPipeline.ets` —— 澄清草稿生成 / 保存 / 恢复 / 回滚（约 200 行）

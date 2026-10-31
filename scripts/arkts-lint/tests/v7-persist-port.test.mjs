@@ -136,8 +136,10 @@ test('PreparedBranch accepts and prefers noteWritePort (A2, 2026-10-31 抽出)',
 
 test('AiService wires the port on capture, captureSet and prepared dispatch (A1+A2)', () => {
   const aiService = read('entry/src/main/ets/services/AiService.ets');
-  const wired = aiService.match(/noteWritePort: await this\.buildNoteWritePort\(\)/g) ?? [];
+  // 2026-10-31：端口装配抽到 services/ai/AiServicePorts（AiService 拆分切片 2）。
+  const ports = read('entry/src/main/ets/services/ai/AiServicePorts.ets');
+  const wired = aiService.match(/noteWritePort: await AiServicePorts\.buildNoteWritePort\(/g) ?? [];
   assert.equal(Array.from(wired).length, 3, 'capture / captureSet / preparedCandidate 三处都要注入端口');
-  assert.match(aiService, /NoteWritePortFactory\.create\(/);
+  assert.match(ports, /NoteWritePortFactory\.create\(/);
   assert.doesNotMatch(aiService, /new NoteDao\(|from ['"]\.\.\/database/);
 });

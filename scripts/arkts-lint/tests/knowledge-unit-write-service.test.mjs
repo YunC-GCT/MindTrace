@@ -12,13 +12,15 @@ test('manual and AI KnowledgeUnit writes share one entry-side service', () => {
   const manual = read('entry/src/main/ets/services/NoteEditService.ets');
   const adapter = read('entry/src/main/ets/adapters/NoteDaoAdapter.ets');
   const ai = read('entry/src/main/ets/services/AiService.ets');
+  const ports = read('entry/src/main/ets/services/ai/AiServicePorts.ets');
 
   assert.match(service, /export class KnowledgeUnitWriteService/);
   assert.match(factory, /new KnowledgeUnitWriteService\(new NoteDao\(store\), effects\)/);
   assert.match(manual, /KnowledgeUnitWriteService/);
   assert.match(adapter, /KnowledgeUnitWriteService/);
   // 形状：工厂可能带第二个参数（includeUiEffects），扩展进程里要关掉 UI 副作用
-  assert.match(ai, /KnowledgeUnitWriteServiceFactory\.create\(this\.context(, this\.includeUiEffects)?\)/);
+  assert.match(ports, /KnowledgeUnitWriteServiceFactory\.create\(context, includeUiEffects\)/);
+  assert.match(ai, /AiServicePorts\.buildNoteDao\(/);
   assert.doesNotMatch(manual, /new NoteDao|dao\.insert|dao\.update/);
   assert.doesNotMatch(adapter, /WritePathValidator|insertUnit/);
   assert.doesNotMatch(ai, /from ['"]\.\.\/database\/NoteDao['"]|new NoteDao\(|noteDao\.insert/);
