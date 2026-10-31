@@ -125,7 +125,12 @@
       - 真机 `3XTYD24C16203663`（重装三包后）：`e2e-capture` 判定 **PASS**（cold 74.4s / warm 20.6s，persist 654/484ms，图搜 hits=5×2，卡片刷新）；`a2a_smoke`（存笔记：微分中值定理）**ok:true**（29 字回执）
     - [x] **Step 6：ADR-0019 状态更新 + tasks 打勾（2026-10-31 完成）**
       - ADR-0019 Status 追加 A4 4c 落地结论（旧入口删除 / 分支直接返回 NoteOutcome / golden 方案 A / HITL v18 真机闭环 / 真机回归）
-    - 遗留：`entry/src/main/ets/utils/NoteItemMapper.ets` 为历史非 UTF-8 文件（0xa1 字节），待单独修
+    - **遗留项清零（2026-10-31，commit `dbc7f3f`）**：
+  - [x] `NoteItemMapper.ets` 由 GBK 转为 UTF-8（内容逐字保留，ets-hygiene 通过）
+  - [x] `RunStatus` 增加 `'committed'`；`RunStoreAdapter` 白名单同步；`RunStoreEventSink.settle` 把 committed 终态写为 committed
+  - [x] run 事件/settle 注入 `DraftPipeline`（预览/重生成）与 `DraftCommitService`（确认提交）；改为「RDB 就绪才装配」的同步工厂（`buildRunEventSinkIfReady`），避免测试/启动早期 await 挂起（`note-topic-resume` 曾因此挂起，修复后 7/7）
+  - [x] `EntryAbility.onCreate` 保存 `launchWant`，修复 `--ps e2e` 冷启动不触发（真机复验待解锁设备后执行）
+  - 验证：build 49 tasks SUCCESSFUL；`agent-gate --all` PASS（pass=1085 fail=0）
   - [ ] 切片 4c：清理旧 `dispatch()/dispatchSet()/DispatchResult`（含 `RunStatus` 扩展评估）
 
 ### AiService 拆分（第二个 god-service，2026-10-31 开始）
