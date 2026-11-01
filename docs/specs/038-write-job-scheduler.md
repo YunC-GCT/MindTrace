@@ -1,6 +1,6 @@
 # 038 — 笔记写入工作调度器（WriteJob Scheduler）
 
-> **Status**: implemented (2026-11-01) — S1/S2 已落地；S3（跨进程 handoff + 队列持久化/断点续跑）为后续
+> **Status**: implemented (2026-11-01) — S1/S2 已落地；S3（跨进程 handoff + 队列持久化/断点续跑）由 [spec 040](./040-writejob-persistence-cross-process.md) / [ADR-0024](../adr/0024-writejob-persistence-cross-process.md) 承接（proposed）
 > **Related**: [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 036](./036-multi-image-single-pass-consolidation.md) · [scheduler design](../architecture/agent-scheduler-design-2026-11-01.md)
 > **Code**: `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/services/WriteJobEventRecorder.ets` · `entry/src/main/ets/services/AsyncMutex.ets` · `entry/src/main/ets/services/KnowledgeUnitWriteService.ets`
 > **Verified by**: `node scripts/agent-gate/index.mjs --all` · e2e `schedulerProbe` / `schedulerIntegration` / `schedulerStress` · `node scripts/quality/scheduler-report.mjs`
@@ -236,7 +236,7 @@ lastWaitMs=362 lastRunMs=121 persistedEvents=18（6 job × enqueued/started/done
 ### 9.4 已知偏差/后续
 
 - ~~同进程多次探针的 scheduler 统计是累计值~~ → S2 复查已改：integration/stress 全部按 **delta** 输出，不再受跨场景污染；
-- S3：跨进程 handoff（扩展写 job、UI 消费）、队列持久化/断点续跑、事件表清理策略。
+- S3：跨进程 handoff（扩展写 job、UI 消费）、队列持久化/断点续跑 → 已立 [spec 040](./040-writejob-persistence-cross-process.md) + [ADR-0024](../adr/0024-writejob-persistence-cross-process.md)；事件表清理策略另行排期。
 
 ### 9.5 Spec 轴复查修复（2026-11-01）
 
