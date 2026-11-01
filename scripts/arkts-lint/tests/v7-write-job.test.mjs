@@ -139,3 +139,39 @@ test('T4b executor 注入点：包装函数经调度器返回 executor 结果', 
   assert.equal(await wrapped('a'), 'result:a');
   assert.equal(calls, 1);
 });
+
+
+test('T7 事件 sink：enqueued/started/done 字段齐全', async () => {
+  const events = [];
+  const scheduler = new WriteJobScheduler({ interactiveConcurrency: 1, backgroundConcurrency: 1, log: () => {} });
+  scheduler.setEventSink((event) => events.push(event));
+  await scheduler.submit('interactive', 'event-text', async () => 'v');
+  assert.deepEqual(events.map((e) => e.phase), ['enqueued', 'started', 'done']);
+  assert.equal(events[0].priority, 'interactive');
+  assert.equal(events[0].kind, 'text_ingest');
+  assert.ok(events[0].queueDepth >= 0);
+  assert.ok(events[1].waitMs >= 0);
+  assert.ok(events[2].runMs >= 0);
+});
+
+test('T7b sink 抛错不影响任务完成', async () => {
+  const scheduler = new WriteJobScheduler({ interactiveConcurrency: 1, backgroundConcurrency: 1, log: () => {} });
+  scheduler.setEventSink(() => { throw new Error('sink-boom'); });
+  const value = await scheduler.submit('interactive', 'x', async () => 'ok');
+  assert.equal(value, 'ok');
+});
+
+test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
+  const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.ok(entry.includes('uiProcessEnabled()'));
+  assert.ok(entry.includes('WriteJobScheduler.shared().setEventSink(WriteJobEventRecorder.create())'));
+  const config = read('entry/src/main/ets/services/WriteJobConfig.ets');
+  assert.ok(config.includes('WRITE_JOB_UI_ENABLED: boolean = true'));
+  const recorder = read('entry/src/main/ets/services/WriteJobEventRecorder.ets');
+  assert.ok(recorder.includes("'writejob:' + event.phase"));
+  assert.ok(recorder.includes('appendEvent'));
+  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  assert.ok(runner.includes('runSchedulerStress'));
+  const ability = read('entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.ok(ability.includes("mode === 'schedulerStress'"));
+});

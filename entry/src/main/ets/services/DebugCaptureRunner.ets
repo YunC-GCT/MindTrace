@@ -34,6 +34,7 @@ import {
 } from './LegacyNoteNormalizer';
 import { NoteDao } from '../database/NoteDao';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from './WriteJobScheduler';
+import { uiProcessEnabled } from './WriteJobConfig';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
 import {
@@ -296,6 +297,72 @@ export class DebugCaptureRunner {
         'stage=done schedulerIntegration=0 err=' + (error as Error).message);
     } finally {
       WriteJobFlags.setEnabled(false);
+    }
+  }
+
+  /** S2 压测：2 interactive + 4 background 混合并发；核对排队与 run_event 落库。 */
+  static async runSchedulerStress(ctx: common.UIAbilityContext): Promise<void> {
+    const scheduler: WriteJobScheduler = WriteJobScheduler.shared();
+    WriteJobFlags.setEnabled(true);
+    const startedAt: number = Date.now();
+    const sleep = (ms: number): Promise<void> => new Promise<void>((resolve: () => void): void => {
+      setTimeout((): void => { resolve(); }, ms);
+    });
+    const exec = async (): Promise<Object> => {
+      await sleep(120);
+      return 'ok' as Object;
+    };
+    const countEvents = async (): Promise<number> => {
+      const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      if (store === null) {
+        return 0;
+      }
+      const rs: relationalStore.ResultSet = await store.querySql(
+        "SELECT COUNT(*) AS c FROM run_event WHERE run_id LIKE 'writejob:%'", []);
+      try {
+        return rs.goToFirstRow() ? rs.getLong(rs.getColumnIndex('c')) : 0;
+      } finally {
+        rs.close();
+      }
+    };
+    try {
+      const beforeEvents: number = await countEvents();
+      const tasks: Promise<Object>[] = [
+        scheduler.submit('interactive', 'stress-i1', exec),
+        scheduler.submit('interactive', 'stress-i2', exec),
+        scheduler.submit('background', 'stress-b1', exec),
+        scheduler.submit('background', 'stress-b2', exec),
+        scheduler.submit('background', 'stress-b3', exec),
+        scheduler.submit('background', 'stress-b4', exec),
+      ];
+      await Promise.all(tasks);
+      const stats: WriteJobStats = scheduler.stats();
+      // recorder 是 fire-and-forget：轮询等本次 18 条（6 job × 3 事件）落库（最多 3s）。
+      let persisted: number = 0;
+      const expectedPersisted: number = 18;
+      for (let attempt = 0; attempt < 15; attempt += 1) {
+        persisted = (await countEvents()) - beforeEvents;
+        if (persisted >= expectedPersisted) {
+          break;
+        }
+        await sleep(200);
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=stress submitted=' + stats.submitted.toString()
+          + ' completed=' + stats.completed.toString() + ' failed=' + stats.failed.toString()
+          + ' maxConcurrent=' + stats.maxConcurrent.toString()
+          + ' queueDepth=' + stats.queueDepth.toString()
+          + ' lastWaitMs=' + stats.lastWaitMs.toString()
+          + ' lastRunMs=' + stats.lastRunMs.toString()
+          + ' persistedEvents=' + persisted.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done stress=1 persistedEvents=' + persisted.toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done stress=0 err=' + (error as Error).message);
+    } finally {
+      WriteJobFlags.setEnabled(uiProcessEnabled());
     }
   }
 

@@ -12,6 +12,7 @@
 import { WriteJob, WriteJobPriority } from './WriteJobModels';
 import { WriteJobQueueCore } from './WriteJobQueueCore';
 import { AsyncSemaphore } from './AsyncSemaphore';
+import { WriteJobEvent, WriteJobEventPhase, WriteJobEventSink } from './WriteJobEvents';
 
 export interface WriteJobSchedulerOptions {
   interactiveConcurrency?: number;
@@ -62,6 +63,7 @@ export class WriteJobScheduler {
   private readonly lanes: WriteLane[] = [];
   private readonly pending: Map<string, PendingJob> = new Map<string, PendingJob>();
   private readonly log: (line: string) => void;
+  private eventSink: WriteJobEventSink | null = null;
   private activeCount: number = 0;
   private submittedCount: number = 0;
   private completedCount: number = 0;
@@ -100,6 +102,11 @@ export class WriteJobScheduler {
     return WriteJobScheduler.instance;
   }
 
+  /** 注册/清除观测 sink（S2：落 run_event；测试可注入 fake）。 */
+  setEventSink(sink: WriteJobEventSink | null): void {
+    this.eventSink = sink;
+  }
+
   /** 提交一个写任务；返回与 executor 同结果的 Promise（失败向上抛）。 */
   submit(priority: WriteJobPriority, text: string, run: () => Promise<Object>): Promise<Object> {
     this.seq += 1;
@@ -120,6 +127,7 @@ export class WriteJobScheduler {
     this.log('[WriteJob] enqueued id=' + job.jobId + ' priority=' + priority
       + ' kind=' + job.kind + ' chars=' + job.payloadText.length.toString()
       + ' depth=' + this.stats().queueDepth.toString());
+    this.emitEvent(job, 'enqueued', this.stats().queueDepth, 0, 0, '');
     this.pump();
     return result;
   }
@@ -178,6 +186,7 @@ export class WriteJobScheduler {
     const startedAt: number = Date.now();
     this.log('[WriteJob] started id=' + job.jobId + ' priority=' + job.priority
       + ' waitMs=' + waitMs.toString() + ' active=' + this.activeCount.toString());
+    this.emitEvent(job, 'started', this.stats().queueDepth, waitMs, 0, '');
     let task: Promise<Object>;
     try {
       task = pending.run();
@@ -194,6 +203,7 @@ export class WriteJobScheduler {
         this.lastRunMs = Date.now() - startedAt;
         this.log('[WriteJob] done id=' + job.jobId + ' priority=' + job.priority
           + ' runMs=' + this.lastRunMs.toString() + ' waitMs=' + waitMs.toString());
+        this.emitEvent(job, 'done', this.stats().queueDepth, waitMs, this.lastRunMs, '');
         pending.resolve(value);
         this.finish(lane);
       })
@@ -210,8 +220,32 @@ export class WriteJobScheduler {
     this.lastRunMs = Date.now() - startedAt;
     this.log('[WriteJob] failed id=' + pending.job.jobId + ' priority=' + pending.job.priority
       + ' runMs=' + this.lastRunMs.toString() + ' err=' + error.message);
+    this.emitEvent(pending.job, 'failed', this.stats().queueDepth, waitMs, this.lastRunMs, error.message);
     pending.reject(error);
     this.finish(lane);
+  }
+
+  private emitEvent(job: WriteJob, phase: WriteJobEventPhase, queueDepth: number,
+    waitMs: number, runMs: number, error: string): void {
+    if (this.eventSink === null) {
+      return;
+    }
+    const event: WriteJobEvent = {
+      jobId: job.jobId,
+      kind: job.kind,
+      priority: job.priority,
+      phase: phase,
+      queueDepth: queueDepth,
+      waitMs: waitMs,
+      runMs: runMs,
+      error: error,
+      at: Date.now(),
+    };
+    try {
+      this.eventSink(event);
+    } catch (e) {
+      // sink 异常不影响写任务
+    }
   }
 
   private finish(lane: WriteLane): void {

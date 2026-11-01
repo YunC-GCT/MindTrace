@@ -180,3 +180,12 @@ interface TaskStep {
 - **观测**：S1 用 `[WriteJob]` hilog + `scripts/quality/scheduler-report.mjs`；A8 的 run_event 落库推迟到 S2（S1 队列不持久化）。
 - **真机证据**：schedulerProbe（1 interactive + 2 background）`submitted=3 completed=3 failed=0 maxConcurrent=2`，第二个 background `lastWaitMs=75043/lastRunMs=14013`（排队生效）；schedulerIntegration `kind=committed submitted=1`。
 - **S2 待办**：run_event 接入、flag 灰度打开、多入口并发压测、断点续跑（S3）。
+
+
+### S2 实现状态（2026-11-01）
+
+- [x] A8 观测落库：`WriteJobEventRecorder` → `run_store`（writejob:<jobId>）+ `run_event`（writejob:<phase>，含 priority/queueDepth/waitMs/runMs），事件写串行（AsyncMutex）保证 18/18 落库；
+- [x] 多入口压测：`e2e=schedulerStress` 6 任务混合优先级 `maxConcurrent=2 / persistedEvents=18`，排队 waitMs=362；
+- [x] flag 灰度：`WRITE_JOB_UI_ENABLED=true` 仅 UI 进程启用；扩展进程默认关闭；
+- [x] 回归：schedulerProbe（3 真实 ingest）、schedulerIntegration、dedupeProbe（flag 开）全通过；gate PASS（pass=1163）；
+- [ ] S3：跨进程 handoff + 队列持久化/断点续跑。

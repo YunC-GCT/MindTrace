@@ -192,3 +192,38 @@ stage=done schedulerIntegration=1 ms=16175
 - 记录（未在本轮做，留 S2）：A8 的 run_event 落库（S1 队列不持久化，先用 hilog + 报告）；flag 默认保持关闭，待 S3 跨进程 + 持久化后灰度。
 
 **验收证据**：`agent-gate --all` RESULT: PASS（pass=1160 fail=0）；真机 schedulerProbe/schedulerIntegration/dedupeProbe 均通过；scheduler-report 可复跑。
+
+
+## 9. S2（2026-11-01 完成）：观测落库 + 压测 + flag 灰度
+
+### 9.1 run_event 观测落库（A8）
+
+- `WriteJobEvents`（纯类型）：`WriteJobEvent{jobId,kind,priority,phase,queueDepth,waitMs,runMs,error,at}` + sink；
+- `WriteJobScheduler.setEventSink()`：enqueued/started/done/failed 发事件；sink 抛错不影响 job；
+- `WriteJobEventRecorder`：每个 job 一条 `run_store`（`run_id=writejob:<jobId>`，终态 `committed/failed`），事件追加到 `run_event`（`kind=writejob:<phase>`，payload 含 priority/queueDepth/waitMs/runMs）；**写事件用 `AsyncMutex` 串行**（run_event 的 MAX(seq)+1 事务并发会冲突，实测丢 2/18 事件）。
+- EntryAbility 启动接线：`WriteJobScheduler.shared().setEventSink(WriteJobEventRecorder.create())`。
+
+### 9.2 flag 灰度（UI 进程启用）
+
+- `WriteJobConfig.WRITE_JOB_UI_ENABLED = true`，仅 `EntryAbility.onCreate`（UI 进程）调用 `WriteJobFlags.setEnabled(true)`；
+- A2A `AgentExtAbility` 是独立 `:agent` 进程，不读该配置 → 仍是默认关闭、走旧路径（跨进程统一留 S3）；
+- 回滚：把常量改 false 重新发版，即完全回到旧行为。
+
+### 9.3 真机验证
+
+- `e2e=schedulerStress`（2 interactive + 4 background 假 executor，验证排队/并发/落库）：
+
+```
+submitted=6 completed=6 failed=0 maxConcurrent=2 queueDepth=0
+lastWaitMs=362 lastRunMs=121 persistedEvents=18（6 job × enqueued/started/done）/ 691ms
+```
+
+- `e2e=schedulerProbe`（灰度开启路径，3 真实 ingest）：`submitted=3 completed=3 failed=0 maxConcurrent=2`；
+- `e2e=schedulerIntegration`：`kind=committed submitted=5 completed=4 failed=0 maxConcurrent=2`（同进程累计统计）；
+- `e2e=dedupeProbe`（flag 开）：`same=1 added=1`（首条新建、第二条复用输入指纹），通过；
+- `agent-gate --all` RESULT: PASS（pass=1163 fail=0）。
+
+### 9.4 已知偏差/后续
+
+- 同进程多次探针的 scheduler 统计是累计值（未做 reset），报告看单次差分；
+- S3：跨进程 handoff（扩展写 job、UI 消费）、队列持久化/断点续跑、事件表清理策略。
