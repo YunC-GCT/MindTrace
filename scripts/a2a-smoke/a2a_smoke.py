@@ -10,6 +10,8 @@
   python a2a_smoke.py --text "整理相册里的数学题"
   python a2a_smoke.py --agent "MindTrace 数学笔记助手" --text "你好" --tag MindTraceA2A
   python a2a_smoke.py --no-restart           # 不清小艺，直接在当前界面操作
+  python a2a_smoke.py --manual --text "整理数学题"   # 手动模式：用户自己进智能体会话，脚本只发送/取回复
+  python a2a_smoke.py --xiaoyi-icon 558,205 --text "你好"  # 桌面图标不暴露文本时的坐标兜底
 
 依赖: 仅标准库；需要 hdc（默认取 DevEco SDK 路径，可用 --hdc 或 HDC 环境变量覆盖）
 退出码: 0 成功拿到回复；1 失败（信息在 stderr 与 JSON 里）
@@ -142,32 +144,83 @@ def is_locked(hdc):
     return b in ("", "com.ohos.systemui")
 
 
-def launch(hdc, restart=True):
-    """aa start 常常只起进程不起界面，兜底回桌面点「小艺」图标。"""
+def dismiss_blocking_dialog(hdc):
+    """aa start 失败时会弹「暂无可用打开方式」；点掉它再回桌面。"""
+    try:
+        nodes = walk(dump_layout(hdc))
+    except Exception:
+        return
+    for key in ("知道了", "确定", "取消"):
+        _n, b = find_text(nodes, key, exact=True)
+        if b:
+            tap(hdc, *center(clickable_containing(nodes, center(b)) or b))
+            time.sleep(0.5)
+            return
+
+
+def find_launcher_icon(nodes):
+    """在桌面布局里找「小艺」图标：精确文本/无障碍描述优先，排除建议/Work 等卡片。"""
+    _n, b = find_text(nodes, "小艺", exact=True)
+    if b:
+        return _n, b
+    for node in nodes:
+        text = node.get("text") or node.get("desc") or ""
+        if "小艺" not in text:
+            continue
+        if any(bad in text for bad in ("建议", "Work", "翻译", "画图", "文档", "深度")):
+            continue
+        b = bounds_of(node["bounds"])
+        if b:
+            return node, b
+    return None, None
+
+
+def wait_foreground(hdc, bundle, seconds):
+    """冷启动/加载可能超过固定 5s：轮询前台 bundle 直到超时。"""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if foreground_bundle(hdc) == bundle:
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def launch(hdc, restart=True, icon_point=None, wait_seconds=10.0):
+    """拉起小艺：aa start → 关启动失败弹窗 → 回桌面点「小艺」图标（桌面不暴露文本时用坐标兜底）。"""
     if restart:
         hdc.shell(f"aa force-stop {YIXIAO_BUNDLE}")
+        hdc.shell(f"aa force-stop {YIXIAO_BUNDLE}.launcher")
         time.sleep(1)
+    # 1) aa start（部分设备有效；无效时会弹「暂无可用打开方式」）
     hdc.shell(f"aa start -b {YIXIAO_BUNDLE} -a {YIXIAO_ABILITY}")
-    time.sleep(5)
-    if foreground_bundle(hdc) == YIXIAO_BUNDLE:
+    if wait_foreground(hdc, YIXIAO_BUNDLE, wait_seconds):
         return True
-
-    # 鍏滃簳 0锛氬厛鍥炴闈㈡澘锛氳嫢鍓嶅彴鏄硶涓夋柟搴旂敤锛屾闈㈡爣蹇楀湪褰撳墠 layout 閲屾壘涓嶅埌
+    # 2) 关掉启动失败弹窗，避免挡住桌面点击
+    dismiss_blocking_dialog(hdc)
     hdc.shell("uitest uiInput keyEvent Home")
     time.sleep(1.5)
-    # 兜底 1：直接点桌面上的小艺图标
-    nodes = walk(dump_layout(hdc))
-    n, b = find_text(nodes, "小艺", exact=True)
-    if b:
-        target = clickable_containing(nodes, center(b)) or b
-        tap(hdc, *center(target))
-        time.sleep(4.5)
-        if foreground_bundle(hdc) == YIXIAO_BUNDLE:
+    # 3) 点桌面「小艺」图标：优先 layout；桌面图标不暴露时用 --xiaoyi-icon 坐标兜底
+    nodes = []
+    try:
+        nodes = walk(dump_layout(hdc))
+    except Exception:
+        nodes = []
+    icon_bounds = None
+    if nodes:
+        _n, icon_bounds = find_launcher_icon(nodes)
+    points = []
+    if icon_bounds:
+        points.append(center(clickable_containing(nodes, center(icon_bounds)) or icon_bounds))
+    if icon_point:
+        points.append((icon_point[0], icon_point[1]))
+    for point in points:
+        tap(hdc, point[0], point[1])
+        if wait_foreground(hdc, YIXIAO_BUNDLE, wait_seconds):
             return True
+        dismiss_blocking_dialog(hdc)
+    # 4) 最后一次兜底：再等一轮（冷启动加载可能较慢）
+    return wait_foreground(hdc, YIXIAO_BUNDLE, wait_seconds)
 
-    # 兜底 2：再等一轮（冷启动有时较慢）
-    time.sleep(4)
-    return foreground_bundle(hdc) == YIXIAO_BUNDLE
 
 
 def clickable_containing(nodes, pt):
@@ -344,6 +397,33 @@ def main():
         default=20,
         help="回复清洗后的最少字数，低于该值判定疑似截断（默认 20）",
     )
+    ap.add_argument(
+        "--xiaoyi-icon",
+        default=os.environ.get("A2A_XIAOYI_ICON", ""),
+        help="桌面小艺图标坐标兜底，格式 x,y（部分设备桌面不暴露图标文本时使用，如 558,205）",
+    )
+    ap.add_argument(
+        "--no-launch",
+        action="store_true",
+        help="不自动拉起小艺：假定用户已手动打开小艺（配合 --no-open-agent 可直接在当前会话发消息）",
+    )
+    ap.add_argument(
+        "--no-open-agent",
+        action="store_true",
+        help="不自动点侧栏进入智能体：假定用户已手动进入目标智能体会话",
+    )
+    ap.add_argument(
+        "--manual",
+        action="store_true",
+        help="手动模式 = --no-launch --no-open-agent（用户自己从小艺入口进入智能体会话后，脚本只负责发送/取回复）",
+    )
+    ap.add_argument(
+        "--launch-wait",
+        type=float,
+        default=10.0,
+        help="拉起小艺后每轮等待前台 bundle 的秒数（默认 10s，冷启动慢时调大）",
+    )
+
     args = ap.parse_args()
 
     hdc = Hdc(args.hdc)
@@ -356,14 +436,34 @@ def main():
         if is_locked(hdc):
             raise RuntimeError("设备可能已锁屏（前台包名为空或 systemui）：请解锁一次后重试（脚本已把息屏时间临时调到 30 分钟）")
 
-        if not launch(hdc, restart=not args.no_restart):
-            raise RuntimeError("拉起小艺失败")
+        icon_point = None
+        if args.xiaoyi_icon:
+            try:
+                icon_point = tuple(int(v.strip()) for v in args.xiaoyi_icon.split(",")[:2])
+            except Exception:
+                icon_point = None
+        manual = args.manual or (args.no_launch and args.no_open_agent)
+        if manual:
+            # 手动模式：不拉起、不点击；用户已从小艺入口进入智能体会话
+            fg = foreground_bundle(hdc)
+            result["foreground"] = fg
+            if not fg:
+                raise RuntimeError("手动模式：当前前台 bundle 为空，请确认小艺/智能体会话在前台，或加 --no-launch 前先打开")
+        elif not args.no_launch:
+            if not launch(hdc, restart=not args.no_restart, icon_point=icon_point, wait_seconds=args.launch_wait):
+                raise RuntimeError("拉起小艺失败")
+        else:
+            fg = foreground_bundle(hdc)
+            result["foreground"] = fg
+            if fg != YIXIAO_BUNDLE:
+                raise RuntimeError(f"--no-launch 需要小艺在前台（当前: {fg or '未知'}）；请先手动打开小艺或进入智能体会话")
         fg = foreground_bundle(hdc)
         result["foreground"] = fg
         if fg != YIXIAO_BUNDLE:
             raise RuntimeError(f"小艺没有到前台（当前前台: {fg or '未知'}），多半是锁屏或启动被拦")
-        if not open_agent(hdc, args.agent):
-            raise RuntimeError(f"界面里找不到智能体「{args.agent}」，确认已发真机测试并重启小艺")
+        if not (args.no_open_agent or args.manual):
+            if not open_agent(hdc, args.agent):
+                raise RuntimeError(f"界面里找不到智能体「{args.agent}」，确认已发真机测试并重启小艺")
 
         # 基准快照要在进入智能体会话之后取，否则侧栏/历史都会被当成新回复
         before = {n["text"] for n in walk(dump_layout(hdc))}

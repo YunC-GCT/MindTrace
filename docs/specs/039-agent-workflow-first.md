@@ -173,7 +173,8 @@ export class CommandRouter {
 - **真机验证（2026-11-01 19:00 设备解锁后补跑）**：
   - `e2e=captureSet`：`total=6 done=6 failed=0 images=2 ms=3500`（本次命中输入指纹复用，未新建笔记，但批量路径跑通）；
   - `e2e=schedulerProbe`：`completed=4 failed=0 maxConcurrent=2`（含 integration 1 条同进程累计）；
-  - `a2a_smoke.py --text "整理数学题"`：**FAIL「拉起小艺失败」**（环境拉起问题，非本 spec 代码路径；待小艺可用后复跑）。
+  - `a2a_smoke.py --manual --text "整理数学题"`：**PASS `ok: true`**（reply_chars=462；A2A 回执 460 字 / 2997ms，foreground=com.huawei.hmos.vassistant）。
+    - 说明：自动拉起在本机不可用（`aa start` 的 VoiceAbility 非导出能力，桌面图标不在 layout 树），已给脚本加 `--manual`（用户自己进智能体会话，脚本只发送/取回复）+ `--xiaoyi-icon` 坐标兜底 + `--launch-wait` 轮询。
 
 ### 下一步
 
