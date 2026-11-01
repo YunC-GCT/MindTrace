@@ -20,6 +20,7 @@ export const INTENT_PROBE: string = 'probe';
 export const INTENT_PLAN_CONTINUE: string = 'plan_continue';
 export const INTENT_PLAN_WAITING: string = 'plan_waiting';
 export const INTENT_OCR: string = 'ocr';
+export const INTENT_IMAGE_QA: string = 'image_qa';
 export const INTENT_PICK_CARD: string = 'pick_card';
 export const INTENT_TEXT_INGEST: string = 'text_ingest';
 export const INTENT_CHAT: string = 'chat';
@@ -82,7 +83,11 @@ export function routeA2AIntent(query: string, hasImages: boolean, hasPendingPlan
     return { kind: INTENT_PLAN_WAITING, reason: 'pending-plan' };
   }
   if (hasImages) {
-    return { kind: INTENT_OCR, reason: 'has-image-parts' };
+    // 带图：有明确「整理」意图 → OCR 整理；否则按图片问答处理（当场回答，不入库）。
+    if (matchesAny(text, INGEST_PHRASES)) {
+      return { kind: INTENT_OCR, reason: 'image-ingest-phrase' };
+    }
+    return { kind: INTENT_IMAGE_QA, reason: 'image-question' };
   }
   if (text.length === 0) {
     return { kind: INTENT_EMPTY, reason: 'no-content' };

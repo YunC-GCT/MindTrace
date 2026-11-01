@@ -23,7 +23,11 @@ test('聊天默认走 chat，不被误判为整理', () => {
 });
 
 test('带图 → OCR；明确拍题但无图 → 卡片', () => {
-  assert.equal(routeA2AIntent('', true, false).kind, 'ocr');
+  // 2.0：带图无整理意图 → 图片问答；明确整理意图 → OCR 整理
+  assert.equal(routeA2AIntent('', true, false).kind, 'image_qa');
+  assert.equal(routeA2AIntent('这题怎么做', true, false).kind, 'image_qa');
+  assert.equal(routeA2AIntent('整理成笔记', true, false).kind, 'ocr');
+  assert.equal(routeA2AIntent('帮我把这道题存到笔记', true, false).kind, 'ocr');
   assert.equal(routeA2AIntent('帮我拍题', false, false).kind, 'pick_card');
   assert.equal(routeA2AIntent('选图整理', false, false).kind, 'pick_card');
 });
@@ -78,4 +82,14 @@ test('A2A 聊天接入 RAG：证据上下文注入 + 引用校验（P0-1）', ()
   assert.match(ctx, /sanitizeAnswer\(evidence, answer\)/);
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(entry, /mode === 'agentChatContext'/);
+});
+
+
+test('A2A 图片意图：带图但无整理短语 → image_qa；带「整理」→ ocr', () => {
+  assert.equal(routeA2AIntent('这题怎么做', true, false).kind, 'image_qa');
+  assert.equal(routeA2AIntent('', true, false).kind, 'image_qa');
+  assert.equal(routeA2AIntent('整理成笔记', true, false).kind, 'ocr');
+  assert.equal(routeA2AIntent('帮我把这道题存到笔记', true, false).kind, 'ocr');
+  // 计划等待优先于图片问答
+  assert.equal(routeA2AIntent('继续', true, true).kind, 'plan_continue');
 });

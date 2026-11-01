@@ -126,17 +126,17 @@ test('P2 跨进程 producer：flag 关闭/DB 不可用回退、入队走 enqueue
   assert.ok(persistence.includes("return await this.enqueueForSource(priority, text, 'app')"));
 });
 
-test('P2 A2A 扩展：持久化开启时只入队 + 回执已受理', () => {
+test('A2A 整理：用户整理意图在扩展内联完成（无需打开 App），超时回退队列', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.ok(ability.includes('WriteJobProducer'));
-  assert.ok(ability.includes('WriteJobPersistenceFlags.isEnabled()'));
-  assert.ok(ability.includes('TEXT_JOB_ENQUEUED job='));
-  assert.ok(ability.includes('PLAN_ENQUEUED item='));
-  assert.ok(ability.includes('A2A_JOB_ACCEPTED_TEXT'));
   assert.ok(ability.includes('private ingestPlanItemNow('));
-  assert.ok(ability.includes('private dispatchTextBatch('));
-  assert.ok(ability.includes('private enqueuePendingTexts('));
-  assert.ok(ability.includes('tryEnqueue('));
+  assert.ok(ability.includes('private ingestTextBatchNow('));
+  assert.ok(ability.includes('private ingestPendingItemsSequentially('));
+  assert.ok(ability.includes('this.ingestPlanItemNow(taskId, plan, item)'));
+  assert.ok(ability.includes('this.ingestTextBatchNow(taskId, request)'));
+  assert.ok(ability.includes('this.enqueueTexts([item.text])'));
+  // 图片问答分支
+  assert.ok(ability.includes('handleImageQuestion'));
+  assert.ok(ability.includes('INTENT_IMAGE_QA'));
 });
 
 test('P2 inbox 迁移：bootstrap 把 pending 项写入 agent_job 后 complete', () => {

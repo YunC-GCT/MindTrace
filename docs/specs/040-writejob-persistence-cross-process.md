@@ -131,3 +131,12 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
   3. 同一 fingerprint 的第二次 ingest 在 `markDone` 写库前复用 running job → 终态回写改为 **await 后再 resolve 调用方**，避免 `JOB_CLAIMED_ELSEWHERE`；
 - 验证：`node scripts/build-hsp-hap.mjs` 成功；`agent-gate --all` **PASS（pass=1193 fail=0）**。
 - 已知未覆盖（环境依赖）：A2A 真机跨进程入队（需手动小艺会话触发，扩展进程 producer 已由单测/源码守卫覆盖）；fresh-install 迁移未单独跑（设备走 v19→v20 升级库验证）。
+
+## 9. 体验修订（2026-11-01，A2A 图片问答 + 不进 App 整理）
+
+用户要求「图片能当场问答」「有整理意图不进 App 也能完成整理」，修订如下：
+
+- **图片问答**：`A2AIntentRouter` 新增 `image_qa`：带图且无整理短语 → OCR 后直接把文字 + 用户问题交给对话回答，不入库；带「整理/存笔记」→ 仍走 OCR 整理；
+- **整理内联化**：A2A 文本整理、计划逐题、「全部」逐题均改为在 `:agent` 扩展进程内联执行（超时/失败回退 inbox/持久队列），不再依赖打开 App；持久队列保留为兜底/溢出/App 写路径；
+- 验证：`A2AIntentRouter` 用例（image_qa/ocr 分流）、build 成功、`agent-gate --all` PASS（pass=1194）；
+- 待真机：小艺发图问答、发图+整理、文字+整理（用户手动会话验证）。

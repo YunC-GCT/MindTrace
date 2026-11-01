@@ -45,8 +45,6 @@ import {
 } from '../services/CaptureReceipt';
 import { AgentInboxItem, buildInboxItem } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
-import { WriteJobProducer } from '../services/WriteJobProducer';
-import { WriteJobPersistenceFlags } from '../services/WriteJobConfig';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
 import {
   A2APlan,
@@ -69,6 +67,7 @@ import { A2APlanStore } from '../services/A2APlanStore';
 import {
   A2AIntent,
   INTENT_EMPTY,
+  INTENT_IMAGE_QA,
   INTENT_OCR,
   INTENT_PICK_CARD,
   INTENT_PLAN_CONTINUE,
@@ -152,7 +151,6 @@ type A2AErrorCode =
 // A2A 入库 deadline：模型慢时不再让用户干等，超时转待整理队列（打开 App 自动补齐）。
 const INGEST_DEADLINE_MS: number = 90000;
 const A2A_INGEST_TIMEOUT_TEXT: string = '这次整理较慢，已转待整理；打开 MindTrace 会自动补齐，稍后也能在 App 里看到。';
-const A2A_JOB_ACCEPTED_TEXT: string = '已受理，已转后台整理；打开 MindTrace 会自动补齐，稍后也能在 App 里看到（幂等去重，不会重复写笔记）。';
 const A2A_TIMEOUT_TEXT: string = '模型响应超时，稍后再试。';
 const A2A_CONFIG_TIMEOUT_TEXT: string = '模型配置读取超时（'
   + A2A_POLICY.configTimeoutMs.toString() + ' ms），请稍后再试。';
@@ -302,6 +300,10 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           this.handleOcrCheckpoint(taskId, ingest);
           return;
         }
+        if (intent.kind === INTENT_IMAGE_QA) {
+          this.handleImageQuestion(taskId, ingest);
+          return;
+        }
         if (intent.kind === INTENT_PICK_CARD || intent.kind === INTENT_EMPTY) {
           this.sendAnswerWithPickCard(taskId, '点下面的卡片去选图，或直接把题目文字发我。');
           return;
@@ -316,6 +318,52 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         hilog.error(DOMAIN, TAG, 'INTENT_ROUTE_FAILED %{public}s', e.message);
         this.runQuery(taskId, query);
       });
+  }
+
+  /** 图片问答：OCR 识别图片文字后直接回答用户问题，不入库（整理意图仍走 OCR/计划）。 */
+  private handleImageQuestion(taskId: string, request: AgentIngestRequest): void {
+    hilog.info(DOMAIN, TAG, 'IMAGE_QA start images=%{public}d chars=%{public}d',
+      request.images.length, request.text.length);
+    this.recognizeImages(request.images)
+      .then((recognized: string): void => {
+        const text: string = recognized.trim();
+        if (text.length === 0) {
+          this.sendAnswer(taskId, '图片里没识别到文字，换清晰点的图，或直接把题目文字发我。', 0);
+          return;
+        }
+        const excerpt: string = text.length > 2000 ? text.substring(0, 2000) : text;
+        const question: string = request.text.trim().length > 0
+          ? request.text.trim() : '请回答图片中的题目';
+        const prompt: string = '用户发来一张图片，OCR 识别到的文字如下：\n'
+          + excerpt + '\n\n用户的问题：' + question
+          + '\n\n请直接回答用户的问题（讲解思路/答案/易错点）。'
+          + '不要输出笔记整理模板；如果用户需要整理成笔记，可以回复「整理成笔记」。';
+        hilog.info(DOMAIN, TAG, 'IMAGE_QA ocrChars=%{public}d', text.length);
+        this.runQuery(taskId, prompt);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'IMAGE_QA failed %{public}s', e.message);
+        this.sendAnswer(taskId, '图片识别失败，换清晰点的图，或直接把题目文字发我。', 0);
+      });
+  }
+
+  /** 依次 OCR 图片（最多 3 张），返回拼接文字。 */
+  private async recognizeImages(images: AgentImagePart[]): Promise<string> {
+    const texts: string[] = [];
+    const limit: number = images.length > 3 ? 3 : images.length;
+    for (let i = 0; i < limit; i += 1) {
+      const image: AgentImagePart = images[i];
+      let text: string = '';
+      if (image.kind === 'uri') {
+        text = await OcrService.recognizeUri(image.value);
+      } else {
+        text = await OcrService.recognizeBase64(image.value);
+      }
+      if (text.trim().length > 0) {
+        texts.push(text.trim());
+      }
+    }
+    return texts.join('\n');
   }
 
   /**
@@ -353,21 +401,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 文本整理入口：持久化开启 → 入队并回执已受理；否则走原有同步 ingestTextBatch。 */
   private dispatchTextBatch(taskId: string, request: AgentIngestRequest): void {
-    if (WriteJobPersistenceFlags.isEnabled()) {
-      WriteJobProducer.tryEnqueue(this.context, request.text, 'interactive', 'xiaoyi')
-        .then((jobId: string | null): void => {
-          if (jobId === null) {
-            this.ingestTextBatchNow(taskId, request);
-            return;
-          }
-          hilog.info(DOMAIN, TAG, 'TEXT_JOB_ENQUEUED job=%{public}s', jobId);
-          this.sendAnswer(taskId, A2A_JOB_ACCEPTED_TEXT, 0, request.text);
-        })
-        .catch((): void => {
-          this.ingestTextBatchNow(taskId, request);
-        });
-      return;
-    }
+    // 用户有整理意图：在扩展进程内联完成（无需打开 App）；超时/失败仍回退 inbox/持久队列。
     this.ingestTextBatchNow(taskId, request);
   }
 
@@ -421,16 +455,14 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       return;
     }
     if (command.kind === PLAN_CMD_ALL) {
-      const pending: string[] = [];
+      const pendingItems: A2APlanItem[] = [];
       for (let i = 0; i < plan.items.length; i += 1) {
         if (plan.done.indexOf(plan.items[i].index) < 0) {
-          pending.push(plan.items[i].text);
+          pendingItems.push(plan.items[i]);
         }
       }
-      this.enqueuePendingTexts(pending);
       A2APlanStore.clear(this.context, taskId).catch((): void => {});
-      this.sendAnswer(taskId, '已把剩余 ' + pending.length.toString()
-        + ' 道题转待整理，打开 MindTrace 会自动补齐。', 0);
+      this.ingestPendingItemsSequentially(taskId, pendingItems);
       return;
     }
     let item: A2APlanItem | undefined = undefined;
@@ -497,24 +529,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 整理计划中的一道题：持久化开启时只入队（跨进程 producer），否则同步执行。 */
   private ingestPlanItem(taskId: string, plan: A2APlan, item: A2APlanItem): void {
-    if (WriteJobPersistenceFlags.isEnabled()) {
-      WriteJobProducer.tryEnqueue(this.context, item.text, 'background', 'xiaoyi')
-        .then((jobId: string | null): void => {
-          if (jobId === null) {
-            this.ingestPlanItemNow(taskId, plan, item);
-            return;
-          }
-          hilog.info(DOMAIN, TAG, 'PLAN_ENQUEUED item=%{public}d job=%{public}s', item.index, jobId);
-          plan.done.push(item.index);
-          A2APlanStore.save(this.context, plan.taskId, plan).catch((): void => {});
-          this.sendAnswer(taskId, '第 ' + (item.index + 1).toString()
-            + ' 题已受理，稍后自动整理（剩余 ' + remainingPlanCount(plan).toString() + ' 题）。', 0);
-        })
-        .catch((): void => {
-          this.ingestPlanItemNow(taskId, plan, item);
-        });
-      return;
-    }
+    // 用户逐题确认后：直接在小艺里内联整理（无需打开 App）；超时/失败回退 inbox。
     this.ingestPlanItemNow(taskId, plan, item);
   }
 
@@ -587,23 +602,42 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     this.sendAnswer(taskId, '这次没整理成（' + code + '），换个说法再发一次试试。', 0);
   }
 
-  /** 剩余题入队：持久化开启 → agent_job；否则回退 inbox 文件队列。 */
-  private enqueuePendingTexts(texts: string[]): void {
-    if (!WriteJobPersistenceFlags.isEnabled()) {
-      this.enqueueTexts(texts);
+  /** 「全部」：在小艺里逐题内联整理，每题一条进度回执（无需打开 App）。 */
+  private ingestPendingItemsSequentially(taskId: string, items: A2APlanItem[]): void {
+    if (items.length === 0) {
+      this.sendAnswer(taskId, '这次计划里的题都整理完了 ✅', 0);
       return;
     }
-    for (let i = 0; i < texts.length; i += 1) {
-      WriteJobProducer.tryEnqueue(this.context, texts[i], 'background', 'xiaoyi')
-        .then((jobId: string | null): void => {
-          if (jobId === null) {
-            this.enqueueTexts([texts[i]]);
+    this.sendAnswer(taskId, '开始逐题整理，共 ' + items.length.toString()
+      + ' 题（在小艺里直接完成，可随时回复「取消」）。', 0);
+    const runNext = (index: number): void => {
+      if (index >= items.length) {
+        this.sendAnswer(taskId, '剩余 ' + items.length.toString() + ' 题已全部整理完成 ✅', 0);
+        return;
+      }
+      const item: A2APlanItem = items[index];
+      this.ingestWithDeadline(item.text)
+        .then((outcome: NoteOutcome): void => {
+          if (outcome.kind === 'committed' && outcome.unit !== undefined) {
+            const unit: KnowledgeUnit = outcome.unit;
+            this.recordA2aIngestReceipt();
+            this.sendAnswer(taskId, '（' + (index + 1).toString() + '/' + items.length.toString()
+              + '）已整理：' + unit.title + '（' + unit.subject + '）', 0);
+          } else {
+            this.enqueueTexts([item.text]);
+            this.sendAnswer(taskId, '（' + (index + 1).toString() + '/' + items.length.toString()
+              + '）这题没整理成，已转待整理。', 0);
           }
+          runNext(index + 1);
         })
         .catch((): void => {
-          this.enqueueTexts([texts[i]]);
+          this.enqueueTexts([item.text]);
+          this.sendAnswer(taskId, '（' + (index + 1).toString() + '/' + items.length.toString()
+            + '）超时，已转待整理。', 0);
+          runNext(index + 1);
         });
-    }
+    };
+    runNext(0);
   }
 
   /** 剩余题逐条追加待整理队列（尽力而为，失败只记日志）。 */
