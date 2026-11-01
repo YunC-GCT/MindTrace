@@ -275,6 +275,30 @@ export default class EntryAbility extends UIAbility {
       });
       return;
     }
+    if (mode === 'appIntentProbe') {
+      DebugCaptureRunner.runAppIntentProbe(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'App 意图自检异常: ' + e.message);
+      });
+      return;
+    }
+    if (mode === 'dedupeProbe') {
+      DebugCaptureRunner.runDedupeProbe(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', '去重自检异常: ' + e.message);
+      });
+      return;
+    }
+    if (mode === 'latencyProbe') {
+      DebugCaptureRunner.runLatencyProbe(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', '延迟自检异常: ' + e.message);
+      });
+      return;
+    }
+    if (mode === 'agentChatContext') {
+      DebugCaptureRunner.runAgentChatContext(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'A2A 聊天上下文自检异常: ' + e.message);
+      });
+      return;
+    }
     if (mode === 'noteAudit') {
       DebugCaptureRunner.runNoteAudit(this.context).catch((e: Error) => {
         hilog.error(0xE2E0, 'E2E', '%{public}s', '笔记审计异常: ' + e.message);

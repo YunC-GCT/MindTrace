@@ -64,3 +64,18 @@ test('扩展接线：意图路由 + OCR checkpoint（回复继续前不写库）
   const service = read('entry/src/main/ets/services/AgentIngestService.ets');
   assert.match(service, /static async planItemsFromRequest\(request: AgentIngestRequest\)/);
 });
+
+
+test('A2A 聊天接入 RAG：证据上下文注入 + 引用校验（P0-1）', () => {
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.match(ability, /A2AChatContext\.build\(query\)/);
+  assert.match(ability, /A2AChatContextResult/);
+  assert.match(ability, /A2AChatContext\.sanitize\(session\.evidence, answer\)/);
+  assert.match(ability, /A2A_EVIDENCE citations=/);
+  const ctx = read('entry/src/main/ets/services/A2AChatContext.ets');
+  assert.match(ctx, /service\.build\(trimmed, \{ topK: EVIDENCE_TOP_K \}\)/);
+  assert.match(ctx, /EVIDENCE_TIMEOUT_MS: number = 1200/);
+  assert.match(ctx, /sanitizeAnswer\(evidence, answer\)/);
+  const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.match(entry, /mode === 'agentChatContext'/);
+});

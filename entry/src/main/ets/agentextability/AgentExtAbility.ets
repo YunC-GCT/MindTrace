@@ -33,6 +33,8 @@ import { CancellationToken, getProviderCatalog, KnowledgeUnit, LlmConfig, LlmErr
 import type { NoteOutcome, ProviderCatalog, ResolvedModel } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
+import { A2AChatContext, A2AChatContextResult } from '../services/A2AChatContext';
+import type { NoteEvidenceContext } from '../models/NoteEvidenceModels';
 import type { LlmCallPolicy } from '../services/ReplyService';
 import type { ReplyStyle } from '../services/ReplyStyleRules';
 import {
@@ -170,6 +172,8 @@ interface A2ARequestSession {
   requestedModel: string;
   canonicalModel: string;
   attempts: number;
+  /** 本轮回合注入的 RAG 证据（回答后做引用校验） */
+  evidence?: NoteEvidenceContext;
 }
 
 /** 扩展进程内的模型配置初始化（只做一次），runQuery 前必须等它 */
@@ -694,25 +698,35 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         'deadline ' + A2A_POLICY.deadlineMs.toString() + 'ms');
     }, A2A_POLICY.deadlineMs);
 
-    const replyContext: ReplyContext = {
-      memoryContext: '',
-      learnerProfileContext: '',
-      userContent: query,
-      evidenceContext: '',
-    };
-    this.awaitConfig()
-      .then((ready: boolean): void => {
+    // P0-1：复用 App 对话同款 RAG——先检索本机笔记证据，再交给 ReplyService（超时降级为空）。
+    A2AChatContext.build(query)
+      .then((built: A2AChatContextResult): void => {
+        session.evidence = built.evidence;
+        hilog.info(DOMAIN, TAG, 'A2A_EVIDENCE citations=%{public}d degraded=%{public}d reason=%{public}s',
+          built.citations, built.degraded ? 1 : 0, built.reason);
         if (session.responded) {
           return;
         }
-        if (!ready) {
-          // 配置没能读到，用当前缓存值（可能是默认值）尽量补齐审计字段。
-          this.fillModelFieldsFromCachedConfig(session);
-          this.settle(session, 'A2A_CONFIG_READ_TIMEOUT', A2A_CONFIG_TIMEOUT_TEXT,
-            'config wait exceeded ' + A2A_POLICY.configTimeoutMs.toString() + 'ms');
-          return;
-        }
-        this.answerWithResolvedModel(session, replyContext);
+        this.awaitConfig()
+          .then((ready: boolean): void => {
+            if (session.responded) {
+              return;
+            }
+            if (!ready) {
+              // 配置没能读到，用当前缓存值（可能是默认值）尽量补齐审计字段。
+              this.fillModelFieldsFromCachedConfig(session);
+              this.settle(session, 'A2A_CONFIG_READ_TIMEOUT', A2A_CONFIG_TIMEOUT_TEXT,
+                'config wait exceeded ' + A2A_POLICY.configTimeoutMs.toString() + 'ms');
+              return;
+            }
+            this.answerWithResolvedModel(session, built.replyContext);
+          })
+          .catch((e: Error): void => {
+            if (session.responded) {
+              return;
+            }
+            this.handleFailure(session, e);
+          });
       })
       .catch((e: Error): void => {
         if (session.responded) {
@@ -855,7 +869,8 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           return;
         }
         const reason: string = resolveReason.length > 0 ? resolveReason : 'OK';
-        this.settle(session, 'A2A_REPLY_SENT', answer, reason);
+        const safeAnswer: string = A2AChatContext.sanitize(session.evidence, answer);
+        this.settle(session, 'A2A_REPLY_SENT', safeAnswer, reason);
       })
       .catch((e: Error): void => {
         if (session.responded) {

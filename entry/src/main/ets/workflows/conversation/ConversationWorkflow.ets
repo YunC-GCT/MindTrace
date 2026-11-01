@@ -31,6 +31,8 @@ import {
 } from 'common';
 import { ReplyContext } from '../../services/IntentClassifier';
 import type { TextIntent } from '../../services/IntentClassifier';
+import { AppIntentRouter } from '../../services/AppIntentRouter';
+import type { AppIntentDecision } from '../../services/AppIntentRules';
 import {
   ConversationProgressStep,
   ConversationState,
@@ -110,6 +112,7 @@ interface ImageNoteReplyResult {
 export class ConversationWorkflow implements IConversationDraftWorkflowHost, IConversationMemoryProjectionHost {
   private cbs: ConversationWorkflowCallbacks;
   private readonly intentClassifier: IConversationIntentPort;
+  private readonly appIntentRouter: AppIntentRouter = new AppIntentRouter();
   private readonly replyService: IConversationReplyPort;
   private readonly capturePort: IConversationCapturePort;
   private readonly noteRoute: IConversationNoteRoutePort;
@@ -277,31 +280,38 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       new StateGraph<ConversationState, ConversationStep>('START', 'END');
     graph.addNode('classify_intent', async (input: ConversationState): Promise<ConversationState> => {
       this.setStep(input.runRef, 'intent_check');
-      this.ensureNotCancelled(input.runRef);
-      const token: CancellationToken | undefined = this.cancellationToken(input.runRef);
-      let intent: TextIntent | undefined = this.intentClassifier.classifyLocalIntent(input.request.userContent);
-      if (intent === undefined && this.getReviewService().classifyIntent(input.request.userContent) !== undefined) {
-        intent = 'chat';
-      }
-      if (intent === undefined) {
-        intent = token === undefined
-          ? await this.intentClassifier.classify(input.request.userContent)
-          : await this.intentClassifier.classifyWithCancellation(input.request.userContent, token);
-      }
+      const token = this.cancellationToken(input.runRef);
+      const decision: AppIntentDecision = await this.appIntentRouter.classify(
+        input.request.userContent, false, token);
+      workflowLog.info('intent kind=' + decision.kind + ' source=' + decision.source
+        + ' confidence=' + decision.confidence.toString() + ' reason=' + decision.reason);
       const next: ConversationState = this.copyState(input, 'classify_intent');
-      next.intent = intent;
+      next.intent = decision.kind === 'note_generate' ? 'note_generation' : 'chat';
+      next.appIntent = decision.kind;
+      next.appIntentConfidence = decision.confidence;
+      next.appIntentSource = decision.source;
+      next.appIntentClarify = decision.kind === 'clarify';
       return next;
     });
     graph.addNode('classify_image_intent', async (input: ConversationState): Promise<ConversationState> => {
       this.setStep(input.runRef, 'intent_check');
-      const userText: string = input.request.userContent.trim();
-      let intent: TextIntent = 'chat';
-      if (userText.length > 0 && userText !== '[图片]') {
-        intent = await this.intentClassifier.classifyWithCancellation(userText, this.cancellationToken(input.runRef));
-      }
+      const decision: AppIntentDecision = await this.appIntentRouter.classify(
+        input.request.userContent, true, this.cancellationToken(input.runRef));
+      workflowLog.info('image intent kind=' + decision.kind + ' source=' + decision.source
+        + ' confidence=' + decision.confidence.toString() + ' reason=' + decision.reason);
       const next: ConversationState = this.copyState(input, 'classify_image_intent');
-      next.intent = intent;
+      next.intent = decision.kind === 'image_note' ? 'note_generation' : 'chat';
+      next.appIntent = decision.kind;
+      next.appIntentConfidence = decision.confidence;
+      next.appIntentSource = decision.source;
+      next.appIntentClarify = decision.kind === 'clarify';
       return next;
+    });
+    graph.addNode('clarify_reply', async (input: ConversationState): Promise<ConversationState> => {
+      const hasImage: boolean = input.request.kind === 'image';
+      await this.addAiMessage(input.runRef, ConversationWorkflow.clarifyPrompt(hasImage),
+        this.originFor(input.runRef));
+      return this.copyState(input, 'clarify_reply');
     });
     graph.addNode('image_reply', async (input: ConversationState): Promise<ConversationState> => {
       if (input.request.kind === 'image') {
@@ -437,12 +447,18 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       return 'classify_intent';
     });
     graph.addConditionalEdge('classify_image_intent', (state: ConversationState): ConversationStep => {
+      if (state.appIntentClarify === true) {
+        return 'clarify_reply';
+      }
       if (state.intent === 'note_generation') {
         return 'image_note_reply';
       }
       return 'image_reply';
     });
     graph.addConditionalEdge('classify_intent', (state: ConversationState): ConversationStep => {
+      if (state.appIntentClarify === true) {
+        return 'clarify_reply';
+      }
       if (state.intent === 'note_generation') {
         return 'note_reply';
       }
@@ -456,6 +472,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       return 'complete_reply';
     });
     graph.addEdge('image_reply', 'END');
+    graph.addEdge('clarify_reply', 'END');
     graph.addEdge('image_note_reply', 'END');
     graph.addEdge('complete_reply', 'END');
     graph.addEdge('stream_reply', 'END');
@@ -472,6 +489,18 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     };
     if (input.intent !== undefined) {
       next.intent = input.intent;
+    }
+    if (input.appIntent !== undefined) {
+      next.appIntent = input.appIntent;
+    }
+    if (input.appIntentConfidence !== undefined) {
+      next.appIntentConfidence = input.appIntentConfidence;
+    }
+    if (input.appIntentSource !== undefined) {
+      next.appIntentSource = input.appIntentSource;
+    }
+    if (input.appIntentClarify !== undefined) {
+      next.appIntentClarify = input.appIntentClarify;
     }
     if (input.memoryContext !== undefined) {
       next.memoryContext = input.memoryContext;
@@ -1414,6 +1443,14 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     if (!this.cbs.isCurrentRun(ref)) {
       throw new Error('STALE_CONVERSATION_RUN');
     }
+  }
+
+  /** 意图不明时的追问文案（不调模型，低延迟）。 */
+  private static clarifyPrompt(hasImage: boolean): string {
+    if (hasImage) {
+      return '这张图你想：① 我先讲解这道题；② 整理成笔记保存？回我 ① 或 ② 就行。';
+    }
+    return '你想：① 直接回答/讲解；② 整理成笔记保存？回我 ① 或 ②（也可以直接说「存笔记」）。';
   }
 
   private async addAiMessage(

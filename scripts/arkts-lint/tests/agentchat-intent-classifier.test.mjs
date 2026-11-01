@@ -38,7 +38,7 @@ test('ConversationWorkflow owns intent orchestration and AgentChatService stays 
   assert.match(runtime, /executeAcceptedOperation<void>/);
   assert.match(runtime, /this\.workflow\.run\(request, ref\)/);
   assert.match(workflow, /private readonly intentClassifier: IConversationIntentPort/);
-  assert.match(workflow, /this\.intentClassifier\.classify\(/);
+  assert.match(workflow, /this\.appIntentRouter\.classify\(/);
   assert.match(workflow, /this\.intentClassifier\.inlineNoteMaterial\(/);
   assert.match(replyService, /this\.intentClassifier\.buildReplyMessages\(/);
   assert.match(replyService, /this\.intentClassifier\.buildStreamingReplyMessages\(/);

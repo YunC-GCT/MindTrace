@@ -86,3 +86,20 @@ test('写入口查重接线：服务层跳过重复、DAO 提供候选查询', (
   assert.match(dao, /async findDuplicate\(unit: KnowledgeUnit\): Promise<KnowledgeUnit \| null>/);
   assert.match(dao, /queryRecentDedupeCandidates\(120\)/);
 });
+
+
+test('P0-2/P0-3 探针与报告接线：阶段耗时日志 + 去重/延迟/质量审计', () => {
+  const pipeline = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.match(pipeline, /CAPTURE_STAGE step=/);
+  assert.match(pipeline, /CAPTURE_TOTAL kind=/);
+  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  assert.match(runner, /static async runDedupeProbe\(/);
+  assert.match(runner, /static async runLatencyProbe\(/);
+  const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.match(entry, /mode === 'dedupeProbe'/);
+  assert.match(entry, /mode === 'latencyProbe'/);
+  const audit = read('scripts/quality/note-quality-audit.mjs');
+  assert.match(audit, /MAX_DUPLICATE_RATIO/);
+  assert.match(audit, /fieldFilledRatio/);
+  assert.match(audit, /--assert/);
+});

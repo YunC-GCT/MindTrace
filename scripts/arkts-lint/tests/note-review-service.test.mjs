@@ -608,7 +608,7 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
 });
 
 
-test('ConversationWorkflow classify_intent node keeps explicit review on chat without remote classifier', async () => {
+test('ConversationWorkflow classify_intent keeps explicit review/note-query on chat (unified app intent)', async () => {
   const { ConversationWorkflow } = loadConversationWorkflow({
     StateGraph: class StateGraph {
       constructor() { this.nodes = {}; }
@@ -616,54 +616,24 @@ test('ConversationWorkflow classify_intent node keeps explicit review on chat wi
       addConditionalEdge() {}
       addEdge() {}
     },
-    IntentClassifier: class IntentClassifier {
-      constructor() { this.remoteCalls = 0; }
-      classifyLocalIntent() { return undefined; }
-      async classify() {
-        this.remoteCalls += 1;
-        return 'note_generation';
-      }
-    },
   });
   const workflow = new ConversationWorkflow({
     onProgress() {},
     isCurrentRun() { return true; },
     getContext() { return {}; },
   });
-  let reviewCalls = 0;
-  workflow.reviewService = {
-    classifyIntent(text) {
-      reviewCalls += 1;
-      return text.includes('笔记') && text.includes('解释') ? 'explain' : undefined;
-    },
-  };
-
   const graph = workflow.buildGraph();
   const next = await graph.nodes.classify_intent({
     request: { kind: 'text', userContent: '根据我的笔记解释极限', responseMode: 'complete' },
     runRef: { sessionId: 's1', runId: 'r1' },
     currentStep: 'START',
   });
-
   assert.equal(next.intent, 'chat');
-  assert.equal(reviewCalls, 1);
-  assert.equal(workflow.intentClassifier.classifier.remoteCalls, 0);
+  assert.equal(next.appIntent, 'note_query');
+  assert.equal(next.appIntentClarify, false);
 });
 
-test('ConversationWorkflow classify_intent node keeps local note generation before review and remote fallback', async () => {
-  const { IntentClassifier } = loadNoteReviewEtsModule('entry/src/main/ets/services/IntentClassifier.ets', {
-    mocks: {
-      common: {
-        JSON_ONLY_RULES: '',
-        LATEX_GENERATION_RULES: '',
-        LlmConfig: { getInstance() { return { async isConfigured() { return false; } }; } },
-        LlmGuard: class LlmGuard {
-          extractJsonObject(value) { return value; }
-        },
-      },
-    },
-  });
-  const realLocalClassifier = new IntentClassifier({ extractJsonObject(value) { return value; } });
+test('ConversationWorkflow classify_intent routes explicit note-generation via unified rules', async () => {
   const { ConversationWorkflow } = loadConversationWorkflow({
     StateGraph: class StateGraph {
       constructor() { this.nodes = {}; }
@@ -671,41 +641,21 @@ test('ConversationWorkflow classify_intent node keeps local note generation befo
       addConditionalEdge() {}
       addEdge() {}
     },
-    IntentClassifier: class IntentClassifierProbe {
-      constructor() { this.remoteCalls = 0; }
-      classifyLocalIntent(text) { return realLocalClassifier.classifyLocalIntent(text); }
-      async classify() {
-        this.remoteCalls += 1;
-        return 'note_generation';
-      }
-    },
   });
   const workflow = new ConversationWorkflow({
     onProgress() {},
     isCurrentRun() { return true; },
     getContext() { return {}; },
   });
-  let reviewCalls = 0;
-  workflow.reviewService = {
-    classifyIntent() {
-      reviewCalls += 1;
-      return 'explain';
-    },
-  };
   const graph = workflow.buildGraph();
-
-  for (const userContent of [
-    '把极限整理为笔记并解释一下',
-    '创建笔记：极限定义',
-    'noteId=note-limit 增量补充极限例子',
-  ]) {
+  for (const userContent of ['存笔记：极限定义', '把极限整理成笔记并解释一下', '创建笔记：极限定义']) {
     const next = await graph.nodes.classify_intent({
       request: { kind: 'text', userContent, responseMode: 'complete' },
       runRef: { sessionId: 's1', runId: 'r1' },
       currentStep: 'START',
     });
     assert.equal(next.intent, 'note_generation');
+    assert.equal(next.appIntent, 'note_generate');
   }
-  assert.equal(reviewCalls, 0);
-  assert.equal(workflow.intentClassifier.classifier.remoteCalls, 0);
 });
+

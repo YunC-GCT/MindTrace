@@ -215,7 +215,8 @@ test('Issue 99 note intent produces a typed preview and confirms the exact check
 
 test('Conversation workflow owns typed intent classification and routes from its state', () => {
   assert.match(workflow, /addNode\('classify_intent'/);
-  assert.match(workflow, /intentClassifier\.classify\(/);
+  assert.match(workflow, /appIntentRouter\.classify\(/);
+  assert.match(workflow, /clarify_reply/);
   assert.match(workflow, /addConditionalEdge\('classify_intent'/);
   assert.match(workflow, /state\.intent === 'note_generation'/);
 });

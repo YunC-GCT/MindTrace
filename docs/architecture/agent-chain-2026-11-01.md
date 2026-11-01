@@ -162,3 +162,43 @@ flowchart TB
 ## 6. 建议下一步
 
 先做 **P0-1（A2A RAG）+ P0-3（质量回归集）**：一个补体验短板，一个把「乱分类/纰漏/重复」变成可量化回归；随后用 run_event 基线做 P0-2 延迟治理（否则不知道优化目标该定多少）。
+
+
+## 7. P0 执行记录（2026-11-01 下午，真机 3XTYD24C16203663）
+
+### P0-1 ✅ A2A 聊天接入 RAG
+
+- 新增 `A2AChatContext`：复用 `NoteEvidenceService`（FTS 检索 → 证据上下文）注入 `ReplyContext`，证据超时 1.2s 降级；回答后 `sanitizeAnswer` 删除证据外引用。
+- 真机 `e2e=agentChatContext`：`citations=1 degraded=0 evidenceChars=349 fakeRefRemoved=1 / 16ms` —— A2A 聊天与 App 对话共用同一条 RAG 证据链。
+- 记忆/学习画像依赖会话 ID，A2A 无会话暂留空（P1 再评估）。
+
+### P0-2 延迟基线（已量到）
+
+`e2e=latencyProbe`（单题文本整理）节点耗时：
+
+```
+CAPTURE_STAGE capture   0ms
+CAPTURE_STAGE classify  3499ms
+CAPTURE_STAGE structure 17116ms   ← 主耗时
+CAPTURE_STAGE truth_check 1ms
+CAPTURE_STAGE persist   1599ms
+CAPTURE_TOTAL committed 22253ms
+```
+
+历史同链路波动 8–80s（LLM 不稳定）；A2A 聊天有 35s deadline、入库无 deadline。下一步：目标 P95（待多轮采样）→ 快速路由/超时转队列。
+
+### P0-3 质量回归（首次跑出数据 + 发现真 bug）
+
+- 新增 `scripts/quality/note-quality-audit.mjs`：跑 `e2e=noteAudit`，输出笔记数/学科分布/非规范学科/字段填充率/空字段/重复对，支持 `--assert`（CI 用）。
+- 首个基线（最近 24 条）：`duplicatePairs=18`（多为历史测试样本；老数据学科存在「数学/初中数学」混用）、`notesWithBlankSections=0`。
+- **去重探针失败**：`e2e=dedupeProbe` 同一文本连续整理两次 → `same=0 notesBefore=136 notesAfter=138 added=2`（第二次未命中查重）。需校准 `NoteDedupe` 阈值/信号（标题改写导致正文相似度不足），列为下一步 P0 修复。
+
+### P0-4 ✅ App 内 agent 统一意图（本轮新增，回应「App 意图也要改」）
+
+- 新增 [`AppIntentRules.ets`](../../entry/src/main/ets/services/AppIntentRules.ets) + [`AppIntentRouter.ets`](../../entry/src/main/ets/services/AppIntentRouter.ets)：
+  - 意图从 2 类（note_generation/chat）扩为 7 类：chat / note_generate / review / note_query / image_explain / image_note / clarify；
+  - 规则优先（否定句、复习、查笔记、图片讲解 vs 整理、指代不明）→ 规则未命中才 LLM 兜底 → 置信度 <0.6 转 clarify；
+  - **clarify checkpoint**：App 对话新增 `clarify_reply` 节点（「① 讲解 ② 整理成笔记」），不再低置信直接猜。
+- `ConversationWorkflow` 接线：文字/图片两处分类统一走 router；意图与来源/置信度写入 state（`appIntent/appIntentSource/appIntentConfidence/appIntentClarify`）并落日志。
+- 真机 `e2e=appIntentProbe`：9 条样例全符合预期（存笔记→note_generate、别整理→chat、复习→review、找旧笔记→note_query、图片讲解/整理区分、含糊→clarify、普通问答→llm）。
+- 契约测试 `v7-app-intent` 6 条；`agent-gate --all` PASS（pass=1140）。

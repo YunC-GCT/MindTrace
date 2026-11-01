@@ -21,6 +21,8 @@ import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
 import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import { RagKitProbe } from './RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
+import { A2AChatContext, A2AChatContextResult } from './A2AChatContext';
+import { AppIntentDecision, classifyAppIntentLocal } from './AppIntentRules';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
 import {
@@ -199,6 +201,96 @@ export class DebugCaptureRunner {
           + ' notesWithBlankSections=' + blankFields.toString());
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done audit=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** 写前查重自检：同一文本连续整理两次，第二次应复用同一笔记（不新增）。 */
+  static async runDedupeProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const text: string = '求函数 f(x)=x+1 在 x=0 处的函数值。';
+    const startedAt: number = Date.now();
+    try {
+      const countBefore: number = await DebugCaptureRunner.countRows(DatabaseHelper.getStore() as relationalStore.RdbStore, 'knowledge_unit');
+      const first: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, text);
+      const second: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, text);
+      const countAfter: number = await DebugCaptureRunner.countRows(DatabaseHelper.getStore() as relationalStore.RdbStore, 'knowledge_unit');
+      const firstId: string = first.unit !== undefined ? first.unit.id : '';
+      const secondId: string = second.unit !== undefined ? second.unit.id : '';
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=dedupe firstId=' + firstId + ' secondId=' + secondId
+          + ' same=' + (firstId.length > 0 && firstId === secondId ? '1' : '0')
+          + ' notesBefore=' + countBefore.toString() + ' notesAfter=' + countAfter.toString()
+          + ' added=' + (countAfter - countBefore).toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done dedupe=' + (firstId.length > 0 && firstId === secondId ? '1' : '0'));
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done dedupe=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** 延迟基线：单题整理一次，节点耗时由 CapturePipeline 的 CAPTURE_STAGE 日志输出。 */
+  static async runLatencyProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const text: string = '计算 12 + 7 × 3 的值并写出运算顺序。设备时间戳 ' + Date.now().toString();
+    const startedAt: number = Date.now();
+    try {
+      const outcome: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, text);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done latency=1 kind=' + outcome.kind
+          + ' totalMs=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done latency=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** App 意图规则自检（纯本地，不调模型）：逐条输出意图决策。 */
+  static async runAppIntentProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const cases: string[][] = [
+      ['存笔记：矩阵的秩等于行秩', '0'],
+      ['不要整理，直接讲解', '0'],
+      ['今天该复习什么？', '0'],
+      ['把我之前记的极限题找出来', '0'],
+      ['这题怎么做', '1'],
+      ['帮我把这张图整理成笔记', '1'],
+      ['帮我看看这个', '1'],
+      ['帮我看看这个', '0'],
+      ['洛必达法则为什么成立？', '0'],
+    ];
+    try {
+      for (let i = 0; i < cases.length; i += 1) {
+        const text: string = cases[i][0];
+        const hasImage: boolean = cases[i][1] === '1';
+        const decision: AppIntentDecision | undefined = classifyAppIntentLocal(text, hasImage);
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=intent case=' + i.toString() + ' text=' + text.substring(0, 18)
+            + ' image=' + cases[i][1]
+            + ' kind=' + (decision === undefined ? 'llm' : decision.kind)
+            + ' source=' + (decision === undefined ? '-' : decision.source));
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=done appIntent=1 cases=' + cases.length.toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done appIntent=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** A2A 聊天 RAG 自检：构建证据上下文（应命中笔记）并做引用校验。 */
+  static async runAgentChatContext(ctx: common.UIAbilityContext): Promise<void> {
+    const query: string = '连续性的定义是什么？';
+    const startedAt: number = Date.now();
+    try {
+      const built: A2AChatContextResult = await A2AChatContext.build(query);
+      const sampleAnswer: string = '连续性的定义见 [noteId=fake-id version=1]。';
+      const sanitized: string = A2AChatContext.sanitize(built.evidence, sampleAnswer);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=chat-context citations=' + built.citations.toString()
+          + ' degraded=' + (built.degraded ? '1' : '0')
+          + ' reason=' + built.reason
+          + ' evidenceChars=' + built.replyContext.evidenceContext.length.toString()
+          + ' fakeRefRemoved=' + (sanitized.indexOf('fake-id') < 0 ? '1' : '0'));
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done chatContext=1 ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done chatContext=0 err=' + (error as Error).message);
     }
   }
 

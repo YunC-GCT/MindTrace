@@ -585,13 +585,22 @@ export class CapturePipeline {
     };
     const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
     const dispatcher: Dispatcher = new Dispatcher();
-    return await dispatcher.dispatchCommand(command, {
+    const startedAt: number = Date.now();
+    // P0-2 延迟基线：节点级耗时始终落日志（CAPTURE_STAGE），便于 e2e 统计 p50/p95。
+    const timing: (step: string, elapsedMs: number) => void = onNodeTiming !== undefined
+      ? onNodeTiming
+      : (step: string, elapsedMs: number): void => {
+        log.info('CAPTURE_STAGE step=' + step + ' ms=' + elapsedMs.toString());
+      };
+    const outcome: NoteOutcome = await dispatcher.dispatchCommand(command, {
       dao: dao,
       noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
       subjectVocabulary: await SubjectVocabularyService.list(),
-      onNodeTiming: onNodeTiming,
+      onNodeTiming: timing,
       runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
     });
+    log.info('CAPTURE_TOTAL kind=' + outcome.kind + ' ms=' + (Date.now() - startedAt).toString());
+    return outcome;
   }
 
   private async processAndPersist(

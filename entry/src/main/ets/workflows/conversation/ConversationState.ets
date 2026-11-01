@@ -30,6 +30,7 @@ export type ConversationStep =
   | 'START'
   | 'classify_intent'
   | 'classify_image_intent'
+  | 'clarify_reply'
   | 'load_reply_context'
   | 'save_reply_input'
   | 'image_reply'
@@ -82,6 +83,11 @@ export interface ConversationState {
   runRef: ConversationRunRef;
   currentStep: ConversationStep;
   intent?: TextIntent;
+  // 统一意图（AppIntentRules）：note_generate / review / note_query / image_* / clarify…
+  appIntent?: string;
+  appIntentConfidence?: number;
+  appIntentSource?: string;
+  appIntentClarify?: boolean;
   memoryContext?: string;
   learnerProfileContext?: string;
   // DEV-006: load_reply_context 构造的可追溯检索/图谱证据, 供 complete/stream 引用
