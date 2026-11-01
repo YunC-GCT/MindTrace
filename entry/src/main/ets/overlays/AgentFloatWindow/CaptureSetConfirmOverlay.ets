@@ -74,10 +74,17 @@ export struct CaptureSetConfirmOverlay {
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
 
-          Text(this.selected.length.toString() + '/' + this.problems.length.toString())
-            .fontSize(12)
-            .fontColor(MINT)
-            .fontWeight(W_MEDIUM)
+          Row() {
+            Text(this.selected.length.toString() + '/' + this.problems.length.toString())
+              .fontSize(12)
+              .fontColor(MINT)
+              .fontWeight(W_MEDIUM)
+            Text(this.allSelected() ? '取消全选' : '全选')
+              .fontSize(12)
+              .fontColor(MINT)
+              .margin({ left: S_3 })
+              .onClick((): void => { this.toggleAll() })
+          }
         }
         .width('100%')
         .padding({ left: S_4, right: S_4, top: S_4, bottom: S_2 })
@@ -204,8 +211,36 @@ export struct CaptureSetConfirmOverlay {
   }
 
   private subtitleText(): string {
-    return this.imageCount.toString() + ' 张图识别出 ' + this.problems.length.toString()
-      + ' 道题；取消勾选不需要入库的题'
+    const reviewCount: number = this.problems.length - this.selectedReviewFreeCount();
+    const base: string = this.imageCount.toString() + ' 张图识别出 ' + this.problems.length.toString()
+      + ' 道题；取消勾选不需要入库的题';
+    return reviewCount > 0 ? base + '（' + reviewCount.toString() + ' 道待复核默认不勾选）' : base;
+  }
+
+  private selectedReviewFreeCount(): number {
+    let count: number = 0;
+    for (let i = 0; i < this.problems.length; i++) {
+      if (!this.problems[i].needsReview) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  private allSelected(): boolean {
+    return this.problems.length > 0 && this.selected.length === this.problems.length;
+  }
+
+  private toggleAll(): void {
+    if (this.allSelected()) {
+      this.selected = [];
+      return;
+    }
+    const all: number[] = [];
+    for (let i = 0; i < this.problems.length; i++) {
+      all.push(this.problems[i].index);
+    }
+    this.selected = all;
   }
 
   private confirmLabel(): string {

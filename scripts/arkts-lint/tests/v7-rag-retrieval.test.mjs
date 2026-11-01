@@ -48,8 +48,9 @@ test('note_fts is kept in sync on create/update/delete, best-effort only', () =>
   assert.match(index, /static async remove\(unitId: string\)/);
   assert.match(index, /DELETE FROM note_fts WHERE unit_id = \?/);
   const write = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
-  assert.ok((write.match(/await NoteFtsIndex\.upsert\(persisted\.unit\)/g) ?? []).length >= 2,
-    'create 与 update 都要同步索引');
+  assert.ok((write.match(/await this\.syncIndex\(persisted\.unit\)/g) ?? []).length >= 4,
+    '四条写路径（create/update + commitKey 变体）都要同步索引');
+  assert.match(write, /NoteFtsIndex\.upsert\(unit\), INDEX_SYNC_TIMEOUT_MS/);
   const dao = read('entry/src/main/ets/database/NoteDao.ets');
   assert.match(dao, /await NoteFtsIndex\.remove\(id\)/);
 });

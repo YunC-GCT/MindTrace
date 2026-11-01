@@ -78,7 +78,7 @@ async function startE2e(mode, { cold, debug, waitMs, markers }) {
     // 避免在 onCreate/onWindowStageCreate 早期跑 IO 型自检（RDB 初始化与自检竞争会卡住）。
     log('→ 预热启动应用（不带 e2e 参数）');
     await hdc(['shell', `aa start -a ${ABILITY} -b ${BUNDLE}`]);
-    await new Promise((r) => setTimeout(r, 6000));
+    await new Promise((r) => setTimeout(r, 12000));
   }
   const stream = spawn(HDC, ['shell', 'hilog'], { stdio: ['ignore', 'pipe', 'pipe'] });
   const collected = [];

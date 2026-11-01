@@ -314,3 +314,28 @@ S5（重拍/重复选图去重）真机验证（2026-10-31，`e2e=captureSet5`�
 | 确认页布局修正 | 卡片改为内容自适应（滚动区限高 520），不再被拉伸满屏 | ✅ |
 
 截图证据（gitignored，本地 `.device-logs/`）：`ui-shot5/6/8/9.jpeg`（确认页 / 入库回执 / 布局修复后确认页 / 取消回执）。
+
+### 阶段 6：首装冷启动卡死兜底 + 确认页全选 UX（2026-11-01）
+
+**问题复现**：同包重装后立刻 `e2e=draft --cold`，首次 confirm 偶发卡死 >290s（`stage=confirm start` 后无输出）；重跑正常。加入分步 trace（`[ConfirmTrace]`）后未见卡点，3 轮「重装→首次 draft」均通过（confirm 1.4–1.6s）。
+
+**兜底实现（防御式）**：
+
+| 位置 | 超时 | 行为 |
+|---|---|---|
+| `DraftCommitService.confirmDraft` | 120s | 抛 `CONFIRM_TIMEOUT`，提示重试（commitKey 幂等，不会重复入库） |
+| `CapturePipeline.commitCaptureSet` | `90s + 45s/题` | 超时返回空 batch（已落库结果保留），重试按 commitKey 幂等 |
+| `KnowledgeUnitWriteService` 索引同步 | 5s | 超时仅告警，不改变事务结果 |
+| `KnowledgeUnitWriteService` post-commit effects | 5s | 同上 |
+| `device-runner` e2e `--cold` | 预热 6s→12s | 降低首启初始化与自检竞争 |
+
+**确认页全选 UX**（`hdc uitest` 真机验证）：
+
+| 状态 | 观测 |
+|---|---|
+| 初始 | `3/3 取消全选`，`确认整理（3 题）` |
+| 点「取消全选」 | `0/3 全选`，`确认整理（0 题）`（禁用） |
+| 再点「全选」 | 恢复 `3/3` |
+| 待复核提示 | 存在 needsReview 题时副标题追加「N 道待复核默认不勾选」 |
+
+截图（gitignored，本地）：`ui-shot10/11/12/15/16.jpeg`。

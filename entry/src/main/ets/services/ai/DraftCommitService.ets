@@ -27,6 +27,8 @@ import { NoteGenerationRepositoryFactory } from '../NoteGenerationRepositoryFact
 import { AiServicePorts } from './AiServicePorts';
 
 const log: Logger = new Logger('AiService');
+// 首装冷启动偶发卡死兜底：确认提交最多等 120s；超时快速失败，重试按 commitKey 幂等，不会重复入库。
+const CONFIRM_TIMEOUT_MS: number = 120000;
 
 export class DraftCommitService {
   private readonly context: common.Context | undefined;
@@ -76,11 +78,16 @@ export class DraftCommitService {
   }
 
   async confirmDraft(event: NoteDraftReadyEvent, candidate: KnowledgeUnit): Promise<KnowledgeUnit> {
+    log.info('[ConfirmTrace] step=updateCheckpoint-begin runId=' + event.runId);
     const checkpoint: NoteGenerationCheckpoint = await this.updateDraftCheckpoint(event, candidate);
+    log.info('[ConfirmTrace] step=updateCheckpoint-ok');
     const repository = await NoteGenerationRepositoryFactory.create(AiServicePorts.requireContext(this.context));
+    log.info('[ConfirmTrace] step=repo-ok');
     const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
+    log.info('[ConfirmTrace] step=dao-ok');
     const approvedHash: string = sourceFingerprint(JSON.stringify(candidate));
     await repository.markCheckpointApproved(event.runId, checkpoint.id, approvedHash, Date.now());
+    log.info('[ConfirmTrace] step=markApproved-ok');
     const prepared: PreparedCandidate = {
       runId: event.runId,
       checkpointId: checkpoint.id,
@@ -101,12 +108,16 @@ export class DraftCommitService {
       preparedCandidate: prepared,
       payload: { kind: 'text', text: candidate.content },
     };
-    const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
+    log.info('[ConfirmTrace] step=dispatch-begin');
+    const writePort = await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects);
+    log.info('[ConfirmTrace] step=writePort-ok');
+    const outcome: NoteOutcome = await DraftCommitService.withConfirmTimeout(new Dispatcher().dispatchCommand(command, {
       dao: dao,
-      noteWritePort: await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects),
+      noteWritePort: writePort,
       generationRepository: repository,
       runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
-    });
+    }), CONFIRM_TIMEOUT_MS);
+    log.info('[ConfirmTrace] step=dispatch-ok kind=' + outcome.kind);
     const committedUnit: KnowledgeUnit | undefined = outcome.unit;
     if (outcome.kind !== 'committed' || committedUnit === undefined) {
       const prefix: string = outcome.code === 'VERSION_CONFLICT' ? 'VERSION_CONFLICT: ' : '';
@@ -126,6 +137,36 @@ export class DraftCommitService {
       }
     }
     return committedUnit;
+  }
+
+  /** 看门狗：确认提交超时快速失败；commitKey 幂等，用户重试不会重复入库。 */
+  private static withConfirmTimeout(task: Promise<NoteOutcome>, timeoutMs: number): Promise<NoteOutcome> {
+    return new Promise<NoteOutcome>((resolve: (value: NoteOutcome) => void, reject: (reason: Error) => void): void => {
+      let settled: boolean = false;
+      const timer: number = setTimeout((): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        log.warn('[ConfirmTrace] confirm timeout after ' + timeoutMs.toString() + 'ms');
+        reject(new Error('CONFIRM_TIMEOUT: 确认提交超时，请重试（重复提交不会重复入库）'));
+      }, timeoutMs);
+      task.then((value: NoteOutcome): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      }).catch((error: Error): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+    });
   }
 
   private async resolvePendingMemoryIds(

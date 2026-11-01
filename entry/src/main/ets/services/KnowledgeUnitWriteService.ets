@@ -20,6 +20,10 @@ import {
 } from '../models/KnowledgeUnitWriteModels';
 import { WritePathValidator } from './WritePathValidator';
 
+// 首装冷启动偶发卡死兜底：索引同步/副作用最多等 5s，超时降级为告警，不阻塞主写链路。
+const INDEX_SYNC_TIMEOUT_MS: number = 5000;
+const POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000;
+
 export class KnowledgeUnitWriteService {
   private repository: KnowledgeUnitWriteRepository;
   private effects: KnowledgeUnitPostCommitEffect[];
@@ -33,7 +37,7 @@ export class KnowledgeUnitWriteService {
     WritePathValidator.validateKnowledgeUnit(unit);
     const persisted: KnowledgeUnitPersistenceResult =
       await this.repository.createWithRevision(unit, generationMetadata);
-    await NoteFtsIndex.upsert(persisted.unit);
+    await this.syncIndex(persisted.unit);
     const warnings: string[] = await this.runPostCommit(persisted.unit, true);
     const result: KnowledgeUnitWriteResult = {
       committed: true,
@@ -53,7 +57,7 @@ export class KnowledgeUnitWriteService {
     try {
       const persisted: KnowledgeUnitPersistenceResult =
         await this.repository.updateWithRevision(unit, expectedVersion, generationMetadata);
-      await NoteFtsIndex.upsert(persisted.unit);
+      await this.syncIndex(persisted.unit);
       const warnings: string[] = await this.runPostCommit(persisted.unit, false);
       const result: KnowledgeUnitWriteResult = {
         committed: true,
@@ -93,13 +97,15 @@ export class KnowledgeUnitWriteService {
     if (this.repository.createWithRevisionAndCommitKey === undefined) {
       return await this.create(unit, generationMetadata);
     }
+    console.info('[ConfirmTrace] service=createWithCommitKey-begin');
     const persisted: KnowledgeUnitPersistenceResult = await this.repository.createWithRevisionAndCommitKey(
       unit,
       generationMetadata,
       commit,
     );
+    console.info('[ConfirmTrace] service=createWithCommitKey-ok');
     if (persisted.duplicate !== true) {
-      await NoteFtsIndex.upsert(persisted.unit);
+      await this.syncIndex(persisted.unit);
     }
     const warnings: string[] = await this.runPostCommit(persisted.unit, persisted.duplicate !== true);
     return {
@@ -122,13 +128,15 @@ export class KnowledgeUnitWriteService {
       return await this.update(unit, expectedVersion, generationMetadata);
     }
     try {
+      console.info('[ConfirmTrace] service=updateWithCommitKey-begin');
       const persisted: KnowledgeUnitPersistenceResult = await this.repository.updateWithRevisionAndCommitKey(
         unit,
         expectedVersion,
         generationMetadata,
         commit,
       );
-      await NoteFtsIndex.upsert(persisted.unit);
+      console.info('[ConfirmTrace] service=updateWithCommitKey-ok');
+      await this.syncIndex(persisted.unit);
       const warnings: string[] = await this.runPostCommit(persisted.unit, false);
       return {
         committed: true,
@@ -158,6 +166,34 @@ export class KnowledgeUnitWriteService {
     }
   }
 
+  /** 索引同步（尽力而为 + 超时兜底）：检索索引失败绝不影响笔记写入结果。 */
+  private async syncIndex(unit: KnowledgeUnit): Promise<void> {
+    console.info('[ConfirmTrace] index-sync-begin');
+    try {
+      await KnowledgeUnitWriteService.withTimeout(
+        NoteFtsIndex.upsert(unit), INDEX_SYNC_TIMEOUT_MS, 'note-index');
+      console.info('[ConfirmTrace] index-sync-ok');
+    } catch (e) {
+      console.warn('[KnowledgeUnitWriteService] index sync skipped: ' + (e as Error).message);
+    }
+  }
+
+  /** Promise.race 超时兜底：只用于「可降级」的附加动作（索引/UI 副作用），不改变事务结果。 */
+  private static async withTimeout(task: Promise<void>, timeoutMs: number, label: string): Promise<void> {
+    let timer: number = 0;
+    const timeout: Promise<void> = new Promise<void>((resolve: () => void): void => {
+      timer = setTimeout((): void => {
+        console.warn('[KnowledgeUnitWriteService] timeout after ' + timeoutMs.toString() + 'ms: ' + label);
+        resolve();
+      }, timeoutMs);
+    });
+    try {
+      await Promise.race([task, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async runPostCommit(unit: KnowledgeUnit, isCreate: boolean): Promise<string[]> {
     const warnings: string[] = [];
     for (const effect of this.effects) {
@@ -165,7 +201,8 @@ export class KnowledgeUnitWriteService {
         continue;
       }
       try {
-        await effect.run(unit);
+        await KnowledgeUnitWriteService.withTimeout(
+          effect.run(unit), POST_COMMIT_EFFECT_TIMEOUT_MS, 'post-commit effect ' + effect.name);
       } catch (e) {
         const message: string = e instanceof Error ? e.message : String(e);
         warnings.push(effect.name + ': ' + message);

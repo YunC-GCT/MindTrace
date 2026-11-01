@@ -68,7 +68,9 @@ export class KnowledgeUnitNoteWriteStore implements NoteWriteStore {
     await this.validateApproval(command);
     const commit: NoteGenerationCommitResult = KnowledgeUnitNoteWriteStore.buildCommit(unit, command, unit.version);
     const metadata: string = command.generationMetadata !== undefined ? command.generationMetadata : '';
+    log.info('[ConfirmTrace] store=insert-begin noteId=' + unit.id);
     const result: KnowledgeUnitWriteResult = await this.service.createWithCommitKey(unit, metadata, commit);
+    log.info('[ConfirmTrace] store=insert-ok');
     return KnowledgeUnitNoteWriteStore.toSnapshot(result, command.commitKey, commit);
   }
 
@@ -76,8 +78,10 @@ export class KnowledgeUnitNoteWriteStore implements NoteWriteStore {
     await this.validateApproval(command);
     const commit: NoteGenerationCommitResult = KnowledgeUnitNoteWriteStore.buildCommit(unit, command, expectedVersion + 1);
     const metadata: string = command.generationMetadata !== undefined ? command.generationMetadata : '';
+    log.info('[ConfirmTrace] store=update-begin noteId=' + unit.id);
     const result: KnowledgeUnitWriteResult =
       await this.service.updateWithCommitKey(unit, expectedVersion, metadata, commit);
+    log.info('[ConfirmTrace] store=update-ok');
     if (result.committed !== true) {
       // 写服务把版本冲突作为结果返回，不抛错；端口层必须还原成结构化错误。
       const code: string = result.errorCode !== undefined ? result.errorCode : 'NOTE_WRITE_FAILED';

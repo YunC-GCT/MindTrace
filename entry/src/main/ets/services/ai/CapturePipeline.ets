@@ -64,7 +64,7 @@ import {
 } from 'common';
 import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
 import { Dispatcher, NoteDaoInterface, planCaptureSet } from 'agents';
-import type { PlannedProblem, SetImageText, SetPlan } from 'agents';
+import type { DispatchOptions, PlannedProblem, SetImageText, SetPlan } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from '../ImageUriResolver';
 import { OcrService } from '../OcrService';
@@ -301,9 +301,10 @@ export class CapturePipeline {
       + ' picked=' + picked.length.toString() + ' duplicates=' + duplicateItems.length.toString()
       + ' commands=' + commands.length.toString());
     const canStreamItems: boolean = duplicateItems.length === 0;
+    // 首装冷启动偶发卡死兜底：批量提交超时快速失败（题多时按题数放宽）；重试按 commitKey 幂等。
     const batch: NoteBatchOutcome = commands.length === 0
       ? { total: 0, committed: 0, failed: 0, cancelled: 0, needsInput: 0, items: [], durationMs: 0 }
-      : await dispatcher.dispatchSetCommand(commands, {
+      : await CapturePipeline.dispatchWithTimeout(dispatcher, commands, {
         dao: dao,
         noteWritePort: await AiServicePorts.buildNoteWritePort(context, this.includeUiEffects),
         cancellationToken: token,
@@ -401,6 +402,29 @@ export class CapturePipeline {
       + ' ms=' + result.durationMs.toString());
     CaptureTiming.logCaptureSet(seq, result.total, result.done, failed, result.cancelled, result.durationMs);
     return result;
+  }
+
+  /** 看门狗：批量提交超时快速失败（不改变已落库结果；重试按 commitKey 幂等）。 */
+  private static dispatchWithTimeout(
+    dispatcher: Dispatcher,
+    commands: NoteCommand[],
+    options: DispatchOptions,
+    onItem: (index: number, outcome: NoteOutcome) => void,
+  ): Promise<NoteBatchOutcome> {
+    const timeoutMs: number = 90000 + 45000 * commands.length;
+    let timer: number = 0;
+    const timeout: Promise<NoteBatchOutcome> = new Promise<NoteBatchOutcome>(
+      (resolve: (value: NoteBatchOutcome) => void): void => {
+        timer = setTimeout((): void => {
+          log.warn('captureSet commit timeout after ' + timeoutMs.toString() + 'ms');
+          const empty: NoteBatchOutcome = {
+            total: 0, committed: 0, failed: 0, cancelled: 0, needsInput: 0, items: [], durationMs: timeoutMs,
+          };
+          resolve(empty);
+        }, timeoutMs);
+      });
+    return Promise.race([dispatcher.dispatchSetCommand(commands, options, onItem), timeout])
+      .finally((): void => clearTimeout(timer));
   }
 
   // 幂等命中项：不写库，复用已有 noteId 并标记 duplicate。

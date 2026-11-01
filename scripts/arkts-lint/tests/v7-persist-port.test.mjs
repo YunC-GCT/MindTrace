@@ -141,7 +141,8 @@ test('AiService wires the port on capture, captureSet and prepared dispatch (A1+
   const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
   const capture = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
   const wired = capture.match(/noteWritePort: await AiServicePorts\.buildNoteWritePort\(/g) ?? [];
-  const wiredCommit = commit.match(/noteWritePort: await AiServicePorts\.buildNoteWritePort\(/g) ?? [];
+  const wiredCommit = commit.match(/noteWritePort: writePort/g) ?? [];
+  assert.ok(commit.includes('const writePort = await AiServicePorts.buildNoteWritePort('), 'prepared 端口先构建再注入（看门狗改造）');
   assert.equal(Array.from(wired).length, 2, 'capture / captureSet 两处注入端口（preparedCandidate 在 DraftCommitService）');
   assert.equal(Array.from(wiredCommit).length, 1, 'preparedCandidate 注入端口');
   assert.match(ports, /NoteWritePortFactory\.create\(/);

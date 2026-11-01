@@ -197,3 +197,27 @@ test('整理回执的「张图」用 imageCount（total 是题数），确认页
   const overlay = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/CaptureSetConfirmOverlay.ets');
   assert.ok(overlay.includes('.constraintSize({ maxHeight: 520 })'), '确认列表限高，卡片不被拉伸');
 });
+
+
+test('确认页支持全选/取消全选，待复核题有提示（036 阶段4 UX）', () => {
+  const overlay = readRepoFile('entry/src/main/ets/overlays/AgentFloatWindow/CaptureSetConfirmOverlay.ets');
+  assert.ok(overlay.includes('private toggleAll(): void'), '全选切换方法');
+  assert.ok(overlay.includes('private allSelected(): boolean'), '全选状态判断');
+  assert.ok(overlay.includes("'取消全选' : '全选'"), '按钮文案随状态切换');
+  assert.ok(overlay.includes('道待复核默认不勾选'), '待复核数量提示');
+});
+
+
+test('首装冷启动卡死兜底：确认/批量/索引副作用都有看门狗超时', () => {
+  const confirm = readRepoFile('entry/src/main/ets/services/ai/DraftCommitService.ets');
+  assert.ok(confirm.includes('CONFIRM_TIMEOUT_MS: number = 120000'), '确认提交 120s 超时');
+  assert.ok(confirm.includes('withConfirmTimeout'), '确认提交包裹看门狗');
+  assert.ok(confirm.includes('CONFIRM_TIMEOUT'), '超时给出可重试错误');
+  const pipeline = readRepoFile('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.ok(pipeline.includes('dispatchWithTimeout'), '批量提交看门狗');
+  assert.ok(pipeline.includes('90000 + 45000 * commands.length'), '按题数放宽超时');
+  const write = readRepoFile('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
+  assert.ok(write.includes('INDEX_SYNC_TIMEOUT_MS: number = 5000'), '索引同步 5s 兜底');
+  assert.ok(write.includes('POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000'), 'post-commit 副作用 5s 兜底');
+  assert.ok(write.includes('private static async withTimeout'), '统一超时工具');
+});
