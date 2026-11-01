@@ -34,7 +34,7 @@ test('blank query still produces a deterministic plan (caller rejects empty)', (
 
 test('schema v19 creates note_fts with trigram tokenizer and backfills from knowledge_unit', () => {
   const db = read('common/src/main/ets/DatabaseHelper.ets');
-  assert.match(db, /DB_SCHEMA_VERSION: number = 19/);
+  assert.match(db, /DB_SCHEMA_VERSION: number = 20/);
   assert.match(db, /CREATE VIRTUAL TABLE IF NOT EXISTS note_fts USING fts5\(/);
   assert.match(db, /tokenize='trigram'/);
   assert.match(db, /SQL_BACKFILL_NOTE_FTS/);

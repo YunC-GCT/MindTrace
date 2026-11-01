@@ -11,7 +11,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 19;
+const DB_SCHEMA_VERSION: number = 20;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -307,6 +307,31 @@ const SQL_INDEX_RUN_EVENT_RUN_SEQ: string =
 // StudyPlanWritePort（v16 → v17）：study_plan 加 version 列做 CAS，另建幂等操作表。
 // 语义仍是待办（ADR-0022）：只加版本与操作记录，不加评分/掌握度字段。
 // v18：HITL 审批哈希落位（ADR-0019 (d)）——审批属于检查点，用 approved_at 标记。
+// v20（ADR-0024 / spec 040）：WriteJob 持久队列 + 跨进程 handoff。
+// 单执行者（UI 进程）claim 租约；producer（:agent 扩展）只入队。
+const SQL_CREATE_AGENT_JOB: string = `
+CREATE TABLE IF NOT EXISTS agent_job (
+  job_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  priority TEXT NOT NULL,
+  payload_text TEXT NOT NULL,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  fingerprint TEXT NOT NULL,
+  lease_owner TEXT NOT NULL DEFAULT '',
+  lease_expires_at INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+
+const SQL_INDEX_AGENT_JOB_PICK: string =
+  "CREATE INDEX IF NOT EXISTS idx_agent_job_pick ON agent_job(status, priority, created_at)";
+// 同 fingerprint 的非终态 job 唯一：跨进程重复入队只保留一条（queued/running 才参与）。
+const SQL_INDEX_AGENT_JOB_ACTIVE_FP: string =
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_job_active_fp ON agent_job(fingerprint) WHERE status IN ('queued', 'running')";
+
 const SQL_MIGRATE_CHECKPOINT_APPROVED: string =
   'ALTER TABLE note_generation_checkpoint ADD COLUMN approved_at INTEGER NOT NULL DEFAULT 0';
 const SQL_MIGRATE_STUDY_PLAN_VERSION: string =
@@ -486,6 +511,7 @@ export class DatabaseHelper {
       SQL_CREATE_REVIEW_LOG,
       SQL_CREATE_RUN_STORE,
       SQL_CREATE_RUN_EVENT,
+      SQL_CREATE_AGENT_JOB,
       SQL_CREATE_STUDY_PLAN_OP,
       SQL_INDEX_KNOWLEDGE_CREATED,
       SQL_INDEX_KNOWLEDGE_REVIEW,
@@ -507,6 +533,8 @@ export class DatabaseHelper {
       SQL_INDEX_REVIEW_LOG_ITEM,
       SQL_INDEX_RUN_STORE_STATUS,
       SQL_INDEX_RUN_EVENT_RUN_SEQ,
+      SQL_INDEX_AGENT_JOB_PICK,
+      SQL_INDEX_AGENT_JOB_ACTIVE_FP,
       SQL_INDEX_STUDY_PLAN_OP_PLAN,
     ];
 

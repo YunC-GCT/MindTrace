@@ -1,6 +1,6 @@
 # 040 — WriteJob 持久队列与跨进程 handoff（038 S3）
 
-> **Status**: proposed (2026-11-01)
+> **Status**: in-progress (2026-11-01) — P0 完成；P1（调度器持久化/恢复）待做
 > **Related**: [ADR-0024](../adr/0024-writejob-persistence-cross-process.md) · [spec 038](./038-write-job-scheduler.md) · [spec 039](./039-agent-workflow-first.md) · [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md)
 > **Code**: `common/src/main/ets/DatabaseHelper.ets` · `entry/src/main/ets/database/`（新 `AgentJobDao.ets`） · `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `entry/src/main/ets/services/A2AInboxIngestService.ets`
 > **Verified by**: 实现后回填（gate / 真机跨进程与重启 e2e / scheduler-report）
@@ -78,3 +78,20 @@ P0 schema/DAO → P1 scheduler 持久化/恢复 → P2 跨进程 producer + inbo
 ```
 
 P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰度打开。
+
+## 8. 执行记录
+
+### P0（2026-11-01 完成）
+
+- schema **v20**：`agent_job` 表（job_id/kind/priority/payload_text/source/status/attempt/fingerprint/lease_owner/lease_expires_at/error/created_at/updated_at）+ `idx_agent_job_pick` + `idx_agent_job_active_fp`（partial unique：仅 queued/running 参与，跨进程重复入队只保留一条）；
+- `AgentJobModels`（纯类型/状态机函数）：终态集合、优先级排序、恢复判定；
+- `AgentJobDao`：`enqueue`（fingerprint 去重 + 唯一索引兜底）、`claim`（事务内条件更新 + 租约）、`listQueued`、`recoverExpired`（attempt+1 / 达上限 failed）、`markDone/Failed/Cancelled`、`countByStatus`、`queryJob`；
+- 测试：`v7-agent-job` 6 条（模型/schema/入队去重/claim/恢复/边界）；旧 schema 版本断言更新到 20；
+- 验证：`node scripts/build-hsp-hap.mjs` 成功；`agent-gate --all` → **RESULT: PASS（pass=1183 fail=0）**；真机升级库验证 `e2e=dedupeProbe` `same=1 added=0 / 16ms`（v20 迁移后 DB 正常）；
+- 说明：`--cold` 模式下 e2e 启动参数偶发未送达（设备冻结/启动竞态），非本片代码；非冷启动复验通过。
+
+### 下一步
+
+- P1：`WriteJobScheduler` 接 `AgentJobDao`（enqueue 落库 / 启动恢复 / claim 租约 / 终态回写 / 重试），flag `WRITE_JOB_PERSIST_ENABLED` 默认关；
+- P2：`AgentExtAbility`/`AgentIngestService` 改为「入队 + 回执已受理」，inbox 迁移；
+- P3：真机跨进程/重启/幂等/灰度回退验收。
