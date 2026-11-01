@@ -41,7 +41,7 @@ import {
   formatReceipt,
   matchesReceiptIntent,
 } from '../services/CaptureReceipt';
-import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/AgentInboxModels';
+import { AgentInboxItem, buildInboxItem } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
 import {
@@ -62,7 +62,18 @@ import {
   reviewCountOf,
 } from '../services/A2APlanModels';
 import { A2APlanStore } from '../services/A2APlanStore';
-import { AgentIngestRequest, buildIngestRequest, hasIngestPayload, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
+import {
+  A2AIntent,
+  INTENT_EMPTY,
+  INTENT_OCR,
+  INTENT_PICK_CARD,
+  INTENT_PLAN_CONTINUE,
+  INTENT_PLAN_WAITING,
+  INTENT_PROBE,
+  INTENT_TEXT_INGEST,
+  routeA2AIntent,
+} from '../services/A2AIntentRouter';
+import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
 import { AgentImagePart, AgentPart, collectImageParts, joinTextParts, mediaTypeOf } from '../services/AgentImageParts';
 import { OcrService } from '../services/OcrService';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
@@ -251,39 +262,50 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     hilog.info(DOMAIN, TAG, 'id=%{public}s taskId=%{public}s query=%{public}s',
       this.lastRequestId, taskId.length > 0 ? taskId : 'none', query);
 
-    if (query.indexOf('识别探针') >= 0) {
-      OcrService.probe(this.context).then((r: string): void => {
-        this.sendAnswer(taskId, 'OCR 探针：' + r, 0);
-      });
-      return;
-    }
-    // 协议 → 数据契约：文字和图片都折成同一个 AgentIngestRequest，后面的整理链路只认它。
-    // 图片 part 存在时以「识别 + 整理」为主；只发图不打字也要能跑。
+    // 意图路由：显式判断「聊天回复 / 文字识别（OCR） / 存笔记 / 拍题卡片 / 计划推进」，
+    // 取代原来散落的 indexOf 关键词分支（见 services/A2AIntentRouter）。
     const parts: AgentPart[] = this.readParts(request);
     const images: AgentImagePart[] = collectImageParts(parts);
     const text: string = query.length > 0 ? query : joinTextParts(parts);
     const ingest: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, text, images);
-    if (images.length > 0) {
-      this.ingestDirectly(taskId, ingest);
-      return;
-    }
-    if (!hasIngestPayload(ingest)) {
-      // 实测（2026-10-29，小艺 11.7.8，平台照片开关已开、客户端也把图传到了 OBS）：
-      // 扩展收到的仍然只有 1 个空 part —— {"parts":[{"mediaType":"text/plain"}]}，
-      // 既没有 url 也没有 file，说明图是在小艺组装报文那一步被丢掉的，不是应用侧解析漏字段。
-      // 应用侧已按协议兼容 url / raw / file.uri 三种图片载体（AgentImageParts）。
-      // 空 payload 无法从 query 判意图，直接给卡片：点一下就能进应用选图。
-      this.sendAnswerWithPickCard(taskId, '点下面的卡片去选图，或直接说『存笔记：…』');
-      return;
-    }
-    // 「存笔记」走文字；有图片 part 时无论带不带文字都直接整理。
-    // 原文在这里就地整理入库，用户不用回到应用（失败才退回队列，等应用前台补）。
-    if (ingest.images.length > 0 || shouldEnqueue(query)) {
-      this.ingestDirectly(taskId, ingest);
-      return;
-    }
-    // onData 必须立刻返回：模型链路异步跑，结果回来再自己发快照
-    this.runQuery(taskId, query);
+    A2APlanStore.load(this.context)
+      .then((plan: A2APlan | null): void => {
+        const intent: A2AIntent = routeA2AIntent(text, images.length > 0, plan !== null);
+        hilog.info(DOMAIN, TAG, 'INTENT kind=%{public}s reason=%{public}s',
+          intent.kind, intent.reason);
+        if (intent.kind === INTENT_PROBE) {
+          OcrService.probe(this.context).then((r: string): void => {
+            this.sendAnswer(taskId, 'OCR 探针：' + r, 0);
+          });
+          return;
+        }
+        if (intent.kind === INTENT_PLAN_CONTINUE && plan !== null) {
+          this.handlePlanTurn(taskId, text, plan);
+          return;
+        }
+        if (intent.kind === INTENT_PLAN_WAITING && plan !== null) {
+          this.sendAnswer(taskId, '当前有整理计划（共 ' + plan.items.length.toString() + ' 题，已完成 '
+            + plan.done.length.toString() + ' 题）。回复「继续」/「第 N 题」/「全部」/「取消」。', 0);
+          return;
+        }
+        if (intent.kind === INTENT_OCR) {
+          this.handleOcrCheckpoint(taskId, ingest);
+          return;
+        }
+        if (intent.kind === INTENT_PICK_CARD || intent.kind === INTENT_EMPTY) {
+          this.sendAnswerWithPickCard(taskId, '点下面的卡片去选图，或直接把题目文字发我。');
+          return;
+        }
+        if (intent.kind === INTENT_TEXT_INGEST) {
+          this.handleTextPlanMessage(taskId, ingest);
+          return;
+        }
+        this.runQuery(taskId, query);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'INTENT_ROUTE_FAILED %{public}s', e.message);
+        this.runQuery(taskId, query);
+      });
   }
 
   /**
@@ -291,62 +313,34 @@ export default class AgentExtAbility extends AgentExtensionAbility {
    * 图片请求会先经过 OcrService（端侧识别）再落库；任何一步失败（模型、库、超时）
    * 都退回队列，保证原文不丢。
    */
-  private ingestDirectly(taskId: string, request: AgentIngestRequest): void {
-    hilog.info(DOMAIN, TAG, 'INGEST_DIRECT start source=%{public}s chars=%{public}d images=%{public}d',
-      request.source, request.text.length, request.images.length);
-    // 图片识别后的文字：多题时先回「识别摘要 + 整理规划」，再按用户指令一题一题整理。
-    if (request.images.length === 0) {
-      this.handleTextPlanMessage(taskId, request);
-      return;
-    }
-    // A3d：A2A 回执直接消费 NoteOutcome（committed / failed / cancelled），不再靠异常文本判断。
-    AgentIngestService.ingestOutcome(this.context, request)
-      .then((outcome: NoteOutcome): void => {
-        if (outcome.kind === 'committed' && outcome.unit !== undefined) {
-          const unit: KnowledgeUnit = outcome.unit;
-          hilog.info(DOMAIN, TAG, 'INGEST_DIRECT done subject=%{public}s title=%{public}s',
-            unit.subject, unit.title);
-          this.recordA2aIngestReceipt();
-          this.sendAnswer(taskId,
-            '已整理入库：' + unit.title + '（' + unit.subject + '）· 本次整理 1 条', 0,
-            request.text);
+  /** 文本入口：有未完成计划 → 推进计划；否则切题——多题先回规划，单题直接整理。 */
+  /** 意图=OCR：先用文字识别工具把图转文字并按题规划，回 checkpoint 摘要；用户「继续」才入库。 */
+  private handleOcrCheckpoint(taskId: string, request: AgentIngestRequest): void {
+    hilog.info(DOMAIN, TAG, 'OCR_CHECKPOINT start images=%{public}d chars=%{public}d',
+      request.images.length, request.text.length);
+    AgentIngestService.planItemsFromRequest(request)
+      .then((items: A2APlanItem[] | null): void => {
+        if (items === null || items.length === 0) {
+          this.sendAnswer(taskId, '这几张图没识别出文字，换清晰点的，或直接把题目文字发我。', 0);
           return;
         }
-        if (outcome.kind === 'cancelled') {
-          hilog.info(DOMAIN, TAG, 'INGEST_DIRECT cancelled committed=%{public}s',
-            outcome.committed === true ? 'true' : 'false');
-          const cancelledText: string = outcome.committed === true
-            ? '这次整理已落库，但随后被取消了；笔记已保存，可在应用里查看。'
-            : '这次整理已取消，没有写入笔记。';
-          this.sendAnswer(taskId, cancelledText, 0);
-          return;
-        }
-        const code: string = outcome.code !== undefined ? outcome.code : 'INGEST_FAILED';
-        const retryable: boolean = outcome.retryable === true;
-        hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed code=%{public}s retryable=%{public}s',
-          code, retryable ? 'true' : 'false');
-        if (request.images.length > 0) {
-          // 队列只存文本；图片识别失败就把提示原样排进队列，至少留下用户意图
-          this.sendAnswer(taskId, '这几张图没认出文字，换张清晰点的，或直接把题目文字发我。', 0);
-          return;
-        }
-        if (!retryable) {
-          this.sendAnswer(taskId, '这次没整理成（' + code + '），换个说法再发一次试试。', 0);
-          return;
-        }
-        this.enqueueForIngest(taskId, request.text);
+        const plan: A2APlan = { taskId: taskId, createdAt: Date.now(), items: items, done: [] };
+        hilog.info(DOMAIN, TAG, 'OCR_CHECKPOINT items=%{public}d', items.length);
+        A2APlanStore.save(this.context, plan)
+          .then((): void => {
+            this.sendAnswer(taskId, formatA2APlanSummary(plan), 0);
+          })
+          .catch((e: Error): void => {
+            hilog.warn(DOMAIN, TAG, 'PLAN_SAVE_FAILED %{public}s', e.message);
+            this.sendAnswer(taskId, formatA2APlanSummary(plan), 0);
+          });
       })
       .catch((e: Error): void => {
-        hilog.error(DOMAIN, TAG, 'INGEST_DIRECT failed %{public}s', e.message);
-        if (request.images.length > 0) {
-          this.sendAnswer(taskId, '这几张图没认出文字，换张清晰点的，或直接把题目文字发我。', 0);
-          return;
-        }
-        this.enqueueForIngest(taskId, request.text);
+        hilog.error(DOMAIN, TAG, 'OCR_CHECKPOINT failed %{public}s', e.message);
+        this.sendAnswer(taskId, '图片识别失败，换清晰点的图，或直接把题目文字发我。', 0);
       });
   }
 
-  /** 文本入口：有未完成计划 → 推进计划；否则切题——多题先回规划，单题直接整理。 */
   private handleTextPlanMessage(taskId: string, request: AgentIngestRequest): void {
     A2APlanStore.load(this.context)
       .then((existing: A2APlan | null): void => {

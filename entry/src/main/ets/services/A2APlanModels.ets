@@ -16,6 +16,8 @@ export interface A2APlanItem {
   anchor: string;
   text: string;
   needsReview: boolean;
+  /** 来源图片下标（纯文字输入为空数组） */
+  sourceImages: number[];
 }
 
 /** 待推进的整理计划。 */
@@ -44,6 +46,11 @@ const PREVIEW_LIMIT: number = 36;
 /** 把一段文本按题切分成规划项（>1 时调用方才应保存计划并回摘要）。 */
 export function buildA2APlanItems(text: string): A2APlanItem[] {
   const pages: SetImageText[] = [{ imageIndex: 0, text: text }];
+  return buildA2APlanItemsFromPages(pages);
+}
+
+/** 把多页 OCR 文本按题切分成规划项（图片入口用；保留来源图下标）。 */
+export function buildA2APlanItemsFromPages(pages: SetImageText[]): A2APlanItem[] {
   const plan: SetPlan = planCaptureSet(pages);
   const items: A2APlanItem[] = [];
   for (let i = 0; i < plan.problems.length; i += 1) {
@@ -54,6 +61,7 @@ export function buildA2APlanItems(text: string): A2APlanItem[] {
       anchor: anchor,
       text: problem.text,
       needsReview: problem.needsReview,
+      sourceImages: problem.sourceImageIndexes,
     };
     items.push(item);
   }
@@ -137,8 +145,11 @@ export function formatA2APlanSummary(plan: A2APlan): string {
     + (review > 0 ? '（待复核 ' + review.toString() + ' 道）' : '') + '：');
   for (let i = 0; i < plan.items.length; i += 1) {
     const item: A2APlanItem = plan.items[i];
+    const source: string = item.sourceImages.length > 0
+      ? '第 ' + (item.sourceImages[0] + 1).toString() + ' 张图' : '文字';
     lines.push((i + 1).toString() + '. [' + item.anchor + '] ' + previewOf(item.text)
-      + '（约 ' + item.text.length.toString() + ' 字，' + (item.needsReview ? '待复核' : '正常') + '）');
+      + '（' + source + '，约 ' + item.text.length.toString() + ' 字，'
+      + (item.needsReview ? '待复核' : '正常') + '）');
   }
   lines.push('回复「继续」按顺序一题一题整理；「第 2 题」只整理某题；「全部」转待整理；「取消」放弃。');
   return lines.join('\n');

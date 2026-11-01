@@ -21,6 +21,8 @@ import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
 import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import { RagKitProbe } from './RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
+import { AgentImagePart } from './AgentImageParts';
+import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
 import {
   A2APlan,
   A2APlanItem,
@@ -135,6 +137,48 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /** A2A 图片 OCR checkpoint 自检：OCR → 规划（不写库）→ 第一题入库。 */
+  static async runAgentImagePlan(ctx: common.UIAbilityContext): Promise<void> {
+    const startedAt: number = Date.now();
+    try {
+      const localPath: string = await DebugCaptureRunner.materialize(ctx, 'debug/math-1.png');
+      const images: AgentImagePart[] = [{ kind: 'uri', value: localPath }];
+      const request: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, '', images);
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=image-plan ocr-start');
+      const items: A2APlanItem[] | null = await AgentIngestService.planItemsFromRequest(request);
+      if (items === null || items.length === 0) {
+        hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done imagePlan=0 err=ocr-empty');
+        return;
+      }
+      const plan: A2APlan = { taskId: 'e2e-image-plan', createdAt: Date.now(), items: items, done: [] };
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=image-plan items=' + items.length.toString()
+          + ' summary=' + formatA2APlanSummary(plan).split('\n')[0]);
+      const first: A2APlanItem | undefined = nextPlanItem(plan);
+      if (first === undefined) {
+        hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done imagePlan=0 err=no-item');
+        return;
+      }
+      await A2APlanStore.save(ctx, plan);
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=image-plan checkpoint saved (未写库)');
+      const outcome: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, first.text);
+      if (outcome.kind !== 'committed' || outcome.unit === undefined) {
+        hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done imagePlan=0 err=ingest kind=' + outcome.kind);
+        return;
+      }
+      plan.done.push(first.index);
+      await A2APlanStore.save(ctx, plan);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=image-plan progress=' + formatA2APlanProgress(plan, first, outcome.unit.title, outcome.unit.subject).split('\n')[0]);
+      await A2APlanStore.clear(ctx);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done imagePlan=1 ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done imagePlan=0 err=' + (error as Error).message);
+    }
+  }
+
   /** A2A「规划 + 一题一题来」自检：切题 → 落盘计划 → 取第一题入库 → 进度回执。 */
   static async runAgentTextPlan(ctx: common.UIAbilityContext): Promise<void> {
     const text: string = '1. 求方程 x^2-5x+6=0 的解。\n2. 求函数 f(x)=x^2+2x+1 的最小值。';

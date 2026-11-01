@@ -113,6 +113,56 @@
 
 
 
+## A2A 意图路由 + checkpoint（2026-11-01）
+
+### 意图路由（取代散落的关键词判断）
+
+[`A2AIntentRouter.ets`](../../entry/src/main/ets/services/A2AIntentRouter.ets)（纯函数）把一次请求收敛为显式意图，`AgentExtAbility.onData` 只做分发：
+
+| 意图 | 触发 | 行为 |
+|---|---|---|
+| `probe` | 含「识别探针」 | 跑 OCR 探针并回结果 |
+| `plan_continue` / `plan_waiting` | 存在未完成 checkpoint 计划 + （继续/第N题/全部/取消） | 推进计划；非指令则提示当前进度与可用指令 |
+| `ocr` | 请求带图片 part | **先 OCR**（文字识别工具）→ 按题规划 → 回 checkpoint 摘要，**不写库** |
+| `pick_card` | 说「拍题/选图/整理图片…」但没图 | 回 `uiExtensionCard` 引导进 App 选图 |
+| `text_ingest` | 明确说「存笔记/整理这道题/整理成笔记…」且文本 ≥8 字 | 走 036 切题：多题先回规划；单题直接整理 |
+| `chat` | 其余 | 正常对话回答，不误触发写作 |
+| `empty` | 无文本无图 | 回选图卡片 |
+
+即：**文本对话 / 调用文字识别工具（OCR）/ 存笔记 / 拍题引导** 由意图路由决定；OCR 不再「有图就直接写库」，而是识别后进 checkpoint。
+
+### checkpoint 点与「继续」推进
+
+| # | checkpoint | 触发条件 | 用户可回复 |
+|---|---|---|---|
+| 1 | **OCR 后识别摘要** | 带图请求 OCR 完成 | 继续（逐题入库）/ 第 N 题 / 全部（转待整理）/ 取消 |
+| 2 | **多题文本整理规划** | 一段文本切出 >1 题 | 同上 |
+| 3 | App 图片确认页 | App 内相册/拍照批量 | 逐题勾选 → 确认整理 / 取消 |
+
+checkpoint 状态持久化在 `<filesDir>/a2a/plan.json`（跨轮次）。回执示例：
+
+```
+识别到 3 道题，约 50 字：
+1. [1.] …（第 1 张图，约 20 字，正常）
+2. [2.] …（第 1 张图，约 18 字，正常）
+3. [3.] …（第 2 张图，约 12 字，正常）
+回复「继续」按顺序一题一题整理；「第 2 题」只整理某题；「全部」转待整理；「取消」放弃。
+```
+
+### 真机自检
+
+- `e2e=agentImagePlan`（图片 → OCR → checkpoint → 第 1 题入库）：
+
+```
+stage=image-plan ocr-start
+stage=image-plan items=3 summary=识别到 3 道题，约 50 字：
+stage=image-plan checkpoint saved (未写库)
+stage=image-plan progress=第 1 题已整理入库：解一元一次方程（初中数学）
+stage=done imagePlan=1 ms=78995
+```
+
+- `e2e=agentTextPlan`（文本多题规划 → 第 1 题入库）：`items=2` → `plan-store loaded=1` → `第 1 题已整理入库` → `remaining=1`。
+
 ## A2A 文本多题通道：识别规划 + 一题一题来（2026-11-01，对齐 036）
 
 背景：端A2A 客户端不下发图片 `parts`（见 037 调研/phase-tracker），图片整理在小艺里无法直接进入扩展进程。降级方案：用户把**图片识别后的文字**发给智能体，扩展先给「识别摘要 + 整理规划」，再按用户指令一题一题整理（不一次性跑完，避免 35s 预算与长时间无反馈）。

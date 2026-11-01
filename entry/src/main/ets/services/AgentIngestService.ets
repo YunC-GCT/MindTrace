@@ -24,6 +24,7 @@ import { planCaptureSet } from 'agents';
 import type { PlannedProblem, SetImageText, SetPlan } from 'agents';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest } from './AgentIngestRequest';
+import { A2APlanItem, buildA2APlanItemsFromPages } from './A2APlanModels';
 import { OcrService } from './OcrService';
 
 const DOMAIN: number = 0xA2A0;
@@ -53,6 +54,36 @@ export class AgentIngestService {
       throw new Error(code + ': ' + message);
     }
     return outcome.unit;
+  }
+
+  /**
+   * 图片入口：OCR（文字识别工具）→ 按题规划项（不写库）。返回 null 表示没有可识别文字。
+   * A2A 只在「意图=ocr」时调用，识别完先给 checkpoint 摘要，用户回复「继续」才逐题入库。
+   */
+  static async planItemsFromRequest(request: AgentIngestRequest): Promise<A2APlanItem[] | null> {
+    if (request.images.length === 0) {
+      return null;
+    }
+    const total: number = request.images.length > MAX_IMAGES ? MAX_IMAGES : request.images.length;
+    const pages: SetImageText[] = [];
+    for (let i = 0; i < total; i += 1) {
+      const image: AgentImagePart = request.images[i];
+      try {
+        const text: string = image.kind === 'uri'
+          ? await OcrService.recognizeUri(image.value)
+          : await OcrService.recognizeBase64(image.value);
+        hilog.info(DOMAIN, TAG, 'OCR_PLAN index=%{public}d chars=%{public}d', i, text.length);
+        if (text.trim().length > 0) {
+          pages.push({ imageIndex: i, text: text.trim() });
+        }
+      } catch (e) {
+        hilog.error(DOMAIN, TAG, 'OCR_PLAN_FAILED index=%{public}d %{public}s', i, (e as Error).message);
+      }
+    }
+    if (pages.length === 0) {
+      return null;
+    }
+    return buildA2APlanItemsFromPages(pages);
   }
 
   /** 单题同步整理（A2A 计划推进用）：初始化 DB → ingestTextOutcome。 */

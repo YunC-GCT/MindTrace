@@ -68,7 +68,7 @@ test('计划推进：下一题、剩余数、完成回执', () => {
 test('质量统计：待复核题数与摘要标注', () => {
   const items = Array.from(buildA2APlanItems(TWO_PROBLEMS));
   assert.equal(reviewCountOf(items), 0);
-  const dirty = [{ index: 0, anchor: '1.', text: '短文本', needsReview: true }];
+  const dirty = [{ index: 0, anchor: '1.', text: '短文本', needsReview: true, sourceImages: [] }];
   const plan = { taskId: 't', createdAt: 1, items: dirty, done: [] };
   assert.equal(reviewCountOf(dirty), 1);
   assert.ok(formatA2APlanSummary(plan).includes('待复核 1 道'));
