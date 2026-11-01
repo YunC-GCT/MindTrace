@@ -147,6 +147,9 @@ type A2AErrorCode =
   | 'A2A_REPLY_SENT'
   | 'A2A_LLM_FAILED';
 
+// A2A 入库 deadline：模型慢时不再让用户干等，超时转待整理队列（打开 App 自动补齐）。
+const INGEST_DEADLINE_MS: number = 90000;
+const A2A_INGEST_TIMEOUT_TEXT: string = '这次整理较慢，已转待整理；打开 MindTrace 会自动补齐，稍后也能在 App 里看到。';
 const A2A_TIMEOUT_TEXT: string = '模型响应超时，稍后再试。';
 const A2A_CONFIG_TIMEOUT_TEXT: string = '模型配置读取超时（'
   + A2A_POLICY.configTimeoutMs.toString() + ' ms），请稍后再试。';
@@ -432,11 +435,44 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     this.ingestPlanItem(taskId, plan, item);
   }
 
+  /** 单题入库 deadline：超时抛 INGEST_DEADLINE，由调用方转待整理队列。 */
+  private ingestWithDeadline(text: string): Promise<NoteOutcome> {
+    return new Promise<NoteOutcome>((resolve: (value: NoteOutcome) => void,
+      reject: (reason: Error) => void): void => {
+      let settled: boolean = false;
+      const timer: number = setTimeout((): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        hilog.warn(DOMAIN, TAG, 'INGEST_DEADLINE exceeded ms=%{public}d', INGEST_DEADLINE_MS);
+        reject(new Error('INGEST_DEADLINE: ' + INGEST_DEADLINE_MS.toString() + 'ms'));
+      }, INGEST_DEADLINE_MS);
+      AgentIngestService.ingestSingleText(this.context, text)
+        .then((outcome: NoteOutcome): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          resolve(outcome);
+        })
+        .catch((error: Error): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
+  }
+
   /** 整理计划中的一道题；完成后更新进度并回执。 */
   private ingestPlanItem(taskId: string, plan: A2APlan, item: A2APlanItem): void {
     hilog.info(DOMAIN, TAG, 'PLAN_INGEST item=%{public}d chars=%{public}d',
       item.index, item.text.length);
-    AgentIngestService.ingestSingleText(this.context, item.text)
+    this.ingestWithDeadline(item.text)
       .then((outcome: NoteOutcome): void => {
         if (outcome.kind === 'committed' && outcome.unit !== undefined) {
           const unit: KnowledgeUnit = outcome.unit;
@@ -452,6 +488,11 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'PLAN_INGEST exception %{public}s', e.message);
+        if (e.message.indexOf('INGEST_DEADLINE') >= 0) {
+          this.enqueueTexts([item.text]);
+          this.sendAnswer(taskId, A2A_INGEST_TIMEOUT_TEXT, 0);
+          return;
+        }
         this.sendAnswer(taskId, '第 ' + (item.index + 1).toString()
           + ' 题这次没整理成，回复「继续」重试，或「取消」。', 0);
       });

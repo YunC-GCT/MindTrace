@@ -214,3 +214,9 @@ CAPTURE_TOTAL committed 22253ms
   - `nonCanonicalRatio=0`、`fieldFilledRatio=1.0`、`notesWithBlankSections=0`、**`duplicatePairs(内容级)=0`**、`titleDuplicatePairs=7`（同标题不同稿，仅信息展示）。
   - 学科分布（最近 24 条）：初中数学 18 / 数学分析 3 / 其他 2 / 概率论 1。
 - 质量脚本修复：日志选取改用 `statSync(mtimeMs)`（原实现按文件大小排序会选错日志）；重复指标拆为「内容级（可执行）+ 标题级（信息）」。
+
+
+### A 延迟治理 · 第一片（2026-11-01 15:50）
+
+- A2A 逐题入库加 **90s deadline**：超时抛 `INGEST_DEADLINE`，自动把题目文本转 `AgentInboxQueue` 待整理，并回执「已转待整理，打开 MindTrace 自动补齐」——不再让用户干等 70–80s，也不丢原文。
+- 后续（A 第二片）：基于 `CAPTURE_STAGE` 基线做快速生成路由（压缩 structure 的 token 预算/候选轮次）+ 多轮采样定 P95 目标。

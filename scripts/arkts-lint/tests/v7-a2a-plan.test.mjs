@@ -87,3 +87,13 @@ test('扩展入口接线：多题先回规划，再按指令逐题整理；计�
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(entry, /mode === 'agentTextPlan'/);
 });
+
+
+test('A2A 入库 deadline：超时转待整理队列（P0-2 第一片）', () => {
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.match(ability, /INGEST_DEADLINE_MS: number = 90000/);
+  assert.match(ability, /private ingestWithDeadline\(text: string\): Promise<NoteOutcome>/);
+  assert.match(ability, /INGEST_DEADLINE: ' \+ INGEST_DEADLINE_MS/);
+  assert.match(ability, /A2A_INGEST_TIMEOUT_TEXT/);
+  assert.match(ability, /this\.enqueueTexts\(\[item\.text\]\)/);
+});

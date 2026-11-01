@@ -194,7 +194,8 @@ test('A2A ingest receipt consumes NoteOutcome instead of exception text (A3d)', 
   assert.match(ingest, /static async ingestOutcome/);
   assert.match(ingest, /service\.ingestTextOutcome/);
   assert.match(ability, /ingestTextBatch\(this\.context, request\.text\)/);
-  assert.match(ability, /ingestSingleText\(this\.context, item\.text\)/);
+  assert.match(ability, /this\.ingestWithDeadline\(item\.text\)/);
+  assert.match(ability, /AgentIngestService\.ingestSingleText\(this\.context, text\)/);
   assert.match(ability, /outcome\.kind === 'committed'/);
   assert.match(ability, /outcome\.kind === 'cancelled'/);
   assert.match(ability, /retryable/);
