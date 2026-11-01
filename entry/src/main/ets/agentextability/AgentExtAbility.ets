@@ -44,6 +44,24 @@ import {
 import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
+import {
+  A2APlan,
+  A2APlanCommand,
+  A2APlanItem,
+  PLAN_CMD_ALL,
+  PLAN_CMD_CANCEL,
+  PLAN_CMD_INDEX,
+  PLAN_CMD_NONE,
+  PLAN_CMD_START,
+  buildA2APlanItems,
+  formatA2APlanProgress,
+  formatA2APlanSummary,
+  nextPlanItem,
+  parseA2APlanCommand,
+  remainingPlanCount,
+  reviewCountOf,
+} from '../services/A2APlanModels';
+import { A2APlanStore } from '../services/A2APlanStore';
 import { AgentIngestRequest, buildIngestRequest, hasIngestPayload, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
 import { AgentImagePart, AgentPart, collectImageParts, joinTextParts, mediaTypeOf } from '../services/AgentImageParts';
 import { OcrService } from '../services/OcrService';
@@ -276,16 +294,9 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   private ingestDirectly(taskId: string, request: AgentIngestRequest): void {
     hilog.info(DOMAIN, TAG, 'INGEST_DIRECT start source=%{public}s chars=%{public}d images=%{public}d',
       request.source, request.text.length, request.images.length);
-    // 图片识别后的文字：先按题切分（复用 036 planner）；多题时同步入第 1 题、其余转待整理队列。
+    // 图片识别后的文字：多题时先回「识别摘要 + 整理规划」，再按用户指令一题一题整理。
     if (request.images.length === 0) {
-      AgentIngestService.ingestTextBatch(this.context, request.text)
-        .then((batch: AgentTextBatchResult): void => {
-          this.handleTextBatch(taskId, request, batch);
-        })
-        .catch((e: Error): void => {
-          hilog.error(DOMAIN, TAG, 'INGEST_TEXT_BATCH failed %{public}s', e.message);
-          this.enqueueForIngest(taskId, request.text);
-        });
+      this.handleTextPlanMessage(taskId, request);
       return;
     }
     // A3d：A2A 回执直接消费 NoteOutcome（committed / failed / cancelled），不再靠异常文本判断。
@@ -332,6 +343,119 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           return;
         }
         this.enqueueForIngest(taskId, request.text);
+      });
+  }
+
+  /** 文本入口：有未完成计划 → 推进计划；否则切题——多题先回规划，单题直接整理。 */
+  private handleTextPlanMessage(taskId: string, request: AgentIngestRequest): void {
+    A2APlanStore.load(this.context)
+      .then((existing: A2APlan | null): void => {
+        if (existing !== null) {
+          this.handlePlanTurn(taskId, request.text, existing);
+          return;
+        }
+        const items: A2APlanItem[] = buildA2APlanItems(request.text);
+        hilog.info(DOMAIN, TAG, 'TEXT_PLAN items=%{public}d review=%{public}d',
+          items.length, reviewCountOf(items));
+        if (items.length > 1) {
+          const plan: A2APlan = { taskId: taskId, createdAt: Date.now(), items: items, done: [] };
+          A2APlanStore.save(this.context, plan)
+            .then((): void => {
+              this.sendAnswer(taskId, formatA2APlanSummary(plan), 0);
+            })
+            .catch((e: Error): void => {
+              hilog.warn(DOMAIN, TAG, 'PLAN_SAVE_FAILED %{public}s', e.message);
+              this.sendAnswer(taskId, formatA2APlanSummary(plan), 0);
+            });
+          return;
+        }
+        AgentIngestService.ingestTextBatch(this.context, request.text)
+          .then((batch: AgentTextBatchResult): void => {
+            this.handleTextBatch(taskId, request, batch);
+          })
+          .catch((e: Error): void => {
+            hilog.error(DOMAIN, TAG, 'INGEST_TEXT_BATCH failed %{public}s', e.message);
+            this.enqueueForIngest(taskId, request.text);
+          });
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'PLAN_LOAD_FAILED %{public}s', e.message);
+        this.enqueueForIngest(taskId, request.text);
+      });
+  }
+
+  /** 有未完成计划时：解析「继续 / 第 N 题 / 全部 / 取消」，逐题推进。 */
+  private handlePlanTurn(taskId: string, query: string, plan: A2APlan): void {
+    const command: A2APlanCommand = parseA2APlanCommand(query);
+    if (command.kind === PLAN_CMD_CANCEL) {
+      A2APlanStore.clear(this.context).catch((): void => {});
+      this.sendAnswer(taskId, '已取消这次整理计划，没有写入新笔记。', 0);
+      return;
+    }
+    if (command.kind === PLAN_CMD_ALL) {
+      const pending: string[] = [];
+      for (let i = 0; i < plan.items.length; i += 1) {
+        if (plan.done.indexOf(plan.items[i].index) < 0) {
+          pending.push(plan.items[i].text);
+        }
+      }
+      this.enqueueTexts(pending);
+      A2APlanStore.clear(this.context).catch((): void => {});
+      this.sendAnswer(taskId, '已把剩余 ' + pending.length.toString()
+        + ' 道题转待整理，打开 MindTrace 会自动补齐。', 0);
+      return;
+    }
+    let item: A2APlanItem | undefined = undefined;
+    if (command.kind === PLAN_CMD_INDEX) {
+      for (let i = 0; i < plan.items.length; i += 1) {
+        if (i + 1 === command.index) {
+          item = plan.items[i];
+          break;
+        }
+      }
+      if (item === undefined) {
+        this.sendAnswer(taskId, '没有第 ' + command.index.toString() + ' 题，当前共 '
+          + plan.items.length.toString() + ' 题。', 0);
+        return;
+      }
+    } else if (command.kind === PLAN_CMD_START) {
+      item = nextPlanItem(plan);
+    }
+    if (item === undefined) {
+      if (remainingPlanCount(plan) === 0) {
+        A2APlanStore.clear(this.context).catch((): void => {});
+        this.sendAnswer(taskId, '这次计划里的题都整理完了 ✅', 0);
+        return;
+      }
+      this.sendAnswer(taskId, '当前有整理计划（共 ' + plan.items.length.toString() + ' 题，已完成 '
+        + plan.done.length.toString() + ' 题）。回复「继续」/「第 N 题」/「全部」/「取消」。', 0);
+      return;
+    }
+    this.ingestPlanItem(taskId, plan, item);
+  }
+
+  /** 整理计划中的一道题；完成后更新进度并回执。 */
+  private ingestPlanItem(taskId: string, plan: A2APlan, item: A2APlanItem): void {
+    hilog.info(DOMAIN, TAG, 'PLAN_INGEST item=%{public}d chars=%{public}d',
+      item.index, item.text.length);
+    AgentIngestService.ingestSingleText(this.context, item.text)
+      .then((outcome: NoteOutcome): void => {
+        if (outcome.kind === 'committed' && outcome.unit !== undefined) {
+          const unit: KnowledgeUnit = outcome.unit;
+          plan.done.push(item.index);
+          A2APlanStore.save(this.context, plan).catch((): void => {});
+          this.recordA2aIngestReceipt();
+          this.sendAnswer(taskId, formatA2APlanProgress(plan, item, unit.title, unit.subject), 0);
+          return;
+        }
+        hilog.error(DOMAIN, TAG, 'PLAN_INGEST failed kind=%{public}s', outcome.kind);
+        this.sendAnswer(taskId, '第 ' + (item.index + 1).toString()
+          + ' 题这次没整理成，回复「继续」重试，或「取消」。', 0);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'PLAN_INGEST exception %{public}s', e.message);
+        this.sendAnswer(taskId, '第 ' + (item.index + 1).toString()
+          + ' 题这次没整理成，回复「继续」重试，或「取消」。', 0);
       });
   }
 

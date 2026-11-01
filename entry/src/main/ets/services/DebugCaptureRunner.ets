@@ -21,6 +21,16 @@ import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
 import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import { RagKitProbe } from './RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
+import {
+  A2APlan,
+  A2APlanItem,
+  buildA2APlanItems,
+  formatA2APlanProgress,
+  formatA2APlanSummary,
+  nextPlanItem,
+  remainingPlanCount,
+} from './A2APlanModels';
+import { A2APlanStore } from './A2APlanStore';
 import { NoteEvidenceService } from './NoteEvidenceService';
 import { NoteEvidenceContext } from '../models/NoteEvidenceModels';
 
@@ -125,6 +135,50 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /** A2A「规划 + 一题一题来」自检：切题 → 落盘计划 → 取第一题入库 → 进度回执。 */
+  static async runAgentTextPlan(ctx: common.UIAbilityContext): Promise<void> {
+    const text: string = '1. 求方程 x^2-5x+6=0 的解。\n2. 求函数 f(x)=x^2+2x+1 的最小值。';
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=plan start chars=' + text.length.toString());
+    const startedAt: number = Date.now();
+    try {
+      const items: A2APlanItem[] = buildA2APlanItems(text);
+      const plan: A2APlan = { taskId: 'e2e-plan', createdAt: Date.now(), items: items, done: [] };
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=plan items=' + items.length.toString() + ' remaining=' + remainingPlanCount(plan).toString()
+          + ' summary=' + formatA2APlanSummary(plan).split('\n')[0]);
+      await A2APlanStore.save(ctx, plan);
+      const loaded: A2APlan | null = await A2APlanStore.load(ctx);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=plan-store loaded=' + (loaded === null ? '0' : '1'));
+      if (loaded === null) {
+        hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done plan=0 err=store-load');
+        return;
+      }
+      const first: A2APlanItem | undefined = nextPlanItem(loaded);
+      if (first === undefined) {
+        hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done plan=0 err=no-item');
+        return;
+      }
+      const outcome: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, first.text);
+      if (outcome.kind !== 'committed' || outcome.unit === undefined) {
+        hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done plan=0 err=ingest kind=' + outcome.kind);
+        return;
+      }
+      loaded.done.push(first.index);
+      await A2APlanStore.save(ctx, loaded);
+      const progress: string = formatA2APlanProgress(loaded, first, outcome.unit.title, outcome.unit.subject);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=plan-progress remaining=' + remainingPlanCount(loaded).toString()
+          + ' first=' + progress.split('\n')[0]);
+      await A2APlanStore.clear(ctx);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done plan=1 ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done plan=0 err=' + (error as Error).message);
+    }
+  }
+
   /** A2A 文本多题自检：一段「图片识别后的文字」按题切分，首题入库、其余转队列。 */
   static async runAgentTextBatch(ctx: common.UIAbilityContext): Promise<void> {
     const text: string = '1. 求方程 x^2-5x+6=0 的解。\n2. 求函数 f(x)=x^2+2x+1 的最小值。';

@@ -275,6 +275,12 @@ export default class EntryAbility extends UIAbility {
       });
       return;
     }
+    if (mode === 'agentTextPlan') {
+      DebugCaptureRunner.runAgentTextPlan(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', 'A2A 文本规划自检异常: ' + e.message);
+      });
+      return;
+    }
     if (mode === 'agentTextBatch') {
       DebugCaptureRunner.runAgentTextBatch(this.context).catch((e: Error) => {
         hilog.error(0xE2E0, 'E2E', '%{public}s', 'A2A 文本多题自检异常: ' + e.message);

@@ -55,6 +55,17 @@ export class AgentIngestService {
     return outcome.unit;
   }
 
+  /** 单题同步整理（A2A 计划推进用）：初始化 DB → ingestTextOutcome。 */
+  static async ingestSingleText(context: common.Context, text: string): Promise<NoteOutcome> {
+    const body: string = text.trim();
+    if (body.length === 0) {
+      throw new Error('empty payload');
+    }
+    await DatabaseHelper.init(context);
+    const service: AiService = new AiService(context, false);
+    return await service.ingestTextOutcome(body);
+  }
+
   /**
    * 图片识别后的文字入口：把一段 OCR 文本按题切分（复用 036 planner）。
    * - 单题：保持原逻辑，整段文本同步整理 → 1 条笔记；

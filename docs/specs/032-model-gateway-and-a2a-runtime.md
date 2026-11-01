@@ -111,22 +111,46 @@
 - 崩溃排查的教训已写入 `skills/harmonyos-xiaoyi-a2a`：**先看产物，再看源码**；`up-to-date` 是危险信号。
 
 
-## A2A 文本多题通道（2026-11-01，对齐 036）
 
-背景：端A2A 客户端不下发图片 `parts`（见 037 调研/phase-tracker），图片整理在小艺里无法直接进入扩展进程。降级方案：用户把**图片识别后的文字**发给智能体，扩展按 036 同款切题能力处理：
 
-- `AgentIngestService.ingestTextBatch(context, text)`：用 `planCaptureSet([{imageIndex:0,text}])` 把一段 OCR 文本按题切分；
-  - 单题：整段同步 `ingestTextOutcome`（行为与旧版一致）；
-  - 多题：**首题同步入库**（保证回执有内容），其余题返回 `queuedTexts`；
-- `AgentExtAbility.ingestDirectly` 文本分支改走该入口：首题回执「已整理入库：标题；本次识别 N 道题，已入第 1 道；其余 M 道已转待整理，打开 MindTrace 会自动补齐」，剩余题 `AgentInboxQueue.append` 入队（app 前台自动补跑）；
-- 图片分支保持原逻辑（`ingestOutcome` + OCR）。
+## A2A 文本多题通道：识别规划 + 一题一题来（2026-11-01，对齐 036）
 
-真机自检 `e2e=agentTextBatch`（`node scripts/device-runner.mjs e2e agentTextBatch --cold`）：
+背景：端A2A 客户端不下发图片 `parts`（见 037 调研/phase-tracker），图片整理在小艺里无法直接进入扩展进程。降级方案：用户把**图片识别后的文字**发给智能体，扩展先给「识别摘要 + 整理规划」，再按用户指令一题一题整理（不一次性跑完，避免 35s 预算与长时间无反馈）。
+
+**首次收到多题文本（秒回，不调 LLM）**
 
 ```
-stage=text-batch start chars=48
-stage=text-batch problems=2 committed=1 queued=1 first=解一元二次方程
-stage=done textBatch=1 ms=70756
+识别到 3 道题，约 128 字（待复核 1 道）：
+1. [1.] 求方程…（约 42 字，正常）
+2. [2.] 已知函数…（约 39 字，待复核）
+3. [3.] …（约 47 字，正常）
+回复「继续」按顺序一题一题整理；「第 2 题」只整理某题；「全部」转待整理；「取消」放弃。
 ```
 
-已知延迟风险：首题同步整理 70s（LLM 生成 + 评估），高于端A2A 内部 35s deadline；真实小艺客户端回执是否会被截断尚未实测（入库路径不走 `runQuery` deadline）。后续可按实测结果改成「立即回执 + 全部转队列」。
+**后续回合（逐题推进）**
+
+| 用户回复 | 行为 |
+|---|---|
+| 继续 / 开始 / 下一题 / 好 | 整理下一道未完成题（`ingestSingleText`），回执「第 X 题已整理入库：标题；进度 X/N，还剩 M 题」 |
+| 第 N 题 / 纯数字 N | 只整理第 N 题 |
+| 全部 | 剩余题写入 `AgentInboxQueue`，回「已把剩余 M 道题转待整理，打开 MindTrace 会自动补齐」，清空计划 |
+| 取消 | 清空计划，回「已取消这次整理计划，没有写入新笔记」 |
+| 其它文本 | 提示当前计划进度与可用指令 |
+
+**实现**
+
+- 纯模型/文案：[`A2APlanModels.ets`](../../entry/src/main/ets/services/A2APlanModels.ets)（切题目录、指令解析、质量统计、摘要/进度文案）
+- 计划落盘：[`A2APlanStore.ets`](../../entry/src/main/ets/services/A2APlanStore.ets)（`<filesDir>/a2a/plan.json`，跨轮次）
+- 入口接线：[`AgentExtAbility`](../../entry/src/main/ets/agentextability/AgentExtAbility.ets) 文本分支 `handleTextPlanMessage / handlePlanTurn / ingestPlanItem`
+- 单题整理：`AgentIngestService.ingestSingleText`
+
+**真机自检** `e2e=agentTextPlan`：
+
+```
+stage=plan items=2 remaining=2 summary=识别到 2 道题，约 48 字：
+stage=plan-store loaded=1
+stage=plan-progress remaining=1 first=第 1 题已整理入库：解一元二次方程 x^2-5x+6=0（数学）
+stage=done plan=1 ms=8830
+```
+
+即：规划秒回、计划跨轮持久、单题 8.8s 完成；App 内图片链路仍走确认页（题数/预览/待复核 + 逐题勾选）。
