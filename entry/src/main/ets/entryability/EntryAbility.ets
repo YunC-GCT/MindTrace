@@ -275,6 +275,12 @@ export default class EntryAbility extends UIAbility {
       });
       return;
     }
+    if (mode === 'schedulerIntegration') {
+      DebugCaptureRunner.runSchedulerIntegration(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', '调度器集成自检异常: ' + e.message);
+      });
+      return;
+    }
     if (mode === 'schedulerProbe') {
       DebugCaptureRunner.runSchedulerProbe(this.context).catch((e: Error) => {
         hilog.error(0xE2E0, 'E2E', '%{public}s', '调度器自检异常: ' + e.message);

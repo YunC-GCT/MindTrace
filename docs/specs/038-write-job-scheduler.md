@@ -146,3 +146,22 @@ stage=done scheduler=1 ms=18017
 - 真机验证 flag=true 时的 `AgentIngestService.ingestSingleText` 包装路径（schedulerIntegration e2e）
 - flag 关闭回归（latencyProbe/dedupeProbe）+ 打开灰度决策
 - code-review skill 两轴审查（Standards/Spec）并修问题
+
+
+### M3（2026-11-01 完成）
+
+- [x] 集成路径真机验证 `e2e=schedulerIntegration`（flag 开 → `AgentIngestService.ingestSingleText` → 调度器 → 写路径）：
+
+```
+stage=scheduler-integration kind=committed submitted=1 completed=1 failed=0 maxConcurrent=1 noteId=KB-mvxlgwjp-zc56zo
+stage=done schedulerIntegration=1 ms=16175
+```
+
+- [x] flag 关闭回归（默认关闭）：
+  - `dedupeProbe`：`same=1 notesBefore=notesAfter added=0 / 21ms`（输入指纹幂等正常）；
+  - `latencyProbe`：第一次命 provider 长尾（structure 调用 >300s 未返回，非调度器路径，flag 关闭）；重试 `committed totalMs=79201`。记录为 provider 波动，非回归。
+- [x] 灰度决策：**flag 默认保持关闭**。原因：S1 队列是进程内内存队列，A2A 扩展进程与 UI 进程各自独立；等 S3 跨进程 handoff + 持久化后再默认开启。当前通过 e2e 开关验证路径与行为。
+
+### M4（收尾）
+
+- code-review skill：Standards / Spec 双轴审查（fixed point = `552fca1`），修复 findings 后 gate 全绿。

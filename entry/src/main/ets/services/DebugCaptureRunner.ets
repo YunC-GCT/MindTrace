@@ -273,6 +273,32 @@ export class DebugCaptureRunner {
     }
   }
 
+  /** M3 集成自检：flag 开启时 ingestSingleText 必须经调度器包装路径返回结果。 */
+  static async runSchedulerIntegration(ctx: common.UIAbilityContext): Promise<void> {
+    const text: string = '计算 6 + 2 × 3 的值，写出运算顺序。集成 ' + Date.now().toString();
+    WriteJobFlags.setEnabled(true);
+    const startedAt: number = Date.now();
+    try {
+      const outcome: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, text);
+      const stats: WriteJobStats = WriteJobScheduler.shared().stats();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=scheduler-integration kind=' + outcome.kind
+          + ' submitted=' + stats.submitted.toString()
+          + ' completed=' + stats.completed.toString()
+          + ' failed=' + stats.failed.toString()
+          + ' maxConcurrent=' + stats.maxConcurrent.toString()
+          + ' noteId=' + (outcome.noteId !== undefined ? outcome.noteId : ''));
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done schedulerIntegration=' + (outcome.kind === 'committed' ? '1' : '0')
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done schedulerIntegration=0 err=' + (error as Error).message);
+    } finally {
+      WriteJobFlags.setEnabled(false);
+    }
+  }
+
   /** S1 调度器自检：interactive + background 双通道真机验证（flag 开）。 */
   static async runSchedulerProbe(ctx: common.UIAbilityContext): Promise<void> {
     const stamp: string = Date.now().toString();
