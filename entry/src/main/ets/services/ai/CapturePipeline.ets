@@ -71,6 +71,7 @@ import { OcrService } from '../OcrService';
 import { SubjectVocabularyService } from '../SubjectVocabularyService';
 import { ConversationRunIdPolicy, SessionIdPolicy } from '../ConversationIdentity';
 import { NoteGenerationRepositoryFactory } from '../NoteGenerationRepositoryFactory';
+import { normalizeForDedupe } from '../NoteDedupe';
 import { AgentMemoryService } from '../AgentMemoryService';
 import { NoteGenerationContextBuilder } from '../NoteGenerationContextBuilder';
 import { CaptureTiming } from './CaptureTiming';
@@ -247,7 +248,7 @@ export class CapturePipeline {
 
   /**
    * 036 阶段 4：确认提交。selectedIndexes 为空 = 全选；逐题 capture 命令落库。
-   * 幂等：commitKey = capture-set:<setId>:<problemFingerprint>，已存在 commit 记录时跳过写入并复用原 noteId。
+   * 幂等：commitKey = capture-input:<problemFingerprint>（全局输入指纹，跨批次/跨入口生效），已存在时跳过写入并复用原 noteId。
    */
   async commitCaptureSet(preview: CaptureSetPreview, selectedIndexes?: number[],
     token?: CancellationToken, onItem?: (item: CaptureSetItemResult) => void): Promise<CaptureSetResult> {
@@ -274,7 +275,7 @@ export class CapturePipeline {
         continue;
       }
       selectedProblems.push(problem);
-      const commitKey: string = 'capture-set:' + preview.setId + ':' + problem.fingerprint;
+      const commitKey: string = CapturePipeline.captureInputCommitKey(problem.text);
       let existing: NoteGenerationCommitResult | undefined = undefined;
       try {
         existing = await commitRepository.getCommitResult(commitKey);
@@ -350,7 +351,7 @@ export class CapturePipeline {
         continue;
       }
       const commit: NoteGenerationCommitResult = {
-        commitKey: 'capture-set:' + preview.setId + ':' + picked[k].fingerprint,
+        commitKey: CapturePipeline.captureInputCommitKey(picked[k].text),
         runId: preview.setId,
         checkpointId: 'p' + picked[k].index.toString(),
         noteId: item.noteId,
@@ -586,6 +587,14 @@ export class CapturePipeline {
     const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
     const dispatcher: Dispatcher = new Dispatcher();
     const startedAt: number = Date.now();
+    // 输入指纹幂等：同一段原文（OCR/粘贴/重复发送）无论模型怎么改写都只落一条。
+    if (payload.kind === 'text') {
+      const reused: NoteOutcome | null = await this.findCommittedByInput(dao, payload.text);
+      if (reused !== null) {
+        log.info('capture 命中输入幂等，复用笔记 noteId=' + (reused.noteId ?? ''));
+        return reused;
+      }
+    }
     // P0-2 延迟基线：节点级耗时始终落日志（CAPTURE_STAGE），便于 e2e 统计 p50/p95。
     const timing: (step: string, elapsedMs: number) => void = onNodeTiming !== undefined
       ? onNodeTiming
@@ -600,7 +609,71 @@ export class CapturePipeline {
       runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
     });
     log.info('CAPTURE_TOTAL kind=' + outcome.kind + ' ms=' + (Date.now() - startedAt).toString());
+    if (payload.kind === 'text' && outcome.kind === 'committed' && outcome.noteId !== undefined
+      && outcome.noteId.length > 0) {
+      await this.rememberCommittedInput(payload.text, outcome);
+    }
     return outcome;
+  }
+
+  /** 输入指纹 → commitKey（与批次/时间无关，跨入口共享）。 */
+  static captureInputCommitKey(text: string): string {
+    return 'capture-input:' + sourceFingerprint(normalizeForDedupe(text));
+  }
+
+  /** 查历史输入指纹：命中则返回「复用已有笔记」的 committed 终态。 */
+  private async findCommittedByInput(dao: NoteDaoInterface, text: string): Promise<NoteOutcome | null> {
+    try {
+      const context: common.UIAbilityContext = AiServicePorts.requireContext(this.context);
+      const repository = await NoteGenerationRepositoryFactory.create(context);
+      const key: string = CapturePipeline.captureInputCommitKey(text);
+      const existing: NoteGenerationCommitResult | undefined = await repository.getCommitResult(key);
+      if (existing === undefined || existing.noteId.length === 0) {
+        return null;
+      }
+      let unit: KnowledgeUnit | undefined = undefined;
+      if (dao.queryById !== undefined) {
+        const found: KnowledgeUnit | null = await dao.queryById(existing.noteId);
+        if (found !== null) {
+          unit = found;
+        }
+      }
+      const outcome: NoteOutcome = {
+        kind: 'committed',
+        operationId: 'capture-reuse-' + existing.noteId,
+        route: 'D1',
+        durationMs: 0,
+        noteId: existing.noteId,
+        version: existing.version,
+        commitKey: key,
+        unit: unit,
+      };
+      return outcome;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** 成功落库后记录输入指纹 → noteId，供后续重复输入复用。 */
+  private async rememberCommittedInput(text: string, outcome: NoteOutcome): Promise<void> {
+    try {
+      const context: common.UIAbilityContext = AiServicePorts.requireContext(this.context);
+      const repository = await NoteGenerationRepositoryFactory.create(context);
+      const key: string = CapturePipeline.captureInputCommitKey(text);
+      const commit: NoteGenerationCommitResult = {
+        commitKey: key,
+        runId: outcome.operationId,
+        checkpointId: '',
+        noteId: outcome.noteId !== undefined ? outcome.noteId : '',
+        version: outcome.version !== undefined ? outcome.version : 1,
+        sourceIds: [],
+        candidateJson: JSON.stringify({ text: text }),
+        committedAt: Date.now(),
+      };
+      await repository.saveCommitResult(commit);
+    } catch (e) {
+      log.warn('capture 输入幂等记录保存失败: ' + (e as Error).message);
+    }
   }
 
   private async processAndPersist(

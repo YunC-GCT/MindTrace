@@ -191,7 +191,8 @@ CAPTURE_TOTAL committed 22253ms
 
 - 新增 `scripts/quality/note-quality-audit.mjs`：跑 `e2e=noteAudit`，输出笔记数/学科分布/非规范学科/字段填充率/空字段/重复对，支持 `--assert`（CI 用）。
 - 首个基线（最近 24 条）：`duplicatePairs=18`（多为历史测试样本；老数据学科存在「数学/初中数学」混用）、`notesWithBlankSections=0`。
-- **去重探针失败**：`e2e=dedupeProbe` 同一文本连续整理两次 → `same=0 notesBefore=136 notesAfter=138 added=2`（第二次未命中查重）。需校准 `NoteDedupe` 阈值/信号（标题改写导致正文相似度不足），列为下一步 P0 修复。
+- **去重问题已修（2026-11-01 15:36）**：原探针 `same=0 added=2` 暴露「同文本重复整理」；新增**输入指纹幂等层**——`capture-input:<normalized-text-hash>` 作为 commitKey（与批次/时间/LLM 改写无关），派发前查 `note_generation_commit`，命中直接复用已有笔记；`CaptureSet` 的 commitKey 也从 `capture-set:<setId>:<fp>` 改为全局 `capture-input:<fp>`。复验：`e2e=dedupeProbe firstId=secondId same=1 notesBefore=notesAfter added=0 / 7ms`。
+- 质量基线（16:37 复跑，最近 24 条）：`fieldFilledRatio=1.0`、`notesWithBlankSections=0`、`duplicatePairs=7`（较上次 18 下降）、非规范学科 8 条（均为**历史数据**里的 `数学`，新写入口已收敛到「其他」）；legacy 数据清理列为后续项。
 
 ### P0-4 ✅ App 内 agent 统一意图（本轮新增，回应「App 意图也要改」）
 

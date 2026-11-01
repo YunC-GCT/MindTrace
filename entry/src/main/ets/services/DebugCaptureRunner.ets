@@ -213,8 +213,10 @@ export class DebugCaptureRunner {
       const first: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, text);
       const second: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, text);
       const countAfter: number = await DebugCaptureRunner.countRows(DatabaseHelper.getStore() as relationalStore.RdbStore, 'knowledge_unit');
-      const firstId: string = first.unit !== undefined ? first.unit.id : '';
-      const secondId: string = second.unit !== undefined ? second.unit.id : '';
+      const firstUnitId: string = first.unit !== undefined ? first.unit.id : '';
+      const secondUnitId: string = second.unit !== undefined ? second.unit.id : '';
+      const firstId: string = first.noteId !== undefined && first.noteId.length > 0 ? first.noteId : firstUnitId;
+      const secondId: string = second.noteId !== undefined && second.noteId.length > 0 ? second.noteId : secondUnitId;
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=dedupe firstId=' + firstId + ' secondId=' + secondId
           + ' same=' + (firstId.length > 0 && firstId === secondId ? '1' : '0')

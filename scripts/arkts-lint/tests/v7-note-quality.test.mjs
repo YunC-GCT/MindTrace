@@ -103,3 +103,14 @@ test('P0-2/P0-3 探针与报告接线：阶段耗时日志 + 去重/延迟/质�
   assert.match(audit, /fieldFilledRatio/);
   assert.match(audit, /--assert/);
 });
+
+
+test('输入指纹幂等：同一原文重复整理复用已有笔记（P0-3）', () => {
+  const pipeline = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.match(pipeline, /static captureInputCommitKey\(text: string\): string/);
+  assert.match(pipeline, /capture-input:' \+ sourceFingerprint\(normalizeForDedupe\(text\)\)/);
+  assert.match(pipeline, /findCommittedByInput\(/);
+  assert.match(pipeline, /rememberCommittedInput\(/);
+  const dao = read('agents/src/main/ets/models/NoteDaoInterface.ets');
+  assert.match(dao, /queryById\?\(id: string\)/);
+});
