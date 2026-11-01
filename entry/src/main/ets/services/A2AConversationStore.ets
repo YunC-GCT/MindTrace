@@ -109,3 +109,19 @@ export class A2AConversationStore {
     return text.length > limit ? text.substring(0, limit) : text;
   }
 }
+
+
+/** 是否在问「上一轮/刚才」：此类问题直接读记忆确定性回答，不依赖模型是否用 memoryContext。 */
+export function matchesRememberIntent(query: string): boolean {
+  const text: string = query.trim();
+  if (text.length === 0) {
+    return false;
+  }
+  const phrases: string[] = ['上一条', '上一句', '上条', '刚才', '刚刚', '之前聊', '前面聊', '上轮', '上一轮'];
+  for (let i = 0; i < phrases.length; i += 1) {
+    if (text.indexOf(phrases[i]) >= 0) {
+      return true;
+    }
+  }
+  return false;
+}

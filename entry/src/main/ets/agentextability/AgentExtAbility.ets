@@ -46,7 +46,7 @@ import {
 import { AgentInboxItem, buildInboxItem } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
-import { A2AConversationStore } from '../services/A2AConversationStore';
+import { A2AConversationStore, matchesRememberIntent } from '../services/A2AConversationStore';
 import type { A2AConversationTurn } from '../services/A2AConversationStore';
 import {
   A2APlan,
@@ -835,6 +835,11 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       this.answerFromReceipt(taskId);
       return;
     }
+    // 「上一条说了什么」类问题：直接读会话记忆确定性回答（模型偶尔会忽略 memoryContext）。
+    if (matchesRememberIntent(query)) {
+      this.answerFromConversationMemory(taskId, conversationKey);
+      return;
+    }
     const startedAt: number = Date.now();
     const token: CancellationToken = new CancellationToken();
     const session: A2ARequestSession = {
@@ -867,10 +872,8 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     A2AConversationStore.load(this.context, conversationKey)
       .then((turns: A2AConversationTurn[]): Promise<A2AChatContextResult> => {
         const memory: string = A2AConversationStore.format(turns);
-        if (memory.length > 0) {
-          hilog.info(DOMAIN, TAG, 'A2A_MEMORY turns=%{public}d chars=%{public}d',
-            turns.length, memory.length);
-        }
+        hilog.info(DOMAIN, TAG, 'A2A_MEMORY key=%{public}s turns=%{public}d chars=%{public}d',
+          conversationKey, turns.length, memory.length);
         return A2AChatContext.build(query, memory);
       })
       .then((built: A2AChatContextResult): void => {
@@ -913,6 +916,27 @@ export default class AgentExtAbility extends AgentExtensionAbility {
    * 回执直接读文件回答：不建 session、不占 deadline 预算、不碰 LlmConfig。
    * 读写失败都只影响这一条答复（read 内部已把异常收敛成 null）。
    */
+  /** 确定性回答「上一轮」：直接读最近一轮，不调模型，避免模型说“看不到上下文”。 */
+  private answerFromConversationMemory(taskId: string, conversationKey: string): void {
+    A2AConversationStore.load(this.context, conversationKey)
+      .then((turns: A2AConversationTurn[]): void => {
+        if (turns.length === 0) {
+          this.sendAnswer(taskId, '我这边还没有上一轮对话的记录。你可以先发一道题或问题，我再记住。', 0);
+          return;
+        }
+        const last: A2AConversationTurn = turns[turns.length - 1];
+        const userText: string = last.user.length > 160 ? last.user.substring(0, 160) + '…' : last.user;
+        const answerText: string = last.assistant.length > 240
+          ? last.assistant.substring(0, 240) + '…' : last.assistant;
+        this.sendAnswer(taskId,
+          '你上一条消息是：「' + userText + '」。\n\n我当时回答的是：「' + answerText + '」。', 0);
+      })
+      .catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'A2A_MEMORY_RECALL_FAILED %{public}s', e.message);
+        this.sendAnswer(taskId, '读取上一轮对话失败，请重试。', 0);
+      });
+  }
+
   private async answerFromReceipt(taskId: string): Promise<void> {
     const receipt: CaptureReceipt | null = await CaptureReceiptStore.read(this.context);
     hilog.info(DOMAIN, TAG,
@@ -1044,7 +1068,13 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         const reason: string = resolveReason.length > 0 ? resolveReason : 'OK';
         const safeAnswer: string = A2AChatContext.sanitize(session.evidence, answer);
         A2AConversationStore.append(this.context, session.conversationKey, session.query, safeAnswer)
-          .catch((): void => {});
+          .then((): void => {
+            hilog.info(DOMAIN, TAG, 'A2A_MEMORY_SAVED key=%{public}s', session.conversationKey);
+          })
+          .catch((e: Error): void => {
+            hilog.warn(DOMAIN, TAG, 'A2A_MEMORY_SAVE_FAILED key=%{public}s err=%{public}s',
+              session.conversationKey, e.message);
+          });
         this.settle(session, 'A2A_REPLY_SENT', safeAnswer, reason);
       })
       .catch((e: Error): void => {

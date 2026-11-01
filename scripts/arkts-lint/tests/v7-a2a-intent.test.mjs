@@ -105,7 +105,7 @@ test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后�
   assert.ok(ability.includes('A2AConversationStore.load(this.context, conversationKey)'));
   assert.ok(ability.includes('A2AChatContext.build(query, memory)'));
   assert.ok(ability.includes('A2AConversationStore.append(this.context, session.conversationKey'));
-  assert.ok(ability.includes("hilog.info(DOMAIN, TAG, 'A2A_MEMORY turns="));
+  assert.ok(ability.includes("A2A_MEMORY key="));
   // 扩展进程补 DB 初始化：RAG 证据不再 store-not-ready
   assert.ok(ability.includes('DatabaseHelper.init(this.context)'));
   const chat = read('entry/src/main/ets/services/A2AChatContext.ets');
@@ -115,4 +115,17 @@ test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后�
   assert.ok(store.includes('static keyOf(taskId: string, contextId: string)'));
   assert.ok(store.includes('static format(turns: A2AConversationTurn[])'));
   assert.ok(store.includes('MAX_TURNS: number = 6'));
+});
+
+
+test('「上一条」问题走确定性记忆回答（不依赖模型是否用 memoryContext）', () => {
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.ok(ability.includes('matchesRememberIntent(query)'));
+  assert.ok(ability.includes('answerFromConversationMemory'));
+  assert.ok(ability.includes("你上一条消息是：「"));
+  const store = read('entry/src/main/ets/services/A2AConversationStore.ets');
+  assert.ok(store.includes('export function matchesRememberIntent'));
+  for (const phrase of ['上一条', '上一句', '刚才', '之前聊']) {
+    assert.ok(store.includes("'" + phrase + "'"));
+  }
 });
