@@ -152,6 +152,9 @@ def launch(hdc, restart=True):
     if foreground_bundle(hdc) == YIXIAO_BUNDLE:
         return True
 
+    # 鍏滃簳 0锛氬厛鍥炴闈㈡澘锛氳嫢鍓嶅彴鏄硶涓夋柟搴旂敤锛屾闈㈡爣蹇楀湪褰撳墠 layout 閲屾壘涓嶅埌
+    hdc.shell("uitest uiInput keyEvent Home")
+    time.sleep(1.5)
     # 兜底 1：直接点桌面上的小艺图标
     nodes = walk(dump_layout(hdc))
     n, b = find_text(nodes, "小艺", exact=True)

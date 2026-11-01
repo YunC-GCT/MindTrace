@@ -61,7 +61,7 @@
 | Agent Framework Kit 拉起智能体 | 入口 | 官方口径「在小艺开放平台**上线**智能体后」才可通过 UI 控件拉起，测试态不可验 |
 | 设备重装后必须重启小艺 | P0 复测 | 旧连接不释放，日志里连 `onCreate` 都没有 |
 | 平台「服务名称」= `abilityName` | P0 | 填错就是 `extension ability not exist`，改完必须重新导入 AgentCard |
-| 端A2A 图片不进报文 | P1 图片通道 | 小艺侧已上传成功（`HwVA_ObsAbilityRequestTask: uploadToObs fileId=…`）、待发送区有缩略图，但发出的 `message.parts` 只有 `[{"mediaType":"text/plain"}]`；整包 475 B，见 `MindTraceA2A: raw=`。卡片声明 `image/*` + 五种显式 MIME（v1.0.2）后仍复现。平台下发的 agentEntity 里 `supportPlusInputModes=["image","camera","file"]`、`agentApiType=[]`。扩展侧已兼容 `url`/`raw`/`file`/`data` 四种 part 形状，待定位客户端为何不填 parts |
+| 端A2A 图片不进报文 | P1 图片通道 | 小艺侧已上传成功（`HwVA_ObsAbilityRequestTask: uploadToObs fileId=…`）、待发送区有缩略图，但发出的 `message.parts` 只有 `[{"mediaType":"text/plain"}]`；整包 475 B，见 `MindTraceA2A: raw=`。卡片声明 `image/*` + 五种显式 MIME（v1.0.2）后仍复现。平台下发的 agentEntity 里 `supportPlusInputModes=["image","camera","file"]`、`agentApiType=[]`。扩展侧已兼容 `url`/`raw`/`file`/`data` 四种 part 形状，待定位客户端为何不填 parts |；**已落地降级通道（2026-11-01）**：A2A 文本入口复用 036 planner，一段「图片识别后的文字」按题切分——首题同步入库、其余转待整理队列（真机 `e2e=agentTextBatch`：2 题 → committed=1 queued=1） |
 
 ## 维护规则
 

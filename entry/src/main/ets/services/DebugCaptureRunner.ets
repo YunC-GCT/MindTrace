@@ -13,13 +13,14 @@ import { relationalStore } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DatabaseHelper, ImageSearchIndexRegistry } from 'common';
-import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ImageSearchHit, KnowledgeUnit } from 'common';
+import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ImageSearchHit, KnowledgeUnit, NoteOutcome } from 'common';
 import { AiService } from './AiService';
 import { CardSnapshotService } from './CardSnapshotService';
 import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
 import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
 import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import { RagKitProbe } from './RagKitProbe';
+import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
 import { NoteEvidenceService } from './NoteEvidenceService';
 import { NoteEvidenceContext } from '../models/NoteEvidenceModels';
 
@@ -124,6 +125,39 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /** A2A 文本多题自检：一段「图片识别后的文字」按题切分，首题入库、其余转队列。 */
+  static async runAgentTextBatch(ctx: common.UIAbilityContext): Promise<void> {
+    const text: string = '1. 求方程 x^2-5x+6=0 的解。\n2. 求函数 f(x)=x^2+2x+1 的最小值。';
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=text-batch start chars=' + text.length.toString());
+    const startedAt: number = Date.now();
+    try {
+      const batch: AgentTextBatchResult = await AgentIngestService.ingestTextBatch(ctx, text);
+      let committed: number = 0;
+      let firstTitle: string = '';
+      for (let i = 0; i < batch.outcomes.length; i += 1) {
+        const outcome: NoteOutcome = batch.outcomes[i];
+        if (outcome.kind === 'committed') {
+          committed += 1;
+          const unit: KnowledgeUnit | undefined = outcome.unit;
+          if (firstTitle.length === 0 && unit !== undefined) {
+            firstTitle = unit.title;
+          }
+        }
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=text-batch problems=' + batch.totalProblems.toString()
+          + ' committed=' + committed.toString()
+          + ' queued=' + batch.queuedTexts.length.toString()
+          + ' first=' + firstTitle);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done textBatch=1 ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=text-batch fail err=' + (error as Error).message);
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done textBatch=0');
+    }
+  }
+
   /** 036 S3 自检：题干页 + 解答页应合并为 1 题（sources=[0,1]）。 */
   static async runCaptureSetS3(ctx: common.UIAbilityContext): Promise<void> {
     const rawPaths: string[] = ['debug/cross-1.png', 'debug/cross-2.png'];

@@ -20,6 +20,8 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DatabaseHelper, KnowledgeUnit } from 'common';
 import type { NoteOutcome } from 'common';
 import { AiService } from './AiService';
+import { planCaptureSet } from 'agents';
+import type { PlannedProblem, SetImageText, SetPlan } from 'agents';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest } from './AgentIngestRequest';
 import { OcrService } from './OcrService';
@@ -30,6 +32,15 @@ const TAG: string = 'AgentIngest';
 /** 一次最多识别几张图：小艺/分享单条消息很少超过 3 张，多则截断 */
 const MAX_IMAGES: number = 3;
 const NEWLINE: string = String.fromCharCode(10);
+
+export interface AgentTextBatchResult {
+  /** 同步提交的结果（多题时只含第 1 题）。 */
+  outcomes: NoteOutcome[];
+  /** planner 切分出的总题数。 */
+  totalProblems: number;
+  /** 多题时剩余题目文本（调用方转入待整理队列）。 */
+  queuedTexts: string[];
+}
 
 export class AgentIngestService {
   /** 端口入口（旧适配器）：失败向上抛，由调用方决定是否退回队列。 */
@@ -42,6 +53,46 @@ export class AgentIngestService {
       throw new Error(code + ': ' + message);
     }
     return outcome.unit;
+  }
+
+  /**
+   * 图片识别后的文字入口：把一段 OCR 文本按题切分（复用 036 planner）。
+   * - 单题：保持原逻辑，整段文本同步整理 → 1 条笔记；
+   * - 多题：先同步整理第 1 题保证 30s 内回执，其余题返回 queuedTexts 由调用方转入待整理队列
+   *   （app 前台自动补跑），避免超出端A2A 35s 时间预算。
+   */
+  static async ingestTextBatch(context: common.Context, text: string): Promise<AgentTextBatchResult> {
+    const body: string = text.trim();
+    if (body.length === 0) {
+      throw new Error('empty payload');
+    }
+    await DatabaseHelper.init(context);
+    const pages: SetImageText[] = [{ imageIndex: 0, text: body }];
+    const plan: SetPlan = planCaptureSet(pages);
+    hilog.info(DOMAIN, TAG, 'TEXT_PLAN problems=%{public}d preambleSkipped=%{public}d',
+      plan.problems.length, plan.preambleSkipped);
+    const service: AiService = new AiService(context, false);
+    if (plan.problems.length <= 1) {
+      const outcome: NoteOutcome = await service.ingestTextOutcome(body);
+      const single: AgentTextBatchResult = {
+        outcomes: [outcome],
+        totalProblems: plan.problems.length,
+        queuedTexts: [],
+      };
+      return single;
+    }
+    const first: PlannedProblem = plan.problems[0];
+    const firstOutcome: NoteOutcome = await service.ingestTextOutcome(first.text);
+    const queued: string[] = [];
+    for (let i = 1; i < plan.problems.length; i += 1) {
+      queued.push(plan.problems[i].text);
+    }
+    const batch: AgentTextBatchResult = {
+      outcomes: [firstOutcome],
+      totalProblems: plan.problems.length,
+      queuedTexts: queued,
+    };
+    return batch;
   }
 
   /**

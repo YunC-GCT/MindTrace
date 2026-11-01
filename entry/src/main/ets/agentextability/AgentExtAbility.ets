@@ -43,7 +43,7 @@ import {
 } from '../services/CaptureReceipt';
 import { AgentInboxItem, buildInboxItem, shouldEnqueue } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
-import { AgentIngestService } from '../services/AgentIngestService';
+import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
 import { AgentIngestRequest, buildIngestRequest, hasIngestPayload, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
 import { AgentImagePart, AgentPart, collectImageParts, joinTextParts, mediaTypeOf } from '../services/AgentImageParts';
 import { OcrService } from '../services/OcrService';
@@ -276,6 +276,18 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   private ingestDirectly(taskId: string, request: AgentIngestRequest): void {
     hilog.info(DOMAIN, TAG, 'INGEST_DIRECT start source=%{public}s chars=%{public}d images=%{public}d',
       request.source, request.text.length, request.images.length);
+    // 图片识别后的文字：先按题切分（复用 036 planner）；多题时同步入第 1 题、其余转待整理队列。
+    if (request.images.length === 0) {
+      AgentIngestService.ingestTextBatch(this.context, request.text)
+        .then((batch: AgentTextBatchResult): void => {
+          this.handleTextBatch(taskId, request, batch);
+        })
+        .catch((e: Error): void => {
+          hilog.error(DOMAIN, TAG, 'INGEST_TEXT_BATCH failed %{public}s', e.message);
+          this.enqueueForIngest(taskId, request.text);
+        });
+      return;
+    }
     // A3d：A2A 回执直接消费 NoteOutcome（committed / failed / cancelled），不再靠异常文本判断。
     AgentIngestService.ingestOutcome(this.context, request)
       .then((outcome: NoteOutcome): void => {
@@ -321,6 +333,59 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         }
         this.enqueueForIngest(taskId, request.text);
       });
+  }
+
+  /** 处理「文字多题」结果：第 1 题同步回执，剩余题入待整理队列（app 前台补跑）。 */
+  private handleTextBatch(taskId: string, request: AgentIngestRequest, batch: AgentTextBatchResult): void {
+    if (batch.outcomes.length === 0) {
+      this.enqueueForIngest(taskId, request.text);
+      return;
+    }
+    const outcome: NoteOutcome = batch.outcomes[0];
+    if (outcome.kind === 'committed' && outcome.unit !== undefined) {
+      const unit: KnowledgeUnit = outcome.unit;
+      hilog.info(DOMAIN, TAG, 'INGEST_TEXT done problems=%{public}d title=%{public}s',
+        batch.totalProblems, unit.title);
+      this.recordA2aIngestReceipt();
+      if (batch.totalProblems > 1) {
+        this.enqueueTexts(batch.queuedTexts);
+        this.sendAnswer(taskId,
+          '已整理入库：' + unit.title + '（' + unit.subject + '）。本次识别 ' + batch.totalProblems.toString()
+            + ' 道题，已入第 1 道；其余 ' + batch.queuedTexts.length.toString()
+            + ' 道已转待整理，打开 MindTrace 会自动补齐。', 0);
+        return;
+      }
+      this.sendAnswer(taskId,
+        '已整理入库：' + unit.title + '（' + unit.subject + '）· 本次整理 1 条', 0, request.text);
+      return;
+    }
+    if (outcome.kind === 'cancelled') {
+      const cancelledText: string = outcome.committed === true
+        ? '这次整理已落库，但随后被取消了；笔记已保存，可在应用里查看。'
+        : '这次整理已取消，没有写入笔记。';
+      this.sendAnswer(taskId, cancelledText, 0);
+      return;
+    }
+    const code: string = outcome.code !== undefined ? outcome.code : 'INGEST_FAILED';
+    if (outcome.retryable === true) {
+      this.enqueueTexts(batch.totalProblems > 1 ? batch.queuedTexts : [request.text]);
+      this.enqueueForIngest(taskId, request.text);
+      return;
+    }
+    this.sendAnswer(taskId, '这次没整理成（' + code + '），换个说法再发一次试试。', 0);
+  }
+
+  /** 剩余题逐条追加待整理队列（尽力而为，失败只记日志）。 */
+  private enqueueTexts(texts: string[]): void {
+    for (let i = 0; i < texts.length; i += 1) {
+      AgentInboxQueue.append(this.context, buildInboxItem(texts[i], Date.now() + i))
+        .then((pending: number): void => {
+          hilog.info(DOMAIN, TAG, 'INBOX_ENQUEUED_BATCH pending=%{public}d', pending);
+        })
+        .catch((e: Error): void => {
+          hilog.warn(DOMAIN, TAG, 'INBOX_ENQUEUE_BATCH_FAILED %{public}s', e.message);
+        });
+    }
   }
 
   /**
