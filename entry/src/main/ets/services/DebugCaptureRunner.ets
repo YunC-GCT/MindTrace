@@ -23,6 +23,16 @@ import { RagKitProbe } from './RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
 import { A2AChatContext, A2AChatContextResult } from './A2AChatContext';
 import { AppIntentDecision, classifyAppIntentLocal } from './AppIntentRules';
+import { isDuplicateOf } from './NoteDedupe';
+import {
+  LegacyDedupeEntry,
+  LegacyDuplicateGroup,
+  LegacySubjectInput,
+  groupExactDuplicates,
+  groupNearDuplicates,
+  normalizeLegacySubject,
+} from './LegacyNoteNormalizer';
+import { NoteDao } from '../database/NoteDao';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
 import {
@@ -39,6 +49,12 @@ import { NoteEvidenceService } from './NoteEvidenceService';
 import { NoteEvidenceContext } from '../models/NoteEvidenceModels';
 
 const TAG: string = 'E2E';
+interface AuditRow {
+  id: string;
+  title: string;
+  content: string;
+}
+
 const DOMAIN: number = 0xE2E0;
 // 平台调用偶发不返回（updateForm / search 都遇到），自检每一步都限时，先保证有结论
 const CAPTURE_TIMEOUT_MS: number = 150000;
@@ -150,6 +166,7 @@ export class DebugCaptureRunner {
       const rs: relationalStore.ResultSet = await store.querySql(
         'SELECT id, title, subject, category, content FROM knowledge_unit ORDER BY created_at DESC LIMIT 24', []);
       const titles: string[] = [];
+      const rows: AuditRow[] = [];
       let count: number = 0;
       let blankFields: number = 0;
       try {
@@ -179,6 +196,7 @@ export class DebugCaptureRunner {
             blankFields += 1;
           }
           titles.push(title.replace(/\s+/g, ''));
+          rows.push({ id: id, title: title, content: content });
           hilog.info(DOMAIN, TAG, '%{public}s',
             'audit note id=' + id + ' subject=' + subject + ' category=' + category
               + ' title=' + title.substring(0, 40) + ' sections=' + sectionLabels.join(',')
@@ -196,8 +214,18 @@ export class DebugCaptureRunner {
           }
         }
       }
+      let contentDup: number = 0;
+      for (let i = 0; i < rows.length; i += 1) {
+        for (let j = i + 1; j < rows.length; j += 1) {
+          if (isDuplicateOf(rows[i].title, rows[i].content,
+            { id: rows[j].id, title: rows[j].title, content: rows[j].content })) {
+            contentDup += 1;
+          }
+        }
+      }
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=done audit=1 notes=' + count.toString() + ' duplicatePairs=' + dup.toString()
+          + ' contentDuplicatePairs=' + contentDup.toString()
           + ' notesWithBlankSections=' + blankFields.toString());
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done audit=0 err=' + (error as Error).message);
@@ -241,6 +269,100 @@ export class DebugCaptureRunner {
           + ' totalMs=' + (Date.now() - startedAt).toString());
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done latency=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** 历史数据清理（B）：旧笔记学科归一 + 完全重复删除；apply=false 只审计。 */
+  static async runLegacyCleanup(ctx: common.UIAbilityContext, apply: boolean): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done legacyCleanup=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    try {
+      const rs: relationalStore.ResultSet = await store.querySql(
+        'SELECT id, title, subject, chapter, content, created_at FROM knowledge_unit ORDER BY created_at ASC', []);
+      const entries: LegacyDedupeEntry[] = [];
+      const subjectFixes: string[][] = [];
+      let processed: number = 0;
+      try {
+        while (rs.goToNextRow()) {
+          const id: string = rs.getString(rs.getColumnIndex('id'));
+          const title: string = rs.getString(rs.getColumnIndex('title'));
+          const subject: string = rs.getString(rs.getColumnIndex('subject'));
+          const chapter: string = rs.getString(rs.getColumnIndex('chapter'));
+          const content: string = rs.getString(rs.getColumnIndex('content'));
+          const createdAt: number = rs.getLong(rs.getColumnIndex('created_at'));
+          processed += 1;
+          entries.push({ id: id, titleKey: title, contentKey: content, createdAt: createdAt });
+          const input: LegacySubjectInput = {
+            id: id,
+            subject: subject,
+            chapter: chapter,
+            title: title,
+            contentExcerpt: content,
+          };
+          const fixed: string = normalizeLegacySubject(input);
+          if (fixed.length > 0 && fixed !== subject) {
+            subjectFixes.push([id, subject, fixed]);
+          }
+        }
+      } finally {
+        rs.close();
+      }
+      for (let i = 0; i < subjectFixes.length; i += 1) {
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'legacy subject id=' + subjectFixes[i][0] + ' from=' + subjectFixes[i][1]
+            + ' to=' + subjectFixes[i][2] + (apply ? ' apply=1' : ' apply=0'));
+        if (apply) {
+          await store.executeSql('UPDATE knowledge_unit SET subject = ?, updated_at = ? WHERE id = ?',
+            [subjectFixes[i][2], Date.now(), subjectFixes[i][0]]);
+        }
+      }
+      const exactGroups: LegacyDuplicateGroup[] = groupExactDuplicates(entries);
+      const nearGroups: LegacyDuplicateGroup[] = groupNearDuplicates(entries);
+      const seenKeep: string[] = [];
+      const groups: LegacyDuplicateGroup[] = [];
+      for (let i = 0; i < exactGroups.length; i += 1) {
+        groups.push(exactGroups[i]);
+        seenKeep.push(exactGroups[i].keepId);
+      }
+      for (let i = 0; i < nearGroups.length; i += 1) {
+        if (seenKeep.indexOf(nearGroups[i].keepId) < 0) {
+          groups.push(nearGroups[i]);
+        }
+      }
+      let removed: number = 0;
+      const dao: NoteDao = new NoteDao(store);
+      for (let i = 0; i < groups.length; i += 1) {
+        const group: LegacyDuplicateGroup = groups[i];
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'legacy duplicate keep=' + group.keepId + ' remove=' + group.removeIds.join(',')
+            + (apply ? ' apply=1' : ' apply=0'));
+        if (!apply) {
+          continue;
+        }
+        for (let k = 0; k < group.removeIds.length; k += 1) {
+          try {
+            await dao.deleteById(group.removeIds[k]);
+            removed += 1;
+          } catch (e) {
+            hilog.warn(DOMAIN, TAG, 'legacy dedupe delete failed id=%{public}s %{public}s',
+              group.removeIds[k], (e as Error).message);
+          }
+        }
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done legacyCleanup=1 apply=' + (apply ? '1' : '0')
+          + ' scanned=' + processed.toString()
+          + ' subjectFixes=' + subjectFixes.length.toString()
+          + ' duplicateGroups=' + groups.length.toString()
+          + ' removed=' + removed.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done legacyCleanup=0 err=' + (error as Error).message);
     }
   }
 

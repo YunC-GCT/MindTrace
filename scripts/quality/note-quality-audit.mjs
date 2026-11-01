@@ -11,7 +11,7 @@
  * 退出码: 0 = 报告生成；--assert 下 1 = 超阈值。
  */
 import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,7 +47,7 @@ function existsDir(path) {
 
 function statMtime(path) {
   try {
-    return Number(readFileSync(path, { encoding: 'utf8', flag: 'r' }).length) + 0;
+    return statSync(path).mtimeMs;
   } catch {
     return 0;
   }
@@ -82,7 +82,7 @@ function parseAudit(content) {
       empty: Number(match[7]),
     });
   }
-  const summary = content.match(/stage=done audit=(\d+) notes=(\d+) duplicatePairs=(\d+) notesWithBlankSections=(\d+)/);
+  const summary = content.match(/stage=done audit=(\d+) notes=(\d+) duplicatePairs=(\d+)(?: contentDuplicatePairs=(\d+))? notesWithBlankSections=(\d+)/);
   return {
     notes,
     summary: summary === null
@@ -90,15 +90,18 @@ function parseAudit(content) {
       : {
         audit: Number(summary[1]),
         notes: Number(summary[2]),
-        duplicatePairs: Number(summary[3]),
-        notesWithBlankSections: Number(summary[4]),
+        titleDuplicatePairs: Number(summary[3]),
+        contentDuplicatePairs: summary[4] !== undefined ? Number(summary[4]) : Number(summary[3]),
+        notesWithBlankSections: Number(summary[5] !== undefined ? summary[5] : '0'),
       },
   };
 }
 
 function buildReport(parsed) {
   const notes = parsed.notes;
-  const summary = parsed.summary ?? { audit: 0, notes: notes.length, duplicatePairs: 0, notesWithBlankSections: 0 };
+  const summary = parsed.summary ?? {
+    audit: 0, notes: notes.length, contentDuplicatePairs: 0, titleDuplicatePairs: 0, notesWithBlankSections: 0,
+  };
   const total = summary.notes > 0 ? summary.notes : notes.length;
   const subjectCounts = {};
   let nonCanonical = 0;
@@ -113,7 +116,8 @@ function buildReport(parsed) {
     empty += note.empty;
   }
   const fieldTotal = filled + empty;
-  const duplicateRatio = total > 0 ? summary.duplicatePairs / total : 0;
+  // 可执行的判重指标用内容级（同题不同稿不算重复）；标题级仅作信息展示。
+  const duplicateRatio = total > 0 ? summary.contentDuplicatePairs / total : 0;
   const nonCanonicalRatio = total > 0 ? nonCanonical / total : 0;
   const blankRatio = total > 0 ? summary.notesWithBlankSections / total : 0;
   return {
@@ -124,7 +128,8 @@ function buildReport(parsed) {
     fieldFilledRatio: fieldTotal > 0 ? Number((filled / fieldTotal).toFixed(3)) : null,
     notesWithBlankSections: summary.notesWithBlankSections,
     blankNoteRatio: Number(blankRatio.toFixed(3)),
-    duplicatePairs: summary.duplicatePairs,
+    duplicatePairs: summary.contentDuplicatePairs,
+    titleDuplicatePairs: summary.titleDuplicatePairs,
     duplicateRatio: Number(duplicateRatio.toFixed(3)),
     thresholds: {
       maxDuplicateRatio: MAX_DUPLICATE_RATIO,
@@ -137,10 +142,12 @@ function buildReport(parsed) {
 function main() {
   const reuse = process.argv.includes('--reuse');
   const assertMode = process.argv.includes('--assert');
+  const before = latestAuditLog();
   if (!reuse) {
     runDeviceAudit();
   }
-  const logPath = latestAuditLog();
+  const after = latestAuditLog();
+  const logPath = after !== before ? after : (reuse ? after : after);
   if (logPath === '') {
     process.stdout.write(JSON.stringify({ ok: false, error: 'no-audit-log' }, null, 2) + '\n');
     process.exit(assertMode ? 1 : 0);

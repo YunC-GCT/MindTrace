@@ -203,3 +203,14 @@ CAPTURE_TOTAL committed 22253ms
 - `ConversationWorkflow` 接线：文字/图片两处分类统一走 router；意图与来源/置信度写入 state（`appIntent/appIntentSource/appIntentConfidence/appIntentClarify`）并落日志。
 - 真机 `e2e=appIntentProbe`：9 条样例全符合预期（存笔记→note_generate、别整理→chat、复习→review、找旧笔记→note_query、图片讲解/整理区分、含糊→clarify、普通问答→llm）。
 - 契约测试 `v7-app-intent` 6 条；`agent-gate --all` PASS（pass=1140）。
+
+
+### B 历史数据清理（2026-11-01 15:45，真机已应用）
+
+- 新增 `LegacyNoteNormalizer`（纯函数）：旧学科「别名归一 → 关键词推断（初中/高数/线代/概率）→ 其他」；重复判定复用 `NoteDedupe`（只清完全一致/高相似，避免误删同题不同稿）。
+- 新增 e2e：`legacyCleanupAudit`（dry-run） / `legacyCleanupApply`（应用）。
+- 真机结果：扫描 140 条 → **42 条学科归一**（数学→初中数学/高等数学/概率论/其他），删除 0 条（旧「同题不同稿」内容差异大，按保守策略保留），耗时 20.6s。
+- 质量报告（升级后指标：内容级重复才算重复）：
+  - `nonCanonicalRatio=0`、`fieldFilledRatio=1.0`、`notesWithBlankSections=0`、**`duplicatePairs(内容级)=0`**、`titleDuplicatePairs=7`（同标题不同稿，仅信息展示）。
+  - 学科分布（最近 24 条）：初中数学 18 / 数学分析 3 / 其他 2 / 概率论 1。
+- 质量脚本修复：日志选取改用 `statSync(mtimeMs)`（原实现按文件大小排序会选错日志）；重复指标拆为「内容级（可执行）+ 标题级（信息）」。
