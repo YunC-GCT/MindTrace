@@ -279,6 +279,10 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('ragProbe', DebugCaptureRunner.runRagProbe(this.context));
       return;
     }
+    if (mode === 'schedulerInbox') {
+      this.runDebugProbe('schedulerInbox', DebugCaptureRunner.runSchedulerInbox(this.context));
+      return;
+    }
     if (mode === 'schedulerStress') {
       this.runDebugProbe('schedulerStress', DebugCaptureRunner.runSchedulerStress());
       return;

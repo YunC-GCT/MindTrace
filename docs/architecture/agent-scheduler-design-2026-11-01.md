@@ -184,8 +184,8 @@ interface TaskStep {
 
 ### S2 实现状态（2026-11-01）
 
-- [x] A8 观测落库：`WriteJobEventRecorder` → `run_store`（writejob:<jobId>）+ `run_event`（writejob:<phase>，含 priority/queueDepth/waitMs/runMs），事件写串行（AsyncMutex）保证 18/18 落库；
-- [x] 多入口压测：`e2e=schedulerStress` 6 任务混合优先级 `maxConcurrent=2 / persistedEvents=18`，排队 waitMs=362；
+- [x] A8 观测落库 + 报告：`WriteJobEventRecorder` → `run_store`（writejob:<jobId>，终态 committed/failed）+ `run_event`（writejob:<phase>），事件写串行（AsyncMutex）；`scheduler-report.mjs` 解析 probe/integration/stress/inbox，stress 验证 21 事件 + terminal 6/1；
+- [x] 多入口压测：`e2e=schedulerStress` 7 任务（含 1 必失败）`maxConcurrent=2 / persistedEvents=21 / terminalCommitted=6 / terminalFailed=1`；`e2e=schedulerInbox` 覆盖 inbox→background lane 真实 ingest（claimed=1 done=1）；
 - [x] flag 灰度：`WRITE_JOB_UI_ENABLED=true` 仅 UI 进程启用；扩展进程默认关闭；
 - [x] 回归：schedulerProbe（3 真实 ingest）、schedulerIntegration、dedupeProbe（flag 开）全通过；gate PASS（pass=1163）；
 - [ ] S3：跨进程 handoff + 队列持久化/断点续跑。

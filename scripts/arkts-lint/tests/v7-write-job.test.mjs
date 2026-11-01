@@ -181,3 +181,28 @@ test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
   assert.ok(!ext.includes('WriteJobFlags.setEnabled(true)'));
   assert.ok(!ext.includes('WRITE_JOB_UI_ENABLED'));
 });
+
+
+test('T3d 失败相事件：phase=failed + error，统计 failed', async () => {
+  const events = [];
+  const scheduler = new WriteJobScheduler({ interactiveConcurrency: 1, backgroundConcurrency: 1, log: () => {} });
+  scheduler.setEventSink((event) => events.push(event));
+  await assert.rejects(() => scheduler.submit('interactive', 'bad', async () => { throw new Error('phase-boom'); }), /phase-boom/);
+  assert.deepEqual(events.map((e) => e.phase), ['enqueued', 'started', 'failed']);
+  assert.equal(events[2].error, 'phase-boom');
+  assert.equal(scheduler.stats().failed, 1);
+});
+
+test('T8b S2 复查接线：inbox e2e、终态 DAO、report 解析 stress', () => {
+  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  assert.ok(runner.includes('runSchedulerInbox'));
+  assert.ok(runner.includes('A2AInboxIngestService.consume'));
+  assert.ok(runner.includes('countRecordsByRunPrefixAndStatus'));
+  const dao = read('entry/src/main/ets/database/RunStoreDao.ets');
+  assert.ok(dao.includes('countRecordsByRunPrefixAndStatus'));
+  const report = read('scripts/quality/scheduler-report.mjs');
+  assert.ok(report.includes('e2e-schedulerStress-'));
+  assert.ok(report.includes('terminalCommitted'));
+  const ability = read('entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.ok(ability.includes("mode === 'schedulerInbox'"));
+});

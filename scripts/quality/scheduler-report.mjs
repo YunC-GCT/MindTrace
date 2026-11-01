@@ -45,7 +45,12 @@ function parseSchedulerLog(path) {
   }
   const summary = content.match(
     /stage=scheduler done interactiveMs=(\d+) backgroundMs=(\d+)(?: background2Ms=(\d+))? submitted=(\d+) completed=(\d+) failed=(\d+) queueDepth=(\d+) maxConcurrent=(\d+) lastWaitMs=(\d+) lastRunMs=(\d+)/);
-  const integration = content.match(/stage=scheduler-integration kind=(\w+) submitted=(\d+) completed=(\d+) failed=(\d+) maxConcurrent=(\d+)/);
+  const integrationDelta = content.match(
+    /stage=scheduler-integration kind=(\w+) submittedDelta=(\d+) completedDelta=(\d+) failedDelta=(\d+)/);
+  const stress = content.match(
+    /stage=stress submittedDelta=(\d+) completedDelta=(\d+) failedDelta=(\d+) maxConcurrent=(\d+) queueDepth=(\d+) lastWaitMs=(\d+) lastRunMs=(\d+) persistedEvents=(\d+) terminalCommitted=(\d+) terminalFailed=(\d+)/);
+  const inbox = content.match(
+    /stage=inbox claimed=(\d+) done=(\d+) failed=(\d+) submittedDelta=(\d+) completedDelta=(\d+) failedDelta=(\d+) maxConcurrent=(\d+)/);
   return {
     events,
     priorities,
@@ -61,12 +66,32 @@ function parseSchedulerLog(path) {
       lastWaitMs: Number(summary[9]),
       lastRunMs: Number(summary[10]),
     },
-    integration: integration === null ? null : {
-      kind: integration[1],
-      submitted: Number(integration[2]),
-      completed: Number(integration[3]),
-      failed: Number(integration[4]),
-      maxConcurrent: Number(integration[5]),
+    integration: integrationDelta === null ? null : {
+      kind: integrationDelta[1],
+      submittedDelta: Number(integrationDelta[2]),
+      completedDelta: Number(integrationDelta[3]),
+      failedDelta: Number(integrationDelta[4]),
+    },
+    stress: stress === null ? null : {
+      submittedDelta: Number(stress[1]),
+      completedDelta: Number(stress[2]),
+      failedDelta: Number(stress[3]),
+      maxConcurrent: Number(stress[4]),
+      queueDepth: Number(stress[5]),
+      lastWaitMs: Number(stress[6]),
+      lastRunMs: Number(stress[7]),
+      persistedEvents: Number(stress[8]),
+      terminalCommitted: Number(stress[9]),
+      terminalFailed: Number(stress[10]),
+    },
+    inbox: inbox === null ? null : {
+      claimed: Number(inbox[1]),
+      done: Number(inbox[2]),
+      failed: Number(inbox[3]),
+      submittedDelta: Number(inbox[4]),
+      completedDelta: Number(inbox[5]),
+      failedDelta: Number(inbox[6]),
+      maxConcurrent: Number(inbox[7]),
     },
   };
 }
@@ -92,11 +117,19 @@ function main() {
   }
   const probeLogs = listLogs('e2e-schedulerProbe-').slice(0, Math.max(1, samples));
   const integrationLogs = listLogs('e2e-schedulerIntegration-').slice(0, 1);
+  const stressLogs = listLogs('e2e-schedulerStress-').slice(0, 1);
+  const inboxLogs = listLogs('e2e-schedulerInbox-').slice(0, 1);
   const report = {
     samples: probeLogs.length,
     probes: probeLogs.map((entry) => ({ name: entry.name, ...parseSchedulerLog(entry.path) })),
     integration: integrationLogs.length > 0
       ? { name: integrationLogs[0].name, ...parseSchedulerLog(integrationLogs[0].path) }
+      : null,
+    stress: stressLogs.length > 0
+      ? { name: stressLogs[0].name, ...parseSchedulerLog(stressLogs[0].path) }
+      : null,
+    inbox: inboxLogs.length > 0
+      ? { name: inboxLogs[0].name, ...parseSchedulerLog(inboxLogs[0].path) }
       : null,
   };
   process.stdout.write(JSON.stringify(report, null, 2) + '\n');

@@ -34,6 +34,9 @@ import {
 } from './LegacyNoteNormalizer';
 import { NoteDao } from '../database/NoteDao';
 import { RunStoreDao } from '../database/RunStoreDao';
+import { A2AInboxIngestService, IngestSummary } from './A2AInboxIngestService';
+import { AgentInboxQueue } from './AgentInboxQueue';
+import { buildInboxItem } from './AgentInboxModels';
 import { WRITE_JOB_RUN_PREFIX } from './WriteJobEvents';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from './WriteJobScheduler';
 import { WRITE_JOB_UI_ENABLED } from './WriteJobConfig';
@@ -276,20 +279,20 @@ export class DebugCaptureRunner {
     }
   }
 
-  /** M3 集成自检：flag 开启时 ingestSingleText 必须经调度器包装路径返回结果。 */
+  /** M3 集成自检：flag 开启时 ingestSingleText 必须经调度器包装路径返回结果（看 delta）。 */
   static async runSchedulerIntegration(ctx: common.UIAbilityContext): Promise<void> {
     const text: string = '计算 6 + 2 × 3 的值，写出运算顺序。集成 ' + Date.now().toString();
     WriteJobFlags.setEnabled(true);
     const startedAt: number = Date.now();
     try {
+      const before: WriteJobStats = WriteJobScheduler.shared().stats();
       const outcome: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, text);
       const stats: WriteJobStats = WriteJobScheduler.shared().stats();
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=scheduler-integration kind=' + outcome.kind
-          + ' submitted=' + stats.submitted.toString()
-          + ' completed=' + stats.completed.toString()
-          + ' failed=' + stats.failed.toString()
-          + ' maxConcurrent=' + stats.maxConcurrent.toString()
+          + ' submittedDelta=' + (stats.submitted - before.submitted).toString()
+          + ' completedDelta=' + (stats.completed - before.completed).toString()
+          + ' failedDelta=' + (stats.failed - before.failed).toString()
           + ' noteId=' + (outcome.noteId !== undefined ? outcome.noteId : ''));
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=done schedulerIntegration=' + (outcome.kind === 'committed' ? '1' : '0')
@@ -298,11 +301,36 @@ export class DebugCaptureRunner {
       hilog.error(DOMAIN, TAG, '%{public}s',
         'stage=done schedulerIntegration=0 err=' + (error as Error).message);
     } finally {
-      WriteJobFlags.setEnabled(false);
+      WriteJobFlags.setEnabled(WRITE_JOB_UI_ENABLED);
     }
   }
 
-  /** S2 压测：2 interactive + 4 background 混合并发；核对排队与 run_event 落库。 */
+  /** S2 多入口：A2A inbox 队列 → flag 开 → background lane 真实 ingest。 */
+  static async runSchedulerInbox(ctx: common.UIAbilityContext): Promise<void> {
+    const text: string = '计算 5 + 5 × 2 的值，写出运算顺序。收件箱 ' + Date.now().toString();
+    const startedAt: number = Date.now();
+    try {
+      await AgentInboxQueue.append(ctx, buildInboxItem(text, Date.now()));
+      const before: WriteJobStats = WriteJobScheduler.shared().stats();
+      const summary: IngestSummary = await A2AInboxIngestService.consume(ctx);
+      const after: WriteJobStats = WriteJobScheduler.shared().stats();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=inbox claimed=' + summary.claimed.toString()
+          + ' done=' + summary.done.toString() + ' failed=' + summary.failed.toString()
+          + ' submittedDelta=' + (after.submitted - before.submitted).toString()
+          + ' completedDelta=' + (after.completed - before.completed).toString()
+          + ' failedDelta=' + (after.failed - before.failed).toString()
+          + ' maxConcurrent=' + after.maxConcurrent.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done inbox=' + (summary.done > 0 ? '1' : '0'));
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done inbox=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** S2 压测：2 interactive + 4 background + 1 失败任务；核对排队、事件与终态。 */
   static async runSchedulerStress(): Promise<void> {
     const scheduler: WriteJobScheduler = WriteJobScheduler.shared();
     WriteJobFlags.setEnabled(true);
@@ -311,16 +339,22 @@ export class DebugCaptureRunner {
       await DebugCaptureRunner.sleep(120);
       return 'ok' as Object;
     };
-    const countEvents = async (): Promise<number> => {
+    const daoOf = (): RunStoreDao | null => {
       const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-      if (store === null) {
-        return 0;
-      }
-      const dao: RunStoreDao = new RunStoreDao(store);
-      return await dao.countEventsByRunPrefix(WRITE_JOB_RUN_PREFIX);
+      return store === null ? null : new RunStoreDao(store);
+    };
+    const countEvents = async (): Promise<number> => {
+      const dao: RunStoreDao | null = daoOf();
+      return dao === null ? 0 : await dao.countEventsByRunPrefix(WRITE_JOB_RUN_PREFIX);
+    };
+    const countTerminal = async (status: string): Promise<number> => {
+      const dao: RunStoreDao | null = daoOf();
+      return dao === null ? 0 : await dao.countRecordsByRunPrefixAndStatus(WRITE_JOB_RUN_PREFIX, status);
     };
     try {
       const beforeEvents: number = await countEvents();
+      const beforeCommitted: number = await countTerminal('committed');
+      const beforeFailed: number = await countTerminal('failed');
       const beforeStats: WriteJobStats = scheduler.stats();
       const tasks: Promise<Object>[] = [
         scheduler.submit('interactive', 'stress-i1', exec),
@@ -329,31 +363,44 @@ export class DebugCaptureRunner {
         scheduler.submit('background', 'stress-b2', exec),
         scheduler.submit('background', 'stress-b3', exec),
         scheduler.submit('background', 'stress-b4', exec),
+        scheduler.submit('interactive', 'stress-fail', async (): Promise<Object> => {
+          throw new Error('stress-fail');
+        }).catch((): Object => 'failed' as Object),
       ];
       await Promise.all(tasks);
       const stats: WriteJobStats = scheduler.stats();
-      // recorder 是 fire-and-forget：轮询等本次 job × 3 事件落库（最多 3s）。
       const submittedDelta: number = stats.submitted - beforeStats.submitted;
+      const completedDelta: number = stats.completed - beforeStats.completed;
+      const failedDelta: number = stats.failed - beforeStats.failed;
       let persisted: number = 0;
+      let terminalCommitted: number = 0;
+      let terminalFailed: number = 0;
       const expectedPersisted: number = submittedDelta * 3;
       for (let attempt = 0; attempt < 15; attempt += 1) {
         persisted = (await countEvents()) - beforeEvents;
-        if (persisted >= expectedPersisted) {
+        terminalCommitted = (await countTerminal('committed')) - beforeCommitted;
+        terminalFailed = (await countTerminal('failed')) - beforeFailed;
+        if (persisted >= expectedPersisted && terminalCommitted >= completedDelta
+          && terminalFailed >= failedDelta) {
           break;
         }
         await DebugCaptureRunner.sleep(200);
       }
       hilog.info(DOMAIN, TAG, '%{public}s',
-        'stage=stress submitted=' + stats.submitted.toString()
-          + ' completed=' + stats.completed.toString() + ' failed=' + stats.failed.toString()
+        'stage=stress submittedDelta=' + submittedDelta.toString()
+          + ' completedDelta=' + completedDelta.toString() + ' failedDelta=' + failedDelta.toString()
           + ' maxConcurrent=' + stats.maxConcurrent.toString()
           + ' queueDepth=' + stats.queueDepth.toString()
           + ' lastWaitMs=' + stats.lastWaitMs.toString()
           + ' lastRunMs=' + stats.lastRunMs.toString()
           + ' persistedEvents=' + persisted.toString()
+          + ' terminalCommitted=' + terminalCommitted.toString()
+          + ' terminalFailed=' + terminalFailed.toString()
           + ' ms=' + (Date.now() - startedAt).toString());
       hilog.info(DOMAIN, TAG, '%{public}s',
-        'stage=done stress=1 persistedEvents=' + persisted.toString());
+        'stage=done stress=1 persistedEvents=' + persisted.toString()
+          + ' terminalCommitted=' + terminalCommitted.toString()
+          + ' terminalFailed=' + terminalFailed.toString());
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s',
         'stage=done stress=0 err=' + (error as Error).message);
@@ -362,12 +409,11 @@ export class DebugCaptureRunner {
     }
   }
 
-  /** S1 调度器自检：interactive + background 双通道真机验证（flag 开）。 */
+  /** S1 调度器 lane 自检：直接注入 executor 验证双通道并发；flag 接线由 schedulerIntegration 覆盖。 */
   static async runSchedulerProbe(ctx: common.UIAbilityContext): Promise<void> {
     const stamp: string = Date.now().toString();
     const interactiveText: string = '计算 2 + 3 × 4 的值，写出运算顺序。调度 ' + stamp + 'I';
     const backgroundText: string = '计算 10 - 4 × 2 的值，写出运算顺序。调度 ' + stamp + 'B';
-    WriteJobFlags.setEnabled(true);
     const startedAt: number = Date.now();
     const timed = (run: () => Promise<Object>): Promise<number> => {
       const taskStarted: number = Date.now();
@@ -376,16 +422,14 @@ export class DebugCaptureRunner {
     try {
       hilog.info(DOMAIN, TAG, '%{public}s', 'stage=scheduler start');
       const scheduler: WriteJobScheduler = WriteJobScheduler.shared();
-      const interactiveTextB: string = interactiveText;
-      const backgroundText2: string = backgroundText;
       const backgroundText3: string = '计算 12 - 2 × 3 的值，写出运算顺序。调度 ' + stamp + 'B2';
       const interactiveMs: Promise<number> = DebugCaptureRunner.withTimeout(
-        timed((): Promise<Object> => scheduler.submit('interactive', interactiveTextB,
-          async (): Promise<Object> => await AgentIngestService.ingestSingleTextDirect(ctx, interactiveTextB) as Object)),
+        timed((): Promise<Object> => scheduler.submit('interactive', interactiveText,
+          async (): Promise<Object> => await AgentIngestService.ingestSingleTextDirect(ctx, interactiveText) as Object)),
         150000, 'scheduler-interactive');
       const backgroundMs: Promise<number> = DebugCaptureRunner.withTimeout(
-        timed((): Promise<Object> => scheduler.submit('background', backgroundText2,
-          async (): Promise<Object> => await AgentIngestService.ingestSingleTextDirect(ctx, backgroundText2) as Object)),
+        timed((): Promise<Object> => scheduler.submit('background', backgroundText,
+          async (): Promise<Object> => await AgentIngestService.ingestSingleTextDirect(ctx, backgroundText) as Object)),
         150000, 'scheduler-background-1');
       const background2Ms: Promise<number> = DebugCaptureRunner.withTimeout(
         timed((): Promise<Object> => scheduler.submit('background', backgroundText3,
@@ -406,8 +450,6 @@ export class DebugCaptureRunner {
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s',
         'stage=done scheduler=0 err=' + (error as Error).message);
-    } finally {
-      WriteJobFlags.setEnabled(false);
     }
   }
 

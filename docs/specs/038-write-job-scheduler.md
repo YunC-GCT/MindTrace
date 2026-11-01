@@ -225,12 +225,22 @@ submitted=6 completed=6 failed=0 maxConcurrent=2 queueDepth=0
 lastWaitMs=362 lastRunMs=121 persistedEvents=18（6 job × enqueued/started/done）/ 691ms
 ```
 
-- `e2e=schedulerProbe`（灰度开启路径，3 真实 ingest）：`submitted=3 completed=3 failed=0 maxConcurrent=2`；
-- `e2e=schedulerIntegration`：`kind=committed submitted=5 completed=4 failed=0 maxConcurrent=2`（同进程累计统计）；
+- `e2e=schedulerProbe`（lane 机制：直接注入 executor，flag 接线由 schedulerIntegration 覆盖，3 真实 ingest）：`submitted=3 completed=3 failed=0 maxConcurrent=2`；
+- `e2e=schedulerIntegration`（flag 开 → ingestSingleText 包装路径，按单次 delta 统计）：`kind=committed submittedDelta=1 completedDelta=1 failedDelta=0 / 8.8s`；
+- `e2e=schedulerInbox`（多入口：inbox 队列 → flag 开 → background lane）：`claimed=1 done=1 failed=0 submittedDelta=1 completedDelta=1 maxConcurrent=2 / 11.2s`；
 - `e2e=dedupeProbe`（flag 开）：`same=1 added=1`（首条新建、第二条复用输入指纹），通过；
-- `agent-gate --all` RESULT: PASS（pass=1163 fail=0）。
+- `agent-gate --all` RESULT: PASS（pass=1165 fail=0）。
 
 ### 9.4 已知偏差/后续
 
-- 同进程多次探针的 scheduler 统计是累计值（未做 reset），报告看单次差分；
+- ~~同进程多次探针的 scheduler 统计是累计值~~ → S2 复查已改：integration/stress 全部按 **delta** 输出，不再受跨场景污染；
 - S3：跨进程 handoff（扩展写 job、UI 消费）、队列持久化/断点续跑、事件表清理策略。
+
+### 9.5 Spec 轴复查修复（2026-11-01）
+
+- **A8 闭环**：`scheduler-report.mjs` 增加解析 `schedulerStress`（`persistedEvents` + `terminalCommitted/terminalFailed`）与 `schedulerInbox`；`RunStoreDao` 增加 `countRecordsByRunPrefixAndStatus`，stress 用 run_store 终态核对 6 committed / 1 failed；
+- **失败相验证**：stress 增加 1 个必失败 job（`failedDelta=1`、events 21=7×3、terminalFailed=1），单元测试 T3d 覆盖 `phase=failed + error`；
+- **多入口压测补全**：新增 `e2e=schedulerInbox`，覆盖 `A2AInboxIngestService.consume` 的 flag-on background lane（真实 ingest，claimed=1 done=1）；
+- **schedulerProbe 语义修正**：不再自切 flag（lane 机制直接注入 executor），flag 接线由 schedulerIntegration 验证；
+- **integration 证据修正**：改为单次 delta（submittedDelta=1/completedDelta=1），不再引用跨场景累计值。
+- 遗留（S3）：跨进程 handoff、队列持久化/断点续跑、事件清理。
