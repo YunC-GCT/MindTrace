@@ -124,11 +124,12 @@ export class WriteJobScheduler {
       this.pending.set(job.jobId, { job: job, run: run, resolve: resolve, reject: reject });
     });
     this.laneOf(priority).queue.enqueue(job);
+    const enqueuedDepth: number = this.stats().queueDepth;
     this.log('[WriteJob] enqueued id=' + job.jobId + ' priority=' + priority
       + ' kind=' + job.kind + ' chars=' + job.payloadText.length.toString()
-      + ' depth=' + this.stats().queueDepth.toString());
+      + ' depth=' + enqueuedDepth.toString());
     this.emitEvent(job, 'enqueued', {
-      queueDepth: this.stats().queueDepth, waitMs: 0, runMs: 0, error: '',
+      queueDepth: enqueuedDepth, waitMs: 0, runMs: 0, error: '',
     });
     this.pump();
     return result;

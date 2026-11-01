@@ -68,6 +68,8 @@ WriteJobScheduler（单例，entry/services）
 | T4 | 接入 flag：关闭时不经过调度器；开启时经过（source/behavior guard） | 契约测试 + 可注入 executor 的集成测试 |
 | T5 | A2APlanStore：同 taskId 读写、不同 taskId 隔离、旧全局计划可读迁移 | 以 mock fileIo 或纯 key 函数测试 |
 | T6 | 观测日志字段：enqueued/started/done 字段齐全 | source guard + 日志格式断言 |
+| T7 | 观测事件（S2）：phase/metrics 齐全、失败相带 error、sink 抛错不影响 job | `v7-write-job.test.mjs`（fake sink） |
+| T8 | S2 接线守卫：UI 灰度开关、recorder 前缀/落库调用、扩展进程不读配置 | source guard |
 
 ## 5. 验收
 
@@ -204,7 +206,7 @@ stage=done schedulerIntegration=1 ms=16175
 
 ### 9.1 run_event 观测落库（A8）
 
-- `WriteJobEvents`（纯类型）：`WriteJobEvent{jobId,kind,priority,phase,queueDepth,waitMs,runMs,error,at}` + sink；
+- `WriteJobEvents`（零依赖契约：事件/metrics 类型 + `WRITE_JOB_RUN_PREFIX` 常量，kind/priority 复用 `WriteJobKind`/`WriteJobPriority`）：`WriteJobEvent{jobId,kind,priority,phase,queueDepth,waitMs,runMs,error,at}` + sink；
 - `WriteJobScheduler.setEventSink()`：enqueued/started/done/failed 发事件；sink 抛错不影响 job；
 - `WriteJobEventRecorder`：每个 job 一条 `run_store`（`run_id=writejob:<jobId>`，终态 `committed/failed`），事件追加到 `run_event`（`kind=writejob:<phase>`，payload 含 priority/queueDepth/waitMs/runMs）；**写事件用 `AsyncMutex` 串行**（run_event 的 MAX(seq)+1 事务并发会冲突，实测丢 2/18 事件）。
 - EntryAbility 启动接线：`WriteJobScheduler.shared().setEventSink(WriteJobEventRecorder.create())`。

@@ -2,11 +2,13 @@
  * RunStoreDao.ets — RunStoreStore 的生产实现（run_store / run_event 两表）
  *
  * 路径: entry/src/main/ets/database/RunStoreDao.ets
- * 职责: 把 RunStoreStore 的五个方法落到 RDB：记录读写 + 事件追加（事务内 MAX(sequence)+1）+ 事件分页。
+ * 职责: 把 RunStoreStore 的五个方法落到 RDB：记录读写 + 事件追加（事务内 MAX(sequence)+1）+ 事件分页；
+ *       另提供观测用计数：countRecordsByRunPrefixAndStatus / countEventsByRunPrefix。
  * 依赖: @kit.ArkData（relationalStore）、common 的 RunRecord / RunEvent / RunStoreStore 契约、common uuid。
  *
  * 数据流:
  *   RunStoreAdapter → queryRecord / insert / update / appendEvent / listEvents → run_store / run_event
+ *   scheduler 观测 → countRecordsByRunPrefixAndStatus / countEventsByRunPrefix → run_store / run_event
  *
  * schema（v16）:
  *   run_store(run_id PK, parent_run_id, status, checkpoint_id, committed_note_id, committed_version, created_at, updated_at)
