@@ -41,7 +41,7 @@ export const PLAN_CMD_CANCEL: string = 'cancel';
 export const PLAN_CMD_INDEX: string = 'index';
 export const PLAN_CMD_NONE: string = 'none';
 const PLAN_KEY_MAX: number = 64;
-const PLAN_KEY_DEFAULT: string = 'default';
+export const PLAN_KEY_DEFAULT: string = 'default';
 
 /** 计划文件 key：按 taskId 隔离（多会话不互相覆盖）；文件名安全、限长。 */
 export function sanitizePlanKey(taskId: string): string {
@@ -51,12 +51,15 @@ export function sanitizePlanKey(taskId: string): string {
   }
   let out: string = '';
   const lower: string = trimmed.toLowerCase();
-  for (let i = 0; i < lower.length && out.length < PLAN_KEY_MAX; i += 1) {
-    const code: number = lower.charCodeAt(i);
+  for (const ch of lower) {
+    if (out.length >= PLAN_KEY_MAX) {
+      break;
+    }
+    const code: number = ch.charCodeAt(0);
     const isDigit: boolean = code >= 48 && code <= 57;
     const isLower: boolean = code >= 97 && code <= 122;
     const isDash: boolean = code === 45 || code === 95;
-    out += (isDigit || isLower || isDash) ? lower.charAt(i) : '-';
+    out += (isDigit || isLower || isDash) ? ch : '-';
   }
   return out.length > 0 ? out : PLAN_KEY_DEFAULT;
 }

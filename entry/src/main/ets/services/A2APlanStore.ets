@@ -13,7 +13,7 @@
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { A2APlan, sanitizePlanKey } from './A2APlanModels';
+import { A2APlan, PLAN_KEY_DEFAULT, sanitizePlanKey } from './A2APlanModels';
 
 const DOMAIN: number = 0xA2A0;
 const TAG: string = 'MindTraceA2A';
@@ -26,13 +26,15 @@ export class A2APlanStore {
   static async load(context: common.Context, taskId: string): Promise<A2APlan | null> {
     try {
       let path: string = A2APlanStore.filePath(context, taskId);
+      let migrated: boolean = false;
       if (!fileIo.accessSync(path)) {
-        // 兼容旧版本单文件：仅当 taskId 缺省时读取
+        // 兼容旧版本单文件：任何 taskId 首次读取时迁移到自己的 keyed 文件（旧计划不丢）。
         const legacy: string = A2APlanStore.legacyPath(context);
-        if (sanitizePlanKey(taskId) !== 'default' || !fileIo.accessSync(legacy)) {
+        if (!fileIo.accessSync(legacy)) {
           return null;
         }
         path = legacy;
+        migrated = true;
       }
       const content: string = await A2APlanStore.readText(path);
       if (content.trim().length === 0) {
@@ -43,6 +45,9 @@ export class A2APlanStore {
         || parsed.items.length === 0) {
         return null;
       }
+      if (migrated) {
+        await A2APlanStore.save(context, taskId, parsed);
+      }
       return parsed;
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'PLAN_LOAD_FAILED %{public}s', (e as Error).message);
@@ -50,14 +55,14 @@ export class A2APlanStore {
     }
   }
 
-  /** 保存计划（按 taskId 分文件覆盖）。 */
-  static async save(context: common.Context, plan: A2APlan): Promise<void> {
+  /** 保存计划（按 taskId 分文件覆盖；key API 与 load/clear 对齐）。 */
+  static async save(context: common.Context, taskId: string, plan: A2APlan): Promise<void> {
     try {
       const dir: string = A2APlanStore.dirPath(context);
       if (!fileIo.accessSync(dir)) {
         fileIo.mkdirSync(dir, true);
       }
-      const file: fileIo.File = fileIo.openSync(A2APlanStore.filePath(context, plan.taskId),
+      const file: fileIo.File = fileIo.openSync(A2APlanStore.filePath(context, taskId),
         fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
       try {
         fileIo.writeSync(file.fd, JSON.stringify(plan));
@@ -76,7 +81,7 @@ export class A2APlanStore {
       if (fileIo.accessSync(path)) {
         fileIo.unlinkSync(path);
       }
-      if (sanitizePlanKey(taskId) === 'default') {
+      if (sanitizePlanKey(taskId) === PLAN_KEY_DEFAULT) {
         const legacy: string = A2APlanStore.legacyPath(context);
         if (fileIo.accessSync(legacy)) {
           fileIo.unlinkSync(legacy);

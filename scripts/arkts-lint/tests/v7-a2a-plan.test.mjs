@@ -80,11 +80,11 @@ test('扩展入口接线：多题先回规划，再按指令逐题整理；计�
   assert.match(ability, /formatA2APlanSummary\(plan\)/);
   assert.match(ability, /private handlePlanTurn\(/);
   assert.match(ability, /private ingestPlanItem\(/);
-  assert.match(ability, /A2APlanStore\.save\(this\.context, plan\)/);
+  assert.match(ability, /A2APlanStore\.save\(this\.context, plan\.taskId, plan\)/);
   const store = read('entry/src/main/ets/services/A2APlanStore.ets');
   assert.match(store, /static async load\(context: common\.Context, taskId: string\)/);
-  assert.match(store, /static async save\(context: common\.Context, plan: A2APlan\)/);
-  assert.match(store, /filePath\(context, plan\.taskId\)/);
+  assert.match(store, /static async save\(context: common\.Context, taskId: string, plan: A2APlan\)/);
+  assert.match(store, /filePath\(context, taskId\)/);
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(entry, /mode === 'agentTextPlan'/);
 });

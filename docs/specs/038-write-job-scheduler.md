@@ -165,3 +165,30 @@ stage=done schedulerIntegration=1 ms=16175
 ### M4（收尾）
 
 - code-review skill：Standards / Spec 双轴审查（fixed point = `552fca1`），修复 findings 后 gate 全绿。
+
+
+### M4（2026-11-01 完成）：code-review 双轴审查 + 修复
+
+固定比较点 `552fca1`（`git diff 552fca1...HEAD`），并行两个子代理（Standards / Spec），聚合后逐条修复：
+
+**Standards 轴**
+- [x] Hard：`AsyncSemaphore` / `WriteJobModels` / `WriteJobQueueCore` 文件头补「依赖」字段；
+- [x] Data Clumps / Repeated Switches：调度器改为 Lane{queue, sem}（interactive/background 各一条），删除双队列/双 cap/双 running 平行字段与重复 priority 分支；
+- [x] Speculative Generality：`AsyncSemaphore` 成为生产 lane 并发控制（不再只被测试使用）；`WriteJob.payloadText` 在 enqueued 日志读取 chars；`timed(label,…)` 未用参数删除；
+- [x] Duplicated Code：探针超时统一复用 `DebugCaptureRunner.withTimeout`（120s/150s 两处内联竞速删除）；EntryAbility 探针分支统一走 `runDebugProbe`（17 处同形分支收敛）；
+- [x] Primitive Obsession：`PLAN_KEY_DEFAULT` 导出并在 store 复用；`A2APlanStore.save(context, taskId, plan)` 与 load/clear 的 key API 对齐；
+- [x] 同模块双 import 合并；`for…of` 替换新增 C-style for（队列/plan key）。
+- 备注：`AsyncMutex.isBusy()` 与 `priorityRank` 导出已在 review 前清理。
+
+**Spec 轴**
+- [x] `WriteJob` 补 `kind(text_ingest)` + `status(queued/running/done/failed)` 与状态迁移；
+- [x] `AsyncSemaphore` 接入生产调度（见上）；
+- [x] 补 T4b（executor 注入语义）、T6（日志格式断言）与 T3c（executor 同步抛错不占死 lane）；
+- [x] `schedulerProbe` 改为 3 任务（interactive×1 + background×2）：`submitted=3 completed=3 failed=0 maxConcurrent=2`，`lastWaitMs=75043/lastRunMs=14013` 作为排队证据；
+- [x] 旧全局 `plan.json` 迁移：任何 taskId 首次读取旧计划时迁移到自己的 keyed 文件（不再丢失）；
+- [x] duplicate 写路径恢复旧行为：跳过索引同步但仍执行 post-commit effects（flag 关时逐字节一致）；
+- [x] done/failed 日志补 `priority=`；executor 同步抛错走统一失败收尾；
+- [x] 新增 `scripts/quality/scheduler-report.mjs`（A8 观测）。
+- 记录（未在本轮做，留 S2）：A8 的 run_event 落库（S1 队列不持久化，先用 hilog + 报告）；flag 默认保持关闭，待 S3 跨进程 + 持久化后灰度。
+
+**验收证据**：`agent-gate --all` RESULT: PASS（pass=1160 fail=0）；真机 schedulerProbe/schedulerIntegration/dedupeProbe 均通过；scheduler-report 可复跑。

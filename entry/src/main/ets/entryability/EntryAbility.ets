@@ -264,33 +264,23 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     if (mode === 'ragSearch') {
-      DebugCaptureRunner.runRagSearch(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'RAG 检索自检异常: ' + e.message);
-      });
+      this.runDebugProbe('ragSearch', DebugCaptureRunner.runRagSearch(this.context));
       return;
     }
     if (mode === 'ragProbe') {
-      DebugCaptureRunner.runRagProbe(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'RAG 探针异常: ' + e.message);
-      });
+      this.runDebugProbe('ragProbe', DebugCaptureRunner.runRagProbe(this.context));
       return;
     }
     if (mode === 'schedulerIntegration') {
-      DebugCaptureRunner.runSchedulerIntegration(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', '调度器集成自检异常: ' + e.message);
-      });
+      this.runDebugProbe('schedulerIntegration', DebugCaptureRunner.runSchedulerIntegration(this.context));
       return;
     }
     if (mode === 'schedulerProbe') {
-      DebugCaptureRunner.runSchedulerProbe(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', '调度器自检异常: ' + e.message);
-      });
+      this.runDebugProbe('schedulerProbe', DebugCaptureRunner.runSchedulerProbe(this.context));
       return;
     }
     if (mode === 'concurrencyProbe') {
-      DebugCaptureRunner.runConcurrencyProbe(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', '并发实验异常: ' + e.message);
-      });
+      this.runDebugProbe('concurrencyProbe', DebugCaptureRunner.runConcurrencyProbe(this.context));
       return;
     }
     if (mode === 'legacyCleanupAudit') {
@@ -306,69 +296,47 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     if (mode === 'appIntentProbe') {
-      DebugCaptureRunner.runAppIntentProbe(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'App 意图自检异常: ' + e.message);
-      });
+      this.runDebugProbe('appIntentProbe', DebugCaptureRunner.runAppIntentProbe(this.context));
       return;
     }
     if (mode === 'dedupeProbe') {
-      DebugCaptureRunner.runDedupeProbe(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', '去重自检异常: ' + e.message);
-      });
+      this.runDebugProbe('dedupeProbe', DebugCaptureRunner.runDedupeProbe(this.context));
       return;
     }
     if (mode === 'latencyProbe') {
-      DebugCaptureRunner.runLatencyProbe(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', '延迟自检异常: ' + e.message);
-      });
+      this.runDebugProbe('latencyProbe', DebugCaptureRunner.runLatencyProbe(this.context));
       return;
     }
     if (mode === 'agentChatContext') {
-      DebugCaptureRunner.runAgentChatContext(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'A2A 聊天上下文自检异常: ' + e.message);
-      });
+      this.runDebugProbe('agentChatContext', DebugCaptureRunner.runAgentChatContext(this.context));
       return;
     }
     if (mode === 'noteAudit') {
-      DebugCaptureRunner.runNoteAudit(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', '笔记审计异常: ' + e.message);
-      });
+      this.runDebugProbe('noteAudit', DebugCaptureRunner.runNoteAudit(this.context));
       return;
     }
     if (mode === 'agentImagePlan') {
-      DebugCaptureRunner.runAgentImagePlan(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'A2A 图片规划自检异常: ' + e.message);
-      });
+      this.runDebugProbe('agentImagePlan', DebugCaptureRunner.runAgentImagePlan(this.context));
       return;
     }
     if (mode === 'agentTextPlan') {
-      DebugCaptureRunner.runAgentTextPlan(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'A2A 文本规划自检异常: ' + e.message);
-      });
+      this.runDebugProbe('agentTextPlan', DebugCaptureRunner.runAgentTextPlan(this.context));
       return;
     }
     if (mode === 'agentTextBatch') {
-      DebugCaptureRunner.runAgentTextBatch(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'A2A 文本多题自检异常: ' + e.message);
-      });
+      this.runDebugProbe('agentTextBatch', DebugCaptureRunner.runAgentTextBatch(this.context));
       return;
     }
     if (mode === 'captureSetS3') {
-      DebugCaptureRunner.runCaptureSetS3(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'captureSet(S3) 自检异常: ' + e.message);
-      });
+      this.runDebugProbe('captureSetS3', DebugCaptureRunner.runCaptureSetS3(this.context));
       return;
     }
     if (mode === 'captureSetIdem') {
-      DebugCaptureRunner.runCaptureSetIdem(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'captureSet(幂等) 自检异常: ' + e.message);
-      });
+      this.runDebugProbe('captureSetIdem', DebugCaptureRunner.runCaptureSetIdem(this.context));
       return;
     }
     if (mode === 'captureSetPreview') {
-      DebugCaptureRunner.runCaptureSetPreview(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'captureSet(preview) 自检异常: ' + e.message);
-      });
+      this.runDebugProbe('captureSetPreview', DebugCaptureRunner.runCaptureSetPreview(this.context));
       return;
     }
     if (mode === 'captureSet5') {
@@ -378,9 +346,7 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     if (mode === 'captureSet') {
-      DebugCaptureRunner.runCaptureSet(this.context).catch((e: Error) => {
-        hilog.error(0xE2E0, 'E2E', '%{public}s', 'captureSet 自检异常: ' + e.message);
-      });
+      this.runDebugProbe('captureSet', DebugCaptureRunner.runCaptureSet(this.context));
       return;
     }
     if (mode === 'draft') {
@@ -472,6 +438,13 @@ export default class EntryAbility extends UIAbility {
   }
 
   // v1 不做复习同步/备份，卡片快照改为退到后台时直接刷新，不再申请后台任务
+  /** 调试探针统一异常落日志（避免每个 mode 分支重复 .catch/hilog）。 */
+  private runDebugProbe(mode: string, task: Promise<void>): void {
+    task.catch((e: Error): void => {
+      hilog.error(0xE2E0, 'E2E', '%{public}s', mode + ' 探针异常: ' + e.message);
+    });
+  }
+
   private async refreshCardSnapshot(): Promise<void> {
     await CardSnapshotService.refresh(this.context);
   }

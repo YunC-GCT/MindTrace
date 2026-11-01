@@ -125,9 +125,8 @@ export class KnowledgeUnitWriteService {
       commit,
     );
     console.info('[ConfirmTrace] service=createWithCommitKey-ok');
-    const warnings: string[] = persisted.duplicate === true
-      ? []
-      : await this.finalizeWrite(persisted.unit, true);
+    const warnings: string[] = await this.finalizeWrite(
+      persisted.unit, persisted.duplicate !== true, persisted.duplicate !== true);
     return {
       committed: true,
       rowId: persisted.rowId,
@@ -197,10 +196,13 @@ export class KnowledgeUnitWriteService {
     }
   }
 
-  /** 写区串行段：索引同步 + post-commit effects（并发时会卡死，必须互斥）。 */
-  private async finalizeWrite(unit: KnowledgeUnit, isCreate: boolean): Promise<string[]> {
+  /** 写区串行段：索引同步（可选）+ post-commit effects（并发时会卡死，必须互斥）。 */
+  private async finalizeWrite(unit: KnowledgeUnit, isCreate: boolean,
+    syncIndex: boolean = true): Promise<string[]> {
     return await KnowledgeUnitWriteService.writeSection.runExclusive(async (): Promise<string[]> => {
-      await this.syncIndex(unit);
+      if (syncIndex) {
+        await this.syncIndex(unit);
+      }
       return await this.runPostCommit(unit, isCreate);
     });
   }

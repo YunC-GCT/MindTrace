@@ -16,8 +16,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AgentInboxItem } from './AgentInboxModels';
 import { AgentInboxQueue } from './AgentInboxQueue';
 import { AiService } from './AiService';
-import { WriteJobFlags } from './WriteJobScheduler';
-import { WriteJobScheduler } from './WriteJobScheduler';
+import { WriteJobFlags, WriteJobScheduler } from './WriteJobScheduler';
 
 const DOMAIN: number = 0xA2A0;
 const TAG: string = 'A2AInbox';

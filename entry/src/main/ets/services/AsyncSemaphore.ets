@@ -3,6 +3,7 @@
  *
  * 路径: entry/src/main/ets/services/AsyncSemaphore.ets
  * 职责: acquire/release 控制并发；等待者 FIFO 唤醒（spec 038 T2）。
+* 依赖: 无
  */
 export class AsyncSemaphore {
   private readonly capacity: number;

@@ -172,3 +172,11 @@ interface TaskStep {
 1. 双通道总并发默认 1 还是 2（看 S0 数据与 provider 429）；
 2. S0 若证明互拖不显著：是否只做「优先级 + 排队可见性」，放弃完整队列/断点续跑；
 3. `agent_job` 用新表还是塞进 `run_store`（当前倾向新表单职责，S0 后确认）。
+
+## 8. S1 实现状态（2026-11-01，spec 038）
+
+- **S0 实验定论**：并发 ingest 的两条笔记都落库但 post-commit 阶段卡死 >10min；加 `AsyncMutex` 写区互斥（索引同步 + effects 串行）后并发正常，复跑：顺序 10.24s vs 并发 wall 4.35s（overlap 50%、slowdown 0.85）。→ S1 不串行化 LLM，只串行写区。
+- **S1 已落地**（spec 038 M1–M3）：`WriteJobModels`（kind/status/priority）+ `WriteJobQueueCore` + `AsyncSemaphore` + `WriteJobScheduler`（双 lane，默认各 1；waitMs/runMs/queueDepth/maxConcurrent 统计）；`WriteJobFlags` 默认关，接入 `AgentIngestService.ingestSingleText` 与 `A2AInboxIngestService`（background lane）；`A2APlanStore` 按 taskId 隔离并迁移旧 plan.json。
+- **观测**：S1 用 `[WriteJob]` hilog + `scripts/quality/scheduler-report.mjs`；A8 的 run_event 落库推迟到 S2（S1 队列不持久化）。
+- **真机证据**：schedulerProbe（1 interactive + 2 background）`submitted=3 completed=3 failed=0 maxConcurrent=2`，第二个 background `lastWaitMs=75043/lastRunMs=14013`（排队生效）；schedulerIntegration `kind=committed submitted=1`。
+- **S2 待办**：run_event 接入、flag 灰度打开、多入口并发压测、断点续跑（S3）。

@@ -333,7 +333,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         }
         const plan: A2APlan = { taskId: taskId, createdAt: Date.now(), items: items, done: [] };
         hilog.info(DOMAIN, TAG, 'OCR_CHECKPOINT items=%{public}d', items.length);
-        A2APlanStore.save(this.context, plan)
+        A2APlanStore.save(this.context, plan.taskId, plan)
           .then((): void => {
             this.sendAnswer(taskId, formatA2APlanSummary(plan), 0);
           })
@@ -360,7 +360,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           items.length, reviewCountOf(items));
         if (items.length > 1) {
           const plan: A2APlan = { taskId: taskId, createdAt: Date.now(), items: items, done: [] };
-          A2APlanStore.save(this.context, plan)
+          A2APlanStore.save(this.context, plan.taskId, plan)
             .then((): void => {
               this.sendAnswer(taskId, formatA2APlanSummary(plan), 0);
             })
@@ -477,7 +477,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         if (outcome.kind === 'committed' && outcome.unit !== undefined) {
           const unit: KnowledgeUnit = outcome.unit;
           plan.done.push(item.index);
-          A2APlanStore.save(this.context, plan).catch((): void => {});
+          A2APlanStore.save(this.context, plan.taskId, plan).catch((): void => {});
           this.recordA2aIngestReceipt();
           this.sendAnswer(taskId, formatA2APlanProgress(plan, item, unit.title, unit.subject), 0);
           return;

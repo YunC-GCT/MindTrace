@@ -24,8 +24,7 @@ import { planCaptureSet } from 'agents';
 import type { PlannedProblem, SetImageText, SetPlan } from 'agents';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest } from './AgentIngestRequest';
-import { WriteJobFlags } from './WriteJobScheduler';
-import { WriteJobScheduler } from './WriteJobScheduler';
+import { WriteJobFlags, WriteJobScheduler } from './WriteJobScheduler';
 import { A2APlanItem, buildA2APlanItemsFromPages } from './A2APlanModels';
 import { OcrService } from './OcrService';
 

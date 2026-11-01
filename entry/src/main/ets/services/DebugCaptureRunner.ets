@@ -306,34 +306,34 @@ export class DebugCaptureRunner {
     const backgroundText: string = '计算 10 - 4 × 2 的值，写出运算顺序。调度 ' + stamp + 'B';
     WriteJobFlags.setEnabled(true);
     const startedAt: number = Date.now();
-    const timed = (label: string, run: () => Promise<Object>): Promise<number> => {
+    const timed = (run: () => Promise<Object>): Promise<number> => {
       const taskStarted: number = Date.now();
       return run().then((_value: Object): number => Date.now() - taskStarted);
-    };
-    const withDeadline = (task: Promise<number>): Promise<number> => {
-      let timer: number = 0;
-      const timeout: Promise<number> = new Promise<number>((_resolve: (v: number) => void,
-        reject: (e: Error) => void): void => {
-        timer = setTimeout((): void => { reject(new Error('SCHEDULER_PROBE_TIMEOUT')); }, 150000);
-      });
-      return Promise.race([task, timeout]).finally((): void => { clearTimeout(timer); });
     };
     try {
       hilog.info(DOMAIN, TAG, '%{public}s', 'stage=scheduler start');
       const scheduler: WriteJobScheduler = WriteJobScheduler.shared();
-      const interactiveMs: Promise<number> = withDeadline(timed('interactive', (): Promise<Object> =>
-        scheduler.submit('interactive', interactiveText, async (): Promise<Object> => {
-          return await AgentIngestService.ingestSingleTextDirect(ctx, interactiveText) as Object;
-        })));
-      const backgroundMs: Promise<number> = withDeadline(timed('background', (): Promise<Object> =>
-        scheduler.submit('background', backgroundText, async (): Promise<Object> => {
-          return await AgentIngestService.ingestSingleTextDirect(ctx, backgroundText) as Object;
-        })));
-      const results: number[] = await Promise.all([interactiveMs, backgroundMs]);
+      const interactiveTextB: string = interactiveText;
+      const backgroundText2: string = backgroundText;
+      const backgroundText3: string = '计算 12 - 2 × 3 的值，写出运算顺序。调度 ' + stamp + 'B2';
+      const interactiveMs: Promise<number> = DebugCaptureRunner.withTimeout(
+        timed((): Promise<Object> => scheduler.submit('interactive', interactiveTextB,
+          async (): Promise<Object> => await AgentIngestService.ingestSingleTextDirect(ctx, interactiveTextB) as Object)),
+        150000, 'scheduler-interactive');
+      const backgroundMs: Promise<number> = DebugCaptureRunner.withTimeout(
+        timed((): Promise<Object> => scheduler.submit('background', backgroundText2,
+          async (): Promise<Object> => await AgentIngestService.ingestSingleTextDirect(ctx, backgroundText2) as Object)),
+        150000, 'scheduler-background-1');
+      const background2Ms: Promise<number> = DebugCaptureRunner.withTimeout(
+        timed((): Promise<Object> => scheduler.submit('background', backgroundText3,
+          async (): Promise<Object> => await AgentIngestService.ingestSingleTextDirect(ctx, backgroundText3) as Object)),
+        150000, 'scheduler-background-2');
+      const results: number[] = await Promise.all([interactiveMs, backgroundMs, background2Ms]);
       const stats: WriteJobStats = scheduler.stats();
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=scheduler done interactiveMs=' + results[0].toString()
           + ' backgroundMs=' + results[1].toString()
+          + ' background2Ms=' + results[2].toString()
           + ' submitted=' + stats.submitted.toString() + ' completed=' + stats.completed.toString()
           + ' failed=' + stats.failed.toString() + ' queueDepth=' + stats.queueDepth.toString()
           + ' maxConcurrent=' + stats.maxConcurrent.toString()
@@ -358,17 +358,7 @@ export class DebugCaptureRunner {
     const timeOne = async (text: string): Promise<number> => {
       const startedAt: number = Date.now();
       const task: Promise<void> = AgentIngestService.ingestSingleText(ctx, text).then((): void => {});
-      let timer: number = 0;
-      const timeout: Promise<void> = new Promise<void>((_resolve: () => void, reject: (e: Error) => void): void => {
-        timer = setTimeout((): void => {
-          reject(new Error('TASK_TIMEOUT_120S'));
-        }, 120000);
-      });
-      try {
-        await Promise.race([task, timeout]);
-      } finally {
-        clearTimeout(timer);
-      }
+      await DebugCaptureRunner.withTimeout(task, 120000, 'concurrency-task');
       return Date.now() - startedAt;
     };
     try {
@@ -573,7 +563,7 @@ export class DebugCaptureRunner {
         hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done imagePlan=0 err=no-item');
         return;
       }
-      await A2APlanStore.save(ctx, plan);
+      await A2APlanStore.save(ctx, plan.taskId, plan);
       hilog.info(DOMAIN, TAG, '%{public}s', 'stage=image-plan checkpoint saved (未写库)');
       const outcome: NoteOutcome = await AgentIngestService.ingestSingleText(ctx, first.text);
       if (outcome.kind !== 'committed' || outcome.unit === undefined) {
@@ -581,7 +571,7 @@ export class DebugCaptureRunner {
         return;
       }
       plan.done.push(first.index);
-      await A2APlanStore.save(ctx, plan);
+      await A2APlanStore.save(ctx, plan.taskId, plan);
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=image-plan progress=' + formatA2APlanProgress(plan, first, outcome.unit.title, outcome.unit.subject).split('\n')[0]);
       await A2APlanStore.clear(ctx, 'e2e-plan');
@@ -604,7 +594,7 @@ export class DebugCaptureRunner {
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=plan items=' + items.length.toString() + ' remaining=' + remainingPlanCount(plan).toString()
           + ' summary=' + formatA2APlanSummary(plan).split('\n')[0]);
-      await A2APlanStore.save(ctx, plan);
+      await A2APlanStore.save(ctx, plan.taskId, plan);
       const loaded: A2APlan | null = await A2APlanStore.load(ctx, 'e2e-plan');
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=plan-store loaded=' + (loaded === null ? '0' : '1'));
@@ -623,7 +613,7 @@ export class DebugCaptureRunner {
         return;
       }
       loaded.done.push(first.index);
-      await A2APlanStore.save(ctx, loaded);
+      await A2APlanStore.save(ctx, loaded.taskId, loaded);
       const progress: string = formatA2APlanProgress(loaded, first, outcome.unit.title, outcome.unit.subject);
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=plan-progress remaining=' + remainingPlanCount(loaded).toString()

@@ -2,15 +2,16 @@
  * WriteJobScheduler.ets — 写入工作调度器（双通道 + 观测 + feature flag）
  *
  * 路径: entry/src/main/ets/services/WriteJobScheduler.ets
- * 职责: 把「写笔记」任务放进 interactive / background 两条 lane（各自并发上限，默 1），
- *       提供 submit/await、waitMs/runMs/并发峰值统计；S0 已证明 LLM 可自然并发，
- *       写区串行由 KnowledgeUnitWriteService 的 AsyncMutex 保证。
- * 依赖: WriteJobModels / WriteJobQueueCore（纯逻辑，可 Node 单测）。
+ * 职责: 把「写笔记」任务放进 interactive / background 两条 lane（AsyncSemaphore 控并发，默认各 1），
+ *       提供 submit/await、waitMs/runMs/queueDepth/maxConcurrent 统计、job 状态与 [WriteJob] 日志。
+ *       S0 已证明 LLM 可自然并发；写区串行由 KnowledgeUnitWriteService 的 AsyncMutex 保证。
+ * 依赖: WriteJobModels / WriteJobQueueCore / AsyncSemaphore（纯逻辑，可 Node 单测）。
  *
  * 约束: 不持久化（S1）；flag 默认关闭，关闭时接入点走原路径。
  */
 import { WriteJob, WriteJobPriority } from './WriteJobModels';
 import { WriteJobQueueCore } from './WriteJobQueueCore';
+import { AsyncSemaphore } from './AsyncSemaphore';
 
 export interface WriteJobSchedulerOptions {
   interactiveConcurrency?: number;
@@ -26,6 +27,12 @@ export interface WriteJobStats {
   maxConcurrent: number;
   lastWaitMs: number;
   lastRunMs: number;
+}
+
+interface WriteLane {
+  priority: WriteJobPriority;
+  queue: WriteJobQueueCore;
+  sem: AsyncSemaphore;
 }
 
 interface PendingJob {
@@ -50,14 +57,12 @@ export class WriteJobFlags {
 
 export class WriteJobScheduler {
   private static instance: WriteJobScheduler | null = null;
-  private readonly interactiveQueue: WriteJobQueueCore = new WriteJobQueueCore();
-  private readonly backgroundQueue: WriteJobQueueCore = new WriteJobQueueCore();
+  private readonly interactiveLane: WriteLane;
+  private readonly backgroundLane: WriteLane;
+  private readonly lanes: WriteLane[] = [];
   private readonly pending: Map<string, PendingJob> = new Map<string, PendingJob>();
-  private readonly interactiveCap: number;
-  private readonly backgroundCap: number;
   private readonly log: (line: string) => void;
-  private runningInteractive: number = 0;
-  private runningBackground: number = 0;
+  private activeCount: number = 0;
   private submittedCount: number = 0;
   private completedCount: number = 0;
   private failedCount: number = 0;
@@ -68,8 +73,22 @@ export class WriteJobScheduler {
 
   constructor(options?: WriteJobSchedulerOptions) {
     const resolved: WriteJobSchedulerOptions = options !== undefined ? options : {};
-    this.interactiveCap = resolved.interactiveConcurrency !== undefined ? resolved.interactiveConcurrency : 1;
-    this.backgroundCap = resolved.backgroundConcurrency !== undefined ? resolved.backgroundConcurrency : 1;
+    const interactiveCap: number = resolved.interactiveConcurrency !== undefined
+      ? resolved.interactiveConcurrency : 1;
+    const backgroundCap: number = resolved.backgroundConcurrency !== undefined
+      ? resolved.backgroundConcurrency : 1;
+    this.interactiveLane = {
+      priority: 'interactive',
+      queue: new WriteJobQueueCore(),
+      sem: new AsyncSemaphore(interactiveCap),
+    };
+    this.backgroundLane = {
+      priority: 'background',
+      queue: new WriteJobQueueCore(),
+      sem: new AsyncSemaphore(backgroundCap),
+    };
+    this.lanes.push(this.interactiveLane);
+    this.lanes.push(this.backgroundLane);
     this.log = resolved.log !== undefined ? resolved.log : (line: string): void => { console.info(line); };
   }
 
@@ -86,8 +105,10 @@ export class WriteJobScheduler {
     this.seq += 1;
     const job: WriteJob = {
       jobId: 'wj-' + Date.now().toString(36) + '-' + this.seq.toString(),
+      kind: 'text_ingest',
       priority: priority,
       payloadText: text,
+      status: 'queued',
       createdAt: Date.now(),
     };
     this.submittedCount += 1;
@@ -95,23 +116,24 @@ export class WriteJobScheduler {
       reject: (reason: Error) => void): void => {
       this.pending.set(job.jobId, { job: job, run: run, resolve: resolve, reject: reject });
     });
-    if (priority === 'interactive') {
-      this.interactiveQueue.enqueue(job);
-    } else {
-      this.backgroundQueue.enqueue(job);
-    }
+    this.laneOf(priority).queue.enqueue(job);
     this.log('[WriteJob] enqueued id=' + job.jobId + ' priority=' + priority
+      + ' kind=' + job.kind + ' chars=' + job.payloadText.length.toString()
       + ' depth=' + this.stats().queueDepth.toString());
     this.pump();
     return result;
   }
 
   stats(): WriteJobStats {
+    let depth: number = 0;
+    for (const lane of this.lanes) {
+      depth += lane.queue.size();
+    }
     const stats: WriteJobStats = {
       submitted: this.submittedCount,
       completed: this.completedCount,
       failed: this.failedCount,
-      queueDepth: this.interactiveQueue.size() + this.backgroundQueue.size(),
+      queueDepth: depth,
       maxConcurrent: this.maxConcurrent,
       lastWaitMs: this.lastWaitMs,
       lastRunMs: this.lastRunMs,
@@ -119,73 +141,82 @@ export class WriteJobScheduler {
     return stats;
   }
 
+  private laneOf(priority: WriteJobPriority): WriteLane {
+    return priority === 'interactive' ? this.interactiveLane : this.backgroundLane;
+  }
+
   private pump(): void {
     let startedAny: boolean = true;
     while (startedAny) {
       startedAny = false;
-      if (this.runningInteractive < this.interactiveCap) {
-        const job: WriteJob | undefined = this.interactiveQueue.dequeue();
-        if (job !== undefined) {
-          this.start(job);
-          startedAny = true;
-        }
-      }
-      if (this.runningBackground < this.backgroundCap) {
-        const job: WriteJob | undefined = this.backgroundQueue.dequeue();
-        if (job !== undefined) {
-          this.start(job);
+      for (const lane of this.lanes) {
+        while (lane.sem.available() > 0) {
+          const job: WriteJob | undefined = lane.queue.dequeue();
+          if (job === undefined) {
+            break;
+          }
+          this.start(lane, job);
           startedAny = true;
         }
       }
     }
   }
 
-  private start(job: WriteJob): void {
+  private start(lane: WriteLane, job: WriteJob): void {
     const pending: PendingJob | undefined = this.pending.get(job.jobId);
     if (pending === undefined) {
       return;
     }
     this.pending.delete(job.jobId);
-    if (job.priority === 'interactive') {
-      this.runningInteractive += 1;
-    } else {
-      this.runningBackground += 1;
+    lane.sem.acquire();
+    this.activeCount += 1;
+    if (this.activeCount > this.maxConcurrent) {
+      this.maxConcurrent = this.activeCount;
     }
-    const active: number = this.runningInteractive + this.runningBackground;
-    if (active > this.maxConcurrent) {
-      this.maxConcurrent = active;
-    }
+    job.status = 'running';
     const waitMs: number = Date.now() - job.createdAt;
     const startedAt: number = Date.now();
     this.log('[WriteJob] started id=' + job.jobId + ' priority=' + job.priority
-      + ' waitMs=' + waitMs.toString() + ' active=' + active.toString());
-    pending.run()
+      + ' waitMs=' + waitMs.toString() + ' active=' + this.activeCount.toString());
+    let task: Promise<Object>;
+    try {
+      task = pending.run();
+    } catch (error) {
+      // executor 同步抛错：必须走统一失败收尾，否则 lane 永久占死。
+      this.settleFailure(lane, pending, (error as Error), waitMs, startedAt);
+      return;
+    }
+    task
       .then((value: Object): void => {
+        job.status = 'done';
         this.completedCount += 1;
         this.lastWaitMs = waitMs;
         this.lastRunMs = Date.now() - startedAt;
-        this.log('[WriteJob] done id=' + job.jobId + ' runMs=' + this.lastRunMs.toString()
-          + ' waitMs=' + waitMs.toString());
+        this.log('[WriteJob] done id=' + job.jobId + ' priority=' + job.priority
+          + ' runMs=' + this.lastRunMs.toString() + ' waitMs=' + waitMs.toString());
         pending.resolve(value);
-        this.finish(job);
+        this.finish(lane);
       })
       .catch((error: Error): void => {
-        this.failedCount += 1;
-        this.lastWaitMs = waitMs;
-        this.lastRunMs = Date.now() - startedAt;
-        this.log('[WriteJob] failed id=' + job.jobId + ' runMs=' + this.lastRunMs.toString()
-          + ' err=' + error.message);
-        pending.reject(error);
-        this.finish(job);
+        this.settleFailure(lane, pending, error, waitMs, startedAt);
       });
   }
 
-  private finish(job: WriteJob): void {
-    if (job.priority === 'interactive') {
-      this.runningInteractive = Math.max(0, this.runningInteractive - 1);
-    } else {
-      this.runningBackground = Math.max(0, this.runningBackground - 1);
-    }
+  private settleFailure(lane: WriteLane, pending: PendingJob, error: Error,
+    waitMs: number, startedAt: number): void {
+    pending.job.status = 'failed';
+    this.failedCount += 1;
+    this.lastWaitMs = waitMs;
+    this.lastRunMs = Date.now() - startedAt;
+    this.log('[WriteJob] failed id=' + pending.job.jobId + ' priority=' + pending.job.priority
+      + ' runMs=' + this.lastRunMs.toString() + ' err=' + error.message);
+    pending.reject(error);
+    this.finish(lane);
+  }
+
+  private finish(lane: WriteLane): void {
+    this.activeCount = Math.max(0, this.activeCount - 1);
+    lane.sem.release();
     this.pump();
   }
 }
