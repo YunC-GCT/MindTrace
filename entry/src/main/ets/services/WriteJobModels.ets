@@ -14,7 +14,7 @@ export interface WriteJob {
 }
 
 /** 排序键：interactive 先于 background；同优先级按创建时间 FIFO。 */
-export function priorityRank(priority: WriteJobPriority): number {
+function priorityRank(priority: WriteJobPriority): number {
   return priority === 'interactive' ? 0 : 1;
 }
 

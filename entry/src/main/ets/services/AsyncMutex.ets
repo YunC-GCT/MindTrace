@@ -26,8 +26,4 @@ export class AsyncMutex {
     }
   }
 
-  /** 当前是否有人在写区（调试/观测用）。 */
-  isBusy(): boolean {
-    return this.tail !== Promise.resolve();
-  }
 }
