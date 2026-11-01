@@ -1,6 +1,6 @@
 # 040 — WriteJob 持久队列与跨进程 handoff（038 S3）
 
-> **Status**: in-progress (2026-11-01) — P0 完成；P1（调度器持久化/恢复）待做
+> **Status**: in-progress (2026-11-01) — P0/P1 完成；P2（跨进程 producer + inbox 迁移）待做
 > **Related**: [ADR-0024](../adr/0024-writejob-persistence-cross-process.md) · [spec 038](./038-write-job-scheduler.md) · [spec 039](./039-agent-workflow-first.md) · [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md)
 > **Code**: `common/src/main/ets/DatabaseHelper.ets` · `entry/src/main/ets/database/`（新 `AgentJobDao.ets`） · `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `entry/src/main/ets/services/A2AInboxIngestService.ets`
 > **Verified by**: 实现后回填（gate / 真机跨进程与重启 e2e / scheduler-report）
@@ -90,8 +90,17 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - 验证：`node scripts/build-hsp-hap.mjs` 成功；`agent-gate --all` → **RESULT: PASS（pass=1183 fail=0）**；真机升级库验证 `e2e=dedupeProbe` `same=1 added=0 / 16ms`（v20 迁移后 DB 正常）；
 - 说明：`--cold` 模式下 e2e 启动参数偶发未送达（设备冻结/启动竞态），非本片代码；非冷启动复验通过。
 
+### P1（2026-11-01 完成）
+
+- `WriteJobConfig.WRITE_JOB_PERSIST_ENABLED`（默认 **false**，行为不变）；
+- `WriteJobPersistence`：hooks 契约 + `AgentJobPersistence`（enqueue 用 `sourceFingerprint(normalizeForDedupe)` 指纹、claimJob 租约 5min、finish→markDone/markFailed、启动 recover=过期回收+listQueued）；
+- `WriteJobScheduler`：`setPersistenceHooks`；submit 持久化路径（先 enqueue 拿持久 jobId → 内存队列 → start 前 claim，抢不到 `JOB_CLAIMED_ELSEWHERE`）；done/failed 回写终态；`submitRecovered` 恢复路径（不重复 enqueue）；
+- `AgentJobDao.claimJob(jobId,owner,leaseMs)`；`recoverExpired` 改为查询+条件 UPDATE（启动单执行者场景，避开 Transaction.executeSql 不可用）；
+- `WriteJobBootstrap`：DB 就绪后注册 hooks + `recover()` + `submitRecovered`（执行用 `ingestSingleTextDirect`，不再走调度器包装）；EntryAbility `DatabaseHelper.init` 后调用；
+- 测试：`v7-write-job-persist` 6 条（顺序/claim 失败/失败回写/enqueue 失败/恢复路径/接线守卫）；build 成功；gate --all **PASS（pass=1189 fail=0）**；
+- 偏差：失败重试（attempt>1 重新入队）留 P2/P3；P1 失败直接 markFailed。
+
 ### 下一步
 
-- P1：`WriteJobScheduler` 接 `AgentJobDao`（enqueue 落库 / 启动恢复 / claim 租约 / 终态回写 / 重试），flag `WRITE_JOB_PERSIST_ENABLED` 默认关；
 - P2：`AgentExtAbility`/`AgentIngestService` 改为「入队 + 回执已受理」，inbox 迁移；
 - P3：真机跨进程/重启/幂等/灰度回退验收。

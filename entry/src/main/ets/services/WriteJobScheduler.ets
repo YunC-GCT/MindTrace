@@ -13,6 +13,7 @@ import { WriteJob, WriteJobPriority } from './WriteJobModels';
 import { WriteJobQueueCore } from './WriteJobQueueCore';
 import { AsyncSemaphore } from './AsyncSemaphore';
 import { WriteJobEvent, WriteJobEventMetrics, WriteJobEventPhase, WriteJobEventSink } from './WriteJobEvents';
+import type { WriteJobPersistenceHooks } from './WriteJobPersistence';
 
 export interface WriteJobSchedulerOptions {
   interactiveConcurrency?: number;
@@ -64,6 +65,7 @@ export class WriteJobScheduler {
   private readonly pending: Map<string, PendingJob> = new Map<string, PendingJob>();
   private readonly log: (line: string) => void;
   private eventSink: WriteJobEventSink | null = null;
+  private hooks: WriteJobPersistenceHooks | null = null;
   private activeCount: number = 0;
   private submittedCount: number = 0;
   private completedCount: number = 0;
@@ -107,6 +109,11 @@ export class WriteJobScheduler {
     this.eventSink = sink;
   }
 
+  /** spec 040 P1：注册持久化 hooks（agent_job enqueue/claim/finish）；null 回到内存队列。 */
+  setPersistenceHooks(hooks: WriteJobPersistenceHooks | null): void {
+    this.hooks = hooks;
+  }
+
   /** 提交一个写任务；返回与 executor 同结果的 Promise（失败向上抛）。 */
   submit(priority: WriteJobPriority, text: string, run: () => Promise<Object>): Promise<Object> {
     this.seq += 1;
@@ -119,20 +126,63 @@ export class WriteJobScheduler {
       createdAt: Date.now(),
     };
     this.submittedCount += 1;
+    let rejectPersist: (reason: Error) => void = (): void => {};
     const result: Promise<Object> = new Promise<Object>((resolve: (value: Object) => void,
       reject: (reason: Error) => void): void => {
+      rejectPersist = reject;
       this.pending.set(job.jobId, { job: job, run: run, resolve: resolve, reject: reject });
     });
-    this.laneOf(priority).queue.enqueue(job);
+    if (this.hooks === null) {
+      this.installJob(job);
+      return result;
+    }
+    // 持久化：先入队（幂等）拿持久 jobId，再进入内存队列执行；claim 在 start 里做。
+    this.hooks.enqueue(priority, text).then((persistedJobId: string): void => {
+      const existing = this.pending.get(job.jobId);
+      this.pending.delete(job.jobId);
+      job.jobId = persistedJobId;
+      if (existing !== undefined) {
+        this.pending.set(persistedJobId, existing);
+      }
+      this.installJob(job);
+    }).catch((error: Error): void => {
+      this.pending.delete(job.jobId);
+      rejectPersist(error);
+    });
+    return result;
+  }
+
+  /** 恢复路径：job 已在 DB queued，直接进内存队列（不再重复 enqueue）。 */
+  submitRecovered(jobId: string, priority: WriteJobPriority, text: string,
+    run: () => Promise<Object>): void {
+    const job: WriteJob = {
+      jobId: jobId,
+      kind: 'text_ingest',
+      priority: priority,
+      payloadText: text,
+      status: 'queued',
+      createdAt: Date.now(),
+    };
+    this.pending.set(job.jobId, {
+      job: job,
+      run: run,
+      resolve: (): void => {},
+      reject: (): void => {},
+    });
+    this.log('[WriteJob] recovered enqueued id=' + jobId + ' priority=' + priority);
+    this.installJob(job);
+  }
+
+  private installJob(job: WriteJob): void {
+    this.laneOf(job.priority).queue.enqueue(job);
     const enqueuedDepth: number = this.stats().queueDepth;
-    this.log('[WriteJob] enqueued id=' + job.jobId + ' priority=' + priority
+    this.log('[WriteJob] enqueued id=' + job.jobId + ' priority=' + job.priority
       + ' kind=' + job.kind + ' chars=' + job.payloadText.length.toString()
       + ' depth=' + enqueuedDepth.toString());
     this.emitEvent(job, 'enqueued', {
       queueDepth: enqueuedDepth, waitMs: 0, runMs: 0, error: '',
     });
     this.pump();
-    return result;
   }
 
   stats(): WriteJobStats {
@@ -184,6 +234,30 @@ export class WriteJobScheduler {
     if (this.activeCount > this.maxConcurrent) {
       this.maxConcurrent = this.activeCount;
     }
+    if (this.hooks !== null) {
+      this.hooks.claim(job.jobId).then((claimed: boolean): void => {
+        if (!claimed) {
+          this.releaseSlot(lane);
+          pending.reject(new Error('JOB_CLAIMED_ELSEWHERE: ' + job.jobId));
+          return;
+        }
+        this.executePending(lane, pending, job);
+      }).catch((error: Error): void => {
+        this.releaseSlot(lane);
+        pending.reject(error);
+      });
+      return;
+    }
+    this.executePending(lane, pending, job);
+  }
+
+  private releaseSlot(lane: WriteLane): void {
+    this.activeCount = Math.max(0, this.activeCount - 1);
+    lane.sem.release();
+    this.pump();
+  }
+
+  private executePending(lane: WriteLane, pending: PendingJob, job: WriteJob): void {
     job.status = 'running';
     const waitMs: number = Date.now() - job.createdAt;
     const startedAt: number = Date.now();
@@ -211,6 +285,7 @@ export class WriteJobScheduler {
         this.emitEvent(job, 'done', {
           queueDepth: this.stats().queueDepth, waitMs: waitMs, runMs: this.lastRunMs, error: '',
         });
+        this.persistFinish(job.jobId, 'done', '');
         pending.resolve(value);
         this.finish(lane);
       })
@@ -230,6 +305,7 @@ export class WriteJobScheduler {
     this.emitEvent(pending.job, 'failed', {
       queueDepth: this.stats().queueDepth, waitMs: waitMs, runMs: this.lastRunMs, error: error.message,
     });
+    this.persistFinish(pending.job.jobId, 'failed', error.message);
     pending.reject(error);
     this.finish(lane);
   }
@@ -254,6 +330,13 @@ export class WriteJobScheduler {
     } catch (e) {
       // sink 异常不影响写任务
     }
+  }
+
+  private persistFinish(jobId: string, status: string, error: string): void {
+    if (this.hooks === null) {
+      return;
+    }
+    this.hooks.finish(jobId, status, error).catch((): void => {});
   }
 
   private finish(lane: WriteLane): void {

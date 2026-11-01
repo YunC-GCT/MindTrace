@@ -34,6 +34,7 @@ import { A2AInboxIngestService } from '../services/A2AInboxIngestService';
 import { WRITE_JOB_UI_ENABLED } from '../services/WriteJobConfig';
 import { WriteJobEventRecorder } from '../services/WriteJobEventRecorder';
 import { WriteJobFlags, WriteJobScheduler } from '../services/WriteJobScheduler';
+import { WriteJobBootstrap } from '../services/WriteJobBootstrap';
 import { AgentIngestService } from '../services/AgentIngestService';
 import {
   AgentIngestRequest,
@@ -116,6 +117,10 @@ export default class EntryAbility extends UIAbility {
         // ADR-0021 Step 3：DB 就绪后把只读端口注入证据服务组合根（未就绪则保持既有 SQL 路径）
         const readStore: RdbNoteReadStore | null = RdbNoteReadStore.fromDatabase();
         configureEvidenceReadPort(readStore === null ? undefined : new NoteReadPortAdapter(readStore));
+        // spec 040 P1：flag 开启时注册持久化 hooks 并恢复 queued job（默认关 → 行为不变）。
+        WriteJobBootstrap.install(this.context).catch((e: Error) => {
+          hilog.warn(DOMAIN, 'testTag', 'WriteJobBootstrap install failed: %{public}s', e.message);
+        });
         return CardSnapshotService.refresh(this.context);
       })
       .catch((e: Error) => {

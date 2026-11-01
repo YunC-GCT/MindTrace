@@ -7,3 +7,5 @@
  * 数据流: EntryAbility.onCreate() → WRITE_JOB_UI_ENABLED → WriteJobFlags.setEnabled()
  */
 export const WRITE_JOB_UI_ENABLED: boolean = true;
+// spec 040 P1：持久队列开关（默认关；P3 真机验收后再打开）。
+export const WRITE_JOB_PERSIST_ENABLED: boolean = false;

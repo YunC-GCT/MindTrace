@@ -18,6 +18,8 @@ import type {
   AgentJob,
   AgentJobEnqueueInput,
   AgentJobEnqueueResult,
+  AgentJobKind,
+  AgentJobPriority,
   AgentJobStatus,
 } from '../models/AgentJobModels';
 import { shouldRecoverAgentJob } from '../models/AgentJobModels';
@@ -119,6 +121,25 @@ export class AgentJobDao {
     }
   }
 
+  /** 按 jobId claim（内存队列恢复用）；条件更新失败返回 null。 */
+  async claimJob(jobId: string, owner: string, leaseMs: number): Promise<AgentJob | null> {
+    const now: number = Date.now();
+    const predicates = new relationalStore.RdbPredicates('agent_job');
+    predicates.equalTo('job_id', jobId);
+    predicates.equalTo('status', 'queued');
+    const bucket: relationalStore.ValuesBucket = {
+      'status': 'running',
+      'lease_owner': owner,
+      'lease_expires_at': now + leaseMs,
+      'updated_at': now,
+    };
+    const rows: number = await this.store.update(bucket, predicates);
+    if (rows === 0) {
+      return null;
+    }
+    return await this.queryJob(jobId);
+  }
+
   /** 启动恢复：queued 列表（按优先级/FIFO）。 */
   async listQueued(limit: number): Promise<AgentJob[]> {
     const resultSet: relationalStore.ResultSet = await this.store.querySql(
@@ -141,36 +162,29 @@ export class AgentJobDao {
 
   /** 恢复租约过期的 running：attempt+1；达上限置 failed，否则回 queued。返回处理行数。 */
   async recoverExpired(now: number, maxAttempt: number = MAX_ATTEMPT): Promise<number> {
-    const transaction: relationalStore.Transaction = await this.store.createTransaction();
+    const countResult: relationalStore.ResultSet = await this.store.querySql(
+      "SELECT COUNT(*) AS c FROM agent_job WHERE status = 'running'"
+      + " AND lease_expires_at > 0 AND lease_expires_at < ?", [now.toString()]);
+    let count: number = 0;
     try {
-      const countResult: relationalStore.ResultSet = await transaction.querySql(
-        "SELECT COUNT(*) AS c FROM agent_job WHERE status = 'running'"
-        + " AND lease_expires_at > 0 AND lease_expires_at < ?", [now.toString()]);
-      let count: number = 0;
-      try {
-        if (countResult.goToFirstRow()) {
-          count = countResult.getLong(countResult.getColumnIndex('c'));
-        }
-      } finally {
-        countResult.close();
+      if (countResult.goToFirstRow()) {
+        count = countResult.getLong(countResult.getColumnIndex('c'));
       }
-      await transaction.executeSql(
-        "UPDATE agent_job SET attempt = attempt + 1,"
-        + " status = CASE WHEN attempt + 1 >= ? THEN 'failed' ELSE 'queued' END,"
-        + " lease_owner = '', lease_expires_at = 0, updated_at = ?"
-        + " WHERE status = 'running' AND lease_expires_at > 0 AND lease_expires_at < ?",
-        [maxAttempt.toString(), now.toString(), now.toString()],
-      );
-      await transaction.commit();
-      return count;
-    } catch (e) {
-      try {
-        await transaction.rollback();
-      } catch (rollbackError) {
-        // 忽略回滚失败
-      }
-      throw new Error('AgentJobDao.recoverExpired failed: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      countResult.close();
     }
+    if (count === 0) {
+      return 0;
+    }
+    // 启动恢复路径：先统计再条件更新（单执行者启动时无并发 claim，可接受非原子）。
+    await this.store.executeSql(
+      "UPDATE agent_job SET attempt = attempt + 1,"
+      + " status = CASE WHEN attempt + 1 >= ? THEN 'failed' ELSE 'queued' END,"
+      + " lease_owner = '', lease_expires_at = 0, updated_at = ?"
+      + " WHERE status = 'running' AND lease_expires_at > 0 AND lease_expires_at < ?",
+      [maxAttempt.toString(), now.toString(), now.toString()],
+    );
+    return count;
   }
 
   async markDone(jobId: string): Promise<void> {
@@ -264,8 +278,8 @@ export class AgentJobDao {
   private static toJob(resultSet: relationalStore.ResultSet): AgentJob {
     const job: AgentJob = {
       jobId: resultSet.getString(resultSet.getColumnIndex('job_id')),
-      kind: resultSet.getString(resultSet.getColumnIndex('kind')) as AgentJob['kind'],
-      priority: resultSet.getString(resultSet.getColumnIndex('priority')) as AgentJob['priority'],
+      kind: resultSet.getString(resultSet.getColumnIndex('kind')) as AgentJobKind,
+      priority: resultSet.getString(resultSet.getColumnIndex('priority')) as AgentJobPriority,
       payloadText: resultSet.getString(resultSet.getColumnIndex('payload_text')),
       source: resultSet.getString(resultSet.getColumnIndex('source')),
       status: resultSet.getString(resultSet.getColumnIndex('status')) as AgentJobStatus,
