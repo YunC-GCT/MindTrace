@@ -128,3 +128,47 @@ interface TaskStep {
 
 - 当前 P0-2 的「provider 长尾 72–82s」与「多入口无并发闸门」直接相关：S2 的限流+准入先把互相拖慢消掉，再谈单请求优化；
 - 现有 90s deadline → 队列兜底是 S1/S2 的雏形，迁移到 TaskStore 后统一。
+
+
+## 7. 设计评审与修订（2026-11-01，S1 前）
+
+### 7.1 结论
+
+方向合理（统一任务模型/checkpoint/准入/优先级是真实缺口），但**原方案范围偏大且有 3 处判断需要修正**：
+
+1. **收益尚未证实**：慢样本 `completionTokens=594 / NETSTACK total_time≈72s`，同 prompt 快样本 9.3s；且 e2e 是单入口顺序执行也出现长尾 → provider 长尾**不是并发造成的**。调度器能解决的是「多入口互拖/前台被后台阻塞」，**不能解决 provider 长尾**。S1 前应先做 S0 实验证明「互拖」存在，否则优先级/队列收益主要是体验策略而非性能。
+2. **MVP 过重**：S1 同时上 TaskPlanner(DAG)+TaskStore(task/step 双表,schema v20)+跨进程交接，属于过度设计。应改为「单表 job + 线性步骤 + 内存优先级队列 + 现有表/事件系统」，不新增 DAG、不升 schema、不做跨进程。
+3. **进程边界被低估**：A2A 扩展是 `:agent` 独立进程，原方案「UI 进程唯一全局调度」会迫使扩展把任务写 DB 再靠轮询消费，复杂且延迟不可控。MVP 明确：**扩展进程不进调度器**（保持 90s deadline + inbox），调度器先只覆盖 UI 进程写路径 + inbox 消费。
+
+### 7.2 需要调整/补充的点
+
+| # | 调整 | 原因 |
+|---|---|---|
+| A1 | 命名收窄：`WriteJob / WriteJobQueue / WriteJobScheduler`（限定「笔记写入工作」），不用泛化的 TaskPlanner/TaskStore | 避免与现有 `note_generation_run`/`run_store`/`ConversationState` 概念混淆，也避免被理解为通用 agent 调度 |
+| A2 | S1 存储用**单表 `agent_job`**（jobId/kind/priority/status/payloadJson/checkpoint/attempt/时间戳），步骤事件复用 `run_event`；不升 schema v20 | 迁移成本低、回滚容易；DAG/step 表等真有需要（S3）再拆 |
+| A3 | 并发模型改为**双通道**：interactive lane=1（聊天/确认）+ background lane=1（整理/补跑），总量 ≤2，可配置；OCR/write 仍各 1 | LLM 总并发=1 会让前台聊天排在 100s+ 的批量整理后面；总并发 2 兼顾吞吐与 provider 限流，需实测 |
+| A4 | 准入加「前台等待标记」：后台 job 在**步骤边界**检查前台是否有排队交互，有则让出槽位（不做抢占式中断 LLM） | 步骤是结构化边界，天然可让出；避免半成品 |
+| A5 | 降级策略按入口区分：App 内 = 进度 + 取消（不可静默转队列）；A2A = 超时转 inbox 队列（已有） | 前台用户不能「被转后台」而不知道 |
+| A6 | 重试只允许幂等步骤：LLM 可重试（commitKey/输入指纹兜底）、写库幂等、通知不重试；错误分类沿用现有 `retriable` | 避免重复入库/重复回执 |
+| A7 | 立即小修（不依赖调度器）：`A2APlanStore` 由「单全局计划」改为按 taskId/会话分 key | 当前多会话会互相覆盖计划，是现存 bug（S1 之前就能修） |
+| A8 | 观测先进 `run_event`：job 状态变化（queued/admitted/started/done/degraged）+ 排队时长；配 `scripts/quality/scheduler-report.mjs` | 没有数据无法证明调度收益 |
+| A9 | Feature flag `WRITE_JOB_SCHEDULER_ENABLED`（默认关→灰度开），回滚只需关 flag | 写路径是核心链路，必须可一键回退 |
+| A10 | 任务保留策略：完成/失败 job 保留 200 条或 7 天，payload 脱敏；清理任务在 App 启动时执行 | 原文落库膨胀 + 隐私边界 |
+| A11 | 范围锁定：S1 只覆盖 capture/ingest（写笔记）；chat/review 的 LLM 竞争留 S2 | 先闭环可验证的小范围 |
+| A12 | provider 熔断先做「暂停 + 降级入队」，备用模型切换留 S3（依赖多厂商 key 配置） | 不做无数据支撑的模型切换 |
+
+### 7.3 修订后的路线（含 S0）
+
+| 阶段 | 内容 | 验收 |
+|---|---|---|
+| **S0（半天，先做）** | 并发压力实验（不改架构）：e2e 同时提交 2–3 个整理任务 + 后台 inbox 消费，记录首次/各阶段耗时；对比单任务基线 | 结论明确：并发互拖是否真实存在、量化倍数；**若无明显互拖，调度器降级为「优先级+进度」小需求** |
+| **S1** | `agent_job` 单表 + `WriteJobQueue`（内存优先级队列）+ 双通道信号量 + `CapturePipeline`/`AgentIngestService`/inbox 消费接入（flag 控制） | 并发时前台/批量按通道排队；P95 不劣化；关 flag 与旧行为逐字节一致；gate PASS |
+| **S2** | 准入/让出/取消/进度 + 排队指标 + A2A 扩展侧保持现状 | 后台批量时前台聊天首字延迟不劣化；run_event 可查排队时长 |
+| **S3** | 跨进程任务交接（扩展写 job、UI 消费）+ 断点续跑 + A2APlan 迁移 + 熔断/备用模型 | 杀进程重启可续跑；长尾 provider 暂停/降级 |
+| **S4** | 多目标拆解（一句话多任务）+ 调度面板 | 多目标不互踩，任务时间线可查 |
+
+### 7.4 仍待决策（S0 后定）
+
+1. 双通道总并发默认 1 还是 2（看 S0 数据与 provider 429）；
+2. S0 若证明互拖不显著：是否只做「优先级 + 排队可见性」，放弃完整队列/断点续跑；
+3. `agent_job` 用新表还是塞进 `run_store`（当前倾向新表单职责，S0 后确认）。
