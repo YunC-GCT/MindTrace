@@ -43,6 +43,7 @@ docs/
 | **Write the design spec for a ticket** | `docs/specs/` — create `NNN-{slug}.md` from [`docs/template/spec-template.md`](./template/spec-template.md) |
 | **Read an implementation design plan** | [`plans/`](./plans/index.md) — implementation designs pending formal spec |
 | **Record how a ticket was executed / verified** | `docs/specs/execution/{slug}/` — see [`execution/index.md`](./specs/execution/index.md) |
+| **看写入调度器方案** | [`specs/038-write-job-scheduler.md`](./specs/038-write-job-scheduler.md) — WriteJob 双通道队列/并发/观测（S0 实验 + S1 MVP） |
 | **看 RAG 架构决策** | [`adr/0023-rag-local-fts-retrieval.md`](./adr/0023-rag-local-fts-retrieval.md) — 为什么选本机 FTS5 + 证据注入，Kit retrieveRdb 如何暂缓 |
 | **看 RAG 检索方案（DataAugmentationKit 复用）** | [`specs/037-rag-retrieval-data-augmentation.md`](./specs/037-rag-retrieval-data-augmentation.md) — retrieval(FTS/BM25) + 现有 LLM，含真机探针结论 |
 | **看 v1 端A2A 的设计** | [`specs/031-xiaoyi-batch-capture-entry.md`](./specs/031-xiaoyi-batch-capture-entry.md) — 小艺唤起批量整理（浮窗 / 多选 / 落库） |
