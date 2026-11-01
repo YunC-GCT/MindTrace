@@ -13,20 +13,26 @@
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { A2APlan } from './A2APlanModels';
+import { A2APlan, sanitizePlanKey } from './A2APlanModels';
 
 const DOMAIN: number = 0xA2A0;
 const TAG: string = 'MindTraceA2A';
 const PLAN_DIR: string = 'a2a';
-const PLAN_FILE: string = 'plan.json';
+const PLAN_FILE_PREFIX: string = 'plan-';
+const PLAN_FILE_LEGACY: string = 'plan.json';
 
 export class A2APlanStore {
-  /** 读取待推进计划；无计划/坏数据返回 null。 */
-  static async load(context: common.Context): Promise<A2APlan | null> {
+  /** 读取待推进计划（按 taskId 隔离；兼容旧的单文件计划）；无计划/坏数据返回 null。 */
+  static async load(context: common.Context, taskId: string): Promise<A2APlan | null> {
     try {
-      const path: string = A2APlanStore.filePath(context);
+      let path: string = A2APlanStore.filePath(context, taskId);
       if (!fileIo.accessSync(path)) {
-        return null;
+        // 兼容旧版本单文件：仅当 taskId 缺省时读取
+        const legacy: string = A2APlanStore.legacyPath(context);
+        if (sanitizePlanKey(taskId) !== 'default' || !fileIo.accessSync(legacy)) {
+          return null;
+        }
+        path = legacy;
       }
       const content: string = await A2APlanStore.readText(path);
       if (content.trim().length === 0) {
@@ -44,14 +50,14 @@ export class A2APlanStore {
     }
   }
 
-  /** 保存计划（覆盖）。 */
+  /** 保存计划（按 taskId 分文件覆盖）。 */
   static async save(context: common.Context, plan: A2APlan): Promise<void> {
     try {
       const dir: string = A2APlanStore.dirPath(context);
       if (!fileIo.accessSync(dir)) {
         fileIo.mkdirSync(dir, true);
       }
-      const file: fileIo.File = fileIo.openSync(A2APlanStore.filePath(context),
+      const file: fileIo.File = fileIo.openSync(A2APlanStore.filePath(context, plan.taskId),
         fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
       try {
         fileIo.writeSync(file.fd, JSON.stringify(plan));
@@ -63,12 +69,18 @@ export class A2APlanStore {
     }
   }
 
-  /** 清除计划。 */
-  static async clear(context: common.Context): Promise<void> {
+  /** 清除计划（按 taskId；缺省同时清理旧的单文件计划）。 */
+  static async clear(context: common.Context, taskId: string): Promise<void> {
     try {
-      const path: string = A2APlanStore.filePath(context);
+      const path: string = A2APlanStore.filePath(context, taskId);
       if (fileIo.accessSync(path)) {
         fileIo.unlinkSync(path);
+      }
+      if (sanitizePlanKey(taskId) === 'default') {
+        const legacy: string = A2APlanStore.legacyPath(context);
+        if (fileIo.accessSync(legacy)) {
+          fileIo.unlinkSync(legacy);
+        }
       }
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'PLAN_CLEAR_FAILED %{public}s', (e as Error).message);
@@ -79,8 +91,12 @@ export class A2APlanStore {
     return context.filesDir + '/' + PLAN_DIR;
   }
 
-  private static filePath(context: common.Context): string {
-    return A2APlanStore.dirPath(context) + '/' + PLAN_FILE;
+  private static filePath(context: common.Context, taskId: string): string {
+    return A2APlanStore.dirPath(context) + '/' + PLAN_FILE_PREFIX + sanitizePlanKey(taskId) + '.json';
+  }
+
+  private static legacyPath(context: common.Context): string {
+    return A2APlanStore.dirPath(context) + '/' + PLAN_FILE_LEGACY;
   }
 
   private static async readText(path: string): Promise<string> {

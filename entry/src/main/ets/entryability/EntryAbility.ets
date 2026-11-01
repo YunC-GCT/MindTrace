@@ -275,6 +275,12 @@ export default class EntryAbility extends UIAbility {
       });
       return;
     }
+    if (mode === 'concurrencyProbe') {
+      DebugCaptureRunner.runConcurrencyProbe(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', '并发实验异常: ' + e.message);
+      });
+      return;
+    }
     if (mode === 'legacyCleanupAudit') {
       DebugCaptureRunner.runLegacyCleanup(this.context, false).catch((e: Error) => {
         hilog.error(0xE2E0, 'E2E', '%{public}s', '历史数据审计异常: ' + e.message);

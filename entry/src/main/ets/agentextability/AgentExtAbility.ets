@@ -275,7 +275,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     const images: AgentImagePart[] = collectImageParts(parts);
     const text: string = query.length > 0 ? query : joinTextParts(parts);
     const ingest: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, text, images);
-    A2APlanStore.load(this.context)
+    A2APlanStore.load(this.context, taskId)
       .then((plan: A2APlan | null): void => {
         const intent: A2AIntent = routeA2AIntent(text, images.length > 0, plan !== null);
         hilog.info(DOMAIN, TAG, 'INTENT kind=%{public}s reason=%{public}s',
@@ -349,7 +349,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   }
 
   private handleTextPlanMessage(taskId: string, request: AgentIngestRequest): void {
-    A2APlanStore.load(this.context)
+    A2APlanStore.load(this.context, taskId)
       .then((existing: A2APlan | null): void => {
         if (existing !== null) {
           this.handlePlanTurn(taskId, request.text, existing);
@@ -389,7 +389,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
   private handlePlanTurn(taskId: string, query: string, plan: A2APlan): void {
     const command: A2APlanCommand = parseA2APlanCommand(query);
     if (command.kind === PLAN_CMD_CANCEL) {
-      A2APlanStore.clear(this.context).catch((): void => {});
+      A2APlanStore.clear(this.context, taskId).catch((): void => {});
       this.sendAnswer(taskId, '已取消这次整理计划，没有写入新笔记。', 0);
       return;
     }
@@ -401,7 +401,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         }
       }
       this.enqueueTexts(pending);
-      A2APlanStore.clear(this.context).catch((): void => {});
+      A2APlanStore.clear(this.context, taskId).catch((): void => {});
       this.sendAnswer(taskId, '已把剩余 ' + pending.length.toString()
         + ' 道题转待整理，打开 MindTrace 会自动补齐。', 0);
       return;
@@ -424,7 +424,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     }
     if (item === undefined) {
       if (remainingPlanCount(plan) === 0) {
-        A2APlanStore.clear(this.context).catch((): void => {});
+        A2APlanStore.clear(this.context, taskId).catch((): void => {});
         this.sendAnswer(taskId, '这次计划里的题都整理完了 ✅', 0);
         return;
       }

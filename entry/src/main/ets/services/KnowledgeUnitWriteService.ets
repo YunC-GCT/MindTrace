@@ -10,6 +10,7 @@
  */
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
 import { NoteFtsIndex } from '../database/NoteFtsIndex';
+import { AsyncMutex } from './AsyncMutex';
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitPostCommitEffect,
@@ -25,6 +26,8 @@ const INDEX_SYNC_TIMEOUT_MS: number = 5000;
 const POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000;
 
 export class KnowledgeUnitWriteService {
+  /** 全局写区：索引同步 + post-commit effects 串行（S0 并发实验：并发 post-commit 会卡死）。 */
+  private static readonly writeSection: AsyncMutex = new AsyncMutex();
   private repository: KnowledgeUnitWriteRepository;
   private effects: KnowledgeUnitPostCommitEffect[];
 
@@ -47,8 +50,7 @@ export class KnowledgeUnitWriteService {
     }
     const persisted: KnowledgeUnitPersistenceResult =
       await this.repository.createWithRevision(unit, generationMetadata);
-    await this.syncIndex(persisted.unit);
-    const warnings: string[] = await this.runPostCommit(persisted.unit, true);
+    const warnings: string[] = await this.finalizeWrite(persisted.unit, true);
     const result: KnowledgeUnitWriteResult = {
       committed: true,
       rowId: persisted.rowId,
@@ -67,8 +69,7 @@ export class KnowledgeUnitWriteService {
     try {
       const persisted: KnowledgeUnitPersistenceResult =
         await this.repository.updateWithRevision(unit, expectedVersion, generationMetadata);
-      await this.syncIndex(persisted.unit);
-      const warnings: string[] = await this.runPostCommit(persisted.unit, false);
+      const warnings: string[] = await this.finalizeWrite(persisted.unit, false);
       const result: KnowledgeUnitWriteResult = {
         committed: true,
         rowId: persisted.rowId,
@@ -124,10 +125,9 @@ export class KnowledgeUnitWriteService {
       commit,
     );
     console.info('[ConfirmTrace] service=createWithCommitKey-ok');
-    if (persisted.duplicate !== true) {
-      await this.syncIndex(persisted.unit);
-    }
-    const warnings: string[] = await this.runPostCommit(persisted.unit, persisted.duplicate !== true);
+    const warnings: string[] = persisted.duplicate === true
+      ? []
+      : await this.finalizeWrite(persisted.unit, true);
     return {
       committed: true,
       rowId: persisted.rowId,
@@ -156,8 +156,7 @@ export class KnowledgeUnitWriteService {
         commit,
       );
       console.info('[ConfirmTrace] service=updateWithCommitKey-ok');
-      await this.syncIndex(persisted.unit);
-      const warnings: string[] = await this.runPostCommit(persisted.unit, false);
+      const warnings: string[] = await this.finalizeWrite(persisted.unit, false);
       return {
         committed: true,
         rowId: persisted.rowId,
@@ -198,6 +197,14 @@ export class KnowledgeUnitWriteService {
     }
   }
 
+  /** 写区串行段：索引同步 + post-commit effects（并发时会卡死，必须互斥）。 */
+  private async finalizeWrite(unit: KnowledgeUnit, isCreate: boolean): Promise<string[]> {
+    return await KnowledgeUnitWriteService.writeSection.runExclusive(async (): Promise<string[]> => {
+      await this.syncIndex(unit);
+      return await this.runPostCommit(unit, isCreate);
+    });
+  }
+
   /** 索引同步（尽力而为 + 超时兜底）：检索索引失败绝不影响笔记写入结果。 */
   private async syncIndex(unit: KnowledgeUnit): Promise<void> {
     console.info('[ConfirmTrace] index-sync-begin');
@@ -232,9 +239,11 @@ export class KnowledgeUnitWriteService {
       if (effect.createOnly === true && !isCreate) {
         continue;
       }
+      const effectStartedAt: number = Date.now();
       try {
         await KnowledgeUnitWriteService.withTimeout(
           effect.run(unit), POST_COMMIT_EFFECT_TIMEOUT_MS, 'post-commit effect ' + effect.name);
+        console.info('[EffectTrace] name=' + effect.name + ' ok ms=' + (Date.now() - effectStartedAt).toString());
       } catch (e) {
         const message: string = e instanceof Error ? e.message : String(e);
         warnings.push(effect.name + ': ' + message);

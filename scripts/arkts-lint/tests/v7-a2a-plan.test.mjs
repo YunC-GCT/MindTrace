@@ -82,8 +82,9 @@ test('扩展入口接线：多题先回规划，再按指令逐题整理；计�
   assert.match(ability, /private ingestPlanItem\(/);
   assert.match(ability, /A2APlanStore\.save\(this\.context, plan\)/);
   const store = read('entry/src/main/ets/services/A2APlanStore.ets');
-  assert.match(store, /static async load\(context: common\.Context\)/);
+  assert.match(store, /static async load\(context: common\.Context, taskId: string\)/);
   assert.match(store, /static async save\(context: common\.Context, plan: A2APlan\)/);
+  assert.match(store, /filePath\(context, plan\.taskId\)/);
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(entry, /mode === 'agentTextPlan'/);
 });
@@ -96,4 +97,17 @@ test('A2A 入库 deadline：超时转待整理队列（P0-2 第一片）', () =>
   assert.match(ability, /INGEST_DEADLINE: ' \+ INGEST_DEADLINE_MS/);
   assert.match(ability, /A2A_INGEST_TIMEOUT_TEXT/);
   assert.match(ability, /this\.enqueueTexts\(\[item\.text\]\)/);
+});
+
+
+test('A2APlan 多会话：计划 key 按 taskId 隔离且文件名安全', () => {
+  const models = loadNoteReviewEtsModule('entry/src/main/ets/services/A2APlanModels.ets', {
+    mocks: { agents: loadNoteReviewEtsModule('agents/src/main/ets/graph/captureSetPlanner.ets') },
+  });
+  const key = models.sanitizePlanKey;
+  assert.equal(key('task-1'), 'task-1');
+  assert.equal(key(''), 'default');
+  assert.equal(key('a/b:c d'), 'a-b-c-d');
+  assert.equal(key('x'.repeat(200)).length <= 64, true);
+  assert.notEqual(key('task-1'), key('task-2'));
 });

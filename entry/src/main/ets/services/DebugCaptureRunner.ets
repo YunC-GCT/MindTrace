@@ -272,6 +272,63 @@ export class DebugCaptureRunner {
     }
   }
 
+  /** S0 并发实验：顺序两条 vs 并发两条，量「多入口互拖」是否存在。 */
+  static async runConcurrencyProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const stamp: string = Date.now().toString();
+    const seqA: string = '计算 3 + 5 × 2 的值，写出运算顺序。批次 ' + stamp + 'A';
+    const seqB: string = '计算 8 - 2 × 3 的值，写出运算顺序。批次 ' + stamp + 'B';
+    const concA: string = '计算 4 + 6 × 2 的值，写出运算顺序。批次 ' + stamp + 'C';
+    const concB: string = '计算 9 - 3 × 2 的值，写出运算顺序。批次 ' + stamp + 'D';
+    const timeOne = async (text: string): Promise<number> => {
+      const startedAt: number = Date.now();
+      const task: Promise<void> = AgentIngestService.ingestSingleText(ctx, text).then((): void => {});
+      let timer: number = 0;
+      const timeout: Promise<void> = new Promise<void>((_resolve: () => void, reject: (e: Error) => void): void => {
+        timer = setTimeout((): void => {
+          reject(new Error('TASK_TIMEOUT_120S'));
+        }, 120000);
+      });
+      try {
+        await Promise.race([task, timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
+      return Date.now() - startedAt;
+    };
+    try {
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=concurrency seq-start');
+      const seqAMs: number = await timeOne(seqA);
+      const seqBMs: number = await timeOne(seqB);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=concurrency seq a=' + seqAMs.toString() + ' b=' + seqBMs.toString()
+          + ' sum=' + (seqAMs + seqBMs).toString());
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=concurrency conc-start');
+      const wallStart: number = Date.now();
+      let concAMs: number = 0;
+      let concBMs: number = 0;
+      await Promise.all([
+        timeOne(concA).then((ms: number): void => { concAMs = ms; }),
+        timeOne(concB).then((ms: number): void => { concBMs = ms; }),
+      ]);
+      const wallMs: number = Date.now() - wallStart;
+      const seqSum: number = seqAMs + seqBMs;
+      const concSum: number = concAMs + concBMs;
+      const overlap: number = concSum > 0 ? Math.max(0, Math.round((concSum - wallMs) / concSum * 100)) : 0;
+      const slowdown: number = seqSum > 0 ? Number((concSum / seqSum).toFixed(2)) : 0;
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=concurrency conc a=' + concAMs.toString() + ' b=' + concBMs.toString()
+          + ' sum=' + concSum.toString() + ' wall=' + wallMs.toString()
+          + ' overlapPct=' + overlap.toString()
+          + ' slowdown=' + slowdown.toString()
+          + ' seqSum=' + seqSum.toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done concurrency=1 slowdown=' + slowdown.toString() + ' overlapPct=' + overlap.toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done concurrency=0 err=' + (error as Error).message);
+    }
+  }
+
   /** 历史数据清理（B）：旧笔记学科归一 + 完全重复删除；apply=false 只审计。 */
   static async runLegacyCleanup(ctx: common.UIAbilityContext, apply: boolean): Promise<void> {
     const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
@@ -451,7 +508,7 @@ export class DebugCaptureRunner {
       await A2APlanStore.save(ctx, plan);
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=image-plan progress=' + formatA2APlanProgress(plan, first, outcome.unit.title, outcome.unit.subject).split('\n')[0]);
-      await A2APlanStore.clear(ctx);
+      await A2APlanStore.clear(ctx, 'e2e-plan');
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=done imagePlan=1 ms=' + (Date.now() - startedAt).toString());
     } catch (error) {
@@ -472,7 +529,7 @@ export class DebugCaptureRunner {
         'stage=plan items=' + items.length.toString() + ' remaining=' + remainingPlanCount(plan).toString()
           + ' summary=' + formatA2APlanSummary(plan).split('\n')[0]);
       await A2APlanStore.save(ctx, plan);
-      const loaded: A2APlan | null = await A2APlanStore.load(ctx);
+      const loaded: A2APlan | null = await A2APlanStore.load(ctx, 'e2e-plan');
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=plan-store loaded=' + (loaded === null ? '0' : '1'));
       if (loaded === null) {
@@ -495,7 +552,7 @@ export class DebugCaptureRunner {
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=plan-progress remaining=' + remainingPlanCount(loaded).toString()
           + ' first=' + progress.split('\n')[0]);
-      await A2APlanStore.clear(ctx);
+      await A2APlanStore.clear(ctx, 'e2e-plan');
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=done plan=1 ms=' + (Date.now() - startedAt).toString());
     } catch (error) {

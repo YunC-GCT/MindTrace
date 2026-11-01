@@ -87,3 +87,35 @@ M2  T1–T3 核心（queue/semaphore/scheduler）+ 单测
 M3  T4–T6 接入/观测 + flag + 真机 schedulerProbe
 M4  gate 全绿 + code-review 两轴审查 + 文档收尾
 ```
+
+
+## 8. 执行记录
+
+### M1（2026-11-01）
+
+- [x] 计划（本 spec）
+- [x] `A2APlanStore` 多会话修复：计划文件按 `taskId` 分 key（`plan-<sanitize(taskId)>.json`），旧 `plan.json` 仅 default 兼容读取；`sanitizePlanKey` 纯函数 + 单测。
+- [x] `e2e=concurrencyProbe`（S0 实验，只读观测 + 顺序/并发对照）
+- [x] **S0 发现并发 bug**：两条 ingest 并发时，两条笔记都落库，但探针 10+ 分钟不返回（post-commit 阶段卡死）。
+- [x] 修复：`AsyncMutex` 全局写区互斥，`KnowledgeUnitWriteService.finalizeWrite` 把「索引同步 + post-commit effects」串行化；effect 增加耗时日志；并发探针加 120s 单任务超时防挂死。
+- [x] S0 复跑（修复后，真机）：
+
+```
+stage=concurrency seq a=7097 b=3143 sum=10240
+stage=concurrency conc a=4352 b=4319 sum=8671 wall=4352 overlapPct=50 slowdown=0.85
+stage=done concurrency=1
+```
+
+**S0 结论与设计调整**：
+
+1. 并发卡死根因在 **post-commit 写区**（native 副作用不可重入），与 LLM 并发无关；互斥后并发可跑、且 LLM 侧天然重叠（overlap 50%），并发不劣化（slowdown 0.85，样本小）。
+2. 因此 **S1 不需要串行化 LLM**；`WriteJobScheduler` 改为：队列/优先级/背压 + **写区继续用 `AsyncMutex`（lane=1）**；interactive/background 双通道仅用于调度顺序与观测，LLM 可自然并发（上限留可配置）。
+3. 修复本身独立于调度器，先于 S1 生效（当前所有写入已串行 post-commit）。
+
+### M2（下一步）
+
+- T1 `WriteJobQueueCore`（纯函数：interactive 优先、同级 FIFO）
+- T2 `AsyncSemaphore`（或复用 AsyncMutex 的 lane 语义）
+- T3 `WriteJobScheduler`（注入 executor、统计 waitMs/runMs、flag）
+- T4 接入 `AgentIngestService.ingestSingleText` + `A2AInboxIngestService.consume`
+- T5/T6 观测与真机 `schedulerProbe`
