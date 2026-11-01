@@ -10,6 +10,7 @@
   python a2a_smoke.py --text "整理相册里的数学题"
   python a2a_smoke.py --agent "MindTrace 数学笔记助手" --text "你好" --tag MindTraceA2A
   python a2a_smoke.py --no-restart           # 不清小艺，直接在当前界面操作
+  python a2a_smoke.py --text "整理数学题"    # 全自动：模板匹配桌面小艺图标 → 拉起 → 进智能体 → 发送/取回复
   python a2a_smoke.py --manual --text "整理数学题"   # 手动模式：用户自己进智能体会话，脚本只发送/取回复
   python a2a_smoke.py --xiaoyi-icon 558,205 --text "你好"  # 桌面图标不暴露文本时的坐标兜底
 
@@ -30,6 +31,8 @@ DEFAULT_HDC = os.environ.get("HDC") or (
 DEFAULT_AGENT = "MindTrace 数学笔记助手"
 YIXIAO_BUNDLE = "com.huawei.hmos.vassistant"
 YIXIAO_ABILITY = "VoiceAbility"
+# 桌面小艺图标模板（部分设备桌面图标不在 layout 树里，用截图模板匹配定位点击）
+ICON_TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "xiaoyi-icon-template.png")
 
 # 气泡里混入的界面噪声：时间戳、「内容由 AI 生成」等，不算回复正文字数
 REPLY_NOISE_PATTERNS = (
@@ -175,6 +178,31 @@ def find_launcher_icon(nodes):
     return None, None
 
 
+def find_icon_by_template(hdc, template_path=ICON_TEMPLATE_PATH, threshold=0.7):
+    """截图 + 模板匹配找桌面小艺图标，返回点击坐标；cv2/模板缺失时返回 None。"""
+    try:
+        import cv2
+    except Exception:
+        return None
+    if not template_path or not os.path.exists(template_path):
+        return None
+    with tempfile.TemporaryDirectory() as td:
+        hdc.shell("snapshot_display -f /data/local/tmp/a2a_home.jpeg")
+        hdc.run(["file", "recv", "/data/local/tmp/a2a_home.jpeg", "home.jpeg"], cwd=td)
+        path = os.path.join(td, "home.jpeg")
+        if not os.path.exists(path):
+            return None
+        screen = cv2.imread(path)
+        template = cv2.imread(template_path)
+        if screen is None or template is None:
+            return None
+        result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+        _min_v, max_v, _min_loc, max_loc = cv2.minMaxLoc(result)
+        if max_v < threshold:
+            return None
+        return (max_loc[0] + template.shape[1] // 2, max_loc[1] + template.shape[0] // 2)
+
+
 def wait_foreground(hdc, bundle, seconds):
     """冷启动/加载可能超过固定 5s：轮询前台 bundle 直到超时。"""
     deadline = time.time() + seconds
@@ -185,7 +213,7 @@ def wait_foreground(hdc, bundle, seconds):
     return False
 
 
-def launch(hdc, restart=True, icon_point=None, wait_seconds=10.0):
+def launch(hdc, restart=True, icon_point=None, wait_seconds=10.0, icon_template=None, match_threshold=0.7):
     """拉起小艺：aa start → 关启动失败弹窗 → 回桌面点「小艺」图标（桌面不暴露文本时用坐标兜底）。"""
     if restart:
         hdc.shell(f"aa force-stop {YIXIAO_BUNDLE}")
@@ -209,6 +237,10 @@ def launch(hdc, restart=True, icon_point=None, wait_seconds=10.0):
     if nodes:
         _n, icon_bounds = find_launcher_icon(nodes)
     points = []
+    # 桌面图标不在 layout 树时：截图模板匹配（优先级最高，避免点到其他图标）
+    template_point = find_icon_by_template(hdc, icon_template or ICON_TEMPLATE_PATH, match_threshold)
+    if template_point:
+        points.append(template_point)
     if icon_bounds:
         points.append(center(clickable_containing(nodes, center(icon_bounds)) or icon_bounds))
     if icon_point:
@@ -418,6 +450,17 @@ def main():
         help="手动模式 = --no-launch --no-open-agent（用户自己从小艺入口进入智能体会话后，脚本只负责发送/取回复）",
     )
     ap.add_argument(
+        "--icon-template",
+        default=ICON_TEMPLATE_PATH,
+        help="桌面小艺图标模板 PNG 路径（默认 scripts/a2a-smoke/xiaoyi-icon-template.png）",
+    )
+    ap.add_argument(
+        "--match-threshold",
+        type=float,
+        default=0.7,
+        help="图标模板匹配阈值（默认 0.7）",
+    )
+    ap.add_argument(
         "--launch-wait",
         type=float,
         default=10.0,
@@ -450,7 +493,7 @@ def main():
             if not fg:
                 raise RuntimeError("手动模式：当前前台 bundle 为空，请确认小艺/智能体会话在前台，或加 --no-launch 前先打开")
         elif not args.no_launch:
-            if not launch(hdc, restart=not args.no_restart, icon_point=icon_point, wait_seconds=args.launch_wait):
+            if not launch(hdc, restart=not args.no_restart, icon_point=icon_point, wait_seconds=args.launch_wait, icon_template=args.icon_template, match_threshold=args.match_threshold):
                 raise RuntimeError("拉起小艺失败")
         else:
             fg = foreground_bundle(hdc)
