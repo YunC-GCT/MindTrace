@@ -140,3 +140,11 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - **整理内联化**：A2A 文本整理、计划逐题、「全部」逐题均改为在 `:agent` 扩展进程内联执行（超时/失败回退 inbox/持久队列），不再依赖打开 App；持久队列保留为兜底/溢出/App 写路径；
 - 验证：`A2AIntentRouter` 用例（image_qa/ocr 分流）、build 成功、`agent-gate --all` PASS（pass=1194）；
 - 待真机：小艺发图问答、发图+整理、文字+整理（用户手动会话验证）。
+
+### 9.1 小艺多轮记忆 / 短整理指令修复（2026-11-01 晚）
+
+真机日志暴露三个问题（`part[0] text=0` 无 image part、`taskId=none`、`整理成笔记` 5 字被路由 chat）：
+
+1. **多轮记忆**：新增 `A2AConversationStore`（按 `message.contextId` 回退 taskId 持久最近 6 轮），`A2AChatContext.build(query, memoryContext)` 注入 `ReplyContext.memoryContext`，回答后 append；扩展 `onCreate` 补 `DatabaseHelper.init`（修 `A2A_EVIDENCE store-not-ready`）；
+2. **短整理指令**：无图且 `整理成笔记/存笔记` 不足 8 字 → `pick_card` 引导（不再静默闲聊）；
+3. **图片无法到达**：日志确认小艺只下发 `text/plain`（图片测试收到 `text=0` 空 part，无 raw/url/file），图片走小艺自身视觉链路；需平台重新导入 AgentCard + 重发真机测试 + 重启小艺，若仍无 image part 则应用侧不可修复。

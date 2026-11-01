@@ -29,10 +29,10 @@ export interface A2AChatContextResult {
 
 export class A2AChatContext {
   /** 构建聊天回合上下文（证据注入；超时/失败自动降级为空证据）。 */
-  static async build(query: string): Promise<A2AChatContextResult> {
+  static async build(query: string, memoryContext: string = ''): Promise<A2AChatContextResult> {
     const fallback: A2AChatContextResult = {
       replyContext: {
-        memoryContext: '',
+        memoryContext: memoryContext,
         learnerProfileContext: '',
         userContent: query,
         evidenceContext: '',
@@ -52,7 +52,7 @@ export class A2AChatContext {
         service.build(trimmed, { topK: EVIDENCE_TOP_K }), EVIDENCE_TIMEOUT_MS);
       return {
         replyContext: {
-          memoryContext: '',
+          memoryContext: memoryContext,
           learnerProfileContext: '',
           userContent: query,
           evidenceContext: evidence.contextText,

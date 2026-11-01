@@ -35,6 +35,9 @@ test('带图 → OCR；明确拍题但无图 → 卡片', () => {
 test('显式存笔记意图 → text_ingest', () => {
   assert.equal(routeA2AIntent('帮我整理这道题：求 f(2)', false, false).kind, 'text_ingest');
   assert.equal(routeA2AIntent('存笔记：矩阵的秩等于行秩', false, false).kind, 'text_ingest');
+  // 短指令「整理成笔记」但没内容：给选图/打字引导，不能静默走闲聊
+  assert.equal(routeA2AIntent('整理成笔记', false, false).kind, 'pick_card');
+  assert.equal(routeA2AIntent('存笔记', false, false).kind, 'pick_card');
 });
 
 test('存在 checkpoint 计划时，继续/第N题/全部/取消 优先推进', () => {
@@ -72,7 +75,7 @@ test('扩展接线：意图路由 + OCR checkpoint（回复继续前不写库）
 
 test('A2A 聊天接入 RAG：证据上下文注入 + 引用校验（P0-1）', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.match(ability, /A2AChatContext\.build\(query\)/);
+  assert.match(ability, /A2AChatContext\.build\(query/);
   assert.match(ability, /A2AChatContextResult/);
   assert.match(ability, /A2AChatContext\.sanitize\(session\.evidence, answer\)/);
   assert.match(ability, /A2A_EVIDENCE citations=/);
@@ -92,4 +95,24 @@ test('A2A 图片意图：带图但无整理短语 → image_qa；带「整理」
   assert.equal(routeA2AIntent('帮我把这道题存到笔记', true, false).kind, 'ocr');
   // 计划等待优先于图片问答
   assert.equal(routeA2AIntent('继续', true, true).kind, 'plan_continue');
+});
+
+
+test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后落盘', () => {
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.ok(ability.includes('readContextId'));
+  assert.ok(ability.includes('conversationKey'));
+  assert.ok(ability.includes('A2AConversationStore.load(this.context, conversationKey)'));
+  assert.ok(ability.includes('A2AChatContext.build(query, memory)'));
+  assert.ok(ability.includes('A2AConversationStore.append(this.context, session.conversationKey'));
+  assert.ok(ability.includes("hilog.info(DOMAIN, TAG, 'A2A_MEMORY turns="));
+  // 扩展进程补 DB 初始化：RAG 证据不再 store-not-ready
+  assert.ok(ability.includes('DatabaseHelper.init(this.context)'));
+  const chat = read('entry/src/main/ets/services/A2AChatContext.ets');
+  assert.ok(chat.includes("static async build(query: string, memoryContext: string = '')"));
+  assert.ok(chat.includes('memoryContext: memoryContext'));
+  const store = read('entry/src/main/ets/services/A2AConversationStore.ets');
+  assert.ok(store.includes('static keyOf(taskId: string, contextId: string)'));
+  assert.ok(store.includes('static format(turns: A2AConversationTurn[])'));
+  assert.ok(store.includes('MAX_TURNS: number = 6'));
 });

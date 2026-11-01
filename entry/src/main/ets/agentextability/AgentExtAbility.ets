@@ -29,7 +29,7 @@
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { CancellationToken, getProviderCatalog, KnowledgeUnit, LlmConfig, LlmError, OcrRecognizerRegistry, resolveModel } from 'common';
+import { CancellationToken, DatabaseHelper, getProviderCatalog, KnowledgeUnit, LlmConfig, LlmError, OcrRecognizerRegistry, resolveModel } from 'common';
 import type { NoteOutcome, ProviderCatalog, ResolvedModel } from 'common';
 import { IntentClassifier, ReplyContext } from '../services/IntentClassifier';
 import { ReplyService } from '../services/ReplyService';
@@ -46,6 +46,8 @@ import {
 import { AgentInboxItem, buildInboxItem } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
+import { A2AConversationStore } from '../services/A2AConversationStore';
+import type { A2AConversationTurn } from '../services/A2AConversationStore';
 import {
   A2APlan,
   A2APlanCommand,
@@ -178,6 +180,8 @@ interface A2ARequestSession {
   attempts: number;
   /** 本轮回合注入的 RAG 证据（回答后做引用校验） */
   evidence?: NoteEvidenceContext;
+  /** 会话键：contextId 优先，回退 taskId；用于多轮记忆 */
+  conversationKey: string;
 }
 
 /** 扩展进程内的模型配置初始化（只做一次），runQuery 前必须等它 */
@@ -189,6 +193,8 @@ const DOMAIN: number = 0xA2A0;
 // part 的形状判定与图片提取集中在 services/AgentImageParts（纯函数，可单测），这里只做透传。
 interface A2AMessage {
   parts?: AgentPart[];
+  /** 小艺会话 id：taskId 为空时用它做多轮记忆键 */
+  contextId?: string;
 }
 
 interface A2AParams {
@@ -227,6 +233,10 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         a2aBudgetMs(), A2A_POLICY.deadlineMs);
     }
     // 扩展进程独立于 UI 进程，模型配置必须在这里重新初始化，否则会用默认 endpoint
+    // 扩展进程初始化同一个 DB：聊天证据（RAG）与内联整理都需要，否则 A2A_EVIDENCE 恒为 store-not-ready。
+    DatabaseHelper.init(this.context).catch((e: Error) => {
+      hilog.warn(DOMAIN, TAG, 'DB init failed %{public}s', e.message);
+    });
     configReady = LlmConfig.getInstance().init(this.context)
       .then((): void => {
         const cfg: LlmConfig = LlmConfig.getInstance();
@@ -267,8 +277,9 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     this.logParts(request);
     const query: string = this.readQuery(request);
     const taskId: string = this.readTaskId(request);
-    hilog.info(DOMAIN, TAG, 'id=%{public}s taskId=%{public}s query=%{public}s',
-      this.lastRequestId, taskId.length > 0 ? taskId : 'none', query);
+    const conversationKey: string = A2AConversationStore.keyOf(taskId, this.readContextId(request));
+    hilog.info(DOMAIN, TAG, 'id=%{public}s taskId=%{public}s ctxKey=%{public}s query=%{public}s',
+      this.lastRequestId, taskId.length > 0 ? taskId : 'none', conversationKey, query);
 
     // 意图路由：显式判断「聊天回复 / 文字识别（OCR） / 存笔记 / 拍题卡片 / 计划推进」，
     // 取代原来散落的 indexOf 关键词分支（见 services/A2AIntentRouter）。
@@ -301,7 +312,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           return;
         }
         if (intent.kind === INTENT_IMAGE_QA) {
-          this.handleImageQuestion(taskId, ingest);
+          this.handleImageQuestion(taskId, ingest, conversationKey);
           return;
         }
         if (intent.kind === INTENT_PICK_CARD || intent.kind === INTENT_EMPTY) {
@@ -312,16 +323,16 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           this.handleTextPlanMessage(taskId, ingest);
           return;
         }
-        this.runQuery(taskId, query);
+        this.runQuery(taskId, query, conversationKey);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'INTENT_ROUTE_FAILED %{public}s', e.message);
-        this.runQuery(taskId, query);
+        this.runQuery(taskId, query, conversationKey);
       });
   }
 
   /** 图片问答：OCR 识别图片文字后直接回答用户问题，不入库（整理意图仍走 OCR/计划）。 */
-  private handleImageQuestion(taskId: string, request: AgentIngestRequest): void {
+  private handleImageQuestion(taskId: string, request: AgentIngestRequest, conversationKey: string): void {
     hilog.info(DOMAIN, TAG, 'IMAGE_QA start images=%{public}d chars=%{public}d',
       request.images.length, request.text.length);
     this.recognizeImages(request.images)
@@ -339,7 +350,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           + '\n\n请直接回答用户的问题（讲解思路/答案/易错点）。'
           + '不要输出笔记整理模板；如果用户需要整理成笔记，可以回复「整理成笔记」。';
         hilog.info(DOMAIN, TAG, 'IMAGE_QA ocrChars=%{public}d', text.length);
-        this.runQuery(taskId, prompt);
+        this.runQuery(taskId, prompt, conversationKey);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'IMAGE_QA failed %{public}s', e.message);
@@ -807,8 +818,18 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     return '';
   }
 
+  /** 小艺会话 id（message.contextId）：taskId 为空时做多轮记忆/计划键。 */
+  private readContextId(request: A2ARequest): string {
+    const params: A2AParams | undefined = request.params;
+    if (params === undefined || params.message === undefined) {
+      return '';
+    }
+    const cid: string | undefined = params.message.contextId;
+    return cid === undefined ? '' : cid;
+  }
+
   /** 从 onData 拿到有效 query 开始计时：4s 配置 + 25s 模型 + 6s 余量 = 35s。 */
-  private runQuery(taskId: string, query: string): void {
+  private runQuery(taskId: string, query: string, conversationKey: string = 'default'): void {
     // 回执意图本地判定：命中就读落盘事实，不等待 configReady、不调 ReplyService、不判 LlmConfig
     if (matchesReceiptIntent(query)) {
       this.answerFromReceipt(taskId);
@@ -827,6 +848,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       requestedModel: '',
       canonicalModel: '',
       attempts: 0,
+      conversationKey: conversationKey,
     };
     this.activeSession = session;
 
@@ -842,7 +864,15 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     }, A2A_POLICY.deadlineMs);
 
     // P0-1：复用 App 对话同款 RAG——先检索本机笔记证据，再交给 ReplyService（超时降级为空）。
-    A2AChatContext.build(query)
+    A2AConversationStore.load(this.context, conversationKey)
+      .then((turns: A2AConversationTurn[]): Promise<A2AChatContextResult> => {
+        const memory: string = A2AConversationStore.format(turns);
+        if (memory.length > 0) {
+          hilog.info(DOMAIN, TAG, 'A2A_MEMORY turns=%{public}d chars=%{public}d',
+            turns.length, memory.length);
+        }
+        return A2AChatContext.build(query, memory);
+      })
       .then((built: A2AChatContextResult): void => {
         session.evidence = built.evidence;
         hilog.info(DOMAIN, TAG, 'A2A_EVIDENCE citations=%{public}d degraded=%{public}d reason=%{public}s',
@@ -1013,6 +1043,8 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         }
         const reason: string = resolveReason.length > 0 ? resolveReason : 'OK';
         const safeAnswer: string = A2AChatContext.sanitize(session.evidence, answer);
+        A2AConversationStore.append(this.context, session.conversationKey, session.query, safeAnswer)
+          .catch((): void => {});
         this.settle(session, 'A2A_REPLY_SENT', safeAnswer, reason);
       })
       .catch((e: Error): void => {

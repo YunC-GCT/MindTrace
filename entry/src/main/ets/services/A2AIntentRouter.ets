@@ -98,6 +98,10 @@ export function routeA2AIntent(query: string, hasImages: boolean, hasPendingPlan
   if (text.length >= MIN_TEXT_INGEST_CHARS && matchesAny(text, INGEST_PHRASES)) {
     return { kind: INTENT_TEXT_INGEST, reason: 'ingest-phrase' };
   }
+  if (matchesAny(text, INGEST_PHRASES)) {
+    // 「整理成笔记」这类短指令但没内容：给选图/发文字引导，绝不静默走闲聊。
+    return { kind: INTENT_PICK_CARD, reason: 'ingest-without-content' };
+  }
   return { kind: INTENT_CHAT, reason: 'default-chat' };
 }
 
