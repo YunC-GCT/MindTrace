@@ -1,6 +1,6 @@
 # 039 — Agent 编排收口：CommandExecutor + CommandRouter + 四条 workflow
 
-> **Status**: proposed (2026-11-01) — **S1/S2 已落地**（2026-11-01）；S3（事件树）待做
+> **Status**: implemented (2026-11-01) — S1/S2/S3 已落地；真机 captureSet/a2a smoke 因设备锁屏待补跑（不阻塞代码/单测/golden 判据）
 > **Related**: [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 038](./038-write-job-scheduler.md) · [架构提案](../architecture/agent-architecture-proposal-2026-11-01.md) · [v7 外评审](../architecture/review-v7-2026-10-27.md)
 > **Code**: `agents/src/main/ets/core/Dispatcher.ets` · `agents/src/main/ets/core/dispatch/`（DispatchGraph / CaptureBranch / RunEventSink） · `agents/src/main/ets/agents/NoteAgent.ets` · `entry/src/main/ets/services/ai/{AiServicePorts,CapturePipeline,DraftPipeline,DraftCommitService}.ets` · `common/src/main/ets/workflow/StateGraph.ets`
 > **Verified by**: 基线 `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（pass=1165 / 0 lint error / 0 边界违规）；本 spec 的验收命令见 §7，实施后逐条回填
@@ -176,3 +176,11 @@ export class CommandRouter {
 
 - S3：事件 schema（node/tool/approval/commit）+ runId 贯通 + scheduler-report 解析；之后补真机 captureSet/a2a smoke。
 
+### S3（2026-11-01 完成）
+
+- `RunEventSink` 扩事件契约：`node.ended` / `commit.committed` / `approval.rejected`（全部 runId=`command.operationId`，payload 只带 step/duration、noteId/version/commitKey、code/message，不落正文）；
+- `CommandExecutor`：把 options.onNodeTiming 包成「用户回调 + node.ended 事件」；committed 时先发 `commit.committed` 再发 `dispatch.terminal`；preflight 审批拒绝发 `approval.rejected`；每次 sink emit 打 `run_event kind=... runId=...` 日志；
+- `scheduler-report.mjs` 增加 `runEvents` 统计（解析 `run_event kind=` 行）；
+- 测试：新增 `v7-run-events`（7 条：事件顺序、runId 贯通、payload 不落正文、失败无 commit、approval.rejected、报告解析）；既有 `v7-run-event-sink` 期望更新为事件树；
+- 验证：`node scripts/agent-gate/index.mjs --all` → **RESULT: PASS（fail=0）**；`node scripts/build-hsp-hap.mjs` 成功；golden `raw/` 零 diff；
+- 偏差（记录）：`node.started` 未发（CaptureGraph 的 timing seam 只暴露节点结束后的 step+ms；避免为单一事件改图内核，留待有第二个消费者时补）；`tool.*` 不接（ToolLoop 生产零引用，随 spec 040 接 Chat 时补）；`approval.*` 只发 rejected（确认在业务级草稿/审批，ADR-0008 不做图内 HITL）。

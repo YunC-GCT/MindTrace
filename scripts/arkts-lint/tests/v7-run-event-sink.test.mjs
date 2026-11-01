@@ -48,13 +48,14 @@ test('dispatchCommand emits start + terminal run events through the sink', async
     runEventSink: sink,
   });
   assert.equal(outcome.kind, 'committed');
-  assert.equal(events.length, 2);
+  assert.ok(events.length >= 3, 'S3 事件树：start + node.ended + commit.committed + terminal');
   assert.equal(events[0].kind, 'dispatch.start');
-  assert.equal(events[1].kind, 'dispatch.terminal');
+  const terminalEvent = events[events.length - 1];
+  assert.equal(terminalEvent.kind, 'dispatch.terminal');
   assert.equal(events[0].runId, 'op-sink-1');
   const start = JSON.parse(events[0].payloadJson);
   assert.equal(start.commandKind, 'capture');
-  const terminal = JSON.parse(events[1].payloadJson);
+  const terminal = JSON.parse(terminalEvent.payloadJson);
   assert.equal(terminal.outcomeKind, 'committed');
   assert.equal(terminal.noteId.length > 0, true);
   assert.equal(typeof terminal.durationMs, 'number');

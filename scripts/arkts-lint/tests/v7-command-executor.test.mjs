@@ -43,11 +43,13 @@ test('capture：committed + run.started 先于 run.terminal + runId=operationId 
     runEventSink: recorder.sink,
   });
   assert.equal(outcome.kind, 'committed');
-  assert.equal(recorder.events.length, 2);
-  assert.match(recorder.events[0].kind, /start/i);
-  assert.match(recorder.events[1].kind, /terminal/i);
+  const kinds = recorder.events.map((event) => event.kind);
+  assert.equal(kinds[0], 'dispatch.start');
+  assert.equal(kinds[kinds.length - 1], 'dispatch.terminal');
+  assert.ok(kinds.includes('commit.committed'));
+  assert.ok(kinds.includes('node.ended'));
   assert.equal(recorder.events[0].runId, 'op-exec-1');
-  assert.equal(recorder.events[1].runId, 'op-exec-1');
+  assert.equal(recorder.events[recorder.events.length - 1].runId, 'op-exec-1');
   assert.equal(recorder.settled.length, 1);
   assert.equal(recorder.settled[0].runId, 'op-exec-1');
 });
@@ -62,7 +64,8 @@ test('异常：workflow 抛错 → failed 终态（不向外抛）且 terminal/s
   assert.equal(outcome.kind, 'failed');
   assert.equal(typeof outcome.code, 'string');
   assert.equal(typeof outcome.retryable, 'boolean');
-  assert.equal(recorder.events.length, 2);
+  assert.equal(recorder.events[0].kind, 'dispatch.start');
+  assert.equal(recorder.events[recorder.events.length - 1].kind, 'dispatch.terminal');
   assert.equal(recorder.settled.length, 1);
   assert.equal(recorder.settled[0].kind, 'failed');
 });

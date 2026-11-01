@@ -34,8 +34,14 @@ import { NoteOutcomeMapper } from './dispatch/NoteOutcomeMapper';
 import {
   DISPATCH_EVENT_START,
   DISPATCH_EVENT_TERMINAL,
+  RUN_EVENT_APPROVAL_REJECTED,
+  RUN_EVENT_COMMIT_COMMITTED,
+  RUN_EVENT_NODE_ENDED,
+  approvalRejectedPayload,
+  commitCommittedPayload,
   dispatchStartPayload,
   dispatchTerminalPayload,
+  nodeEndedPayload,
 } from './dispatch/RunEventSink';
 import { CommandRouter, RouterPreflightResult } from './CommandRouter';
 import type { WorkflowContext } from '../workflows/WorkflowContext';
@@ -169,6 +175,7 @@ export class CommandExecutor {
     }
     try {
       await sink.emit(runId, { kind: kind, payloadJson: payloadJson });
+      log.info('run_event kind=' + kind + ' runId=' + runId);
     } catch (e) {
       log.warn('run event sink failed kind=' + kind + ' runId=' + runId
         + ' err=' + (e instanceof Error ? e.message : String(e)));
@@ -258,6 +265,8 @@ export class CommandExecutor {
     if (preflight.errorCode !== undefined) {
       const message: string = preflight.errorMessage !== undefined
         ? preflight.errorMessage : preflight.errorCode;
+      await CommandExecutor.emitRunEvent(options, command.operationId, RUN_EVENT_APPROVAL_REJECTED,
+        approvalRejectedPayload(preflight.errorCode, message));
       return CommandExecutor.failedOutcome(command, preflight.errorCode, message, preflight.retryable === true);
     }
 
@@ -265,6 +274,15 @@ export class CommandExecutor {
     if (preflight.outcome !== undefined) {
       outcome = preflight.outcome;
     } else {
+      // spec 039 S3：节点结束时发 node.ended（runId=operationId）；原 onNodeTiming 回调保持透传。
+      const userTiming: ((step: string, elapsedMs: number) => void) | undefined = effective.onNodeTiming;
+      effective.onNodeTiming = (step: string, elapsedMs: number): void => {
+        if (userTiming !== undefined) {
+          userTiming(step, elapsedMs);
+        }
+        CommandExecutor.emitRunEvent(options, command.operationId, RUN_EVENT_NODE_ENDED,
+          nodeEndedPayload(step, elapsedMs)).catch((): void => {});
+      };
       const context: WorkflowContext = {
         request: request,
         options: effective,
@@ -286,6 +304,10 @@ export class CommandExecutor {
       return CommandExecutor.failedOutcome(command, violation.code, violation.message, violation.retryable);
     }
 
+    if (outcome.kind === 'committed') {
+      await CommandExecutor.emitRunEvent(options, command.operationId, RUN_EVENT_COMMIT_COMMITTED,
+        commitCommittedPayload(outcome));
+    }
     await CommandExecutor.emitRunEvent(
       options, command.operationId, DISPATCH_EVENT_TERMINAL, dispatchTerminalPayload(outcome));
     await CommandExecutor.settleRun(options, command.operationId, outcome);

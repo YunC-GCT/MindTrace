@@ -33,6 +33,10 @@ export class NullRunEventSink implements RunEventSink {
 
 export const DISPATCH_EVENT_START: string = 'dispatch.start';
 export const DISPATCH_EVENT_TERMINAL: string = 'dispatch.terminal';
+// spec 039 S3：细粒度事件（全部带 runId=operationId；payload 不落正文）
+export const RUN_EVENT_NODE_ENDED: string = 'node.ended';
+export const RUN_EVENT_COMMIT_COMMITTED: string = 'commit.committed';
+export const RUN_EVENT_APPROVAL_REJECTED: string = 'approval.rejected';
 
 export function dispatchStartPayload(command: NoteCommand): string {
   return JSON.stringify({
@@ -50,5 +54,27 @@ export function dispatchTerminalPayload(outcome: NoteOutcome): string {
     committed: outcome.committed === true,
     noteId: outcome.noteId !== undefined ? outcome.noteId : '',
     durationMs: outcome.durationMs,
+  });
+}
+
+export function nodeEndedPayload(step: string, elapsedMs: number): string {
+  return JSON.stringify({
+    step: step,
+    durationMs: elapsedMs,
+  });
+}
+
+export function commitCommittedPayload(outcome: NoteOutcome): string {
+  return JSON.stringify({
+    noteId: outcome.noteId !== undefined ? outcome.noteId : '',
+    version: outcome.version !== undefined ? outcome.version : 0,
+    commitKey: outcome.commitKey !== undefined ? outcome.commitKey : '',
+  });
+}
+
+export function approvalRejectedPayload(code: string, message: string): string {
+  return JSON.stringify({
+    code: code,
+    message: message,
   });
 }

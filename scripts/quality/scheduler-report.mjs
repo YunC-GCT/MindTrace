@@ -34,7 +34,12 @@ function parseSchedulerLog(path) {
   const content = readFileSync(path, 'utf8');
   const events = { enqueued: 0, started: 0, done: 0, failed: 0 };
   const priorities = [];
+  const runEvents = {};
   for (const line of content.split('\n')) {
+    const runEventMatch = line.match(/run_event kind=(\S+)/);
+    if (runEventMatch !== null) {
+      runEvents[runEventMatch[1]] = (runEvents[runEventMatch[1]] ?? 0) + 1;
+    }
     const match = line.match(/\[WriteJob\] (enqueued|started|done|failed) id=\S+ priority=(\w+)/);
     if (match !== null) {
       events[match[1]] += 1;
@@ -54,6 +59,7 @@ function parseSchedulerLog(path) {
   return {
     events,
     priorities,
+    runEvents,
     probe: summary === null ? null : {
       interactiveMs: Number(summary[1]),
       backgroundMs: Number(summary[2]),

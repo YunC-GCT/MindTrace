@@ -623,7 +623,7 @@ preflight → route → invoke → verify → HITL → publish
 
 ### 17.3 内核差距（按优先级）
 
-> **2026-11-01 更新**：差距 1（子图即节点 / 五层调用）在 spec 039 中收敛为「执行器 + 路由 + workflow」；NoteAgent 作为 capture workflow 的图装配器保留，S2 删除 CaptureBranch 同层包装。
+> **2026-11-01 更新（spec 039 S1–S3 完成）**：差距 1 已收口——`Dispatcher`→`CommandExecutor`+`CommandRouter`，`DispatchGraph`/`CaptureBranch`/`NoteAgent` 删除，capture 图装配收进 `NoteCaptureWorkflow`；事件树补 `node.ended`/`commit.committed`/`approval.rejected`（runId 贯通）。
 
 
 1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；`CaptureGraph` 现已由 `NoteAgent` 装配并直调（#241 切片 1，薄包装），但还不是「子图作为节点」；
