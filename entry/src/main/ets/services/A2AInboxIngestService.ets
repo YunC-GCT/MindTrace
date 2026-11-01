@@ -16,6 +16,8 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AgentInboxItem } from './AgentInboxModels';
 import { AgentInboxQueue } from './AgentInboxQueue';
 import { AiService } from './AiService';
+import { WriteJobFlags } from './WriteJobScheduler';
+import { WriteJobScheduler } from './WriteJobScheduler';
 
 const DOMAIN: number = 0xA2A0;
 const TAG: string = 'A2AInbox';
@@ -81,7 +83,15 @@ export class A2AInboxIngestService {
       let failed: number = 0;
       for (let i = 0; i < items.length; i++) {
         try {
-          await service.ingestText(items[i].text);
+          if (WriteJobFlags.isEnabled()) {
+            const scheduler: WriteJobScheduler = WriteJobScheduler.shared();
+            await scheduler.submit('background', items[i].text, async (): Promise<Object> => {
+              await service.ingestText(items[i].text);
+              return items[i].id as Object;
+            });
+          } else {
+            await service.ingestText(items[i].text);
+          }
           done += 1;
         } catch (error) {
           failed += 1;

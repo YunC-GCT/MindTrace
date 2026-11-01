@@ -33,6 +33,7 @@ import {
   normalizeLegacySubject,
 } from './LegacyNoteNormalizer';
 import { NoteDao } from '../database/NoteDao';
+import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from './WriteJobScheduler';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
 import {
@@ -269,6 +270,55 @@ export class DebugCaptureRunner {
           + ' totalMs=' + (Date.now() - startedAt).toString());
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done latency=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** S1 调度器自检：interactive + background 双通道真机验证（flag 开）。 */
+  static async runSchedulerProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const stamp: string = Date.now().toString();
+    const interactiveText: string = '计算 2 + 3 × 4 的值，写出运算顺序。调度 ' + stamp + 'I';
+    const backgroundText: string = '计算 10 - 4 × 2 的值，写出运算顺序。调度 ' + stamp + 'B';
+    WriteJobFlags.setEnabled(true);
+    const startedAt: number = Date.now();
+    const timed = (label: string, run: () => Promise<Object>): Promise<number> => {
+      const taskStarted: number = Date.now();
+      return run().then((_value: Object): number => Date.now() - taskStarted);
+    };
+    const withDeadline = (task: Promise<number>): Promise<number> => {
+      let timer: number = 0;
+      const timeout: Promise<number> = new Promise<number>((_resolve: (v: number) => void,
+        reject: (e: Error) => void): void => {
+        timer = setTimeout((): void => { reject(new Error('SCHEDULER_PROBE_TIMEOUT')); }, 150000);
+      });
+      return Promise.race([task, timeout]).finally((): void => { clearTimeout(timer); });
+    };
+    try {
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=scheduler start');
+      const scheduler: WriteJobScheduler = WriteJobScheduler.shared();
+      const interactiveMs: Promise<number> = withDeadline(timed('interactive', (): Promise<Object> =>
+        scheduler.submit('interactive', interactiveText, async (): Promise<Object> => {
+          return await AgentIngestService.ingestSingleTextDirect(ctx, interactiveText) as Object;
+        })));
+      const backgroundMs: Promise<number> = withDeadline(timed('background', (): Promise<Object> =>
+        scheduler.submit('background', backgroundText, async (): Promise<Object> => {
+          return await AgentIngestService.ingestSingleTextDirect(ctx, backgroundText) as Object;
+        })));
+      const results: number[] = await Promise.all([interactiveMs, backgroundMs]);
+      const stats: WriteJobStats = scheduler.stats();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=scheduler done interactiveMs=' + results[0].toString()
+          + ' backgroundMs=' + results[1].toString()
+          + ' submitted=' + stats.submitted.toString() + ' completed=' + stats.completed.toString()
+          + ' failed=' + stats.failed.toString() + ' queueDepth=' + stats.queueDepth.toString()
+          + ' maxConcurrent=' + stats.maxConcurrent.toString()
+          + ' lastWaitMs=' + stats.lastWaitMs.toString() + ' lastRunMs=' + stats.lastRunMs.toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done scheduler=1 ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done scheduler=0 err=' + (error as Error).message);
+    } finally {
+      WriteJobFlags.setEnabled(false);
     }
   }
 

@@ -24,6 +24,8 @@ import { planCaptureSet } from 'agents';
 import type { PlannedProblem, SetImageText, SetPlan } from 'agents';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest } from './AgentIngestRequest';
+import { WriteJobFlags } from './WriteJobScheduler';
+import { WriteJobScheduler } from './WriteJobScheduler';
 import { A2APlanItem, buildA2APlanItemsFromPages } from './A2APlanModels';
 import { OcrService } from './OcrService';
 
@@ -86,8 +88,23 @@ export class AgentIngestService {
     return buildA2APlanItemsFromPages(pages);
   }
 
-  /** 单题同步整理（A2A 计划推进用）：初始化 DB → ingestTextOutcome。 */
+  /**
+   * 单题整理入口：flag 开启时经 WriteJobScheduler（interactive lane）；
+   * 关闭时直连（旧行为逐字节一致）。
+   */
   static async ingestSingleText(context: common.Context, text: string): Promise<NoteOutcome> {
+    if (!WriteJobFlags.isEnabled()) {
+      return await AgentIngestService.ingestSingleTextDirect(context, text);
+    }
+    const result: Object = await WriteJobScheduler.shared().submit('interactive', text, async (): Promise<Object> => {
+      const outcome: NoteOutcome = await AgentIngestService.ingestSingleTextDirect(context, text);
+      return outcome as Object;
+    });
+    return result as NoteOutcome;
+  }
+
+  /** 单题同步整理（直连实现）：初始化 DB → ingestTextOutcome。 */
+  static async ingestSingleTextDirect(context: common.Context, text: string): Promise<NoteOutcome> {
     const body: string = text.trim();
     if (body.length === 0) {
       throw new Error('empty payload');

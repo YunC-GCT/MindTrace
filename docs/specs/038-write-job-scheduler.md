@@ -119,3 +119,30 @@ stage=done concurrency=1
 - T3 `WriteJobScheduler`（注入 executor、统计 waitMs/runMs、flag）
 - T4 接入 `AgentIngestService.ingestSingleText` + `A2AInboxIngestService.consume`
 - T5/T6 观测与真机 `schedulerProbe`
+
+
+### M2（2026-11-01 完成）
+
+- [x] T1 `WriteJobQueueCore`（interactive 优先/同级 FIFO）
+- [x] T2 `AsyncSemaphore`（容量上限 + FIFO 唤醒）
+- [x] T3 `WriteJobScheduler`（interactive/background 双 lane，默认各 1；`waitMs/runMs/queueDepth/maxConcurrent` 统计；`[WriteJob]` 日志）
+- [x] T3b 失败传播与 failed 统计
+- [x] T4 feature flag `WriteJobFlags`（默认关）+ 接入 `AgentIngestService.ingestSingleText`、`A2AInboxIngestService.consume`（background lane）；关闭时走 `ingestSingleTextDirect` 旧路径
+- [x] 真机 `e2e=schedulerProbe`（flag 开，interactive+background 各一条真实 ingest）：
+
+```
+stage=scheduler done interactiveMs=7040 backgroundMs=18017
+submitted=2 completed=2 failed=0 queueDepth=0 maxConcurrent=2
+lastWaitMs=0 lastRunMs=18016
+stage=done scheduler=1 ms=18017
+```
+
+结论：双 lane 并发（maxConcurrent=2）按预期工作、失败 0；写区串行仍由 `AsyncMutex` 保证（S0 结论），LLM 允许自然重叠。
+
+- 测试：`v7-write-job` 5 条 + `v7-write-section` 3 条 + `v7-a2a-plan` 7 条；gate --all PASS（pass=1157）。
+
+### M3（下一步）
+
+- 真机验证 flag=true 时的 `AgentIngestService.ingestSingleText` 包装路径（schedulerIntegration e2e）
+- flag 关闭回归（latencyProbe/dedupeProbe）+ 打开灰度决策
+- code-review skill 两轴审查（Standards/Spec）并修问题
