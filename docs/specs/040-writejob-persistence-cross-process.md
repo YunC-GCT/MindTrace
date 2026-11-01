@@ -148,3 +148,13 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 1. **多轮记忆**：新增 `A2AConversationStore`（按 `message.contextId` 回退 taskId 持久最近 6 轮），`A2AChatContext.build(query, memoryContext)` 注入 `ReplyContext.memoryContext`，回答后 append；扩展 `onCreate` 补 `DatabaseHelper.init`（修 `A2A_EVIDENCE store-not-ready`）；
 2. **短整理指令**：无图且 `整理成笔记/存笔记` 不足 8 字 → `pick_card` 引导（不再静默闲聊）；
 3. **图片无法到达**：日志确认小艺只下发 `text/plain`（图片测试收到 `text=0` 空 part，无 raw/url/file），图片走小艺自身视觉链路；需平台重新导入 AgentCard + 重发真机测试 + 重启小艺，若仍无 image part 则应用侧不可修复。
+
+### 9.2 真机 A2A 冒烟验证（2026-11-01 晚，自动化）
+
+- 多轮记忆：turn1 发「介绍基本不等式」→ turn2 发「我们上一条消息是什么」→ 实际回复：
+  `你上一条消息是：「介绍基本不等式」。我当时回答的是：「基本不等式（均值不等式）的核心结论…」`
+  （`scripts/a2a-smoke/a2a_smoke.py`，`ok=true`，158→272 chars；hilog 显示 `ctxKey=mindtrace-context`、`A2A_MEMORY` 载入）；
+- 短整理指令：发「整理成笔记」（无内容）→ 回复「点下面的卡片去选图，或直接把题目文字发我。」（`ok=true`，21 chars），符合引导预期；
+- 图片问答：代码路径已就绪（`image_qa` + OCR + 回答），但真机日志仍无 image part（小艺只下发 `text/plain`，图片请求为 `text=0` 空 part）；需平台三件事后复测，否则属小艺客户端不分发图片，应用侧不可修复；
+- 修复记录：记忆键合并（contextId 与 default 按时间合并、去重），避免部分请求无 contextId 时“看不到上一条”；
+- 验证：build 成功；gate --all RESULT: PASS（pass=1197 fail=0）。

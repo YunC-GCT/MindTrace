@@ -88,6 +88,33 @@ export class A2AConversationStore {
     }
   }
 
+  /**
+   * 载入并合并本会话键与 default（兼容部分请求不带 contextId、以及旧数据只落在单边），
+   * 按时间排序、按「用户+助手」去重后取最近 MAX_TURNS 轮。
+   */
+  static async loadWithFallback(context: common.Context, key: string): Promise<A2AConversationTurn[]> {
+    const own: A2AConversationTurn[] = await A2AConversationStore.load(context, key);
+    if (key === 'default') {
+      return own;
+    }
+    const fallback: A2AConversationTurn[] = await A2AConversationStore.load(context, 'default');
+    const seen: string[] = [];
+    const merged: A2AConversationTurn[] = [];
+    for (let i = 0; i < own.length; i += 1) {
+      seen.push(own[i].user + '|' + own[i].assistant);
+      merged.push(own[i]);
+    }
+    for (let i = 0; i < fallback.length; i += 1) {
+      const idText: string = fallback[i].user + '|' + fallback[i].assistant;
+      if (seen.indexOf(idText) < 0) {
+        seen.push(idText);
+        merged.push(fallback[i]);
+      }
+    }
+    merged.sort((a: A2AConversationTurn, b: A2AConversationTurn): number => a.at - b.at);
+    return merged.length > MAX_TURNS ? merged.slice(merged.length - MAX_TURNS) : merged;
+  }
+
   /** 注入 ReplyContext.memoryContext 的文本；空历史返回空串。 */
   static format(turns: A2AConversationTurn[]): string {
     if (turns.length === 0) {

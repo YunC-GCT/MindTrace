@@ -102,7 +102,7 @@ test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后�
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
   assert.ok(ability.includes('readContextId'));
   assert.ok(ability.includes('conversationKey'));
-  assert.ok(ability.includes('A2AConversationStore.load(this.context, conversationKey)'));
+  assert.ok(ability.includes('A2AConversationStore.loadWithFallback(this.context, conversationKey)'));
   assert.ok(ability.includes('A2AChatContext.build(query, memory)'));
   assert.ok(ability.includes('A2AConversationStore.append(this.context, session.conversationKey'));
   assert.ok(ability.includes("A2A_MEMORY key="));
@@ -128,4 +128,16 @@ test('「上一条」问题走确定性记忆回答（不依赖模型是否用 m
   for (const phrase of ['上一条', '上一句', '刚才', '之前聊']) {
     assert.ok(store.includes("'" + phrase + "'"));
   }
+});
+
+
+test('记忆键合并：contextId 与 default 按时间合并（跨请求无 contextId 兼容）', () => {
+  const store = read('entry/src/main/ets/services/A2AConversationStore.ets');
+  assert.ok(store.includes('static async loadWithFallback'));
+  assert.ok(store.includes("A2AConversationStore.load(context, 'default')"));
+  assert.ok(store.includes('merged.sort('));
+  assert.ok(store.includes('MAX_TURNS'));
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.ok(ability.includes('loadWithFallback(this.context, conversationKey)'));
+  assert.ok(ability.includes("A2AConversationStore.append(this.context, 'default'"));
 });

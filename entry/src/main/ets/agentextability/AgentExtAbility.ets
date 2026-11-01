@@ -869,7 +869,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     }, A2A_POLICY.deadlineMs);
 
     // P0-1：复用 App 对话同款 RAG——先检索本机笔记证据，再交给 ReplyService（超时降级为空）。
-    A2AConversationStore.load(this.context, conversationKey)
+    A2AConversationStore.loadWithFallback(this.context, conversationKey)
       .then((turns: A2AConversationTurn[]): Promise<A2AChatContextResult> => {
         const memory: string = A2AConversationStore.format(turns);
         hilog.info(DOMAIN, TAG, 'A2A_MEMORY key=%{public}s turns=%{public}d chars=%{public}d',
@@ -918,7 +918,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
    */
   /** 确定性回答「上一轮」：直接读最近一轮，不调模型，避免模型说“看不到上下文”。 */
   private answerFromConversationMemory(taskId: string, conversationKey: string): void {
-    A2AConversationStore.load(this.context, conversationKey)
+    A2AConversationStore.loadWithFallback(this.context, conversationKey)
       .then((turns: A2AConversationTurn[]): void => {
         if (turns.length === 0) {
           this.sendAnswer(taskId, '我这边还没有上一轮对话的记录。你可以先发一道题或问题，我再记住。', 0);
@@ -1075,6 +1075,10 @@ export default class AgentExtAbility extends AgentExtensionAbility {
             hilog.warn(DOMAIN, TAG, 'A2A_MEMORY_SAVE_FAILED key=%{public}s err=%{public}s',
               session.conversationKey, e.message);
           });
+        if (session.conversationKey !== 'default') {
+          A2AConversationStore.append(this.context, 'default', session.query, safeAnswer)
+            .catch((): void => {});
+        }
         this.settle(session, 'A2A_REPLY_SENT', safeAnswer, reason);
       })
       .catch((e: Error): void => {
