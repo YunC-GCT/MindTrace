@@ -19,7 +19,7 @@ test('PromptBuilder turns the known subjects into a closed vocabulary', () => {
 });
 
 test('the vocabulary travels from the dispatcher down to the prompt', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
   // 2026-10-31：DispatchOptions 抽到独立模块、capture 分支抽到 CaptureBranch，字段断言按拆分后的归属分别检查。
   const dispatchOptions = read('agents/src/main/ets/core/dispatch/DispatchOptions.ets');
   const captureBranch = read('agents/src/main/ets/core/dispatch/CaptureBranch.ets');

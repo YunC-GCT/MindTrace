@@ -127,9 +127,9 @@ test('NotePortError maps to a structured node error with retryable preserved', a
 // ==================== A2：preparedCandidate 写路径接端口 ====================
 
 test('PreparedBranch accepts and prefers noteWritePort (A2, 2026-10-31 抽出)', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+  const workflow = read('agents/src/main/ets/workflows/NotePreparedWorkflow.ets');
   const branch = read('agents/src/main/ets/core/dispatch/PreparedBranch.ets');
-  assert.match(dispatcher, /PreparedBranch\.dispatch\(\s*req, prepared, options, startedAt/);
+  assert.match(workflow, /PreparedBranch\.dispatch\([\s\S]*?context\.runContext/);
   assert.match(branch, /static buildGraph\(dao\?: NoteDaoInterface, noteWritePort\?: NoteWritePort\)/);
   assert.match(branch, /PersistNodeFactory\.createWithWritePort\(noteWritePort\)/);
 });

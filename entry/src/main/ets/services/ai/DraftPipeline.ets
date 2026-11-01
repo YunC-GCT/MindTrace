@@ -4,7 +4,7 @@
  * 路径: entry/src/main/ets/services/ai/DraftPipeline.ets
  * 职责: 生成命令装配（generation/regenerate）、readyPreview/needsInput 终态映射、草稿恢复与取消、
  *       上下文预算与 run 恢复事件组装。
- * 依赖: Dispatcher.dispatchCommand / NoteGenerationRepository / AiServicePorts。
+ * 依赖: CommandExecutor.dispatchCommand / NoteGenerationRepository / AiServicePorts。
  *
  * 拆出原因（2026-10-31）：AiService 拆分切片 4；草稿生命周期是独立能力域。
  */
@@ -16,7 +16,7 @@
 //  接口约定:
 //    - capture(imageUri, userText?): Promise<KnowledgeUnit>
 //        拍照/相册的入口。绝不只走 LLM 对话,必须进入 capture pipeline:
-//        Dispatcher -> image/OCR/MCP 识别 -> 分类 -> 知识结构化 -> 入库。
+//        CommandExecutor -> image/OCR/MCP 识别 -> 分类 -> 知识结构化 -> 入库。
 //
 //  UI 端约束: 凡是发图的,都必须调 capture() 而不是 LLM 对话。
 //
@@ -62,7 +62,7 @@ import {
   TextPayload,
 } from 'common';
 import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
-import { Dispatcher, NoteDaoInterface } from 'agents';
+import { CommandExecutor, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 import { ImageUriResolver, ResolvedImageFile } from '../ImageUriResolver';
@@ -198,7 +198,7 @@ export class DraftPipeline {
       generation: request,
       payload: { kind: 'text', text: payloadText },
     };
-    const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
+    const outcome: NoteOutcome = await new CommandExecutor().dispatchCommand(command, {
       generationRepository: repository,
       cancellationToken: cancellationToken,
       progressSink: progressSink,
@@ -331,7 +331,7 @@ export class DraftPipeline {
       generation: request,
       payload: { kind: 'text', text: sourceText },
     };
-    const outcome: NoteOutcome = await new Dispatcher().dispatchCommand(command, {
+    const outcome: NoteOutcome = await new CommandExecutor().dispatchCommand(command, {
       generationRepository: repository,
       cancellationToken: cancellationToken,
       progressSink: progressSink,

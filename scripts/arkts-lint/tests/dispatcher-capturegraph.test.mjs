@@ -4,9 +4,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
-const dispatcher = readFileSync(resolve(root, 'agents/src/main/ets/core/Dispatcher.ets'), 'utf8');
+const dispatcher = readFileSync(resolve(root, 'agents/src/main/ets/core/CommandExecutor.ets'), 'utf8');
 const captureBranch = readFileSync(resolve(root, 'agents/src/main/ets/core/dispatch/CaptureBranch.ets'), 'utf8');
 const noteAgent = readFileSync(resolve(root, 'agents/src/main/ets/agents/NoteAgent.ets'), 'utf8');
+const captureWorkflow = readFileSync(resolve(root, 'agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), 'utf8');
 const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiService.ets'), 'utf8');
 const agentsIndex = readFileSync(resolve(root, 'agents/src/main/ets/Index.ets'), 'utf8');
 const captureTypes = readFileSync(resolve(root, 'common/src/main/ets/models/CaptureChain.ets'), 'utf8');
@@ -29,8 +30,8 @@ test('NoteAgent owns CaptureGraph construction and DAO injection internally', ()
   assert.doesNotMatch(noteAgent, /addNode\('persist', async \(input: AgentState\) => \(\{ state: input \}\)\)/);
 });
 
-test('Dispatcher delegates capture to CaptureBranch which runs NoteAgent (2026-10-31 拆分)', () => {
-  assert.match(dispatcher, /CaptureBranch\.dispatchCapture\(req, options, this\.resolveRunContext\(options\), t0\)/);
+test('CommandExecutor delegates capture to NoteCaptureWorkflow which runs CaptureBranch/NoteAgent (spec 039)', () => {
+  assert.match(captureWorkflow, /CaptureBranch\.dispatchCapture\([\s\S]*?context\.runContext/);
   assert.match(captureBranch, /new NoteAgent\(/);
   assert.match(captureBranch, /noteAgent\.run\(initial, runContext\)/);
   assert.doesNotMatch(dispatcher, /private buildGraph\(/);

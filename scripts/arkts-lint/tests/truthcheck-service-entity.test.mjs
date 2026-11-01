@@ -26,7 +26,7 @@ const runtimeSources = [
   'agents/src/main/ets/core/dispatch/UnitSupport.ets',
   'agents/src/main/ets/core/dispatch/PreparedBranch.ets',
   'agents/src/main/ets/core/dispatch/GenerationEvaluator.ets',
-  'agents/src/main/ets/core/Dispatcher.ets',
+  'agents/src/main/ets/core/CommandExecutor.ets',
 ].map((path) => read(path).replace(/^import[\s\S]*?;\r?\n/gm, '')).join('\n');
 const compiled = ts.transpileModule('class Logger {}\n' + runtimeSources, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
@@ -71,7 +71,6 @@ test('candidate check preserves source state but does not validate raw source as
 });
 
 test('dispatcher retains the actual local failure detail through the real prepared graph', async () => {
-  const dispatcher = new Dispatcher();
   const result = { draft: { sections: [] }, evidence: [], verification: { issues: [], decisions: [] } };
   const evaluation = await GenerationEvaluator.evaluateStandardCandidate(result,
     { fragments: [{ id: 's1', text: 'original' }] }, { mustInclude: [] },
@@ -81,7 +80,6 @@ test('dispatcher retains the actual local failure detail through the real prepar
 });
 
 test('diagnostics retain long reasons, section locations and all distinct issues', () => {
-  const dispatcher = new Dispatcher();
   const issues = Array.from({ length: 5 }, (_, index) => ({ code: 'MATH_ERROR', stage: 'verifier',
     severity: 'hard', sectionId: 'section-' + index, message: '原因'.repeat(60) + '关键结论', repairable: false }));
   const summary = GenerationEvaluator.issueSummary(issues);
@@ -90,7 +88,6 @@ test('diagnostics retain long reasons, section locations and all distinct issues
 });
 
 test('soft verifier advice does not mislabel a hard local gate failure', () => {
-  const dispatcher = new Dispatcher();
   const issues = [
     { stage: 'verifier', code: 'OPTIONAL_EXPLANATION', severity: 'soft', message: '可补充解释' },
     { stage: 'truth_check', code: 'TRUTH_CHECK_ERROR', severity: 'hard', message: 'missing closing brace' },

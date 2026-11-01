@@ -8,8 +8,10 @@
 export const AGENTS_VERSION = 'v0.0.3';
 
 // 主 Agent 调度中枢(Z)
-export { Dispatcher } from './core/Dispatcher';
-export type { DispatchOptions } from './core/Dispatcher';
+export { CommandExecutor } from './core/CommandExecutor';
+export { CommandRouter } from './core/CommandRouter';
+export type { NoteWorkflowId, RouterPreflightResult } from './core/CommandRouter';
+export type { DispatchOptions } from './core/CommandExecutor';
 export { NullRunEventSink } from './core/dispatch/RunEventSink';
 export type { DispatchRunEvent, RunEventSink } from './core/dispatch/RunEventSink';
 

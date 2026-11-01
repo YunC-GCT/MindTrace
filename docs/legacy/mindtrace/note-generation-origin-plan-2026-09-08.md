@@ -339,7 +339,7 @@ finalize / needs_input → END
 - [entry/src/main/ets/services/AgentMemoryService.ets](../../../entry/src/main/ets/services/AgentMemoryService.ets)
 - [entry/src/main/ets/services/ReplyService.ets](../../../entry/src/main/ets/services/ReplyService.ets)
 - [entry/src/main/ets/services/AiService.ets](../../../entry/src/main/ets/services/AiService.ets)
-- [agents/src/main/ets/core/Dispatcher.ets](../../../agents/src/main/ets/core/Dispatcher.ets)
+- [agents/src/main/ets/core/Dispatcher.ets](../../../agents/src/main/ets/core/CommandExecutor.ets)
 - [agents/src/main/ets/graph/AgentState.ets](../../../agents/src/main/ets/graph/AgentState.ets)
 - [agents/src/main/ets/graph/nodes/StructureNode.ets](../../../agents/src/main/ets/graph/nodes/StructureNode.ets)
 - [agents/src/main/ets/graph/nodes/TruthCheckNode.ets](../../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets)

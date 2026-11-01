@@ -4,7 +4,7 @@
  * 路径: entry/src/main/ets/services/ai/CapturePipeline.ets
  * 职责: 图片准备 → 命令式 dispatch（capture/analysisOnly/批量 set）→ completed 终态 → 文搜图索引；
  *       以及文本/A2A 入库（ingestText / ingestTextOutcome）与批量回执适配。
- * 依赖: Dispatcher.dispatchCommand/dispatchSetCommand / AiServicePorts / CaptureTiming。
+ * 依赖: CommandExecutor.dispatchCommand/dispatchSetCommand / AiServicePorts / CaptureTiming。
  *
  * 拆出原因（2026-10-31）：AiService 拆分切片 6（最后一片）；AiService 收敛为纯 facade。
  */
@@ -16,7 +16,7 @@
 //  接口约定:
 //    - capture(imageUri, userText?): Promise<KnowledgeUnit>
 //        拍照/相册的入口。绝不只走 LLM 对话,必须进入 capture pipeline:
-//        Dispatcher -> image/OCR/MCP 识别 -> 分类 -> 知识结构化 -> 入库。
+//        CommandExecutor -> image/OCR/MCP 识别 -> 分类 -> 知识结构化 -> 入库。
 //
 //  UI 端约束: 凡是发图的,都必须调 capture() 而不是 LLM 对话。
 //
@@ -63,7 +63,7 @@ import {
   TextPayload,
 } from 'common';
 import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
-import { Dispatcher, NoteDaoInterface, planCaptureSet } from 'agents';
+import { CommandExecutor, NoteDaoInterface, planCaptureSet } from 'agents';
 import type { DispatchOptions, PlannedProblem, SetImageText, SetPlan } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from '../ImageUriResolver';
@@ -260,7 +260,7 @@ export class CapturePipeline {
     log.info('captureSet commit step=repo-begin setId=' + preview.setId);
     const commitRepository = await NoteGenerationRepositoryFactory.create(context);
     log.info('captureSet commit step=repo-ok setId=' + preview.setId);
-    const dispatcher: Dispatcher = new Dispatcher();
+    const dispatcher: CommandExecutor = new CommandExecutor();
     const selectedProblems: CaptureSetProblem[] = [];
     const duplicateItems: CaptureSetItemResult[] = [];
     const picked: CaptureSetProblem[] = [];
@@ -408,7 +408,7 @@ export class CapturePipeline {
 
   /** 看门狗：批量提交超时快速失败（不改变已落库结果；重试按 commitKey 幂等）。 */
   private static dispatchWithTimeout(
-    dispatcher: Dispatcher,
+    dispatcher: CommandExecutor,
     commands: NoteCommand[],
     options: DispatchOptions,
     onItem: (index: number, outcome: NoteOutcome) => void,
@@ -554,7 +554,7 @@ export class CapturePipeline {
 
     const resolved: ResolvedImageFile = await new ImageUriResolver(this.context as common.UIAbilityContext).resolve(imageUri);
 
-    const dispatcher: Dispatcher = new Dispatcher();
+    const dispatcher: CommandExecutor = new CommandExecutor();
     // A3c：分析入口也走命令 seam；analysisOnly 的终态是 readyPreview（不落库）。
     const command: NoteCommand = {
       kind: 'analysisOnly',
@@ -587,7 +587,7 @@ export class CapturePipeline {
       payload: payload,
     };
     const dao: NoteDaoInterface = await AiServicePorts.buildNoteDao(AiServicePorts.requireContext(this.context), this.includeUiEffects);
-    const dispatcher: Dispatcher = new Dispatcher();
+    const dispatcher: CommandExecutor = new CommandExecutor();
     const startedAt: number = Date.now();
     // 输入指纹幂等：同一段原文（OCR/粘贴/重复发送）无论模型怎么改写都只落一条。
     if (payload.kind === 'text') {

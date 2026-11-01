@@ -83,12 +83,12 @@ test('markCheckpointApproved fails loudly when no row matches', () => {
 
 
 test('main graph preflight enforces approval before write (A4 4e)', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
-  assert.match(dispatcher, /private static async preflightApproval\(/);
-  assert.match(dispatcher, /await Dispatcher\.preflightApproval\(command, options\)/);
-  assert.match(dispatcher, /PREPARED_CHECKPOINT_MISSING/);
-  assert.match(dispatcher, /'APPROVAL_HASH_MISMATCH'/);
-  assert.match(dispatcher, /approvedAt !== undefined && approvedAt <= 0/);
+  const router = read('agents/src/main/ets/core/CommandRouter.ets');
+  assert.match(router, /private static async preflightApproval\(/);
+  assert.match(router, /await CommandRouter\.preflightApproval\(command, options\)/);
+  assert.match(router, /PREPARED_CHECKPOINT_MISSING/);
+  assert.match(router, /'APPROVAL_HASH_MISMATCH'/);
+  assert.match(router, /approvedAt !== undefined && approvedAt <= 0/);
 });
 
 test('A2A ingest records a receipt and reports the count (P4)', () => {

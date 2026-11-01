@@ -151,3 +151,5 @@ Kit facade 是 workflow 可调用的系统能力 adapter，不是 workflow 或 N
 Issue #12 证明了 Capture workflow 最小闭环可行，但不代表整体 Agent workflow 架构迁移完成。后续进度以本 spec 和 `docs/specs/index.md` 为准；早期 Python sidecar 调研只作为历史背景。
 
 实现同时修复了三处原链路损害：TruthCheckNode 丢失 KnowledgeUnit、TruthCheck 通过语义反向且失败仍可持久化、PersistNode 重建 KnowledgeUnit 并覆盖分类/难度。设备侧 Hypium、真实 OCR/LLM、Form 卡片和小艺入口仍需人工验收。
+
+> **2026-11-01 更新（spec 039 S1）**：文中 `Dispatcher.dispatch` 的现状已收敛为 `CommandExecutor.dispatchCommand`（命令入口签名不变）；六阶段主图删除，改为 `CommandRouter` + 四条 workflow。

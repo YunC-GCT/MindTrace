@@ -599,6 +599,9 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 
 ### 17.2 Dispatcher 主图与子图
 
+> **2026-11-01 spec 039 S1 已落地**：`Dispatcher` 已拆为 `CommandExecutor`（run/preflight/verify/publish）+ `CommandRouter`（取消/审批前置 + kind→workflow），六阶段 `DispatchGraph` 删除；capture/generation/regenerate/prepared 四条 workflow 骨架在 `agents/workflows/`（capture 收口在 S2）。下面为历史设计原文。
+
+
 ```text
 preflight → route → invoke → verify → HITL → publish
 ```
@@ -619,6 +622,9 @@ preflight → route → invoke → verify → HITL → publish
 > 拆分工作在代码里已经落地，剩下的是核对与关票，不是重写。
 
 ### 17.3 内核差距（按优先级）
+
+> **2026-11-01 更新**：差距 1（子图即节点 / 五层调用）在 spec 039 中收敛为「执行器 + 路由 + workflow」；NoteAgent 作为 capture workflow 的图装配器保留，S2 删除 CaptureBranch 同层包装。
+
 
 1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；`CaptureGraph` 现已由 `NoteAgent` 装配并直调（#241 切片 1，薄包装），但还不是「子图作为节点」；
 2. **RunContext**：**已落地**（#243）——`runId` / `parentRunId` / `deadline` / `budget` / `token` 经 `DispatchOptions.runContext` 传入，父子图共享同一预算；

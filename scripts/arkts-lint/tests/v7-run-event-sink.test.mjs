@@ -82,7 +82,7 @@ test('RunEventSink seam stays in the dispatch layer and is optional', () => {
   assert.match(sinkContract, /DISPATCH_EVENT_START/);
   assert.match(sinkContract, /DISPATCH_EVENT_TERMINAL/);
   assert.match(options, /runEventSink\?: RunEventSink/);
-  assert.match(read('agents/src/main/ets/core/Dispatcher.ets'), /emitRunEvent\(options, command\.operationId/);
+  assert.match(read('agents/src/main/ets/core/CommandExecutor.ets'), /emitRunEvent\(\s*options, command\.operationId/);
 });
 
 test('entry side RunStoreEventSink persists events through RunStorePort (A4 slice 2)', () => {
@@ -126,8 +126,8 @@ test('entry sink maps outcome kinds onto RunRecord status and committed facts', 
   assert.match(sink, /committedNoteId: outcome\.kind === 'committed' \? outcome\.noteId/);
   assert.match(sink, /committedVersion: outcome\.kind === 'committed' \? outcome\.version/);
   assert.match(sink, /await this\.port\.update\(updated\)/);
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
-  assert.match(dispatcher, /await Dispatcher\.settleRun\(options, command\.operationId, settled\)/);
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
+  assert.match(dispatcher, /await CommandExecutor\.settleRun\(\s*options, command\.operationId, outcome\)/);
 });
 
 

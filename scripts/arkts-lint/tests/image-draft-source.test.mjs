@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const captureChain = read('common/src/main/ets/models/CaptureChain.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const ocrNode = read('agents/src/main/ets/graph/nodes/OcrNode.ets');
@@ -26,7 +26,7 @@ test('image payload maps to camera_capture source in the capture flow', () => {
   const unitSupport = read('agents/src/main/ets/core/dispatch/UnitSupport.ets');
   assert.match(unitSupport, /payload\.kind === 'image'/);
   assert.match(unitSupport, /return 'camera_capture'/);
-  assert.match(dispatcher, /CaptureBranch\.dispatchCapture\(/);
+  assert.match(read('agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), /CaptureBranch\.dispatchCapture\(/);
 });
 
 test('generation pipeline always synthesizes a text payload from the source bundle', () => {

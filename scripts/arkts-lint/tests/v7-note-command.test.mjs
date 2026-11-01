@@ -240,7 +240,7 @@ test('AiService capture and confirm paths use the command seam', () => {
   assert.ok(!mapper.includes('static toOutcome('), 'toOutcome 必须已下线');
   assert.match(mapper, /static toRequest\(/);
   assert.match(mapper, /static toOptions\(/);
-  const dispatcherSource = read('agents/src/main/ets/core/Dispatcher.ets');
+  const dispatcherSource = read('agents/src/main/ets/core/CommandExecutor.ets');
   assert.match(dispatcherSource, /normalizeInvokedOutcome/, 'committed 信封归一化在 Dispatcher 内');
 });
 

@@ -149,7 +149,7 @@ MindTrace 后端 agent workflow 是一套*正在持续完善的 agent 工作流�
 
 ### 4.2 CaptureGraph 节点行
 
-文件: [`agents/src/main/ets/graph/CaptureGraph.ets:1-99`](../../agents/src/main/ets/graph/CaptureGraph.ets) · 拓扑见[`Dispatcher.ets:1497-1531`](../../agents/src/main/ets/core/Dispatcher.ets) `buildGraph` 装配
+文件: [`agents/src/main/ets/graph/CaptureGraph.ets:1-99`](../../agents/src/main/ets/graph/CaptureGraph.ets) · 拓扑见[`Dispatcher.ets:1497-1531`](../../agents/src/main/ets/core/CommandExecutor.ets) `buildGraph` 装配
 
 | 节点 | file:line | 输入 | 输出 | 出边 | 条件谓词 | LLM 调用 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -201,7 +201,7 @@ type CaptureNode = (state: AgentState) => Promise<{ state: AgentState }>;      /
 
 ### 4.4 Dispatcher 契约 —`dispatch(req, options)`
 
-文件: [`agents/src/main/ets/core/Dispatcher.ets:68-188`](../../agents/src/main/ets/core/Dispatcher.ets)
+文件: [`agents/src/main/ets/core/Dispatcher.ets:68-188`](../../agents/src/main/ets/core/CommandExecutor.ets)
 
 **唯一公共方法**: `async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult>` (`:98-100`)。
 | `req.*` 字段 | 分支 | file:line | 持久化行为 |
@@ -341,7 +341,7 @@ AiService.generateNoteDraftWithSources
 
 ```
 
-**route 选择** ([`Dispatcher.ets:339`](../../agents/src/main/ets/core/Dispatcher.ets)): `selectGenerationRoute(bundle, instruction)` 按源材料量+ 指令复杂度决定。
+**route 选择** ([`Dispatcher.ets:339`](../../agents/src/main/ets/core/CommandExecutor.ets)): `selectGenerationRoute(bundle, instruction)` 按源材料量+ 指令复杂度决定。
 
 #### 5.2.1 standard route — Plan-and-Execute + Reflexion
 

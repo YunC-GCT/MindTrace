@@ -61,7 +61,7 @@ for (const source of [
 
 test('guard allows service construction in host, node invocation and unrelated check methods', () => {
   const files = fixture();
-  files.set('agents/src/main/ets/core/Dispatcher.ets',
+  files.set('agents/src/main/ets/core/CommandExecutor.ets',
     "import { TruthCheckService } from 'agents'; const service = new TruthCheckService();");
   files.set('agents/src/main/ets/graph/nodes/TruthCheckNode.ets',
     "import { TruthCheckService } from 'agents'; new TruthCheckService().check('x');");

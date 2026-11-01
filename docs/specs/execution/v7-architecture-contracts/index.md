@@ -18,3 +18,5 @@
 `errorCode` 等现状，作为 #241 迁移的等价判据。
 
 设计变更写回 §17 或 `docs/adr/`，不在本 bundle 里改设计（见 `docs/style/naming-conventions.md` §3.9）。
+
+> **2026-11-01（spec 039 S1）**：`Dispatcher`/`DispatchGraph` 已删除，入口改为 `CommandExecutor.dispatchCommand` + `CommandRouter`；A4 六阶段骨架退役，行为由 golden 18 条继续守。

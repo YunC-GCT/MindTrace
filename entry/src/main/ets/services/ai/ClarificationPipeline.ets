@@ -3,7 +3,7 @@
  *
  * 路径: entry/src/main/ets/services/ai/ClarificationPipeline.ets
  * 职责: 保存澄清候选（topic 列表）、用户选定主题后生成草稿（含回滚）、断点恢复与失败重试。
- * 依赖: Dispatcher.dispatchCommand / NoteGenerationRepository / ClarificationRegistry。
+ * 依赖: CommandExecutor.dispatchCommand / NoteGenerationRepository / ClarificationRegistry。
  *
  * 拆出原因（2026-10-31）：AiService 拆分切片 5；澄清是独立的 HITL 前置流程。
  */
@@ -15,7 +15,7 @@
 //  接口约定:
 //    - capture(imageUri, userText?): Promise<KnowledgeUnit>
 //        拍照/相册的入口。绝不只走 LLM 对话,必须进入 capture pipeline:
-//        Dispatcher -> image/OCR/MCP 识别 -> 分类 -> 知识结构化 -> 入库。
+//        CommandExecutor -> image/OCR/MCP 识别 -> 分类 -> 知识结构化 -> 入库。
 //
 //  UI 端约束: 凡是发图的,都必须调 capture() 而不是 LLM 对话。
 //
@@ -59,7 +59,7 @@ import {
   TextPayload,
 } from 'common';
 import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
-import { Dispatcher, NoteDaoInterface } from 'agents';
+import { CommandExecutor, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from '../ImageUriResolver';
 import { SubjectVocabularyService } from '../SubjectVocabularyService';

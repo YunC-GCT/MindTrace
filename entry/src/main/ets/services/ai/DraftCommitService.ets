@@ -4,7 +4,7 @@
  * 路径: entry/src/main/ets/services/ai/DraftCommitService.ets
  * 职责: 确认草稿 = 更新检查点 → preparedCandidate 命令提交（committed 终态）→ pending 素材清理。
  *       AiService 只保留同名 facade 委托。
- * 依赖: Dispatcher.dispatchCommand / NoteGenerationRepository / AgentMemoryService / AiServicePorts。
+ * 依赖: CommandExecutor.dispatchCommand / NoteGenerationRepository / AgentMemoryService / AiServicePorts。
  *
  * 拆出原因（2026-10-31）：AiService 拆分切片 3；确认提交是独立事务边界，与采集/生成链路解耦。
  */
@@ -21,7 +21,7 @@ import {
   PreparedCandidate,
   sourceFingerprint,
 } from 'common';
-import { Dispatcher, NoteDaoInterface } from 'agents';
+import { CommandExecutor, NoteDaoInterface } from 'agents';
 import { AgentMemoryService } from '../AgentMemoryService';
 import { NoteGenerationRepositoryFactory } from '../NoteGenerationRepositoryFactory';
 import { AiServicePorts } from './AiServicePorts';
@@ -111,7 +111,7 @@ export class DraftCommitService {
     log.info('[ConfirmTrace] step=dispatch-begin');
     const writePort = await AiServicePorts.buildNoteWritePort(AiServicePorts.requireContext(this.context), this.includeUiEffects);
     log.info('[ConfirmTrace] step=writePort-ok');
-    const outcome: NoteOutcome = await DraftCommitService.withConfirmTimeout(new Dispatcher().dispatchCommand(command, {
+    const outcome: NoteOutcome = await DraftCommitService.withConfirmTimeout(new CommandExecutor().dispatchCommand(command, {
       dao: dao,
       noteWritePort: writePort,
       generationRepository: repository,

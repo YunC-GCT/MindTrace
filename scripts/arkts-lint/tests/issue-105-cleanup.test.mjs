@@ -6,7 +6,7 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (file) => readFileSync(resolve(root, file), 'utf8');
 
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const knowledgeModel = read('agents/src/main/ets/agents/KnowledgeModel.ets');
 const truthCheckNode = read('agents/src/main/ets/graph/nodes/TruthCheckNode.ets');
 const persistNode = read('agents/src/main/ets/graph/nodes/PersistNode.ets');

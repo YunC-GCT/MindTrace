@@ -6,7 +6,7 @@
 //  接口约定:
 //    - capture(imageUri, userText?): Promise<KnowledgeUnit>
 //        拍照/相册的入口。绝不只走 LLM 对话,必须进入 capture pipeline:
-//        Dispatcher -> image/OCR/MCP 识别 -> 分类 -> 知识结构化 -> 入库。
+//        CommandExecutor -> image/OCR/MCP 识别 -> 分类 -> 知识结构化 -> 入库。
 //
 //  UI 端约束: 凡是发图的,都必须调 capture() 而不是 LLM 对话。
 //
@@ -51,7 +51,7 @@ import {
   TextPayload,
 } from 'common';
 import type { NoteBatchOutcome, NoteCommand, NoteOutcome } from 'common';
-import { Dispatcher, NoteDaoInterface } from 'agents';
+import { CommandExecutor, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
 import { SubjectVocabularyService } from './SubjectVocabularyService';

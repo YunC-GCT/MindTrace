@@ -17,7 +17,7 @@ const read = (p) => {
 };
 
 const models = read('common/src/main/ets/models/NoteGenerationModels.ets');
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const noteGenRepo = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
 const relationDao = read('entry/src/main/ets/database/KnowledgeRelationDao.ets');

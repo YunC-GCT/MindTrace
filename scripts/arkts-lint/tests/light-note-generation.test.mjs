@@ -8,7 +8,7 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..', '..')
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8')
 
 test('Issue 98 exposes typed light generation through Dispatcher.dispatch', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
   // 2026-10-31：light 生成路径抽到 GenerationBranch。
   const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets')
   const models = read('common/src/main/ets/models/NoteGenerationModels.ets')
@@ -18,13 +18,13 @@ test('Issue 98 exposes typed light generation through Dispatcher.dispatch', () =
   assert.match(models, /interface NoteDraftDocument/)
   assert.match(models, /interface NoteGenerationCheckpoint/)
   assert.match(models, /interface NoteGenerationResult/)
-  assert.match(dispatcher, /NoteGenerationRequest/)
+  assert.match(read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets'), /NoteGenerationRequest/)
   assert.match(branch, /persist:\s*false/)
   assert.doesNotMatch(dispatcher, /NoteGenerationRepositoryImpl/)
 })
 
 test('note generation exposes coarse progress through the Dispatcher seam', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
   // 2026-10-31：DispatchOptions 抽到独立模块、生成分支抽到 GenerationBranch，断言按归属分开。
   const dispatchOptions = read('agents/src/main/ets/core/dispatch/DispatchOptions.ets')
   const generationBranch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets')

@@ -10,7 +10,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 
 const models = read('common/src/main/ets/models/NoteGenerationModels.ets');
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const repoImpl = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
 const convWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');

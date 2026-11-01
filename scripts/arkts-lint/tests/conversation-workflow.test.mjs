@@ -14,7 +14,7 @@ const state = read('entry/src/main/ets/workflows/conversation/ConversationState.
 const workflowTypes = read('entry/src/main/ets/workflows/conversation/ConversationTypes.ets');
 const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 
 // Execute the real error delivery boundary, with only platform imports removed.
 const withoutImports = (source) => source.replace(/import\s+(?:type\s+)?\{[\s\S]*?\}\s+from\s+'[^']+';\s*/g, '');
@@ -210,7 +210,7 @@ test('Issue 99 note intent produces a typed preview and confirms the exact check
   const preparedBranch = read('agents/src/main/ets/core/dispatch/PreparedBranch.ets');
   assert.match(preparedBranch, /checkpointId/);
   assert.match(preparedBranch, /candidateHash/);
-  assert.match(dispatcher, /PreparedBranch/);
+  assert.match(read('agents/src/main/ets/workflows/NotePreparedWorkflow.ets'), /PreparedBranch\.dispatch/);
 });
 
 test('Conversation workflow owns typed intent classification and routes from its state', () => {

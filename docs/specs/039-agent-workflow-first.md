@@ -1,6 +1,6 @@
 # 039 — Agent 编排收口：CommandExecutor + CommandRouter + 四条 workflow
 
-> **Status**: proposed (2026-11-01)
+> **Status**: proposed (2026-11-01) — **S1 已落地**（2026-11-01）；S2（capture 收口）/ S3（事件树）待做
 > **Related**: [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 038](./038-write-job-scheduler.md) · [架构提案](../architecture/agent-architecture-proposal-2026-11-01.md) · [v7 外评审](../architecture/review-v7-2026-10-27.md)
 > **Code**: `agents/src/main/ets/core/Dispatcher.ets` · `agents/src/main/ets/core/dispatch/`（DispatchGraph / CaptureBranch / RunEventSink） · `agents/src/main/ets/agents/NoteAgent.ets` · `entry/src/main/ets/services/ai/{AiServicePorts,CapturePipeline,DraftPipeline,DraftCommitService}.ets` · `common/src/main/ets/workflow/StateGraph.ets`
 > **Verified by**: 基线 `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（pass=1165 / 0 lint error / 0 边界违规）；本 spec 的验收命令见 §7，实施后逐条回填
@@ -152,3 +152,19 @@ export class CommandRouter {
 - `docs/specs/018-agent-workflow-architecture.md` 现状段
 - `docs/specs/execution/v7-architecture-contracts/index.md` 状态行
 - `docs/agents/phase-tracker.md`（若影响验收口径）
+
+## 13. 执行记录
+
+### S1（2026-11-01 完成）
+
+- 新增 `agents/src/main/ets/core/CommandExecutor.ets`（run 生命周期：start/terminal 事件、runId=operationId、preflight→workflow→verify→settle、异常→五终态）与 `CommandRouter.ets`（取消/审批哈希前置 + `kind → workflow` 路由）；
+- 新增 `agents/src/main/ets/workflows/`：`WorkflowContext` + `NoteCaptureWorkflow` / `NoteGenerationWorkflow` / `NoteRegenerateWorkflow` / `NotePreparedWorkflow`（S1 骨架：分别委托 CaptureBranch / GenerationBranch / IncrementalBranch / PreparedBranch）；
+- 删除 `core/Dispatcher.ets` 与 `core/dispatch/DispatchGraph.ets`；`agents/Index.ets` 改导出 `CommandExecutor` / `CommandRouter`；entry `services/ai/*` 与 `AiService` 的构造/类型改 `CommandExecutor`（方法名 `dispatchCommand/dispatchSetCommand` 不变）；
+- 测试：新增 `v7-command-executor`（7 条）+ `v7-command-router`（7 条）；`v7-dispatch-graph`（直接测已删除骨架）由这两个文件替代；旧测试的 Dispatcher 引用与断言改指新执行器/路由/workflow；
+- 验证：`node scripts/agent-gate/index.mjs --all` → **RESULT: PASS（pass=1171 fail=0）**；golden `raw/` **零 diff**；`node scripts/build-hsp-hap.mjs` 成功；
+- 偏差（记录在案）：Generation/Regenerate/Prepared 三条 workflow 本轮只做骨架委托，分支文件内容迁移推迟；S2 完成 capture 收口后再评估是否把三分支内容收进 workflow（验收不要求其删除）。
+
+### 下一步
+
+- S2：`NoteCaptureWorkflow` 接管 capture（NoteCaptureWorkflow 直接装配 CaptureGraph，NoteAgent 改名/归位），删 `CaptureBranch`；
+- S3：事件 schema（node/tool/approval/commit）+ runId 贯通 + scheduler-report 解析。

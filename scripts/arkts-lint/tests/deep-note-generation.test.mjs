@@ -7,7 +7,7 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..', '..')
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8')
 
 test('Issue 103 wires a real deep route through Dispatcher and KnowledgeModel', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
   // 2026-10-31：生成分支编排抽到 GenerationBranch。
   const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets')
   const model = read('agents/src/main/ets/agents/DeepDraftComposer.ets')
@@ -42,7 +42,7 @@ test('Issue 103 deep source selection is semantic, not arbitrary truncation', ()
 })
 
 test('deep generation reports real section and verification activity', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
   const model = read('agents/src/main/ets/agents/DeepDraftComposer.ets')
 
   assert.match(model, /progressSink\?: NoteGenerationProgressSink/)
