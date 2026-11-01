@@ -37,11 +37,16 @@ export class AgentJobPersistence implements WriteJobPersistenceHooks {
   }
 
   async enqueue(priority: string, text: string): Promise<string> {
+    return await this.enqueueForSource(priority, text, 'app');
+  }
+
+  /** 跨进程 producer（A2A 扩展/inbox）指定 source；幂等仍在 DAO 层。 */
+  async enqueueForSource(priority: string, text: string, source: string): Promise<string> {
     const result = await this.dao.enqueue({
       kind: 'text_ingest',
       priority: priority === 'interactive' ? 'interactive' : 'background',
       payloadText: text,
-      source: 'app',
+      source: source,
       fingerprint: writeJobFingerprint(text),
     });
     return result.job.jobId;

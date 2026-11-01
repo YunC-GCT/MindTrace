@@ -15,6 +15,7 @@ import { AgentJobPersistence } from './WriteJobPersistence';
 import { AgentJobDao } from '../database/AgentJobDao';
 import type { AgentJob } from '../models/AgentJobModels';
 import { AgentIngestService } from './AgentIngestService';
+import { AgentInboxQueue } from './AgentInboxQueue';
 
 const MAX_RECOVERED: number = 50;
 const MAX_ATTEMPT: number = 2;
@@ -46,5 +47,19 @@ export class WriteJobBootstrap {
         },
       );
     }
+    await WriteJobBootstrap.migrateInbox(context, persistence);
+  }
+
+  /** inbox 文件队列 pending 项一次性迁移到 agent_job（迁移成功后清空 processing）。 */
+  private static async migrateInbox(context: common.Context,
+    persistence: AgentJobPersistence): Promise<void> {
+    const items = await AgentInboxQueue.claim(context);
+    if (items.length === 0) {
+      return;
+    }
+    for (const item of items) {
+      await persistence.enqueueForSource('background', item.text, 'inbox');
+    }
+    await AgentInboxQueue.complete(context);
   }
 }

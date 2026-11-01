@@ -45,6 +45,8 @@ import {
 } from '../services/CaptureReceipt';
 import { AgentInboxItem, buildInboxItem } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
+import { WriteJobProducer } from '../services/WriteJobProducer';
+import { WRITE_JOB_PERSIST_ENABLED } from '../services/WriteJobConfig';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
 import {
   A2APlan,
@@ -150,6 +152,7 @@ type A2AErrorCode =
 // A2A 入库 deadline：模型慢时不再让用户干等，超时转待整理队列（打开 App 自动补齐）。
 const INGEST_DEADLINE_MS: number = 90000;
 const A2A_INGEST_TIMEOUT_TEXT: string = '这次整理较慢，已转待整理；打开 MindTrace 会自动补齐，稍后也能在 App 里看到。';
+const A2A_JOB_ACCEPTED_TEXT: string = '已受理，已转后台整理；打开 MindTrace 会自动补齐，稍后也能在 App 里看到（幂等去重，不会重复写笔记）。';
 const A2A_TIMEOUT_TEXT: string = '模型响应超时，稍后再试。';
 const A2A_CONFIG_TIMEOUT_TEXT: string = '模型配置读取超时（'
   + A2A_POLICY.configTimeoutMs.toString() + ' ms），请稍后再试。';
@@ -348,6 +351,37 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       });
   }
 
+  /** 文本整理入口：持久化开启 → 入队并回执已受理；否则走原有同步 ingestTextBatch。 */
+  private dispatchTextBatch(taskId: string, request: AgentIngestRequest): void {
+    if (WRITE_JOB_PERSIST_ENABLED) {
+      WriteJobProducer.tryEnqueue(this.context, request.text, 'interactive', 'xiaoyi')
+        .then((jobId: string | null): void => {
+          if (jobId === null) {
+            this.ingestTextBatchNow(taskId, request);
+            return;
+          }
+          hilog.info(DOMAIN, TAG, 'TEXT_JOB_ENQUEUED job=%{public}s', jobId);
+          this.sendAnswer(taskId, A2A_JOB_ACCEPTED_TEXT, 0, request.text);
+        })
+        .catch((): void => {
+          this.ingestTextBatchNow(taskId, request);
+        });
+      return;
+    }
+    this.ingestTextBatchNow(taskId, request);
+  }
+
+  private ingestTextBatchNow(taskId: string, request: AgentIngestRequest): void {
+    AgentIngestService.ingestTextBatch(this.context, request.text)
+      .then((batch: AgentTextBatchResult): void => {
+        this.handleTextBatch(taskId, request, batch);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'INGEST_TEXT_BATCH failed %{public}s', e.message);
+        this.enqueueForIngest(taskId, request.text);
+      });
+  }
+
   private handleTextPlanMessage(taskId: string, request: AgentIngestRequest): void {
     A2APlanStore.load(this.context, taskId)
       .then((existing: A2APlan | null): void => {
@@ -370,14 +404,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
             });
           return;
         }
-        AgentIngestService.ingestTextBatch(this.context, request.text)
-          .then((batch: AgentTextBatchResult): void => {
-            this.handleTextBatch(taskId, request, batch);
-          })
-          .catch((e: Error): void => {
-            hilog.error(DOMAIN, TAG, 'INGEST_TEXT_BATCH failed %{public}s', e.message);
-            this.enqueueForIngest(taskId, request.text);
-          });
+        this.dispatchTextBatch(taskId, request);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'PLAN_LOAD_FAILED %{public}s', e.message);
@@ -400,7 +427,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           pending.push(plan.items[i].text);
         }
       }
-      this.enqueueTexts(pending);
+      this.enqueuePendingTexts(pending);
       A2APlanStore.clear(this.context, taskId).catch((): void => {});
       this.sendAnswer(taskId, '已把剩余 ' + pending.length.toString()
         + ' 道题转待整理，打开 MindTrace 会自动补齐。', 0);
@@ -468,8 +495,30 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     });
   }
 
-  /** 整理计划中的一道题；完成后更新进度并回执。 */
+  /** 整理计划中的一道题：持久化开启时只入队（跨进程 producer），否则同步执行。 */
   private ingestPlanItem(taskId: string, plan: A2APlan, item: A2APlanItem): void {
+    if (WRITE_JOB_PERSIST_ENABLED) {
+      WriteJobProducer.tryEnqueue(this.context, item.text, 'background', 'xiaoyi')
+        .then((jobId: string | null): void => {
+          if (jobId === null) {
+            this.ingestPlanItemNow(taskId, plan, item);
+            return;
+          }
+          hilog.info(DOMAIN, TAG, 'PLAN_ENQUEUED item=%{public}d job=%{public}s', item.index, jobId);
+          plan.done.push(item.index);
+          A2APlanStore.save(this.context, plan.taskId, plan).catch((): void => {});
+          this.sendAnswer(taskId, '第 ' + (item.index + 1).toString()
+            + ' 题已受理，稍后自动整理（剩余 ' + remainingPlanCount(plan).toString() + ' 题）。', 0);
+        })
+        .catch((): void => {
+          this.ingestPlanItemNow(taskId, plan, item);
+        });
+      return;
+    }
+    this.ingestPlanItemNow(taskId, plan, item);
+  }
+
+  private ingestPlanItemNow(taskId: string, plan: A2APlan, item: A2APlanItem): void {
     hilog.info(DOMAIN, TAG, 'PLAN_INGEST item=%{public}d chars=%{public}d',
       item.index, item.text.length);
     this.ingestWithDeadline(item.text)
@@ -536,6 +585,25 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       return;
     }
     this.sendAnswer(taskId, '这次没整理成（' + code + '），换个说法再发一次试试。', 0);
+  }
+
+  /** 剩余题入队：持久化开启 → agent_job；否则回退 inbox 文件队列。 */
+  private enqueuePendingTexts(texts: string[]): void {
+    if (!WRITE_JOB_PERSIST_ENABLED) {
+      this.enqueueTexts(texts);
+      return;
+    }
+    for (let i = 0; i < texts.length; i += 1) {
+      WriteJobProducer.tryEnqueue(this.context, texts[i], 'background', 'xiaoyi')
+        .then((jobId: string | null): void => {
+          if (jobId === null) {
+            this.enqueueTexts([texts[i]]);
+          }
+        })
+        .catch((): void => {
+          this.enqueueTexts([texts[i]]);
+        });
+    }
   }
 
   /** 剩余题逐条追加待整理队列（尽力而为，失败只记日志）。 */

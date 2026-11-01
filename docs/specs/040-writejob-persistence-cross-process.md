@@ -1,6 +1,6 @@
 # 040 — WriteJob 持久队列与跨进程 handoff（038 S3）
 
-> **Status**: in-progress (2026-11-01) — P0/P1 完成；P2（跨进程 producer + inbox 迁移）待做
+> **Status**: in-progress (2026-11-01) — P0/P1/P2 完成；P3（真机跨进程/重启/灰度验收）待做
 > **Related**: [ADR-0024](../adr/0024-writejob-persistence-cross-process.md) · [spec 038](./038-write-job-scheduler.md) · [spec 039](./039-agent-workflow-first.md) · [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md)
 > **Code**: `common/src/main/ets/DatabaseHelper.ets` · `entry/src/main/ets/database/`（新 `AgentJobDao.ets`） · `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `entry/src/main/ets/services/A2AInboxIngestService.ets`
 > **Verified by**: 实现后回填（gate / 真机跨进程与重启 e2e / scheduler-report）
@@ -100,7 +100,16 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - 测试：`v7-write-job-persist` 6 条（顺序/claim 失败/失败回写/enqueue 失败/恢复路径/接线守卫）；build 成功；gate --all **PASS（pass=1189 fail=0）**；
 - 偏差：失败重试（attempt>1 重新入队）留 P2/P3；P1 失败直接 markFailed。
 
+### P2（2026-11-01 完成）
+
+- `WriteJobProducer.tryEnqueue(context,text,priority,source)`：flag 开 + DB 就绪才入队（`enqueueForSource`），否则返回 null 让调用方走旧路径；
+- A2A `AgentExtAbility`：
+  - 文本整理入口 `dispatchTextBatch`：flag 开启 → 入队并回执 `A2A_JOB_ACCEPTED_TEXT`（不再在扩展进程跑 LLM）；关闭 → 原 `ingestTextBatch`；
+  - 计划逐题 `ingestPlanItem`：flag 开启 → 每题入队 background + 进度回执；关闭 → 原同步执行（`ingestPlanItemNow`）；
+  - 「全部」指令 `enqueuePendingTexts`：flag 开启 → 入 job，否则回退 inbox 文件队列；
+- `WriteJobBootstrap.migrateInbox`：flag 开启时把 `AgentInboxQueue` pending 项一次性迁到 `agent_job`（source=inbox，fingerprint 幂等），成功后 `complete`；
+- 测试：`v7-write-job-persist` 增 3 条 P2 守卫（producer/A2A 入队/inbox 迁移）；gate --all **PASS**。
+
 ### 下一步
 
-- P2：`AgentExtAbility`/`AgentIngestService` 改为「入队 + 回执已受理」，inbox 迁移；
-- P3：真机跨进程/重启/幂等/灰度回退验收。
+- P3：真机跨进程/重启/幂等/灰度回退验收；通过后打开 `WRITE_JOB_PERSIST_ENABLED` 并更新 038 状态。

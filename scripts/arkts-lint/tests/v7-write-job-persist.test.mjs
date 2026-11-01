@@ -114,3 +114,35 @@ test('P1 接线：flag 默认关、bootstrap 注册 hooks 并恢复、EntryAbili
   const dao = read('entry/src/main/ets/database/AgentJobDao.ets');
   assert.ok(dao.includes('async claimJob('));
 });
+
+
+test('P2 跨进程 producer：flag 关闭/DB 不可用回退、入队走 enqueueForSource', () => {
+  const producer = read('entry/src/main/ets/services/WriteJobProducer.ets');
+  assert.ok(producer.includes('WRITE_JOB_PERSIST_ENABLED'));
+  assert.ok(producer.includes('DatabaseHelper.init(context)'));
+  assert.ok(producer.includes('enqueueForSource(priority, text, source)'));
+  const persistence = read('entry/src/main/ets/services/WriteJobPersistence.ets');
+  assert.ok(persistence.includes('async enqueueForSource(priority: string, text: string, source: string)'));
+  assert.ok(persistence.includes("return await this.enqueueForSource(priority, text, 'app')"));
+});
+
+test('P2 A2A 扩展：持久化开启时只入队 + 回执已受理', () => {
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.ok(ability.includes('WriteJobProducer'));
+  assert.ok(ability.includes('WRITE_JOB_PERSIST_ENABLED'));
+  assert.ok(ability.includes('TEXT_JOB_ENQUEUED job='));
+  assert.ok(ability.includes('PLAN_ENQUEUED item='));
+  assert.ok(ability.includes('A2A_JOB_ACCEPTED_TEXT'));
+  assert.ok(ability.includes('private ingestPlanItemNow('));
+  assert.ok(ability.includes('private dispatchTextBatch('));
+  assert.ok(ability.includes('private enqueuePendingTexts('));
+  assert.ok(ability.includes('tryEnqueue('));
+});
+
+test('P2 inbox 迁移：bootstrap 把 pending 项写入 agent_job 后 complete', () => {
+  const bootstrap = read('entry/src/main/ets/services/WriteJobBootstrap.ets');
+  assert.ok(bootstrap.includes('migrateInbox'));
+  assert.ok(bootstrap.includes('AgentInboxQueue.claim(context)'));
+  assert.ok(bootstrap.includes("enqueueForSource('background', item.text, 'inbox')"));
+  assert.ok(bootstrap.includes('AgentInboxQueue.complete(context)'));
+});
