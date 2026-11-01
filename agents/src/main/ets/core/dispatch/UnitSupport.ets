@@ -1,5 +1,5 @@
 /**
- * UnitSupport.ets — 分支模块共用的纯函数（从 Dispatcher.ets 抽出）
+ * UnitSupport.ets — 分支模块共用的纯函数（从 CommandExecutor.ets 抽出）
  *
  * 路径: agents/src/main/ets/core/dispatch/UnitSupport.ets
  * 职责: 只放无状态、无依赖的转换函数，供 capture / prepared / generation 分支复用。

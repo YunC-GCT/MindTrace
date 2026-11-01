@@ -6,7 +6,7 @@
  * 依赖: CaptureStructurer、DraftComposer、DeepDraftComposer、IncrementalPatchComposer、common
  *
  * 数据流:
- *   Dispatcher → KnowledgeModel → CaptureStructurer / 各生成路线 Module
+ *   CommandExecutor → KnowledgeModel → CaptureStructurer / 各生成路线 Module
  *
  * 第一阶段保留 facade；生成业务是否脱离外部 Interface 留待后续阶段裁决。
  */

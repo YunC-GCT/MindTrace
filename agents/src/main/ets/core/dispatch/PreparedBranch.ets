@@ -1,12 +1,12 @@
 /**
- * PreparedBranch.ets — preparedCandidate 确认提交分支（从 Dispatcher.ets 抽出）
+ * PreparedBranch.ets — preparedCandidate 确认提交分支（从 CommandExecutor.ets 抽出）
  *
  * 路径: agents/src/main/ets/core/dispatch/PreparedBranch.ets
  * 职责: 校验候选指纹 / 检查点 → 幂等提交（commitKey 或端口）→ 写 commit 记录与生命周期日志 → 返回 NoteOutcome 终态。
  * 依赖: CaptureGraph（truth_check + persist）、PreparedCandidate / generationRepository 契约。
  *
  * 边界:
- *   - 只负责「已确认候选的提交」；路由、运行上下文与结果外壳由 Dispatcher 负责。
+ *   - 只负责「已确认候选的提交」；路由、运行上下文与结果外壳由 CommandExecutor 负责。
  *   - 写路径：注入 NoteWritePort 时走端口（切片 A2），否则 legacy DAO。
  *   - 幂等：先查 commitKey 已有记录，命中直接返回首次候选（并补写生命周期日志）。
  */

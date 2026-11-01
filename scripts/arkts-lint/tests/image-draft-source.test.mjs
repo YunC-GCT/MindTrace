@@ -26,7 +26,7 @@ test('image payload maps to camera_capture source in the capture flow', () => {
   const unitSupport = read('agents/src/main/ets/core/dispatch/UnitSupport.ets');
   assert.match(unitSupport, /payload\.kind === 'image'/);
   assert.match(unitSupport, /return 'camera_capture'/);
-  assert.match(read('agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), /CaptureBranch\.dispatchCapture\(/);
+  assert.match(read('agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), /this\.buildGraph\(options\)\.run\(initial, runContext\)/);
 });
 
 test('generation pipeline always synthesizes a text payload from the source bundle', () => {

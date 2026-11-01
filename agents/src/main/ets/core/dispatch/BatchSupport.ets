@@ -1,5 +1,5 @@
 /**
- * BatchSupport.ets — dispatchSet 批量编排的纯辅助（从 Dispatcher.ets 抽出）
+ * BatchSupport.ets — dispatchSet 批量编排的纯辅助（从 CommandExecutor.ets 抽出）
  *
  * 路径: agents/src/main/ets/core/dispatch/BatchSupport.ets
  * 职责: 取消判定 / 跳过项回执 / 共享 RunContext 的选项逐字段复制。

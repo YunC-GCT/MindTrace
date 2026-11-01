@@ -1,5 +1,5 @@
 /**
- * IncrementalBranch.ets — 增量重生成分支（从 Dispatcher.ets 抽出）
+ * IncrementalBranch.ets — 增量重生成分支（从 CommandExecutor.ets 抽出）
  *
  * 路径: agents/src/main/ets/core/dispatch/IncrementalBranch.ets
  * 职责: 基于已提交笔记做分区增量重生成：加载 base → 计划/锁定 → 局部补丁 → 合并校验 →

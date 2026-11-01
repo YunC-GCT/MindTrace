@@ -1,5 +1,5 @@
 /**
- * CommandExecutor.ets — 命令执行器（spec 039；替代原 Dispatcher）
+ * CommandExecutor.ets — 命令执行器（spec 039；替代原 CommandExecutor）
  *
  * 路径: agents/src/main/ets/core/CommandExecutor.ets
  * 职责: 一条 NoteCommand 的 run 生命周期：建 run（runId=operationId）→ preflight/路由（委托 CommandRouter）

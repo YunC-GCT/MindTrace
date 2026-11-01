@@ -1,5 +1,5 @@
 /**
- * GenerationBranch.ets — 生成分支（从 Dispatcher.ets 抽出）
+ * GenerationBranch.ets — 生成分支（从 CommandExecutor.ets 抽出）
  *
  * 路径: agents/src/main/ets/core/dispatch/GenerationBranch.ets
  * 职责: light / standard / deep 三条生成路径的编排：路由选择、预算包装、候选评估循环、
@@ -8,7 +8,7 @@
  *
  * 边界:
  *   - 不负责幂等提交（preparedCandidate 走 PreparedBranch）与增量重生成（IncrementalBranch）。
- *   - run 上下文由 Dispatcher 传入（预算与取消是运行时属性）。
+ *   - run 上下文由 CommandExecutor 传入（预算与取消是运行时属性）。
  *   - 行为等价判据：#239 generation golden 快照。
  */
 import {
@@ -652,7 +652,7 @@ export class GenerationBranch {
         kind: fragment.kind,
         originId: fragment.originId,
         sequence: sequence,
-        // Source text is the authority at the Dispatcher boundary. Never trust a
+        // Source text is the authority at the CommandExecutor boundary. Never trust a
         // caller-supplied fingerprint that may actually be a record or OCR ID.
         fingerprint: sourceFingerprint(fragment.text),
         text: fragment.text,

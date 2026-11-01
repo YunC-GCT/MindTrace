@@ -81,7 +81,7 @@ export interface TypeClassifierTextResult {
  * 返回约定：
  *   - recognizeText().rawText: OCR/输入原文，便于排查识别质量。
  *   - recognizeText().text: 轻量预处理后的文本，便于下游直接使用。
- *   - classify(): LLM 优先识别五类 + 学科；失败时规则兜底，不阻断 Dispatcher。
+ *   - classify(): LLM 优先识别五类 + 学科；失败时规则兜底，不阻断 CommandExecutor。
  */
 export class TypeClassifier {
   private readonly cancellationToken?: CancellationToken;

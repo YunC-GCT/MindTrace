@@ -182,7 +182,7 @@ test('036 幂等：capture-set commitKey 透传到写端口，重复确认命中
   assert.ok(pipeline.includes('problemItemOfDuplicate'), '重复命中项标记 duplicate 并复用 noteId');
   const mapper = readRepoFile('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets');
   assert.ok(mapper.includes('commitKey: command.commitKey'), '分支请求透传 commitKey');
-  const branch = readRepoFile('agents/src/main/ets/core/dispatch/CaptureBranch.ets');
+  const branch = readRepoFile('agents/src/main/ets/workflows/NoteCaptureWorkflow.ets');
   assert.ok(branch.includes('commitKey: req.commitKey'), 'AgentState 携带 commitKey');
   const persist = readRepoFile('agents/src/main/ets/graph/nodes/PersistNode.ets');
   assert.ok(persist.includes('if (input.commitKey !== undefined && input.commitKey.length > 0)'), '写端口优先用命令 commitKey');

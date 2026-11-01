@@ -48,7 +48,7 @@ export class CaptureGraph {
         context?.throwIfStopped();
         const result: CaptureNodeResult = await node(nodeInput, context);
         // 节点已经给出终态错误（含「写成功后才取消」）时，不再用 token 覆盖错误；
-        // 这样 CaptureBranch 能读到 commitResult，区分 cancelled(committed=true/false)（ADR-0019 (e)）。
+        // 这样 NoteCaptureWorkflow 能读到 commitResult，区分 cancelled(committed=true/false)（ADR-0019 (e)）。
         if (result.state.error === undefined) {
           context?.throwIfStopped();
         }

@@ -2,7 +2,7 @@
  * RunEventSink.ets — run 级事件流 seam（A4 可观测性第一片）
  *
  * 路径: agents/src/main/ets/core/dispatch/RunEventSink.ets
- * 职责: 定义「命令执行 → run 事件」的最小写出契约；Dispatcher 在命令 seam 上发 start/terminal 事件，
+ * 职责: 定义「命令执行 → run 事件」的最小写出契约；CommandExecutor 在命令 seam 上发 start/terminal 事件，
  *       entry 侧实现落到 `run_store` / `run_event`（RunStorePort），测试侧可用内存 sink。
  * 依赖: 仅类型；不碰 Kit / RDB。
  *

@@ -5,9 +5,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const dispatcher = readFileSync(resolve(root, 'agents/src/main/ets/core/CommandExecutor.ets'), 'utf8');
-const captureBranch = readFileSync(resolve(root, 'agents/src/main/ets/core/dispatch/CaptureBranch.ets'), 'utf8');
-const noteAgent = readFileSync(resolve(root, 'agents/src/main/ets/agents/NoteAgent.ets'), 'utf8');
-const captureWorkflow = readFileSync(resolve(root, 'agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), 'utf8');
+const workflow = readFileSync(resolve(root, 'agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), 'utf8');
 const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiService.ets'), 'utf8');
 const agentsIndex = readFileSync(resolve(root, 'agents/src/main/ets/Index.ets'), 'utf8');
 const captureTypes = readFileSync(resolve(root, 'common/src/main/ets/models/CaptureChain.ets'), 'utf8');
@@ -19,28 +17,28 @@ test('Dispatcher exposes only the command entry (A4 4c Step2)', () => {
   assert.equal((dispatcher.match(/async routeDispatch\(/g) || []).length, 0);
 });
 
-test('NoteAgent owns CaptureGraph construction and DAO injection internally', () => {
-  assert.match(noteAgent, /private buildGraph\(\): CaptureGraph/);
-  assert.match(noteAgent, /PersistNodeFactory\.create\(dao\)/);
-  assert.match(noteAgent, /addConditionalEdge\('classify'/);
-  assert.match(noteAgent, /input\.analysisOnly \? 'END' : 'structure'/);
-  assert.match(noteAgent, /addConditionalEdge\('truth_check', .*persist \? 'persist' : 'END'\)/);
-  assert.match(noteAgent, /addEdge\('persist', 'END'\)/);
-  assert.match(noteAgent, /PERSIST_DAO_REQUIRED/);
-  assert.doesNotMatch(noteAgent, /addNode\('persist', async \(input: AgentState\) => \(\{ state: input \}\)\)/);
+test('NoteCaptureWorkflow owns CaptureGraph construction and DAO/port injection internally', () => {
+  assert.match(workflow, /private buildGraph\(options: DispatchOptions\): CaptureGraph/);
+  assert.match(workflow, /PersistNodeFactory\.create\(dao\)/);
+  assert.match(workflow, /addConditionalEdge\('classify'/);
+  assert.match(workflow, /input\.analysisOnly \? 'END' : 'structure'/);
+  assert.match(workflow, /addConditionalEdge\('truth_check', .*persist \? 'persist' : 'END'\)/);
+  assert.match(workflow, /addEdge\('persist', 'END'\)/);
+  assert.match(workflow, /PERSIST_DAO_REQUIRED/);
+  assert.doesNotMatch(workflow, /addNode\('persist', async \(input: AgentState\) => \(\{ state: input \}\)\)/);
 });
 
-test('CommandExecutor delegates capture to NoteCaptureWorkflow which runs CaptureBranch/NoteAgent (spec 039)', () => {
-  assert.match(captureWorkflow, /CaptureBranch\.dispatchCapture\([\s\S]*?context\.runContext/);
-  assert.match(captureBranch, /new NoteAgent\(/);
-  assert.match(captureBranch, /noteAgent\.run\(initial, runContext\)/);
+test('CommandExecutor delegates capture to NoteCaptureWorkflow (spec 039 S2)', () => {
+  assert.match(dispatcher, /NoteCaptureWorkflow/);
+  assert.match(workflow, /this\.buildGraph\(options\)\.run\(initial, runContext\)/);
   assert.doesNotMatch(dispatcher, /private buildGraph\(/);
   assert.doesNotMatch(dispatcher, /new TypeClassifier\(/);
-  assert.doesNotMatch(captureBranch, /private buildGraph\(/);
+  assert.doesNotMatch(workflow, /new NoteAgent\(/);
+  assert.doesNotMatch(workflow, /CaptureBranch\.dispatchCapture/);
 });
 
-test('NoteAgent instantiates one shared TypeClassifier inside buildGraph', () => {
-  assert.equal((noteAgent.match(/new TypeClassifier\(/g) || []).length, 1);
+test('NoteCaptureWorkflow instantiates one shared TypeClassifier inside buildGraph', () => {
+  assert.equal((workflow.match(/new TypeClassifier\(/g) || []).length, 1);
 });
 
 test('AiService consumes Capture workflow only through Dispatcher.dispatch', () => {

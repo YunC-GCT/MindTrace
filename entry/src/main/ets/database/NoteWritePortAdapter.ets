@@ -7,7 +7,7 @@
  * 依赖: common 的契约与纯判定（decideWrite 从 common barrel 引入）；运行期只依赖注入的 store。
  *
  * 数据流:
- *   NoteAgent / HITL 确认 → commit(unit, command) → queryCommit → decideWrite → store.insert / update
+ *   NoteCaptureWorkflow / HITL 确认 → commit(unit, command) → queryCommit → decideWrite → store.insert / update
  *
  * 契约实现（#238 / ADR-0019 (d)，顺序不得交换）:
  *   1. commitKey 空 → COMMIT_KEY_REQUIRED（不碰存储）

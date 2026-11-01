@@ -8,7 +8,7 @@
  * 依赖: common 的契约与错误类型；运行期只依赖注入的 store。
  *
  * 数据流:
- *   Dispatcher / NoteAgent → create / update / appendEvent → RunStoreStore → run_store / run_event
+ *   CommandExecutor / NoteCaptureWorkflow → create / update / appendEvent → RunStoreStore → run_store / run_event
  *
  * 契约（#238 / §17.5）:
  *   - create：runId 必填、status 合法；同 runId 重复 create → RUN_EXISTS（不可重试）。

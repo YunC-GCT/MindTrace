@@ -1,6 +1,6 @@
 # 039 — Agent 编排收口：CommandExecutor + CommandRouter + 四条 workflow
 
-> **Status**: proposed (2026-11-01) — **S1 已落地**（2026-11-01）；S2（capture 收口）/ S3（事件树）待做
+> **Status**: proposed (2026-11-01) — **S1/S2 已落地**（2026-11-01）；S3（事件树）待做
 > **Related**: [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 038](./038-write-job-scheduler.md) · [架构提案](../architecture/agent-architecture-proposal-2026-11-01.md) · [v7 外评审](../architecture/review-v7-2026-10-27.md)
 > **Code**: `agents/src/main/ets/core/Dispatcher.ets` · `agents/src/main/ets/core/dispatch/`（DispatchGraph / CaptureBranch / RunEventSink） · `agents/src/main/ets/agents/NoteAgent.ets` · `entry/src/main/ets/services/ai/{AiServicePorts,CapturePipeline,DraftPipeline,DraftCommitService}.ets` · `common/src/main/ets/workflow/StateGraph.ets`
 > **Verified by**: 基线 `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（pass=1165 / 0 lint error / 0 边界违规）；本 spec 的验收命令见 §7，实施后逐条回填
@@ -164,7 +164,15 @@ export class CommandRouter {
 - 验证：`node scripts/agent-gate/index.mjs --all` → **RESULT: PASS（pass=1171 fail=0）**；golden `raw/` **零 diff**；`node scripts/build-hsp-hap.mjs` 成功；
 - 偏差（记录在案）：Generation/Regenerate/Prepared 三条 workflow 本轮只做骨架委托，分支文件内容迁移推迟；S2 完成 capture 收口后再评估是否把三分支内容收进 workflow（验收不要求其删除）。
 
+### S2（2026-11-01 完成）
+
+- `NoteCaptureWorkflow` 接管 capture：原 `CaptureBranch` 的终态映射（失败/analysisOnly/缺 unit/cancelled/committed）与 `NoteAgent.buildGraph` 的图装配合并进 workflow；
+- 删除 `agents/src/main/ets/core/dispatch/CaptureBranch.ets` 与 `agents/src/main/ets/agents/NoteAgent.ets`（五层调用 `DispatchGraph→invoke→CaptureBranch→NoteAgent→CaptureGraph` 降为 `CommandExecutor→NoteCaptureWorkflow→CaptureGraph`）；
+- 测试：`dispatcher-capturegraph` 重写为 `NoteCaptureWorkflow` 图装配/委托契约；`v7-capture-set`、`v7-subject-vocabulary`、`image-draft-source` 的旧路径断言改指 workflow；
+- 验证：`node scripts/agent-gate/index.mjs --all` → **RESULT: PASS（pass=1169 fail=0）**；golden `raw/` **零 diff**；`node scripts/build-hsp-hap.mjs` 成功；agents/ 内 `DispatchGraph|CaptureBranch|NoteAgent|Dispatcher` 引用清零（含注释）；
+- **真机验证受阻（需解锁）**：设备锁屏，`aa start` 被拒；`e2e=captureSet` 与 `a2a_smoke.py` 待设备解锁后补跑（不影响 S2 代码/单测/golden 判据）。
+
 ### 下一步
 
-- S2：`NoteCaptureWorkflow` 接管 capture（NoteCaptureWorkflow 直接装配 CaptureGraph，NoteAgent 改名/归位），删 `CaptureBranch`；
-- S3：事件 schema（node/tool/approval/commit）+ runId 贯通 + scheduler-report 解析。
+- S3：事件 schema（node/tool/approval/commit）+ runId 贯通 + scheduler-report 解析；之后补真机 captureSet/a2a smoke。
+

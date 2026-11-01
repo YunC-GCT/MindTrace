@@ -1,12 +1,12 @@
 /**
- * GenerationEvaluator.ets — 生成结果的评估 / 终态 / 诊断（从 Dispatcher.ets 抽出）
+ * GenerationEvaluator.ets — 生成结果的评估 / 终态 / 诊断（从 CommandExecutor.ets 抽出）
  *
  * 路径: agents/src/main/ets/core/dispatch/GenerationEvaluator.ets
  * 职责: 标准/深度候选评估、问题合并与摘要、终态 run 组装、诊断日志、预算包装、bundleText。
- *       全部为静态方法，不持有 Dispatcher 状态。
+ *       全部为静态方法，不持有 CommandExecutor 状态。
  * 依赖: common 的生成模型类型（NoteGenerationStandardResult / Issue / Coverage / Run 等）。
  *
- * 拆出原因（2026-10-31）：Dispatcher 近 1530 行，评估/诊断/终态逻辑与分支编排混在一个类；
+ * 拆出原因（2026-10-31）：CommandExecutor 近 1530 行，评估/诊断/终态逻辑与分支编排混在一个类；
  * 这些方法只依赖入参与 common 类型，是低风险的第一块可整体搬走的逻辑。
  */
 import {

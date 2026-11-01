@@ -1,12 +1,12 @@
 /**
- * DispatchOptions.ets — Dispatcher 的调用选项契约（从 Dispatcher.ets 抽出，便于分支模块复用）
+ * DispatchOptions.ets — CommandExecutor 的调用选项契约（从 CommandExecutor.ets 抽出，便于分支模块复用）
  *
  * 路径: agents/src/main/ets/core/dispatch/DispatchOptions.ets
- * 职责: 只声明调用选项形状；Dispatcher 负责默认值与装配，分支模块只消费。
+ * 职责: 只声明调用选项形状；CommandExecutor 负责默认值与装配，分支模块只消费。
  * 依赖: common 类型 + agents 的 NoteDaoInterface / KnowledgeModel（仅类型）。
  *
- * 拆出原因（2026-10-31）：Dispatcher.ets 近 1800 行，分支不断往同一文件堆；
- * 先把跨分支共享的选项契约抽成叶子模块，避免分支模块反向 import Dispatcher 造成环。
+ * 拆出原因（2026-10-31）：CommandExecutor.ets 近 1800 行，分支不断往同一文件堆；
+ * 先把跨分支共享的选项契约抽成叶子模块，避免分支模块反向 import CommandExecutor 造成环。
  */
 import type {
   CancellationToken,

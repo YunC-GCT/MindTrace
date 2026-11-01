@@ -12,7 +12,7 @@ export class OcrNodeFactory {
       if (input.payload === undefined) {
         const error: CaptureGraphError = {
           kind: 'CAPTURE_NO_PAYLOAD',
-          message: 'capture node requires state.payload (seeded by Dispatcher START)',
+          message: 'capture node requires state.payload (seeded by CommandExecutor START)',
           step: 'capture',
           retriable: false,
         };
