@@ -187,6 +187,31 @@ export class AgentJobDao {
     return count;
   }
 
+  /** 单执行者启动接管：所有 running 视为孤儿（进程崩溃/被杀，租约可能未过期）。 */
+  async recoverAllRunning(now: number, maxAttempt: number = MAX_ATTEMPT): Promise<number> {
+    const countResult: relationalStore.ResultSet = await this.store.querySql(
+      "SELECT COUNT(*) AS c FROM agent_job WHERE status = 'running'", []);
+    let count: number = 0;
+    try {
+      if (countResult.goToFirstRow()) {
+        count = countResult.getLong(countResult.getColumnIndex('c'));
+      }
+    } finally {
+      countResult.close();
+    }
+    if (count === 0) {
+      return 0;
+    }
+    await this.store.executeSql(
+      "UPDATE agent_job SET attempt = attempt + 1,"
+      + " status = CASE WHEN attempt + 1 >= ? THEN 'failed' ELSE 'queued' END,"
+      + " lease_owner = '', lease_expires_at = 0, updated_at = ?"
+      + " WHERE status = 'running'",
+      [maxAttempt.toString(), now.toString()],
+    );
+    return count;
+  }
+
   async markDone(jobId: string): Promise<void> {
     await this.finish(jobId, 'done', '');
   }

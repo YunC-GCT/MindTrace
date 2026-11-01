@@ -1,6 +1,6 @@
 # 038 — 笔记写入工作调度器（WriteJob Scheduler）
 
-> **Status**: implemented (2026-11-01) — S1/S2 已落地；S3（跨进程 handoff + 队列持久化/断点续跑）由 [spec 040](./040-writejob-persistence-cross-process.md) / [ADR-0024](../adr/0024-writejob-persistence-cross-process.md) 承接（proposed）
+> **Status**: implemented (2026-11-01) — S1/S2/S3 全部落地：持久队列（schema v20 `agent_job`）+ 跨进程 handoff + 启动恢复，flag 已灰度打开（见 [spec 040](./040-writejob-persistence-cross-process.md) / [ADR-0024](../adr/0024-writejob-persistence-cross-process.md)）
 > **Related**: [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 036](./036-multi-image-single-pass-consolidation.md) · [scheduler design](../architecture/agent-scheduler-design-2026-11-01.md)
 > **Code**: `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/services/WriteJobEventRecorder.ets` · `entry/src/main/ets/services/AsyncMutex.ets` · `entry/src/main/ets/services/KnowledgeUnitWriteService.ets`
 > **Verified by**: `node scripts/agent-gate/index.mjs --all` · e2e `schedulerProbe` / `schedulerIntegration` / `schedulerStress` · `node scripts/quality/scheduler-report.mjs`

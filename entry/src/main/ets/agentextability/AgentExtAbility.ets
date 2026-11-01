@@ -46,7 +46,7 @@ import {
 import { AgentInboxItem, buildInboxItem } from '../services/AgentInboxModels';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { WriteJobProducer } from '../services/WriteJobProducer';
-import { WRITE_JOB_PERSIST_ENABLED } from '../services/WriteJobConfig';
+import { WriteJobPersistenceFlags } from '../services/WriteJobConfig';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
 import {
   A2APlan,
@@ -353,7 +353,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 文本整理入口：持久化开启 → 入队并回执已受理；否则走原有同步 ingestTextBatch。 */
   private dispatchTextBatch(taskId: string, request: AgentIngestRequest): void {
-    if (WRITE_JOB_PERSIST_ENABLED) {
+    if (WriteJobPersistenceFlags.isEnabled()) {
       WriteJobProducer.tryEnqueue(this.context, request.text, 'interactive', 'xiaoyi')
         .then((jobId: string | null): void => {
           if (jobId === null) {
@@ -497,7 +497,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 整理计划中的一道题：持久化开启时只入队（跨进程 producer），否则同步执行。 */
   private ingestPlanItem(taskId: string, plan: A2APlan, item: A2APlanItem): void {
-    if (WRITE_JOB_PERSIST_ENABLED) {
+    if (WriteJobPersistenceFlags.isEnabled()) {
       WriteJobProducer.tryEnqueue(this.context, item.text, 'background', 'xiaoyi')
         .then((jobId: string | null): void => {
           if (jobId === null) {
@@ -589,7 +589,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 剩余题入队：持久化开启 → agent_job；否则回退 inbox 文件队列。 */
   private enqueuePendingTexts(texts: string[]): void {
-    if (!WRITE_JOB_PERSIST_ENABLED) {
+    if (!WriteJobPersistenceFlags.isEnabled()) {
       this.enqueueTexts(texts);
       return;
     }

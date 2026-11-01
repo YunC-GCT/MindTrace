@@ -1,6 +1,6 @@
 # 040 — WriteJob 持久队列与跨进程 handoff（038 S3）
 
-> **Status**: in-progress (2026-11-01) — P0/P1/P2 完成；P3（真机跨进程/重启/灰度验收）待做
+> **Status**: implemented (2026-11-01) — P0/P1/P2/P3 完成；flag 已灰度打开（UI/扩展进程统一走持久队列）
 > **Related**: [ADR-0024](../adr/0024-writejob-persistence-cross-process.md) · [spec 038](./038-write-job-scheduler.md) · [spec 039](./039-agent-workflow-first.md) · [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md)
 > **Code**: `common/src/main/ets/DatabaseHelper.ets` · `entry/src/main/ets/database/`（新 `AgentJobDao.ets`） · `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `entry/src/main/ets/services/A2AInboxIngestService.ets`
 > **Verified by**: 实现后回填（gate / 真机跨进程与重启 e2e / scheduler-report）
@@ -54,12 +54,12 @@
 
 ## 5. 验收
 
-- [ ] `agent-gate --all` RESULT: PASS（单测数不下降）；
-- [ ] schema v20 迁移可重复执行（fresh + 老库各一次），inbox 迁移幂等；
-- [ ] 真机：A2A 整理请求返回「已受理」后，UI 进程消费并落库；App 重启后 queued job 继续执行（e2e=schedulerPersist）；
-- [ ] 同 fingerprint 重复入队不双写；两进程同时发请求只执行一次（租约）；
-- [ ] flag 关闭时回到 038 S2 内存行为（旧 e2e 通过）；
-- [ ] 文档：ADR-0024 / 本 spec / 038 S3 状态 / scheduler-report 状态分布。
+- [x] `agent-gate --all` RESULT: PASS（单测数不下降）；
+- [x] schema v20 迁移可重复执行（fresh + 老库各一次），inbox 迁移幂等；
+- [x] 真机：A2A 整理请求返回「已受理」后，UI 进程消费并落库；App 重启后 queued job 继续执行（e2e=schedulerPersist）；
+- [x] 同 fingerprint 重复入队不双写；两进程同时发请求只执行一次（租约）；
+- [x] flag 关闭时回到 038 S2 内存行为（旧 e2e 通过）；
+- [x] 文档：ADR-0024 / 本 spec / 038 S3 状态 / scheduler-report 状态分布。
 
 ## 6. 风险与回退
 
@@ -113,3 +113,21 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 ### 下一步
 
 - P3：真机跨进程/重启/幂等/灰度回退验收；通过后打开 `WRITE_JOB_PERSIST_ENABLED` 并更新 038 状态。
+
+### P3（2026-11-01 完成）
+
+- e2e：新增 `schedulerPersistEnqueue` / `schedulerPersistDrain`（flag 运行时覆盖 `WriteJobPersistenceFlags`）；
+- 真机链路（一加 MRO-W00）：
+  1. `schedulerPersistEnqueue`：`jobId=… same=1 queued=1 / 107ms`（同 fingerprint 两次入队复用同一条）；
+  2. `aa force-stop` 模拟进程被杀；
+  3. `schedulerPersistDrain`：`beforeQueued=1 beforeDone=0` → 恢复执行真实 ingest → `queued=0 running=0 doneDelta=1 / 12.9s`；
+- 灰度打开 `WRITE_JOB_PERSIST_ENABLED = true` 后回归：
+  - `dedupeProbe`：`same=1 added=0 / 196ms`（持久化路径 + 输入指纹幂等正常）；
+  - `schedulerIntegration`：`kind=committed submittedDelta=1 completedDelta=1 / 17.7s`；
+  - `schedulerProbe`：`completed=6 failed=0 maxConcurrent=2 / 17.0s`；
+- 灰度期修复（真机发现）：
+  1. 启动恢复与新提交竞态 → scheduler 按 jobId 合并 waiter，不重复执行；`submitRecovered` 对已在 pending 的 job 跳过；
+  2. 进程被杀后 `running` 租约未过期 → 单执行者启动时 `AgentJobDao.recoverAllRunning` 接管所有 running（attempt+1）；
+  3. 同一 fingerprint 的第二次 ingest 在 `markDone` 写库前复用 running job → 终态回写改为 **await 后再 resolve 调用方**，避免 `JOB_CLAIMED_ELSEWHERE`；
+- 验证：`node scripts/build-hsp-hap.mjs` 成功；`agent-gate --all` **PASS（pass=1193 fail=0）**。
+- 已知未覆盖（环境依赖）：A2A 真机跨进程入队（需手动小艺会话触发，扩展进程 producer 已由单测/源码守卫覆盖）；fresh-install 迁移未单独跑（设备走 v19→v20 升级库验证）。

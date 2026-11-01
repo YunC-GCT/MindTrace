@@ -8,4 +8,17 @@
  */
 export const WRITE_JOB_UI_ENABLED: boolean = true;
 // spec 040 P1：持久队列开关（默认关；P3 真机验收后再打开）。
-export const WRITE_JOB_PERSIST_ENABLED: boolean = false;
+export const WRITE_JOB_PERSIST_ENABLED: boolean = true;
+
+/** 生产默认关；e2e/灰度验证可运行时覆盖（进程内）。 */
+export class WriteJobPersistenceFlags {
+  private static enabled: boolean = WRITE_JOB_PERSIST_ENABLED;
+
+  static isEnabled(): boolean {
+    return WriteJobPersistenceFlags.enabled;
+  }
+
+  static setEnabled(value: boolean): void {
+    WriteJobPersistenceFlags.enabled = value;
+  }
+}

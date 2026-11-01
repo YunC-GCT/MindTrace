@@ -1,6 +1,6 @@
 # 0024 — WriteJob 队列持久化与跨进程 handoff（038 S3）
 
-> **Status**: proposed (2026-11-01)
+> **Status**: accepted (2026-11-01) — 实现见 spec 040（P0–P3 完成）
 > **Related**: [spec 038](../specs/038-write-job-scheduler.md) · [spec 039](../specs/039-agent-workflow-first.md) · [ADR-0008](./0008-capturegraph-self-built-runtime.md) · [ADR-0019](./0019-note-command-and-outcome.md) · [ADR-0021](./0021-shared-read-port-implementation-in-common.md)
 > **Code**: `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/services/A2AInboxIngestService.ets` · `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `common/src/main/ets/DatabaseHelper.ets`
 > **Verified by**: 本 ADR 仅定决策；实现验收见 spec 040（待排期）

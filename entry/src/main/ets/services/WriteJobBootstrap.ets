@@ -9,7 +9,7 @@
  */
 import { DatabaseHelper } from 'common';
 import type { common } from '@kit.AbilityKit';
-import { WRITE_JOB_PERSIST_ENABLED } from './WriteJobConfig';
+import { WriteJobPersistenceFlags } from './WriteJobConfig';
 import { WriteJobScheduler } from './WriteJobScheduler';
 import { AgentJobPersistence } from './WriteJobPersistence';
 import { AgentJobDao } from '../database/AgentJobDao';
@@ -23,15 +23,18 @@ const MAX_ATTEMPT: number = 2;
 export class WriteJobBootstrap {
   /** 在 DB 就绪后调用；flag 关闭或 DB 未就绪时安全跳过。 */
   static async install(context: common.Context): Promise<void> {
-    if (!WRITE_JOB_PERSIST_ENABLED) {
+    if (!WriteJobPersistenceFlags.isEnabled()) {
       return;
     }
     const store = DatabaseHelper.getStore();
     if (store === null) {
       return;
     }
-    const persistence: AgentJobPersistence = new AgentJobPersistence(new AgentJobDao(store));
+    const dao: AgentJobDao = new AgentJobDao(store);
+    const persistence: AgentJobPersistence = new AgentJobPersistence(dao);
     WriteJobScheduler.shared().setPersistenceHooks(persistence);
+    // 单执行者：启动时所有 running 都是孤儿（租约可能未过期），先接管再取 queued。
+    await dao.recoverAllRunning(Date.now());
     const recovered: AgentJob[] = await persistence.recover();
     const jobs: AgentJob[] = recovered.length > MAX_RECOVERED ? recovered.slice(0, MAX_RECOVERED) : recovered;
     for (const job of jobs) {

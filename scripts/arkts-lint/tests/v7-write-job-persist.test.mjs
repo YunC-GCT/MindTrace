@@ -97,9 +97,9 @@ test('P1 恢复路径 submitRecovered：不重复 enqueue，仍 claim + run + fi
 
 test('P1 接线：flag 默认关、bootstrap 注册 hooks 并恢复、EntryAbility DB 后调用', () => {
   const config = read('entry/src/main/ets/services/WriteJobConfig.ets');
-  assert.ok(config.includes('WRITE_JOB_PERSIST_ENABLED: boolean = false'));
+  assert.ok(config.includes('WRITE_JOB_PERSIST_ENABLED: boolean = true'));
   const bootstrap = read('entry/src/main/ets/services/WriteJobBootstrap.ets');
-  assert.ok(bootstrap.includes('WRITE_JOB_PERSIST_ENABLED'));
+  assert.ok(bootstrap.includes('WriteJobPersistenceFlags.isEnabled()'));
   assert.ok(bootstrap.includes('setPersistenceHooks'));
   assert.ok(bootstrap.includes('persistence.recover()'));
   assert.ok(bootstrap.includes('submitRecovered'));
@@ -118,7 +118,7 @@ test('P1 接线：flag 默认关、bootstrap 注册 hooks 并恢复、EntryAbili
 
 test('P2 跨进程 producer：flag 关闭/DB 不可用回退、入队走 enqueueForSource', () => {
   const producer = read('entry/src/main/ets/services/WriteJobProducer.ets');
-  assert.ok(producer.includes('WRITE_JOB_PERSIST_ENABLED'));
+  assert.ok(producer.includes('WriteJobPersistenceFlags.isEnabled()'));
   assert.ok(producer.includes('DatabaseHelper.init(context)'));
   assert.ok(producer.includes('enqueueForSource(priority, text, source)'));
   const persistence = read('entry/src/main/ets/services/WriteJobPersistence.ets');
@@ -129,7 +129,7 @@ test('P2 跨进程 producer：flag 关闭/DB 不可用回退、入队走 enqueue
 test('P2 A2A 扩展：持久化开启时只入队 + 回执已受理', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
   assert.ok(ability.includes('WriteJobProducer'));
-  assert.ok(ability.includes('WRITE_JOB_PERSIST_ENABLED'));
+  assert.ok(ability.includes('WriteJobPersistenceFlags.isEnabled()'));
   assert.ok(ability.includes('TEXT_JOB_ENQUEUED job='));
   assert.ok(ability.includes('PLAN_ENQUEUED item='));
   assert.ok(ability.includes('A2A_JOB_ACCEPTED_TEXT'));
@@ -145,4 +145,21 @@ test('P2 inbox 迁移：bootstrap 把 pending 项写入 agent_job 后 complete',
   assert.ok(bootstrap.includes('AgentInboxQueue.claim(context)'));
   assert.ok(bootstrap.includes("enqueueForSource('background', item.text, 'inbox')"));
   assert.ok(bootstrap.includes('AgentInboxQueue.complete(context)'));
+});
+
+
+test('P3 持久化 flag 可 e2e 覆盖；run/重启 e2e 模式接线', () => {
+  const config = read('entry/src/main/ets/services/WriteJobConfig.ets');
+  assert.ok(config.includes('class WriteJobPersistenceFlags'));
+  assert.ok(config.includes('static isEnabled()'));
+  assert.ok(config.includes('static setEnabled('));
+  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  assert.ok(runner.includes('runSchedulerPersistEnqueue'));
+  assert.ok(runner.includes('runSchedulerPersistDrain'));
+  assert.ok(runner.includes('stage=persist-enqueue jobId='));
+  assert.ok(runner.includes('stage=persist-drain result queued='));
+  assert.ok(runner.includes('WriteJobBootstrap.install(ctx)'));
+  const ability = read('entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.ok(ability.includes("mode === 'schedulerPersistEnqueue'"));
+  assert.ok(ability.includes("mode === 'schedulerPersistDrain'"));
 });

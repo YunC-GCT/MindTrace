@@ -11,7 +11,7 @@
  */
 import { DatabaseHelper } from 'common';
 import type { common } from '@kit.AbilityKit';
-import { WRITE_JOB_PERSIST_ENABLED } from './WriteJobConfig';
+import { WriteJobPersistenceFlags } from './WriteJobConfig';
 import { AgentJobPersistence } from './WriteJobPersistence';
 import { AgentJobDao } from '../database/AgentJobDao';
 
@@ -19,7 +19,7 @@ export class WriteJobProducer {
   /** 入队一条待整理文本；flag 关闭/DB 不可用/入队失败返回 null（调用方回退旧路径）。 */
   static async tryEnqueue(context: common.Context, text: string,
     priority: string, source: string): Promise<string | null> {
-    if (!WRITE_JOB_PERSIST_ENABLED) {
+    if (!WriteJobPersistenceFlags.isEnabled()) {
       return null;
     }
     try {

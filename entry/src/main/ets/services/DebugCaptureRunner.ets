@@ -39,7 +39,10 @@ import { AgentInboxQueue } from './AgentInboxQueue';
 import { buildInboxItem } from './AgentInboxModels';
 import { WRITE_JOB_RUN_PREFIX } from './WriteJobEvents';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from './WriteJobScheduler';
-import { WRITE_JOB_UI_ENABLED } from './WriteJobConfig';
+import { WRITE_JOB_PERSIST_ENABLED, WRITE_JOB_UI_ENABLED, WriteJobPersistenceFlags } from './WriteJobConfig';
+import { AgentJobPersistence } from './WriteJobPersistence';
+import { WriteJobBootstrap } from './WriteJobBootstrap';
+import { AgentJobDao } from '../database/AgentJobDao';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
 import {
@@ -302,6 +305,80 @@ export class DebugCaptureRunner {
         'stage=done schedulerIntegration=0 err=' + (error as Error).message);
     } finally {
       WriteJobFlags.setEnabled(WRITE_JOB_UI_ENABLED);
+    }
+  }
+
+  /** P3 持久化 e2e：入队一条 job（同 fingerprint 两次 → 同 jobId），不执行，供重启后 drain。 */
+  static async runSchedulerPersistEnqueue(ctx: common.UIAbilityContext): Promise<void> {
+    WriteJobPersistenceFlags.setEnabled(true);
+    const startedAt: number = Date.now();
+    try {
+      await DatabaseHelper.init(ctx);
+      const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      if (store === null) {
+        throw new Error('store-null');
+      }
+      const dao: AgentJobDao = new AgentJobDao(store);
+      const persistence: AgentJobPersistence = new AgentJobPersistence(dao);
+      const text: string = '持久化探针 ' + Date.now().toString() + '：计算 6 + 7 的值并说明运算顺序。';
+      const firstId: string = await persistence.enqueueForSource('interactive', text, 'e2e');
+      const secondId: string = await persistence.enqueueForSource('interactive', text, 'e2e');
+      const queued: number = await dao.countByStatus('queued');
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=persist-enqueue jobId=' + firstId + ' same=' + (firstId === secondId ? '1' : '0')
+          + ' queued=' + queued.toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done persistEnqueue=1 ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done persistEnqueue=0 err=' + (error as Error).message);
+    } finally {
+      WriteJobPersistenceFlags.setEnabled(WRITE_JOB_PERSIST_ENABLED);
+    }
+  }
+
+  /** P3 持久化 e2e：重启后安装 hooks/recover 并等待队列清空（真实 ingest）。 */
+  static async runSchedulerPersistDrain(ctx: common.UIAbilityContext): Promise<void> {
+    WriteJobPersistenceFlags.setEnabled(true);
+    const startedAt: number = Date.now();
+    try {
+      await DatabaseHelper.init(ctx);
+      const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      if (store === null) {
+        throw new Error('store-null');
+      }
+      const dao: AgentJobDao = new AgentJobDao(store);
+      const beforeQueued: number = await dao.countByStatus('queued');
+      const beforeRunning: number = await dao.countByStatus('running');
+      const beforeDone: number = await dao.countByStatus('done');
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=persist-drain beforeQueued=' + beforeQueued.toString()
+          + ' beforeRunning=' + beforeRunning.toString() + ' beforeDone=' + beforeDone.toString());
+      await WriteJobBootstrap.install(ctx);
+      let queued: number = beforeQueued;
+      let running: number = beforeRunning;
+      let done: number = beforeDone;
+      for (let i = 0; i < 180; i += 1) {
+        await DebugCaptureRunner.sleep(1000);
+        queued = await dao.countByStatus('queued');
+        running = await dao.countByStatus('running');
+        done = await dao.countByStatus('done');
+        if (queued === 0 && running === 0) {
+          break;
+        }
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=persist-drain result queued=' + queued.toString() + ' running=' + running.toString()
+          + ' doneDelta=' + (done - beforeDone).toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done persistDrain=' + (queued === 0 && running === 0 ? '1' : '0')
+          + ' doneDelta=' + (done - beforeDone).toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done persistDrain=0 err=' + (error as Error).message);
+    } finally {
+      WriteJobPersistenceFlags.setEnabled(WRITE_JOB_PERSIST_ENABLED);
     }
   }
 
