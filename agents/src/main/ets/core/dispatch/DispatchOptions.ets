@@ -38,6 +38,8 @@ export interface DispatchOptions {
   subjectVocabulary?: string[];
   /** A4：run 级事件流（start/terminal）；未装配时行为零变化（NullRunEventSink）。 */
   runEventSink?: RunEventSink;
+  /** 快速路由：跳过独立的分类 LLM，让 structure 在同一次调用里自分类（省一次往返）。 */
+  skipLlmClassification?: boolean;
 }
 
 // spec 036 阶段 1：集合级整理的可选项。

@@ -154,7 +154,8 @@ export class CapturePipeline {
       throw new Error('CapturePipeline.ingestText 需要非空文本');
     }
     const payload: TextPayload = { kind: 'text', text: body };
-    return await this.processAndPersistOutcome(payload);
+    // 快速路由：文字整理跳过独立分类 LLM（structure 自分类），省一次 ~3.5s 往返。
+    return await this.processAndPersistOutcome(payload, undefined, true);
   }
 
   /**
@@ -576,6 +577,7 @@ export class CapturePipeline {
   private async processAndPersistOutcome(
     payload: DispatchPayload,
     onNodeTiming?: (step: string, elapsedMs: number) => void,
+    skipLlmClassification: boolean = false,
   ): Promise<NoteOutcome> {
     const operationId: string = 'capture-' + Date.now().toString() + '-' + CaptureTiming.nextSeq().toString();
     const command: NoteCommand = {
@@ -607,6 +609,7 @@ export class CapturePipeline {
       subjectVocabulary: await SubjectVocabularyService.list(),
       onNodeTiming: timing,
       runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
+      skipLlmClassification: skipLlmClassification,
     });
     log.info('CAPTURE_TOTAL kind=' + outcome.kind + ' ms=' + (Date.now() - startedAt).toString());
     if (payload.kind === 'text' && outcome.kind === 'committed' && outcome.noteId !== undefined

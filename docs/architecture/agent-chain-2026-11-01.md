@@ -220,3 +220,21 @@ CAPTURE_TOTAL committed 22253ms
 
 - A2A 逐题入库加 **90s deadline**：超时抛 `INGEST_DEADLINE`，自动把题目文本转 `AgentInboxQueue` 待整理，并回执「已转待整理，打开 MindTrace 自动补齐」——不再让用户干等 70–80s，也不丢原文。
 - 后续（A 第二片）：基于 `CAPTURE_STAGE` 基线做快速生成路由（压缩 structure 的 token 预算/候选轮次）+ 多轮采样定 P95 目标。
+
+
+### A 延迟治理 · 第二片（2026-11-01 16:12，真机采样）
+
+- **快速路由落地**：文字整理跳过独立分类 LLM（`skipLlmClassification` → ClassifyNode 不调模型 → structure prompt 自分类），并把 `NoteOutcomeMapper.toOptions` 的白名单拷贝补上 `skipLlmClassification/runEventSink`（否则选项在 dispatch 内部丢失）。
+- 真机对比（`e2e=latencyProbe`，各 3 次）：
+
+| 阶段 | 快速路由前 | 快速路由后 |
+|---|---|---|
+| classify | 3499ms（一次样本）/ 1989–3036ms（多数） | **0ms**（跳过） |
+| structure | 17116ms（单样本） | 9321 / 72292 / 81767ms（provider 波动） |
+| persist | 1599ms | 214 / 1609 / 1724ms |
+| total | 22253ms（单样本） | 12029 / 74073 / 83643ms |
+
+- 结论：代码侧省掉一次分类调用（~2–3.5s）；**剩余 variance 来自模型服务端**——慢样本 `completionTokens=594 / NETSTACK total_time≈72s`，同一 prompt 快样本 9.3s，属于 provider 排队/网络，不是链路 bug。
+- 新增 `scripts/quality/latency-report.mjs`：跑 N 次 `latencyProbe` 或 `--reuse`，输出各阶段 P50/P95 与逐次明细（后续回归基线）。
+- 兜底已有：A2A 入库 90s deadline → 超时转待整理队列，用户不再无限等待。
+- 下一步选项：① 模型降级/备用 provider（超时切更快模型）；② structure 输出预算/字段数限制（需质检防截断）；③ 接受 provider 波动，以「90s deadline + 队列」为体验兜底并持续用 latency-report 监控。

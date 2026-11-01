@@ -114,3 +114,18 @@ test('输入指纹幂等：同一原文重复整理复用已有笔记（P0-3）'
   const dao = read('agents/src/main/ets/models/NoteDaoInterface.ets');
   assert.match(dao, /queryById\?\(id: string\)/);
 });
+
+
+test('快速路由：文字整理跳过分类 LLM（structure 自分类）', () => {
+  const options = read('agents/src/main/ets/core/dispatch/DispatchOptions.ets');
+  assert.ok(options.includes('skipLlmClassification?: boolean'));
+  const classify = read('agents/src/main/ets/graph/nodes/ClassifyNode.ets');
+  assert.ok(classify.includes('input.skipClassification === true'));
+  const structure = read('agents/src/main/ets/graph/nodes/StructureNode.ets');
+  assert.ok(structure.includes('input.skipClassification === true'));
+  const structurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
+  assert.ok(structurer.includes('skipClassifierHint: boolean = false'));
+  assert.ok(structurer.includes('this.buildExternalHint(ocrText, type, subject, chapter)'));
+  const pipeline = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.ok(pipeline.includes('this.processAndPersistOutcome(payload, undefined, true)'));
+});

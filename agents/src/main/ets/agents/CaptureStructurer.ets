@@ -91,15 +91,14 @@ export class CaptureStructurer {
     source: string = 'camera_capture',
     provenance?: CaptureProvenance,
     knownSubjects: string[] = [],
+    skipClassifierHint: boolean = false,
   ): Promise<KnowledgeUnit> {
     this.cancellationToken?.throwIfCancelled();
     const startTime: number = Date.now();
-    const classificationHint: ClassificationResult = await this.resolveClassificationHint(
-      ocrText,
-      type,
-      subject,
-      chapter,
-    );
+    // 快速路由：跳过独立的分类 LLM（structure prompt 里已要求模型自己判 category/subject）。
+    const classificationHint: ClassificationResult = skipClassifierHint
+      ? this.buildExternalHint(ocrText, type, subject, chapter)
+      : await this.resolveClassificationHint(ocrText, type, subject, chapter);
     const hasExternalType: boolean = type !== undefined && type.trim().length > 0;
     const hasNoExternalHint: boolean = type === undefined && subject === undefined && chapter.length === 0;
     const canUseClassifierType: boolean = hasNoExternalHint

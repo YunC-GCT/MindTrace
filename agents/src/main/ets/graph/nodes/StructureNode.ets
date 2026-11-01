@@ -52,6 +52,10 @@ export class StructureNodeFactory {
             draft = await service.structureLightDraft(input.generationRequest);
           }
           unit = service.draftToKnowledgeUnit(draft, input.source, provenance);
+        } else if (input.skipClassification === true) {
+          unit = await service.structure(
+            input.captureText, undefined, undefined, '', input.source, provenance,
+            input.subjectVocabulary ?? [], true);
         } else if (input.classification === undefined) {
           unit = await service.structure(
             input.captureText, undefined, undefined, '', input.source, provenance,

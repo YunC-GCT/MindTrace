@@ -63,6 +63,8 @@ export class NoteOutcomeMapper {
     copy.progressSink = options.progressSink;
     copy.onNodeTiming = options.onNodeTiming;
     copy.subjectVocabulary = options.subjectVocabulary;
+    copy.runEventSink = options.runEventSink;
+    copy.skipLlmClassification = options.skipLlmClassification;
     return copy;
   }
 
