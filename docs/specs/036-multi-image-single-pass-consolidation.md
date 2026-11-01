@@ -339,3 +339,17 @@ S5（重拍/重复选图去重）真机验证（2026-10-31，`e2e=captureSet5`�
 | 待复核提示 | 存在 needsReview 题时副标题追加「N 道待复核默认不勾选」 |
 
 截图（gitignored，本地）：`ui-shot10/11/12/15/16.jpeg`。
+
+### 阶段 6 补充：卡死根因（2026-11-01，真机日志坐实）
+
+再次复现时 hilog 出现：
+
+```
+C01713/resource_schedule_service/SUSPEND_MANAGER: add freeze unit: 20020230_com.example.mindtrace ...
+```
+
+即 **系统资源调度把应用冻结**（e2e 通过 `aa start` 在无用户交互情况下反复触发，命中系统冻结策略），JS 定时器/Promise 全部停摆，表现为「`stage=idem start` 后无任何日志」。重新 `aa start`（解冻）后同一进程立即完成（`idem firstDone=6 / duplicates=6 / idsEqual=1 / 99s`）。
+
+结论：
+- 该现象是**测试调度环境**触发，真实用户在前台交互时不会被冻结；产品侧看门狗（120s/90+45n/5s）仍保留，防止极端情况下无限等待。
+- 设备验证时若日志停在 `start` 不动，先重新触发一次（解冻）再判断；`device-runner` 已保持 30 分钟不休眠，但仍会被系统冻结策略影响。
