@@ -163,7 +163,7 @@ test('T7b sink 抛错不影响任务完成', async () => {
 
 test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
-  assert.ok(entry.includes('uiProcessEnabled()'));
+  assert.ok(entry.includes('WRITE_JOB_UI_ENABLED'));
   assert.ok(entry.includes('WriteJobScheduler.shared().setEventSink(WriteJobEventRecorder.create())'));
   const config = read('entry/src/main/ets/services/WriteJobConfig.ets');
   assert.ok(config.includes('WRITE_JOB_UI_ENABLED: boolean = true'));
@@ -174,4 +174,8 @@ test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
   assert.ok(runner.includes('runSchedulerStress'));
   const ability = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.ok(ability.includes("mode === 'schedulerStress'"));
+  // 扩展进程不得读 UI 灰度配置（保持旧路径）
+  const ext = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.ok(!ext.includes('WriteJobFlags.setEnabled(true)'));
+  assert.ok(!ext.includes('WRITE_JOB_UI_ENABLED'));
 });

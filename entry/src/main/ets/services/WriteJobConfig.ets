@@ -6,7 +6,3 @@
  * 依赖: 无
  */
 export const WRITE_JOB_UI_ENABLED: boolean = true;
-
-export function uiProcessEnabled(): boolean {
-  return WRITE_JOB_UI_ENABLED;
-}

@@ -31,7 +31,7 @@ import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSessio
 import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
 import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
 import { A2AInboxIngestService } from '../services/A2AInboxIngestService';
-import { uiProcessEnabled } from '../services/WriteJobConfig';
+import { WRITE_JOB_UI_ENABLED } from '../services/WriteJobConfig';
 import { WriteJobEventRecorder } from '../services/WriteJobEventRecorder';
 import { WriteJobFlags, WriteJobScheduler } from '../services/WriteJobScheduler';
 import { AgentIngestService } from '../services/AgentIngestService';
@@ -70,7 +70,7 @@ export default class EntryAbility extends UIAbility {
     // 卡片刷新这类 UI 副作用只能在主进程加载：注册一次，共享写路径按注册表取用
     KnowledgeUnitUiEffects.register(new CardUiEffectProvider());
     // S2：UI 进程启用调度器（扩展进程不读此配置，继续走旧路径），并把 job 事件落 run_event。
-    if (uiProcessEnabled()) {
+    if (WRITE_JOB_UI_ENABLED) {
       WriteJobFlags.setEnabled(true);
     }
     WriteJobScheduler.shared().setEventSink(WriteJobEventRecorder.create());

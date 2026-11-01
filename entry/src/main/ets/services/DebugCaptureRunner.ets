@@ -34,7 +34,7 @@ import {
 } from './LegacyNoteNormalizer';
 import { NoteDao } from '../database/NoteDao';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from './WriteJobScheduler';
-import { uiProcessEnabled } from './WriteJobConfig';
+import { WRITE_JOB_UI_ENABLED } from './WriteJobConfig';
 import { AgentImagePart } from './AgentImageParts';
 import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
 import {
@@ -327,6 +327,7 @@ export class DebugCaptureRunner {
     };
     try {
       const beforeEvents: number = await countEvents();
+      const beforeStats: WriteJobStats = scheduler.stats();
       const tasks: Promise<Object>[] = [
         scheduler.submit('interactive', 'stress-i1', exec),
         scheduler.submit('interactive', 'stress-i2', exec),
@@ -337,9 +338,10 @@ export class DebugCaptureRunner {
       ];
       await Promise.all(tasks);
       const stats: WriteJobStats = scheduler.stats();
-      // recorder 是 fire-and-forget：轮询等本次 18 条（6 job × 3 事件）落库（最多 3s）。
+      // recorder 是 fire-and-forget：轮询等本次 job × 3 事件落库（最多 3s）。
+      const submittedDelta: number = stats.submitted - beforeStats.submitted;
       let persisted: number = 0;
-      const expectedPersisted: number = 18;
+      const expectedPersisted: number = submittedDelta * 3;
       for (let attempt = 0; attempt < 15; attempt += 1) {
         persisted = (await countEvents()) - beforeEvents;
         if (persisted >= expectedPersisted) {
@@ -362,7 +364,7 @@ export class DebugCaptureRunner {
       hilog.error(DOMAIN, TAG, '%{public}s',
         'stage=done stress=0 err=' + (error as Error).message);
     } finally {
-      WriteJobFlags.setEnabled(uiProcessEnabled());
+      WriteJobFlags.setEnabled(WRITE_JOB_UI_ENABLED);
     }
   }
 
