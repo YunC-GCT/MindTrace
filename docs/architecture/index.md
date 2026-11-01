@@ -14,6 +14,7 @@
 | [`window-layout-strategy-2026-09-08.md`](./window-layout-strategy-2026-09-08.md) | 2026-09-08 | 窗口 / 浮层布局策略 |
 | [`agent-scheduler-design-2026-11-01.md`](./agent-scheduler-design-2026-11-01.md) | 2026-11-01 | Agent 规划/调度器评估：现状=有编排无调度；TaskPlanner+TaskStore+AgentScheduler 目标架构与 S1–S4 落地计划 |
 | [`agent-chain-2026-11-01.md`](./agent-chain-2026-11-01.md) | 2026-11-01 | Agent 链路现状：四条入口 + 共享内核 + 瓶颈与优化 backlog（P0/P1/P2） |
+| [`agent-architecture-proposal-2026-11-01.md`](./agent-architecture-proposal-2026-11-01.md) | 2026-11-01 | Agent 架构重构提案：workflow-first 目标架构、运行时/事件契约、改造切片与决策矩阵 |
 | [`review-v7-2026-10-27.md`](./review-v7-2026-10-27.md) | 2026-10-27 | v7 目标态外评审：结论「有条件可落地」，端口/运行上下文/迁移顺序的硬依赖与五条落地风险 |
 
 ## 命名与维护
