@@ -91,6 +91,18 @@ export class RunStoreDao implements RunStoreStore {
     }
   }
 
+  /** 按 run_id 前缀统计事件数（观测脚本/自检用；schema 知识只留在此 DAO）。 */
+  async countEventsByRunPrefix(prefix: string): Promise<number> {
+    const sql: string = 'SELECT COUNT(*) AS c FROM run_event WHERE run_id LIKE ?';
+    const args: string[] = [prefix + '%'];
+    const resultSet: relationalStore.ResultSet = await this.store.querySql(sql, args);
+    try {
+      return resultSet.goToFirstRow() ? resultSet.getLong(resultSet.getColumnIndex('c')) : 0;
+    } finally {
+      resultSet.close();
+    }
+  }
+
   async appendEvent(runId: string, kind: string, payloadJson: string, createdAt: number): Promise<RunEvent> {
     const transaction: relationalStore.Transaction = await this.store.createTransaction();
     try {

@@ -166,9 +166,11 @@ test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
   assert.ok(entry.includes('WRITE_JOB_UI_ENABLED'));
   assert.ok(entry.includes('WriteJobScheduler.shared().setEventSink(WriteJobEventRecorder.create())'));
   const config = read('entry/src/main/ets/services/WriteJobConfig.ets');
-  assert.ok(config.includes('WRITE_JOB_UI_ENABLED: boolean = true'));
+  // 只断言声明存在（值为 true/false 都允许，回滚改 false 不应让 gate 变红）
+  assert.ok(config.includes('WRITE_JOB_UI_ENABLED: boolean'));
   const recorder = read('entry/src/main/ets/services/WriteJobEventRecorder.ets');
-  assert.ok(recorder.includes("'writejob:' + event.phase"));
+  assert.ok(recorder.includes('WRITE_JOB_RUN_PREFIX + event.phase'));
+  assert.ok(recorder.includes('WRITE_JOB_RUN_PREFIX + event.jobId'));
   assert.ok(recorder.includes('appendEvent'));
   const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
   assert.ok(runner.includes('runSchedulerStress'));

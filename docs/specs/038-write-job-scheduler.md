@@ -1,5 +1,11 @@
 # 038 — 笔记写入工作调度器（WriteJob Scheduler）
 
+> **Status**: implemented (2026-11-01) — S1/S2 已落地；S3（跨进程 handoff + 队列持久化/断点续跑）为后续
+> **Related**: [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 036](./036-multi-image-single-pass-consolidation.md) · [scheduler design](../architecture/agent-scheduler-design-2026-11-01.md)
+> **Code**: `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/services/WriteJobEventRecorder.ets` · `entry/src/main/ets/services/AsyncMutex.ets` · `entry/src/main/ets/services/KnowledgeUnitWriteService.ets`
+> **Verified by**: `node scripts/agent-gate/index.mjs --all` · e2e `schedulerProbe` / `schedulerIntegration` / `schedulerStress` · `node scripts/quality/scheduler-report.mjs`
+
+
 > 目标：为「写笔记」这类长任务引入一个**薄调度层**（规划 → 队列 → 双通道并发 → 可观测），
 > 解决多入口互拖/前后台争抢；不做通用 Agent 调度框架。
 > 上游设计评估见 [`docs/architecture/agent-scheduler-design-2026-11-01.md`](../architecture/agent-scheduler-design-2026-11-01.md)。
@@ -208,6 +214,7 @@ stage=done schedulerIntegration=1 ms=16175
 - `WriteJobConfig.WRITE_JOB_UI_ENABLED = true`，仅 `EntryAbility.onCreate`（UI 进程）调用 `WriteJobFlags.setEnabled(true)`；
 - A2A `AgentExtAbility` 是独立 `:agent` 进程，不读该配置 → 仍是默认关闭、走旧路径（跨进程统一留 S3）；
 - 回滚：把常量改 false 重新发版，即完全回到旧行为。
+- **决策更新（supersedes M3「flag 默认保持关闭」）**：S2 已完成观测落库与压测，UI 进程启用、A2A 扩展进程保持关闭；原「等 S3 再开」的约束随 S2 收敛——跨进程统一仍在 S3，但不再阻塞 UI 进程灰度。
 
 ### 9.3 真机验证
 

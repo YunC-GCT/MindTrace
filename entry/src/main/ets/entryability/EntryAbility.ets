@@ -280,7 +280,7 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     if (mode === 'schedulerStress') {
-      this.runDebugProbe('schedulerStress', DebugCaptureRunner.runSchedulerStress(this.context));
+      this.runDebugProbe('schedulerStress', DebugCaptureRunner.runSchedulerStress());
       return;
     }
     if (mode === 'schedulerIntegration') {

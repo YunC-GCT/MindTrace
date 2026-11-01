@@ -5,6 +5,7 @@
  * 职责: 调度器 sink 的持久化实现：每个 job 一条 run_store（run_id=writejob:<jobId>），
  *       生命周期事件写 run_event（kind=writejob:<phase>），终态更新 run 状态。
  * 依赖: common DatabaseHelper / RunRecord；entry RunStoreDao。
+* 数据流: WriteJobScheduler sink → record() → RunStoreDao.appendEvent/updateRecord（run_store/run_event）
  *
  * 约束: best-effort（DB 未就绪/失败不影响写任务）；事件按 job 顺序追加（RunStoreDao 事务内取 MAX(seq)+1）。
  */
@@ -12,6 +13,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DatabaseHelper } from 'common';
 import type { RunRecord } from 'common';
 import { RunStoreDao } from '../database/RunStoreDao';
+import { WRITE_JOB_RUN_PREFIX } from './WriteJobEvents';
 import type { WriteJobEvent, WriteJobEventSink } from './WriteJobEvents';
 import { AsyncMutex } from './AsyncMutex';
 
@@ -40,13 +42,13 @@ export class WriteJobEventRecorder {
       return;
     }
     const dao: RunStoreDao = new RunStoreDao(store);
-    const runId: string = 'writejob:' + event.jobId;
+    const runId: string = WRITE_JOB_RUN_PREFIX + event.jobId;
     const existing: RunRecord | null = await dao.queryRecord(runId);
     if (existing === null) {
       try {
         await dao.insertRecord({ runId: runId, status: 'running', updatedAt: event.at });
       } catch (e) {
-        // 并发 enqueued/started 事件可能同时插入：忽略已存在，继续追加事件。
+        // 历史/重入情况下 run_store 可能已存在：忽略插入失败，继续追加事件。
       }
     }
     const payload: string = JSON.stringify({
@@ -58,7 +60,7 @@ export class WriteJobEventRecorder {
       runMs: event.runMs,
       error: event.error,
     });
-    await dao.appendEvent(runId, 'writejob:' + event.phase, payload, event.at);
+    await dao.appendEvent(runId, WRITE_JOB_RUN_PREFIX + event.phase, payload, event.at);
     if (event.phase === 'done' || event.phase === 'failed') {
       try {
         await dao.updateRecord({

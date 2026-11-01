@@ -12,7 +12,7 @@
 import { WriteJob, WriteJobPriority } from './WriteJobModels';
 import { WriteJobQueueCore } from './WriteJobQueueCore';
 import { AsyncSemaphore } from './AsyncSemaphore';
-import { WriteJobEvent, WriteJobEventPhase, WriteJobEventSink } from './WriteJobEvents';
+import { WriteJobEvent, WriteJobEventMetrics, WriteJobEventPhase, WriteJobEventSink } from './WriteJobEvents';
 
 export interface WriteJobSchedulerOptions {
   interactiveConcurrency?: number;
@@ -127,7 +127,9 @@ export class WriteJobScheduler {
     this.log('[WriteJob] enqueued id=' + job.jobId + ' priority=' + priority
       + ' kind=' + job.kind + ' chars=' + job.payloadText.length.toString()
       + ' depth=' + this.stats().queueDepth.toString());
-    this.emitEvent(job, 'enqueued', this.stats().queueDepth, 0, 0, '');
+    this.emitEvent(job, 'enqueued', {
+      queueDepth: this.stats().queueDepth, waitMs: 0, runMs: 0, error: '',
+    });
     this.pump();
     return result;
   }
@@ -186,7 +188,9 @@ export class WriteJobScheduler {
     const startedAt: number = Date.now();
     this.log('[WriteJob] started id=' + job.jobId + ' priority=' + job.priority
       + ' waitMs=' + waitMs.toString() + ' active=' + this.activeCount.toString());
-    this.emitEvent(job, 'started', this.stats().queueDepth, waitMs, 0, '');
+    this.emitEvent(job, 'started', {
+      queueDepth: this.stats().queueDepth, waitMs: waitMs, runMs: 0, error: '',
+    });
     let task: Promise<Object>;
     try {
       task = pending.run();
@@ -203,7 +207,9 @@ export class WriteJobScheduler {
         this.lastRunMs = Date.now() - startedAt;
         this.log('[WriteJob] done id=' + job.jobId + ' priority=' + job.priority
           + ' runMs=' + this.lastRunMs.toString() + ' waitMs=' + waitMs.toString());
-        this.emitEvent(job, 'done', this.stats().queueDepth, waitMs, this.lastRunMs, '');
+        this.emitEvent(job, 'done', {
+          queueDepth: this.stats().queueDepth, waitMs: waitMs, runMs: this.lastRunMs, error: '',
+        });
         pending.resolve(value);
         this.finish(lane);
       })
@@ -220,13 +226,14 @@ export class WriteJobScheduler {
     this.lastRunMs = Date.now() - startedAt;
     this.log('[WriteJob] failed id=' + pending.job.jobId + ' priority=' + pending.job.priority
       + ' runMs=' + this.lastRunMs.toString() + ' err=' + error.message);
-    this.emitEvent(pending.job, 'failed', this.stats().queueDepth, waitMs, this.lastRunMs, error.message);
+    this.emitEvent(pending.job, 'failed', {
+      queueDepth: this.stats().queueDepth, waitMs: waitMs, runMs: this.lastRunMs, error: error.message,
+    });
     pending.reject(error);
     this.finish(lane);
   }
 
-  private emitEvent(job: WriteJob, phase: WriteJobEventPhase, queueDepth: number,
-    waitMs: number, runMs: number, error: string): void {
+  private emitEvent(job: WriteJob, phase: WriteJobEventPhase, metrics: WriteJobEventMetrics): void {
     if (this.eventSink === null) {
       return;
     }
@@ -235,10 +242,10 @@ export class WriteJobScheduler {
       kind: job.kind,
       priority: job.priority,
       phase: phase,
-      queueDepth: queueDepth,
-      waitMs: waitMs,
-      runMs: runMs,
-      error: error,
+      queueDepth: metrics.queueDepth,
+      waitMs: metrics.waitMs,
+      runMs: metrics.runMs,
+      error: metrics.error,
       at: Date.now(),
     };
     try {

@@ -33,6 +33,8 @@ import {
   normalizeLegacySubject,
 } from './LegacyNoteNormalizer';
 import { NoteDao } from '../database/NoteDao';
+import { RunStoreDao } from '../database/RunStoreDao';
+import { WRITE_JOB_RUN_PREFIX } from './WriteJobEvents';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from './WriteJobScheduler';
 import { WRITE_JOB_UI_ENABLED } from './WriteJobConfig';
 import { AgentImagePart } from './AgentImageParts';
@@ -301,15 +303,12 @@ export class DebugCaptureRunner {
   }
 
   /** S2 压测：2 interactive + 4 background 混合并发；核对排队与 run_event 落库。 */
-  static async runSchedulerStress(ctx: common.UIAbilityContext): Promise<void> {
+  static async runSchedulerStress(): Promise<void> {
     const scheduler: WriteJobScheduler = WriteJobScheduler.shared();
     WriteJobFlags.setEnabled(true);
     const startedAt: number = Date.now();
-    const sleep = (ms: number): Promise<void> => new Promise<void>((resolve: () => void): void => {
-      setTimeout((): void => { resolve(); }, ms);
-    });
     const exec = async (): Promise<Object> => {
-      await sleep(120);
+      await DebugCaptureRunner.sleep(120);
       return 'ok' as Object;
     };
     const countEvents = async (): Promise<number> => {
@@ -317,13 +316,8 @@ export class DebugCaptureRunner {
       if (store === null) {
         return 0;
       }
-      const rs: relationalStore.ResultSet = await store.querySql(
-        "SELECT COUNT(*) AS c FROM run_event WHERE run_id LIKE 'writejob:%'", []);
-      try {
-        return rs.goToFirstRow() ? rs.getLong(rs.getColumnIndex('c')) : 0;
-      } finally {
-        rs.close();
-      }
+      const dao: RunStoreDao = new RunStoreDao(store);
+      return await dao.countEventsByRunPrefix(WRITE_JOB_RUN_PREFIX);
     };
     try {
       const beforeEvents: number = await countEvents();
@@ -347,7 +341,7 @@ export class DebugCaptureRunner {
         if (persisted >= expectedPersisted) {
           break;
         }
-        await sleep(200);
+        await DebugCaptureRunner.sleep(200);
       }
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=stress submitted=' + stats.submitted.toString()

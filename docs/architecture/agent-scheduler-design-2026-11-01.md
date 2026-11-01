@@ -189,3 +189,4 @@ interface TaskStep {
 - [x] flag 灰度：`WRITE_JOB_UI_ENABLED=true` 仅 UI 进程启用；扩展进程默认关闭；
 - [x] 回归：schedulerProbe（3 真实 ingest）、schedulerIntegration、dedupeProbe（flag 开）全通过；gate PASS（pass=1163）；
 - [ ] S3：跨进程 handoff + 队列持久化/断点续跑。
+- 注：§7.3/M3 的「flag 默认保持关闭」已由 S2 收敛为「UI 进程启用、A2A 扩展进程关闭」，S3 再做跨进程统一。
