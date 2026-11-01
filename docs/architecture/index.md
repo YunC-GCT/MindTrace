@@ -12,6 +12,7 @@
 | [`langgraph-migration-baseline-2026-09-09.md`](./langgraph-migration-baseline-2026-09-09.md) | 2026-09-09 | LangGraph 迁移前基线 |
 | [`langgraph-terminology-map-2026-09-09.md`](./langgraph-terminology-map-2026-09-09.md) | 2026-09-09 | LangGraph 术语 ↔ 本项目命名对照 |
 | [`window-layout-strategy-2026-09-08.md`](./window-layout-strategy-2026-09-08.md) | 2026-09-08 | 窗口 / 浮层布局策略 |
+| [`agent-chain-2026-11-01.md`](./agent-chain-2026-11-01.md) | 2026-11-01 | Agent 链路现状：四条入口 + 共享内核 + 瓶颈与优化 backlog（P0/P1/P2） |
 | [`review-v7-2026-10-27.md`](./review-v7-2026-10-27.md) | 2026-10-27 | v7 目标态外评审：结论「有条件可落地」，端口/运行上下文/迁移顺序的硬依赖与五条落地风险 |
 
 ## 命名与维护
