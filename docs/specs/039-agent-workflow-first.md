@@ -170,7 +170,10 @@ export class CommandRouter {
 - 删除 `agents/src/main/ets/core/dispatch/CaptureBranch.ets` 与 `agents/src/main/ets/agents/NoteAgent.ets`（五层调用 `DispatchGraph→invoke→CaptureBranch→NoteAgent→CaptureGraph` 降为 `CommandExecutor→NoteCaptureWorkflow→CaptureGraph`）；
 - 测试：`dispatcher-capturegraph` 重写为 `NoteCaptureWorkflow` 图装配/委托契约；`v7-capture-set`、`v7-subject-vocabulary`、`image-draft-source` 的旧路径断言改指 workflow；
 - 验证：`node scripts/agent-gate/index.mjs --all` → **RESULT: PASS（pass=1169 fail=0）**；golden `raw/` **零 diff**；`node scripts/build-hsp-hap.mjs` 成功；agents/ 内 `DispatchGraph|CaptureBranch|NoteAgent|Dispatcher` 引用清零（含注释）；
-- **真机验证受阻（需解锁）**：设备锁屏，`aa start` 被拒；`e2e=captureSet` 与 `a2a_smoke.py` 待设备解锁后补跑（不影响 S2 代码/单测/golden 判据）。
+- **真机验证（2026-11-01 19:00 设备解锁后补跑）**：
+  - `e2e=captureSet`：`total=6 done=6 failed=0 images=2 ms=3500`（本次命中输入指纹复用，未新建笔记，但批量路径跑通）；
+  - `e2e=schedulerProbe`：`completed=4 failed=0 maxConcurrent=2`（含 integration 1 条同进程累计）；
+  - `a2a_smoke.py --text "整理数学题"`：**FAIL「拉起小艺失败」**（环境拉起问题，非本 spec 代码路径；待小艺可用后复跑）。
 
 ### 下一步
 
@@ -184,3 +187,4 @@ export class CommandRouter {
 - 测试：新增 `v7-run-events`（7 条：事件顺序、runId 贯通、payload 不落正文、失败无 commit、approval.rejected、报告解析）；既有 `v7-run-event-sink` 期望更新为事件树；
 - 验证：`node scripts/agent-gate/index.mjs --all` → **RESULT: PASS（fail=0）**；`node scripts/build-hsp-hap.mjs` 成功；golden `raw/` 零 diff；
 - 偏差（记录）：`node.started` 未发（CaptureGraph 的 timing seam 只暴露节点结束后的 step+ms；避免为单一事件改图内核，留待有第二个消费者时补）；`tool.*` 不接（ToolLoop 生产零引用，随 spec 040 接 Chat 时补）；`approval.*` 只发 rejected（确认在业务级草稿/审批，ADR-0008 不做图内 HITL）。
+- **真机回归修复**：首版逐节点实时写 run_event，与 capture persist 的 SQLite 写事务互抢 → `NOTE_WRITE_FAILED: database file is locked`；改为 workflow 结束后批量补发 node.ended（顺序/字段不变），复测 `schedulerIntegration committed / schedulerProbe failed=0`。

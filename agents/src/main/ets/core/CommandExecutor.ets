@@ -55,6 +55,11 @@ export type { CaptureSetOptions, DispatchOptions } from './dispatch/DispatchOpti
 
 const log = new Logger('CommandExecutor');
 
+interface NodeEndedRecord {
+  step: string;
+  elapsedMs: number;
+}
+
 interface EnvelopeViolation {
   code: string;
   message: string;
@@ -274,14 +279,16 @@ export class CommandExecutor {
     if (preflight.outcome !== undefined) {
       outcome = preflight.outcome;
     } else {
-      // spec 039 S3：节点结束时发 node.ended（runId=operationId）；原 onNodeTiming 回调保持透传。
+      // spec 039 S3：节点结束时先缓冲 node.ended（runId=operationId），workflow 结束后再补发。
+      // 原因（真机回归）：capture 图执行期间 persist 持有写事务，逐节点写 run_event 会抢 SQLite 写锁
+      // 导致 NOTE_WRITE_FAILED；补发落在外层，不改变事件顺序与字段。
       const userTiming: ((step: string, elapsedMs: number) => void) | undefined = effective.onNodeTiming;
+      const nodeEvents: NodeEndedRecord[] = [];
       effective.onNodeTiming = (step: string, elapsedMs: number): void => {
         if (userTiming !== undefined) {
           userTiming(step, elapsedMs);
         }
-        CommandExecutor.emitRunEvent(options, command.operationId, RUN_EVENT_NODE_ENDED,
-          nodeEndedPayload(step, elapsedMs)).catch((): void => {});
+        nodeEvents.push({ step: step, elapsedMs: elapsedMs });
       };
       const context: WorkflowContext = {
         request: request,
@@ -296,6 +303,10 @@ export class CommandExecutor {
       } catch (e) {
         const error: Error = e instanceof Error ? e : new Error(String(e));
         outcome = NoteOutcomeMapper.fromThrown(command, error);
+      }
+      for (const nodeEvent of nodeEvents) {
+        await CommandExecutor.emitRunEvent(options, command.operationId, RUN_EVENT_NODE_ENDED,
+          nodeEndedPayload(nodeEvent.step, nodeEvent.elapsedMs));
       }
     }
 
