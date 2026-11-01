@@ -35,6 +35,16 @@ export class KnowledgeUnitWriteService {
 
   async create(unit: KnowledgeUnit, generationMetadata: string = ''): Promise<KnowledgeUnitWriteResult> {
     WritePathValidator.validateKnowledgeUnit(unit);
+    const duplicate: KnowledgeUnit | null = await this.findDuplicate(unit);
+    if (duplicate !== null) {
+      return {
+        committed: true,
+        rowId: 0,
+        unit: duplicate,
+        warnings: ['DUPLICATE_SKIPPED'],
+        duplicate: true,
+      };
+    }
     const persisted: KnowledgeUnitPersistenceResult =
       await this.repository.createWithRevision(unit, generationMetadata);
     await this.syncIndex(persisted.unit);
@@ -96,6 +106,16 @@ export class KnowledgeUnitWriteService {
     WritePathValidator.validateKnowledgeUnit(unit);
     if (this.repository.createWithRevisionAndCommitKey === undefined) {
       return await this.create(unit, generationMetadata);
+    }
+    const duplicate: KnowledgeUnit | null = await this.findDuplicate(unit);
+    if (duplicate !== null) {
+      return {
+        committed: true,
+        rowId: 0,
+        unit: duplicate,
+        warnings: ['DUPLICATE_SKIPPED'],
+        duplicate: true,
+      };
     }
     console.info('[ConfirmTrace] service=createWithCommitKey-begin');
     const persisted: KnowledgeUnitPersistenceResult = await this.repository.createWithRevisionAndCommitKey(
@@ -163,6 +183,18 @@ export class KnowledgeUnitWriteService {
         throw new Error(e.message);
       }
       throw new Error(String(e));
+    }
+  }
+
+  /** 写前查重：同一道题重复整理时复用已有笔记（不新增行、不刷索引）。 */
+  private async findDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
+    if (this.repository.findDuplicate === undefined) {
+      return null;
+    }
+    try {
+      return await this.repository.findDuplicate(unit);
+    } catch (e) {
+      return null;
     }
   }
 

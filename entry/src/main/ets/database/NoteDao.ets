@@ -14,6 +14,7 @@
 import { relationalStore } from '@kit.ArkData';
 import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult } from 'common';
 import { NoteFtsIndex } from './NoteFtsIndex';
+import { DedupeCandidate, findDuplicate } from '../services/NoteDedupe';
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitRevision,
@@ -308,6 +309,38 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
   }
 
   // 按 id 查询
+  /** 重复笔记检测：最近 120 条里按标题/正文相似度找同一道题（写入口调用）。 */
+  async findDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
+    try {
+      const candidates: DedupeCandidate[] = await this.queryRecentDedupeCandidates(120);
+      const matched: DedupeCandidate | null = findDuplicate(unit.title, unit.content, candidates);
+      if (matched === null) {
+        return null;
+      }
+      return await this.queryById(matched.id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  private async queryRecentDedupeCandidates(limit: number): Promise<DedupeCandidate[]> {
+    const result: DedupeCandidate[] = [];
+    const rs: relationalStore.ResultSet = await this.store.querySql(
+      'SELECT id, title, content FROM knowledge_unit ORDER BY created_at DESC LIMIT ' + limit.toString(), []);
+    try {
+      while (rs.goToNextRow()) {
+        result.push({
+          id: rs.getString(rs.getColumnIndex('id')),
+          title: rs.getString(rs.getColumnIndex('title')),
+          content: rs.getString(rs.getColumnIndex('content')),
+        });
+      }
+    } finally {
+      rs.close();
+    }
+    return result;
+  }
+
   async queryById(id: string): Promise<KnowledgeUnit | null> {
     const predicates = new relationalStore.RdbPredicates('knowledge_unit');
     predicates.equalTo('id', id);

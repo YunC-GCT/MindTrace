@@ -11,6 +11,13 @@
  * 第一阶段只做行为保持的文件提取；TruthCheck 仍由 Capture workflow Node 负责。
  */
 import type { KnowledgeCategory } from '../models/KnowledgeCategory';
+import {
+  FlatField,
+  canonicalSectionLabel,
+  missingSectionLabels,
+  normalizeStructuredFields,
+  requiredSectionLabels,
+} from './StructuredSections';
 import { KnowledgeUnitExt, createUnitExt, StructuredField, AiRawResponse } from '../models/KnowledgeUnitExt';
 import {
   normalizeSubjectName,
@@ -324,7 +331,7 @@ export class CaptureStructurer {
       tags: this.normalizeStringArray(this.readRecordValue(parsed, 'tags')),
       difficulty: normalizeDraftDifficulty(Number(this.readRecordValue(parsed, 'difficulty') ?? 3)),
       importance: this.normalizeScore(Number(this.readRecordValue(parsed, 'importance') ?? 3)),
-      fields: this.normalizeFields(this.readRecordValue(parsed, 'fields')),
+      fields: this.normalizeFields(this.normalizeCategory(String(this.readRecordValue(parsed, 'category') ?? ''), typeHint), this.readRecordValue(parsed, 'fields')),
     };
 
     return aiRaw;
@@ -402,6 +409,33 @@ export class CaptureStructurer {
         if (!contentResult.ok) {
           issues.push('field.value violates MM-MD-v1: ' + contentResult.issues.join(', '));
           break;
+        }
+      }
+    }
+    // 标准表单校验：五类笔记缺少标准字段时交给 LlmGuard 重试，避免「表单结构内容纰漏」。
+    const fieldsForSectionCheck: FlatField[] = [];
+    if (Array.isArray(fieldsValue)) {
+      const rawFields: Object[] = fieldsValue as Object[];
+      for (const rawField of rawFields) {
+        const record: Record<string, Object> = rawField as Record<string, Object>;
+        fieldsForSectionCheck.push({
+          key: String(this.readRecordValue(record, 'key') ?? '').trim(),
+          label: String(this.readRecordValue(record, 'label') ?? '').trim(),
+          value: String(this.readRecordValue(record, 'value') ?? '').trim(),
+        });
+      }
+    }
+    const normalizedCategory: string = normalizeNoteType(categoryText);
+    if (normalizedCategory.length > 0) {
+      const missingSections: string[] = missingSectionLabels(normalizedCategory, fieldsForSectionCheck);
+      if (missingSections.length > 0) {
+        // 软校验：缺个别标准字段只告警（后续 normalizeFields 会规范顺序/标签/丢空值），
+        // 只有「完全没有标准字段」才判为表单结构不对并触发重试。
+        console.warn('[KnowledgeModel] fields missing sections: category=' + normalizedCategory
+          + ' missing=' + missingSections.join('/'));
+        const standardMatched: number = requiredSectionLabels(normalizedCategory).length - missingSections.length;
+        if (standardMatched === 0) {
+          issues.push('fields labels do not match the standard form for category ' + normalizedCategory);
         }
       }
     }
@@ -492,6 +526,10 @@ export class CaptureStructurer {
     // 学科裁决：内置学科 > 库里已有学科 > 才允许新建。
     // 提示词里已经把已有学科列成封闭词表，这里再兜一次，防止模型无视约束。
     const resolution: SubjectResolution = resolveSubjectName(value, knownSubjects);
+    if (resolution.decision === 'new') {
+      // 学科块必须可枚举：模型发明的学科名一律收敛到「其他」，不再新建奇怪学科。
+      return KNOWLEDGE_FALLBACK_SUBJECT;
+    }
     const normalized: SubjectNormalization = normalizeSubjectName(resolution.subject, fallback !== undefined ? fallback : '');
     const subject: string = normalized.subject.trim();
     if (subject.length > 0 && subject !== '未知' && subject !== 'null' && subject !== 'undefined') {
@@ -549,10 +587,10 @@ export class CaptureStructurer {
     return result;
   }
 
-  private normalizeFields(value: Object | undefined): StructuredField[] {
-    const result: StructuredField[] = [];
+  private normalizeFields(category: KnowledgeCategory, value: Object | undefined): StructuredField[] {
+    const flats: FlatField[] = [];
     if (value === undefined || value === null || !Array.isArray(value)) {
-      return result;
+      return [];
     }
     const items: Object[] = value as Object[];
     for (const item of items) {
@@ -561,12 +599,14 @@ export class CaptureStructurer {
       const label: string = String(this.readRecordValue(record, 'label') ?? '').trim();
       const fieldValue: string = String(this.readRecordValue(record, 'value') ?? '').trim();
       if ((key.length > 0 || label.length > 0) && fieldValue.length > 0) {
-        result.push({
-          key: key.length > 0 ? key : label,
-          label: label.length > 0 ? label : key,
-          value: fieldValue,
-        });
+        flats.push({ key: key.length > 0 ? key : label, label: label.length > 0 ? label : key, value: fieldValue });
       }
+    }
+    // 标准表单：按类别规范标签、固定顺序、丢弃空/占位字段（避免表单内容纰漏）。
+    const normalized: FlatField[] = normalizeStructuredFields(category, flats);
+    const result: StructuredField[] = [];
+    for (let i = 0; i < normalized.length; i += 1) {
+      result.push({ key: normalized[i].key, label: normalized[i].label, value: normalized[i].value });
     }
     return result;
   }

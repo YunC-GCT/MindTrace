@@ -65,15 +65,15 @@ const SUBJECT_ALIASES: SubjectAlias[] = [
       '运筹', '数学规划', '非线性规划', '凸优化'],
   },
   { canonical: '数学分析', aliases: ['数学分析'] },
-  { canonical: '高等数学', aliases: ['高等数学', '高数', '微积分'] },
-  { canonical: '线性代数', aliases: ['线性代数', '线代', '矩阵论'] },
+  { canonical: '高等数学', aliases: ['高等数学', '高数', '微积分', '高等数学上', '高等数学下', '工科数学', '数学一', '数学二', '数学三'] },
+  { canonical: '线性代数', aliases: ['线性代数', '线代', '矩阵论', '线性代数与空间解析几何'] },
   { canonical: '解析几何', aliases: ['解析几何', '空间解析几何'] },
   { canonical: '概率论', aliases: ['概率论与数理统计', '概率统计', '概率论', '概率'] },
   { canonical: '数值分析', aliases: ['数值分析', '数值计算方法', '计算方法'] },
   { canonical: '离散数学', aliases: ['离散数学'] },
   { canonical: '初中数学', aliases: ['初中数学'] },
   { canonical: '高中数学', aliases: ['高中数学'] },
-  { canonical: '其它', aliases: ['其它', '其他', '未知学科'] },
+  { canonical: '其他', aliases: ['其他', '其它', '未知学科', '数学', '数学题', '数学课', '数学笔记'] },
 ];
 
 // 复核类标记的判定词；命中就把整个括号从标题里摘掉。

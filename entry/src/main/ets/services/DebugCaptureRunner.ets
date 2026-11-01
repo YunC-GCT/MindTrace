@@ -137,6 +137,71 @@ export class DebugCaptureRunner {
    * 只测 search：每条 query 限时 20s，用来区分「检索慢」和「检索死不返回」。
    * 触发：aa start ... --ps e2e search
    */
+  /** 笔记质量审计（只读）：最近笔记的学科/分类/结构化字段完整度/重复标题。 */
+  static async runNoteAudit(ctx: common.UIAbilityContext): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done audit=0 err=store-null');
+      return;
+    }
+    try {
+      const rs: relationalStore.ResultSet = await store.querySql(
+        'SELECT id, title, subject, category, content FROM knowledge_unit ORDER BY created_at DESC LIMIT 24', []);
+      const titles: string[] = [];
+      let count: number = 0;
+      let blankFields: number = 0;
+      try {
+        while (rs.goToNextRow()) {
+          const id: string = rs.getString(rs.getColumnIndex('id'));
+          const title: string = rs.getString(rs.getColumnIndex('title'));
+          const subject: string = rs.getString(rs.getColumnIndex('subject'));
+          const category: string = rs.getString(rs.getColumnIndex('category'));
+          const content: string = rs.getString(rs.getColumnIndex('content'));
+          const sections: string[] = content.split('## ');
+          const sectionLabels: string[] = [];
+          let filled: number = 0;
+          let empty: number = 0;
+          for (let i = 1; i < sections.length; i += 1) {
+            const block: string = sections[i];
+            const nl: number = block.indexOf('\n');
+            const label: string = nl > 0 ? block.substring(0, nl).trim() : block.trim();
+            const value: string = nl > 0 ? block.substring(nl + 1).trim() : '';
+            sectionLabels.push(label + ':' + value.length.toString());
+            if (value.length > 0) {
+              filled += 1;
+            } else {
+              empty += 1;
+            }
+          }
+          if (empty > 0) {
+            blankFields += 1;
+          }
+          titles.push(title.replace(/\s+/g, ''));
+          hilog.info(DOMAIN, TAG, '%{public}s',
+            'audit note id=' + id + ' subject=' + subject + ' category=' + category
+              + ' title=' + title.substring(0, 40) + ' sections=' + sectionLabels.join(',')
+              + ' filled=' + filled.toString() + ' empty=' + empty.toString());
+          count += 1;
+        }
+      } finally {
+        rs.close();
+      }
+      let dup: number = 0;
+      for (let i = 0; i < titles.length; i += 1) {
+        for (let j = i + 1; j < titles.length; j += 1) {
+          if (titles[i] === titles[j]) {
+            dup += 1;
+          }
+        }
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done audit=1 notes=' + count.toString() + ' duplicatePairs=' + dup.toString()
+          + ' notesWithBlankSections=' + blankFields.toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done audit=0 err=' + (error as Error).message);
+    }
+  }
+
   /** A2A 图片 OCR checkpoint 自检：OCR → 规划（不写库）→ 第一题入库。 */
   static async runAgentImagePlan(ctx: common.UIAbilityContext): Promise<void> {
     const startedAt: number = Date.now();
