@@ -19,6 +19,8 @@
 4. 观测补到 node/tool/approval/commit 级，runId 贯通；
 5. 遵守 [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md)：**不做 runtime checkpoint、不做图内 HITL**，checkpoint 留在业务级（草稿/审批）。
 
+实施 spec：[`039-agent-workflow-first.md`](../specs/039-agent-workflow-first.md)（S1–S3 + golden 零重录判据；S4 另立 spec 040）。
+
 代价估计 **约 4–6 人日**（Slice 0–3，一人熟 ArkTS）；不改协议、不改数据模型、不动 golden 语义。
 
 ---

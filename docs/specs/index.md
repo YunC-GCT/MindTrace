@@ -91,6 +91,7 @@ Each spec has these sections:
 - [`036-multi-image-single-pass-consolidation.md`](./036-multi-image-single-pass-consolidation.md) — 一次整理：1..N 张图 → 多题汇总（一图多题/多图多题/确认页）
 - [`038-write-job-scheduler.md`](./038-write-job-scheduler.md) — 笔记写入工作调度器：WriteJob 双通道队列/并发/观测（S0 实验 + S1 MVP）
 - [`037-rag-retrieval-data-augmentation.md`](./037-rag-retrieval-data-augmentation.md) — RAG 检索：复用 DataAugmentationKit retrieval（FTS/BM25）+ 现有 LLM
+- [`039-agent-workflow-first.md`](./039-agent-workflow-first.md) — Agent 编排收口：CommandExecutor + CommandRouter + 四条 workflow（S1–S3，golden 零重录）
 
 ## Conventions in these specs
 
