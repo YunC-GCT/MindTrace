@@ -950,7 +950,8 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       .then((material: A2AImageMaterial | null): void => {
         if (material === null) {
           this.sendAnswer(taskId,
-            '这次没收到图片/题目内容。直接发图并说「整理成笔记」，或把题目文字发我即可。', 0);
+            '小艺这边只把文字转给智能体，图片本身不会传过来。请先让小艺识别图片里的题目文字'
+              + '（或直接输入文字），再发「整理成笔记」，我就能在小艺里直接整理入库。', 0);
           return;
         }
         hilog.info(DOMAIN, TAG, 'IMAGE_RECALL ingest chars=%{public}d', material.text.length);

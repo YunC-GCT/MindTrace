@@ -161,6 +161,7 @@ test('A2A 不再发「进入 App」卡片；无图整理用上一次图片 OCR �
   assert.ok(ability.includes('A2AImageContextStore.load(this.context, conversationKey)'));
   assert.ok(ability.includes('IMAGE_RECALL ingest chars='));
   assert.ok(ability.includes('不需要打开 App'));
+  assert.ok(ability.includes('小艺这边只把文字转给智能体'));
   assert.equal(ability.includes('sendAnswerWithPickCard'), false);
   assert.equal(ability.includes('buildPickCardPartJson'), false);
   assert.equal(ability.includes('A2A_UI_CARD'), false);
@@ -168,4 +169,17 @@ test('A2A 不再发「进入 App」卡片；无图整理用上一次图片 OCR �
   assert.ok(store.includes('static async save'));
   assert.ok(store.includes('static async load'));
   assert.ok(store.includes("loadExact(context, 'default')"));
+});
+
+
+test('图片材料探针隔离：e2e-probe key 不镜像 default，并可清理', () => {
+  const store = read('entry/src/main/ets/services/A2AImageContextStore.ets');
+  assert.ok(store.includes('mirrorToDefault: boolean = true'));
+  assert.ok(store.includes('mirrorToDefault && key !=='));
+  assert.ok(store.includes('static async clear'));
+  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  assert.ok(runner.includes("probeKey: string = 'e2e-probe'"));
+  assert.ok(runner.includes('save(ctx, probeKey, ocrText, false)'));
+  assert.ok(runner.includes('runA2AImageContextClear'));
+  assert.ok(runner.includes("clear(ctx, 'default')"));
 });

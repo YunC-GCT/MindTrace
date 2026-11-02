@@ -309,13 +309,45 @@ export class DebugCaptureRunner {
     }
   }
 
+  /** 文本整理 e2e：直接调用 A2A 内联同款 ingestTextBatch（不经过 App UI / 小艺 UI）。 */
+  static async runA2ATextIngestProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const startedAt: number = Date.now();
+    try {
+      const batch: AgentTextBatchResult = await AgentIngestService.ingestTextBatch(ctx,
+        '整理成笔记：计算 12 - 4 * 2 的值，并写出运算顺序。');
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done a2aTextIngest=1 problems=' + batch.totalProblems.toString()
+          + ' queued=' + batch.queuedTexts.length.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done a2aTextIngest=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** e2e：清除图片材料（含探针污染），不触发 ingest。 */
+  static async runA2AImageContextClear(ctx: common.UIAbilityContext): Promise<void> {
+    try {
+      await A2AImageContextStore.clear(ctx, 'default');
+      await A2AImageContextStore.clear(ctx, 'e2e-probe');
+      await A2AImageContextStore.clear(ctx, 'mindtrace-context');
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=done a2aImageClear=1');
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done a2aImageClear=0 err=' + (error as Error).message);
+    }
+  }
+
   /** 图片整理闭环 e2e：保存 OCR 文本 → 跨消息读回 → 直接内联整理（不经 App UI）。 */
   static async runA2AImageIngestProbe(ctx: common.UIAbilityContext): Promise<void> {
     const startedAt: number = Date.now();
     try {
+      const probeKey: string = 'e2e-probe';
       const ocrText: string = '图片OCR探针：计算 6 + 7 的值，并写出运算顺序。';
-      await A2AImageContextStore.save(ctx, 'mindtrace-context', ocrText);
-      const material = await A2AImageContextStore.load(ctx, 'mindtrace-context');
+      await A2AImageContextStore.clear(ctx, probeKey);
+      await A2AImageContextStore.clear(ctx, 'default');
+      await A2AImageContextStore.save(ctx, probeKey, ocrText, false);
+      const material = await A2AImageContextStore.load(ctx, probeKey);
       if (material === null) {
         throw new Error('recall-null');
       }

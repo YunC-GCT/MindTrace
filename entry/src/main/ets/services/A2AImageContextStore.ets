@@ -19,7 +19,8 @@ export interface A2AImageMaterial {
 const MAX_TEXT_CHARS: number = 6000;
 
 export class A2AImageContextStore {
-  static async save(context: common.Context, key: string, ocrText: string): Promise<void> {
+  static async save(context: common.Context, key: string, ocrText: string,
+    mirrorToDefault: boolean = true): Promise<void> {
     const text: string = ocrText.trim();
     if (text.length === 0) {
       return;
@@ -43,7 +44,7 @@ export class A2AImageContextStore {
     } catch (e) {
       // 记住图片内容失败不影响本轮问答
     }
-    if (key !== 'default') {
+    if (mirrorToDefault && key !== 'default') {
       try {
         const material: A2AImageMaterial = { text: text.length > MAX_TEXT_CHARS
           ? text.substring(0, MAX_TEXT_CHARS) : text, at: Date.now() };
@@ -82,6 +83,18 @@ export class A2AImageContextStore {
       return material;
     } catch (e) {
       return null;
+    }
+  }
+
+  /** 清除某会话的图片材料（e2e 探针隔离用，避免污染真实会话）。 */
+  static async clear(context: common.Context, key: string): Promise<void> {
+    try {
+      const path: string = A2AImageContextStore.pathOf(context, key);
+      if (fileIo.accessSync(path)) {
+        fileIo.unlinkSync(path);
+      }
+    } catch (e) {
+      // 忽略
     }
   }
 
