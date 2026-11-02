@@ -83,9 +83,10 @@ export function routeA2AIntent(query: string, hasImages: boolean, hasPendingPlan
     return { kind: INTENT_PLAN_WAITING, reason: 'pending-plan' };
   }
   if (hasImages) {
-    // 带图：有明确「整理」意图 → OCR 整理；否则按图片问答处理（当场回答，不入库）。
-    if (matchesAny(text, INGEST_PHRASES)) {
-      return { kind: INTENT_OCR, reason: 'image-ingest-phrase' };
+    // 带图：只要带「整理」类意图就 OCR 整理（如「整理雅可比」「帮我把图存成笔记」）；
+    // 纯提问（这题怎么做/讲一下）走图片问答，当场回答不入库。
+    if (hasIngestIntent(text)) {
+      return { kind: INTENT_OCR, reason: 'image-ingest-intent' };
     }
     return { kind: INTENT_IMAGE_QA, reason: 'image-question' };
   }
@@ -95,14 +96,26 @@ export function routeA2AIntent(query: string, hasImages: boolean, hasPendingPlan
   if (matchesAny(text, PICK_PHRASES)) {
     return { kind: INTENT_PICK_CARD, reason: 'pick-phrase' };
   }
-  if (text.length >= MIN_TEXT_INGEST_CHARS && matchesAny(text, INGEST_PHRASES)) {
+  if (text.length >= MIN_TEXT_INGEST_CHARS && hasIngestIntent(text)) {
     return { kind: INTENT_TEXT_INGEST, reason: 'ingest-phrase' };
   }
-  if (matchesAny(text, INGEST_PHRASES)) {
+  if (hasIngestIntent(text)) {
     // 「整理成笔记」这类短指令但没内容：给选图/发文字引导，绝不静默走闲聊。
     return { kind: INTENT_PICK_CARD, reason: 'ingest-without-content' };
   }
   return { kind: INTENT_CHAT, reason: 'default-chat' };
+}
+
+/** 整理意图：显式短语，或任何带「整理 / 入库 / 存笔记」的说法（如图片 +「整理雅可比」）。 */
+export function hasIngestIntent(text: string): boolean {
+  if (matchesAny(text, INGEST_PHRASES)) {
+    return true;
+  }
+  if (text.indexOf('整理') >= 0 || text.indexOf('入库') >= 0) {
+    return true;
+  }
+  return text.indexOf('笔记') >= 0
+    && (text.indexOf('存') >= 0 || text.indexOf('记') >= 0 || text.indexOf('写') >= 0);
 }
 
 function matchesAny(text: string, phrases: string[]): boolean {

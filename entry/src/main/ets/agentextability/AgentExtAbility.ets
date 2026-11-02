@@ -48,6 +48,9 @@ import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
 import { A2AConversationStore, matchesRememberIntent } from '../services/A2AConversationStore';
 import type { A2AConversationTurn } from '../services/A2AConversationStore';
+import { A2AImageContextStore } from '../services/A2AImageContextStore';
+import type { A2AImageMaterial } from '../services/A2AImageContextStore';
+import { hasIngestIntent } from '../services/A2AIntentRouter';
 import {
   A2APlan,
   A2APlanCommand,
@@ -83,7 +86,6 @@ import { AgentImagePart, AgentPart, collectImageParts, joinTextParts, mediaTypeO
 import { OcrService } from '../services/OcrService';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { buildTaskSnapshotWithCard, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
-import { buildPickCardPartJson, CARD_ID, wantsPickCard } from './A2AUiCard';
 
 const TAG: string = 'MindTraceA2A';
 
@@ -91,7 +93,6 @@ const TAG: string = 'MindTraceA2A';
  * 官方 UI 卡片开关。真机出现 1011 start_ability_fail 或每秒重试时改 false 并重建，
  * 立刻退回纯文本（buildTaskSnapshotWithCard 的空卡片路径与旧输出逐字节一致）。
  */
-const UI_CARD_ENABLED: boolean = true;
 
 /**
  * A2A 单次回复预算（计划 §4.1–§4.3）——超时/重试/输出预算的数字只在这里定义。
@@ -316,7 +317,12 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           return;
         }
         if (intent.kind === INTENT_PICK_CARD || intent.kind === INTENT_EMPTY) {
-          this.sendAnswerWithPickCard(taskId, '点下面的卡片去选图，或直接把题目文字发我。');
+          if (intent.kind === INTENT_EMPTY || intent.reason === 'ingest-without-content'
+            || hasIngestIntent(text)) {
+            this.answerWithLastImageMaterial(taskId, conversationKey);
+            return;
+          }
+          this.sendAnswer(taskId, '直接把题目图片或文字发我即可；说「整理成笔记」我会在小艺里直接整理，不需要打开 App。', 0);
           return;
         }
         if (intent.kind === INTENT_TEXT_INGEST) {
@@ -342,6 +348,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
           this.sendAnswer(taskId, '图片里没识别到文字，换清晰点的图，或直接把题目文字发我。', 0);
           return;
         }
+        A2AImageContextStore.save(this.context, conversationKey, text).catch((): void => {});
         const excerpt: string = text.length > 2000 ? text.substring(0, 2000) : text;
         const question: string = request.text.trim().length > 0
           ? request.text.trim() : '请回答图片中的题目';
@@ -594,7 +601,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
         return;
       }
       this.sendAnswer(taskId,
-        '已整理入库：' + unit.title + '（' + unit.subject + '）· 本次整理 1 条', 0, request.text);
+        '已整理入库：' + unit.title + '（' + unit.subject + '）· 本次整理 1 条', 0);
       return;
     }
     if (outcome.kind === 'cancelled') {
@@ -937,6 +944,25 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       });
   }
 
+  /** 「整理成笔记」但本条没带图：用最近一张图的 OCR 文本直接内联整理（无需打开 App）。 */
+  private answerWithLastImageMaterial(taskId: string, conversationKey: string): void {
+    A2AImageContextStore.load(this.context, conversationKey)
+      .then((material: A2AImageMaterial | null): void => {
+        if (material === null) {
+          this.sendAnswer(taskId,
+            '这次没收到图片/题目内容。直接发图并说「整理成笔记」，或把题目文字发我即可。', 0);
+          return;
+        }
+        hilog.info(DOMAIN, TAG, 'IMAGE_RECALL ingest chars=%{public}d', material.text.length);
+        const ingest: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, material.text, []);
+        this.ingestTextBatchNow(taskId, ingest);
+      })
+      .catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'IMAGE_RECALL failed %{public}s', e.message);
+        this.sendAnswer(taskId, '读取上次图片内容失败，请重发图片。', 0);
+      });
+  }
+
   private async answerFromReceipt(taskId: string): Promise<void> {
     const receipt: CaptureReceipt | null = await CaptureReceiptStore.read(this.context);
     hilog.info(DOMAIN, TAG,
@@ -1170,7 +1196,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
       '%{public}s requestId=%{public}s taskId=%{public}s requestedModel=%{public}s canonicalModel=%{public}s reason=%{public}s attempts=%{public}d elapsedMs=%{public}d',
       code, this.lastRequestId, session.taskId, session.requestedModel, session.canonicalModel,
       reason, session.attempts, elapsedMs);
-    this.sendAnswer(session.taskId, text, session.requestStartedAt, session.query);
+    this.sendAnswer(session.taskId, text, session.requestStartedAt);
   }
 
   /**
@@ -1178,26 +1204,13 @@ export default class AgentExtAbility extends AgentExtensionAbility {
    * 不拆 statusUpdate / artifactUpdate —— 小艺对增量帧只渲染开头几个词。
    * 报文拼装由 TaskSnapshot（纯函数）负责，这里只选 taskId 并发送。
    *
-   * 卡片 part：query 命中「拍题/选图」意图且 UI_CARD_ENABLED 时追加一个
-   * buildPickCardPartJson(query)；每个 task 只发一帧快照，卡片 part 最多一个。
    *
    * #234 可观测性: 发送成功后只打计数摘要（chars/字节/特殊符号/耗时），
    * 不打印正文、正文前缀或哈希（AGENTS 红线）。requestStartedAt 由调用方传入
    * 当前 session 的模型调用起点；无 session 的分支传 0，elapsedMs 记 0。
    */
-  private sendAnswer(taskId: string, text: string, requestStartedAt: number, cardQuery: string = ''): void {
-    const cardPartJson: string = UI_CARD_ENABLED && wantsPickCard(cardQuery)
-      ? buildPickCardPartJson(cardQuery) : '';
-    this.sendSnapshot(taskId, text, requestStartedAt, cardPartJson);
-  }
-
-  /**
-   * 空 payload 分支专用：没有 query 可判意图，直接带一张卡片。
-   * 文案与 sendAnswer 分开，避免把「没有内容」说成「已整理」。
-   */
-  private sendAnswerWithPickCard(taskId: string, text: string): void {
-    const cardPartJson: string = UI_CARD_ENABLED ? buildPickCardPartJson('') : '';
-    this.sendSnapshot(taskId, text, 0, cardPartJson);
+  private sendAnswer(taskId: string, text: string, requestStartedAt: number): void {
+    this.sendSnapshot(taskId, text, requestStartedAt, '');
   }
 
   /** 唯一发帧出口：拼快照 + 发一帧 + 计数日志。 */
@@ -1210,10 +1223,6 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     }
     try {
       this.hostProxy.sendData(payload);
-      if (cardPartJson.length > 0) {
-        hilog.info(DOMAIN, TAG, 'A2A_UI_CARD sent cardId=%{public}s chars=%{public}d',
-          CARD_ID, cardPartJson.length);
-      }
       const elapsedMs: number = requestStartedAt > 0 ? Date.now() - requestStartedAt : 0;
       hilog.info(DOMAIN, TAG,
         'A2A_REPLY_SENT chars=%{public}d utf8Bytes=%{public}d snapshotBytes=%{public}d dollar=%{public}d backslash=%{public}d zeroWidth=%{public}d sqrt=%{public}d ge=%{public}d elapsedMs=%{public}d taskId=%{public}s',

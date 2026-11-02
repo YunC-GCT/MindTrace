@@ -158,3 +158,12 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - 图片问答：代码路径已就绪（`image_qa` + OCR + 回答），但真机日志仍无 image part（小艺只下发 `text/plain`，图片请求为 `text=0` 空 part）；需平台三件事后复测，否则属小艺客户端不分发图片，应用侧不可修复；
 - 修复记录：记忆键合并（contextId 与 default 按时间合并、去重），避免部分请求无 contextId 时“看不到上一条”；
 - 验证：build 成功；gate --all RESULT: PASS（pass=1197 fail=0）。
+
+### 9.3 A2A 图片整理闭环（2026-11-02，无 App 入口）
+
+用户反馈：发图 +「整理雅可比」被当成问答；随后「整理成笔记」返回了一个进入 App 的卡片。修复：
+
+- **意图**：`hasIngestIntent()`（显式短语 / 含「整理」「入库」/「笔记+存/记/写」）用于图片分支——带图 +「整理雅可比」→ OCR 整理；纯提问仍走 `image_qa` 问答；
+- **跨消息图片内容**：`A2AImageContextStore` 在图片问答/OCR 成功后按会话键（含 default 兜底）记住 OCR 文本；下一条「整理成笔记」即使没有 image part，也直接取上次 OCR 文本内联整理（`ingestTextBatchNow`），**不打开 App**；
+- **删除 App 入口**：A2A 不再发送 `uiExtensionCard`（移除 `sendAnswerWithPickCard` / `buildPickCardPartJson` 调用、`A2A_UI_CARD`），无内容时只回文字引导；
+- 待真机：发图 +「整理成笔记」验证 image part → OCR → 入库；若图片仍未下发则仍是客户端限制。

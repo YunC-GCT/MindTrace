@@ -141,3 +141,31 @@ test('记忆键合并：contextId 与 default 按时间合并（跨请求无 con
   assert.ok(ability.includes('loadWithFallback(this.context, conversationKey)'));
   assert.ok(ability.includes("A2AConversationStore.append(this.context, 'default'"));
 });
+
+
+test('图片整理意图：带图 +「整理雅可比」→ OCR 整理；带图提问 → image_qa', () => {
+  const mod = loadNoteReviewEtsModule('entry/src/main/ets/services/A2AIntentRouter.ets', { mocks });
+  assert.equal(mod.routeA2AIntent('整理雅可比', true, false).kind, 'ocr');
+  assert.equal(mod.routeA2AIntent('帮我把这张图存成笔记', true, false).kind, 'ocr');
+  assert.equal(mod.routeA2AIntent('这题怎么做', true, false).kind, 'image_qa');
+  assert.equal(mod.hasIngestIntent('整理雅可比'), true);
+  assert.equal(mod.hasIngestIntent('这题怎么做'), false);
+  // 无图且无内容：短整理指令给引导，不进闲聊
+  assert.equal(routeA2AIntent('整理雅可比', false, false).kind, 'pick_card');
+});
+
+test('A2A 不再发「进入 App」卡片；无图整理用上一次图片 OCR 文本内联完成', () => {
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.ok(ability.includes('answerWithLastImageMaterial'));
+  assert.ok(ability.includes('A2AImageContextStore.save(this.context, conversationKey, text)'));
+  assert.ok(ability.includes('A2AImageContextStore.load(this.context, conversationKey)'));
+  assert.ok(ability.includes('IMAGE_RECALL ingest chars='));
+  assert.ok(ability.includes('不需要打开 App'));
+  assert.equal(ability.includes('sendAnswerWithPickCard'), false);
+  assert.equal(ability.includes('buildPickCardPartJson'), false);
+  assert.equal(ability.includes('A2A_UI_CARD'), false);
+  const store = read('entry/src/main/ets/services/A2AImageContextStore.ets');
+  assert.ok(store.includes('static async save'));
+  assert.ok(store.includes('static async load'));
+  assert.ok(store.includes("loadExact(context, 'default')"));
+});
