@@ -3,7 +3,8 @@
  *
  * 路径: entry/src/main/ets/database/AgentJobDao.ets
  * 职责: `agent_job` 表的入队去重、claim（租约）、恢复、终态回写与状态统计；
- *       跨进程时 producer 只入队，执行侧 claim 保证同一时刻只有一个执行者。
+ *       跨进程时 producer 只入队（兜底路径），执行侧 claim 保证同一时刻只有一个队列执行者；
+ *       A2A 单次整理内联执行，不经过队列（ADR-0024 §2.7）。
  * 依赖: @kit.ArkData（relationalStore）、common uuid、AgentJobModels。
  * 数据流: WriteJobScheduler/AgentExtAbility → AgentJobDao.enqueue/claim/finish → agent_job 表
  *

@@ -7,6 +7,9 @@
  * 数据流: CommandExecutor.dispatchCommand() → CommandRouter.preflight(审批哈希) → resolve()=prepared → 本类 run() → PreparedBranch
  *
  * 边界: 不发 run 级事件；审批拒绝由 router 前置返回（不会进到本 workflow）。
+ *
+ * 当前状态（2026-11-02）: 本类是转发壳，真实逻辑在 core/dispatch/PreparedBranch。
+ *       spec 039 的分支内容迁移尚未完成；改业务请改 branch，不要在壳里加逻辑。
  */
 import type { NoteCommand, NoteOutcome, PreparedCandidate } from 'common';
 import { PreparedBranch } from '../core/dispatch/PreparedBranch';

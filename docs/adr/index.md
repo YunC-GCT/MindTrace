@@ -72,7 +72,7 @@ If a decision is easy to reverse, skip the ADR — you'll just reverse it. If it
 - [`0021-shared-read-port-implementation-in-common.md`](./0021-shared-read-port-implementation-in-common.md) — 读端口实现位置
 - [`0022-review-and-video-scope.md`](./0022-review-and-video-scope.md) — 复习/视频范围
 - [`0023-rag-local-fts-retrieval.md`](./0023-rag-local-fts-retrieval.md) — RAG 一期：本机 FTS5 + 证据注入（Kit retrieveRdb 暂缓）
-- [`0024-writejob-persistence-cross-process.md`](./0024-writejob-persistence-cross-process.md) — WriteJob 队列持久化与跨进程 handoff（038 S3：单执行者 + agent_job + 租约）
+- [`0024-writejob-persistence-cross-process.md`](./0024-writejob-persistence-cross-process.md) — WriteJob 队列持久化与跨进程 handoff（038 S3：队列单执行者 + agent_job + 租约；A2A 单次整理内联）
 
 ## Relationship to other docs
 

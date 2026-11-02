@@ -1,3 +1,10 @@
+/**
+ * DatabaseHelper.ets — 数据库初始化与 schema 迁移
+ *
+ * 路径: common/src/main/ets/DatabaseHelper.ets
+ * 职责: 打开 MindTrace.db、建表/迁移到 schema v20、初始化 RDB 单例。
+ * 依赖: @kit.ArkData (relationalStore)。
+ */
 // MindTrace - 数据库初始化工具
 // 责任: Z
 // 创建: 2026-07-14 — 精简拍照链 RDB 基础设施
@@ -308,7 +315,7 @@ const SQL_INDEX_RUN_EVENT_RUN_SEQ: string =
 // 语义仍是待办（ADR-0022）：只加版本与操作记录，不加评分/掌握度字段。
 // v18：HITL 审批哈希落位（ADR-0019 (d)）——审批属于检查点，用 approved_at 标记。
 // v20（ADR-0024 / spec 040）：WriteJob 持久队列 + 跨进程 handoff。
-// 单执行者（UI 进程）claim 租约；producer（:agent 扩展）只入队。
+// 队列单执行者（UI 进程）claim 租约；:agent 扩展的单次整理内联执行（ADR-0024 §2.7），不经过此队列。
 const SQL_CREATE_AGENT_JOB: string = `
 CREATE TABLE IF NOT EXISTS agent_job (
   job_id TEXT PRIMARY KEY,

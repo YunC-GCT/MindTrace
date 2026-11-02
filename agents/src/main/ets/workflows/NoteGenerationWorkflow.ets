@@ -7,6 +7,9 @@
  * 数据流: CommandExecutor.dispatchCommand() → CommandRouter.resolve()=generation → 本类 run() → GenerationBranch → GenerationEvaluator
  *
  * 边界: 不发 run 级事件；分支内部错误由调用方（CommandExecutor）映射终态。
+ *
+ * 当前状态（2026-11-02）: 本类是转发壳，真实逻辑在 core/dispatch/GenerationBranch。
+ *       spec 039 的分支内容迁移尚未完成；改业务请改 branch，不要在壳里加逻辑。
  */
 import type { NoteCommand, NoteOutcome, NoteGenerationRequest } from 'common';
 import { GenerationBranch } from '../core/dispatch/GenerationBranch';

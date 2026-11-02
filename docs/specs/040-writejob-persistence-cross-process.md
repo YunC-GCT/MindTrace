@@ -1,6 +1,6 @@
 # 040 — WriteJob 持久队列与跨进程 handoff（038 S3）
 
-> **Status**: implemented (2026-11-01) — P0/P1/P2/P3 完成；flag 已灰度打开（UI/扩展进程统一走持久队列）
+> **Status**: implemented (2026-11-01) — P0–P3 完成；队列承接 UI 侧 inbox / 恢复 / 兜底。A2A 单次整理在 :agent 内联执行（ADR-0024 §2.1 / §2.7，2026-11-02 口径统一）。
 > **Related**: [ADR-0024](../adr/0024-writejob-persistence-cross-process.md) · [spec 038](./038-write-job-scheduler.md) · [spec 039](./039-agent-workflow-first.md) · [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md)
 > **Code**: `common/src/main/ets/DatabaseHelper.ets` · `entry/src/main/ets/database/`（新 `AgentJobDao.ets`） · `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `entry/src/main/ets/services/A2AInboxIngestService.ets`
 > **Verified by**: 实现后回填（gate / 真机跨进程与重启 e2e / scheduler-report）
@@ -10,7 +10,7 @@
 把 038 S1/S2 的进程内 `WriteJob` 队列升级为**持久、可恢复、可跨进程交接**的队列：
 
 - App 被杀/重启后 queued job 不丢；
-- A2A `:agent` 进程只把长任务**交接**给 UI 进程执行，不再自己跑 ingest；
+- A2A `:agent` 的**兜底/溢出**任务交接给 UI 进程执行；单次整理按 ADR-0024 §2.7 内联，不经过本队列；
 - 保持 038 已有的双 lane / 观测 / 幂等 / flag 回滚能力。
 
 决策依据见 [ADR-0024](../adr/0024-writejob-persistence-cross-process.md)。
@@ -21,7 +21,7 @@
 
 1. schema v20：`agent_job` 表 + `AgentJobDao`（additive，不动既有表）；
 2. `WriteJobScheduler` 持久化：enqueue 落库、启动恢复、claim（租约）、终态回写、失败重试策略；
-3. 跨进程 producer：`AgentExtAbility` / `AgentIngestService` 改为「入队 + 回执已受理」，UI 进程消费；
+3. 跨进程 producer（兜底路径）：A2A 超时 / 失败 / 批量溢出时「入队 + 回执」，UI 进程消费；正常单次整理内联，见 §9；
 4. inbox 迁移：pending `AgentInboxQueue` 项 → `agent_job`（一次），保留回滚读路径；
 5. 观测：job 生命周期事件 + `scheduler-report` 状态分布；flag `WRITE_JOB_PERSIST_ENABLED`（默认关 → 验证后开）；
 6. 测试与真机验收（跨进程/重启/幂等/灰度回退）。
@@ -34,12 +34,12 @@
 ## 3. 设计要点（ADR-0024 展开）
 
 - **状态机**：`queued → running → done|failed|cancelled`；attempt 上限 2（仅 retryable 重试）；
-- **单执行者**：UI 进程调度器 + `AsyncMutex` 写区；扩展进程只 INSERT；
+- **队列单执行者**：UI 进程调度器 + `AsyncMutex` 写区；扩展只在兜底路径 INSERT；A2A 单次整理内联（ADR-0024 §2.7）；
 - **租约**：claim 事务条件更新；启动时 `running` 且租约过期 → 回 queued（attempt+1）；
 - **幂等**：fingerprint 去重入队；执行侧沿用 capture-input commitKey/写端口 CAS；
 - **inbox 迁移**：首启一次性迁移（记录 migration 标记），回滚版本仍读 inbox；
 - **观测**：`[WriteJob]` 日志 + run_event（runId=jobId；`job.recovered` 等新增 kind）；
-- **flag**：默认 false；P3 真机通过后 UI 进程打开；扩展进程仍只入队（不读 flag 也可安全入队）。
+- **flag**：默认 false；P3 真机通过后 UI 进程打开。flag 只控制 UI 进程的持久队列；扩展内联路径不读 flag。
 
 ## 4. TDD 切片
 
@@ -47,7 +47,7 @@
 |---|---|---|
 | P0 | schema v20 + `AgentJobDao`（insert/claim/lease/finish/list/recover） | `v7-agent-job-dao.test.mjs`（内存 RDB 桩或 SQL guard）+ 迁移纯函数 |
 | P1 | `WriteJobScheduler` 持久化：enqueue write、startup recovery、claim 失败跳过、终态回写、重试 | `v7-write-job-persist.test.mjs`（注入 fake repository；恢复/租约/attempt） |
-| P2 | 跨进程 producer：`AgentIngestService` 入队并回执；`A2AInboxIngestService` 先迁移/后消费；扩展进程不执行 | 契约守卫 + `v7-a2a-inbox` 更新 |
+| P2 | 跨进程 producer：`AgentIngestService` 入队并回执；`A2AInboxIngestService` 先迁移/后消费（**已被 §9 修订**：A2A 改为内联，producer 仅兜底） | 契约守卫 + `v7-a2a-inbox` 更新 |
 | P3 | 真机 e2e：`schedulerPersist`（重启恢复/跨进程入队/幂等/flag 开关） | 设备 e2e 模式 + scheduler-report |
 
 每片一个可回滚 commit；旧内存路径在 flag 关时保留（同 S2 行为）。
@@ -65,7 +65,7 @@
 
 | 风险 | 缓解 |
 |---|---|
-| 多进程 RDB 写竞争 | `busy_timeout` + 入队重试 + claim 事务；失败降级 inbox |
+| 多进程 RDB 写竞争 | claim 租约 + `commitKey` 幂等 + 失败降级 inbox。**已知未落地**：`StoreConfig` 无 `busy_timeout`，错误重试尚未实现；A2A 内联写与 UI 写并发是残余风险 |
 | payload 变长/隐私 | 只存待整理原文；完成后可清理策略 |
 | 迁移失败 | 迁移标记 + 可重入；inbox 原文件保留一个版本 |
 | A2A UX 变化（立即回执） | 回执文案「已受理，稍后自动整理」；deadline 路径保留 |
@@ -101,6 +101,8 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - 偏差：失败重试（attempt>1 重新入队）留 P2/P3；P1 失败直接 markFailed。
 
 ### P2（2026-11-01 完成）
+
+> 以下 P2 / P3 记录保留当时的「扩展只入队」方案；该方案已于 §9 修订为 A2A 内联，记录仅作历史证据。
 
 - `WriteJobProducer.tryEnqueue(context,text,priority,source)`：flag 开 + DB 就绪才入队（`enqueueForSource`），否则返回 null 让调用方走旧路径；
 - A2A `AgentExtAbility`：
@@ -194,3 +196,9 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - 路由仍保持：有未完成 OCR 计划时优先推进计划；带图 + 整理意图进 OCR checkpoint；无图文本按原 `text_ingest`/chat 分流；
 - 测试：`v7-a2a-intent` 覆盖 `image_ingest` / `image_qa` 的显式/空/模糊文字用例；gate PASS（pass=1201）；
 - 注意：该判断只在图片 part 真正到达时生效；当前小艺客户端仍未下发 image part（需平台侧修复）。
+
+### 9.7 写权威口径统一（2026-11-02）
+
+- **决定**：A2A 单次整理在 `:agent` 内联是正式路径，不是例外；队列（`agent_job` / inbox）只承接超时、失败、批量溢出与启动恢复。
+- **修正**：本文 Status、§1、§2、§3、§4 中「UI/扩展统一走持久队列」「扩展只入队」「扩展进程不执行」的表述以本节为准；`WriteJobProducer` 保留为兜底 producer，当前无生产调用方。
+- **残余风险**：跨进程同时写同一 RDB 的 `SQLITE_BUSY`、`run_event` 序列无唯一约束；本轮只统一口径，未改代码行为。

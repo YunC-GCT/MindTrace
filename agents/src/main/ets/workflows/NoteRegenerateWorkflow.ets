@@ -7,6 +7,9 @@
  * 数据流: CommandExecutor.dispatchCommand() → CommandRouter.resolve()=regenerate → 本类 run() → IncrementalBranch
  *
  * 边界: 不发 run 级事件。
+ *
+ * 当前状态（2026-11-02）: 本类是转发壳，真实逻辑在 core/dispatch/IncrementalBranch。
+ *       spec 039 的分支内容迁移尚未完成；改业务请改 branch，不要在壳里加逻辑。
  */
 import type { NoteCommand, NoteOutcome, NoteGenerationRequest } from 'common';
 import { IncrementalBranch } from '../core/dispatch/IncrementalBranch';

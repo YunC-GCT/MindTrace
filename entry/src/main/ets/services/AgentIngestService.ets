@@ -8,11 +8,16 @@
  *
  * 为什么这么分层：
  *   入口层（小艺 extension / 应用内选图 / 分享）只负责「把外部协议翻译成 AgentIngestRequest」，
- *   传输差异到此为止；识别是共享能力（OcrService），编排与落库也是共享的（Dispatcher + 写路径）。
+ *   传输差异到此为止；识别是共享能力（OcrService），编排与落库也是共享的（CommandExecutor + 写路径）。
  *   新入口 = 新 adapter，不需要复制任何整理逻辑。
  *
  * 进程约束：扩展进程（:agent）没有 UIAbilityContext，副作用必须关掉
  *   （AiService 第二个参数 includeUiEffects = false），卡片刷新由主进程注册。
+ *
+ * 写库模式（ADR-0024 §2.1/§2.7）:
+ *   - ingestTextBatch / ingestOutcome / ingestSingleTextDirect 直接执行，不经过 WriteJobScheduler；
+ *   - ingestSingleText 仅在 flag 开启（UI 进程）时经调度器；扩展进程 flag 恒为 false；
+ *   - 因此 A2A 单次整理是扩展进程内联；队列只承接兜底/恢复。
  */
 
 import { common } from '@kit.AbilityKit';

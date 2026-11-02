@@ -5,7 +5,8 @@
  * 职责: 队列文件的追加写 / 领取 / 收尾。扩展进程（:agent）只写，应用进程只领。
  * 依赖: @kit.AbilityKit (common.Context)、@kit.CoreFileKit (fileIo)、AgentInboxModels
  *
- * 为什么用文件而不是 RDB：notes 库由应用进程独占，扩展进程跨进程写 RDB 不可靠；
+ * 为什么用文件而不是 RDB：队列只承接 A2A 超时/失败/溢出的兜底项，避免追加队列时与写路径抢 RDB 写锁；
+ *   2026-11-02 口径统一：A2A 单次整理走扩展内联（ADR-0024 §2.7），不是所有写都经应用进程。
  * 同一 bundle 的 filesDir 是两个进程都能访问的安全区，所以队列走文件。
  * 领取时先把 pending 文件改名成 processing，再读 processing：应用中途被杀也不会重复整理，
  * 下次前台继续从 processing 读（单条失败只记日志，不阻塞其余条目）。

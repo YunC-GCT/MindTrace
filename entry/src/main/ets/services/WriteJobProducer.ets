@@ -1,13 +1,14 @@
 /**
- * WriteJobProducer.ets — 跨进程 producer：只入队、不执行（spec 040 P2）
+ * WriteJobProducer.ets — 跨进程 producer（兜底路径）：只入队、不执行（spec 040 P2）
  *
  * 路径: entry/src/main/ets/services/WriteJobProducer.ets
- * 职责: 供 A2A `:agent` 扩展进程 / inbox 迁移等 producer 使用：flag 开启且 DB 就绪时，
- *       把待整理文本写入 agent_job（幂等指纹）并返回 jobId；返回 null 表示走旧路径。
+ * 职责: 队列兜底路径的 producer：A2A 超时/失败/溢出与 inbox 迁移时，
+ *       把待整理文本写入 agent_job（幂等指纹）并返回 jobId；返回 null 表示调用方走内联/旧路径。
  * 依赖: common DatabaseHelper、./WriteJobConfig、./WriteJobPersistence、../database/AgentJobDao。
- * 数据流: AgentExtAbility/inbox → tryEnqueue() → AgentJobPersistence → agent_job
+ * 数据流: 兜底调用方 → tryEnqueue() → AgentJobPersistence → agent_job
  *
  * 边界: 不执行 LLM/OCR/写笔记；执行在 UI 进程调度器。
+ * 当前状态（2026-11-02）: 无生产调用方；A2A 单次整理走扩展内联（ADR-0024 §2.7），不经过本类。
  */
 import { DatabaseHelper } from 'common';
 import type { common } from '@kit.AbilityKit';

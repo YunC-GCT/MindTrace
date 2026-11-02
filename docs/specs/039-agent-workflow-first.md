@@ -1,6 +1,6 @@
 # 039 — Agent 编排收口：CommandExecutor + CommandRouter + 四条 workflow
 
-> **Status**: implemented (2026-11-01) — S1/S2/S3 已落地；真机 captureSet / schedulerProbe / schedulerIntegration / a2a smoke（自动+手动）均已通过
+> **Status**: implemented (2026-11-01) — S1/S2/S3 已落地；真机 captureSet / schedulerProbe / schedulerIntegration / a2a smoke（自动+手动）均已通过。**当前形态（2026-11-02）**：只有 capture 完成迁移，generation / regenerate / prepared 仍由 `core/dispatch/*Branch` 承载，三个 workflow 是转发壳（见 §13.1）。
 > **Related**: [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 038](./038-write-job-scheduler.md) · [架构提案](../architecture/agent-architecture-proposal-2026-11-01.md) · [v7 外评审](../architecture/review-v7-2026-10-27.md)
 > **Code**: `agents/src/main/ets/core/Dispatcher.ets` · `agents/src/main/ets/core/dispatch/`（DispatchGraph / CaptureBranch / RunEventSink） · `agents/src/main/ets/agents/NoteAgent.ets` · `entry/src/main/ets/services/ai/{AiServicePorts,CapturePipeline,DraftPipeline,DraftCommitService}.ets` · `common/src/main/ets/workflow/StateGraph.ets`
 > **Verified by**: 基线 `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（pass=1165 / 0 lint error / 0 边界违规）；本 spec 的验收命令见 §7，实施后逐条回填
@@ -41,6 +41,8 @@ export class CommandRouter {
 | `NotePreparedWorkflow` | `workflows/NotePreparedWorkflow.ets` | preparedCandidate：hash/checkpoint 校验 → commit |
 
 `NoteAgent` 改名为 `NoteCaptureWorkflow`（`NoteAgent.ets` → `workflows/NoteCaptureWorkflow.ets`）；`GenerateBranch` / `PreparedBranch` / `IncrementalBranch` 的内容迁进对应 workflow，文件删除。
+
+> **2026-11-02 状态**：上表的迁移只有 capture 完成；generation / regenerate / prepared 三条 workflow 仍是转发壳，真实逻辑在 `core/dispatch/GenerationBranch` / `IncrementalBranch` / `PreparedBranch`。改业务请改 branch，迁移完成后再删壳（见 §13.1）。
 
 ### 2.2 职责切分（硬边界）
 
@@ -190,3 +192,10 @@ export class CommandRouter {
 - 验证：`node scripts/agent-gate/index.mjs --all` → **RESULT: PASS（fail=0）**；`node scripts/build-hsp-hap.mjs` 成功；golden `raw/` 零 diff；
 - 偏差（记录）：`node.started` 未发（CaptureGraph 的 timing seam 只暴露节点结束后的 step+ms；避免为单一事件改图内核，留待有第二个消费者时补）；`tool.*` 不接（ToolLoop 生产零引用，随 spec 041 接 Chat 时补）；`approval.*` 只发 rejected（确认在业务级草稿/审批，ADR-0008 不做图内 HITL）。
 - **真机回归修复**：首版逐节点实时写 run_event，与 capture persist 的 SQLite 写事务互抢 → `NOTE_WRITE_FAILED: database file is locked`；改为 workflow 结束后批量补发 node.ended（顺序/字段不变），复测 `schedulerIntegration committed / schedulerProbe failed=0`。
+
+### 当前形态（2026-11-02 标注）
+
+- `NoteCaptureWorkflow` 是唯一实体 workflow（装配并执行 `CaptureGraph`）。
+- `NoteGenerationWorkflow` / `NoteRegenerateWorkflow` / `NotePreparedWorkflow` 目前是 27–29 行转发壳，真实逻辑仍在 `core/dispatch/GenerationBranch`（705 行）/ `IncrementalBranch`（272 行）/ `PreparedBranch`（176 行）+ `GenerationEvaluator`。
+- S1 已记录该偏差；S2 只完成 capture 收口。本条不是新决策，只是把当前形态写清楚：**改 generation / regenerate / prepared 请改对应 branch；不要在转发壳里加业务逻辑。**
+- 完成迁移的判据仍按 §7：branch 内容进 workflow、branch 文件删除、golden `raw/` 零 diff。迁移未完成前，`NoteWorkflowId` 的四个值保持不变。

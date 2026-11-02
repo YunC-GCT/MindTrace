@@ -1,6 +1,6 @@
 # 0024 — WriteJob 队列持久化与跨进程 handoff（038 S3）
 
-> **Status**: accepted (2026-11-01) — 实现见 spec 040（P0–P3 完成）
+> **Status**: accepted (2026-11-01) — 2026-11-02 修订写权威口径：A2A 单次整理内联为正式路径（§2.1 / §2.7），队列只承接兜底与恢复；实现见 spec 040（P0–P3 完成）
 > **Related**: [spec 038](../specs/038-write-job-scheduler.md) · [spec 039](../specs/039-agent-workflow-first.md) · [ADR-0008](./0008-capturegraph-self-built-runtime.md) · [ADR-0019](./0019-note-command-and-outcome.md) · [ADR-0021](./0021-shared-read-port-implementation-in-common.md)
 > **Code**: `entry/src/main/ets/services/WriteJobScheduler.ets` · `entry/src/main/ets/services/A2AInboxIngestService.ets` · `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `common/src/main/ets/DatabaseHelper.ets`
 > **Verified by**: 本 ADR 仅定决策；实现验收见 spec 040（待排期）
@@ -16,11 +16,14 @@
 
 ## 2. 决定
 
-### 2.1 单执行者（UI 进程）
+### 2.1 写权威：同一写端口，两条调度路径
 
-- **只有 UI 进程**执行写任务（调度器 + 写路径）；`:agent` 扩展进程**只入队、不执行**长任务。
-- 扩展在 A2A 文本/图片整理请求上：写 job → 立刻回「已受理，稍后自动整理」，不再占用 90s deadline 等 LLM。
-- 这样跨进程竞争只在「入队写」，不在「执行/写笔记」。
+写权威只有一条决定：**同一份笔记内容只经 `AgentIngestService → CapturePipeline → CommandExecutor → NoteWritePort` 写入**。调度方式按入口分两条，二者都是正式路径：
+
+- **队列路径（UI 进程）**：`WriteJobScheduler` 承接 inbox 消费、启动恢复与显式 background 任务；`agent_job` 的 claim 租约保证队列内同一时刻只有一个执行者。
+- **内联路径（`:agent` 扩展进程）**：A2A 单次整理（单题 / 多题逐题 / 「全部」）在扩展进程内联执行，完成后直接在小艺回执。产品要求「不打开 App 也能整理」，因此它不经过 `WriteJobScheduler`，也不受队列 lane / 租约约束（细节见 §2.7）。
+- 两条路径共享同一套写端口与幂等语义：`commitKey` / 输入指纹 / `expectedVersion` CAS 保证跨进程重放不双写；`KnowledgeUnitWriteService.writeSection` 是**进程内**串行，不是跨进程锁。
+- 已知残余风险：跨进程同时写同一 RDB 可能出现 `SQLITE_BUSY`（`StoreConfig` 无 `busy_timeout`），当前靠 `commitKey` 幂等与 A2A 超时回退队列兜底；错误重试尚未实现，是需要后续加固的点。
 
 ### 2.2 持久队列 `agent_job`（schema v20）
 
@@ -57,8 +60,8 @@ agent_job(
 
 ### 2.4 跨进程交接
 
-- 扩展进程写 `agent_job`（只 INSERT/幂等 upsert），并立即 A2A 回执「已受理」；
-- UI 进程在前台/启动时消费；App 不在前台也保证**队列不丢**（RDB 持久）；
+- 队列交接只用于兜底：A2A 超时 / 失败 / 批量溢出时，扩展把原文写入 `agent_job`（或 inbox），并立即回执；UI 进程在前台/启动时消费；
+- 正常 A2A 单次整理不写队列，直接在扩展内联完成（§2.7）；App 不在前台时队列仍保证**不丢**（RDB 持久）；
 - `AgentInboxQueue`（文件 JSON）迁移：首次启动把 pending 项转成 `agent_job`（source=inbox），迁移完成后新流程不再写 inbox；保留读迁移代码 1 个版本用于回滚。
 
 ### 2.5 观测与灰度
@@ -67,11 +70,11 @@ agent_job(
 - `scheduler-report.mjs` 读事件/状态分布；
 - 灰度 flag：`WRITE_JOB_PERSIST_ENABLED` 默认 false → 设备验证后 UI 进程打开；回滚 = flag 关闭（队列退回内存，数据保留）。
 
-### 2.7 例外：A2A 内联整理 / 图片问答（2026-11-01 用户体验修订）
+### 2.7 A2A 内联整理 / 图片问答（正式路径，2026-11-01 引入 / 2026-11-02 定稿）
 
-- 用户明确表达「整理/存笔记」意图时，`:agent` 扩展进程**内联执行**该次整理（单题/多题逐题/「全部」），完成后在小艺里直接回执——**不需要打开 App**；
+- 用户明确表达「整理/存笔记」意图时，`:agent` 扩展进程**内联执行**该次整理（单题/多题逐题/「全部」），完成后在小艺里直接回执——**不需要打开 App**；这是与 §2.1 队列路径并列的正式路径，不是例外；
 - 用户发图且无整理意图时，扩展先 OCR 再把文字交给对话回答（图片问答，不入库）；
-- 持久队列（`agent_job`）退化为：**超时/失败兜底、批量溢出、App 内写路径与跨进程交接**；不再是 A2A 单次整理的必经路径；
+- 持久队列（`agent_job`）只承接：**超时/失败兜底、批量溢出、inbox 消费与启动恢复**；不是 A2A 单次整理、也不是 App 交互式整理的必经路径；
 - `JOB_CLAIMED_ELSEWHERE` 类竞态不再影响 A2A（内联执行不经过 claim），队列侧保留单执行者约束。
 
 ### 2.6 明确不做
@@ -93,9 +96,13 @@ agent_job(
 
 - **高**：新表 additive、不动协议/既有表；flag 关闭即回到 038 S2 行为；
 - 回滚时 `agent_job` 可保留（数据无害）或删表；迁移仅 inbox→job 单向，回滚后 inbox 仍可读；
-- 风险点：多进程 RDB 写竞争（用 `busy_timeout` + 租约 + 重试缓解，见 spec 040 §风险）。
+- 风险点：多进程 RDB 写竞争（claim 租约 + `commitKey` 幂等 + 失败降级 inbox；`busy_timeout` / 重试尚未落地，见 spec 040 §风险）。
 
 ## 5. 影响
 
-- spec 040（实现计划）：schema/DAO、调度器持久化与恢复、扩展只入队、真机跨进程/重启验收；
+- spec 040（实现计划）：schema/DAO、调度器持久化与恢复、扩展内联 + 队列兜底、真机跨进程/重启验收；
 - 038 状态：S1/S2 不变，S3 由 spec 040 承接；flag 默认策略更新为「SPEC 040 P3 验证后打开」。
+
+## 6. 修订记录
+
+- **2026-11-02**：统一写权威口径。A2A 单次整理内联是正式路径（§2.7），队列只承接兜底与恢复；删除「只有 UI 进程写 / 扩展只入队」与「扩展内联是例外」的互斥表述。跨进程 `SQLITE_BUSY` 与 `run_event` 序列无唯一约束转为显式待办，不在本轮修复。

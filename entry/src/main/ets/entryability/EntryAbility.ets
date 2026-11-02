@@ -70,7 +70,7 @@ export default class EntryAbility extends UIAbility {
     this.launchWant = want;
     // 卡片刷新这类 UI 副作用只能在主进程加载：注册一次，共享写路径按注册表取用
     KnowledgeUnitUiEffects.register(new CardUiEffectProvider());
-    // S2：UI 进程启用调度器（扩展进程不读此配置，继续走旧路径），并把 job 事件落 run_event。
+    // S2：UI 进程启用调度器（扩展进程走 A2A 内联路径，见 ADR-0024 §2.7），并把 job 事件落 run_event。
     if (WRITE_JOB_UI_ENABLED) {
       WriteJobFlags.setEnabled(true);
     }

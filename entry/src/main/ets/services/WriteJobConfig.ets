@@ -3,6 +3,7 @@
  *
  * 路径: entry/src/main/ets/services/WriteJobConfig.ets
  * 职责: 只允许 UI 进程在启动时按此配置打开调度器；A2A 扩展进程（:agent）不读此配置，保持默认关闭。
+ *       A2A 单次整理走扩展内联，不经过调度器（ADR-0024 §2.7）。
  * 依赖: 无
  * 数据流: EntryAbility.onCreate() → WRITE_JOB_UI_ENABLED → WriteJobFlags.setEnabled()
  */

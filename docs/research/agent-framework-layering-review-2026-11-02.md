@@ -8,11 +8,11 @@
 
 ## 0. 先看结论（TL;DR）
 
-1. Agent 编排已完成 **workflow-first 收口**：`CommandExecutor`（统一入口）→ `CommandRouter`（preflight+路由）→ 四条 workflow（capture / generation / regenerate / prepared）；旧的 `DispatchGraph` / `CaptureBranch` / `NoteAgent` 已删除（spec 039）。
-2. 写入链路做了**双 lane 调度器 + 持久队列 + 跨进程 handoff**：`WriteJobScheduler`（interactive/background 双 lane、并发上限）→ `WriteJobPersistence` hooks → `agent_job` 表（schema v20）→ 启动恢复/租约；flag 已灰度打开（spec 038 / 040 / ADR-0024）。
-3. App 与 A2A 两条入口**共用同一编排**：都经 `CapturePipeline → CommandExecutor → workflow → NoteDao`，没有第二套笔记写入逻辑。
+1. Agent 编排已完成 **workflow-first 收口**：`CommandExecutor`（统一入口）→ `CommandRouter`（preflight+路由）→ 四条 workflow（capture / generation / regenerate / prepared）；旧的 `DispatchGraph` / `CaptureBranch` / `NoteAgent` 已删除（spec 039）。**注意**：capture 是唯一实体图；generation / regenerate / prepared 仍是 27–29 行转发壳，真实逻辑在 `core/dispatch/*Branch`（见 spec 039 §13.1）。
+2. 写入链路做了**双 lane 调度器 + 持久队列 + 跨进程 handoff**：`WriteJobScheduler`（interactive/background 双 lane、并发上限）→ `WriteJobPersistence` hooks → `agent_job` 表（schema v20）→ 启动恢复/租约；flag 已灰度打开（spec 038 / 040 / ADR-0024）。队列承接 UI 侧 inbox / 恢复 / 兜底；A2A 单次整理是扩展内联。
+3. App 与 A2A 两条入口**共用同一编排**：都经 `CapturePipeline → CommandExecutor → workflow → NoteDao`，没有第二套笔记写入逻辑；调度方式不同（App 交互式直连，A2A 单次整理扩展内联，队列只兜底）。
 4. 端A2A（小艺）侧：文本整理真机通；**图片入站是平台能力缺口**——小艺客户端不下发 image part（也不下发识别文字），应用侧无法拿到图片；卡片/App 跳转方案已按用户要求移除，当前纯文本引导（详见 §6）。
-5. 需要 review 的高风险点：**双进程共享 SQLite 写入**、**A2A 内联整理绕过调度器**（有意例外）、**Chat/ToolLoop 尚未并入 workflow 框架**、**A2A UX/错误语义**。
+5. 需要 review 的高风险点：**双进程共享 SQLite 写入**、**A2A 内联整理**（正式路径，ADR-0024 §2.7；残余 `SQLITE_BUSY` 风险待加固）、**Chat/ToolLoop 尚未并入 workflow 框架**、**A2A UX/错误语义**。
 
 ---
 
@@ -92,7 +92,7 @@ UI/VM → AiService.captureText → CapturePipeline.ingestTextOutcome
   ├─ flag 关：内存双 lane 队列（AsyncSemaphore/AsyncMutex + 写段串行）
   └─ flag 开：WriteJobPersistence.enqueue → AgentJobDao(agent_job) → claim(租约) → executor → finish(终态)
             启动：WriteJobBootstrap → recoverAllRunning(孤儿) + recover(queued) → submitRecovered
-            跨进程：WriteJobProducer（:agent 扩展只入队）
+            跨进程兜底：WriteJobProducer（当前无生产调用方；A2A 单次整理走扩展内联）
 ```
 
 ---
@@ -151,8 +151,8 @@ d8e4b9e   spec 039 S3：workflow-first 收口
 
 | # | 问题 | 说明 / 影响 | 当前处理 |
 |---|---|---|---|
-| R1 | **双进程共享 SQLite** | UI 进程与 `:agent` 扩展进程都初始化 DB、都可能写笔记；单执行者假定（UI 进程调度器）被 A2A 内联整理打破 | A2A 单题整理在扩展内联执行（有意例外，ADR-0024 §2.7 记录）；事件写入加 mutex/缓冲规避锁；reviewer 判断是否需要“扩展也只入队” |
-| R2 | **A2A 内联整理绕过调度器** | 不经过 WriteJobScheduler 的 lane/租约；若同时 App 大量写入，可能竞争 | 评估：A2A 走 scheduler.submit 是否更一致（代价：需 App/扩展 executor 协议） |
+| R1 | **双进程共享 SQLite** | UI 进程与 `:agent` 扩展进程都初始化 DB、都可能写笔记；单执行者假定（UI 进程调度器）被 A2A 内联整理打破 | **2026-11-02 已定**：A2A 内联是正式路径（ADR-0024 §2.1/§2.7），队列只兜底；残余 `SQLITE_BUSY` 与 `run_event` 序列问题待加固 |
+| R2 | **A2A 内联整理绕过调度器** | 不经过 WriteJobScheduler 的 lane/租约；若同时 App 大量写入，可能竞争 | **2026-11-02 已定**：保留内联（产品要求不打开 App 也能整理）；长期统一入口留待 spec 039 S4 的 `IngestGateway`，不在本轮改 |
 | R3 | **端A2A 图片能力缺口** | 小艺客户端不下发 image part/识别文字；应用侧无解 | 已调研+提单草稿；图片链路只能 云A2A / 等平台；当前纯文本引导 |
 | R4 | UI 卡片残留历史 | 旧会话里的 `uiExtensionCard` 可能触发客户端重试/转圈；新会话无卡片 | 代码已移除卡片回复；旧对话框建议新建 |
 | R5 | **Chat/ToolLoop 未并入 workflow** | Chat 仍走旧 ToolLoop/ReplyService；Agents 编排只覆盖笔记写入 | spec 039 S4 留待 spec 041；reviewer 判断优先级 |
@@ -164,9 +164,11 @@ d8e4b9e   spec 039 S3：workflow-first 收口
 
 ## 7. 请 Claude 重点回答的 6 个问题
 
+> **2026-11-02 决议（问题 2 / 3）**：A2A 单次整理内联是正式路径（ADR-0024 §2.1 / §2.7），队列只承接兜底与恢复；长期统一入口（`IngestGateway`）留待 spec 039 S4，不在本轮改。
+
 1. **分层**：`CommandExecutor/Router/4 workflows` 放 `agents` HSP、`CapturePipeline` 放 `entry/services/ai`，边界是否合理？是否应把 CapturePipeline 也上移到 agents，避免“入口适配层依赖编排层”倒置？
 2. **写路径一致性**：A2A 内联整理是否应统一走 `WriteJobScheduler.submit`（多执行者 + claim 租约），而不是扩展进程直写？若统一，如何避免 35s 预算与调度等待冲突？
-3. **进程模型**：UI 进程单写者（ADR-0024）与扩展内联写（R1/R2）目前并存；长期应选哪种？是否需要扩展侧只入队 + 前台补偿？
+3. **进程模型**：A2A 内联已定为正式路径（ADR-0024 §2.1/§2.7）；剩下的开放问题是跨进程写加固——`SQLITE_BUSY` 重试与 `run_event` 序列唯一化该放哪一层？
 4. **Chat 统一**：ToolLoop → ChatWorkflow 的迁移是否值得在比赛冻结期做？还是保持现状，仅在 spec 041 记录?
 5. **命令/事件契约**：`NoteCommand/NoteOutcome` + `run_event` 是否足够支撑可观测与重试？缺哪些字段（如 retryable、stage、cause）？
 6. **A2A UX**：平台不下发图片时，纯文本引导是否最优？有没有更优的“小艺侧识别 → 文本回传”官方路径（我们已调研：需要平台/云A2A）？

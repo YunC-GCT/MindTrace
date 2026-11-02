@@ -104,6 +104,8 @@ interface TaskStep {
 
 ### 3.4 进程边界（关键约束）
 
+> 2026-11-02 注：现行口径见 ADR-0024 §2.1 / §2.7——A2A 单次整理在 `:agent` 内联执行，队列只承接兜底与恢复；本节是早期目标态，§7.1 已把 MVP 收窄。
+
 - 小艺 `AgentExtAbility` 跑在 **`:agent` 独立进程**，不能与 UI 进程共享内存调度器。
 - 方案：**UI 进程持有全局 Scheduler**（唯一调度者）；扩展进程只做「轻量前置」（意图/OCR/计划 checkpoint）并把需要长任务的 step 写入 `TaskStore + AgentInboxQueue`（跨进程经 RDB），由 UI 进程消费；扩展进程自身对短任务（回复小艺）也有本地小并发限制。
 - 这样既避免跨进程锁复杂度，又能复用现有 inbox 模式。

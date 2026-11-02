@@ -16,6 +16,10 @@
  *   因此本文件禁止 import ModelRouter / OnDeviceLlm（及其依赖链）；端侧路由只在 UI 进程
  *   （ConversationWorkflowPorts）使用。
  *
+ * 写库模式（ADR-0024 §2.1/§2.7）: A2A 单次整理（单题/多题逐题/「全部」）在本扩展进程内联执行，
+ *   这是正式路径，不经过 WriteJobScheduler；超时/失败/批量溢出才回退 inbox/agent_job。
+ *   UI 进程的队列只承接兜底与恢复。两条路径共用 AgentIngestService → CapturePipeline → CommandExecutor。
+ *
  * 数据流:
  *   onCreate -> 组合根安装 OCR 能力（OcrRecognizerRegistry.install(CoreVisionOcrRecognizer)）
  *   onData(proxy, data) -> JSON.parse 取 id / params.message.parts[] 第一段 string text
@@ -24,8 +28,8 @@
  *     -> 回执意图命中：读 last-capture.json -> formatReceipt -> sendAnswer（不等配置、不调模型）
  *     -> 异步：等配置（≤4s）-> isConfigured -> ReplyService.complete（25s / 0 retry）
  *     -> 35s deadline 到点：取消同一个 token（LlmClient 内 destroy 底层 HTTP），只回一次 timeout
- *     -> sendAnswer(taskId, text, query)：命中拍题/选图意图时用 buildTaskSnapshotWithCard
- *        追加一个官方 uiExtensionCard part；否则是逐字节不变的纯文本单帧快照
+ *     -> sendAnswer(taskId, text, requestStartedAt)：一律发纯文本单帧快照；
+ *        旧版 uiExtensionCard 选图回复已移除（9e489fb2），保留 buildTaskSnapshotWithCard 的空卡片路径
  */
 import { AgentExtensionAbility, common, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -545,7 +549,7 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     });
   }
 
-  /** 整理计划中的一道题：持久化开启时只入队（跨进程 producer），否则同步执行。 */
+  /** 整理计划中的一道题：按 ADR-0024 §2.7 在扩展进程内联执行；超时/失败回退 inbox。 */
   private ingestPlanItem(taskId: string, plan: A2APlan, item: A2APlanItem): void {
     // 用户逐题确认后：直接在小艺里内联整理（无需打开 App）；超时/失败回退 inbox。
     this.ingestPlanItemNow(taskId, plan, item);
