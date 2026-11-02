@@ -174,3 +174,12 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - 已通过部分：`stage=a2a-image-ingest recalledChars=28`（跨消息 OCR 记忆读写正常）；
 - 未完成部分：内联 ingest 在 120s 内未返回（真机生成链路慢/排队，探针等待窗需调大；不影响 A2A 文本整理已有 `ingestTextBatch` 路径）；
 - A2A 图片闭环仍取决于小艺是否下发 image part：若只有空 text part，应用侧无法获得图片像素。
+
+### 9.5 文本整理 A2A 冒烟通过（2026-11-02）
+
+- 命令：`python scripts/a2a-smoke/a2a_smoke.py --text "整理成笔记：计算12减4乘2的值并写出运算顺序"`（自动新建小艺会话/进入智能体）；
+- 结果：`ok=true`，`reply_chars=39`，回复：
+  `已整理入库：计算12减4乘2的值并写出运算顺序（初中数学）· 本次整理 1 条`
+- hilog：`INTENT kind=text_ingest reason=ingest-phrase` → `TEXT_PLAN items=1` → `INGEST_TEXT done problems=1 title=计算12减4乘2的值并写出运算顺序`；
+- 结论：**纯文字 + 整理意图可在小艺里内联完成入库，无需打开 App、无卡片入口**；
+- 图片仍受小艺客户端限制（受控实测：UI 附图片发送后 A2A 仅 `text/plain`，图片不下发）；要“只传识别后文字”需小艺侧把 OCR 文本作为 text 转发。
