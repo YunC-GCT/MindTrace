@@ -167,17 +167,14 @@ test('图片整理意图：带图 +「整理雅可比」→ OCR 整理；带图�
   assert.equal(routeA2AIntent('整理雅可比', false, false).kind, 'pick_card');
 });
 
-test('小艺选图卡片：卡片按钮拉起 App 系统相册（UIExtension 内嵌 picker 不可用）', () => {
+test('无图/纯图片消息：纯文本引导（不再发卡片、不跳 App）', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.ok(ability.includes('sendAnswerWithImageCard'));
-  assert.ok(ability.includes('buildPickCardPartJson'));
-  assert.ok(ability.includes('图片不会直接传给智能体'));
-  assert.equal(ability.includes('startAbility('), false);
+  assert.equal(ability.includes('sendAnswerWithImageCard'), false);
+  assert.equal(ability.includes('buildPickCardPartJson'), false);
+  assert.ok(ability.includes('我在小艺里收不到图片本身'));
+  assert.ok(ability.includes('引用/粘贴过来并说「整理笔记」'));
   const card = read('entry/src/main/ets/pages/AgentUiCard.ets');
-  assert.ok(card.includes("ACTION_PICK: string = 'pick_from_card'"));
-  assert.ok(card.includes('ctx.startAbility(buildPickWant())'));
-  assert.equal(card.includes('PhotoPickerComponent({'), false);
-  assert.equal(card.includes('new photoAccessHelper.PhotoViewPicker'), false);
+  assert.ok(card.includes('AgentUIExtAbility'));
 });
 
 
