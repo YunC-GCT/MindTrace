@@ -167,3 +167,10 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - **跨消息图片内容**：`A2AImageContextStore` 在图片问答/OCR 成功后按会话键（含 default 兜底）记住 OCR 文本；下一条「整理成笔记」即使没有 image part，也直接取上次 OCR 文本内联整理（`ingestTextBatchNow`），**不打开 App**；
 - **删除 App 入口**：A2A 不再发送 `uiExtensionCard`（移除 `sendAnswerWithPickCard` / `buildPickCardPartJson` 调用、`A2A_UI_CARD`），无内容时只回文字引导；
 - 待真机：发图 +「整理成笔记」验证 image part → OCR → 入库；若图片仍未下发则仍是客户端限制。
+
+### 9.4 图片整理闭环探针（2026-11-02）
+
+- 新增 e2e `a2aImageIngestProbe`：写入 OCR 文本 → 跨消息读回 → 直接 `ingestSingleTextDirect`（不经过任何 App UI）；
+- 已通过部分：`stage=a2a-image-ingest recalledChars=28`（跨消息 OCR 记忆读写正常）；
+- 未完成部分：内联 ingest 在 120s 内未返回（真机生成链路慢/排队，探针等待窗需调大；不影响 A2A 文本整理已有 `ingestTextBatch` 路径）；
+- A2A 图片闭环仍取决于小艺是否下发 image part：若只有空 text part，应用侧无法获得图片像素。

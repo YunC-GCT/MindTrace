@@ -284,6 +284,10 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('ragProbe', DebugCaptureRunner.runRagProbe(this.context));
       return;
     }
+    if (mode === 'a2aImageIngestProbe') {
+      this.runDebugProbe('a2aImageIngestProbe', DebugCaptureRunner.runA2AImageIngestProbe(this.context));
+      return;
+    }
     if (mode === 'schedulerPersistEnqueue') {
       this.runDebugProbe('schedulerPersistEnqueue', DebugCaptureRunner.runSchedulerPersistEnqueue(this.context));
       return;

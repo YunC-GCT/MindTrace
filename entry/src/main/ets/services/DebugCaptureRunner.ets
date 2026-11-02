@@ -36,6 +36,7 @@ import { NoteDao } from '../database/NoteDao';
 import { RunStoreDao } from '../database/RunStoreDao';
 import { A2AInboxIngestService, IngestSummary } from './A2AInboxIngestService';
 import { AgentInboxQueue } from './AgentInboxQueue';
+import { A2AImageContextStore } from './A2AImageContextStore';
 import { buildInboxItem } from './AgentInboxModels';
 import { WRITE_JOB_RUN_PREFIX } from './WriteJobEvents';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from './WriteJobScheduler';
@@ -305,6 +306,29 @@ export class DebugCaptureRunner {
         'stage=done schedulerIntegration=0 err=' + (error as Error).message);
     } finally {
       WriteJobFlags.setEnabled(WRITE_JOB_UI_ENABLED);
+    }
+  }
+
+  /** 图片整理闭环 e2e：保存 OCR 文本 → 跨消息读回 → 直接内联整理（不经 App UI）。 */
+  static async runA2AImageIngestProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const startedAt: number = Date.now();
+    try {
+      const ocrText: string = '图片OCR探针：计算 6 + 7 的值，并写出运算顺序。';
+      await A2AImageContextStore.save(ctx, 'mindtrace-context', ocrText);
+      const material = await A2AImageContextStore.load(ctx, 'mindtrace-context');
+      if (material === null) {
+        throw new Error('recall-null');
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=a2a-image-ingest recalledChars=' + material.text.length.toString());
+      const outcome = await AgentIngestService.ingestSingleTextDirect(ctx, material.text) as NoteOutcome;
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done a2aImageIngest=1 kind=' + outcome.kind
+          + ' committed=' + (outcome.committed === true ? '1' : '0')
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done a2aImageIngest=0 err=' + (error as Error).message);
     }
   }
 
