@@ -36,6 +36,7 @@
 | [`on-device-llm-2026-10-24.md`](./on-device-llm-2026-10-24.md) | 2026-10-24 | API 26 端侧生成式模型能力盘点（含更正：漏检 localChatModel） | active (选型依据) |
 | [`xiaoyi-as-model-2026-10-24.md`](./xiaoyi-as-model-2026-10-24.md) | 2026-10-24 | 应用能否调用小艺并把文本回答拿回自己的界面 | active (能力边界) |
 | [`a2a-image-input-feasibility-2026-10-29.md`](./a2a-image-input-feasibility-2026-10-29.md) | 2026-10-29 | 小艺→端侧 Agent 图片输入协议可行性（Part 载体 / inputModes / 客户端丢图） | active (能力边界) |
+| [`a2a-image-ticket-draft-2026-11-02.md`](./a2a-image-ticket-draft-2026-11-02.md) | 2026-11-02 | 小艺端A2A 图片输入提单草稿（渠道/正文/附件清单/平台回复分支） | active (待提交) |
 
 
 ## Cross-reference
