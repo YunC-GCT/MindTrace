@@ -21,6 +21,9 @@ export const INTENT_PLAN_CONTINUE: string = 'plan_continue';
 export const INTENT_PLAN_WAITING: string = 'plan_waiting';
 export const INTENT_OCR: string = 'ocr';
 export const INTENT_IMAGE_QA: string = 'image_qa';
+/** 图片消息的二级意图：问答 or 整理（逐条判断，仅看随图文字）。 */
+export const IMAGE_INTENT_QA: string = 'image_qa';
+export const IMAGE_INTENT_INGEST: string = 'image_ingest';
 export const INTENT_PICK_CARD: string = 'pick_card';
 export const INTENT_TEXT_INGEST: string = 'text_ingest';
 export const INTENT_CHAT: string = 'chat';
@@ -83,9 +86,9 @@ export function routeA2AIntent(query: string, hasImages: boolean, hasPendingPlan
     return { kind: INTENT_PLAN_WAITING, reason: 'pending-plan' };
   }
   if (hasImages) {
-    // 带图：只要带「整理」类意图就 OCR 整理（如「整理雅可比」「帮我把图存成笔记」）；
-    // 纯提问（这题怎么做/讲一下）走图片问答，当场回答不入库。
-    if (hasIngestIntent(text)) {
+    // 带图：逐条判断随图文字——明确整理意图才入库，否则默认按“回答图片相关内容”处理。
+    const imageIntent: string = classifyImageIntent(text);
+    if (imageIntent === IMAGE_INTENT_INGEST) {
       return { kind: INTENT_OCR, reason: 'image-ingest-intent' };
     }
     return { kind: INTENT_IMAGE_QA, reason: 'image-question' };
@@ -104,6 +107,11 @@ export function routeA2AIntent(query: string, hasImages: boolean, hasPendingPlan
     return { kind: INTENT_PICK_CARD, reason: 'ingest-without-content' };
   }
   return { kind: INTENT_CHAT, reason: 'default-chat' };
+}
+
+/** 图片消息的逐条意图判断：只依据用户随图文字，显式整理意图才算整理。 */
+export function classifyImageIntent(text: string): string {
+  return hasIngestIntent(text) ? IMAGE_INTENT_INGEST : IMAGE_INTENT_QA;
 }
 
 /** 整理意图：显式短语，或任何带「整理 / 入库 / 存笔记」的说法（如图片 +「整理雅可比」）。 */

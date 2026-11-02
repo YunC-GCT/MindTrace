@@ -183,3 +183,14 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 - hilog：`INTENT kind=text_ingest reason=ingest-phrase` → `TEXT_PLAN items=1` → `INGEST_TEXT done problems=1 title=计算12减4乘2的值并写出运算顺序`；
 - 结论：**纯文字 + 整理意图可在小艺里内联完成入库，无需打开 App、无卡片入口**；
 - 图片仍受小艺客户端限制（受控实测：UI 附图片发送后 A2A 仅 `text/plain`，图片不下发）；要“只传识别后文字”需小艺侧把 OCR 文本作为 text 转发。
+
+### 9.6 图片消息逐条意图判断（2026-11-02）
+
+按用户口径：每张图片单独判断用途——
+
+- `classifyImageIntent(text)`（`A2AIntentRouter`）只看**随图文字**：
+  - 命中整理意图（「整理」「入库」「笔记+存/记/写」等）→ `image_ingest` → OCR 整理入库；
+  - 其余（提问 / 空文字 / 「讲解一下」「好的」等模糊文字）→ `image_qa` → OCR 后回答图片相关内容，不入库；
+- 路由仍保持：有未完成 OCR 计划时优先推进计划；带图 + 整理意图进 OCR checkpoint；无图文本按原 `text_ingest`/chat 分流；
+- 测试：`v7-a2a-intent` 覆盖 `image_ingest` / `image_qa` 的显式/空/模糊文字用例；gate PASS（pass=1201）；
+- 注意：该判断只在图片 part 真正到达时生效；当前小艺客户端仍未下发 image part（需平台侧修复）。

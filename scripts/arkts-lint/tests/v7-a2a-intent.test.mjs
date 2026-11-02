@@ -143,9 +143,22 @@ test('记忆键合并：contextId 与 default 按时间合并（跨请求无 con
 });
 
 
+test('图片逐条意图判断：显式整理→ingest；提问/空文字/模糊文字→qa', () => {
+  const mod = loadNoteReviewEtsModule('entry/src/main/ets/services/A2AIntentRouter.ets', { mocks });
+  assert.equal(mod.classifyImageIntent('帮我整理成笔记'), 'image_ingest');
+  assert.equal(mod.classifyImageIntent('整理雅可比'), 'image_ingest');
+  assert.equal(mod.classifyImageIntent('把这张图存到笔记'), 'image_ingest');
+  assert.equal(mod.classifyImageIntent('这题怎么做'), 'image_qa');
+  assert.equal(mod.classifyImageIntent(''), 'image_qa');
+  assert.equal(mod.classifyImageIntent('讲一下这个图'), 'image_qa');
+  assert.equal(mod.classifyImageIntent('好的'), 'image_qa');
+});
+
 test('图片整理意图：带图 +「整理雅可比」→ OCR 整理；带图提问 → image_qa', () => {
   const mod = loadNoteReviewEtsModule('entry/src/main/ets/services/A2AIntentRouter.ets', { mocks });
   assert.equal(mod.routeA2AIntent('整理雅可比', true, false).kind, 'ocr');
+  assert.equal(mod.routeA2AIntent('', true, false).kind, 'image_qa');
+  assert.equal(mod.routeA2AIntent('讲解一下这张图', true, false).kind, 'image_qa');
   assert.equal(mod.routeA2AIntent('帮我把这张图存成笔记', true, false).kind, 'ocr');
   assert.equal(mod.routeA2AIntent('这题怎么做', true, false).kind, 'image_qa');
   assert.equal(mod.hasIngestIntent('整理雅可比'), true);
