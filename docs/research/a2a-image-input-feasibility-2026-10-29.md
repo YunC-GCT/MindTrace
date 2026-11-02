@@ -105,3 +105,18 @@
 3. 应用侧无需改结构：`AgentImageParts` 已兼容 `url` / `raw` / `file.uri` 三大形状；若未来下发的是 `https://` URL，还需要补“下载到临时文件再 OCR”的分支（当前未实现，待确认平台载体）；
 4. 结论回到客户端/平台能力：需提单确认（草稿见本文件第五节），或等待小艺版本更新；应用侧没有其它配置可开。
 4. 若平台最终只给文字识别结果，文本整理链路已就绪（真机 A2A 冒烟 `ok=true`，不打开 App、无卡片入口）。
+
+## 2026-11-02 卡片选图实测（端A2A + AgentUIExtension）
+
+实现并真机验证了平台建议的路径二（卡片选图）：
+
+1. **卡片可渲染**：A2A 回复携带 `uiExtensionCard`（`cardId/bundleName/moduleName/abilityName/payload` 齐全）后，小艺能打开 `AgentUIExtAbility` 半屏卡片（hilog `A0A2A1` 有 `onCreate/onSessionCreate`，无 1011）；
+2. **半屏卡片内无法渲染系统相册**：
+   - 卡片里调用 `photoAccessHelper.PhotoViewPicker.select()` → 弹出相册壳但**图片网格空白**；
+   - 改为内嵌系统 `PhotoPickerComponent`（`PickerOptions/PickerController`）→ 卡片区域**空白**；
+   - 判断为 UIExtension（卡片）内再嵌套/内嵌系统相册组件不可用，属系统限制；
+3. **可行兜底**：卡片按钮 `startAbility(EntryAbility, mtAction=pick_from_card)` 可正常打开 MindTrace + 系统照片选择器（实拍已验证，图片网格正常），后续由 App 完成 OCR/整理/写本地库。
+4. 结论：**「不打开 App 的图片整理」在 UIExtension 卡片内无法实现**；图片链路只能二选一：
+   - 卡片/回复按钮 → 短暂打开 App 相册（当前实现，最后写入本地笔记库）；
+   - 云A2A 接收 file part（图片上云，用户留在小艺）。
+   文本整理仍可在小艺内联完成、无需打开 App（已真机冒烟通过）。
