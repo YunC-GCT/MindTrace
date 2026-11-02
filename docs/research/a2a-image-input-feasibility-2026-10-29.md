@@ -52,3 +52,33 @@
 - 小艺客户端丢弃图片 part 的根因（平台开关已开 vs 客户端 bug）：需平台/小艺侧日志，应用侧无法验证。
 - `uiExtensionCard` 的 Want 组装规则（abilityName 来源）：无文档，需提工单。
 - `type:"agentUI"` 取值未在本次 6 篇出现（属工具链 schema 枚举，见 spec 031 §4.5），需查 `modulecheck` 确认。
+
+---
+
+## 2026-11-02 更新：小艺开放平台官方文档合集 + 受控复测
+
+来源：用户调研的 [`a2a-image-input-docs-2026-11-02.md`]（本机 `Documents/MindTrace-a2a-docs-2026-11-02/`，采集自 developer.huawei.com 小艺开放平台文档中心，页面更新时间 2026-10-15 19:40）。
+
+### 新增确认
+
+| # | 事实 | 依据 |
+|---|---|---|
+| 10 | 官方明示 `Part<url>` 文件引用「支持双向传递」，字段 `url / filename / mediaType`；mediaType 白名单含 image/jpeg、png、gif、webp、bmp、pdf、csv、octet-stream；该页**无 raw/base64** | 《端A2A Part结构定义》agent2agent-exp-part-0000002735605000 |
+| 11 | 《对话交互》只给出 **Agent→小艺** 的文件示例；**入站（小艺→Agent）无图片示例** | agent2agent-chat-0000002735604996 |
+| 12 | 平台控制台「编排 → 输入文件」只有：照片开关（支持上传照片/拍摄）、发送方式（直接发送 / 进待发送区发送）、快捷指令；**没有「识别结果转 text」开关** | input-file-settings-0000002775710043 |
+| 13 | 该页示例报文是 **云A2A 形状**：`parts:[{kind:"text",text:...},{kind:"file",file:{name,fileId,uri,mimeType}}]`，与端A2A 手写 proto-JSON（`parts:[{mediaType,text}]`）不是同一形状 | 同上 |
+| 14 | 官方接入要求：「只有 Agent 真正处理图片或文件类型时，才开启输入文件能力，并同步适配 A2A 消息中的媒体内容」；AgentCard 只有 `defaultInputModes` / `skills[].inputModes`，无视觉/识图字段 | device-a2a-quickstart-0000002733266338；agentcard-0000002765284425 |
+| 15 | 受控复测（MRO-W00，小艺 11.7.8.339，2026-11-02 11:46）：在小艺聊天里**从「+ → 照片」选图 + 输入「整理成笔记」→ 发送**，A2A 实际只收到 `parts=1 / part[0] media=text/plain text=5`；图片未出现在任何 part。图片那轮若单独发，则是 `text=""` 空 text part | 真机 hilog `MindTraceA2A` |
+
+### 结论（更新后）
+
+1. **协议层仍支持图片**（Part<url> 双向），应用侧解析已就绪（`AgentImageParts` 兼容 `{url,filename,mediaType}` / `{raw}` / 云形状 `{kind:file,file:{uri,mimeType}}`），但 **客户端组包阶段没有把图放进 parts**——这是当前版本小艺客户端/平台能力缺口，应用侧无法通过代码补齐。
+2. **平台开关不负责转发图片**：照片开关只决定用户能否选图、以及「直接发送/待发送区」交互；它不会把图片识别结果或 image part 自动补进 A2A 报文。
+3. **可行路径**：
+   - A（体验最好，等平台）：小艺把图片以 `Part<url>`（或识别后的文字）转发给 Agent；我们代码无需改结构，只补 OCR/整理即可（已有 `image_qa` 与 OCR 整理分流）；
+   - B（当前可用）：用户先让小艺识别/转写图片文字，再把文字发给 Agent，说「整理成笔记」——已在真机 A2A 冒烟通过（`ok=true`，回复“已整理入库…”），且不打开 App、不再发卡片入口；
+   - C：App 内发图（完整 OCR/整理）。
+4. 需向平台确认的问题（已整理给用户）：
+   - 端A2A 是否计划支持入站 `Part<url>` 图片，或把图片识别结果作为 text 转发？
+   - 平台「支持上传照片」已开启、AgentCard 已声明 image/*，为何客户端组包仍只有 text？（附请求报文/时间点/设备版本）
+   - 「发送方式=进待发送区发送」是否为图片+文字同帧发送的必要条件？当前受控测试在待发送区附文字后仍无 image part。
