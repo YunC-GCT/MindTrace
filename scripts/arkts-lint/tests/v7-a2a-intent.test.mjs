@@ -167,21 +167,17 @@ test('图片整理意图：带图 +「整理雅可比」→ OCR 整理；带图�
   assert.equal(routeA2AIntent('整理雅可比', false, false).kind, 'pick_card');
 });
 
-test('A2A 不再发「进入 App」卡片；无图整理用上一次图片 OCR 文本内联完成', () => {
+test('小艺选图卡片：卡片按钮拉起 App 系统相册（UIExtension 内嵌 picker 不可用）', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.ok(ability.includes('answerWithLastImageMaterial'));
-  assert.ok(ability.includes('A2AImageContextStore.save(this.context, conversationKey, text)'));
-  assert.ok(ability.includes('A2AImageContextStore.load(this.context, conversationKey)'));
-  assert.ok(ability.includes('IMAGE_RECALL ingest chars='));
-  assert.ok(ability.includes('不需要打开 App'));
-  assert.ok(ability.includes('小艺这边只把文字转给智能体'));
-  assert.equal(ability.includes('sendAnswerWithPickCard'), false);
-  assert.equal(ability.includes('buildPickCardPartJson'), false);
-  assert.equal(ability.includes('A2A_UI_CARD'), false);
-  const store = read('entry/src/main/ets/services/A2AImageContextStore.ets');
-  assert.ok(store.includes('static async save'));
-  assert.ok(store.includes('static async load'));
-  assert.ok(store.includes("loadExact(context, 'default')"));
+  assert.ok(ability.includes('sendAnswerWithImageCard'));
+  assert.ok(ability.includes('buildPickCardPartJson'));
+  assert.ok(ability.includes('图片不会直接传给智能体'));
+  assert.equal(ability.includes('startAbility('), false);
+  const card = read('entry/src/main/ets/pages/AgentUiCard.ets');
+  assert.ok(card.includes("ACTION_PICK: string = 'pick_from_card'"));
+  assert.ok(card.includes('ctx.startAbility(buildPickWant())'));
+  assert.equal(card.includes('PhotoPickerComponent({'), false);
+  assert.equal(card.includes('new photoAccessHelper.PhotoViewPicker'), false);
 });
 
 

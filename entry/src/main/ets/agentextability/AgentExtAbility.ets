@@ -86,6 +86,7 @@ import { AgentImagePart, AgentPart, collectImageParts, joinTextParts, mediaTypeO
 import { OcrService } from '../services/OcrService';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { buildTaskSnapshotWithCard, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
+import { buildPickCardPartJson } from './A2AUiCard';
 
 const TAG: string = 'MindTraceA2A';
 
@@ -949,9 +950,8 @@ export default class AgentExtAbility extends AgentExtensionAbility {
     A2AImageContextStore.load(this.context, conversationKey)
       .then((material: A2AImageMaterial | null): void => {
         if (material === null) {
-          this.sendAnswer(taskId,
-            '小艺这边只把文字转给智能体，图片本身不会传过来。请先让小艺识别图片里的题目文字'
-              + '（或直接输入文字），再发「整理成笔记」，我就能在小艺里直接整理入库。', 0);
+          this.sendAnswerWithImageCard(taskId,
+            '图片不会直接传给智能体。点下面的卡片从相册选图，我在小艺里直接 OCR 整理入库（不上传云端、不打开 App）。');
           return;
         }
         hilog.info(DOMAIN, TAG, 'IMAGE_RECALL ingest chars=%{public}d', material.text.length);
@@ -1212,6 +1212,12 @@ export default class AgentExtAbility extends AgentExtensionAbility {
    */
   private sendAnswer(taskId: string, text: string, requestStartedAt: number): void {
     this.sendSnapshot(taskId, text, requestStartedAt, '');
+  }
+
+  /** 带「选图整理」卡片：卡片页在扩展进程内直接调系统照片选择器并入库，不打开 App。 */
+  private sendAnswerWithImageCard(taskId: string, text: string): void {
+    const cardPartJson: string = buildPickCardPartJson('');
+    this.sendSnapshot(taskId, text, 0, cardPartJson);
   }
 
   /** 唯一发帧出口：拼快照 + 发一帧 + 计数日志。 */

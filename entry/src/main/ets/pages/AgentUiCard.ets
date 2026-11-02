@@ -1,22 +1,20 @@
 /**
- * AgentUiCard.ets — 小艺拍题/选图半屏卡片
+ * AgentUiCard.ets — 小艺半屏「选图整理」卡片（App 相册兜底路径）
  *
  * 路径: entry/src/main/ets/pages/AgentUiCard.ets
- * 职责: 作为 AgentUIExtAbility 的半屏内容，向用户说明下一步，
- *       并把「从相册选图」/「拍照整理」意图通过 Want 参数交回 EntryAbility。
- * 依赖: @kit.AbilityKit (common / UIExtensionContentSession / Want)、
- *       @kit.BasicServicesKit (BusinessError)、@kit.PerformanceAnalysisKit (hilog)、
- *       common (UI tokens)
+ * 职责: 作为 AgentUIExtAbility 的半屏内容。系统限制：UIExtension 半屏卡片内无法渲染
+ *       PhotoViewPicker / PhotoPickerComponent（实测空白），因此卡片按钮改为拉起 EntryAbility
+ *       的系统照片选择器（pick_from_card），由 App 完成 OCR/整理/入库；图片仍不出应用沙箱。
+ * 依赖: @kit.AbilityKit、@kit.BasicServicesKit、@kit.PerformanceAnalysisKit、common UI tokens。
  *
  * 数据流:
- *   AgentUIExtAbility.onSessionCreate -> LocalStorage('session' / 'cardQuery') -> AgentUiCard
- *     -> 「从相册选图」-> startAbility(EntryAbility, { mtAction: 'pick_from_card' })
- *     -> 「拍照整理」  -> startAbility(EntryAbility, { mtAction: 'camera_from_card' })
- *     -> 成功后 terminateSelf()；失败则页面显示「请在 MindTrace 里点『+』选图」
+ *   AgentUIExtAbility.onSessionCreate -> LocalStorage('session') -> AgentUiCard
+ *     -> 点「从相册选图并整理」 -> startAbility(EntryAbility, mtAction=pick_from_card)
+ *     -> App 内系统照片选择器 -> OCR/整理/写本地笔记库
  *
- * 尺寸:
- *   - 根容器只做 100% 宽度与自适应高度，不铺深色全屏底；
- *   - 卡片本身 maxWidth 520，平板/折叠屏上居中收窄。
+ * 约束:
+ *   - 卡片自身不渲染相册（UIExtension 嵌套/内嵌 picker 实测空白）；
+ *   - 图片不上传云端，最终写入设备本地笔记库。
  */
 import { common, UIExtensionContentSession, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -48,35 +46,28 @@ const SESSION_KEY: string = 'session';
 const QUERY_KEY: string = 'cardQuery';
 const MT_BUNDLE: string = 'com.example.mindtrace';
 const ENTRY_ABILITY: string = 'EntryAbility';
-/** 与 EntryAbility.readCardAction 约定的两个动作 */
 const ACTION_PICK: string = 'pick_from_card';
-const ACTION_CAMERA: string = 'camera_from_card';
 
-/** 卡片文案集中存放，避免 build() 内散落字符串。 */
 interface AgentUiCardCopy {
   title: string;
   description: string;
   albumAction: string;
-  cameraAction: string;
+  doneAction: string;
   errorText: string;
 }
 
 const CARD_COPY: AgentUiCardCopy = {
   title: 'MindTrace 整理',
-  description: '点下方按钮选择题目图片',
-  albumAction: '从相册选图',
-  cameraAction: '拍照整理',
-  errorText: '请在 MindTrace 里点『+』选图',
+  description: '小艺不会把图片直接传给智能体。点下面按钮打开系统相册选一张题目图片，'
+    + 'MindTrace 会就地 OCR 并整理入库（图片不出应用沙箱）。',
+  albumAction: '从相册选图并整理',
+  doneAction: '完成',
+  errorText: '打开相册失败，请在 MindTrace App 里点「+」选图。',
 };
 
-/**
- * 组装拉起 EntryAbility 的 Want。
- * ArkTS 的 arkts-no-untyped-obj-literals 不接受 Record<string, Object> 字面量，
- * 因此先建空 Record 再按键赋值（与 skill/skillability/SkillAbility 同一写法）。
- */
-function buildCaptureWant(action: string): Want {
+function buildPickWant(): Want {
   const parameters: Record<string, Object> = {};
-  parameters['mtAction'] = action;
+  parameters['mtAction'] = ACTION_PICK;
   parameters['mtSource'] = 'agent_ui';
   const want: Want = {
     bundleName: MT_BUNDLE,
@@ -91,6 +82,7 @@ function buildCaptureWant(action: string): Want {
 struct AgentUiCard {
   private session: UIExtensionContentSession | undefined = undefined;
   @State errorText: string = '';
+  @State busy: boolean = false;
 
   aboutToAppear(): void {
     const storage: LocalStorage | undefined = this.getUIContext().getSharedLocalStorage();
@@ -104,23 +96,35 @@ struct AgentUiCard {
       this.session === undefined ? 'missing' : 'ready');
   }
 
-  /** 先拉起 EntryAbility 处理 mtAction，成功后再关闭卡片。 */
-  private openApp = (action: string): void => {
+  private openPickerInApp = (): void => {
+    if (this.busy) {
+      return;
+    }
+    this.busy = true;
     this.errorText = '';
     const ctx: common.UIExtensionContext = getContext(this) as common.UIExtensionContext;
-    ctx.startAbility(buildCaptureWant(action))
+    ctx.startAbility(buildPickWant())
       .then((): void => {
-        hilog.info(DOMAIN, TAG, 'startAbility(EntryAbility) 成功: mtAction=%{public}s', action);
+        hilog.info(DOMAIN, TAG, 'AGENT_UI startAbility(pick_from_card) ok');
         ctx.terminateSelf().catch((err: BusinessError): void => {
-          hilog.warn(DOMAIN, TAG, 'terminateSelf 失败 code=%{public}d message=%{public}s',
+          hilog.warn(DOMAIN, TAG, 'terminateSelf failed code=%{public}d message=%{public}s',
             err.code, err.message);
         });
       })
       .catch((err: BusinessError): void => {
-        hilog.error(DOMAIN, TAG, 'startAbility(EntryAbility) 失败 code=%{public}d message=%{public}s',
+        hilog.error(DOMAIN, TAG, 'AGENT_UI startAbility failed code=%{public}d message=%{public}s',
           err.code, err.message);
         this.errorText = CARD_COPY.errorText;
+        this.busy = false;
       });
+  };
+
+  private closeCard = (): void => {
+    const ctx: common.UIExtensionContext = getContext(this) as common.UIExtensionContext;
+    ctx.terminateSelf().catch((err: BusinessError): void => {
+      hilog.warn(DOMAIN, TAG, 'terminateSelf failed code=%{public}d message=%{public}s',
+        err.code, err.message);
+    });
   };
 
   build() {
@@ -141,6 +145,15 @@ struct AgentUiCard {
           .lineHeight(LH_COMFORT)
           .textAlign(TextAlign.Start)
 
+        if (this.errorText.length > 0) {
+          Text(this.errorText)
+            .fontSize(F_SM)
+            .fontColor(DANGER)
+            .width('100%')
+            .margin({ top: S_3 })
+            .textAlign(TextAlign.Start)
+        }
+
         Button(CARD_COPY.albumAction)
           .width('100%')
           .height(44)
@@ -150,11 +163,12 @@ struct AgentUiCard {
           .fontSize(F_MD)
           .fontWeight(W_SEMIBOLD)
           .borderRadius(R_MD)
+          .enabled(!this.busy)
           .onClick((): void => {
-            this.openApp(ACTION_PICK);
+            this.openPickerInApp();
           })
 
-        Button(CARD_COPY.cameraAction)
+        Button(CARD_COPY.doneAction)
           .width('100%')
           .height(44)
           .margin({ top: S_3 })
@@ -164,17 +178,8 @@ struct AgentUiCard {
           .borderRadius(R_MD)
           .border({ width: 1, color: BORDER })
           .onClick((): void => {
-            this.openApp(ACTION_CAMERA);
+            this.closeCard();
           })
-
-        if (this.errorText.length > 0) {
-          Text(this.errorText)
-            .fontSize(F_SM)
-            .fontColor(DANGER)
-            .width('100%')
-            .margin({ top: S_3 })
-            .textAlign(TextAlign.Start)
-        }
       }
       .width('100%')
       .constraintSize({ maxWidth: 520 })
