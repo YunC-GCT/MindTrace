@@ -8,7 +8,7 @@
         "organization": "MindTrace",
         "url": "https://github.com/YunC-GCT/MindTrace"
       },
-      "version": "1.0.2",
+      "version": "1.0.3",
       "documentationUrl": "https://github.com/YunC-GCT/MindTrace/blob/main/README.md",
       "capabilities": {
         "streaming": false,
@@ -18,7 +18,6 @@
       },
       "defaultInputModes": [
         "text/plain",
-        "image/*",
         "image/jpeg",
         "image/png",
         "image/webp",
@@ -43,15 +42,6 @@
             "存笔记：设 A 为 3 阶方阵，证明 |2A| = 8|A|",
             "把这几张图里的数学题整理成笔记",
             "帮我整理这道题"
-          ],
-          "inputModes": [
-            "text/plain",
-            "image/*",
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-            "image/bmp",
-            "image/gif"
           ],
           "outputModes": [
             "text/plain"

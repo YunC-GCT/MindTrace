@@ -71,3 +71,19 @@
   - 支持入站 `url`：我方补 https 下载/本地 file:// OCR 分支并真机验证；
   - 只支持文字转发：维持当前文本整理链路；
   - 不支持：保留 App 内图片入口 + 小艺识图转文字兜底。
+
+## 平台反馈（2026-11-02）与我们的处理
+
+平台（工单/运营助手）给出 5 条排查方向，逐条对照：
+
+| # | 平台原因 | 我们的处理 |
+|---|---|---|
+| 1 | `defaultInputModes` 用 `image/*` 通配符可能不被识别，要求具体 MIME、单元素 ≤32 字节 | ✅ 已改为 `["text/plain","image/jpeg","image/png","image/webp","image/bmp","image/gif"]`（不再含 `image/*`） |
+| 2 | skill 级 `inputModes` 会覆盖 `defaultInputModes`，若只含 text/plain 则不下发图片 | ✅ 已删除 skill 内 `inputModes`，统一继承 Agent 级默认值 |
+| 3 | 改 AgentCard 后未重装应用/未重启小艺，客户端仍用旧卡 | ⏳ 需按平台三件事：重新导入 AgentCard → 重发真机测试 → 重启小艺；我方 HAP/HSP 已重装 |
+| 4 | 照片开关只是权限前提，只有用户在对话里主动附加图片才会带 part | ✅ 受控测试已主动「+ → 照片」附加图片 + 文字发送 |
+| 5 | 解析方式可能漏掉图片 part（`getUserInput` 只返回文本；图片在 `url`+`mediaType`） | ✅ 我方是手写 JSON-RPC：`onData` 打印完整 `raw` 与逐 part 字段 `media=… text=… raw=… url=… file=…`；图片在 `url`/`file.uri`/`raw` 时会进 `AgentImageParts`，不存在只读 text 的漏解析 |
+
+- AgentCard 版本升至 **1.0.3**；
+- 平台在反馈末尾建议「打印出的 parts 确实只有 text/plain 且配置无误时提工单/由平台定位路由策略」——与当前现象一致；
+- 下一步：用户重新导入 AgentCard + 重启小艺后，我方再跑一次受控图片测试并复查 `parts`。
