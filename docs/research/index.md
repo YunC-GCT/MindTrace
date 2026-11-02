@@ -37,6 +37,7 @@
 | [`xiaoyi-as-model-2026-10-24.md`](./xiaoyi-as-model-2026-10-24.md) | 2026-10-24 | 应用能否调用小艺并把文本回答拿回自己的界面 | active (能力边界) |
 | [`a2a-image-input-feasibility-2026-10-29.md`](./a2a-image-input-feasibility-2026-10-29.md) | 2026-10-29 | 小艺→端侧 Agent 图片输入协议可行性（Part 载体 / inputModes / 客户端丢图） | active (能力边界) |
 | [`a2a-image-ticket-draft-2026-11-02.md`](./a2a-image-ticket-draft-2026-11-02.md) | 2026-11-02 | 小艺端A2A 图片输入提单草稿（渠道/正文/附件清单/平台回复分支） | active (待提交) |
+| [`agent-framework-layering-review-2026-11-02.md`](./agent-framework-layering-review-2026-11-02.md) | 2026-11-02 | Agent 框架/产品分层现状交接（供外部 review：编排、双进程写库、A2A 图片缺口） | active（review 输入） |
 
 
 ## Cross-reference
