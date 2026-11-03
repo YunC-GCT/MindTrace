@@ -11,7 +11,7 @@
  * 约束: UI 和测试只消费本文件的类型；来源必须来自 NoteEvidenceService 构造的真实引用
  */
 
-import { NoteEvidenceCitation } from './NoteEvidenceModels';
+import { NoteEvidenceCitation, NoteEvidenceContext } from './NoteEvidenceModels';
 
 export type NoteReviewIntent = 'explain' | 'compare' | 'prerequisite' | 'locate' | 'quiz';
 
@@ -78,4 +78,21 @@ export function copyNoteEvidenceCitation(citation: NoteEvidenceCitation): NoteEv
     subject: citation.subject,
     chapter: citation.chapter,
   };
+}
+
+/** 复习回答的计划类型：直接可答 / 硬拒答 / 走模型。 */
+export type NoteReviewPlanKind = 'none' | 'terminal' | 'model';
+
+export interface NoteReviewPlan {
+  kind: NoteReviewPlanKind;
+  answer: NoteReviewAnswer;
+  displayText: string;
+  modelUserContent: string;
+  evidence?: NoteEvidenceContext;
+  quizCount: number;
+}
+
+export interface NoteReviewFinalization {
+  answer: NoteReviewAnswer;
+  displayText: string;
 }

@@ -29,10 +29,10 @@ import {
   Logger,
   StateGraph,
 } from 'common';
-import { ReplyContext } from '../../services/IntentClassifier';
-import type { TextIntent } from '../../services/IntentClassifier';
-import { AppIntentRouter } from '../../services/AppIntentRouter';
-import type { AppIntentDecision } from '../../services/AppIntentRules';
+import { ReplyContext } from 'agents';
+import type { TextIntent } from 'agents';
+import { AppIntentRouter } from 'agents';
+import type { AppIntentDecision } from 'agents';
 import {
   ConversationProgressStep,
   ConversationState,
@@ -40,9 +40,9 @@ import {
   ConversationRequest,
   ChatMessageOrigin,
   ChatMessageOutcome,
-} from './ConversationState';
+} from 'agents';
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
-import { StreamReplyResult } from '../../services/ReplyService';
+import { StreamReplyResult } from 'agents';
 import { streamErrorText } from 'common';
 import {
   NoteDraftReadyEvent,
@@ -57,13 +57,11 @@ import {
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from 'common';
 import { NoteGenerationContextResult } from 'common';
-import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
+import { NoteEvidenceService } from '../../services/NoteEvidenceService';
+import type { NoteEvidencePort, NoteEvidenceStreamFilterPort } from 'common';
 import { NoteReviewAnswer } from 'common';
-import {
-  NoteReviewFinalization,
-  NoteReviewPlan,
-  NoteReviewService,
-} from '../../services/NoteReviewService';
+import { NoteReviewService } from '../../services/NoteReviewService';
+import type { NoteReviewFinalization, NoteReviewPlan, NoteReviewPort } from 'common';
 import { ConversationRunRef } from 'common';
 import { requireConversationRunRef } from 'common';
 import { CancellationToken } from 'common';
@@ -118,8 +116,8 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   private readonly toolReplyService: IConversationToolPort | undefined;
   private readonly capturePort: IConversationCapturePort;
   private readonly noteRoute: IConversationNoteRoutePort;
-  private evidenceService: NoteEvidenceService | null = null;
-  private reviewService: NoteReviewService | null = null;
+  private evidenceService: NoteEvidencePort | null = null;
+  private reviewService: NoteReviewPort | null = null;
   private readonly cancellationTokens: Map<string, CancellationToken> = new Map<string, CancellationToken>();
   private readonly runOrigins: Map<string, ChatMessageOrigin> = new Map<string, ChatMessageOrigin>();
   private readonly reportedErrorRuns: Set<string> = new Set<string>();
@@ -831,7 +829,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const msgId: number = this.cbs.addAiMsgEmpty(ref, this.originFor(ref));
       this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
-      const citationFilter: NoteEvidenceStreamFilter = this.getEvidenceService().createStreamFilter(evidence);
+      const citationFilter: NoteEvidenceStreamFilterPort = this.getEvidenceService().createStreamFilter(evidence);
       const streamStartedAt: number = Date.now();
       let firstChunkMs: number = -1;
       let streamedChars: number = 0;
@@ -1010,7 +1008,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         plan.modelUserContent,
         plan.evidence,
       );
-      const citationFilter: NoteEvidenceStreamFilter = this.getReviewService().createStreamFilter(plan);
+      const citationFilter: NoteEvidenceStreamFilterPort = this.getReviewService().createStreamFilter(plan);
       const streamResult: StreamReplyResult = await this.replyService.stream(
         replyContext,
         (event: StreamEvent): void => {
@@ -1548,14 +1546,14 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       : this.getEvidenceService().formatRetrievalStatus(evidence);
   }
 
-  private getEvidenceService(): NoteEvidenceService {
+  private getEvidenceService(): NoteEvidencePort {
     if (this.evidenceService === null) {
       this.evidenceService = new NoteEvidenceService();
     }
     return this.evidenceService;
   }
 
-  private getReviewService(): NoteReviewService {
+  private getReviewService(): NoteReviewPort {
     if (this.reviewService === null) {
       this.reviewService = new NoteReviewService();
     }

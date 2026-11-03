@@ -22,7 +22,7 @@ import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import { RagKitProbe } from './RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
 import { A2AChatContext, A2AChatContextResult } from './A2AChatContext';
-import { AppIntentDecision, classifyAppIntentLocal } from './AppIntentRules';
+import { AppIntentDecision, classifyAppIntentLocal } from 'agents';
 import { isDuplicateOf } from 'common';
 import {
   LegacyDedupeEntry,

@@ -65,7 +65,7 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 - [X] T009 [US3] Define the structured StreamEvent event family and migrate `LlmStreamCallback` / `LlmCallRequest.onDelta` contract in `common/src/main/ets/llm/LlmTypes.ets`
 - [X] T010 [US3] Export StreamEvent-related types for entry consumers in `common/src/main/ets/Index.ets`
 - [X] T011 [US3] Update LlmClient stream callback references to the structured event contract in `common/src/main/ets/llm/LlmClient.ets`
-- [X] T012 [US3] Update ReplyService stream sink contract to accept structured stream events in `entry/src/main/ets/services/ReplyService.ets`
+- [X] T012 [US3] Update ReplyService stream sink contract to accept structured stream events in `agents/src/main/ets/chat/ReplyService.ets`
 - [X] T013 [US3] Update ConversationWorkflow callback contract to accept structured stream events in `entry/src/main/ets/workflows/conversation/ConversationTypes.ets`
 
 **Checkpoint**: Structured protocol compiles through type surfaces; old stream callback shape is no longer the primary contract.
@@ -87,7 +87,7 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 - [X] T016 [US1] Implement SSE payload to StreamEvent conversion for `thinking` and `text` events in `common/src/main/ets/llm/LlmClient.ets`
 - [X] T017 [US1] Route parsed StreamEvent objects through LlmClient stream buffer and final-buffer processing in `common/src/main/ets/llm/LlmClient.ets`
-- [X] T018 [US1] Forward structured stream events through ReplyService without filtering out `thinking` events in `entry/src/main/ets/services/ReplyService.ets`
+- [X] T018 [US1] Forward structured stream events through ReplyService without filtering out `thinking` events in `agents/src/main/ets/chat/ReplyService.ets`
 - [X] T019 [US1] Forward structured stream events through ConversationWorkflow streaming reply handling in `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
 - [X] T020 [US1] Forward structured stream events through AgentChatService adapter callbacks in `entry/src/main/ets/services/AgentChatService.ets`
 - [X] T021 [US1] Consume `thinking` events into `reasoning` and `text` events into `content` in `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets`
@@ -110,7 +110,7 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 ### Implementation for User Story 2
 
 - [X] T024 [US2] Remove reasoning-to-content fallback emission from SSE delta handling in `common/src/main/ets/llm/LlmClient.ets`
-- [X] T025 [US2] Ensure ReplyService stream result accumulates only `text` events as final answer content in `entry/src/main/ets/services/ReplyService.ets`
+- [X] T025 [US2] Ensure ReplyService stream result accumulates only `text` events as final answer content in `agents/src/main/ets/chat/ReplyService.ets`
 - [X] T026 [US2] Ensure interruption and fallback UI messages are appended through the final-answer text path in `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
 - [X] T027 [US2] Ensure persisted streamed assistant messages contain final answer text only in `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
 
@@ -132,7 +132,7 @@ description: "Task list for 019 Reasoning Process Display P0 — #111 StreamEven
 
 - [X] T029 [US4] Change LlmConfig initial thinking default to enabled in `common/src/main/ets/llm/LlmConfig.ets`
 - [X] T030 [US4] Change LlmConfig preferences load fallback and reset defaults to enabled thinking in `common/src/main/ets/llm/LlmConfig.ets`
-- [X] T031 [US4] Remove ReplyService explicit `enableThinking: false` overrides from complete, stream, and fallback reply paths in `entry/src/main/ets/services/ReplyService.ets`
+- [X] T031 [US4] Remove ReplyService explicit `enableThinking: false` overrides from complete, stream, and fallback reply paths in `agents/src/main/ets/chat/ReplyService.ets`
 
 **Checkpoint**: Chat reply requests use LlmClient config fallback for thinking supply instead of forcing thinking off.
 

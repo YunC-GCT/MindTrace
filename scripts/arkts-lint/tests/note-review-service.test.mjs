@@ -100,10 +100,10 @@ function loadConversationWorkflow(overrides = {}) {
             async summarizeSessionIfNeeded() {}
           },
         },
-        'entry/src/main/ets/services/IntentClassifier.ets': {
+        'agents/src/main/ets/chat/IntentClassifier.ets': {
           IntentClassifier: overrides.IntentClassifier ?? class IntentClassifier {},
         },
-        'entry/src/main/ets/services/ReplyService.ets': {
+        'agents/src/main/ets/chat/ReplyService.ets': {
           ReplyService: class ReplyService {
             constructor(_classifier) {}
             normalize(value) {

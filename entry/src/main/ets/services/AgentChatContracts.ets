@@ -12,7 +12,7 @@ import { common } from '@kit.AbilityKit';
 import { NoteContextClarification, NoteDraftReadyEvent } from 'common';
 import { NoteReviewAnswer } from 'common';
 import { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
-import { ChatMessageOrigin, ChatMessageOutcome } from '../workflows/conversation/ConversationState';
+import { ChatMessageOrigin, ChatMessageOutcome } from 'agents';
 import { ConversationRunRef } from 'common';
 
 export interface AgentChatCallbacks {
@@ -44,3 +44,9 @@ export interface AgentChatCallbacks {
   ) => void;
   onOcrBlank?: (ref: ConversationRunRef, imageUri: string) => void;
 }
+
+// UI 层（overlays）不得直接 import 'agents'：这里代为转发对话图契约（ui-layer-dependency 规则）。
+export type { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
+export type {
+  ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep,
+} from 'agents';

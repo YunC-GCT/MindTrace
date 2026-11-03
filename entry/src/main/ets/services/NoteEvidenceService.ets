@@ -12,7 +12,14 @@
 
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper, ToolCatalog, ToolRegistry, ToolResult } from 'common';
-import type { NoteDetail, NoteReadPort } from 'common';
+import type {
+  NoteDetail,
+  NoteReadPort,
+  NoteEvidenceOptions,
+  CitationVersionRef,
+  NoteEvidencePort,
+  NoteEvidenceStreamFilterPort,
+} from 'common';
 import { KnowledgeRelationDao, GraphExpansion, GraphExpansionLimits } from '../database/KnowledgeRelationDao';
 import { NoteRetrievalQuery } from 'common';
 import { RagHit, RagRetrievalService } from './RagRetrievalService';
@@ -33,15 +40,6 @@ const EVIDENCE_EXCERPT_LIMIT: number = 160;
 const CITATION_MARKER: string = '[noteId=';
 const CITATION_UNVERIFIED: string = '[未验证引用]';
 
-export interface NoteEvidenceOptions {
-  topK?: number;
-  maxDepth?: number;
-  subject?: string;
-  chapter?: string;
-  tag?: string;
-  graphMode?: 'neighborhood' | 'prerequisite-incoming' | 'none';
-}
-
 // 内部行: 图谱邻居的存活笔记元数据
 interface NoteEvidenceRow {
   noteId: string;
@@ -58,12 +56,7 @@ interface TextSplit {
   carry: string;
 }
 
-export interface CitationVersionRef {
-  noteId: string;
-  version: number;
-}
-
-export class NoteEvidenceService {
+export class NoteEvidenceService implements NoteEvidencePort {
   // ADR-0021 Step 3：注入只读端口后，证据扩展的 note 读取走 NoteReadPort；
   // 未注入（测试 / 未配置组合根）时退回既有 SQL 路径，行为不变。
   private readonly readPort?: NoteReadPort;
@@ -750,7 +743,7 @@ export class NoteEvidenceService {
 }
 
 // 流式引用清洗: 缓冲可能被拆分的 [noteId=...] 片段, 允许集外替换为未验证标记
-export class NoteEvidenceStreamFilter {
+export class NoteEvidenceStreamFilter implements NoteEvidenceStreamFilterPort {
   private readonly allowed: CitationVersionRef[];
   private readonly enabled: boolean;
   private carry: string = '';

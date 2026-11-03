@@ -44,21 +44,48 @@ const COMMON_MODEL_FILES = [
   'common/src/main/ets/utils/ReplyStyleRules.ets',
 ];
 
-function loadCommonFacade(options) {
-  const facade = {};
-  const cache = options.cache ?? new Map();
-  for (const file of COMMON_MODEL_FILES) {
-    Object.assign(facade, loadNoteReviewEtsModule(file, { ...options, cache }));
-  }
-  return facade;
-}
-
 // 测试可以用 options.mocks.common 覆盖；没覆盖到的符号回落到真实纯模型文件。
 function loadCommonModule(options) {
-  const facade = loadCommonFacade(options);
+  // Logger 依赖 @ohos.hilog，Node 侧无法求值：给个空实现，免去每个测试重复打桩。
+  return loadFacadeModule('common', COMMON_MODEL_FILES, options, {
+    Logger: class Logger {
+      constructor(_tag) {}
+      debug() {}
+      info() {}
+      warn() {}
+      error() {}
+    },
+  });
+}
+
+// agents 也按模块名切了一刀：只装配对话链路（不碰 core/workflows 的图执行）。
+const AGENTS_CHAT_FILES = [
+  'agents/src/main/ets/chat/IntentClassifier.ets',
+  'agents/src/main/ets/chat/ReplyService.ets',
+  'agents/src/main/ets/chat/ModelRouter.ets',
+  'agents/src/main/ets/chat/AppIntentRules.ets',
+  'agents/src/main/ets/chat/AppIntentRouter.ets',
+  'agents/src/main/ets/conversation/ConversationState.ets',
+  'agents/src/main/ets/conversation/ConversationToolReplyFlags.ets',
+];
+
+function loadAgentsModule(options) {
+  return loadFacadeModule('agents', AGENTS_CHAT_FILES, options);
+}
+
+function loadFacadeModule(name, files, options, defaults) {
+  const facade = Object.assign({}, defaults ?? {});
+  const cache = options.cache ?? new Map();
+  for (const file of files) {
+    if (options.mocks !== undefined && Object.prototype.hasOwnProperty.call(options.mocks, file)) {
+      Object.assign(facade, options.mocks[file]);
+      continue;
+    }
+    Object.assign(facade, loadNoteReviewEtsModule(file, { ...options, cache }));
+  }
   const override = options.mocks !== undefined
-    && Object.prototype.hasOwnProperty.call(options.mocks, 'common')
-    ? options.mocks['common']
+    && Object.prototype.hasOwnProperty.call(options.mocks, name)
+    ? options.mocks[name]
     : undefined;
   if (override === undefined) {
     return facade;
@@ -100,6 +127,9 @@ export function loadNoteReviewEtsModule(relativePath, options = {}) {
   const localRequire = (request) => {
     if (request === 'common') {
       return loadCommonModule(options);
+    }
+    if (request === 'agents') {
+      return loadAgentsModule(options);
     }
     const resolvedRequest = modulePathForRequest(normalizedPath, request);
     if (options.mocks !== undefined && Object.prototype.hasOwnProperty.call(options.mocks, resolvedRequest)) {

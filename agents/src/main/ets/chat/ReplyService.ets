@@ -1,7 +1,7 @@
 /**
  * ReplyService.ets — LLM 流式回复 + 非流式回退
  *
- * 路径: entry/src/main/ets/services/ReplyService.ets
+ * 路径: agents/src/main/ets/chat/ReplyService.ets
  * 职责: 封装 chat 流的 SSE 解析和 fallback,提供 complete 与 stream 两种回复路径
  * 依赖: common ContentProtocol/LlmClient/LlmGuard/Logger; ./IntentClassifier
  *
@@ -28,10 +28,16 @@ import type {
 } from 'common';
 import { IntentClassifier, ReplyContext } from './IntentClassifier';
 import type { ReplyStyle } from 'common';
-import { DebugFaults } from './DebugFaults';
-import type { DebugFault } from './DebugFaults';
+import type { DebugFault, DebugFaultSource } from 'common';
 
 const replyLog: Logger = new Logger('ReplyService');
+
+// 调试档位由组合根注入（entry EntryAbility）；未注入时按 'none' 处理，:agent 进程不注入。
+let configuredDebugFaultSource: DebugFaultSource | undefined = undefined;
+
+export function configureDebugFaultSource(source: DebugFaultSource | undefined): void {
+  configuredDebugFaultSource = source;
+}
 const CHAT_REPLY_MAX_TOKENS: number = 12000;
 const CHAT_REPLY_TIMEOUT_MS: number = 120000;
 const CHAT_REPLY_MAX_RETRIES: number = 2;
@@ -142,7 +148,9 @@ export class ReplyService {
   ): Promise<StreamReplyResult> {
     cancellationToken?.throwIfCancelled();
     // #224 调试注入: 首次调用懒加载档位; 'none' 时下面所有返回原样透传。
-    await DebugFaults.load();
+    if (configuredDebugFaultSource !== undefined) {
+      await configuredDebugFaultSource.load();
+    }
     if (ReplyService.streamDisabled) {
       replyLog.warn('[StreamCircuit] open, skip SSE');
       return this.applyDebugFault(await this.fallback(context, cancellationToken));
@@ -255,7 +263,9 @@ export class ReplyService {
    * - none: 返回原对象，生产行为不变。
    */
   private applyDebugFault(result: StreamReplyResult): StreamReplyResult {
-    const fault: DebugFault = DebugFaults.current();
+    const fault: DebugFault = configuredDebugFaultSource !== undefined
+      ? configuredDebugFaultSource.current()
+      : 'none';
     if (fault === 'empty') {
       replyLog.warn('[DebugFault] injected=empty');
       const injected: StreamReplyResult = {

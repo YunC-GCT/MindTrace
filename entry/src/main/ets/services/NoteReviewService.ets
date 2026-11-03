@@ -18,10 +18,16 @@ import {
   copyNoteEvidenceCitations,
 } from 'common';
 import {
-  NoteEvidenceOptions,
   NoteEvidenceService,
   NoteEvidenceStreamFilter,
 } from './NoteEvidenceService';
+import type {
+  NoteEvidenceOptions,
+  NoteReviewFinalization,
+  NoteReviewPlan,
+  NoteReviewPlanKind,
+  NoteReviewPort,
+} from 'common';
 import type { NoteReadPort } from 'common';
 import { NoteRetrievalQuery } from 'common';
 
@@ -40,22 +46,6 @@ const REVIEW_CONTEXT_LIMIT: number = 6000;
 const REVIEW_RELATION_REASON_LIMIT: number = 120;
 const REVIEW_DEFAULT_QUIZ_COUNT: number = 3;
 const REVIEW_MAX_QUIZ_COUNT: number = 5;
-
-export type NoteReviewPlanKind = 'none' | 'terminal' | 'model';
-
-export interface NoteReviewPlan {
-  kind: NoteReviewPlanKind;
-  answer: NoteReviewAnswer;
-  displayText: string;
-  modelUserContent: string;
-  evidence?: NoteEvidenceContext;
-  quizCount: number;
-}
-
-export interface NoteReviewFinalization {
-  answer: NoteReviewAnswer;
-  displayText: string;
-}
 
 export abstract class NoteReviewEvidenceProvider {
   abstract build(query: string, options?: NoteEvidenceOptions): Promise<NoteEvidenceContext>;
@@ -99,7 +89,7 @@ class NoteReviewTopicSet {
   quizCount: number = REVIEW_DEFAULT_QUIZ_COUNT;
 }
 
-export class NoteReviewService {
+export class NoteReviewService implements NoteReviewPort {
   private readonly evidenceProvider: NoteReviewEvidenceProvider;
 
   constructor(evidenceProvider?: NoteReviewEvidenceProvider) {

@@ -26,7 +26,7 @@ import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
 import { DebugFaults } from "../../services/DebugFaults"
 import { DebugCaptureRunner } from "../../services/DebugCaptureRunner"
 import { common } from "@kit.AbilityKit"
-import type { DebugFault } from "../../services/DebugFaults"
+import type { DebugFault } from 'common'
 
 // PR2-T2 P3: 添加新供应商 modal 4 字段 cfg
 // 与 VendorPicker.ets AddCustomVendorCfg 同步(DRY 妥协 — ArkTS 1.1 不允许 inline object literal as type)

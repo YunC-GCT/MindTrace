@@ -87,7 +87,7 @@ entry/src/test/
   - **Rationale**: 这是 ADR-0015 same-PR 硬条款；保留伪装会继续把思考文本复制进最终回答，先删不改消费端会复现 UI 空白。
   - **Alternatives considered**: 保留兼容 fallback 到后续票再删；被 ADR-0015 明确拒绝。
 
-- **Decision**: `entry/src/main/ets/services/ReplyService.ets` 的流式结果只把 `text` 事件计入最终回答正文；`thinking` 事件只向上游 sink 传递，不进入最终 answer content。
+- **Decision**: `agents/src/main/ets/chat/ReplyService.ets` 的流式结果只把 `text` 事件计入最终回答正文；`thinking` 事件只向上游 sink 传递，不进入最终 answer content。
   - **Rationale**: Chat memory 与最终回答区应保存/展示真实回答，而不是思考链。该边界确保即使 UI 累积 reasoning，也不会污染 assistant content 的持久化。
   - **Alternatives considered**: 把所有事件 delta 都并入 `StreamReplyResult.content`；会重新引入思考文本污染最终回答的问题。
 
@@ -95,7 +95,7 @@ entry/src/test/
   - **Rationale**: ChatMsg 已有 `reasoning` 与 `content` 字段，P0 零新增字段即可满足功能；默认兜底保证 P1 之前保留事件不会破坏 P0 消费端。
   - **Alternatives considered**: 新增 ChatMsg 字段或分离 UI-only 状态；会引入旧会话兼容风险，不符合 #111 范围。
 
-- **Decision**: `enableThinking` 默认值改为 true，并移除 `entry/src/main/ets/services/ReplyService.ets` 中三处显式 false 覆盖。
+- **Decision**: `enableThinking` 默认值改为 true，并移除 `agents/src/main/ets/chat/ReplyService.ets` 中三处显式 false 覆盖。
   - **Rationale**: issue #111 明确要求稳定开启思考供给；LlmClient 已有 request 未定义时回退 config 的链路。`common/src/main/ets/llm/LlmConfig.ets` 的 load/reset/default 三处需要一致，否则“恢复默认”或“无旧配置”仍会关闭 thinking。
   - **Alternatives considered**: 新增 UI 开关或只改流式路径；UI 开关被 spec 019 排除，只改流式路径会留下配置不一致。
 
@@ -169,7 +169,7 @@ entry/src/test/
 
 | Contract | Location | Required Change |
 |----------|----------|-----------------|
-| ReplyEventSink | `entry/src/main/ets/services/ReplyService.ets` | 接收结构化 stream event；只把 text 事件计入最终回答内容 |
+| ReplyEventSink | `agents/src/main/ets/chat/ReplyService.ets` | 接收结构化 stream event；只把 text 事件计入最终回答内容 |
 | Conversation callbacks | `entry/src/main/ets/workflows/conversation/ConversationTypes.ets` | append 回调接受结构化 event 或等价语义对象，不再使用旧 `kind` union |
 | AgentChat callbacks | `entry/src/main/ets/services/AgentChatService.ets` | adapter 透传结构化事件，不过滤 thinking |
 | FloatWindow append | `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` | thinking -> reasoning；text -> content；tool_* default 兜底 |

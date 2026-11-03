@@ -1,7 +1,7 @@
 /**
  * AppIntentRouter.ets — App 内 agent 意图路由（规则优先 + LLM 兜底 + 低置信追问）
  *
- * 路径: entry/src/main/ets/services/AppIntentRouter.ets
+ * 路径: agents/src/main/ets/chat/AppIntentRouter.ets
  * 职责: 统一 App 对话（文字/图片）的意图判定：先走 AppIntentRules 本地规则；
  *       规则无法判定时，用 LLM 返回 {intent,confidence,reason}（LlmGuard 校验），
  *       置信度 <0.6 转 clarify；LLM 不可用/失败回退 chat（不误触发写笔记）。

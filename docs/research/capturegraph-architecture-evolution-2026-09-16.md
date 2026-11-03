@@ -298,7 +298,7 @@ LLM 用 `this.llm` (`:102-106`), 类型 `LlmCaller` (re-export of `LlmClient.cal
 
 ### 5.1 入口与三模式
 
-笔记生成由`ConversationWorkflow` 主导, 通过 `IntentClassifier` ([`entry/src/main/ets/services/IntentClassifier.ets:14`](../../entry/src/main/ets/services/IntentClassifier.ets) 类型 `'note_generation' | 'chat'`) 分流到 AiService:
+笔记生成由`ConversationWorkflow` 主导, 通过 `IntentClassifier` ([`agents/src/main/ets/chat/IntentClassifier.ets:14`](../../agents/src/main/ets/chat/IntentClassifier.ets) 类型 `'note_generation' | 'chat'`) 分流到 AiService:
 
 | 入口 | IntentClassifier 决策 | AiService 方法 | Dispatcher 分支 | 用途 |
 | --- | --- | --- | --- | --- |
@@ -524,7 +524,7 @@ if (event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0) {
 
 ### 6.3 ConversationWorkflow state
 
-[`ConversationState.ets:49-60`](../../entry/src/main/ets/workflows/conversation/ConversationState.ets): 字段 `request / sessionId / currentStep / intent? / memoryContext? / learnerProfileContext? / draftRunId? / draftCheckpointId? / draftCandidateHash? / draftStatus?`。无 spec 018 §4 禁项 (UIAbilityContext / ArkUI / callback / DAO / LlmClient / ToolRegistry)。`ConversationWorkflow` 类持 `ConversationWorkflowCallbacks` (构造注入 `:32`), **不在 state**。
+[`ConversationState.ets:49-60`](../../agents/src/main/ets/conversation/ConversationState.ets): 字段 `request / sessionId / currentStep / intent? / memoryContext? / learnerProfileContext? / draftRunId? / draftCheckpointId? / draftCandidateHash? / draftStatus?`。无 spec 018 §4 禁项 (UIAbilityContext / ArkUI / callback / DAO / LlmClient / ToolRegistry)。`ConversationWorkflow` 类持 `ConversationWorkflowCallbacks` (构造注入 `:32`), **不在 state**。
 流式 delta: `ConversationWorkflowCallbacks` 提供 `appendAiMsg(id, event)` + `addAiMsgEmpty()`。`handleStreamReply` (`ConversationWorkflow.ets:317-371`) 对`StreamEvent` 直接调。
 
 ### 6.4 ToolCallingWorkflow State 字段
@@ -1019,7 +1019,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.11 ReplyService — Adapter（Stream + JSON fallback）
 
 **Pattern**: Adapter pattern (封装 LLM 调用的 transport 选择: SSE 优先 + JSON 回退)
-**位置**: [`ReplyService.ets:1-227`](../../entry/src/main/ets/services/ReplyService.ets)
+**位置**: [`ReplyService.ets:1-227`](../../agents/src/main/ets/chat/ReplyService.ets)
 
 - 公开 2 入口: `complete(context)` (`:49-51` 调`guardedComplete` JSON) + `stream(context, sink)` (`:68-146` 走 SSE + JSON fallback)
 - `stream` 内部 retry 1 次(`:81-113` while loop, `streamAttempts < 2`), 首字节超时或 NETWORK_ERROR 才重试 仍失败 → `fallback()` (`:153-164`) 调`guardedComplete`

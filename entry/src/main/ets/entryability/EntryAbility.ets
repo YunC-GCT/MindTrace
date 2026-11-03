@@ -38,6 +38,8 @@ import { WriteJobFlags, WriteJobScheduler } from '../services/WriteJobScheduler'
 import { WriteJobBootstrap } from '../services/WriteJobBootstrap';
 import { IngestGateway, INGEST_MODE_INLINE } from '../services/IngestGateway';
 import { DataRetentionService } from '../services/DataRetentionService';
+import { DebugFaultSourceAdapter } from '../services/DebugFaults';
+import { configureDebugFaultSource } from 'agents';
 import {
   AgentIngestRequest,
   buildIngestRequest,
@@ -73,6 +75,8 @@ export default class EntryAbility extends UIAbility {
     this.launchWant = want;
     // 卡片刷新这类 UI 副作用只能在主进程加载：注册一次，共享写路径按注册表取用
     KnowledgeUnitUiEffects.register(new CardUiEffectProvider());
+    // 调试故障注入只在 UI 进程接：:agent 进程未注入，ReplyService 按 'none' 处理
+    configureDebugFaultSource(new DebugFaultSourceAdapter());
     // S2：UI 进程启用调度器（扩展进程走 A2A 内联路径，见 ADR-0024 §2.7），并把 job 事件落 run_event。
     if (WRITE_JOB_UI_ENABLED) {
       WriteJobFlags.setEnabled(true);

@@ -2,7 +2,7 @@
 
 > **Status**: proposed (2026-10-25)
 > **Related**: (implicit) `docs/agents/phase-tracker.md` · `docs/specs/018-agent-workflow-architecture.md` · `docs/adr/0004-llm-call-layer-consolidation.md`
-> **Code**: `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `entry/src/main/ets/services/ReplyService.ets` · `common/src/main/ets/llm/LlmGuard.ets` · `common/src/main/ets/llm/LlmClient.ets` · `common/src/main/ets/llm/LlmConfig.ets` · `common/src/main/ets/llm/providers.ets` · `common/src/main/ets/llm/ModelCapabilities.ets`
+> **Code**: `entry/src/main/ets/agentextability/AgentExtAbility.ets` · `agents/src/main/ets/chat/ReplyService.ets` · `common/src/main/ets/llm/LlmGuard.ets` · `common/src/main/ets/llm/LlmClient.ets` · `common/src/main/ets/llm/LlmConfig.ets` · `common/src/main/ets/llm/providers.ets` · `common/src/main/ets/llm/ModelCapabilities.ets`
 > **Verified by**: 只读源码追踪、`git grep`、连接设备的只读偏好文件读取、DSH 源码只读比对；未修改源码、未提交、未运行 hvigor 构建、未运行端 A2A 冒烟
 
 本文只给小艺端 A2A 的性能修复设计和实机验收协议。所有当前值均来自 checkout 中的代码或一次只读设备读取；目标值标为 `[推导]`，不能当作已经部署的行为。
@@ -219,7 +219,7 @@ strict/deferred 两级解析照 DSH：写配置前 strict 直接拒绝，存量�
 | `common/src/main/ets/llm/ModelCapabilities.ets:25-70` | 按 `modelLower.indexOf('deepseek')`、`qwen`、`reasoner` 推导 | 按 resolved listing 读取 modalities/context/max output/efforts | 能力随清单更新，不依赖名称 | LlmClient JSON/SSE、图像输入门控 |
 | `common/src/main/ets/llm/LlmClient.ets:93-109,325-349` | request 值或 LlmConfig 值直接写 `max_tokens`; thinking 用模型名辅助判断 | 接收 `ResolvedModel`; `maxTokens=min(taskNeed,maxOutput)`；effort 只取 supported levels；取消时销毁 request | 参数与能力一致，避免 12000/65536 猜测 | JSON 与 SSE 两条 transport |
 | `common/src/main/ets/llm/LlmGuard.ets:42-85` | `DEFAULT_MAX_RETRIES=2`，默认 3 次 | A2A policy 显式传 `maxRetries: 0`；App 内聊天暂保留 2 | A2A 受 deadline 约束，避免 3×120 秒尾部工作 | 小艺链路；App 聊天不立即改变 |
-| `entry/src/main/ets/services/ReplyService.ets:33-80,104-125` | `CHAT_REPLY_MAX_TOKENS=12000`、`timeoutMs=120000`，stream 也固定 120000 | 接受 `LlmCallPolicy`；A2A complete 使用 task budget/25s/0 retry；普通聊天显式保留现策略直到另一次基线 | 把性能修复限定在 A2A | A2A 与 App 内聊天的行为差异可观测 |
+| `agents/src/main/ets/chat/ReplyService.ets:33-80,104-125` | `CHAT_REPLY_MAX_TOKENS=12000`、`timeoutMs=120000`，stream 也固定 120000 | 接受 `LlmCallPolicy`；A2A complete 使用 task budget/25s/0 retry；普通聊天显式保留现策略直到另一次基线 | 把性能修复限定在 A2A | A2A 与 App 内聊天的行为差异可观测 |
 | `entry/src/main/ets/agentextability/AgentExtAbility.ets:32-35,184-242` | 4 秒配置等待、60 秒 `Promise.race`、无 token 的 `complete` | 单一 35 秒 deadline 覆盖配置等待；创建 token；deadline 时取消 HTTP；日志 code 化 | 消除外层/内层矛盾和过期请求 | 小艺扩展进程；单帧 task 形状不变 |
 | `entry/src/main/ets/viewmodels/AiSettingsViewModel.ets:116-165` | 保存循环写 `vendor_models`/`active_vendor_models`，最后回写旧 max/timeout | 发现候选供用户确认；只有确认才写覆盖；迁移保留显式选择 | discovery 不覆盖用户选择 | 设置页、preferences |
 | `entry/src/main/ets/pages/AiSettings/VendorPicker.ets:23-28` | 注释内复制 5 个硬编码模型 ID | 由 provider/catalog 渲染名称、规范 ID、不可用原因 | UI 不再制造第二份清单 | 设置页显示 |

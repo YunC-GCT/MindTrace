@@ -18,7 +18,7 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
+import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from 'agents';
 import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
 import type { StreamEvent } from 'common';
 import { ConversationRunRef } from 'common';

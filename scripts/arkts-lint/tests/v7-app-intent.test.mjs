@@ -8,7 +8,7 @@ import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
-const rules = loadNoteReviewEtsModule('entry/src/main/ets/services/AppIntentRules.ets');
+const rules = loadNoteReviewEtsModule('agents/src/main/ets/chat/AppIntentRules.ets');
 const local = (text, hasImage = false) => rules.classifyAppIntentLocal(text, hasImage);
 
 test('显式「存笔记/整理成笔记」→ note_generate；「不要存」→ chat', () => {
@@ -55,10 +55,10 @@ test('Workflow 接线：统一意图 + clarify 节点 + 状态透传', () => {
   assert.match(workflow, /graph\.addNode\('clarify_reply'/);
   assert.match(workflow, /appIntentClarify === true/);
   assert.match(workflow, /clarifyPrompt\(hasImage\)/);
-  const state = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+  const state = read('agents/src/main/ets/conversation/ConversationState.ets');
   assert.match(state, /appIntent\?: string/);
   assert.match(state, /appIntentClarify\?: boolean/);
-  const router = read('entry/src/main/ets/services/AppIntentRouter.ets');
+  const router = read('agents/src/main/ets/chat/AppIntentRouter.ets');
   assert.match(router, /AppIntentRouter\.trace\(decision, hasImage\)/);
   assert.match(router, /kind: 'chat', source: 'fallback'/);
 });

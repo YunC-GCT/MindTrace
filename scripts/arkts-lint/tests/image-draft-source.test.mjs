@@ -16,7 +16,7 @@ const aiService = read('entry/src/main/ets/services/AiService.ets');
 const ocrNode = read('agents/src/main/ets/graph/nodes/OcrNode.ets');
 const convWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
 const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
-const convState = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+const convState = read('agents/src/main/ets/conversation/ConversationState.ets');
 const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 
 // === Legacy tests preserved ===

@@ -23,9 +23,9 @@ import {
   resolveModel,
 } from 'common';
 import type { NoteOutcome, ProviderCatalog, ResolvedModel } from 'common';
-import { IntentClassifier, ReplyContext } from './IntentClassifier';
-import { ReplyService } from './ReplyService';
-import type { LlmCallPolicy } from './ReplyService';
+import { IntentClassifier, ReplyContext } from 'agents';
+import { ReplyService } from 'agents';
+import type { LlmCallPolicy } from 'agents';
 import type { ReplyStyle } from 'common';
 import { CaptureReceipt, CaptureReceiptStore, formatReceipt, matchesReceiptIntent } from './CaptureReceipt';
 import { AgentInboxItem, buildInboxItem } from './AgentInboxModels';

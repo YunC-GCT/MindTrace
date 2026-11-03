@@ -1,9 +1,9 @@
 /**
  * ConversationState.ets — Conversation workflow State 类型定义
  *
- * 路径: entry/src/main/ets/workflows/conversation/ConversationState.ets
+ * 路径: agents/src/main/ets/conversation/ConversationState.ets
  * 职责: 定义 ConversationStep 状态机节点 / ConversationProgressStep 进度上报 / ConversationRequest 三种请求 / ConversationState 状态结构
- * 依赖: ../../services/IntentClassifier (TextIntent)
+ * 依赖: agents/src/main/ets/chat/IntentClassifier (TextIntent)
  *
  * 数据流:
  *   ConversationWorkflow.buildGraph → ConversationState (初始 / 中间 / 结束) → 节点函数 copyState → 下游节点
@@ -17,9 +17,9 @@
  *   - 所有可选字段显式 `?:` 标注,避免 uninitialized 推断
  */
 
-import { TextIntent } from '../../services/IntentClassifier';
+import { TextIntent } from '../chat/IntentClassifier';
 import { NoteEvidenceContext } from 'common';
-import { NoteReviewPlan } from '../../services/NoteReviewService';
+import type { NoteReviewPlan } from 'common';
 import { ClassificationResult } from 'common';
 import { ConversationRunRef } from 'common';
 

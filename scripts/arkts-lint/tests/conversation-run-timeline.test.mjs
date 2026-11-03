@@ -62,7 +62,7 @@ test('conversation forwards real note progress without legacy note status steps'
 });
 
 test('ordinary chat request types cannot carry note-generation route state', () => {
-  const state = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+  const state = read('agents/src/main/ets/conversation/ConversationState.ets');
   assert.doesNotMatch(state, /route\?: NoteGenerationRoute/);
   assert.doesNotMatch(facade, /realReplyStream\([^)]*NoteGenerationRoute/);
   assert.doesNotMatch(contracts, /getNoteGenerationRoute/);

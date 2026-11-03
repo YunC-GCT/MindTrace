@@ -18,7 +18,7 @@ test('Conversation coordinator owns cancellation, child hooks, and fixed capacit
 
 test('Cancellation reaches transport, retry/fallback, workflow, and lifecycle owners', () => {
   const client = read('common/src/main/ets/llm/LlmClient.ets');
-  const reply = read('entry/src/main/ets/services/ReplyService.ets');
+  const reply = read('agents/src/main/ets/chat/ReplyService.ets');
   const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
   const service = read('entry/src/main/ets/services/AgentChatService.ets');
   const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');

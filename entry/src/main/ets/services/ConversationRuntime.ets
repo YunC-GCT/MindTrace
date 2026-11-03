@@ -12,7 +12,7 @@ import { CancellationToken, KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRu
 import {
   ConversationRequest,
   ImageConversationRequest,
-} from '../workflows/conversation/ConversationState';
+} from 'agents';
 import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
 import {
   ConversationWorkflowPorts,

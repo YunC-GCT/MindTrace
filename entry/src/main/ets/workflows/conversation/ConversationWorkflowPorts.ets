@@ -31,12 +31,12 @@ import {
 } from 'common';
 import type { StreamEvent, ToolLoopOptions } from 'common';
 import { AiService } from '../../services/AiService';
-import { IntentClassifier, ReplyContext, TextIntent } from '../../services/IntentClassifier';
-import { ReplyEventSink, ReplyService, StreamReplyResult } from '../../services/ReplyService';
+import { IntentClassifier, ReplyContext, TextIntent } from 'agents';
+import { ReplyEventSink, ReplyService, StreamReplyResult } from 'agents';
 import { ConversationRunRef } from 'common';
-import { ModelRouter } from '../../services/ModelRouter';
-import type { RoutedReply } from '../../services/ModelRouter';
-import { ConversationToolReplyFlags } from './ConversationToolReplyFlags';
+import { ModelRouter } from 'agents';
+import type { RoutedReply } from 'agents';
+import { ConversationToolReplyFlags } from 'agents';
 
 const replyPortLog: Logger = new Logger('ConversationReplyPort');
 

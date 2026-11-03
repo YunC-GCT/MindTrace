@@ -18,7 +18,7 @@ import {
   ChatMessageOrigin,
   ChatMessageOutcome,
   ConversationProgressStep,
-} from '../workflows/conversation/ConversationState';
+} from 'agents';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { NoteReviewAnswer } from 'common';
 import { AgentChatCallbacks } from './AgentChatContracts';

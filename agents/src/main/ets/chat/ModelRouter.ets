@@ -1,7 +1,7 @@
 /**
  * ModelRouter.ets — 模型路由：端侧优先，用户配置的模型是显式例外，回退必须标注
  *
- * 路径: entry/src/main/ets/services/ModelRouter.ets
+ * 路径: agents/src/main/ets/chat/ModelRouter.ets
  * 职责: 按硬规则决定这一轮由谁回答
  *       1) 系统端侧问答模型已就绪 -> 端侧，不降级
  *       2) 端侧未就绪、用户配置了模型 -> 用配置的模型（这是显式例外，不算降级）

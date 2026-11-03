@@ -1,7 +1,7 @@
 /**
  * AppIntentRules.ets — App 内 agent 的意图分类规则（纯函数，无 IO）
  *
- * 路径: entry/src/main/ets/services/AppIntentRules.ets
+ * 路径: agents/src/main/ets/chat/AppIntentRules.ets
  * 职责: 把 App 对话（文字/图片）的意图从「note_generation / chat」两分类扩展为
  *       chat / note_generate / review / note_query / image_explain / image_note / clarify。
  *       规则优先（快、可解释），无法判定时返回 undefined 交给 AppIntentRouter 走 LLM 兜底；

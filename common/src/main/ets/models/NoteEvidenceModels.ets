@@ -46,3 +46,19 @@ export interface NoteEvidenceContext {
   degraded: boolean;
   reason: string;
 }
+
+/** 证据检索的可选裁剪参数（深度 / 学科 / 章节 / 标签 / 图谱模式）。 */
+export interface NoteEvidenceOptions {
+  topK?: number;
+  maxDepth?: number;
+  subject?: string;
+  chapter?: string;
+  tag?: string;
+  graphMode?: 'neighborhood' | 'prerequisite-incoming' | 'none';
+}
+
+/** 允许被引用的笔记版本句柄。 */
+export interface CitationVersionRef {
+  noteId: string;
+  version: number;
+}

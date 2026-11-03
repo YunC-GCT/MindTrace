@@ -11,7 +11,7 @@ const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const workflowAdapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
 const chatModels = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets');
-const conversationState = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+const conversationState = read('agents/src/main/ets/conversation/ConversationState.ets');
 
 // spec 007 PR2: Chat 状态机从 AgentChatService.statusFromStep 抽取为 ChatStatusMachine。
 // 4 个 structural guard (与 PR1 agentchat-intent-classifier.test.mjs 同节奏)。

@@ -305,7 +305,7 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 - **`@State` vs `@Prop`**: `AgentMessageList.messages` 是 `@Prop @Watch('onMessagesChanged')`(`AgentMessageList.ets:56`),父组件用 `this.messages.map(... applyStreamEventToChatMsg ...)` 触发重渲染(`AgentFloatWindow.ets:115`)。
 - **`@Observed`**: `ChatSession`(`AgentFloatWindow/chat/ChatModels.ets` 中应有)— 嵌套对象的字段更新需要 `@Observed`。
 - **关于 `ConversationWorkflow`**(`entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:54`):
-  - 状态: `ConversationState`(`entry/src/main/ets/workflows/conversation/ConversationState.ets`)— `request` / `sessionId` / `currentStep` / `intent` / `memoryContext` / `learnerProfileContext` / `draftRunId/draftCheckpointId/draftCandidateHash/draftStatus`。
+  - 状态: `ConversationState`(`agents/src/main/ets/conversation/ConversationState.ets`)— `request` / `sessionId` / `currentStep` / `intent` / `memoryContext` / `learnerProfileContext` / `draftRunId/draftCheckpointId/draftCandidateHash/draftStatus`。
   - graph 节点: `classify_intent` / `image_reply` / `load_reply_context` / `save_reply_input` / `stream_reply` / `complete_reply` / `note_reply` / `regenerate_reply`(`ConversationWorkflow.ets:150-227`)
   - **copyState 显式字段复制**(`ConversationWorkflow.ets:258-286`),无解构 — 这是 spec 015 的 ArkTS 1.1 strict 约束。
   - 错误处理: 大部分失败走 `addAiMessage(sessionId, '⚠️ ...')` + `throw`,用户能看到一条消息(`ConversationWorkflow.ets:300-303, 411-415, 464-466` 等)。

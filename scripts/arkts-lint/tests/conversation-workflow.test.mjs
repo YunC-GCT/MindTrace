@@ -10,9 +10,9 @@ const facade = read('entry/src/main/ets/services/AgentChatService.ets');
 const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
 const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
-const state = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+const state = read('agents/src/main/ets/conversation/ConversationState.ets');
 const workflowTypes = read('entry/src/main/ets/workflows/conversation/ConversationTypes.ets');
-const replyService = read('entry/src/main/ets/services/ReplyService.ets');
+const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 

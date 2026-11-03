@@ -35,7 +35,7 @@ Initial grep inventory for old `(delta, kind)` stream contract:
   - Usage comment references `(delta, kind)`.
   - `callStreamInternal`, `processSseBuffer`, `processSseBufferFinal`, and SSE delta parsing consume `LlmStreamCallback`.
   - Old SSE fallback emits `reasoning_content` as content when `content` is empty; must be removed.
-- `entry/src/main/ets/services/ReplyService.ets`
+- `agents/src/main/ets/chat/ReplyService.ets`
 - `ReplyEventSink = (event: StreamEvent)` structured event sink.
   - Stream `onDelta` forwards structured events; only `text` events contribute to final answer content.
   - Three explicit `enableThinking: false` overrides must be removed from complete/stream/fallback paths.
@@ -101,7 +101,7 @@ Stage these #111 implementation files:
 - `common/src/main/ets/Index.ets`
 - `common/src/test/LlmStreamEvents.test.ets`
 - `common/src/test/List.test.ets`
-- `entry/src/main/ets/services/ReplyService.ets`
+- `agents/src/main/ets/chat/ReplyService.ets`
 - `entry/src/main/ets/services/AgentChatService.ets`
 - `entry/src/main/ets/workflows/conversation/ConversationTypes.ets`
 - `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
@@ -164,8 +164,8 @@ Do not stage these unrelated pre-existing files:
 - User reproduced `⚠️ AI 回复异常: LLM response truncated by max_tokens` during real chat after #111 follow-up.
 - Root trigger is the non-stream JSON branch in `common/src/main/ets/llm/LlmClient.ets` throwing on `finish_reason === 'length'`.
 - The affected conversation paths in `ReplyService.complete`, `ReplyService.stream`, and `ReplyService.fallback` were still pinning `maxTokens: 4096`; with thinking enabled this budget is too small for detailed math replies and fallback completion.
-- Raised the shared chat reply cap to `CHAT_REPLY_MAX_TOKENS = 12000` in `entry/src/main/ets/services/ReplyService.ets`.
+- Raised the shared chat reply cap to `CHAT_REPLY_MAX_TOKENS = 12000` in `agents/src/main/ets/chat/ReplyService.ets`.
 - Updated `AGENTS.md` with the corrected gotcha and follow-up diagnosis.
-- `arkts_check` on `entry/src/main/ets/services/ReplyService.ets`: passed.
+- `arkts_check` on `agents/src/main/ets/chat/ReplyService.ets`: passed.
 - Follow-up validation after the token-budget fix passed: `node scripts/arkts-lint/index.mjs --quiet`, `npm --prefix scripts/arkts-lint test` (90/90), `node scripts/naming-lint/index.mjs`, `git diff --check`, `build_project(product=default, build_mode=debug)`, and the previously successful `start_app(module=entry, target=default, hvd=MatePad Pro 13)`.
 - Current rerun after updating the static contract tests also passed lint, tests, naming, diff, ArkTS checks, and debug build. The app installed successfully, but the emulator launch was blocked by its locked screen in developer mode; no retry was performed.

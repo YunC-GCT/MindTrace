@@ -7,7 +7,7 @@ import ts from 'typescript';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..');
-const intentPath = path.join(repoRoot, 'entry', 'src', 'main', 'ets', 'services', 'IntentClassifier.ets');
+const intentPath = path.join(repoRoot, 'agents', 'src', 'main', 'ets', 'chat', 'IntentClassifier.ets');
 const workflowPath = path.join(
   repoRoot,
   'entry',

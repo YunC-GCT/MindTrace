@@ -10,11 +10,11 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 test('Chat 工具回复默认关闭，可灰度开启', () => {
-  const flags = read('entry/src/main/ets/workflows/conversation/ConversationToolReplyFlags.ets');
+  const flags = read('agents/src/main/ets/conversation/ConversationToolReplyFlags.ets');
   assert.match(flags, /CHAT_TOOL_REPLY_ENABLED: boolean = false/);
   assert.match(flags, /static isEnabled\(\)/);
   assert.match(flags, /static setEnabled\(/);
-  const mod = loadNoteReviewEtsModule('entry/src/main/ets/workflows/conversation/ConversationToolReplyFlags.ets');
+  const mod = loadNoteReviewEtsModule('agents/src/main/ets/conversation/ConversationToolReplyFlags.ets');
   assert.equal(mod.ConversationToolReplyFlags.isEnabled(), false);
   mod.ConversationToolReplyFlags.setEnabled(true);
   assert.equal(mod.ConversationToolReplyFlags.isEnabled(), true);

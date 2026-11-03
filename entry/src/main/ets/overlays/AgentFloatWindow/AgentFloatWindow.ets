@@ -67,7 +67,7 @@ import {
   chatMessageIdPolicy,
   conversationRunIdPolicy,
 } from 'common';
-import { ConversationMessageEvent } from '../../workflows/conversation/ConversationTypes';
+import { ConversationMessageEvent } from '../../services/AgentChatContracts';
 import { AiService } from '../../services/AiService';
 import { DraftRecoveryService } from '../../services/DraftRecoveryService';
 import {

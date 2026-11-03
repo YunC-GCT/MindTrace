@@ -16,7 +16,7 @@ import {
   ChatMessageOrigin,
   ChatMessageOutcome,
   ConversationProgressStep,
-} from '../../../workflows/conversation/ConversationState'
+} from '../../../services/AgentChatContracts'
 import {
   NoteReviewAnswer,
   NoteReviewFeedback,
@@ -40,7 +40,7 @@ import {
 } from './AgentRunModels'
 import { ChatMessageIdPolicy, SessionIdPolicy } from 'common'
 
-export { ChatMessageOrigin, ChatMessageOutcome } from '../../../workflows/conversation/ConversationState'
+export { ChatMessageOrigin, ChatMessageOutcome } from '../../../services/AgentChatContracts'
 
 export interface ChatMsg {
   // 消息唯一 id (由 ChatMessageIdPolicy 生成并校验)

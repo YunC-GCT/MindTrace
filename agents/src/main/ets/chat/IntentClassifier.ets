@@ -1,12 +1,17 @@
-// ============================================================================
-//  services/IntentClassifier.ets — 意图分类 + 提示词构建 (spec 007 PR1)
-//  ----------------------------------------------------------------------------
-//  职责: 判定 note_generation / chat 意图 (关键词前置, 远程 LLM 兜底, LlmGuard 校验重试);
-//        构建聊天回复 system prompt (画像/记忆注入, MM-MD-v1 + JSON/LaTeX 约束);
-//        从用户指令中提取笔记素材文本
-//  依赖: common.LlmGuard (JSON 校验重试 + extractJsonObject, 不再私有复制)
-//  seam: 构造可注入 LlmGuard (生产缺省 new LlmGuard(), 测试传 mock LlmCaller)
-//  ============================================================================
+/**
+ * IntentClassifier.ets — 意图分类 + 提示词构建（spec 007 PR1）
+ *
+ * 路径: agents/src/main/ets/chat/IntentClassifier.ets
+ * 职责: 判定 note_generation / chat 意图（关键词前置、远程 LLM 兜底、LlmGuard 校验重试）；
+ *       构建聊天回复 system prompt（画像/记忆注入，MM-MD-v1 + JSON/LaTeX 约束）；
+ *       从用户指令中提取笔记素材文本
+ * 依赖: common.LlmGuard / LlmConfig / ReplyStyleRules
+ *
+ * 数据流:
+ *   用户文本 → classify → 意图；ReplyContext → buildReplyMessages → system prompt → LlmGuard
+ *
+ * seam: 构造可注入 LlmGuard（生产缺省 new LlmGuard()，测试传 mock LlmCaller）
+ */
 
 import { ChatMessage, JSON_ONLY_RULES, LATEX_GENERATION_RULES, LlmConfig, LlmGuard } from 'common';
 import type { LlmGuardValidationResult } from 'common';

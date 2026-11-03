@@ -555,3 +555,22 @@ export type { RagQueryPlan } from './utils/RagQueryPlan';
 
 export { buildMathStyleRules } from './utils/ReplyStyleRules';
 export type { ReplyStyle } from './utils/ReplyStyleRules';
+
+// ========== 调试故障注入端口（2026-11-03） ==========
+export type { DebugFault, DebugFaultSource } from './ports/DebugFaultPort';
+
+// ========== 证据链端口（2026-11-03） ==========
+export type {
+  NoteEvidenceCitationRef,
+  NoteEvidencePort,
+  NoteEvidenceStreamFilterPort,
+} from './ports/NoteEvidencePort';
+export type { CitationVersionRef, NoteEvidenceOptions } from './models/NoteEvidenceModels';
+
+// ========== 复习链端口（2026-11-03） ==========
+export type { NoteReviewPort } from './ports/NoteReviewPort';
+export type {
+  NoteReviewFinalization,
+  NoteReviewPlan,
+  NoteReviewPlanKind,
+} from './models/NoteReviewModels';

@@ -196,7 +196,7 @@ CAPTURE_TOTAL committed 22253ms
 
 ### P0-4 ✅ App 内 agent 统一意图（本轮新增，回应「App 意图也要改」）
 
-- 新增 [`AppIntentRules.ets`](../../entry/src/main/ets/services/AppIntentRules.ets) + [`AppIntentRouter.ets`](../../entry/src/main/ets/services/AppIntentRouter.ets)：
+- 新增 [`AppIntentRules.ets`](../../agents/src/main/ets/chat/AppIntentRules.ets) + [`AppIntentRouter.ets`](../../agents/src/main/ets/chat/AppIntentRouter.ets)：
   - 意图从 2 类（note_generation/chat）扩为 7 类：chat / note_generate / review / note_query / image_explain / image_note / clarify；
   - 规则优先（否定句、复习、查笔记、图片讲解 vs 整理、指代不明）→ 规则未命中才 LLM 兜底 → 置信度 <0.6 转 clarify；
   - **clarify checkpoint**：App 对话新增 `clarify_reply` 节点（「① 讲解 ② 整理成笔记」），不再低置信直接猜。

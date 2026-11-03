@@ -12,7 +12,7 @@ import { common } from '@kit.AbilityKit';
 import { CancellationToken, ClassificationResult, SourceFragment, sourceFingerprint } from 'common';
 import { AgentMemoryService } from '../../services/AgentMemoryService';
 import { AgentMemoryRecord, NoteGenerationContextResult } from 'common';
-import { ChatMessageOrigin } from './ConversationState';
+import { ChatMessageOrigin } from 'agents';
 import { ConversationRunRef } from 'common';
 
 export interface IConversationMemoryProjectionHost {

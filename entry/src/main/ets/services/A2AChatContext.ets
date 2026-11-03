@@ -12,7 +12,7 @@
  *   - 证据构建最多等 1200ms；超时/异常降级为空上下文，不阻断聊天（和 App 对话一致）；
  *   - 返回 evidence 供调用方在回答后做 sanitizeAnswer。
  */
-import type { ReplyContext } from './IntentClassifier';
+import type { ReplyContext } from 'agents';
 import { NoteEvidenceService } from './NoteEvidenceService';
 import type { NoteEvidenceContext } from 'common';
 

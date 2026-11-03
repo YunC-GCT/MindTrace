@@ -6,11 +6,11 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
-const classifier = read('entry/src/main/ets/services/IntentClassifier.ets');
+const classifier = read('agents/src/main/ets/chat/IntentClassifier.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
-const replyService = read('entry/src/main/ets/services/ReplyService.ets');
+const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
 
 test('IntentClassifier exposes its public intent and reply APIs', () => {
   assert.match(classifier, /export class IntentClassifier/);

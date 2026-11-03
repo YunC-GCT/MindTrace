@@ -41,3 +41,27 @@ export type { NoteDaoInterface, NoteCommitResult } from './models/NoteDaoInterfa
 //   UI 端 (entry/) 可以 `import type { DispatchPayload, CaptureProvenance } from 'agents'`
 //   也可以从 'common' 拿,两种都行
 export type { CaptureProvenance, DispatchPayload } from 'common';
+
+// 对话回复链路（2026-11-03 由 entry/services 上移，UI 与 :agent 进程共用）
+export { IntentClassifier } from './chat/IntentClassifier';
+export type { ReplyContext, ReplyKind, TextIntent } from './chat/IntentClassifier';
+export { ModelRouter } from './chat/ModelRouter';
+export type { RoutedReply } from './chat/ModelRouter';
+export { CHAT_REPLY_POLICY, ReplyService, configureDebugFaultSource } from './chat/ReplyService';
+export type { LlmCallPolicy, ReplyEventSink, StreamReplyResult } from './chat/ReplyService';
+
+// App 内意图分类（2026-11-03 由 entry/services 上移）
+export { AppIntentRouter } from './chat/AppIntentRouter';
+export {
+  INTENT_KINDS, INTENT_LABELS, buildAppIntentPrompt, classifyAppIntentLocal,
+  isKnownAppIntent, parseAppIntentJson, validateAppIntentJson,
+} from './chat/AppIntentRules';
+export type { AppIntentDecision, AppIntentKind } from './chat/AppIntentRules';
+
+// 对话图契约（2026-11-03 由 entry/workflows/conversation 上移）
+export type {
+  ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep, ConversationRequest,
+  ConversationState, ConversationStep, ImageConversationRequest,
+  RegenerateConversationRequest, TextConversationRequest,
+} from './conversation/ConversationState';
+export { CHAT_TOOL_REPLY_ENABLED, ConversationToolReplyFlags } from './conversation/ConversationToolReplyFlags';
