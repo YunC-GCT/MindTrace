@@ -176,3 +176,12 @@ Who decides `cancelled(committed: true)`: the persist node / `NoteWritePort`, be
 - [v7 review §4 and 附](../architecture/review-v7-2026-10-27.md) — why a separate ADR is required for command/outcome semantics
 - [#238 ports](../specs/execution/v7-architecture-contracts/tasks.md) — `commitKey` / `expectedVersion` / `approvedCheckpointHash` / `RunStore`
 - [KnowledgeModel behavior baseline](../../scripts/arkts-lint/tests/knowledge-baseline.md) — the three inconsistent cancellation/error shapes this ADR replaces
+
+## 代码路径迁移注记（2026-11-03）
+
+正文按当时的代码位置书写，下列路径已随模块下沉迁移；正文保持原样，以保留决策当时的语境。
+
+| 正文中的路径 | 现在位置 |
+|---|---|
+| `entry/src/main/ets/models/KnowledgeUnitWriteModels.ets` | `common/src/main/ets/models/KnowledgeUnitWriteModels.ets`（领域模型下沉 common） |
+| `Dispatcher.ets` | `agents/src/main/ets/core/CommandExecutor.ets`（spec 039 编排收口） |

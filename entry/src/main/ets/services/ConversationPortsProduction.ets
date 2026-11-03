@@ -26,6 +26,7 @@ import {
 } from 'common';
 import type { AgentMemoryRecord, CancellationToken } from 'common';
 import {
+  NoteReviewService,
   ConversationWorkflowPorts,
   ConversationWorkflowPortsFactory,
 } from 'agents';
@@ -38,8 +39,8 @@ import type {
 } from 'agents';
 import { AiService } from './AiService';
 import { AgentMemoryService } from './AgentMemoryService';
-import { NoteEvidenceService } from './NoteEvidenceService';
-import { NoteReviewService } from './NoteReviewService';
+import { createNoteEvidenceService, NoteEvidenceService } from './NoteEvidenceService';
+import { DefaultNoteReviewEvidenceProvider } from './NoteReviewEvidenceProviders';
 
 class ConversationCaptureAdapter implements IConversationCapturePort {
   private readonly ai: AiService;
@@ -260,7 +261,7 @@ export function buildProductionConversationPorts(
     draftService: new ConversationDraftServiceAdapter(ai),
     memoryService: new ConversationMemoryServiceAdapter(new AgentMemoryService(context)),
     evidence: new NoteEvidenceService(),
-    review: new NoteReviewService(),
+    review: new NoteReviewService(new DefaultNoteReviewEvidenceProvider(createNoteEvidenceService())),
     noteRoute: noteRoute,
   };
   return ConversationWorkflowPortsFactory.production(input);

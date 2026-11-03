@@ -14,7 +14,7 @@
 
 验收条件（原文摘要）：手写新建 / 手写更新 / AI 落库走同一个写入口；KnowledgeUnit 与 revision 同事务；按 note ID + 期望版本更新，未命中返回 `VERSION_CONFLICT`；revision 可按 note ID + 版本查询，保留完整 KnowledgeUnit 与生成元数据；迁移时幂等回填历史行；提交后副作用失败只报 warning。
 
-落点：`entry/src/main/ets/models/KnowledgeUnitWriteModels.ets`、`entry/src/main/ets/adapters/NoteDaoAdapter.ets`、`entry/src/main/ets/database/NoteDao.ets`（`note_revision` 表）、`common/src/main/ets/DatabaseHelper.ets`（建表与迁移）。
+落点：`common/src/main/ets/models/KnowledgeUnitWriteModels.ets`、`entry/src/main/ets/adapters/NoteDaoAdapter.ets`、`entry/src/main/ets/database/NoteDao.ets`（`note_revision` 表）、`common/src/main/ets/DatabaseHelper.ets`（建表与迁移）。
 
 ## #98 light 草稿与可恢复生成
 

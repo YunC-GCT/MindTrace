@@ -39,3 +39,14 @@ Tests: `agents/src/test/KnowledgeModel.test.ets` already covers the analyze path
 
 - Audit §4.5 — original finding
 - Phase 4 ticket #4 — implementation ticket
+
+## 代码路径迁移注记（2026-11-03）
+
+本文中的 `Dispatcher` 已在 spec 039 的 workflow-first 收口时改名并拆分：
+
+| 正文中的路径 | 现在位置 |
+|---|---|
+| `agents/src/main/ets/core/Dispatcher.ets` | `agents/src/main/ets/core/CommandExecutor.ets`（统一入口）+ `agents/core/CommandRouter.ets`（preflight 与路由） |
+| `agents/src/test/KnowledgeModel.test.ets` | 已并入 `scripts/arkts-lint/tests/` 下的 Node 单测 |
+
+“单入口”这一决策本身不变：对外仍只有一个 `dispatchCommand(command, options)`。

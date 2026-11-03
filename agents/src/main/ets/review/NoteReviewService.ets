@@ -1,10 +1,16 @@
-// ============================================================================
-//  services/NoteReviewService.ets — 个人笔记复习回答计划与绑定
-// ============================================================================
-// 职责: 识别 explain/compare/prerequisite/locate/quiz, 复用 NoteEvidenceService 只读检索,
-//       生成硬拒答/确定性定位/LLM 上下文计划, 并把最终回答绑定到真实消息 id。
-// 约束: 不写库; 不新增第二套检索入口; 测试可注入 evidence provider。
-// ============================================================================
+/**
+ * NoteReviewService.ets — 个人笔记复习回答计划与绑定
+ *
+ * 路径: agents/src/main/ets/review/NoteReviewService.ets
+ * 职责: 识别 explain/compare/prerequisite/locate/quiz，生成硬拒答 / 确定性定位 /
+ *       LLM 上下文计划，并把最终回答绑定到真实消息 id
+ * 依赖: common（NoteReviewModels / NoteEvidencePort）、NoteRetrievalQuery
+ *
+ * 数据流:
+ *   用户内容 → classifyIntent → plan → createStreamFilter → finalizeModelAnswer
+ *
+ * 约束: 不写库；证据只经 NoteReviewEvidenceProvider 注入，不新增第二套检索入口
+ */
 
 import {
   NoteEvidenceCitation,
@@ -17,27 +23,15 @@ import {
   NoteReviewStatus,
   copyNoteEvidenceCitations,
 } from 'common';
-import {
-  NoteEvidenceService,
-  NoteEvidenceStreamFilter,
-} from './NoteEvidenceService';
 import type {
   NoteEvidenceOptions,
+  NoteEvidenceStreamFilterPort,
   NoteReviewFinalization,
   NoteReviewPlan,
   NoteReviewPlanKind,
   NoteReviewPort,
 } from 'common';
-import type { NoteReadPort } from 'common';
 import { NoteRetrievalQuery } from 'common';
-
-// ADR-0021 Step 3：组合根在 DB 初始化后注入只读端口；未注入时 NoteEvidenceService 走既有 SQL 路径
-// （保持测试与旧行为不变）。端口实现由 entry 组合根从 common 的 RdbNoteReadStore 构造。
-let evidenceReadPort: NoteReadPort | undefined = undefined;
-
-export function configureEvidenceReadPort(port: NoteReadPort | undefined): void {
-  evidenceReadPort = port;
-}
 
 const REVIEW_MAX_CALLS: number = 6;
 const REVIEW_MAX_CITATIONS: number = 10;
@@ -51,37 +45,8 @@ export abstract class NoteReviewEvidenceProvider {
   abstract build(query: string, options?: NoteEvidenceOptions): Promise<NoteEvidenceContext>;
   abstract formatSources(context: NoteEvidenceContext): string;
   abstract sanitizeAnswerStrict(citations: NoteEvidenceCitation[], answer: string): string;
-  abstract createStrictStreamFilter(citations: NoteEvidenceCitation[]): NoteEvidenceStreamFilter;
+  abstract createStrictStreamFilter(citations: NoteEvidenceCitation[]): NoteEvidenceStreamFilterPort;
   abstract hasVerifiedCitation(citations: NoteEvidenceCitation[], answer: string): boolean;
-}
-
-class DefaultNoteReviewEvidenceProvider extends NoteReviewEvidenceProvider {
-  private readonly service: NoteEvidenceService;
-
-  constructor(service?: NoteEvidenceService) {
-    super();
-    this.service = service === undefined ? new NoteEvidenceService(evidenceReadPort) : service;
-  }
-
-  async build(query: string, options?: NoteEvidenceOptions): Promise<NoteEvidenceContext> {
-    return await this.service.build(query, options);
-  }
-
-  formatSources(context: NoteEvidenceContext): string {
-    return this.service.formatSources(context);
-  }
-
-  sanitizeAnswerStrict(citations: NoteEvidenceCitation[], answer: string): string {
-    return this.service.sanitizeAnswerStrict(citations, answer);
-  }
-
-  createStrictStreamFilter(citations: NoteEvidenceCitation[]): NoteEvidenceStreamFilter {
-    return this.service.createStrictStreamFilter(citations);
-  }
-
-  hasVerifiedCitation(citations: NoteEvidenceCitation[], answer: string): boolean {
-    return this.service.hasVerifiedCitation(citations, answer);
-  }
 }
 
 class NoteReviewTopicSet {
@@ -92,8 +57,8 @@ class NoteReviewTopicSet {
 export class NoteReviewService implements NoteReviewPort {
   private readonly evidenceProvider: NoteReviewEvidenceProvider;
 
-  constructor(evidenceProvider?: NoteReviewEvidenceProvider) {
-    this.evidenceProvider = evidenceProvider === undefined ? new DefaultNoteReviewEvidenceProvider() : evidenceProvider;
+  constructor(evidenceProvider: NoteReviewEvidenceProvider) {
+    this.evidenceProvider = evidenceProvider;
   }
 
   classifyIntent(userContent: string): NoteReviewIntent | undefined {
@@ -165,7 +130,7 @@ export class NoteReviewService implements NoteReviewPort {
     return this.model(intent, userContent, 'grounded', 'ready', reviewContext, modelUserContent, topicSet.quizCount);
   }
 
-  createStreamFilter(plan: NoteReviewPlan): NoteEvidenceStreamFilter {
+  createStreamFilter(plan: NoteReviewPlan): NoteEvidenceStreamFilterPort {
     return this.evidenceProvider.createStrictStreamFilter(plan.answer.citations);
   }
 

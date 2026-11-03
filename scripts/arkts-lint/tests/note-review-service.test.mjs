@@ -91,7 +91,7 @@ function stubConversationPorts() {
 
 function loadReviewService() {
   return loadNoteReviewEtsModule(
-    'entry/src/main/ets/services/NoteReviewService.ets',
+    'agents/src/main/ets/review/NoteReviewService.ets',
     {
       mocks: {
         'entry/src/main/ets/services/NoteEvidenceService.ets': {
@@ -165,7 +165,7 @@ function loadConversationWorkflow(overrides = {}) {
           NoteEvidenceService: class NoteEvidenceService {},
           NoteEvidenceStreamFilter: class NoteEvidenceStreamFilter {},
         },
-        'entry/src/main/ets/services/NoteReviewService.ets': {
+        'agents/src/main/ets/review/NoteReviewService.ets': {
           NoteReviewService: class NoteReviewService {},
         },
       },

@@ -86,3 +86,6 @@ export type {
   ConversationRunEventStatus, ConversationStatusMessageEvent, ConversationStreamMessageEvent,
   ConversationWorkflowCallbacks,
 } from './conversation/ConversationTypes';
+
+// 复习链（2026-11-03 由 entry/services 上移，证据经 provider 注入）
+export { NoteReviewEvidenceProvider, NoteReviewService } from './review/NoteReviewService';

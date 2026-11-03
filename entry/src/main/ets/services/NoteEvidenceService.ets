@@ -56,6 +56,19 @@ interface TextSplit {
   carry: string;
 }
 
+// ADR-0021 Step 3：组合根在 DB 初始化后注入只读端口；未注入时走既有 SQL 路径。
+// 端口实现由 entry 组合根从 common 的 RdbNoteReadStore 构造。
+let configuredReadPort: NoteReadPort | undefined = undefined;
+
+export function configureEvidenceReadPort(port: NoteReadPort | undefined): void {
+  configuredReadPort = port;
+}
+
+/** 组合根工厂：用当前注入的只读端口构造证据服务。 */
+export function createNoteEvidenceService(): NoteEvidenceService {
+  return new NoteEvidenceService(configuredReadPort);
+}
+
 export class NoteEvidenceService implements NoteEvidencePort {
   // ADR-0021 Step 3：注入只读端口后，证据扩展的 note 读取走 NoteReadPort；
   // 未注入（测试 / 未配置组合根）时退回既有 SQL 路径，行为不变。
