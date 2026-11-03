@@ -65,8 +65,8 @@ test('RagRetrievalService.search uses the plan and returns empty on failure', ()
 });
 
 
-test('NoteEvidenceService prefers local FTS recall and falls back to note.search', () => {
-  const evidence = read('entry/src/main/ets/services/NoteEvidenceService.ets');
+test('evidence search prefers local FTS recall and falls back to note.search', () => {
+  const evidence = read('entry/src/main/ets/services/RagNoteEvidenceSearch.ets');
   assert.match(evidence, /RagRetrievalService\.search\(store, query, topK\)/);
   assert.match(evidence, /private async queryHitsByFts\(/);
   assert.match(evidence, /queryLiveRows\(store, ids\)/);

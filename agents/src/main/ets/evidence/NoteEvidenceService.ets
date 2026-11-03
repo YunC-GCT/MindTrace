@@ -1,28 +1,30 @@
-// ============================================================================
-//  services/NoteEvidenceService.ets — 可追溯回答证据上下文 (DEV-004/005/006)
-// ============================================================================
-// 路径: entry/src/main/ets/services/NoteEvidenceService.ets
-// 职责: 组合 note_query_rag (关键词检索) 与 accepted kg_edge 有限深度扩展,
-//       产出可追溯证据上下文: prompt 注入文本 + noteId/version/excerpt 引用 +
-//       已确认关系快照; 并对模型输出做虚构引用清洗
-// 依赖: common DatabaseHelper/ToolCatalog/ToolRegistry/ToolResult;
-//       ../database/KnowledgeRelationDao; common (NoteEvidenceModels)
-// 约束: 引用只来自真实 knowledge_unit 行; 不写库; 不引入向量检索
-// ============================================================================
-
-import { relationalStore } from '@kit.ArkData';
-import { DatabaseHelper, ToolCatalog, ToolRegistry, ToolResult } from 'common';
+/**
+ * NoteEvidenceService.ets — 可追溯回答的证据上下文
+ *
+ * 路径: agents/src/main/ets/evidence/NoteEvidenceService.ets
+ * 职责: 组合检索命中与 accepted kg_edge 有限深度扩展，产出可追溯证据上下文
+ *       （prompt 注入文本 + noteId/version/excerpt 引用 + 已确认关系快照），
+ *       并对模型输出做虚构引用清洗
+ * 依赖: common（NoteEvidenceModels / NoteEvidenceSearchPort / NoteGraphPort / NoteReadPort）；
+ *       检索与图谱的数据访问由 entry 适配器实现
+ *
+ * 数据流:
+ *   用户问题 → search.search → citations → graph.expand → 邻接引用 → NoteEvidenceContext
+ *
+ * 约束: 引用只来自真实 knowledge_unit 行；不写库；不引入向量检索
+ */
 import type {
-  NoteDetail,
-  NoteReadPort,
-  NoteEvidenceOptions,
   CitationVersionRef,
+  NoteDetail,
+  NoteEvidenceOptions,
   NoteEvidencePort,
+  NoteEvidenceSearchPort,
   NoteEvidenceStreamFilterPort,
+  NoteGraphNeighborhood,
+  NoteGraphPort,
+  NoteReadPort,
 } from 'common';
-import { KnowledgeRelationDao, GraphExpansion, GraphExpansionLimits } from '../database/KnowledgeRelationDao';
 import { NoteRetrievalQuery } from 'common';
-import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import {
   NoteEvidenceCitation,
   NoteEvidenceContext,
@@ -30,7 +32,7 @@ import {
   NoteEvidenceRole,
 } from 'common';
 
-const EVIDENCE_TOOL_NAME: string = 'note_query_rag';
+
 const EVIDENCE_DEFAULT_TOP_K: number = 5;
 const EVIDENCE_MAX_TOP_K: number = 10;
 const EVIDENCE_DEFAULT_DEPTH: number = 1;
@@ -40,42 +42,20 @@ const EVIDENCE_EXCERPT_LIMIT: number = 160;
 const CITATION_MARKER: string = '[noteId=';
 const CITATION_UNVERIFIED: string = '[未验证引用]';
 
-// 内部行: 图谱邻居的存活笔记元数据
-interface NoteEvidenceRow {
-  noteId: string;
-  title: string;
-  version: number;
-  subject: string;
-  chapter: string;
-  summary: string;
-  content: string;
-}
-
 interface TextSplit {
   text: string;
   carry: string;
 }
 
-// ADR-0021 Step 3：组合根在 DB 初始化后注入只读端口；未注入时走既有 SQL 路径。
-// 端口实现由 entry 组合根从 common 的 RdbNoteReadStore 构造。
-let configuredReadPort: NoteReadPort | undefined = undefined;
-
-export function configureEvidenceReadPort(port: NoteReadPort | undefined): void {
-  configuredReadPort = port;
-}
-
-/** 组合根工厂：用当前注入的只读端口构造证据服务。 */
-export function createNoteEvidenceService(): NoteEvidenceService {
-  return new NoteEvidenceService(configuredReadPort);
-}
-
 export class NoteEvidenceService implements NoteEvidencePort {
-  // ADR-0021 Step 3：注入只读端口后，证据扩展的 note 读取走 NoteReadPort；
-  // 未注入（测试 / 未配置组合根）时退回既有 SQL 路径，行为不变。
-  private readonly readPort?: NoteReadPort;
+  private readonly search: NoteEvidenceSearchPort;
+  private readonly graph: NoteGraphPort;
+  private readonly read: NoteReadPort | undefined;
 
-  constructor(readPort?: NoteReadPort) {
-    this.readPort = readPort;
+  constructor(search: NoteEvidenceSearchPort, graph: NoteGraphPort, read?: NoteReadPort) {
+    this.search = search;
+    this.graph = graph;
+    this.read = read;
   }
 
   // 构建证据上下文; 任何失败都降级为 degraded 上下文, 不阻断回答
@@ -86,13 +66,9 @@ export class NoteEvidenceService implements NoteEvidencePort {
     if (normalizedQuery.length === 0) {
       return NoteEvidenceService.emptyContext(normalizedQuery, topK, 'empty-query');
     }
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
-      return NoteEvidenceService.degradedContext(normalizedQuery, topK, 'store-not-ready');
-    }
     let citations: NoteEvidenceCitation[] = [];
     try {
-      citations = await this.queryHits(normalizedQuery, topK, options);
+      citations = await this.search.search(normalizedQuery, topK, options);
     } catch (e) {
       return NoteEvidenceService.degradedContext(normalizedQuery, topK, 'search-failed');
     }
@@ -107,9 +83,9 @@ export class NoteEvidenceService implements NoteEvidencePort {
     if (graphMode !== 'none') {
       try {
         if (graphMode === 'prerequisite-incoming') {
-          await this.expandPrerequisites(store, citations, relations, maxDepth);
+          await this.expandPrerequisites(citations, relations, maxDepth);
         } else {
-          await this.expandGraph(store, citations, relations, maxDepth);
+          await this.expandGraph(citations, relations, maxDepth);
         }
       } catch (e) {
         degraded = true;
@@ -208,111 +184,12 @@ export class NoteEvidenceService implements NoteEvidencePort {
     return NoteEvidenceService.hasAllowedCitation(allowed, answer);
   }
 
-  private async queryHits(
-    query: string,
-    topK: number,
-    options?: NoteEvidenceOptions,
-  ): Promise<NoteEvidenceCitation[]> {
-    // R3：优先用本地 FTS 检索（自管 note_fts，trigram/LIKE），失败或无命中回退既有 note.search。
-    const ragCitations: NoteEvidenceCitation[] | undefined = await this.queryHitsByFts(query, topK, options);
-    if (ragCitations !== undefined && ragCitations.length > 0) {
-      return ragCitations;
-    }
-    const registry: ToolRegistry = ToolCatalog.createReadOnlyRegistry();
-    const args: Record<string, Object> = {};
-    args['query'] = query;
-    args['topK'] = topK;
-    if (options !== undefined) {
-      const subject: string = options.subject === undefined ? '' : options.subject.trim();
-      const chapter: string = options.chapter === undefined ? '' : options.chapter.trim();
-      const tag: string = options.tag === undefined ? '' : options.tag.trim();
-      if (subject.length > 0) {
-        args['subject'] = subject;
-      }
-      if (chapter.length > 0) {
-        args['chapter'] = chapter;
-      }
-      if (tag.length > 0) {
-        args['tag'] = tag;
-      }
-    }
-    const result: ToolResult = await registry.execute(EVIDENCE_TOOL_NAME, JSON.stringify(args));
-    if (!result.ok) {
-      throw new Error('note_query_rag failed: ' + result.content);
-    }
-    return NoteEvidenceService.parseHits(result.content);
-  }
-
   /**
    * R3：本地 FTS 召回 → join knowledge_unit（取 version）→ NoteEvidenceCitation。
    * 返回 undefined 表示「无法使用 FTS」（表未就绪/查询异常），调用方回退 note.search；
    * 返回空数组表示 FTS 可用但无命中。
    */
-  private async queryHitsByFts(
-    query: string,
-    topK: number,
-    options?: NoteEvidenceOptions,
-  ): Promise<NoteEvidenceCitation[] | undefined> {
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
-      return undefined;
-    }
-    let hits: RagHit[] = [];
-    try {
-      hits = await RagRetrievalService.search(store, query, topK);
-    } catch (e) {
-      return undefined;
-    }
-    if (hits.length === 0) {
-      return [];
-    }
-    const ids: string[] = [];
-    for (const hit of hits) {
-      NoteEvidenceService.addUnique(ids, hit.unitId);
-    }
-    let rows: NoteEvidenceRow[] = [];
-    try {
-      rows = await this.queryLiveRows(store, ids);
-    } catch (e) {
-      return undefined;
-    }
-    const subjectFilter: string = options !== undefined && options.subject !== undefined ? options.subject.trim() : '';
-    const chapterFilter: string = options !== undefined && options.chapter !== undefined ? options.chapter.trim() : '';
-    const citations: NoteEvidenceCitation[] = [];
-    for (const hit of hits) {
-      let row: NoteEvidenceRow | undefined = undefined;
-      for (const candidate of rows) {
-        if (candidate.noteId === hit.unitId) {
-          row = candidate;
-          break;
-        }
-      }
-      if (row === undefined) {
-        continue;
-      }
-      if (subjectFilter.length > 0 && row.subject !== subjectFilter) {
-        continue;
-      }
-      if (chapterFilter.length > 0 && row.chapter !== chapterFilter) {
-        continue;
-      }
-      citations.push({
-        noteId: row.noteId,
-        version: row.version,
-        title: row.title,
-        excerpt: NoteEvidenceService.buildExcerpt(row.content, row.summary),
-        role: 'hit',
-        score: 0,
-        matchedFields: ['content'],
-        subject: row.subject,
-        chapter: row.chapter,
-      });
-    }
-    return citations;
-  }
-
   private async expandGraph(
-    store: relationalStore.RdbStore,
     citations: NoteEvidenceCitation[],
     relations: NoteEvidenceRelation[],
     maxDepth: number,
@@ -321,9 +198,7 @@ export class NoteEvidenceService implements NoteEvidencePort {
     for (const citation of citations) {
       NoteEvidenceService.addUnique(seeds, citation.noteId);
     }
-    const dao: KnowledgeRelationDao = new KnowledgeRelationDao(store);
-    const limits: GraphExpansionLimits = { maxDepth: maxDepth };
-    const expansion: GraphExpansion = await dao.expandAcceptedNeighborhood(seeds, limits);
+    const expansion: NoteGraphNeighborhood = await this.graph.expandAcceptedNeighborhood(seeds, maxDepth);
     const known: string[] = [];
     for (const citation of citations) {
       NoteEvidenceService.addUnique(known, citation.noteId);
@@ -335,10 +210,10 @@ export class NoteEvidenceService implements NoteEvidencePort {
       }
     }
     if (missing.length > 0) {
-      const rows: NoteEvidenceRow[] = await this.queryLiveRows(store, missing);
+      const rows: NoteDetail[] = this.read === undefined ? [] : await this.read.listByIds(missing);
       for (const row of rows) {
         citations.push({
-          noteId: row.noteId,
+          noteId: row.id,
           version: row.version,
           title: row.title,
           excerpt: NoteEvidenceService.buildExcerpt(row.content, row.summary),
@@ -371,7 +246,6 @@ export class NoteEvidenceService implements NoteEvidencePort {
   }
 
   private async expandPrerequisites(
-    store: relationalStore.RdbStore,
     citations: NoteEvidenceCitation[],
     relations: NoteEvidenceRelation[],
     maxDepth: number,
@@ -380,9 +254,7 @@ export class NoteEvidenceService implements NoteEvidencePort {
     for (const citation of citations) {
       NoteEvidenceService.addUnique(seeds, citation.noteId);
     }
-    const dao: KnowledgeRelationDao = new KnowledgeRelationDao(store);
-    const limits: GraphExpansionLimits = { maxDepth: maxDepth };
-    const expansion: GraphExpansion = await dao.expandAcceptedPrerequisites(seeds, limits);
+    const expansion: NoteGraphNeighborhood = await this.graph.expandAcceptedPrerequisites(seeds, maxDepth);
     const relationSeen: string[] = [];
     for (const edge of expansion.edges) {
       if (relationSeen.indexOf(edge.id) >= 0) {
@@ -407,10 +279,10 @@ export class NoteEvidenceService implements NoteEvidencePort {
         NoteEvidenceService.addUnique(missing, node.unitId);
       }
     }
-    const rows: NoteEvidenceRow[] = await this.queryLiveRows(store, missing);
+    const rows: NoteDetail[] = this.read === undefined ? [] : await this.read.listByIds(missing);
     for (const row of rows) {
       citations.push({
-        noteId: row.noteId,
+        noteId: row.id,
         version: row.version,
         title: row.title,
         excerpt: NoteEvidenceService.buildExcerpt(row.content, row.summary),
@@ -421,99 +293,6 @@ export class NoteEvidenceService implements NoteEvidencePort {
         chapter: row.chapter,
       });
     }
-  }
-
-  private async queryLiveRows(store: relationalStore.RdbStore, unitIds: string[]): Promise<NoteEvidenceRow[]> {
-    if (unitIds.length === 0) {
-      const empty: NoteEvidenceRow[] = [];
-      return empty;
-    }
-    const port: NoteReadPort | undefined = this.readPort;
-    if (port !== undefined) {
-      try {
-        const details: NoteDetail[] = await port.listByIds(unitIds);
-        const rows: NoteEvidenceRow[] = [];
-        for (const detail of details) {
-          rows.push({
-            noteId: detail.id,
-            title: detail.title,
-            version: detail.version,
-            subject: detail.subject,
-            chapter: detail.chapter,
-            summary: detail.summary,
-            content: detail.content,
-          });
-        }
-        return rows;
-      } catch (e) {
-        const message: string = e instanceof Error ? e.message : String(e);
-        throw new Error('NoteEvidenceService.queryLiveRows failed: ' + message);
-      }
-    }
-    const placeholders: string = NoteEvidenceService.placeholders(unitIds.length);
-    const sql: string = 'SELECT id, title, version, subject, chapter, summary, content FROM knowledge_unit'
-      + ' WHERE id IN (' + placeholders + ') ORDER BY id ASC';
-    return new Promise<NoteEvidenceRow[]>((resolve, reject) => {
-      store.querySql(sql, unitIds, (err, resultSet) => {
-        if (err) {
-          reject(new Error('NoteEvidenceService.queryLiveRows failed: ' + err.message));
-          return;
-        }
-        const rows: NoteEvidenceRow[] = [];
-        if (resultSet.goToFirstRow()) {
-          do {
-            rows.push({
-              noteId: NoteEvidenceService.readString(resultSet, 'id'),
-              title: NoteEvidenceService.readString(resultSet, 'title'),
-              version: NoteEvidenceService.readLong(resultSet, 'version'),
-              subject: NoteEvidenceService.readString(resultSet, 'subject'),
-              chapter: NoteEvidenceService.readString(resultSet, 'chapter'),
-              summary: NoteEvidenceService.readString(resultSet, 'summary'),
-              content: NoteEvidenceService.readString(resultSet, 'content'),
-            });
-          } while (resultSet.goToNextRow());
-        }
-        resultSet.close();
-        resolve(rows);
-      });
-    });
-  }
-
-  private static parseHits(content: string): NoteEvidenceCitation[] {
-    const citations: NoteEvidenceCitation[] = [];
-    let parsed: Record<string, Object>;
-    try {
-      parsed = JSON.parse(content) as Record<string, Object>;
-    } catch (e) {
-      return citations;
-    }
-    const hitsValue: Object | undefined = parsed['hits'];
-    if (hitsValue === undefined || hitsValue === null || !Array.isArray(hitsValue)) {
-      return citations;
-    }
-    const hits: Object[] = hitsValue as Object[];
-    for (const item of hits) {
-      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
-        continue;
-      }
-      const record: Record<string, Object> = item as Record<string, Object>;
-      const noteId: string = String(record['noteId'] ?? '');
-      if (noteId.length === 0) {
-        continue;
-      }
-      citations.push({
-        noteId: noteId,
-        version: Number(record['version'] ?? 0),
-        title: String(record['title'] ?? ''),
-        excerpt: String(record['excerpt'] ?? ''),
-        role: 'hit',
-        score: Number(record['score'] ?? 0),
-        matchedFields: NoteEvidenceService.readStringArray(record['matchedFields']),
-        subject: String(record['subject'] ?? ''),
-        chapter: String(record['chapter'] ?? ''),
-      });
-    }
-    return citations;
   }
 
   private static formatContext(citations: NoteEvidenceCitation[], relations: NoteEvidenceRelation[]): string {
@@ -738,21 +517,6 @@ export class NoteEvidenceService implements NoteEvidencePort {
     return values;
   }
 
-  private static readString(resultSet: relationalStore.ResultSet, column: string): string {
-    const index: number = resultSet.getColumnIndex(column);
-    if (index < 0) {
-      return '';
-    }
-    return resultSet.getString(index);
-  }
-
-  private static readLong(resultSet: relationalStore.ResultSet, column: string): number {
-    const index: number = resultSet.getColumnIndex(column);
-    if (index < 0) {
-      return 0;
-    }
-    return resultSet.getLong(index);
-  }
 }
 
 // 流式引用清洗: 缓冲可能被拆分的 [noteId=...] 片段, 允许集外替换为未验证标记

@@ -39,7 +39,7 @@ import type {
 } from 'agents';
 import { AiService } from './AiService';
 import { AgentMemoryService } from './AgentMemoryService';
-import { createNoteEvidenceService, NoteEvidenceService } from './NoteEvidenceService';
+import { createNoteEvidenceService } from './EvidenceComposition';
 import { DefaultNoteReviewEvidenceProvider } from './NoteReviewEvidenceProviders';
 
 class ConversationCaptureAdapter implements IConversationCapturePort {
@@ -260,7 +260,7 @@ export function buildProductionConversationPorts(
     capture: new ConversationCaptureAdapter(context),
     draftService: new ConversationDraftServiceAdapter(ai),
     memoryService: new ConversationMemoryServiceAdapter(new AgentMemoryService(context)),
-    evidence: new NoteEvidenceService(),
+    evidence: createNoteEvidenceService(),
     review: new NoteReviewService(new DefaultNoteReviewEvidenceProvider(createNoteEvidenceService())),
     noteRoute: noteRoute,
   };

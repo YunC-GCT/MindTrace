@@ -51,14 +51,14 @@ test('knowledge relation model and DAO expose graph-specific relation queries', 
 
 test('relation persistence and evidence expansion share KnowledgeRelationDao', () => {
   const daoSource = readRepoFile('entry/src/main/ets/database/KnowledgeRelationDao.ets');
-  const evidenceSource = readRepoFile('entry/src/main/ets/services/NoteEvidenceService.ets');
+  const evidenceSource = readRepoFile('entry/src/main/ets/services/RdbNoteGraph.ets');
   assert.match(daoSource, /async saveRelation\(relation: KnowledgeRelation\): Promise<KnowledgeRelation>/);
   assert.match(daoSource, /async acceptRelation\(id: string\): Promise<boolean>/);
   assert.match(daoSource, /async rejectRelation\(id: string\): Promise<boolean>/);
   assert.match(daoSource, /status: relation\.status/);
   assert.match(daoSource, /async expandAcceptedNeighborhood\(/);
   assert.match(evidenceSource, /new KnowledgeRelationDao\(store\)/);
-  assert.match(evidenceSource, /dao\.expandAcceptedNeighborhood\(seeds, limits\)/);
+  assert.match(evidenceSource, /dao\.expandAcceptedNeighborhood\(seedIds, limits\)/);
 });
 
 test('knowledge galaxy uses graph metadata and accepted kg_edge relations', () => {

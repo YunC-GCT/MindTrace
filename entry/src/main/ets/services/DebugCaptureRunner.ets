@@ -56,7 +56,8 @@ import {
   remainingPlanCount,
 } from './A2APlanModels';
 import { A2APlanStore } from './A2APlanStore';
-import { NoteEvidenceService } from './NoteEvidenceService';
+import type { NoteEvidenceService } from 'agents';
+import { createNoteEvidenceService } from './EvidenceComposition';
 import { NoteEvidenceContext } from 'common';
 
 const TAG: string = 'E2E';
@@ -1011,7 +1012,7 @@ export class DebugCaptureRunner {
       const ftsCount: number = await DebugCaptureRunner.countRows(searchStore, 'note_fts');
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=rag-index ragChunks=' + chunkCount.toString() + ' ftsRows=' + ftsCount.toString());
-      const evidenceService: NoteEvidenceService = new NoteEvidenceService();
+      const evidenceService: NoteEvidenceService = createNoteEvidenceService();
       const evidence: NoteEvidenceContext = await evidenceService.build('连续性', { topK: 3 });
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=rag-evidence citations=' + evidence.citations.length.toString()

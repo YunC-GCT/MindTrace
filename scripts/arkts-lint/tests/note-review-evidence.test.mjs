@@ -54,53 +54,54 @@ function resultSet(rows) {
   };
 }
 
-function loadEvidenceService(runtime = {}) {
-  const store = runtime.store ?? null;
-  const registry = runtime.registry ?? {
-    execute() {
-      return Promise.resolve({ ok: false, content: 'not used' });
+function loadEvidenceService() {
+  return loadNoteReviewEtsModule('agents/src/main/ets/evidence/NoteEvidenceService.ets');
+}
+
+/**
+ * 证据服务现在只认三个端口：检索 / 图谱 / 读行。
+ * 测试直接给假端口，不再 mock DatabaseHelper 或 DAO。
+ */
+function makeService(runtime = {}) {
+  const { NoteEvidenceService } = loadEvidenceService();
+  const calls = { search: [], graph: [], read: [] };
+  const search = {
+    async search(query, topK, options) {
+      calls.search.push({ query, topK, options });
+      if (runtime.searchError) { throw new Error(runtime.searchError); }
+      return runtime.citations ?? [];
     },
   };
-  const relationDao = runtime.relationDao ?? class KnowledgeRelationDao {};
-  return loadNoteReviewEtsModule(
-    'entry/src/main/ets/services/NoteEvidenceService.ets',
-    {
-      mocks: {
-        common: {
-          DatabaseHelper: {
-            getStore() {
-              return store;
-            },
-          },
-          ToolCatalog: {
-            createReadOnlyRegistry() {
-              return registry;
-            },
-          },
-        },
-        'entry/src/main/ets/database/KnowledgeRelationDao.ets': { KnowledgeRelationDao: relationDao },
-        'common/src/main/ets/models/NoteEvidenceModels.ets': {},
-      },
+  const emptyGraph = { nodes: [], edges: [], truncated: false };
+  const graph = {
+    async expandAcceptedNeighborhood(seedIds, maxDepth) {
+      calls.graph.push({ mode: 'neighborhood', seedIds, maxDepth });
+      if (runtime.graphError) { throw new Error(runtime.graphError); }
+      return runtime.neighborhood ?? emptyGraph;
     },
-  );
+    async expandAcceptedPrerequisites(seedIds, maxDepth) {
+      calls.graph.push({ mode: 'prerequisites', seedIds, maxDepth });
+      if (runtime.graphError) { throw new Error(runtime.graphError); }
+      return runtime.prerequisites ?? emptyGraph;
+    },
+  };
+  const read = {
+    async listByIds(ids) {
+      calls.read.push(ids);
+      return runtime.rows ?? [];
+    },
+  };
+  return { service: new NoteEvidenceService(search, graph, read), calls };
 }
 
 test('natural-language evidence requests retrieve a topic instead of the entire sentence', async () => {
-  const queries = [];
-  const registry = { async execute(_name, args) {
-    const query = JSON.parse(args).query;
-    queries.push(query);
-    const hits = query === '极限' ? [citation()] : [];
-    return { ok: true, content: JSON.stringify({ hits }) };
-  } };
-  const { NoteEvidenceService } = loadEvidenceService({ store: {}, registry });
-  const service = new NoteEvidenceService();
+  const { service, calls } = makeService({ citations: [citation()] });
   for (const input of ['解释一下极限', '请帮我讲讲极限', '根据我的笔记解释一下极限', '极限是什么？']) {
     const result = await service.build(input, { graphMode: 'none' });
     assert.equal(result.citations.length, 1, input);
     assert.equal(result.query, '极限', input);
   }
-  assert.deepEqual(queries, ['极限', '极限', '极限', '极限']);
+  assert.deepEqual(calls.search.map((item) => item.query), ['极限', '极限', '极限', '极限']);
 });
 
 test('retrieval status distinguishes hits, no match, unavailable storage and partial graph failure', () => {
@@ -250,80 +251,39 @@ test('NoteEvidenceService source formatting includes bounded source versions', (
 });
 
 test('NoteEvidenceService distinguishes no-match and search failure without calling an answer model', async () => {
-  let calls = 0;
-  const registry = {
-    execute() {
-      calls += 1;
-      return Promise.resolve({ ok: true, content: JSON.stringify({ hits: [] }) });
-    },
-  };
-  const { NoteEvidenceService } = loadEvidenceService({
-    store: {},
-    registry,
-  });
-  const service = new NoteEvidenceService();
-
-  const noMatch = await service.build('我的极限笔记', { topK: 99, maxDepth: 99 });
+  const noMatchHarness = makeService({ citations: [] });
+  const noMatch = await noMatchHarness.service.build('我的极限笔记', { topK: 99, maxDepth: 99 });
   assert.equal(noMatch.reason, 'no-match');
   assert.equal(noMatch.degraded, false);
   assert.equal(noMatch.citations.length, 0);
-  assert.equal(calls, 1);
+  assert.equal(noMatch.topK, 10, 'topK 应被夹到上限');
+  assert.equal(noMatchHarness.calls.search.length, 1);
 
-  const failedRegistry = {
-    execute() {
-      calls += 1;
-      return Promise.resolve({ ok: false, content: 'query failed' });
-    },
-  };
-  const failedService = loadEvidenceService({
-    store: {},
-    registry: failedRegistry,
-  }).NoteEvidenceService;
-  const failed = await new failedService().build('我的极限笔记');
+  const failedHarness = makeService({ searchError: 'query failed' });
+  const failed = await failedHarness.service.build('我的极限笔记');
   assert.equal(failed.reason, 'search-failed');
   assert.equal(failed.degraded, true);
   assert.equal(failed.citations.length, 0);
-  assert.equal(calls, 2);
+  assert.equal(failedHarness.calls.search.length, 1);
 });
 
 test('NoteEvidenceService bounds retrieval options and keeps direct hits when graph expansion fails', async () => {
-  let args = '';
-  const registry = {
-    execute(_name, rawArgs) {
-      args = rawArgs;
-      return Promise.resolve({
-        ok: true,
-        content: JSON.stringify({
-          hits: [{
-            noteId: 'note-limit',
-            version: 3,
-            title: '极限定义',
-            excerpt: '极限摘录',
-            score: 0.9,
-            matchedFields: ['title'],
-            subject: '数学分析',
-            chapter: '极限',
-          }],
-        }),
-      });
-    },
+  const hit = {
+    noteId: 'note-limit',
+    version: 3,
+    title: '极限定义',
+    excerpt: '极限摘录',
+    role: 'hit',
+    score: 0.9,
+    matchedFields: ['title'],
+    subject: '数学分析',
+    chapter: '极限',
   };
-  const relationDao = class KnowledgeRelationDao {
-    constructor(_store) {}
-
-    expandAcceptedNeighborhood() {
-      return Promise.reject(new Error('graph unavailable'));
-    }
-  };
-  const { NoteEvidenceService } = loadEvidenceService({
-    store: {},
-    registry,
-    relationDao,
-  });
-  const service = new NoteEvidenceService();
+  const { service, calls } = makeService({ citations: [hit], graphError: 'graph unavailable' });
   const result = await service.build('根据我的笔记解释极限', { topK: 99, maxDepth: 99 });
 
-  assert.equal(JSON.parse(args).topK, 10);
+  assert.equal(calls.search[0].topK, 10, 'topK 应夹到上限');
+  assert.equal(calls.graph[0].maxDepth, 2, 'maxDepth 应夹到上限');
   assert.equal(result.topK, 10);
   assert.equal(result.degraded, true);
   assert.equal(result.reason, 'graph-failed');
@@ -332,24 +292,16 @@ test('NoteEvidenceService bounds retrieval options and keeps direct hits when gr
 });
 
 test('NoteEvidenceService follows incoming prerequisite direction and preserves edge endpoints', async () => {
-  const registry = {
-    execute() {
-      return Promise.resolve({
-        ok: true,
-        content: JSON.stringify({
-          hits: [{
-            noteId: 'note-derivative',
-            version: 2,
-            title: '导数',
-            excerpt: '导数摘录',
-            score: 0.9,
-            matchedFields: ['title'],
-            subject: '数学分析',
-            chapter: '导数',
-          }],
-        }),
-      });
-    },
+  const derivative = {
+    noteId: 'note-derivative',
+    version: 2,
+    title: '导数',
+    excerpt: '导数摘录',
+    role: 'hit',
+    score: 0.9,
+    matchedFields: ['title'],
+    subject: '数学分析',
+    chapter: '导数',
   };
   const prerequisiteEdge = {
     id: 'edge-limit-derivative',
@@ -358,45 +310,29 @@ test('NoteEvidenceService follows incoming prerequisite direction and preserves 
     relationType: 'prerequisite',
     reason: '先掌握极限',
   };
-  const relationDao = class KnowledgeRelationDao {
-    constructor(_store) {}
-
-    expandAcceptedNeighborhood() {
-      throw new Error('wrong graph direction');
-    }
-
-    expandAcceptedPrerequisites() {
-      return Promise.resolve({
-        nodes: [
-          { unitId: 'note-derivative', depth: 0 },
-          { unitId: 'note-limit', depth: 1 },
-        ],
-        edges: [prerequisiteEdge],
-        truncated: false,
-      });
-    }
-  };
-  const store = {
-    querySql(_sql, _args, callback) {
-      callback(null, resultSet([{
-        id: 'note-limit',
-        title: '极限',
-        version: 4,
-        subject: '数学分析',
-        chapter: '极限',
-        summary: '极限摘要',
-        content: '极限内容',
-      }]));
+  const { service, calls } = makeService({
+    citations: [derivative],
+    prerequisites: {
+      nodes: [
+        { unitId: 'note-derivative', depth: 0 },
+        { unitId: 'note-limit', depth: 1 },
+      ],
+      edges: [prerequisiteEdge],
+      truncated: false,
     },
-  };
-  const { NoteEvidenceService } = loadEvidenceService({
-    store,
-    registry,
-    relationDao,
+    rows: [{
+      id: 'note-limit',
+      title: '极限',
+      version: 4,
+      subject: '数学分析',
+      chapter: '极限',
+      summary: '极限摘要',
+      content: '极限内容',
+    }],
   });
-  const service = new NoteEvidenceService();
   const result = await service.build('导数', { graphMode: 'prerequisite-incoming' });
 
+  assert.equal(calls.graph[0].mode, 'prerequisites', '应走前置方向而不是邻域');
   assert.equal(result.citations.some((item) => item.noteId === 'note-limit' && item.role === 'prerequisite'), true);
   assert.equal(result.relations.length, 1);
   assert.equal(result.relations[0].fromNoteId, 'note-limit');

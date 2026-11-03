@@ -566,6 +566,9 @@ export type {
   NoteEvidenceStreamFilterPort,
 } from './ports/NoteEvidencePort';
 export type { CitationVersionRef, NoteEvidenceOptions } from './models/NoteEvidenceModels';
+export type {
+  NoteEvidenceSearchPort, NoteGraphNeighborhood, NoteGraphNode, NoteGraphPort,
+} from './ports/NoteEvidenceDataPorts';
 
 // ========== 复习链端口（2026-11-03） ==========
 export type { NoteReviewPort } from './ports/NoteReviewPort';

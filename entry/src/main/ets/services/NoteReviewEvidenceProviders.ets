@@ -16,7 +16,7 @@ import {
   NoteEvidenceStreamFilterPort,
 } from 'common';
 import { NoteReviewEvidenceProvider } from 'agents';
-import { NoteEvidenceService } from './NoteEvidenceService';
+import type { NoteEvidenceService } from 'agents';
 
 export class DefaultNoteReviewEvidenceProvider extends NoteReviewEvidenceProvider {
   private readonly service: NoteEvidenceService;

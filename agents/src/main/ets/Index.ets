@@ -89,3 +89,6 @@ export type {
 
 // 复习链（2026-11-03 由 entry/services 上移，证据经 provider 注入）
 export { NoteReviewEvidenceProvider, NoteReviewService } from './review/NoteReviewService';
+
+// 证据链（2026-11-03 由 entry/services 上移，数据经检索/图谱端口注入）
+export { NoteEvidenceService, NoteEvidenceStreamFilter } from './evidence/NoteEvidenceService';

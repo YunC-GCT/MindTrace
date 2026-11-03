@@ -13,7 +13,7 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n'
 
 const galaxyVm = read('entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets');
 const relationDao = read('entry/src/main/ets/database/KnowledgeRelationDao.ets');
-const evidenceService = read('entry/src/main/ets/services/NoteEvidenceService.ets');
+const evidenceService = read('entry/src/main/ets/services/RdbNoteGraph.ets');
 const postCommit = read('entry/src/main/ets/services/KnowledgeUnitPostCommitEffects.ets');
 
 test('Galaxy loads only accepted edges from KnowledgeRelationDao', () => {
@@ -153,7 +153,7 @@ test('expandAcceptedNeighborhood must validate live knowledge_unit existence for
 });
 
 test('NoteEvidenceService must use expandAcceptedNeighborhood for evidence (AC-GRAPH-01)', () => {
-  const hasForward = evidenceService.match(/dao\.expandAcceptedNeighborhood\(seeds, limits\)/);
+  const hasForward = evidenceService.match(/dao\.expandAcceptedNeighborhood\(seedIds, limits\)/);
   if (hasForward !== null) {
     assert.ok(true, 'NoteEvidenceService uses DAO graph expansion');
   } else {

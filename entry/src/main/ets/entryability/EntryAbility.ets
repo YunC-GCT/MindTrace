@@ -25,7 +25,7 @@ import { DebugCaptureRunner } from '../services/DebugCaptureRunner';
 import { ImageSearchWorkerProbe } from '../services/ImageSearchWorkerProbe';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
-import { configureEvidenceReadPort } from '../services/NoteEvidenceService';
+import { configureEvidenceReadPort } from '../services/EvidenceComposition';
 import { ArkWebWarmupService } from '../services/ArkWebWarmupService';
 import { ChatFilesDirSeam, publishChatFilesDirSeam } from '../services/ChatFilesDirSeam';
 import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSession';

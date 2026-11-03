@@ -39,23 +39,30 @@ class FakeKnowledgeRelationDao {
   }
 }
 
-const serviceModule = loadNoteReviewEtsModule(
-  'entry/src/main/ets/services/NoteEvidenceService.ets',
-  {
-    mocks: {
-      common: {
-        DatabaseHelper: { getStore: () => ({}) },
-        ToolCatalog: { createReadOnlyRegistry: () => registry },
-        ToolRegistry: class {},
-        ToolResult: class {},
-      },
-      'entry/src/main/ets/database/KnowledgeRelationDao.ets': {
-        KnowledgeRelationDao: FakeKnowledgeRelationDao,
-      },
-    },
-  },
-);
+const serviceModule = loadNoteReviewEtsModule('agents/src/main/ets/evidence/NoteEvidenceService.ets');
 const NoteEvidenceService = serviceModule.NoteEvidenceService;
+
+/** 证据服务现在只认三个端口；这里给检索/图谱/读行三个 fake。 */
+function portsOf(details) {
+  const search = {
+    search: async () => [{
+      noteId: 'note-1',
+      version: 1,
+      title: '极限定义',
+      excerpt: '极限的第一条证据',
+      role: 'hit',
+      score: 4,
+      matchedFields: ['title'],
+      subject: '数学',
+      chapter: '极限',
+    }],
+  };
+  const graph = {
+    expandAcceptedNeighborhood: async () => ({ nodes: [{ unitId: 'note-2', depth: 1 }], edges: [], truncated: false }),
+    expandAcceptedPrerequisites: async () => ({ nodes: [], edges: [], truncated: false }),
+  };
+  return { search, graph, read: portOf(details) };
+}
 
 function detail(id) {
   return {
@@ -95,7 +102,8 @@ function portOf(details) {
 
 test('evidence expands through the injected NoteReadPort instead of SQL', async () => {
   calls.length = 0;
-  const service = new NoteEvidenceService(portOf([detail('note-2')]));
+  const ports = portsOf([detail('note-2')]);
+  const service = new NoteEvidenceService(ports.search, ports.graph, ports.read);
   const context = await service.build('极限', { graphMode: 'neighborhood' });
   assert.equal(calls.length, 1, 'graph expansion must ask the port for live rows');
   assert.deepEqual(Array.from(calls[0]), ['note-2']);

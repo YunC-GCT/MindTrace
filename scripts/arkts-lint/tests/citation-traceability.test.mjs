@@ -25,7 +25,8 @@ const relationDao = read('entry/src/main/ets/database/KnowledgeRelationDao.ets')
 // Evidence models live in the entry HAP (they reference entry-owned note and
 // graph records); keep this path aligned with the production module boundary.
 const evidenceModels = read('common/src/main/ets/models/NoteEvidenceModels.ets');
-const evidenceService = read('entry/src/main/ets/services/NoteEvidenceService.ets');
+const evidenceService = read('agents/src/main/ets/evidence/NoteEvidenceService.ets');
+const evidenceGraph = read('entry/src/main/ets/services/RdbNoteGraph.ets');
 
 // === Legacy citation traceability tests (must still pass) ===
 
@@ -161,6 +162,6 @@ test('KnowledgeRelationDao queryAcceptedEdges provides accepted-edge data for ci
 
 // AC-CITE-04: NoteEvidenceService uses the DAO directly for accepted graph expansion
 test('NoteEvidenceService uses KnowledgeRelationDao for accepted graph evidence (AC-CITE-04)', () => {
-  assert.match(evidenceService, /new KnowledgeRelationDao\(store\)/);
-  assert.match(evidenceService, /dao\.expandAcceptedNeighborhood\(seeds, limits\)/);
+  assert.match(evidenceGraph, /new KnowledgeRelationDao\(store\)/);
+  assert.match(evidenceGraph, /dao\.expandAcceptedNeighborhood\(seedIds, limits\)/);
 });

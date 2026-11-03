@@ -94,7 +94,7 @@ function loadReviewService() {
     'agents/src/main/ets/review/NoteReviewService.ets',
     {
       mocks: {
-        'entry/src/main/ets/services/NoteEvidenceService.ets': {
+        'agents/src/main/ets/evidence/NoteEvidenceService.ets': {
           NoteEvidenceService: class NoteEvidenceService {},
           NoteEvidenceStreamFilter: class NoteEvidenceStreamFilter {},
         },
@@ -161,7 +161,7 @@ function loadConversationWorkflow(overrides = {}) {
             }
           },
         },
-        'entry/src/main/ets/services/NoteEvidenceService.ets': {
+        'agents/src/main/ets/evidence/NoteEvidenceService.ets': {
           NoteEvidenceService: class NoteEvidenceService {},
           NoteEvidenceStreamFilter: class NoteEvidenceStreamFilter {},
         },

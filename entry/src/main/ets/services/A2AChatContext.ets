@@ -13,7 +13,8 @@
  *   - 返回 evidence 供调用方在回答后做 sanitizeAnswer。
  */
 import type { ReplyContext } from 'agents';
-import { NoteEvidenceService } from './NoteEvidenceService';
+import type { NoteEvidenceService } from 'agents';
+import { createNoteEvidenceService } from './EvidenceComposition';
 import type { NoteEvidenceContext } from 'common';
 
 const EVIDENCE_TIMEOUT_MS: number = 1200;
@@ -47,7 +48,7 @@ export class A2AChatContext {
       return fallback;
     }
     try {
-      const service: NoteEvidenceService = new NoteEvidenceService();
+      const service: NoteEvidenceService = createNoteEvidenceService();
       const evidence: NoteEvidenceContext = await A2AChatContext.withTimeout(
         service.build(trimmed, { topK: EVIDENCE_TOP_K }), EVIDENCE_TIMEOUT_MS);
       return {
@@ -73,7 +74,7 @@ export class A2AChatContext {
       return answer;
     }
     try {
-      return new NoteEvidenceService().sanitizeAnswer(evidence, answer);
+      return createNoteEvidenceService().sanitizeAnswer(evidence, answer);
     } catch (e) {
       return answer;
     }
