@@ -21,6 +21,8 @@ import type { RunEvent, RunRecord, RunStatus, RunStoreStore } from 'common';
 const RECORD_COLUMNS: string = 'run_id, parent_run_id, status, checkpoint_id,'
   + ' committed_note_id, committed_version, created_at, updated_at';
 const EVENT_COLUMNS: string = 'event_id, run_id, sequence, kind, payload_json, created_at';
+const APPEND_ATTEMPTS: number = 3;
+const RETRY_DELAY_MS: number = 50;
 
 export class RunStoreDao implements RunStoreStore {
   private readonly store: relationalStore.RdbStore;
@@ -118,6 +120,25 @@ export class RunStoreDao implements RunStoreStore {
   }
 
   async appendEvent(runId: string, kind: string, payloadJson: string, createdAt: number): Promise<RunEvent> {
+    let lastMessage: string = '';
+    for (let attempt = 0; attempt < APPEND_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.appendEventOnce(runId, kind, payloadJson, createdAt);
+      } catch (e) {
+        lastMessage = e instanceof Error ? e.message : String(e);
+        if (!RunStoreDao.isRetryableWriteError(lastMessage)
+          || attempt + 1 >= APPEND_ATTEMPTS) {
+          break;
+        }
+        await RunStoreDao.delay(RETRY_DELAY_MS);
+      }
+    }
+    throw new Error('RunStoreDao.appendEvent failed: ' + lastMessage);
+  }
+
+  /** 单次尝试：事务内 MAX(sequence)+1；跨进程 busy/唯一冲突由外层重试。 */
+  private async appendEventOnce(runId: string, kind: string, payloadJson: string,
+    createdAt: number): Promise<RunEvent> {
     const transaction: relationalStore.Transaction = await this.store.createTransaction();
     try {
       const maxSequence: number = await RunStoreDao.queryMaxSequence(transaction, runId);
@@ -149,8 +170,23 @@ export class RunStoreDao implements RunStoreStore {
         // 回滚失败不掩盖原始错误
       }
       const message: string = e instanceof Error ? e.message : String(e);
-      throw new Error('RunStoreDao.appendEvent failed: ' + message);
+      throw new Error(message);
     }
+  }
+
+  private static isRetryableWriteError(message: string): boolean {
+    const lower: string = message.toLowerCase();
+    return lower.indexOf('busy') >= 0 || lower.indexOf('locked') >= 0
+      || lower.indexOf('unique constraint') >= 0 || lower.indexOf('constraint failed') >= 0
+      || lower.indexOf('14800015') >= 0;
+  }
+
+  private static delay(ms: number): Promise<void> {
+    return new Promise<void>((resolve: () => void): void => {
+      setTimeout((): void => {
+        resolve();
+      }, ms);
+    });
   }
 
   private static async queryMaxSequence(transaction: relationalStore.Transaction, runId: string): Promise<number> {

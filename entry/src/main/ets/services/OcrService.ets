@@ -3,12 +3,12 @@
  *
  * 路径: entry/src/main/ets/services/OcrService.ets
  * 职责: 把 A2A 收到的图片 part（base64 / file:// uri）与内置自检图统一转成纯文本，
- *       交给同一个整理链路（AgentIngestService.ingest → Dispatcher → 结构化 → 落库）。
+ *       交给同一个整理链路（IngestGateway → AgentIngestService → CommandExecutor → 结构化 → 落库）。
  *       本文件只做字节/资源转换与门面适配，识别全部走 OcrRecognizerRegistry.require()。
  * 依赖: @kit.AbilityKit (common), @kit.PerformanceAnalysisKit (hilog),
  *       @kit.ArkTS (util), common (OcrRecognizer / OcrRecognizerRegistry / OcrTextResult)
  *
- * 数据流: AgentExtAbility / AgentIngestService → OcrService.recognize*
+ * 数据流: A2AController / AgentIngestService → OcrService.recognize*
  *          → OcrRecognizerRegistry.require() (实现由各进程组合根安装)
  *          → CoreVisionOcrRecognizer.recognize(uri) / recognizeBase64(base64) → string
  *

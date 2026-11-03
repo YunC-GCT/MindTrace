@@ -1,6 +1,6 @@
 # 039 — Agent 编排收口：CommandExecutor + CommandRouter + 四条 workflow
 
-> **Status**: implemented (2026-11-01) — S1/S2/S3 已落地；真机 captureSet / schedulerProbe / schedulerIntegration / a2a smoke（自动+手动）均已通过。**当前形态（2026-11-02）**：只有 capture 完成迁移，generation / regenerate / prepared 仍由 `core/dispatch/*Branch` 承载，三个 workflow 是转发壳（见 §13.1）。
+> **Status**: implemented (2026-11-01) — S1/S2/S3 已落地；真机 captureSet / schedulerProbe / schedulerIntegration / a2a smoke（自动+手动）均已通过。**当前形态（2026-11-02）**：capture / prepared / regenerate / generation 四条 workflow 全部完成迁移，`PreparedBranch` / `IncrementalBranch` / `GenerationBranch` 均已删除（见 §13.1）。
 > **Related**: [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 038](./038-write-job-scheduler.md) · [架构提案](../architecture/agent-architecture-proposal-2026-11-01.md) · [v7 外评审](../architecture/review-v7-2026-10-27.md)
 > **Code**: `agents/src/main/ets/core/Dispatcher.ets` · `agents/src/main/ets/core/dispatch/`（DispatchGraph / CaptureBranch / RunEventSink） · `agents/src/main/ets/agents/NoteAgent.ets` · `entry/src/main/ets/services/ai/{AiServicePorts,CapturePipeline,DraftPipeline,DraftCommitService}.ets` · `common/src/main/ets/workflow/StateGraph.ets`
 > **Verified by**: 基线 `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（pass=1165 / 0 lint error / 0 边界违规）；本 spec 的验收命令见 §7，实施后逐条回填
@@ -42,7 +42,7 @@ export class CommandRouter {
 
 `NoteAgent` 改名为 `NoteCaptureWorkflow`（`NoteAgent.ets` → `workflows/NoteCaptureWorkflow.ets`）；`GenerateBranch` / `PreparedBranch` / `IncrementalBranch` 的内容迁进对应 workflow，文件删除。
 
-> **2026-11-02 状态**：上表的迁移只有 capture 完成；generation / regenerate / prepared 三条 workflow 仍是转发壳，真实逻辑在 `core/dispatch/GenerationBranch` / `IncrementalBranch` / `PreparedBranch`。改业务请改 branch，迁移完成后再删壳（见 §13.1）。
+> **2026-11-02 状态**：capture / prepared / regenerate / generation 四条 workflow 均已完成迁移，不再有转发壳；`core/dispatch/*Branch` 已删除（见 §13.1）。
 
 ### 2.2 职责切分（硬边界）
 
@@ -195,7 +195,7 @@ export class CommandRouter {
 
 ### 当前形态（2026-11-02 标注）
 
-- `NoteCaptureWorkflow` 是唯一实体 workflow（装配并执行 `CaptureGraph`）。
-- `NoteGenerationWorkflow` / `NoteRegenerateWorkflow` / `NotePreparedWorkflow` 目前是 27–29 行转发壳，真实逻辑仍在 `core/dispatch/GenerationBranch`（705 行）/ `IncrementalBranch`（272 行）/ `PreparedBranch`（176 行）+ `GenerationEvaluator`。
-- S1 已记录该偏差；S2 只完成 capture 收口。本条不是新决策，只是把当前形态写清楚：**改 generation / regenerate / prepared 请改对应 branch；不要在转发壳里加业务逻辑。**
-- 完成迁移的判据仍按 §7：branch 内容进 workflow、branch 文件删除、golden `raw/` 零 diff。迁移未完成前，`NoteWorkflowId` 的四个值保持不变。
+- 四个 workflow 均为实体实现：`NoteCaptureWorkflow` 装配 `CaptureGraph`，`NotePreparedWorkflow` / `NoteRegenerateWorkflow` / `NoteGenerationWorkflow` 各自承接原 branch 逻辑。
+- `PreparedBranch.ets` / `IncrementalBranch.ets` / `GenerationBranch.ets` 已删除；`GenerationEvaluator` 保留为生成评估协作模块（`finishStandardGeneration` 直接接收 `generationRepository`）。
+- `WorkflowContext` 只暴露 `WritePorts` / `Observability` / `RunControl` / `DispatchMode` / `DispatchDomain`；`DispatchOptions` 的扁平形状只作为 `CommandExecutor.dispatchCommand` 的公共入参。
+- 完成迁移的判据仍按 §7：golden `raw/` 零 diff；当前单测 1213 全绿、build 4/4。

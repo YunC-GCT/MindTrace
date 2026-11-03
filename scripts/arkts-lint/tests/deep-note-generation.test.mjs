@@ -8,8 +8,8 @@ const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'u
 
 test('Issue 103 wires a real deep route through Dispatcher and KnowledgeModel', () => {
   const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
-  // 2026-10-31：生成分支编排抽到 GenerationBranch。
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets')
+  // 2026-11-02：生成编排已迁入 NoteGenerationWorkflow。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets')
   const model = read('agents/src/main/ets/agents/DeepDraftComposer.ets')
   const contracts = read('common/src/main/ets/models/NoteGenerationModels.ets')
 
@@ -51,8 +51,8 @@ test('deep generation reports real section and verification activity', () => {
   assert.match(model, /total: outline\.sections\.length/)
   assert.match(model, /activity: 'check_accuracy'/)
   assert.doesNotMatch(dispatcher, /repairDeepDraft/)
-  const branchSrc = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets')
-  assert.match(branchSrc, /structureDeepDraft\(budgetedRequest, options\.progressSink\)/)
+  const branchSrc = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets')
+  assert.match(branchSrc, /structureDeepDraft\(budgetedRequest, context\.domain\.progressSink\)/)
   assert.match(model, /this\.verifier\.verify\(/)
   assert.match(read('agents/src/main/ets/agents/NoteDraftVerifier.ets'), /evidenceStatuses/)
 })

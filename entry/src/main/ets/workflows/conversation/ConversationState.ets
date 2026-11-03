@@ -37,6 +37,7 @@ export type ConversationStep =
   | 'image_note_reply'
   | 'complete_reply'
   | 'stream_reply'
+  | 'tool_reply'
   | 'note_reply'
   | 'regenerate_reply'
   | 'END';

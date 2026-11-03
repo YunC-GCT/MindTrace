@@ -63,22 +63,22 @@ test('OCR 多页规划：保留来源图并写进摘要', () => {
 });
 
 test('扩展接线：意图路由 + OCR checkpoint（回复继续前不写库）', () => {
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.match(ability, /routeA2AIntent\(text, images\.length > 0, plan !== null\)/);
-  assert.match(ability, /INTENT_OCR/);
-  assert.match(ability, /private handleOcrCheckpoint\(/);
-  assert.match(ability, /planItemsFromRequest\(request\)/);
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.match(controller, /routeA2AIntent\(text, images\.length > 0, plan !== null\)/);
+  assert.match(controller, /INTENT_OCR/);
+  assert.match(controller, /private handleOcrCheckpoint\(/);
+  assert.match(controller, /IngestGateway\.plan\(request\)/);
   const service = read('entry/src/main/ets/services/AgentIngestService.ets');
   assert.match(service, /static async planItemsFromRequest\(request: AgentIngestRequest\)/);
 });
 
 
 test('A2A 聊天接入 RAG：证据上下文注入 + 引用校验（P0-1）', () => {
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.match(ability, /A2AChatContext\.build\(query/);
-  assert.match(ability, /A2AChatContextResult/);
-  assert.match(ability, /A2AChatContext\.sanitize\(session\.evidence, answer\)/);
-  assert.match(ability, /A2A_EVIDENCE citations=/);
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.match(controller, /A2AChatContext\.build\(query/);
+  assert.match(controller, /A2AChatContextResult/);
+  assert.match(controller, /A2AChatContext\.sanitize\(session\.evidence, answer\)/);
+  assert.match(controller, /A2A_EVIDENCE citations=/);
   const ctx = read('entry/src/main/ets/services/A2AChatContext.ets');
   assert.match(ctx, /service\.build\(trimmed, \{ topK: EVIDENCE_TOP_K \}\)/);
   assert.match(ctx, /EVIDENCE_TIMEOUT_MS: number = 1200/);
@@ -100,14 +100,15 @@ test('A2A 图片意图：带图但无整理短语 → image_qa；带「整理」
 
 test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后落盘', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
   assert.ok(ability.includes('readContextId'));
-  assert.ok(ability.includes('conversationKey'));
-  assert.ok(ability.includes('A2AConversationStore.loadWithFallback(this.context, conversationKey)'));
-  assert.ok(ability.includes('A2AChatContext.build(query, memory)'));
-  assert.ok(ability.includes('A2AConversationStore.append(this.context, session.conversationKey'));
-  assert.ok(ability.includes("A2A_MEMORY key="));
+  assert.ok(controller.includes('conversationKey'));
+  assert.ok(controller.includes('A2AConversationStore.loadWithFallback(this.context, conversationKey)'));
+  assert.ok(controller.includes('A2AChatContext.build(query, memory)'));
+  assert.ok(controller.includes('A2AConversationStore.append(this.context, session.conversationKey'));
+  assert.ok(controller.includes("A2A_MEMORY key="));
   // 扩展进程补 DB 初始化：RAG 证据不再 store-not-ready
-  assert.ok(ability.includes('DatabaseHelper.init(this.context)'));
+  assert.ok(controller.includes('DatabaseHelper.init(this.context)'));
   const chat = read('entry/src/main/ets/services/A2AChatContext.ets');
   assert.ok(chat.includes("static async build(query: string, memoryContext: string = '')"));
   assert.ok(chat.includes('memoryContext: memoryContext'));
@@ -119,10 +120,10 @@ test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后�
 
 
 test('「上一条」问题走确定性记忆回答（不依赖模型是否用 memoryContext）', () => {
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.ok(ability.includes('matchesRememberIntent(query)'));
-  assert.ok(ability.includes('answerFromConversationMemory'));
-  assert.ok(ability.includes("你上一条消息是：「"));
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.ok(controller.includes('matchesRememberIntent(query)'));
+  assert.ok(controller.includes('answerFromConversationMemory'));
+  assert.ok(controller.includes("你上一条消息是：「"));
   const store = read('entry/src/main/ets/services/A2AConversationStore.ets');
   assert.ok(store.includes('export function matchesRememberIntent'));
   for (const phrase of ['上一条', '上一句', '刚才', '之前聊']) {
@@ -137,9 +138,9 @@ test('记忆键合并：contextId 与 default 按时间合并（跨请求无 con
   assert.ok(store.includes("A2AConversationStore.load(context, 'default')"));
   assert.ok(store.includes('merged.sort('));
   assert.ok(store.includes('MAX_TURNS'));
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.ok(ability.includes('loadWithFallback(this.context, conversationKey)'));
-  assert.ok(ability.includes("A2AConversationStore.append(this.context, 'default'"));
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.ok(controller.includes('loadWithFallback(this.context, conversationKey)'));
+  assert.ok(controller.includes("A2AConversationStore.append(this.context, 'default'"));
 });
 
 
@@ -169,10 +170,13 @@ test('图片整理意图：带图 +「整理雅可比」→ OCR 整理；带图�
 
 test('无图/纯图片消息：纯文本引导（不再发卡片、不跳 App）', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
   assert.equal(ability.includes('sendAnswerWithImageCard'), false);
+  assert.equal(controller.includes('sendAnswerWithImageCard'), false);
   assert.equal(ability.includes('buildPickCardPartJson'), false);
-  assert.ok(ability.includes('我在小艺里收不到图片本身'));
-  assert.ok(ability.includes('引用/粘贴过来并说「整理笔记」'));
+  assert.equal(controller.includes('buildPickCardPartJson'), false);
+  assert.ok(controller.includes('我在小艺里收不到图片本身'));
+  assert.ok(controller.includes('引用/粘贴过来并说「整理笔记」'));
   const card = read('entry/src/main/ets/pages/AgentUiCard.ets');
   assert.ok(card.includes('AgentUIExtAbility'));
 });

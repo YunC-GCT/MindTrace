@@ -310,6 +310,11 @@ const SQL_INDEX_RUN_STORE_STATUS: string =
   "CREATE INDEX IF NOT EXISTS idx_run_store_status ON run_store(status)";
 const SQL_INDEX_RUN_EVENT_RUN_SEQ: string =
   "CREATE INDEX IF NOT EXISTS idx_run_event_run_seq ON run_event(run_id, sequence)";
+// 跨进程并发时给 (run_id, sequence) 兜底；旧库若已有重复序列，创建会失败并被 tryExecuteSql 跳过。
+const SQL_INDEX_RUN_EVENT_RUN_SEQ_UNIQUE: string =
+  "CREATE UNIQUE INDEX IF NOT EXISTS uq_run_event_run_seq ON run_event(run_id, sequence)";
+// SQLite 跨进程写锁等待：两个进程同时写时先等 5s，而不是立即 SQLITE_BUSY。
+const SQL_PRAGMA_BUSY_TIMEOUT: string = 'PRAGMA busy_timeout = 5000';
 
 // StudyPlanWritePort（v16 → v17）：study_plan 加 version 列做 CAS，另建幂等操作表。
 // 语义仍是待办（ADR-0022）：只加版本与操作记录，不加评分/掌握度字段。
@@ -548,6 +553,9 @@ export class DatabaseHelper {
     for (const sql of statements) {
       await DatabaseHelper.executeSql(store, sql);
     }
+    // 唯一索引是增量加固：老库有重复序列时跳过，不阻塞启动。
+    await DatabaseHelper.tryExecuteSql(store, SQL_INDEX_RUN_EVENT_RUN_SEQ_UNIQUE);
+    await DatabaseHelper.applyBusyTimeout(store);
 
     const hasSubject: boolean = await DatabaseHelper.hasColumn(store, "knowledge_unit", "subject");
     if (!hasSubject) {
@@ -688,6 +696,27 @@ export class DatabaseHelper {
         resolve();
       });
     });
+  }
+
+  /** 增量加固：失败只告警，不阻塞启动（例如老库已有重复数据导致唯一索引建不起来）。 */
+  private static async tryExecuteSql(store: relationalStore.RdbStore, sql: string): Promise<void> {
+    try {
+      await DatabaseHelper.executeSql(store, sql);
+    } catch (e) {
+      const message: string = e instanceof Error ? e.message : String(e);
+      console.warn('[DatabaseHelper] optional SQL skipped: ' + message);
+    }
+  }
+
+  /** 跨进程写锁等待；PRAGMA 不受 StoreConfig 支持，只能连接级设置。 */
+  private static async applyBusyTimeout(store: relationalStore.RdbStore): Promise<void> {
+    try {
+      await DatabaseHelper.executeSql(store, SQL_PRAGMA_BUSY_TIMEOUT);
+      console.info('[DatabaseHelper] PRAGMA busy_timeout=5000');
+    } catch (e) {
+      const message: string = e instanceof Error ? e.message : String(e);
+      console.warn('[DatabaseHelper] PRAGMA busy_timeout failed: ' + message);
+    }
   }
 
   private static async hasColumn(

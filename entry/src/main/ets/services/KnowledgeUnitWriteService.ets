@@ -60,6 +60,14 @@ export class KnowledgeUnitWriteService {
     return result;
   }
 
+  /** 读取当前单元（幂等复用/回执需要 title/subject）；仓库未实现时返回 null。 */
+  async queryById(id: string): Promise<KnowledgeUnit | null> {
+    if (this.repository.queryById === undefined) {
+      return null;
+    }
+    return await this.repository.queryById(id);
+  }
+
   async update(
     unit: KnowledgeUnit,
     expectedVersion: number,

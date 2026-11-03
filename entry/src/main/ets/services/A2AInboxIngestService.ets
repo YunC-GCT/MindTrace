@@ -2,9 +2,9 @@
  * A2AInboxIngestService.ets — 把「小艺排进来的待整理原文」用正规写路径入库。
  *
  * 路径: entry/src/main/ets/services/A2AInboxIngestService.ets
- * 职责: 应用回到前台时领取队列，逐条走 AiService.ingestText（Dispatcher → 结构化 → 落库），
+ * 职责: 应用回到前台时领取队列，逐条经 IngestGateway（background）→ AgentIngestService 入库，
  *       单条失败只记日志，不打断同批其它条目。
- * 依赖: AgentInboxQueue、AiService
+ * 依赖: AgentInboxQueue、IngestGateway
  *
  * 为什么放在应用进程：队列里的兜底原文由 UI 进程消费；A2A 单次整理在扩展内联完成（ADR-0024 §2.7），
  *   只有超时/失败/溢出项才会落到这里。
@@ -16,8 +16,9 @@ import { DatabaseHelper } from 'common';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AgentInboxItem } from './AgentInboxModels';
 import { AgentInboxQueue } from './AgentInboxQueue';
-import { AiService } from './AiService';
-import { WriteJobFlags, WriteJobScheduler } from './WriteJobScheduler';
+import { IngestGateway, INGEST_MODE_BACKGROUND } from './IngestGateway';
+import { INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
+import type { IngestBatchResult } from './AgentIngestRequest';
 
 const DOMAIN: number = 0xA2A0;
 const TAG: string = 'A2AInbox';
@@ -78,19 +79,15 @@ export class A2AInboxIngestService {
         return empty;
       }
       hilog.info(DOMAIN, TAG, 'consume start, claimed=%{public}d', items.length);
-      const service: AiService = new AiService(context);
       let done: number = 0;
       let failed: number = 0;
       for (let i = 0; i < items.length; i++) {
         try {
-          if (WriteJobFlags.isEnabled()) {
-            const scheduler: WriteJobScheduler = WriteJobScheduler.shared();
-            await scheduler.submit('background', items[i].text, async (): Promise<Object> => {
-              await service.ingestText(items[i].text);
-              return items[i].id as Object;
-            });
-          } else {
-            await service.ingestText(items[i].text);
+          const result: IngestBatchResult = await IngestGateway.ingestText(
+            context, items[i].text, INGEST_SOURCE_XIAOYI, INGEST_MODE_BACKGROUND);
+          if (result.outcomes.length === 0 || result.outcomes[0].kind !== 'committed') {
+            throw new Error(result.outcomes.length > 0 && result.outcomes[0].code !== undefined
+              ? result.outcomes[0].code : 'INGEST_FAILED');
           }
           done += 1;
         } catch (error) {

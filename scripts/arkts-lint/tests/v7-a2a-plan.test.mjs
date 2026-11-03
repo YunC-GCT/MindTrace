@@ -75,12 +75,12 @@ test('质量统计：待复核题数与摘要标注', () => {
 });
 
 test('扩展入口接线：多题先回规划，再按指令逐题整理；计划可落盘/清除', () => {
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.match(ability, /private handleTextPlanMessage\(/);
-  assert.match(ability, /formatA2APlanSummary\(plan\)/);
-  assert.match(ability, /private handlePlanTurn\(/);
-  assert.match(ability, /private ingestPlanItem\(/);
-  assert.match(ability, /A2APlanStore\.save\(this\.context, plan\.taskId, plan\)/);
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.match(controller, /private handleTextPlanMessage\(/);
+  assert.match(controller, /formatA2APlanSummary\(plan\)/);
+  assert.match(controller, /private handlePlanTurn\(/);
+  assert.match(controller, /private ingestPlanItem\(/);
+  assert.match(controller, /A2APlanStore\.save\(this\.context, plan\.taskId, plan\)/);
   const store = read('entry/src/main/ets/services/A2APlanStore.ets');
   assert.match(store, /static async load\(context: common\.Context, taskId: string\)/);
   assert.match(store, /static async save\(context: common\.Context, taskId: string, plan: A2APlan\)/);
@@ -91,12 +91,12 @@ test('扩展入口接线：多题先回规划，再按指令逐题整理；计�
 
 
 test('A2A 入库 deadline：超时转待整理队列（P0-2 第一片）', () => {
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.match(ability, /INGEST_DEADLINE_MS: number = 90000/);
-  assert.match(ability, /private ingestWithDeadline\(text: string\): Promise<NoteOutcome>/);
-  assert.match(ability, /INGEST_DEADLINE: ' \+ INGEST_DEADLINE_MS/);
-  assert.match(ability, /A2A_INGEST_TIMEOUT_TEXT/);
-  assert.match(ability, /this\.enqueueTexts\(\[item\.text\]\)/);
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.match(controller, /INGEST_DEADLINE_MS: number = 90000/);
+  assert.match(controller, /private ingestWithDeadline\(text: string\): Promise<NoteOutcome>/);
+  assert.match(controller, /INGEST_DEADLINE: ' \+ INGEST_DEADLINE_MS/);
+  assert.match(controller, /a2aErrorText\('A2A_INGEST_TIMEOUT'\)/);
+  assert.match(controller, /this\.enqueueTexts\(\[item\.text\]\)/);
 });
 
 

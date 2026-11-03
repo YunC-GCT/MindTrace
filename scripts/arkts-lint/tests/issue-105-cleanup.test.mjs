@@ -26,8 +26,8 @@ const withoutComments = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('Issue 105 removes the old summarize-then-persist route and duplicate source gate', () => {
-  // 2026-10-31：生成分支抽到 GenerationBranch，source gate 数量断言随之迁移。
-  const generationBranch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  // 2026-11-02：source gate 断言随迁移指向 NoteGenerationWorkflow。
+  const generationBranch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   assert.doesNotMatch(workflow, /summarizeNoteMaterial|material_summary/);
   assert.doesNotMatch(aiService, /summarizeNoteMaterial|material_summary/);
   assert.doesNotMatch(dispatcher, /inputSourceIssues/);

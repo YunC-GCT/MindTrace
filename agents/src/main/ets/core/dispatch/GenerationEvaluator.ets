@@ -69,8 +69,9 @@ import {
 import type { DispatchPayload, CancellationToken } from 'common';
 import { KnowledgeModel } from '../../agents/KnowledgeModel';
 import { AgentState } from '../../graph/AgentState';
-import { PreparedBranch } from './PreparedBranch';
-import type { DispatchOptions } from './DispatchOptions';
+import { CaptureGraph } from '../../graph/CaptureGraph';
+import { TruthCheckNodeFactory } from '../../graph/nodes/TruthCheckNode';
+import { TruthCheckService } from '../../agents/TruthCheckService';
 import type { NoteOutcome } from 'common';
 
 const evaluatorLog = new Logger('GenerationEvaluator');
@@ -114,7 +115,11 @@ export class GenerationEvaluator {
     for (const issue of result.verification.issues) {
       issues.push(issue);
     }
-    const truthState: AgentState = await PreparedBranch.buildGraph(undefined).run({
+    const truthGraph: CaptureGraph = new CaptureGraph();
+    truthGraph.addNode('truth_check', TruthCheckNodeFactory.create(new TruthCheckService()));
+    truthGraph.addEdge('START', 'truth_check');
+    truthGraph.addEdge('truth_check', 'END');
+    const truthState: AgentState = await truthGraph.run({
       captureText: GenerationEvaluator.bundleText(bundle),
       source: 'note_generation',
       payload: { kind: 'text', text: GenerationEvaluator.bundleText(bundle) },
@@ -461,7 +466,7 @@ export class GenerationEvaluator {
     request: NoteGenerationRequest,
     run: NoteGenerationRun,
     bundle: SourceBundle,
-    options: DispatchOptions,
+    generationRepository: NoteGenerationRepository | undefined,
     startedAt: number,
     issues: NoteGenerationIssue[],
     candidate: KnowledgeUnit | undefined,
@@ -497,7 +502,7 @@ export class GenerationEvaluator {
       progress: progress,
       diagnostics: diagnostics,
     };
-    if (options.generationRepository !== undefined) {
+    if (generationRepository !== undefined) {
       const completedRun: NoteGenerationRun = {
         id: run.id,
         originSessionId: run.originSessionId,
@@ -516,8 +521,8 @@ export class GenerationEvaluator {
         pendingSourceIds: run.pendingSourceIds,
         sourceSummary: run.sourceSummary,
       };
-      await options.generationRepository.saveRun(completedRun, bundle);
-      await options.generationRepository.appendLifecycleLog({
+      await generationRepository.saveRun(completedRun, bundle);
+      await generationRepository.appendLifecycleLog({
         runId: request.runId,
         event: 'finished',
         checkpointId: run.bestCheckpointId,

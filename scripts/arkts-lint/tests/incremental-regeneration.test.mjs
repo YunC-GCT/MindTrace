@@ -8,8 +8,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
 
 test('Issue 104 keeps incremental regeneration behind the four agreed seams', () => {
   const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
-  // 2026-10-31：增量分支抽到 IncrementalBranch，Dispatcher 只留路由委托。
-  const incrementalBranch = read('agents/src/main/ets/core/dispatch/IncrementalBranch.ets')
+  // 2026-11-02：增量逻辑已迁入 NoteRegenerateWorkflow，Dispatcher 只留路由委托。
+  const incrementalWorkflow = read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets')
   const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets')
   const facade = read('entry/src/main/ets/services/AgentChatService.ets')
   const repository = read('entry/src/main/ets/database/NoteGenerationRepository.ets')
@@ -17,11 +17,10 @@ test('Issue 104 keeps incremental regeneration behind the four agreed seams', ()
   const model = read('agents/src/main/ets/agents/KnowledgeModel.ets')
   const models = read('common/src/main/ets/models/NoteGenerationModels.ets')
 
-  assert.match(read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets'), /IncrementalBranch\.dispatchIncrementalGeneration/)
-  assert.match(incrementalBranch, /dispatchIncrementalGeneration/)
-  assert.match(incrementalBranch, /NOTE_ID_REQUIRED/)
-  assert.match(incrementalBranch, /VERSION_CONFLICT/)
-  assert.match(incrementalBranch, /mergeIncrementalPatches/)
+  assert.match(incrementalWorkflow, /private async runIncremental\(/)
+  assert.match(incrementalWorkflow, /NOTE_ID_REQUIRED/)
+  assert.match(incrementalWorkflow, /VERSION_CONFLICT/)
+  assert.match(incrementalWorkflow, /mergeIncrementalPatches/)
   assert.match(workflow, /regenerateNote/)
   assert.match(workflow, /请先选择要修改的明确笔记/)
   assert.doesNotMatch(facade, /requestRegeneration/)
@@ -44,10 +43,10 @@ test('Issue 104 does not add a second persistence owner', () => {
 })
 
 test('incremental regeneration uses the same coarse progress contract', () => {
-  const incrementalBranch = read('agents/src/main/ets/core/dispatch/IncrementalBranch.ets')
-  const incremental = incrementalBranch.slice(
-    incrementalBranch.indexOf('static async dispatchIncrementalGeneration'),
-    incrementalBranch.indexOf('static incrementalResult'),
+  const incrementalWorkflow = read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets')
+  const incremental = incrementalWorkflow.slice(
+    incrementalWorkflow.indexOf('private async runIncremental'),
+    incrementalWorkflow.indexOf('private static incrementalResult'),
   )
 
   assert.match(incremental, /activity: 'collect_sources'/)

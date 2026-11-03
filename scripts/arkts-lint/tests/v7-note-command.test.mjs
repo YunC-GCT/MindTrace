@@ -190,15 +190,30 @@ test('dispatchSetCommand returns per-item outcomes with aggregate counts (A3d)',
 
 test('A2A ingest receipt consumes NoteOutcome instead of exception text (A3d)', () => {
   const ingest = read('entry/src/main/ets/services/AgentIngestService.ets');
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
   assert.match(ingest, /static async ingestOutcome/);
   assert.match(ingest, /service\.ingestTextOutcome/);
-  assert.match(ability, /ingestTextBatch\(this\.context, request\.text\)/);
-  assert.match(ability, /this\.ingestWithDeadline\(item\.text\)/);
-  assert.match(ability, /AgentIngestService\.ingestSingleText\(this\.context, text\)/);
-  assert.match(ability, /outcome\.kind === 'committed'/);
-  assert.match(ability, /outcome\.kind === 'cancelled'/);
-  assert.match(ability, /retryable/);
+  assert.match(controller, /IngestGateway\.ingest\(this\.context, request, INGEST_MODE_INLINE\)/);
+  assert.match(controller, /this\.ingestWithDeadline\(item\.text\)/);
+  assert.match(controller, /IngestGateway\.ingestText\(this\.context, text, INGEST_SOURCE_XIAOYI, INGEST_MODE_INLINE\)/);
+  assert.match(controller, /outcome\.kind === 'committed'/);
+  assert.match(controller, /outcome\.kind === 'cancelled'/);
+  assert.match(controller, /retryable/);
+});
+
+test('幂等复用（committed 无 unit）不报 INGEST_FAILED', () => {
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.match(controller, /已整理过：这条内容已在知识库里/);
+  assert.match(controller, /const unit: KnowledgeUnit \| undefined = outcome\.unit;/);
+});
+
+test('幂等复用回填 unit：写服务 / 适配器暴露 queryById', () => {
+  const service = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
+  assert.match(service, /async queryById\(id: string\): Promise<KnowledgeUnit \| null>/);
+  const adapter = read('entry/src/main/ets/adapters/NoteDaoAdapter.ets');
+  assert.match(adapter, /async queryById\(id: string\): Promise<KnowledgeUnit \| null>/);
+  const repo = read('entry/src/main/ets/models/KnowledgeUnitWriteModels.ets');
+  assert.match(repo, /queryById\?\(id: string\): Promise<KnowledgeUnit \| null>/);
 });
 
 test('legacy DispatchResult appearance is reproducible from the command seam (4c migration)', async () => {

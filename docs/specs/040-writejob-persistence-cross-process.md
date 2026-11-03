@@ -65,7 +65,7 @@
 
 | 风险 | 缓解 |
 |---|---|
-| 多进程 RDB 写竞争 | claim 租约 + `commitKey` 幂等 + 失败降级 inbox。**已知未落地**：`StoreConfig` 无 `busy_timeout`，错误重试尚未实现；A2A 内联写与 UI 写并发是残余风险 |
+| 多进程 RDB 写竞争 | claim 租约 + `commitKey` 幂等 + 失败降级 inbox。**已加固（2026-11-02）**：DB 初始化 `PRAGMA busy_timeout=5000`；`run_event` 唯一索引（旧库重复时跳过）；`appendEvent` 有限重试。`StoreConfig` 仍无 `busy_timeout` 配置项 |
 | payload 变长/隐私 | 只存待整理原文；完成后可清理策略 |
 | 迁移失败 | 迁移标记 + 可重入；inbox 原文件保留一个版本 |
 | A2A UX 变化（立即回执） | 回执文案「已受理，稍后自动整理」；deadline 路径保留 |
@@ -201,4 +201,4 @@ P3 通过后再更新 038 状态为「实现完成（含 S3）」并把 flag 灰
 
 - **决定**：A2A 单次整理在 `:agent` 内联是正式路径，不是例外；队列（`agent_job` / inbox）只承接超时、失败、批量溢出与启动恢复。
 - **修正**：本文 Status、§1、§2、§3、§4 中「UI/扩展统一走持久队列」「扩展只入队」「扩展进程不执行」的表述以本节为准；`WriteJobProducer` 保留为兜底 producer，当前无生产调用方。
-- **残余风险**：跨进程同时写同一 RDB 的 `SQLITE_BUSY`、`run_event` 序列无唯一约束；本轮只统一口径，未改代码行为。
+- **后续加固（2026-11-02）**：已补 `PRAGMA busy_timeout=5000`、`run_event` 唯一索引与 `appendEvent` 有限重试；详见 §6。

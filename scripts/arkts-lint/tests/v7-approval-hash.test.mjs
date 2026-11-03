@@ -92,10 +92,10 @@ test('main graph preflight enforces approval before write (A4 4e)', () => {
 });
 
 test('A2A ingest records a receipt and reports the count (P4)', () => {
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.match(ability, /private recordA2aIngestReceipt\(\): void/);
-  assert.match(ability, /source: 'a2a'/);
-  assert.match(ability, /本次整理 1 条/);
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.match(controller, /private recordA2aIngestReceipt\(\): void/);
+  assert.match(controller, /source: 'a2a'/);
+  assert.match(controller, /本次整理 1 条/);
   const receipt = read('entry/src/main/ets/services/CaptureReceipt.ets');
   assert.match(receipt, /本次整理 ' \+ receipt\.total\.toString\(\) \+ ' 条/);
 });

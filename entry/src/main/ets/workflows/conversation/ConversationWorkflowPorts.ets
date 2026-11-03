@@ -1,9 +1,9 @@
 /**
- * ConversationWorkflowPorts.ets - Injectable external effects for conversation runs.
+ * ConversationWorkflowPorts.ets - conversation workflow 的可注入外部效果端口
  *
- * Path: entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets
- * Responsibility: Keep LLM, OCR, and Capture effects behind testable workflow seams.
- * Dependencies: AiService; IntentClassifier; ReplyService; ModelRouter; LocalChatProvider; common contracts.
+ * 路径: entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets
+ * 职责: 把 LLM / OCR / Capture / ToolLoop 等外部效果收在可注入端口后面，保持 workflow 可测。
+ * 依赖: AiService、IntentClassifier、ReplyService、ModelRouter、LocalChatProvider、common 契约。
  *
  * Data flow:
  *   Workflow request -> typed port -> external service -> typed domain result.
@@ -11,7 +11,10 @@
 import { common } from '@kit.AbilityKit';
 import {
   CancellationToken,
+  ChatMessage,
   ClassificationResult,
+  LlmCallResult,
+  LlmClient,
   LlmConfig,
   LocalChatProvider,
   Logger,
@@ -22,14 +25,18 @@ import {
   SourceFragment,
   SourceBundle,
   NoteTopicCandidate,
+  ToolCatalog,
+  ToolLoop,
+  ToolRegistry,
 } from 'common';
-import type { StreamEvent } from 'common';
+import type { StreamEvent, ToolLoopOptions } from 'common';
 import { AiService } from '../../services/AiService';
 import { IntentClassifier, ReplyContext, TextIntent } from '../../services/IntentClassifier';
 import { ReplyEventSink, ReplyService, StreamReplyResult } from '../../services/ReplyService';
 import { ConversationRunRef } from '../../services/ConversationIdentity';
 import { ModelRouter } from '../../services/ModelRouter';
 import type { RoutedReply } from '../../services/ModelRouter';
+import { ConversationToolReplyFlags } from './ConversationToolReplyFlags';
 
 const replyPortLog: Logger = new Logger('ConversationReplyPort');
 
@@ -46,6 +53,12 @@ export interface IConversationReplyPort {
   completeRouted(context: ReplyContext, token?: CancellationToken): Promise<RoutedReply>;
   stream(context: ReplyContext, sink: ReplyEventSink, token?: CancellationToken): Promise<StreamReplyResult>;
   normalize(content: string): string;
+}
+
+/** Chat 工具回复端口（spec 041，默认关闭）：只读工具循环，非流式。 */
+export interface IConversationToolPort {
+  isEnabled(): boolean;
+  complete(context: ReplyContext, token?: CancellationToken): Promise<string>;
 }
 
 export interface IConversationCapturePort {
@@ -209,6 +222,25 @@ class ConversationReplyAdapter implements IConversationReplyPort {
   normalize(content: string): string { return this.reply.normalize(content); }
 }
 
+class ConversationToolAdapter implements IConversationToolPort {
+  private readonly classifier: IntentClassifier;
+
+  constructor(classifier: IntentClassifier) { this.classifier = classifier; }
+
+  isEnabled(): boolean { return ConversationToolReplyFlags.isEnabled(); }
+
+  async complete(context: ReplyContext, token?: CancellationToken): Promise<string> {
+    token?.throwIfCancelled();
+    const registry: ToolRegistry = ToolCatalog.createReadOnlyRegistry();
+    const messages: ChatMessage[] = this.classifier.buildReplyMessages(context, 'markdown');
+    const options: ToolLoopOptions = { callOptions: { cancellationToken: token } };
+    const loop: ToolLoop = new ToolLoop(new LlmClient());
+    const result: LlmCallResult = await loop.run(messages, registry, options);
+    token?.throwIfCancelled();
+    return result.text !== undefined ? result.text : '';
+  }
+}
+
 class ConversationCaptureAdapter implements IConversationCapturePort {
   private readonly ai: AiService;
 
@@ -333,17 +365,20 @@ export class ConversationWorkflowPorts {
   readonly reply: IConversationReplyPort;
   readonly capture: IConversationCapturePort;
   readonly noteRoute: IConversationNoteRoutePort;
+  readonly toolReply?: IConversationToolPort;
 
   constructor(
     intent: IConversationIntentPort,
     reply: IConversationReplyPort,
     capture: IConversationCapturePort,
     noteRoute?: IConversationNoteRoutePort,
+    toolReply?: IConversationToolPort,
   ) {
     this.intent = intent;
     this.reply = reply;
     this.capture = capture;
     this.noteRoute = noteRoute ?? new AutomaticConversationNoteRouteAdapter();
+    this.toolReply = toolReply;
   }
 
   static production(
@@ -368,6 +403,7 @@ export class ConversationWorkflowPorts {
       replyAdapter,
       new ConversationCaptureAdapter(context),
       noteRoute,
+      new ConversationToolAdapter(classifier),
     );
   }
 }

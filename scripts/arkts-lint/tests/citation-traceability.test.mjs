@@ -71,8 +71,8 @@ test('NoteGenerationRepository getRegenerationBase reconstructs SourceFragments 
 });
 
 test('checkpoint saves outline, evidence, and verification JSON for full artifact recovery', () => {
-  // 2026-10-31：检查点组装随生成分支抽到 GenerationBranch。
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  // 2026-11-02：检查点组装已迁入 NoteGenerationWorkflow。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   assert.match(branch, /outlineJson: JSON\.stringify\(.*outline\)/);
   assert.match(branch, /evidenceJson: JSON\.stringify\(.*evidence\)/);
   assert.match(branch, /verificationJson: JSON\.stringify\(.*verification\)/);

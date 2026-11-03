@@ -41,7 +41,8 @@ HSP agents (CommandExecutor/Router/4 workflows/CaptureGraph/nodes)
 ```
 入口适配层
   ├─ UI:        pages/ + viewmodels/            (用户操作)
-  ├─ A2A:       entry/agentextability/AgentExtAbility.ets
+  ├─ A2A:       AgentExtAbility.ets (协议) → A2AController.ets (策略) → IngestGateway.ets (inline/queue)
+  ├─ 无头整理:  share/inbox → services/IngestGateway.ets
   └─ 调度:      entry/services/WriteJobScheduler.ets  (App 写路径)
 
 编排层（agents module）
@@ -64,6 +65,9 @@ HSP agents (CommandExecutor/Router/4 workflows/CaptureGraph/nodes)
 
 关键点：
 - **只有一个编排入口**：`CommandExecutor.dispatchCommand(NoteCommand, DispatchOptions)`；`NoteCommand` 是 5 类判别联合（capture / generation / regenerate / preparedCandidate / analysisOnly），`NoteOutcome` 是 5 类终态。
+- **A2A 分为适配器与控制器**：`AgentExtAbility` 只解析 JSON-RPC / parts 并发送单帧快照；意图、计划、内联整理、记忆、回执在 `services/A2AController.ets`，经 `A2AReplyPort` 回话；inline/background 模式在 `services/IngestGateway.ets`（2026-11-02 拆分）。
+- **无头入口统一经 IngestGateway**：A2A / 系统分享 / inbox 只传 `AgentIngestRequest`，不自己决定是否进队列；网关是唯一模式决策点。
+- **选项按组消费**：`WorkflowContext` 暴露 `WritePorts` / `Observability` / `RunControl` / `DispatchMode` / `DispatchDomain`；四个 workflow 均已迁移，`flattenDispatchOptions` 已删除（2026-11-02 拆分）。
 - **Router 与 Executor 同在 agents/core**：Router 负责命令形状校验、prepared 审批哈希、取消；Executor 负责选 workflow + 生命周期 + run_event。
 - **workflow 负责装配图**：每次 `run(options)` 按当次 options 装配 capture 子图；capture 内部仍用 `CaptureGraph` 节点（ADR-0008 的 LangGraph 模型是设计根，不是第三方 runtime）。
 
@@ -187,9 +191,73 @@ d8e4b9e   spec 039 S3：workflow-first 收口
 | App 入口→编排 | `entry/src/main/ets/services/ai/CapturePipeline.ets` |
 | 写入调度 | `entry/src/main/ets/services/WriteJobScheduler.ets` |
 | 持久化/恢复 | `WriteJobPersistence.ets` / `WriteJobBootstrap.ets` / `database/AgentJobDao.ets` |
-| 小艺 A2A 入口 | `entry/src/main/ets/agentextability/AgentExtAbility.ets` |
+| 小艺 A2A 入口/协议 | `entry/src/main/ets/agentextability/AgentExtAbility.ets` |
+| 小艺 A2A 策略/编排 | `entry/src/main/ets/services/A2AController.ets` |
 | A2A 意图/记忆 | `A2AIntentRouter.ets` / `A2AConversationStore.ets` / `A2AImageContextStore.ets` |
 | 分析/证据 | `docs/specs/038-*.md`、`039-*.md`、`040-*.md`；`docs/research/a2a-image-*` |
+
+---
+
+## 9. 2026-11-02 拆分执行（A2AController）
+
+- `AgentExtAbility` 1264 → 299 行：只保留 JSON-RPC 解析、part 提取、`TaskSnapshot` 发送与 OCR 组合根。
+- 新增 `services/A2AController.ets`（1049 行）：意图路由、计划推进、内联整理、会话记忆、回执、对话回复；通过 `A2AReplyPort` 回话。
+- 守卫测试按职责读文件：协议断言读 ability，行为断言读 controller；`reply-style-wiring` 改读 controller。
+- 验证：`node scripts/agent-gate/index.mjs` → **RESULT: PASS（pass=1204 fail=0）**；`node scripts/build-hsp-hap.mjs` → 成功；A2A 冒烟 `ok: true`（`存笔记：1+1=2` → `INGEST_TEXT done problems=1`）。
+- 未稳定验证：短指令「整理数学题」的 UI 气泡捕获时好时坏；hilog 已见 `INTENT kind=pick_card reason=ingest-without-content` + `A2A_REPLY_SENT chars=83`，说明引导分支已执行。
+
+## 10. 2026-11-02 拆分执行（IngestGateway）
+
+- 新增 `services/IngestGateway.ets`：A2A / 系统分享 / inbox 的唯一无头整理入口；`inline` vs `background` 只在这里决定。
+- `A2AController`、`EntryAbility.ingestImage`、`A2AInboxIngestService` 改为经网关；`AgentIngestService` 退为底层实现（删除未使用的 `ingest` 适配器，`ingestSingleText` 支持 priority）。
+- 顺带修复：幂等复用时 `NoteDaoAdapter` 缺 `queryById`，导致 committed 无 unit 被误报 `INGEST_FAILED`；写服务 / 适配器补 `queryById`，控制器把任何 committed 视为成功。
+- 补文本整理 deadline：`ingestTextBatchNow` 90s 超时转待整理，避免 provider 挂起时无回执（底层请求不取消，靠输入指纹/commitKey 去重）。
+- 验证：`agent-gate` **PASS（pass=1210 fail=0）**；`build-hsp-hap` 成功；A2A 冒烟 **`ok: true`**（`存笔记：3+3=6` → `INGEST_TEXT done problems=1`，30 字回复）；重复文本的幂等复用也在 hilog 验证（`INGEST_TEXT done` + 28 字回复）。
+
+## 11. 2026-11-02 拆分执行（DispatchOptions 五组）
+
+- `DispatchOptions` 拆成 `WritePorts` / `Observability` / `RunControl` / `DispatchMode` / `DispatchDomain`；扁平接口保留兼容。
+- `WorkflowContext` 只暴露五组；`NoteCaptureWorkflow` 按组消费；三个 branch 壳用 `flattenDispatchOptions` 过渡；`CommandExecutor` 用 `groupDispatchOptions` 构造上下文。
+- 验证：`agent-gate` **PASS（pass=1213 fail=0）**；`build-hsp-hap` 成功；A2A 冒烟 **`ok: true`**（provider 挂起 90s → `INGEST_TEXT_DEADLINE` → 转待整理回执）。
+
+## 12. 2026-11-02 branch 迁移（Prepared）
+
+- `PreparedBranch`（176 行）整体迁入 `NotePreparedWorkflow`；`GenerationEvaluator` 改为自建 truth_check 图，不再依赖 branch。
+- 删除 `PreparedBranch.ets`；prepared 路径不再使用 `flattenDispatchOptions`。
+- 验证：`agent-gate` **PASS（pass=1213 fail=0）**；`build-hsp-hap` 成功。
+- 剩余：`GenerationBranch`（705 行 + `GenerationEvaluator` 637 行）/ `IncrementalBranch`（272 行）。
+
+## 13. 2026-11-02 branch 迁移（Incremental）
+
+- `IncrementalBranch`（272 行）整体迁入 `NoteRegenerateWorkflow`；进度事件改走 workflow 自己的 `emitProgress`，不再依赖 `GenerationBranch`。
+- 删除 `IncrementalBranch.ets`；regenerate 路径不再使用 `flattenDispatchOptions`。
+- 验证：`agent-gate` **PASS（pass=1213 fail=0）**；`build-hsp-hap` 成功。
+- 剩余：`GenerationBranch`（705 行 + `GenerationEvaluator` 637 行；已于 §14 完成）。
+
+## 14. 2026-11-02 branch 迁移（Generation，收口）
+
+- `GenerationBranch`（705 行）整体迁入 `NoteGenerationWorkflow`；`GenerationEvaluator.finishStandardGeneration` 改为直接接收 `generationRepository`，不再需要 `DispatchOptions`。
+- 删除 `GenerationBranch.ets` 与 `flattenDispatchOptions`；四个 workflow 全部按组消费，`WorkflowContext` 不再暴露扁平 options。
+- 验证：`agent-gate` **PASS（pass=1213 fail=0）**；`build-hsp-hap` 成功。
+
+## 15. 2026-11-02 跨进程写加固
+
+- `DatabaseHelper` 初始化执行 `PRAGMA busy_timeout=5000`（连接级；`StoreConfig` 无配置项）；真机 `:agent` 日志已确认。
+- `run_event` 增加 `(run_id, sequence)` 唯一索引（旧库有重复时跳过，不阻塞启动）；`appendEvent` 对 busy / locked / 唯一冲突做 3 次有限重试。
+- 验证：`agent-gate` **PASS（pass=1214 fail=0）**；`build-hsp-hap` 成功；真机 A2A 幂等入库 hilog `INGEST_TEXT done` + `PRAGMA busy_timeout=5000` 已打印。
+
+## 16. 2026-11-02 Chat 工具回复（默认关闭）
+
+- 新增 `ConversationToolReplyFlags`（默认 false）、`IConversationToolPort`、`ConversationToolAdapter`（`ToolLoop` + `ToolCatalog.createReadOnlyRegistry()`）。
+- 开启时 text 请求走 `tool_reply`（非流式）；关闭时图里不添加该节点，`complete_reply` / `stream_reply` 行为不变。
+- `LlmClient` 显式 `implements LlmCaller`，让工具循环的构造注入在 ArkTS 下类型成立。
+- 验证：`agent-gate` PASS；`build-hsp-hap` 成功；默认关闭，未做真机开启验证。
+
+## 17. 2026-11-02 A2A 错误语义统一
+
+- 新增 `A2AErrorTaxonomy`：`A2AErrorCode -> kind (protocol/config/model/timeout/ingest/none)` + `a2aErrorText(code, detail)`。
+- `A2AController` / `AgentExtAbility` 删除本地错误文案常量，统一经 `a2aErrorText`；用户可见措辞保持原样。
+- 验证：`agent-gate` **PASS（pass=1219 fail=0）**；`build-hsp-hap` 成功；真机 A2A 幂等入库 hilog `INGEST_TEXT done`。
 | 进度唯一口径 | `docs/agents/phase-tracker.md` |
 
 验证命令：

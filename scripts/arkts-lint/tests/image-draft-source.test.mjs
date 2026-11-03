@@ -26,12 +26,12 @@ test('image payload maps to camera_capture source in the capture flow', () => {
   const unitSupport = read('agents/src/main/ets/core/dispatch/UnitSupport.ets');
   assert.match(unitSupport, /payload\.kind === 'image'/);
   assert.match(unitSupport, /return 'camera_capture'/);
-  assert.match(read('agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), /this\.buildGraph\(options\)\.run\(initial, runContext\)/);
+  assert.match(read('agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), /this\.buildGraph\(writePorts, observability, runControl\)\.run\(initial, runContext\)/);
 });
 
 test('generation pipeline always synthesizes a text payload from the source bundle', () => {
-  // 2026-10-31：dispatchGeneration 抽到 GenerationBranch。
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  // 2026-11-02：dispatchGeneration 已迁入 NoteGenerationWorkflow。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   const genPayloadBlock = branch.match(
     /const generationPayload: BranchRequest = \{[\s\S]*?payload: \{ kind: 'text', text: (?:this|GenerationEvaluator)\.bundleText\(bundle\) \}/,
   );
@@ -39,7 +39,7 @@ test('generation pipeline always synthesizes a text payload from the source bund
 });
 
 test('light route generation state uses synthesized text and persist=false', () => {
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   const lightStateBlock = branch.match(
     /const initial: AgentState = \{[\s\S]*?captureText: (?:this|GenerationEvaluator)\.bundleText\(bundle\)[\s\S]*?source: 'note_generation'[\s\S]*?persist: false/,
   );
@@ -68,7 +68,7 @@ test('CaptureChain defines ImagePayload with imageUri and optional userText', ()
 test('OcrNode reads input.payload for image kind but does not run in the generation graph', () => {
   assert.match(ocrNode, /input\.payload/);
   // 2026-10-31：buildGenerationGraph 抽到 GenerationBranch（静态方法）。
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   assert.match(branch, /buildGenerationGraph/);
   const genBlock = branch.match(/static .*buildGenerationGraph[\s\S]*?return graph/);
   assert.ok(genBlock !== null, 'buildGenerationGraph must exist and return');
@@ -76,10 +76,10 @@ test('OcrNode reads input.payload for image kind but does not run in the generat
 });
 
 test('image source does not leak into generation candidate evaluation truth check', () => {
-  // 2026-10-31：evaluateStandardCandidate 抽到 GenerationEvaluator，bundleText 也随之外移。
+  // 2026-11-02：PreparedBranch 迁入 NotePreparedWorkflow；evaluator 自建 truth_check 图。
   const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
   const evalBlock = evaluator.match(
-    /PreparedBranch\.buildGraph[\s\S]*?captureText: (?:this|GenerationEvaluator)\.bundleText\(bundle\)/,
+    /truthGraph[\s\S]*?captureText: (?:this|GenerationEvaluator)\.bundleText\(bundle\)/,
   );
   assert.ok(evalBlock !== null, 'evaluateStandardCandidate must use bundleText, not image URI');
 });

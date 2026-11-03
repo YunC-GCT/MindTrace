@@ -87,11 +87,27 @@ _Avoid_: interval (in code surface), delay
 A fixed-dimension vector representation of the note content, used for similarity search. Stored on KnowledgeUnit.
 
 **Dispatch**:
-The orchestration entry point that runs a Capture through the AI pipeline. Returns either a structured analysis or a KnowledgeUnit.
+The orchestration entry point that runs a Capture through the AI pipeline. Returns a `NoteOutcome` (committed / failed / cancelled / needsInput / readyPreview); a committed outcome carries the KnowledgeUnit.
 
-**Dispatcher**:
-The class in `agents/core/Dispatcher.ets` that runs the Capture workflow. Single public entry: `dispatch(req, options)`. Sub-agents are private collaborators.
-_Avoid_: Controller, Manager, Handler
+**CommandExecutor / CommandRouter**:
+The classes in `agents/src/main/ets/core/` that run a `NoteCommand`. `CommandExecutor` owns the run lifecycle and calls the routed workflow; `CommandRouter` does preflight (cancellation / approval hash) and resolves `kind → workflow`. Single public entry: `CommandExecutor.dispatchCommand(command, options)`.
+_Avoid_: Dispatcher (removed in spec 039), Controller, Manager, Handler
+
+**A2AController**:
+The entry-side class in `entry/src/main/ets/services/A2AController.ets` that owns A2A policy and orchestration: intent routing, plan progression, inline ingest, conversation memory, receipts, and replies. `AgentExtAbility` is only the JSON-RPC/snapshot adapter and delegates every request through `A2AReplyPort`.
+_Avoid_: putting intent/plan logic back into `AgentExtAbility`; treating the controller as a transport adapter.
+
+**IngestGateway**:
+The entry-side policy facade in `entry/src/main/ets/services/IngestGateway.ets` that all headless ingest entries (A2A, system share, inbox) call. It owns the inline-vs-background decision and delegates to `AgentIngestService`; callers never choose the execution mode themselves.
+_Avoid_: calling `AgentIngestService` directly from a new entry; duplicating mode checks in callers.
+
+**Chat tool reply**:
+The optional conversation path (`tool_reply`, spec 041) that routes a text turn through `ToolLoop` + `ToolCatalog.createReadOnlyRegistry()`. Default off via `ConversationToolReplyFlags`; when off the graph does not contain the node and replies stay on `ReplyService`.
+_Avoid_: treating it as the default chat path; enabling tools without a device-verified fallback.
+
+**A2A error taxonomy**:
+The single mapping in `entry/src/main/ets/services/A2AErrorTaxonomy.ets` from A2A error code to kind (`protocol/config/model/timeout/ingest/none`) and stable user-facing text. Controllers and the extension adapter format errors through `a2aErrorText`, not by concatenating strings.
+_Avoid_: adding new error strings in `AgentExtAbility` / `A2AController`; changing a code's text without updating the taxonomy test.
 
 **CaptureGraph**:
 The Capture workflow's native ArkTS implementation of the LangGraph graph model. **LangGraph is the project's primary Agent workflow architecture design**, and its naming (Node / Edge / State / conditional edge / START / END) is canonical (universal definitions in `docs/agents/agent-glossary.md`). CaptureGraph (in `agents/src/main/ets/graph/`) executes an Order: fixed edges between steps, plus a conditional edge after `truth_check` that reaches `persist` only when the state's `persist` flag is set. It is the first concrete workflow, not the name of the whole Agent architecture. Built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008).
@@ -103,10 +119,10 @@ The node vocabulary of the CaptureGraph: `START | capture | classify | structure
 The structured error a CaptureGraph node throws on failure: `kind`, `message`, `step`, `retriable`, optional `cause`. It short-circuits the Order — the user sees an error, never a fabricated KnowledgeUnit.
 
 **DispatchOptions**:
-The per-dispatch options bag passed to `Dispatcher.dispatch`: `analysisOnly`, `persist`, `includeRawText`, and `dao` (the injected persistence implementation).
+The per-dispatch options bag passed to `CommandExecutor.dispatchCommand`, grouped into `WritePorts` / `Observability` / `RunControl` / `DispatchMode` / `DispatchDomain`. `WorkflowContext` exposes the groups; workflows should consume only the group they need. The flat form remains the public input to `dispatchCommand`.
 
 **Sub-agent**:
-A private collaborator inside the Dispatcher pipeline (TypeClassifier, KnowledgeModel). Sub-agents are not user-facing.
+A private collaborator inside the command pipeline (TypeClassifier, KnowledgeModel). Sub-agents are not user-facing.
 _Avoid_: agent (overloaded, see below)
 
 **NoteDaoAdapter**:
@@ -172,7 +188,7 @@ The word **agent** is overloaded in this codebase. Use the precise form:
 | **MindTrace** | The whole app (project name) | repo name, `AppScope` config |
 | **`agents/`** (HSP) | The AI business module | `agents/src/main/ets/...` |
 | **`Agent*` (user-facing service)** | An in-app AI helper. *TODO: rename to `Assistant*` per `docs/adr/0002-agent-terminology-disambiguation.md`* | `AgentChatService`, `AgentFloatWindow`, `AgentMemoryService` |
-| **sub-agent** | A private collaborator inside the Dispatcher | `TypeClassifier`, `KnowledgeModel` |
+| **sub-agent** | A private collaborator inside the command pipeline | `TypeClassifier`, `KnowledgeModel` |
 
 **User-facing rule**: when writing copy the user sees (toast, placeholder, button label), use the precise form ("assistant" or "AI helper"), never "agent". When naming code, the migration is staged.
 
@@ -194,9 +210,9 @@ The word **agent** is overloaded in this codebase. Use the precise form:
 
 ## Note on this file
 
-This file is **devoid of implementation details**. Where a term's meaning *requires* code knowledge (e.g. "Dispatcher" is the class name in `agents/core/Dispatcher.ets`), the link is given for grounding but the *meaning* here is what an agent should treat as canonical. If the code contradicts this file, the code is wrong.
+This file is **devoid of implementation details**. Where a term's meaning *requires* code knowledge (e.g. "CommandExecutor" is the class name in `agents/src/main/ets/core/CommandExecutor.ets`), the link is given for grounding but the *meaning* here is what an agent should treat as canonical. If the code contradicts this file, the code is wrong.
 
-Implementation decisions (why this Dispatcher signature, why LlmGuard exists, why mcp/ is misnamed) live in [`docs/adr/`](./docs/adr/).
+Implementation decisions (why this CommandExecutor signature, why LlmGuard exists, why mcp/ is misnamed) live in [`docs/adr/`](./docs/adr/).
 
 ## Migration note (2026-09-02)
 

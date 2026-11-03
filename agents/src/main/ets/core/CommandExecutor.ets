@@ -28,7 +28,8 @@ import type {
   NoteCommand,
   NoteOutcome,
 } from 'common';
-import type { CaptureSetOptions, DispatchOptions } from './dispatch/DispatchOptions';
+import type { CaptureSetOptions, DispatchGroups, DispatchOptions } from './dispatch/DispatchOptions';
+import { groupDispatchOptions } from './dispatch/DispatchOptions';
 import { isBatchCancelled, withRunContext } from './dispatch/BatchSupport';
 import { NoteOutcomeMapper } from './dispatch/NoteOutcomeMapper';
 import {
@@ -290,9 +291,14 @@ export class CommandExecutor {
         }
         nodeEvents.push({ step: step, elapsedMs: elapsedMs });
       };
+      const groups: DispatchGroups = groupDispatchOptions(effective);
       const context: WorkflowContext = {
         request: request,
-        options: effective,
+        writePorts: groups.writePorts,
+        observability: groups.observability,
+        runControl: groups.runControl,
+        mode: groups.mode,
+        domain: groups.domain,
         runContext: this.resolveRunContext(options),
         startedAt: Date.now(),
       };

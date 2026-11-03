@@ -43,7 +43,7 @@ import { NoteDaoInterface } from '../models/NoteDaoInterface';
 import { TypeClassifier } from '../agents/TypeClassifier';
 import { KnowledgeModel } from '../agents/KnowledgeModel';
 import { TruthCheckService } from '../agents/TruthCheckService';
-import type { DispatchOptions } from '../core/dispatch/DispatchOptions';
+import type { DispatchDomain, DispatchMode, Observability, RunControl, WritePorts } from '../core/dispatch/DispatchOptions';
 import { seedTextFromRequest, sourceFromPayload } from '../core/dispatch/UnitSupport';
 import type { NoteWorkflow, WorkflowContext } from './WorkflowContext';
 
@@ -52,7 +52,11 @@ const log = new Logger('NoteCaptureWorkflow');
 export class NoteCaptureWorkflow implements NoteWorkflow {
   async run(command: NoteCommand, context: WorkflowContext): Promise<NoteOutcome> {
     const req: BranchRequest = context.request;
-    const options: DispatchOptions = context.options;
+    const writePorts: WritePorts = context.writePorts;
+    const observability: Observability = context.observability;
+    const runControl: RunControl = context.runControl;
+    const mode: DispatchMode = context.mode;
+    const domain: DispatchDomain = context.domain;
     const runContext: RunContext = context.runContext;
     const startedAt: number = context.startedAt;
     const operationId: string = req.operationId !== undefined ? req.operationId : 'legacy';
@@ -72,22 +76,22 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
       source: sourceFromPayload(req.payload),
       payload: req.payload,
       currentStep: 'START',
-      persist: options.persist !== false,
-      analysisOnly: options.analysisOnly === true,
-      subjectVocabulary: options.subjectVocabulary ?? [],
+      persist: mode.persist !== false,
+      analysisOnly: mode.analysisOnly === true,
+      subjectVocabulary: domain.subjectVocabulary ?? [],
       commitKey: req.commitKey,
-      skipClassification: options.skipLlmClassification === true,
+      skipClassification: mode.skipLlmClassification === true,
     };
     // 预算与取消是运行时属性，只走调用参数，不经 AgentState。
-    const finalState: AgentState = await this.buildGraph(options).run(initial, runContext);
+    const finalState: AgentState = await this.buildGraph(writePorts, observability, runControl).run(initial, runContext);
     const error: CaptureGraphError | undefined = finalState.error;
-    const requestCancelled: boolean = options.cancellationToken !== undefined
-      && options.cancellationToken.isCancelled();
+    const requestCancelled: boolean = runControl.cancellationToken !== undefined
+      && runControl.cancellationToken.isCancelled();
     const cancelledTerminal: boolean = requestCancelled
       || (error !== undefined && error.kind === 'CANCELLED');
     if (cancelledTerminal) {
       // ADR-0019 (e)：先看事务结果，再看 token —— 已落库的写必须报 committed=true。
-      return NoteCaptureWorkflow.cancelledResult(req, finalState, options, startedAt);
+      return NoteCaptureWorkflow.cancelledResult(req, finalState, mode, startedAt);
     }
     if (error !== undefined) {
       log.error('capture graph failed: ' + error.kind + ' step=' + error.step + ' msg=' + error.message);
@@ -95,7 +99,7 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
       if (finalState.classification !== undefined) {
         failed.classification = finalState.classification;
       }
-      if (options.includeRawText === true) {
+      if (mode.includeRawText === true) {
         failed.recognizedText = finalState.captureText;
       }
       return failed;
@@ -108,7 +112,7 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
       const classificationOutcome: NoteOutcome = {
         kind: 'readyPreview', operationId: operationId, route: 'D1', durationMs: Date.now() - startedAt,
         runId: '', checkpointId: '', classification: finalState.classification,
-        recognizedText: options.includeRawText === true ? finalState.captureText : undefined,
+        recognizedText: mode.includeRawText === true ? finalState.captureText : undefined,
       };
       log.info('dispatch analysis completed');
       return classificationOutcome;
@@ -119,7 +123,7 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
       if (finalState.classification !== undefined) {
         missing.classification = finalState.classification;
       }
-      if (options.includeRawText === true) {
+      if (mode.includeRawText === true) {
         missing.recognizedText = finalState.captureText;
       }
       return missing;
@@ -131,7 +135,7 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
     if (finalState.classification !== undefined) {
       success.classification = finalState.classification;
     }
-    if (options.includeRawText === true) {
+    if (mode.includeRawText === true) {
       success.recognizedText = finalState.captureText;
     }
     log.info('dispatch completed persisted=' + finalState.persist.toString() + ' category=' + unit.category);
@@ -139,21 +143,21 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
   }
 
   /** 装配 capture 子图（原 NoteCaptureWorkflow.buildGraph；每次 run 按当次 options 装配）。 */
-  private buildGraph(options: DispatchOptions): CaptureGraph {
-    const sink = options.onNodeTiming;
+  private buildGraph(writePorts: WritePorts, observability: Observability, runControl: RunControl): CaptureGraph {
+    const sink = observability.onNodeTiming;
     const timing: NodeTimingSink | undefined = sink === undefined
       ? undefined
       : (step: CaptureStep, ms: number): void => sink(step, ms);
     const graph: CaptureGraph = new CaptureGraph(timing);
-    const classifier: TypeClassifier = new TypeClassifier(options.cancellationToken);
-    const structure: KnowledgeModel = new KnowledgeModel(undefined, options.cancellationToken);
+    const classifier: TypeClassifier = new TypeClassifier(runControl.cancellationToken);
+    const structure: KnowledgeModel = new KnowledgeModel(undefined, runControl.cancellationToken);
     const truth: TruthCheckService = new TruthCheckService();
     graph.addNode('capture', OcrNodeFactory.create(classifier));
     graph.addNode('classify', ClassifyNodeFactory.create(classifier));
     graph.addNode('structure', StructureNodeFactory.create(structure));
     graph.addNode('truth_check', TruthCheckNodeFactory.create(truth));
-    const writePort: NoteWritePort | undefined = options.noteWritePort;
-    const dao: NoteDaoInterface | undefined = options.dao;
+    const writePort: NoteWritePort | undefined = writePorts.noteWritePort;
+    const dao: NoteDaoInterface | undefined = writePorts.dao;
     if (writePort !== undefined) {
       // #238 切片 A1：端口优先——幂等 / CAS / 结构化错误在端口层统一处理。
       graph.addNode('persist', PersistNodeFactory.createWithWritePort(writePort));
@@ -191,7 +195,7 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
   private static cancelledResult(
     req: BranchRequest,
     finalState: AgentState,
-    options: DispatchOptions,
+    mode: DispatchMode,
     startedAt: number,
   ): NoteOutcome {
     const commitResult = finalState.commitResult;
@@ -213,7 +217,7 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
     if (finalState.classification !== undefined) {
       cancelled.classification = finalState.classification;
     }
-    if (options.includeRawText === true) {
+    if (mode.includeRawText === true) {
       cancelled.recognizedText = finalState.captureText;
     }
     return cancelled;

@@ -127,16 +127,16 @@ test('P2 跨进程 producer：flag 关闭/DB 不可用回退、入队走 enqueue
 });
 
 test('A2A 整理：用户整理意图在扩展内联完成（无需打开 App），超时回退队列', () => {
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.ok(ability.includes('private ingestPlanItemNow('));
-  assert.ok(ability.includes('private ingestTextBatchNow('));
-  assert.ok(ability.includes('private ingestPendingItemsSequentially('));
-  assert.ok(ability.includes('this.ingestPlanItemNow(taskId, plan, item)'));
-  assert.ok(ability.includes('this.ingestTextBatchNow(taskId, request)'));
-  assert.ok(ability.includes('this.enqueueTexts([item.text])'));
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.ok(controller.includes('private ingestPlanItemNow('));
+  assert.ok(controller.includes('private ingestTextBatchNow('));
+  assert.ok(controller.includes('private ingestPendingItemsSequentially('));
+  assert.ok(controller.includes('this.ingestPlanItemNow(taskId, plan, item)'));
+  assert.ok(controller.includes('this.ingestTextBatchNow(taskId, request)'));
+  assert.ok(controller.includes('this.enqueueTexts([item.text])'));
   // 图片问答分支
-  assert.ok(ability.includes('handleImageQuestion'));
-  assert.ok(ability.includes('INTENT_IMAGE_QA'));
+  assert.ok(controller.includes('handleImageQuestion'));
+  assert.ok(controller.includes('INTENT_IMAGE_QA'));
 });
 
 test('P2 inbox 迁移：bootstrap 把 pending 项写入 agent_job 后 complete', () => {

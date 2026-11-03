@@ -25,7 +25,8 @@
 | 复赛演示脚本 / 赛前检查 | [`docs/agents/demo-script-2026-09-06.md`](./docs/agents/demo-script-2026-09-06.md) |
 | 排查 build / 编码陷阱 | [`docs/agents/file-header-template.md`](./docs/agents/file-header-template.md) §"创建新文件" |
 | 做 Agent workflow / CaptureGraph / ToolLoop / Conversation / skill 重构 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) → [`docs/adr/0008-capturegraph-self-built-runtime.md`](./docs/adr/0008-capturegraph-self-built-runtime.md) → [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](./docs/agents/d2-capturegraph-teaching-2026-09-05.md) |
-| 接 / 改小艺端A2A | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (P0 验收口径) → `entry/src/main/ets/agentextability/AgentExtAbility.ets` → `entry/src/main/resources/base/profile/agent_config.json` |
+| 接 / 改小艺端A2A | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (P0 验收口径) → `entry/src/main/ets/services/A2AController.ets` (策略/编排) → `entry/src/main/ets/services/IngestGateway.ets` (inline/queue) → `entry/src/main/ets/agentextability/AgentExtAbility.ets` (协议/快照) → `entry/src/main/resources/base/profile/agent_config.json` |
+| 改 A2A 错误文案 / 分类 | `entry/src/main/ets/services/A2AErrorTaxonomy.ets` → [`docs/specs/042-a2a-error-taxonomy.md`](./docs/specs/042-a2a-error-taxonomy.md) |
 | 查当前做到哪一阶段 / 怎么验收 | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (唯一进度口径, P0–P6 + DoD) |
 | 真机验证 A2A 链路 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (自动起小艺 → 进智能体 → 发送 → 比对回复) |
 | 推进 agent 能力级工作 (工具层 / 调用协议 / 拆分) | [`docs/agents/patterns/capability-to-implementation.md`](./docs/agents/patterns/capability-to-implementation.md) (skill 链路) + [`docs/architecture/agent-tool-chain-2026-09-06.md`](./docs/architecture/agent-tool-chain-2026-09-06.md) (派发链总览) |
@@ -85,7 +86,7 @@
 2. **改完必跑 gate**：`node scripts/agent-gate/index.mjs`。它检查改动的 `.ets`（BOM / 文件头 / 模块边界）、`arkts-lint`、`naming-lint`、`link-check`、`doc-trace`、`process-boundary`，**并跑全量单测**（改动集含 `.ets/.mjs/.ts/.json` 时；`--all` 必跑）。
 3. **交付必须带 gate 结果**：回复 / PR / commit 里写 `RESULT: PASS` 或失败项；没有 gate 输出的“已完成”视为未完成。
 4. **不许绕过**：不得用 `--no-verify`、注释掉 lint 规则、删除/跳过测试、改 `build-profile` 或 CI 来让 gate 变绿。gate 失败先修第一条 error，再重跑。
-5. **边界不放宽**：`agents/` 不 import `entry/`；`pages/` / `overlays/` 不直接 import `CaptureGraph` / `Dispatcher` / `NoteDao`（走 service）；不新建第 6 个 module；不改 `mcp/` 语义（ADR-0010）。
+5. **边界不放宽**：`agents/` 不 import `entry/`；`pages/` / `overlays/` 不直接 import `CaptureGraph` / `CommandExecutor` / `NoteDao`（走 service）；不新建第 6 个 module；不改 `mcp/` 语义（ADR-0010）。
 6. **设计变更先落文档**：改架构 / 协议 / 数据模型前，先看 ADR 与 spec；新的不可逆决策写 ADR，不把决定藏在代码里。
 7. **只改该改的**：不顺手重构无关文件，不整段覆盖 user 的手工编辑；历史文档（`docs/legacy/`）只读。
 8. **报告事实**：命令失败就贴失败输出；不要用“应该”“大概”代替验证结果。
@@ -111,7 +112,7 @@
 | 阶段 | 状态 | 说明 |
 |---|---|---|
 | **P0 协议接入** | ✅ | 小艺可调起 `AgentExtAbility` 并渲染回复；验收命令 `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` 返回 `ok: true` |
-| **P1 入口 / P2 选图 / P3 编排 / P3b 文搜图** | ✅ | 应用内 `+ → 批量`；A2A 已就地入库（`AgentIngestService → Dispatcher → KnowledgeUnitWriteService`）；逐项证据见 phase-tracker |
+| **P1 入口 / P2 选图 / P3 编排 / P3b 文搜图** | ✅ | 应用内 `+ → 批量`；A2A 已就地入库（`AgentIngestService → CommandExecutor → KnowledgeUnitWriteService`）；逐项证据见 phase-tracker |
 | **P4 模型网关** | 🟡 | 云端真机已通（首字 741ms）；端侧 `localChatModel` 仅 PC/2in1 + 企业资质，手机平板不可用 |
 | **P4 结果回执 / P5 合规** | ⬜ / ⏸ | 回执条数未做；合规标识随 P6 缓做 |
 | **P6 上架** | ⏸ | **项目处于测试态，不推进上架**；只影响「意图注册」与「Agent Framework Kit 拉起智能体」两项验证，不影响应用内链路与 A2A 白名单链路 |
@@ -126,12 +127,12 @@
 | UI | `entry/pages/`, `entry/overlays/` | 渲染 + 用户输入 |
 | View Model | `entry/viewmodels/` | UI state + 用户意图 |
 | Business Service | `entry/services/` | 编排, **不持 UI 引用** |
-| **AI Agent (亮点)** | `agents/` | `Dispatcher` (主) + `TypeClassifier` / `KnowledgeModel` (子) |
+| **AI Agent (亮点)** | `agents/` | `CommandExecutor` / `CommandRouter` (主) + workflows / `TypeClassifier` / `KnowledgeModel` |
 | Agent Workflows | `common/workflow/`, `agents/graph/`, `entry/workflows/`, `skill/workflows/` | 共享 StateGraph 内核 + 各领域 State/Node/Edge |
-| **端A2A 入口** | `entry/agentextability/` | 小艺 JSON-RPC 2.0 接入：`onData` → `handleTask` → 回 `task` 快照 |
+| **端A2A 入口** | `entry/agentextability/` + `entry/services/A2AController.ets` + `entry/services/IngestGateway.ets` | 小艺 JSON-RPC 2.0 接入：`onData` → `A2AController.handle` → `IngestGateway` → 回 `task` 快照；ability 只做协议适配 |
 | Data + Infra | `common/` | `LlmClient` / `LlmGuard` / `ContentProtocol` / RDB 单例 |
 
-**关键 seam**: `ConversationWorkflow → AiService.captureText → Dispatcher.dispatch → CaptureGraph → KnowledgeModel.structure → TruthCheckNode → NoteDaoAdapter`; LLM 统一走 `LlmClient.call`, 工具统一走 `ToolCatalog/ToolRegistry`, 全部 Markdown 走 `ContentProtocol` (MM-MD-v1)
+**关键 seam**: `ConversationWorkflow → AiService.captureText → CommandExecutor.dispatchCommand → NoteCaptureWorkflow → CaptureGraph → KnowledgeModel.structure → TruthCheckNode → NoteDaoAdapter`; LLM 统一走 `LlmClient.call`, 工具统一走 `ToolCatalog/ToolRegistry`, 全部 Markdown 走 `ContentProtocol` (MM-MD-v1)
 
 **LLM 截断处理**: 聊天回复在 `finish_reason === 'length'` 时**不再抛错**——流式在末尾追加 `*(回复因长度限制被截断)*`，非流式返回 partial + 同一标记（`LlmResponseParser` / `LlmClient`）。`ReplyService` 仍显式传 `CHAT_REPLY_MAX_TOKENS = 12000`。**注意**：note generation 的 JSON 路径（`GenerationJsonCaller`）遇到同一标记会抛 `LLM_TRUNCATED`，消息形如 `... response truncated by max_tokens`；这不是聊天回复的 StreamEvent 解析问题，修法是提高生成预算 / 压缩 prompt，而不是改流式解析。
 

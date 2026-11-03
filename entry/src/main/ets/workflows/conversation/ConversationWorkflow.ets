@@ -75,6 +75,7 @@ import {
   IConversationIntentPort,
   IConversationNoteRoutePort,
   IConversationReplyPort,
+  IConversationToolPort,
 } from './ConversationWorkflowPorts';
 
 const workflowLog: Logger = new Logger('ConversationWorkflow');
@@ -114,6 +115,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   private readonly intentClassifier: IConversationIntentPort;
   private readonly appIntentRouter: AppIntentRouter = new AppIntentRouter();
   private readonly replyService: IConversationReplyPort;
+  private readonly toolReplyService: IConversationToolPort | undefined;
   private readonly capturePort: IConversationCapturePort;
   private readonly noteRoute: IConversationNoteRoutePort;
   private evidenceService: NoteEvidenceService | null = null;
@@ -130,6 +132,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       ?? ConversationWorkflowPorts.production(callbacks.getContext());
     this.intentClassifier = resolvedPorts.intent;
     this.replyService = resolvedPorts.reply;
+    this.toolReplyService = resolvedPorts.toolReply;
     this.capturePort = resolvedPorts.capture;
     this.noteRoute = resolvedPorts.noteRoute;
     this.draftWorkflow = ConversationDraftWorkflow.create(this);
@@ -275,6 +278,11 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     return await this.draftWorkflow.listRecoverable();
   }
 
+  /** Chat 工具回复默认关闭；开启后 text 请求走 tool_reply（非流式）。 */
+  private toolReplyEnabled(): boolean {
+    return this.toolReplyService !== undefined && this.toolReplyService.isEnabled();
+  }
+
   private buildGraph(): StateGraph<ConversationState, ConversationStep> {
     const graph: StateGraph<ConversationState, ConversationStep> =
       new StateGraph<ConversationState, ConversationStep>('START', 'END');
@@ -396,6 +404,21 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       );
       return this.copyState(input, 'stream_reply');
     });
+    if (this.toolReplyEnabled()) {
+      graph.addNode('tool_reply', async (input: ConversationState): Promise<ConversationState> => {
+        await this.handleCompleteReply(
+          input.runRef,
+          input.memoryContext ?? '',
+          input.learnerProfileContext ?? '',
+          input.request.userContent,
+          input.evidence,
+          input.noteReviewPlan,
+          true,
+        );
+        return this.copyState(input, 'tool_reply');
+      });
+      graph.addEdge('tool_reply', 'END');
+    }
     graph.addNode('note_reply', async (input: ConversationState): Promise<ConversationState> => {
       const event: NoteDraftReadyEvent | undefined = await this.generateNoteFromConversation(
         input.runRef,
@@ -466,6 +489,9 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     });
     graph.addEdge('load_reply_context', 'save_reply_input');
     graph.addConditionalEdge('save_reply_input', (state: ConversationState): ConversationStep => {
+      if (this.toolReplyEnabled() && state.request.kind === 'text') {
+        return 'tool_reply';
+      }
       if (state.request.kind === 'text' && state.request.responseMode === 'stream') {
         return 'stream_reply';
       }
@@ -753,6 +779,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     userContent: string,
     evidence: NoteEvidenceContext | undefined,
     reviewPlan: NoteReviewPlan | undefined,
+    useTools: boolean = false,
   ): Promise<void> {
     if (reviewPlan !== undefined && reviewPlan.kind !== 'none') {
       await this.handleNoteReviewComplete(ref, memoryContext, learnerProfileContext, reviewPlan);
@@ -765,7 +792,9 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       }
       this.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
-      const reply: string = await this.replyService.complete(replyContext, this.cancellationToken(ref));
+      const reply: string = useTools && this.toolReplyService !== undefined
+        ? await this.toolReplyService.complete(replyContext, this.cancellationToken(ref))
+        : await this.replyService.complete(replyContext, this.cancellationToken(ref));
       await this.addAiMessage(ref, this.applyEvidenceToAnswer(evidence, reply));
       await this.safeUpdateLearnerProfileIfNeeded(ref);
       await this.safeSummarizeIfNeeded(ref);

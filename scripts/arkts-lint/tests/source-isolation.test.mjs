@@ -35,8 +35,8 @@ test('NoteGenerationRun carries sourceIds and pendingSourceIds arrays', () => {
 });
 
 test('Dispatcher builds sourceIds from bundle fragments in generation run', () => {
-  // 2026-10-31：生成分支抽到 GenerationBranch。
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  // 2026-11-02：生成逻辑已迁入 NoteGenerationWorkflow。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   assert.match(branch, /sourceIds: bundle\.fragments\.map\(\(fragment\): string => fragment\.id\)/);
 });
 
@@ -46,16 +46,16 @@ test('buildSourceId creates stable composite IDs from kind, originId, sequence',
 });
 
 test('normalizeBundle re-sequences fragments and fills missing IDs', () => {
-  // 2026-10-31：normalizeBundle 抽到 GenerationBranch（静态方法）。
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  // 2026-11-02：normalizeBundle 已迁入 NoteGenerationWorkflow（静态方法）。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   assert.match(branch, /static normalizeBundle/);
   assert.match(branch, /fragment\.id\.length > 0 \? fragment\.id : buildSourceId/);
 });
 
 test('standard and deep generation receive the normalized source bundle', () => {
-  // 2026-10-31：withTokenBudget 随评估/终态逻辑抽到 GenerationEvaluator（静态方法），调用点在 GenerationBranch。
+  // 2026-11-02：withTokenBudget 仍在 GenerationEvaluator（静态方法），调用点在 NoteGenerationWorkflow。
   const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   const calls = branch.match(
     /withTokenBudget\(\s*request,\s*budget\.maxTokens,\s*bundle,\s*requirement,\s*\)/g,
   ) ?? [];
@@ -66,10 +66,10 @@ test('standard and deep generation receive the normalized source bundle', () => 
 });
 
 test('incremental generation concatenates base and new sources', () => {
-  // 2026-10-31：增量分支抽到 IncrementalBranch。
-  const incrementalBranch = read('agents/src/main/ets/core/dispatch/IncrementalBranch.ets');
-  assert.match(incrementalBranch, /base\.sources\.fragments\.concat\(request\.sources\.fragments\)/);
-  assert.match(incrementalBranch, /base\.manifest\.sourceIds\.concat\(plan\.newSourceIds\)/);
+  // 2026-11-02：增量逻辑已迁入 NoteRegenerateWorkflow。
+  const incrementalWorkflow = read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets');
+  assert.match(incrementalWorkflow, /base\.sources\.fragments\.concat\(request\.sources\.fragments\)/);
+  assert.match(incrementalWorkflow, /base\.manifest\.sourceIds\.concat\(plan\.newSourceIds\)/);
 });
 
 test('NoteGenerationRepository persists each SourceFragment in a separate table', () => {
@@ -83,7 +83,7 @@ test('NoteGenerationRepository restore reconstructs fragments ordered by sequenc
 });
 
 test('referencedPendingSourceIds tracks which pending sources appear in draft sections', () => {
-  const branch = read('agents/src/main/ets/core/dispatch/GenerationBranch.ets');
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   assert.match(branch, /static referencedPendingSourceIds/);
   assert.match(branch, /draft\.sections/);
   assert.match(branch, /pendingSourceIds/);

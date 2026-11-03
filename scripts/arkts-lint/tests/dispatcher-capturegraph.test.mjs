@@ -18,7 +18,7 @@ test('Dispatcher exposes only the command entry (A4 4c Step2)', () => {
 });
 
 test('NoteCaptureWorkflow owns CaptureGraph construction and DAO/port injection internally', () => {
-  assert.match(workflow, /private buildGraph\(options: DispatchOptions\): CaptureGraph/);
+  assert.match(workflow, /private buildGraph\(writePorts: WritePorts, observability: Observability, runControl: RunControl\): CaptureGraph/);
   assert.match(workflow, /PersistNodeFactory\.create\(dao\)/);
   assert.match(workflow, /addConditionalEdge\('classify'/);
   assert.match(workflow, /input\.analysisOnly \? 'END' : 'structure'/);
@@ -30,7 +30,7 @@ test('NoteCaptureWorkflow owns CaptureGraph construction and DAO/port injection 
 
 test('CommandExecutor delegates capture to NoteCaptureWorkflow (spec 039 S2)', () => {
   assert.match(dispatcher, /NoteCaptureWorkflow/);
-  assert.match(workflow, /this\.buildGraph\(options\)\.run\(initial, runContext\)/);
+  assert.match(workflow, /this\.buildGraph\(writePorts, observability, runControl\)\.run\(initial, runContext\)/);
   assert.doesNotMatch(dispatcher, /private buildGraph\(/);
   assert.doesNotMatch(dispatcher, /new TypeClassifier\(/);
   assert.doesNotMatch(workflow, /new NoteAgent\(/);

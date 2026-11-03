@@ -24,7 +24,7 @@ const runtimeSources = [
   'common/src/main/ets/models/CaptureChain.ets',
   'agents/src/main/ets/core/dispatch/DispatchOptions.ets',
   'agents/src/main/ets/core/dispatch/UnitSupport.ets',
-  'agents/src/main/ets/core/dispatch/PreparedBranch.ets',
+  'agents/src/main/ets/workflows/NotePreparedWorkflow.ets',
   'agents/src/main/ets/core/dispatch/GenerationEvaluator.ets',
   'agents/src/main/ets/core/CommandExecutor.ets',
 ].map((path) => read(path).replace(/^import[\s\S]*?;\r?\n/gm, '')).join('\n');

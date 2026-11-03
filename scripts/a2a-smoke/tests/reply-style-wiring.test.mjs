@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
-const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+const controller = read('entry/src/main/ets/services/A2AController.ets');
 const replyService = read('entry/src/main/ets/services/ReplyService.ets');
 const UI_CALLERS = [
   'entry/src/main/ets/services/ModelRouter.ets',
@@ -15,8 +15,8 @@ const UI_CALLERS = [
 ];
 
 test('A2A passes plain_text_math explicitly to ReplyService.complete', () => {
-  assert.match(ability, /const A2A_REPLY_STYLE: ReplyStyle = 'plain_text_math'/);
-  assert.match(ability, /\.complete\(context, session\.token, policy, A2A_REPLY_STYLE\)/);
+  assert.match(controller, /const A2A_REPLY_STYLE: ReplyStyle = 'plain_text_math'/);
+  assert.match(controller, /\.complete\(context, session\.token, policy, A2A_REPLY_STYLE\)/);
 });
 
 test('ReplyService keeps markdown as the default style for UI callers', () => {

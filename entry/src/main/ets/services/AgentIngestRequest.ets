@@ -6,11 +6,12 @@
  *       让整理链路只认这个结构，不再关心消息是从哪个入口进来的。
  * 依赖: services/AgentImageParts（图片项形状），无 Kit、无 Context
  *
- * 分层：入口 adapter（协议解析）→ AgentIngestRequest（本文件）→ AgentIngestService（编排）
- *       → OcrService（共享能力）→ Dispatcher（agent 链路）→ 写路径
+ * 分层：入口 adapter（协议解析）→ AgentIngestRequest（本文件）→ IngestGateway（模式/入口收口）
+ *       → AgentIngestService（实现）→ OcrService（共享能力）→ CommandExecutor（agent 链路）→ 写路径
  */
 
 import { AgentImagePart } from './AgentImageParts';
+import type { NoteOutcome } from 'common';
 
 /** 入口标识，用于日志与回执措辞；新增入口只加一个常量 */
 export const INGEST_SOURCE_XIAOYI: string = 'xiaoyi';
@@ -34,4 +35,14 @@ export function buildIngestRequest(source: string, text: string, images: AgentIm
 /** 是否有可整理的内容（空请求不该进模型，也不该入队） */
 export function hasIngestPayload(request: AgentIngestRequest): boolean {
   return request.text.trim().length > 0 || request.images.length > 0;
+}
+
+/**
+ * 一次整理的统一结果（inline / background 共用）。
+ * 多题时 outcomes 只含首题，其余在 queuedTexts；单题/单图时 outcomes 长度为 1。
+ */
+export interface IngestBatchResult {
+  outcomes: NoteOutcome[];
+  totalProblems: number;
+  queuedTexts: string[];
 }

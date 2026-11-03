@@ -206,11 +206,11 @@ test('Issue 99 note intent produces a typed preview and confirms the exact check
   assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /generation:/);
   assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /kind: 'generation'/);
   assert.match(dispatcher, /preparedCandidate/);
-  // 2026-10-31：确认提交的 checkpointId / candidateHash 逻辑在 PreparedBranch。
-  const preparedBranch = read('agents/src/main/ets/core/dispatch/PreparedBranch.ets');
-  assert.match(preparedBranch, /checkpointId/);
-  assert.match(preparedBranch, /candidateHash/);
-  assert.match(read('agents/src/main/ets/workflows/NotePreparedWorkflow.ets'), /PreparedBranch\.dispatch/);
+  // 2026-11-02：确认提交逻辑已迁入 NotePreparedWorkflow。
+  const preparedWorkflow = read('agents/src/main/ets/workflows/NotePreparedWorkflow.ets');
+  assert.match(preparedWorkflow, /checkpointId/);
+  assert.match(preparedWorkflow, /candidateHash/);
+  assert.match(preparedWorkflow, /commitPrepared\(/);
 });
 
 test('Conversation workflow owns typed intent classification and routes from its state', () => {

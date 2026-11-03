@@ -30,7 +30,7 @@ test('the vocabulary travels from the dispatcher down to the prompt', () => {
   const structurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
 
   assert.match(optionsSource, /subjectVocabulary\?: string\[\];/);
-  assert.match(captureBranch, /subjectVocabulary: options\.subjectVocabulary \?\? \[\]/);
+  assert.match(captureBranch, /subjectVocabulary: domain\.subjectVocabulary \?\? \[\]/);
   assert.match(state, /subjectVocabulary\?: string\[\];/);
   assert.match(state, /copied\.subjectVocabulary = input\.subjectVocabulary/);
   assert.match(node, /input\.subjectVocabulary \?\? \[\]/);

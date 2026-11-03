@@ -33,6 +33,7 @@
 //   - 显式类型
 //   - 不抛 Record<string, T>
 
+import type { LlmCaller } from './LlmGuard';
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -71,7 +72,7 @@ interface ComposedRequest {
   effort: string;
 }
 
-export class LlmClient {
+export class LlmClient implements LlmCaller {
   private config: LlmConfig;
 
   constructor() {

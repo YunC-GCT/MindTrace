@@ -1,15 +1,15 @@
 /**
- * AgentIngestService.ets — 所有入口的整理端口（唯一写入口）。
+ * AgentIngestService.ets — 整理链路的底层实现（生产入口统一经 IngestGateway）。
  *
  * 路径: entry/src/main/ets/services/AgentIngestService.ets
  * 职责: 收一个 AgentIngestRequest（文字 + 可选图片），需要时先调 OcrService 把图变成文本，
- *       再走 DatabaseHelper.init → AiService.ingestText → Dispatcher → 结构化 → KnowledgeUnitWriteService。
- * 依赖: common (DatabaseHelper / KnowledgeUnit)、services/AiService、services/OcrService
+ *       再走 DatabaseHelper.init → AiService.ingestText → CommandExecutor → 结构化 → KnowledgeUnitWriteService。
+ * 依赖: common (DatabaseHelper)、services/AiService、services/OcrService、IngestGateway（上游）
  *
  * 为什么这么分层：
  *   入口层（小艺 extension / 应用内选图 / 分享）只负责「把外部协议翻译成 AgentIngestRequest」，
  *   传输差异到此为止；识别是共享能力（OcrService），编排与落库也是共享的（CommandExecutor + 写路径）。
- *   新入口 = 新 adapter，不需要复制任何整理逻辑。
+ *   新入口 = 新 adapter，不需要复制任何整理逻辑；模式选择（inline / background）在 IngestGateway。
  *
  * 进程约束：扩展进程（:agent）没有 UIAbilityContext，副作用必须关掉
  *   （AiService 第二个参数 includeUiEffects = false），卡片刷新由主进程注册。
@@ -22,14 +22,15 @@
 
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { DatabaseHelper, KnowledgeUnit } from 'common';
+import { DatabaseHelper } from 'common';
 import type { NoteOutcome } from 'common';
 import { AiService } from './AiService';
 import { planCaptureSet } from 'agents';
 import type { PlannedProblem, SetImageText, SetPlan } from 'agents';
 import { AgentImagePart } from './AgentImageParts';
-import { AgentIngestRequest } from './AgentIngestRequest';
+import { AgentIngestRequest, IngestBatchResult } from './AgentIngestRequest';
 import { WriteJobFlags, WriteJobScheduler } from './WriteJobScheduler';
+import type { WriteJobPriority } from './WriteJobModels';
 import { A2APlanItem, buildA2APlanItemsFromPages } from './A2APlanModels';
 import { OcrService } from './OcrService';
 
@@ -40,28 +41,9 @@ const TAG: string = 'AgentIngest';
 const MAX_IMAGES: number = 3;
 const NEWLINE: string = String.fromCharCode(10);
 
-export interface AgentTextBatchResult {
-  /** 同步提交的结果（多题时只含第 1 题）。 */
-  outcomes: NoteOutcome[];
-  /** planner 切分出的总题数。 */
-  totalProblems: number;
-  /** 多题时剩余题目文本（调用方转入待整理队列）。 */
-  queuedTexts: string[];
-}
+export interface AgentTextBatchResult extends IngestBatchResult {}
 
 export class AgentIngestService {
-  /** 端口入口（旧适配器）：失败向上抛，由调用方决定是否退回队列。 */
-  static async ingest(context: common.Context, request: AgentIngestRequest): Promise<KnowledgeUnit> {
-    const outcome: NoteOutcome = await AgentIngestService.ingestOutcome(context, request);
-    if (outcome.kind !== 'committed' || outcome.unit === undefined) {
-      const code: string = outcome.code !== undefined ? outcome.code : 'INGEST_FAILED';
-      const message: string = outcome.message !== undefined
-        ? outcome.message : (outcome.reason !== undefined ? outcome.reason : 'ingest failed');
-      throw new Error(code + ': ' + message);
-    }
-    return outcome.unit;
-  }
-
   /**
    * 图片入口：OCR（文字识别工具）→ 按题规划项（不写库）。返回 null 表示没有可识别文字。
    * A2A 只在「意图=ocr」时调用，识别完先给 checkpoint 摘要，用户回复「继续」才逐题入库。
@@ -93,14 +75,15 @@ export class AgentIngestService {
   }
 
   /**
-   * 单题整理入口：flag 开启时经 WriteJobScheduler（interactive lane）；
-   * 关闭时直连（旧行为逐字节一致）。
+   * 单题整理入口：flag 开启时经 WriteJobScheduler（默认 interactive lane）；
+   * 关闭时直连（旧行为逐字节一致）。priority 由 IngestGateway 的 mode 决定。
    */
-  static async ingestSingleText(context: common.Context, text: string): Promise<NoteOutcome> {
+  static async ingestSingleText(context: common.Context, text: string,
+    priority: WriteJobPriority = 'interactive'): Promise<NoteOutcome> {
     if (!WriteJobFlags.isEnabled()) {
       return await AgentIngestService.ingestSingleTextDirect(context, text);
     }
-    const result: Object = await WriteJobScheduler.shared().submit('interactive', text, async (): Promise<Object> => {
+    const result: Object = await WriteJobScheduler.shared().submit(priority, text, async (): Promise<Object> => {
       const outcome: NoteOutcome = await AgentIngestService.ingestSingleTextDirect(context, text);
       return outcome as Object;
     });

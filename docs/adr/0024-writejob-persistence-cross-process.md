@@ -23,7 +23,7 @@
 - **队列路径（UI 进程）**：`WriteJobScheduler` 承接 inbox 消费、启动恢复与显式 background 任务；`agent_job` 的 claim 租约保证队列内同一时刻只有一个执行者。
 - **内联路径（`:agent` 扩展进程）**：A2A 单次整理（单题 / 多题逐题 / 「全部」）在扩展进程内联执行，完成后直接在小艺回执。产品要求「不打开 App 也能整理」，因此它不经过 `WriteJobScheduler`，也不受队列 lane / 租约约束（细节见 §2.7）。
 - 两条路径共享同一套写端口与幂等语义：`commitKey` / 输入指纹 / `expectedVersion` CAS 保证跨进程重放不双写；`KnowledgeUnitWriteService.writeSection` 是**进程内**串行，不是跨进程锁。
-- 已知残余风险：跨进程同时写同一 RDB 可能出现 `SQLITE_BUSY`（`StoreConfig` 无 `busy_timeout`），当前靠 `commitKey` 幂等与 A2A 超时回退队列兜底；错误重试尚未实现，是需要后续加固的点。
+- 跨进程写加固（2026-11-02）：DB 初始化执行 `PRAGMA busy_timeout=5000`；`run_event` 建 `(run_id, sequence)` 唯一索引（旧库有重复时跳过）；`appendEvent` 对 busy / locked / 唯一冲突做有限重试。`StoreConfig` 仍无 `busy_timeout` 配置项，靠连接级 PRAGMA。
 
 ### 2.2 持久队列 `agent_job`（schema v20）
 
@@ -96,7 +96,7 @@ agent_job(
 
 - **高**：新表 additive、不动协议/既有表；flag 关闭即回到 038 S2 行为；
 - 回滚时 `agent_job` 可保留（数据无害）或删表；迁移仅 inbox→job 单向，回滚后 inbox 仍可读；
-- 风险点：多进程 RDB 写竞争（claim 租约 + `commitKey` 幂等 + 失败降级 inbox；`busy_timeout` / 重试尚未落地，见 spec 040 §风险）。
+- 风险点：多进程 RDB 写竞争（claim 租约 + `commitKey` 幂等 + 失败降级 inbox；2026-11-02 已补 `PRAGMA busy_timeout=5000`、`run_event` 唯一索引与 `appendEvent` 有限重试，见 spec 040 §风险）。
 
 ## 5. 影响
 

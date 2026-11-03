@@ -91,8 +91,10 @@ Each spec has these sections:
 - [`036-multi-image-single-pass-consolidation.md`](./036-multi-image-single-pass-consolidation.md) — 一次整理：1..N 张图 → 多题汇总（一图多题/多图多题/确认页）
 - [`038-write-job-scheduler.md`](./038-write-job-scheduler.md) — 笔记写入工作调度器：WriteJob 双通道队列/并发/观测（S0 实验 + S1 MVP）
 - [`037-rag-retrieval-data-augmentation.md`](./037-rag-retrieval-data-augmentation.md) — RAG 检索：复用 DataAugmentationKit retrieval（FTS/BM25）+ 现有 LLM
-- [`039-agent-workflow-first.md`](./039-agent-workflow-first.md) — Agent 编排收口：CommandExecutor + CommandRouter + 四条 workflow（S1–S3，golden 零重录；capture 为实体图，其余三条为转发壳）
+- [`039-agent-workflow-first.md`](./039-agent-workflow-first.md) — Agent 编排收口：CommandExecutor + CommandRouter + 四条 workflow（S1–S3，golden 零重录；四条 workflow 均为实体实现）
 - [`040-writejob-persistence-cross-process.md`](./040-writejob-persistence-cross-process.md) — WriteJob 持久队列：agent_job v20 + 队列单执行者 + 跨进程 handoff（038 S3）；A2A 单次整理内联
+- [`041-chat-tool-loop.md`](./041-chat-tool-loop.md) — Chat 工具回复：ToolLoop 接入 conversation workflow（默认关闭，无行为变更）
+- [`042-a2a-error-taxonomy.md`](./042-a2a-error-taxonomy.md) — A2A 错误码 / 分类 / 用户文案统一映射
 
 ## Conventions in these specs
 

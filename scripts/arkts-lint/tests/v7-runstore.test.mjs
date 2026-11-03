@@ -87,6 +87,18 @@ test('schema v16 adds run_store and run_event with their indexes', () => {
   assert.match(db, /SQL_INDEX_RUN_EVENT_RUN_SEQ,/);
 });
 
+test('跨进程写加固：busy_timeout + run_event 唯一索引 + appendEvent 重试', () => {
+  assert.match(db, /PRAGMA busy_timeout = 5000/);
+  assert.match(db, /uq_run_event_run_seq/);
+  assert.match(db, /tryExecuteSql/);
+  assert.match(db, /applyBusyTimeout/);
+  const dao = readFileSync(resolve(root, 'entry/src/main/ets/database/RunStoreDao.ets'), 'utf8');
+  assert.match(dao, /APPEND_ATTEMPTS: number = 3/);
+  assert.match(dao, /appendEventOnce/);
+  assert.match(dao, /isRetryableWriteError/);
+  assert.match(dao, /RETRY_DELAY_MS/);
+});
+
 test('RunStore.create stores a record and rejects a duplicate runId', async () => {
   const port = new RunStoreAdapter(makeStore());
   await port.create(record());

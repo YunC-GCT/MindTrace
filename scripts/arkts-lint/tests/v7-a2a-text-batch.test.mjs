@@ -18,12 +18,20 @@ test('AgentIngestService 文本入口复用 036 planner 并按题拆分', () => 
 });
 
 test('A2A 文本路径：首题同步回执，其余入待整理队列', () => {
-  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  assert.match(ability, /AgentIngestService\.ingestTextBatch\(this\.context, request\.text\)/);
-  assert.match(ability, /private handleTextBatch\(/);
-  assert.match(ability, /private enqueueTexts\(texts: string\[\]\): void/);
-  assert.match(ability, /已转待整理/);
-  assert.match(ability, /打开 MindTrace 会自动补齐/);
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.match(controller, /IngestGateway\.ingest\(this\.context, request, INGEST_MODE_INLINE\)/);
+  assert.match(controller, /private handleTextBatch\(/);
+  assert.match(controller, /private enqueueTexts\(texts: string\[\]\): void/);
+  assert.match(controller, /已转待整理/);
+  assert.match(controller, /打开 MindTrace 会自动补齐/);
+});
+
+test('文本批量整理有 deadline：provider 挂起时转待整理', () => {
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  assert.match(controller, /private ingestBatchWithDeadline\(/);
+  assert.match(controller, /INGEST_TEXT_DEADLINE exceeded/);
+  assert.match(controller, /this\.enqueueTexts\(\[request\.text\]\)/);
+  assert.match(controller, /a2aErrorText\('A2A_INGEST_TIMEOUT'\)/);
 });
 
 test('e2e agentTextBatch 已注册（真机可自检）', () => {

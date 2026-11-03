@@ -15,7 +15,8 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry, KnowledgeUnit, NoteReadPortAdapter, RdbNoteReadStore } from 'common';
+import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry, NoteReadPortAdapter, RdbNoteReadStore } from 'common';
+import type { KnowledgeUnit, NoteOutcome } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
@@ -35,13 +36,14 @@ import { WRITE_JOB_UI_ENABLED } from '../services/WriteJobConfig';
 import { WriteJobEventRecorder } from '../services/WriteJobEventRecorder';
 import { WriteJobFlags, WriteJobScheduler } from '../services/WriteJobScheduler';
 import { WriteJobBootstrap } from '../services/WriteJobBootstrap';
-import { AgentIngestService } from '../services/AgentIngestService';
+import { IngestGateway, INGEST_MODE_INLINE } from '../services/IngestGateway';
 import {
   AgentIngestRequest,
   buildIngestRequest,
   INGEST_SOURCE_APP_PICKER,
   INGEST_SOURCE_APP_SHARE,
 } from '../services/AgentIngestRequest';
+import type { IngestBatchResult } from '../services/AgentIngestRequest';
 import { AgentImagePart } from '../services/AgentImageParts';
 import { AlbumPickerLauncher } from '../services/AlbumPickerLauncher';
 import { CameraKitLauncher } from '../services/CameraKitLauncher';
@@ -220,8 +222,16 @@ export default class EntryAbility extends UIAbility {
     }
     const image: AgentImagePart = { kind: 'uri', value: uri };
     const request: AgentIngestRequest = buildIngestRequest(source, '', [image]);
-    AgentIngestService.ingest(this.context, request)
-      .then((unit: KnowledgeUnit): void => {
+    IngestGateway.ingest(this.context, request, INGEST_MODE_INLINE)
+      .then((result: IngestBatchResult): void => {
+        if (result.outcomes.length === 0) {
+          throw new Error('empty ingest outcome');
+        }
+        const outcome: NoteOutcome = result.outcomes[0];
+        if (outcome.kind !== 'committed' || outcome.unit === undefined) {
+          throw new Error(outcome.code !== undefined ? outcome.code : 'INGEST_FAILED');
+        }
+        const unit: KnowledgeUnit = outcome.unit;
         hilog.info(DOMAIN, 'testTag', '%{public}s done subject=%{public}s title=%{public}s',
           source, unit.subject, unit.title);
       })

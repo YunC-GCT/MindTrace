@@ -96,8 +96,11 @@ test('T4 flag 与接入点：默认关闭、关闭走直连、开启走调度器
   assert.ok(ingest.includes('WriteJobScheduler.shared().submit('));
   assert.ok(ingest.includes('ingestSingleTextDirect'));
   const inbox = read('entry/src/main/ets/services/A2AInboxIngestService.ets');
-  assert.ok(inbox.includes('WriteJobFlags.isEnabled()'));
-  assert.ok(inbox.includes("'background'"));
+  assert.ok(inbox.includes('IngestGateway.ingestText('));
+  assert.ok(inbox.includes('INGEST_MODE_BACKGROUND'));
+  const gateway = read('entry/src/main/ets/services/IngestGateway.ets');
+  assert.ok(gateway.includes("AgentIngestService.ingestSingleText(context, text, 'background')"));
+  assert.ok(gateway.includes('INGEST_MODE_BACKGROUND'));
   const scheduler = read('entry/src/main/ets/services/WriteJobScheduler.ets');
   assert.ok(scheduler.includes('[WriteJob]'));
 });
@@ -176,10 +179,13 @@ test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
   assert.ok(runner.includes('runSchedulerStress'));
   const ability = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.ok(ability.includes("mode === 'schedulerStress'"));
-  // 扩展进程不得读 UI 灰度配置（保持旧路径）
+  // 扩展进程（适配器 + 控制器）不得读 UI 灰度配置；A2A 走内联路径
   const ext = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  const controller = read('entry/src/main/ets/services/A2AController.ets');
   assert.ok(!ext.includes('WriteJobFlags.setEnabled(true)'));
+  assert.ok(!controller.includes('WriteJobFlags.setEnabled(true)'));
   assert.ok(!ext.includes('WRITE_JOB_UI_ENABLED'));
+  assert.ok(!controller.includes('WRITE_JOB_UI_ENABLED'));
 });
 
 
