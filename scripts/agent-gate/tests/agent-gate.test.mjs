@@ -41,11 +41,14 @@ test('database layer must not reach back into UI', () => {
   assert.equal(boundaryViolations(p, "import { relationalStore } from '@kit.ArkData';\n").length, 0);
 });
 
-test('agents may only use NetworkKit from the platform', () => {
+test('agents may use platform kits; kit safety is process-boundary的职责', () => {
   const p = 'agents/src/main/ets/core/Dispatcher.ets';
-  assert.match(boundaryViolations(p, "import { http } from '@kit.NetworkKit';\n").length === 0 ? '' : 'x', /^$/);
-  assert.match(boundaryViolations(p, "import { relationalStore } from '@kit.ArkData';\n")[0], /only @kit.NetworkKit/);
-  assert.match(boundaryViolations(p, "import { fileIo } from '@ohos.file.fs';\n")[0], /only @kit.NetworkKit/);
+  // Kit 的准入由 scripts/process-boundary 的 RESTRICTED 表按进程可达性判定，
+  // 这里只守模块依赖方向（spec 033 §R5）。
+  assert.deepEqual(boundaryViolations(p, "import { http } from '@kit.NetworkKit';\n"), []);
+  assert.deepEqual(boundaryViolations(p, "import { common } from '@kit.AbilityKit';\n"), []);
+  assert.deepEqual(boundaryViolations(p, "import { relationalStore } from '@kit.ArkData';\n"), []);
+  assert.match(boundaryViolations(p, "import { X } from 'entry/src/main/ets/services/AiService';\n")[0], /must not import entry/);
 });
 
 test('parseLintSummary reads errors and warnings', () => {

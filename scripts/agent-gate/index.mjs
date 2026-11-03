@@ -51,10 +51,6 @@ export function boundaryViolations(relPath, text) {
       if (spec.startsWith('entry/')) {
         out.push(`agents must not import entry (${spec})`);
       }
-      // L2 编排层只依赖端口：平台能力一律走 common 契约（spec 033 / #227 / #228）
-      if ((spec.startsWith('@kit.') || spec.startsWith('@ohos.')) && spec !== '@kit.NetworkKit') {
-        out.push(`agents may only @kit.NetworkKit, got ${spec} — 走端口，不要直接依赖能力 Kit`);
-      }
     }
   }
 
@@ -176,7 +172,7 @@ function testFiles() {
     .sort()
     .map((f) => `scripts/arkts-lint/tests/${f}`);
   // 其他目录下的 node --test 单测也要进 gate，否则新增用例无守门
-  for (const extra of ['scripts/a2a-smoke/tests', 'scripts/e2e-capture']) {
+  for (const extra of ['scripts/a2a-smoke/tests', 'scripts/e2e-capture', 'scripts/process-boundary/tests']) {
     const abs = join(REPO_ROOT, extra);
     if (!existsSync(abs)) continue;
     readdirSync(abs)

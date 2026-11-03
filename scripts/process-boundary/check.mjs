@@ -36,6 +36,10 @@ const BARRELS = { common: 'common/src/main/ets/Index.ets', agents: 'agents/src/m
  * 受限能力登记表（R4）。
  * key = import 说明符（包名或 @kit 名）；value = 允许的进程集合。
  * 未登记的一律按 unsupported 处理——不猜。
+ *
+ * 第一条（受限能力）：只在白名单进程里求值才算安全。
+ * 第二条（基础能力，2026-11-03 登记）：跨进程通用，允许集合取当前可达快照；
+ *   收紧时直接改小数组即可，新增进程会立刻报错。
  */
 export const RESTRICTED = {
   '@kit.DataAugmentationKit': ['main'],
@@ -48,6 +52,17 @@ export const RESTRICTED = {
   '@kit.ImageKit': ['main', 'agent'],  // :agent 侧把 part.raw/url 解码成 PixelMap 供 OCR
   '@ohos.file.picker': ['main'],
   '@kit.CameraKit': ['main'],
+  // —— 基础能力（跨进程通用，登记的是当前可达快照）——
+  '@kit.AbilityKit': ['main', 'agent', 'agentUI', 'form', 'backup'],
+  '@kit.BasicServicesKit': ['main', 'agent', 'agentUI', 'form', 'backup'],
+  '@kit.PerformanceAnalysisKit': ['main', 'agent', 'agentUI', 'form', 'backup'],
+  '@ohos.hilog': ['main', 'agent', 'agentUI', 'form', 'backup'],
+  '@kit.ArkData': ['main', 'agent', 'form'],
+  '@kit.ArkTS': ['main', 'agent', 'form'],
+  '@kit.NetworkKit': ['main', 'agent', 'form'],
+  '@kit.CoreFileKit': ['main', 'agent', 'backup'],
+  '@kit.AssetStoreKit': ['main', 'agent', 'form'],
+  '@ohos.file.fs': ['main', 'agent'],
 };
 
 /** extension type → 进程名 */
@@ -149,6 +164,8 @@ export function walkGraph(root, entries) {
   const seen = new Set();
   const hits = [];
   const unresolved = [];
+  // R4：非 main 进程可达的 kit 必须显式登记（spec 033 §R5）
+  const kitSeen = new Map();
 
   while (queue.length > 0) {
     const { file, chain, process, lazy } = queue.shift();
@@ -176,7 +193,18 @@ export function walkGraph(root, entries) {
       const rel = resolveSpec(root, file, spec);
       if (rel) {
         queue.push({ file: rel, chain: [...chain, rel], process, lazy });
-      } else if (spec.startsWith('@') || spec.includes('/')) {
+      } else if (spec.startsWith('@')) {
+        const allowed = RESTRICTED[spec];
+        if (allowed && !allowed.includes(process)) {
+          hits.push({ kit: spec, chain, process, lazy });
+        } else if (!allowed && process !== 'main' && !lazy) {
+          // 未登记的 kit 在扩展/卡片进程里静态求值：先登记再使用，不猜
+          hits.push({ kit: spec, chain, process, lazy, unregistered: true });
+        }
+        const procs = kitSeen.get(spec) ?? new Set();
+        procs.add(process);
+        kitSeen.set(spec, procs);
+      } else if (spec.includes('/')) {
         const allowed = RESTRICTED[spec];
         if (allowed && !allowed.includes(process)) hits.push({ kit: spec, chain, process, lazy });
       }
@@ -199,7 +227,7 @@ export function walkGraph(root, entries) {
     }
   }
 
-  return { hits, files: [...new Set([...seen].map((s) => s.split('|')[0]))], unresolved };
+  return { hits, files: [...new Set([...seen].map((s) => s.split('|')[0]))], unresolved, kits: kitSeen };
 }
 
 export function discoverEntries(root) {

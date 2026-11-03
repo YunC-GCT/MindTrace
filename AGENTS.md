@@ -75,7 +75,7 @@
 9. **端A2A 配置三件事** — 改 `agent_config.json` 后必须：① 平台重新导入 AgentCard ② 重新发真机测试 ③ 重启小艺。缺一条小艺仍读旧卡，表现为 `extension ability not exist` 或发了不回。
 10. **两种 AgentID 不是一回事** — 小艺开放平台**生成**的 `AgentID`（形如 `agent` + 32 位十六进制）用于应用内 `FunctionComponent` 拉起智能体；`agent_config.json` 里的 `agentId`（如 `mindtrace-note-agent`）只是端A2A 的应用内标识。填错时 `isAgentSupport()` 恒为 false，入口永远显示「暂不支持」。
 10. **不虚报可用** — 端A2A 的改动没跑过 `scripts/a2a-smoke/a2a_smoke.py` 且拿到 `ok: true`，不得写成“已通 / 可用 / 完成”。
-11. **受限 Kit 的求值必须延迟** — `@kit.DataAugmentationKit`（`localChatModel`）只在 UI 进程可用。放进 `common` 必须满足两条：`import type` 只取类型，运行时用 `await import()` 在调用点加载（参照 `common/src/main/ets/llm/LocalChatProvider.ets`）。模块顶层静态求值会在 `:agent` 扩展进程触发初始化，导致网络栈失败（`proxy SendRequest failed 201`）、A2A 的 LLM 调用永不返回（2026-10-24 事故）。新增受限 Kit 前先确认它在扩展进程里能安全求值。
+11. **受限 Kit 的求值必须延迟** — `@kit.DataAugmentationKit`（`localChatModel`）只在 UI 进程可用。放进 `common` 必须满足两条：`import type` 只取类型，运行时用 `await import()` 在调用点加载（参照 `common/src/main/ets/llm/LocalChatProvider.ets`）。模块顶层静态求值会在 `:agent` 扩展进程触发初始化，导致网络栈失败（`proxy SendRequest failed 201`）、A2A 的 LLM 调用永不返回（2026-10-24 事故）。Kit 准入由 `scripts/process-boundary` 的登记表按**进程可达性**判定（未登记即失败），不看模块名；新增 Kit 先登记再使用。
 
 ---
 

@@ -97,6 +97,10 @@ A2A 的 LLM 调用永不返回：日志停在「LLM 调用开始」，60s 超时
 1. **端口在 `common`、零 Kit**：`OcrRecognizer` / `OcrRecognizerRegistry` 是契约，`scripts/ocr-port/tests/` 守着「端口文件不得出现 `@kit`」。
 2. **受限 Kit（§4 里 main-only 的项）即使文件在 `common`，也只能被深路径引用**；确实需要经 barrel 共享时，改为运行时 `import()` 懒加载（`common/Index.ets` 导出 `LocalChatProvider` 就是这个做法）。
 
+**R4 已落代码（2026-11-03）**：`scripts/process-boundary/check.mjs` 按本表强制登记——从任意非 `main` 进程可达、但**未登记**的 `@kit.*` / `@ohos.*` 直接失败；`import type` 与 `await import()` 不算加载边。
+
+Kit 的准入判据只有一条：**哪些进程会求值它**。模块名不参与判断，`agents` 使用 `@kit.AbilityKit` / `@kit.ArkData` 这类跨进程基础能力不再报错；旧的 `agents may only @kit.NetworkKit` 规则已从 `agent-gate` 删除。设备能力（CoreVision / Image / DataAugmentation / FormKit 等）仍然受本表约束。
+
 反例（本次修正）：`@kit.CoreVisionKit` 的适配器**不搬** `common`——现在只有 main 与 `:agent` 两个消费者，两者同属一个 HAP，`entry/services/` 本身就是共享的；搬过去只是给每个进程多一份 Kit 求值风险，收益为零。等 `agents` / `skill` 里真有人要 OCR，再按上表第三行搬。
 
 ## 4. 受限能力清单（initial）

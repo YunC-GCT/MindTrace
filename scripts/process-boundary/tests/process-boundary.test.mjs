@@ -135,3 +135,36 @@ test('卡片宿主进程允许 FormKit，main 进程也允许（推快照）', (
   const { ok } = runCheck(root);
   assert.equal(ok, true);
 });
+
+test('未登记的 kit 在扩展进程里静态求值会被拦下（R4）', () => {
+  const root = fixture({
+    'entry/src/main/module.json5': AGENT_MANIFEST,
+    'entry/src/main/ets/entryability/EntryAbility.ets': `import { X } from '@kit.SomeNewKit';\n`,
+    'entry/src/main/ets/agentextability/AgentExtAbility.ets': `import { Y } from '@kit.SomeNewKit';\n`,
+  });
+
+  const { ok, graph } = runCheck(root);
+  assert.equal(ok, false, '未登记的 kit 不应当被静默放行');
+  const hit = graph.hits.find((h) => h.kit === '@kit.SomeNewKit');
+  assert.ok(hit, '应当命中未登记 kit');
+  assert.equal(hit.unregistered, true);
+});
+
+test('main 进程可以用未登记 kit：登记只约束非 main 进程', () => {
+  const MAIN_ONLY = `{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "abilities": [
+      { "name": "EntryAbility", "srcEntry": "./ets/entryability/EntryAbility.ets" }
+    ]
+  }
+}`;
+  const root = fixture({
+    'entry/src/main/module.json5': MAIN_ONLY,
+    'entry/src/main/ets/entryability/EntryAbility.ets': `import { X } from '@kit.SomeNewKit';\n`,
+  });
+
+  const { ok } = runCheck(root);
+  assert.equal(ok, true);
+});
