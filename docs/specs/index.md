@@ -95,6 +95,7 @@ Each spec has these sections:
 - [`040-writejob-persistence-cross-process.md`](./040-writejob-persistence-cross-process.md) — WriteJob 持久队列：agent_job v20 + 队列单执行者 + 跨进程 handoff（038 S3）；A2A 单次整理内联
 - [`041-chat-tool-loop.md`](./041-chat-tool-loop.md) — Chat 工具回复：ToolLoop 接入 conversation workflow（默认关闭，无行为变更）
 - [`042-a2a-error-taxonomy.md`](./042-a2a-error-taxonomy.md) — A2A 错误码 / 分类 / 用户文案统一映射
+- [`043-data-retention.md`](./043-data-retention.md) — 数据保留与清理：A2A 上下文 7 天 / run 与 job 历史 30 天
 
 ## Conventions in these specs
 

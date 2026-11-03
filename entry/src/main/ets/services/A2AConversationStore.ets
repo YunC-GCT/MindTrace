@@ -128,6 +128,37 @@ export class A2AConversationStore {
     return '最近对话（按时间顺序，供理解“上一条/刚才”指代）：\n' + lines.join('\n');
   }
 
+  /** 删除超过保留期的会话文件；返回删除数量。 */
+  static prune(context: common.Context, maxAgeMs: number): number {
+    const dir: string = context.filesDir + '/a2a';
+    if (!fileIo.accessSync(dir)) {
+      return 0;
+    }
+    const now: number = Date.now();
+    let removed: number = 0;
+    try {
+      const names: string[] = fileIo.listFileSync(dir);
+      for (const name of names) {
+        if (name.indexOf('chat-') !== 0 || !name.endsWith('.json')) {
+          continue;
+        }
+        const path: string = dir + '/' + name;
+        try {
+          const stat: fileIo.Stat = fileIo.statSync(path);
+          if (now - stat.mtime * 1000 > maxAgeMs) {
+            fileIo.unlinkSync(path);
+            removed += 1;
+          }
+        } catch (e) {
+          // 单文件失败不影响其余清理
+        }
+      }
+    } catch (e) {
+      return removed;
+    }
+    return removed;
+  }
+
   private static pathOf(context: common.Context, key: string): string {
     return context.filesDir + '/a2a/chat-' + A2AConversationStore.keyOf('', key) + '.json';
   }

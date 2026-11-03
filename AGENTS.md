@@ -27,6 +27,7 @@
 | 做 Agent workflow / CaptureGraph / ToolLoop / Conversation / skill 重构 | [`docs/specs/018-agent-workflow-architecture.md`](./docs/specs/018-agent-workflow-architecture.md) → [`docs/adr/0008-capturegraph-self-built-runtime.md`](./docs/adr/0008-capturegraph-self-built-runtime.md) → [`docs/agents/d2-capturegraph-teaching-2026-09-05.md`](./docs/agents/d2-capturegraph-teaching-2026-09-05.md) |
 | 接 / 改小艺端A2A | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (P0 验收口径) → `entry/src/main/ets/services/A2AController.ets` (策略/编排) → `entry/src/main/ets/services/IngestGateway.ets` (inline/queue) → `entry/src/main/ets/agentextability/AgentExtAbility.ets` (协议/快照) → `entry/src/main/resources/base/profile/agent_config.json` |
 | 改 A2A 错误文案 / 分类 | `entry/src/main/ets/services/A2AErrorTaxonomy.ets` → [`docs/specs/042-a2a-error-taxonomy.md`](./docs/specs/042-a2a-error-taxonomy.md) |
+| 改数据保留 / 清理策略 | `entry/src/main/ets/services/DataRetentionService.ets` + `A2AContextCleanup.ets` → [`docs/specs/043-data-retention.md`](./docs/specs/043-data-retention.md) |
 | 查当前做到哪一阶段 / 怎么验收 | [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md) (唯一进度口径, P0–P6 + DoD) |
 | 真机验证 A2A 链路 | `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"` (自动起小艺 → 进智能体 → 发送 → 比对回复) |
 | 推进 agent 能力级工作 (工具层 / 调用协议 / 拆分) | [`docs/agents/patterns/capability-to-implementation.md`](./docs/agents/patterns/capability-to-implementation.md) (skill 链路) + [`docs/architecture/agent-tool-chain-2026-09-06.md`](./docs/architecture/agent-tool-chain-2026-09-06.md) (派发链总览) |

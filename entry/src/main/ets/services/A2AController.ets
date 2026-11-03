@@ -37,6 +37,7 @@ import type { A2AErrorCode } from './A2AErrorTaxonomy';
 import { IngestGateway, INGEST_MODE_INLINE } from './IngestGateway';
 import { A2AConversationStore, matchesRememberIntent } from './A2AConversationStore';
 import type { A2AConversationTurn } from './A2AConversationStore';
+import { A2AContextCleanup } from './A2AContextCleanup';
 import { A2AImageContextStore } from './A2AImageContextStore';
 import type { A2AImageMaterial } from './A2AImageContextStore';
 import { hasIngestIntent } from './A2AIntentRouter';
@@ -221,6 +222,8 @@ export class A2AController {
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'LlmConfig 初始化失败: %{public}s', e.message);
       });
+    // R6：A2A 会话 / 图片 / 计划文件按 7 天保留，避免 contextId 维度无限增长。
+    A2AContextCleanup.run(this.context);
   }
 
   /**

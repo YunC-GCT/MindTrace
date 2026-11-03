@@ -37,6 +37,7 @@ import { WriteJobEventRecorder } from '../services/WriteJobEventRecorder';
 import { WriteJobFlags, WriteJobScheduler } from '../services/WriteJobScheduler';
 import { WriteJobBootstrap } from '../services/WriteJobBootstrap';
 import { IngestGateway, INGEST_MODE_INLINE } from '../services/IngestGateway';
+import { DataRetentionService } from '../services/DataRetentionService';
 import {
   AgentIngestRequest,
   buildIngestRequest,
@@ -122,6 +123,10 @@ export default class EntryAbility extends UIAbility {
         // spec 040 P1：flag 开启时注册持久化 hooks 并恢复 queued job（默认关 → 行为不变）。
         WriteJobBootstrap.install(this.context).catch((e: Error) => {
           hilog.warn(DOMAIN, 'testTag', 'WriteJobBootstrap install failed: %{public}s', e.message);
+        });
+        // R7：run_event / run_store / agent_job 保留 30 天，启动后异步清理历史。
+        DataRetentionService.run(this.context).catch((e: Error) => {
+          hilog.warn(DOMAIN, 'testTag', 'retention failed: %{public}s', e.message);
         });
         return CardSnapshotService.refresh(this.context);
       })

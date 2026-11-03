@@ -109,6 +109,10 @@ _Avoid_: treating it as the default chat path; enabling tools without a device-v
 The single mapping in `entry/src/main/ets/services/A2AErrorTaxonomy.ets` from A2A error code to kind (`protocol/config/model/timeout/ingest/none`) and stable user-facing text. Controllers and the extension adapter format errors through `a2aErrorText`, not by concatenating strings.
 _Avoid_: adding new error strings in `AgentExtAbility` / `A2AController`; changing a code's text without updating the taxonomy test.
 
+**Data retention**:
+The cleanup policy for A2A context files (7 days) and run/job history (30 days). A2A files are pruned in `A2AController.prepare()`; DB rows are pruned by `DataRetentionService` on app startup. Running/queued rows are never deleted.
+_Avoid_: deleting active runs; treating retention as a background scheduler.
+
 **CaptureGraph**:
 The Capture workflow's native ArkTS implementation of the LangGraph graph model. **LangGraph is the project's primary Agent workflow architecture design**, and its naming (Node / Edge / State / conditional edge / START / END) is canonical (universal definitions in `docs/agents/agent-glossary.md`). CaptureGraph (in `agents/src/main/ets/graph/`) executes an Order: fixed edges between steps, plus a conditional edge after `truth_check` that reaches `persist` only when the state's `persist` flag is set. It is the first concrete workflow, not the name of the whole Agent architecture. Built per dispatch; no checkpoint / HITL / subgraph by design (ADR-0008).
 

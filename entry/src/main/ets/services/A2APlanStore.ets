@@ -92,6 +92,38 @@ export class A2APlanStore {
     }
   }
 
+  /** 删除超过保留期的计划文件（含旧单文件）；返回删除数量。 */
+  static prune(context: common.Context, maxAgeMs: number): number {
+    const dir: string = A2APlanStore.dirPath(context);
+    if (!fileIo.accessSync(dir)) {
+      return 0;
+    }
+    const now: number = Date.now();
+    let removed: number = 0;
+    try {
+      const names: string[] = fileIo.listFileSync(dir);
+      for (const name of names) {
+        const isPlan: boolean = name.indexOf(PLAN_FILE_PREFIX) === 0 || name === PLAN_FILE_LEGACY;
+        if (!isPlan || !name.endsWith('.json')) {
+          continue;
+        }
+        const path: string = dir + '/' + name;
+        try {
+          const stat: fileIo.Stat = fileIo.statSync(path);
+          if (now - stat.mtime * 1000 > maxAgeMs) {
+            fileIo.unlinkSync(path);
+            removed += 1;
+          }
+        } catch (e) {
+          // 单文件失败不影响其余清理
+        }
+      }
+    } catch (e) {
+      return removed;
+    }
+    return removed;
+  }
+
   private static dirPath(context: common.Context): string {
     return context.filesDir + '/' + PLAN_DIR;
   }

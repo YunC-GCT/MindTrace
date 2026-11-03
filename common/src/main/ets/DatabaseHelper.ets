@@ -308,8 +308,12 @@ CREATE TABLE IF NOT EXISTS run_event (
 
 const SQL_INDEX_RUN_STORE_STATUS: string =
   "CREATE INDEX IF NOT EXISTS idx_run_store_status ON run_store(status)";
+const SQL_INDEX_RUN_STORE_CREATED: string =
+  "CREATE INDEX IF NOT EXISTS idx_run_store_created_at ON run_store(created_at)";
 const SQL_INDEX_RUN_EVENT_RUN_SEQ: string =
   "CREATE INDEX IF NOT EXISTS idx_run_event_run_seq ON run_event(run_id, sequence)";
+const SQL_INDEX_RUN_EVENT_CREATED: string =
+  "CREATE INDEX IF NOT EXISTS idx_run_event_created_at ON run_event(created_at)";
 // 跨进程并发时给 (run_id, sequence) 兜底；旧库若已有重复序列，创建会失败并被 tryExecuteSql 跳过。
 const SQL_INDEX_RUN_EVENT_RUN_SEQ_UNIQUE: string =
   "CREATE UNIQUE INDEX IF NOT EXISTS uq_run_event_run_seq ON run_event(run_id, sequence)";
@@ -343,6 +347,8 @@ const SQL_INDEX_AGENT_JOB_PICK: string =
 // 同 fingerprint 的非终态 job 唯一：跨进程重复入队只保留一条（queued/running 才参与）。
 const SQL_INDEX_AGENT_JOB_ACTIVE_FP: string =
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_job_active_fp ON agent_job(fingerprint) WHERE status IN ('queued', 'running')";
+const SQL_INDEX_AGENT_JOB_UPDATED: string =
+  "CREATE INDEX IF NOT EXISTS idx_agent_job_updated ON agent_job(status, updated_at)";
 
 const SQL_MIGRATE_CHECKPOINT_APPROVED: string =
   'ALTER TABLE note_generation_checkpoint ADD COLUMN approved_at INTEGER NOT NULL DEFAULT 0';
@@ -544,9 +550,12 @@ export class DatabaseHelper {
       SQL_INDEX_REVIEW_ITEM_UNIT,
       SQL_INDEX_REVIEW_LOG_ITEM,
       SQL_INDEX_RUN_STORE_STATUS,
+      SQL_INDEX_RUN_STORE_CREATED,
       SQL_INDEX_RUN_EVENT_RUN_SEQ,
+      SQL_INDEX_RUN_EVENT_CREATED,
       SQL_INDEX_AGENT_JOB_PICK,
       SQL_INDEX_AGENT_JOB_ACTIVE_FP,
+      SQL_INDEX_AGENT_JOB_UPDATED,
       SQL_INDEX_STUDY_PLAN_OP_PLAN,
     ];
 

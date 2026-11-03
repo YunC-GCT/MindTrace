@@ -258,6 +258,12 @@ d8e4b9e   spec 039 S3：workflow-first 收口
 - 新增 `A2AErrorTaxonomy`：`A2AErrorCode -> kind (protocol/config/model/timeout/ingest/none)` + `a2aErrorText(code, detail)`。
 - `A2AController` / `AgentExtAbility` 删除本地错误文案常量，统一经 `a2aErrorText`；用户可见措辞保持原样。
 - 验证：`agent-gate` **PASS（pass=1219 fail=0）**；`build-hsp-hap` 成功；真机 A2A 幂等入库 hilog `INGEST_TEXT done`。
+
+## 18. 2026-11-03 R6/R7 保留清理
+
+- A2A 会话 / 图片 / 计划文件：7 天清理，扩展 `A2AController.prepare()` 执行（`A2AContextCleanup`）。
+- `run_event` / 终态 `run_store` / 终态 `agent_job`：30 天清理，App 启动时 `DataRetentionService` 执行；新增 `created_at` / `updated_at` 索引。
+- 验证：`agent-gate` **PASS（pass=1221 fail=0）**；`build-hsp-hap` 成功；真机 A2A 幂等入库成功。
 | 进度唯一口径 | `docs/agents/phase-tracker.md` |
 
 验证命令：
