@@ -8,10 +8,10 @@ const inputViewModel = readFileSync(
   resolve(root, 'entry/src/main/ets/viewmodels/AgentInputViewModel.ets'),
   'utf8',
 );
-const conversation = readFileSync(
-  resolve(root, 'agents/src/main/ets/conversation/ConversationWorkflow.ets'),
-  'utf8',
-);
+const conversation = [
+  readFileSync(resolve(root, 'agents/src/main/ets/conversation/ConversationWorkflow.ets'), 'utf8'),
+  readFileSync(resolve(root, 'agents/src/main/ets/conversation/ConversationReplyHandler.ets'), 'utf8'),
+].join('\n');
 const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiService.ets'), 'utf8');
 
 test('photo send enters captureReply instead of text-only streaming', () => {
@@ -21,7 +21,7 @@ test('photo send enters captureReply instead of text-only streaming', () => {
 });
 
 test('photo conversation performs analysis only and stores OCR material', () => {
-  assert.match(conversation, /this\.capturePort\.analyzeImage\([\s\S]*?imageUri,[\s\S]*?userText/);
+  assert.match(conversation, /this\.host\.capturePort\(\)\.analyzeImage\([\s\S]*?imageUri,[\s\S]*?userText/);
   assert.match(conversation, /safeSaveOcrResult\(ref, imageUri, userText, result\)/);
   assert.match(readFileSync(resolve(root, 'entry/src/main/ets/services/ai/CapturePipeline.ets'), 'utf8'), /kind: 'analysisOnly'/);
 });

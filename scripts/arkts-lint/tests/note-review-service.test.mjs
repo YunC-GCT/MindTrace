@@ -542,7 +542,7 @@ test('ConversationWorkflow terminal note review finishes the real message and sk
     quizCount: 3,
   };
 
-  await workflow.handleNoteReviewComplete({ sessionId: 's1', runId: 'r1' }, '', '', plan);
+  await workflow.reviewNodes.handleComplete({ sessionId: 's1', runId: 'r1' }, '', '', plan);
 
   assert.equal(completeCalls, 0);
   assert.deepEqual(events.slice(0, 4), [
@@ -648,7 +648,7 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
     quizCount: 3,
   };
 
-  await workflow.handleNoteReviewStream({ sessionId: 's1', runId: 'r1' }, '', '', plan);
+  await workflow.reviewNodes.handleStream({ sessionId: 's1', runId: 'r1' }, '', '', plan);
 
   const reviewIndex = events.findIndex((event) => event.startsWith('review:88:'));
   const finishIndex = events.findIndex((event) => event === 'finish:88');

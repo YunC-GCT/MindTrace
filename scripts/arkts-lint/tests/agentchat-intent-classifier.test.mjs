@@ -9,8 +9,12 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const classifier = read('agents/src/main/ets/chat/IntentClassifier.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
-const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const workflow = [
+  read('agents/src/main/ets/conversation/ConversationWorkflow.ets'),
+  read('agents/src/main/ets/conversation/ConversationReplyHandler.ets'),
+].join('\n');
 const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
+const noteHandler = read('agents/src/main/ets/conversation/ConversationNoteHandler.ets');
 
 test('IntentClassifier exposes its public intent and reply APIs', () => {
   assert.match(classifier, /export class IntentClassifier/);
@@ -39,14 +43,14 @@ test('ConversationWorkflow owns intent orchestration and AgentChatService stays 
   assert.match(runtime, /this\.workflow\.run\(request, ref\)/);
   assert.match(workflow, /private readonly intentClassifier: IConversationIntentPort/);
   assert.match(workflow, /this\.appIntentRouter\.classify\(/);
-  assert.match(workflow, /this\.intentClassifier\.inlineNoteMaterial\(/);
+  assert.match(noteHandler, /this\.host\.intentPort\(\)\.inlineNoteMaterial\(/);
   assert.match(replyService, /this\.intentClassifier\.buildReplyMessages\(/);
   assert.match(replyService, /this\.intentClassifier\.buildStreamingReplyMessages\(/);
 });
 
 test('ConversationWorkflow owns reply implementation without duplicate facade logic', () => {
-  assert.match(workflow, /applyEvidenceToAnswer\(this\.getEvidenceService\(\)/);
-  assert.match(workflow, /private createImageRecognitionReplyContext\(/);
+  assert.match(workflow, /applyEvidenceToAnswer\(this\.host\.evidencePort\(\)/);
+  assert.match(workflow, /createImageRecognitionReplyContext\(/);
   assert.match(workflow, /private readonly replyService: IConversationReplyPort/);
   assert.match(replyService, /async complete\(/);
   assert.match(replyService, /async stream\(/);

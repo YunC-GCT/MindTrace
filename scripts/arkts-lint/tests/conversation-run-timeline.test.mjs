@@ -11,7 +11,12 @@ const contracts = read('entry/src/main/ets/services/AgentChatContracts.ets');
 const adapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');
 const ports = read('agents/src/main/ets/conversation/ConversationWorkflowPorts.ets');
 const types = read('agents/src/main/ets/conversation/ConversationTypes.ets');
-const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const workflow = [
+  read('agents/src/main/ets/conversation/ConversationWorkflow.ets'),
+  read('agents/src/main/ets/conversation/ConversationReplyHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationNoteHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationReviewHandler.ets'),
+].join('\n');
 const reducer = read('entry/src/main/ets/services/ConversationSessionReducer.ets');
 const models = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets');
 const runModels = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/AgentRunModels.ets');
@@ -25,7 +30,7 @@ test('workflow status and errors use the typed ordered run event sink', () => {
   assert.match(adapter, /this\.callbacks\.updateRunEvent\(ref, event\)/);
   assert.match(workflow, /this\.reportRunError\(runRef, error\)/);
   assert.match(workflow, /this\.cbs\.onError\(ref, ConversationWorkflow\.userFacingWorkflowError\(error\)\)/);
-  const handledFailureReports = workflow.match(/this\.finishRunFailure\([^;]+\);/g) ?? [];
+  const handledFailureReports = workflow.match(/finishRunFailure\([^;]+\);/g) ?? [];
   assert.ok(handledFailureReports.length >= 4);
   assert.doesNotMatch(adapter, /setStatusMeta/);
 });

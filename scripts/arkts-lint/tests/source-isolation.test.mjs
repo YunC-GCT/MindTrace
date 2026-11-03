@@ -13,7 +13,12 @@ const models = read('common/src/main/ets/models/NoteGenerationModels.ets');
 const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const repoImpl = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
-const convWorkflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const convWorkflow = [
+  read('agents/src/main/ets/conversation/ConversationWorkflow.ets'),
+  read('agents/src/main/ets/conversation/ConversationReplyHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationNoteHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationReviewHandler.ets'),
+].join('\n');
 const memoryProjection = read('agents/src/main/ets/conversation/ConversationMemoryProjection.ets');
 const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 

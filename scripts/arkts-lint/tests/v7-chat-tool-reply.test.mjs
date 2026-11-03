@@ -26,8 +26,9 @@ test('ConversationWorkflow 有 tool_reply 节点且只在开关开启时接线',
   assert.match(workflow, /toolReplyEnabled\(\)/);
   assert.match(workflow, /graph\.addNode\('tool_reply'/);
   assert.match(workflow, /return 'tool_reply'/);
-  assert.match(workflow, /useTools: boolean = false/);
-  assert.match(workflow, /this\.toolReplyService\.complete\(/);
+  const replyHandler = read('agents/src/main/ets/conversation/ConversationReplyHandler.ets');
+  assert.match(replyHandler, /useTools: boolean = false/);
+  assert.match(replyHandler, /toolReply\.complete\(/);
   const ports = read('agents/src/main/ets/conversation/ConversationWorkflowPorts.ets');
   assert.match(ports, /interface IConversationToolPort/);
   assert.match(ports, /class ConversationToolAdapter implements IConversationToolPort/);

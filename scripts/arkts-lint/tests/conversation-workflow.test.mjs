@@ -9,6 +9,8 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const facade = read('entry/src/main/ets/services/AgentChatService.ets');
 const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
 const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const replyHandler = read('agents/src/main/ets/conversation/ConversationReplyHandler.ets');
+const noteHandlerSrc = read('agents/src/main/ets/conversation/ConversationNoteHandler.ets');
 const memoryProjection = read('agents/src/main/ets/conversation/ConversationMemoryProjection.ets');
 const state = read('agents/src/main/ets/conversation/ConversationState.ets');
 const workflowTypes = read('agents/src/main/ets/conversation/ConversationTypes.ets');
@@ -35,10 +37,14 @@ const errorHarness = ts.transpileModule(
     + withoutImports(read('common/src/main/ets/utils/StreamErrorText.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationFormatting.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationRunRegistry.ets'))
+    + withoutImports(read('agents/src/main/ets/conversation/ConversationNodeHost.ets'))
+    + withoutImports(read('agents/src/main/ets/conversation/ConversationReviewHandler.ets'))
+    + withoutImports(read('agents/src/main/ets/conversation/ConversationNoteHandler.ets'))
+    + withoutImports(read('agents/src/main/ets/conversation/ConversationReplyHandler.ets'))
     + withoutImports(workflow),
   { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } },
 ).outputText;
-const { ConversationWorkflow, NoteEvidenceService, applyEvidenceToAnswer, ConversationRunRegistry } = await import('data:text/javascript;base64,' + Buffer.from(errorHarness).toString('base64'));
+const { ConversationWorkflow, NoteEvidenceService, applyEvidenceToAnswer, ConversationRunRegistry, ConversationReplyHandler } = await import('data:text/javascript;base64,' + Buffer.from(errorHarness).toString('base64'));
 
 test('ordinary reply visibly distinguishes a retrieval miss from an unavailable database', () => {
   const instance = Object.create(ConversationWorkflow.prototype);
@@ -60,6 +66,8 @@ test('stream, complete and stream fallback render and persist exactly one retrie
       let finished = 0;
       instance.evidenceService = new NoteEvidenceService();
       instance.runs = new ConversationRunRegistry();
+  instance.replyHandler = new ConversationReplyHandler(instance);
+      instance.replyHandler = new ConversationReplyHandler(instance);
       instance.memoryProjection = {
         async saveAssistant(_ref, content) { saved.push(content); },
         async updateLearnerProfile() {}, async summarize() {},
@@ -86,9 +94,9 @@ test('stream, complete and stream fallback render and persist exactly one retrie
       };
       const ref = { sessionId: 's1', runId: 'r1' };
       if (mode === 'complete') {
-        await instance.handleCompleteReply(ref, '', '', '解释极限', evidence, undefined);
+        await instance.replyHandler.handleComplete(ref, '', '', '解释极限', evidence, undefined);
       } else {
-        await instance.handleStreamReply(ref, '', '', '解释极限', evidence, undefined);
+        await instance.replyHandler.handleStream(ref, '', '', '解释极限', evidence, undefined);
       }
       assert.deepEqual(saved, [displayed], mode);
       assert.equal((displayed.match(/笔记检索：/g) ?? []).length, 1, mode);
@@ -110,6 +118,7 @@ function deliveredFailure(error) {
   const messages = [];
   const instance = Object.create(ConversationWorkflow.prototype);
   instance.runs = new ConversationRunRegistry();
+  instance.replyHandler = new ConversationReplyHandler(instance);
   instance.cbs = { onError: (_ref, message) => messages.push(message) };
   const ref = { sessionId: 'session', runId: 'run' };
   instance.reportRunError(ref, error);
@@ -158,9 +167,9 @@ test('Conversation workflow has independent typed state and shared graph runtime
   assert.match(workflow, /addNode\('save_reply_input'/);
   assert.match(workflow, /addEdge\('load_reply_context', 'save_reply_input'\)/);
   assert.doesNotMatch(workflowTypes, /overlays|ChatStatusMeta|setBusy|setStatusMeta/);
-  assert.match(workflow, /replyService\.complete\(/);
-  assert.match(workflow, /replyService\.stream\(/);
-  assert.match(workflow, /generateNoteDraft\(/);
+  assert.match(replyHandler, /replyPort\(\)\.complete\(/);
+  assert.match(replyHandler, /replyPort\(\)\.stream\(/);
+  assert.match(noteHandlerSrc, /generateNoteDraftWithBundle\(/);
   assert.match(state, /runRef: ConversationRunRef/);
   assert.doesNotMatch(state, /\n\s*sessionId: string;/);
   assert.doesNotMatch(state, /\n\s*runId: string;/);
@@ -250,7 +259,7 @@ test('Conversation workflow classifies network failures for interruption handlin
 });
 
 test('Conversation workflow records failures as one typed terminal run part', () => {
-  assert.match(workflow, /private finishRunFailure\(/);
+  assert.match(workflow, /finishRunFailure\(/);
   assert.match(workflow, /this\.reportRunError\(ref, error\)/);
   assert.match(workflow, /this\.cbs\.finishAiMsg\(ref, messageId, outcome \?\? ConversationWorkflow\.failureOutcome\(error\)\)/);
   assert.doesNotMatch(workflow, /appendAssistantReply\(ref, displayError/);
@@ -264,7 +273,7 @@ test('Conversation workflow normalizes streamed content through one message even
   );
   assert.doesNotMatch(workflowTypes, /replaceAiMsg/);
   assert.doesNotMatch(workflowTypes, /appendAiMsg/);
-  assert.match(workflow, /kind: 'replace-content', content: displayAnswer/);
+  assert.match(replyHandler, /kind: 'replace-content', content: displayAnswer/);
   assert.doesNotMatch(workflow, /this\.cbs\.replaceAiMsg/);
 });
 
@@ -288,6 +297,7 @@ function timingInstance(mode) {
   const instance = Object.create(ConversationWorkflow.prototype);
   instance.evidenceService = new NoteEvidenceService();
   instance.runs = new ConversationRunRegistry();
+  instance.replyHandler = new ConversationReplyHandler(instance);
   instance.memoryProjection = { async saveAssistant() {}, async updateLearnerProfile() {}, async summarize() {} };
   instance.cbs = {
     isCurrentRun: () => true, onProgress() {}, addAiMsgEmpty: () => 42,
@@ -315,7 +325,7 @@ async function runTiming(mode) {
   globalThis.__mindtraceLogs = [];
   const instance = timingInstance(mode);
   const ref = { sessionId: 'sabc123', runId: 'rdef456' };
-  await instance.handleStreamReply(ref, '', '', '解释极限', undefined, undefined);
+  await instance.replyHandler.handleStream(ref, '', '', '解释极限', undefined, undefined);
   return (globalThis.__mindtraceLogs ?? []).filter((line) => line.msg.startsWith('[StreamTiming]'));
 }
 

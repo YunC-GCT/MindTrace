@@ -12,6 +12,7 @@ const viewModel = read('entry/src/main/ets/viewmodels/AgentInputViewModel.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const state = read('agents/src/main/ets/conversation/ConversationState.ets');
 const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const replyHandler = read('agents/src/main/ets/conversation/ConversationReplyHandler.ets');
 const workflowPorts = read('agents/src/main/ets/conversation/ConversationWorkflowPorts.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const modeChip = read(base + 'ModeChip.ets');
@@ -53,7 +54,7 @@ test('study mode selection reaches note generation without changing ordinary rep
   assert.doesNotMatch(state, /route\?: NoteGenerationRoute/);
   assert.match(workflowPorts, /interface IConversationNoteRoutePort/);
   assert.match(workflow, /this\.noteRoute\.select\(input\.runRef\)/);
-  assert.match(workflow, /generateNoteDraftWithSources\(/);
+  assert.match(replyHandler, /generateNoteDraftWithSources\(/);
   assert.match(aiService, /route: NoteGenerationRoute = 'standard'/);
   assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /route: route/);
 });
