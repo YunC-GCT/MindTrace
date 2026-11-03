@@ -329,7 +329,7 @@ Missing evidence / next red test:
 - `agents/src/main/ets/agents/KnowledgeModel.ets`
 - `agents/src/main/ets/core/Dispatcher.ets`
 - `entry/src/main/ets/database/NoteGenerationRepository.ets`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets`
 - `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets`
 - `entry/src/test/DispatcherNoteGeneration.test.ets`
 - `entry/src/test/List.test.ets`

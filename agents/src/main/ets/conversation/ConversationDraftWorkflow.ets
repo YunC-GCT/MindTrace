@@ -8,14 +8,13 @@
  * Data flow:
  *   Session-owned draft command -> ownership validation -> AiService -> preview/commit result.
  */
-import { common } from '@kit.AbilityKit';
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
-import { AiService } from '../../services/AiService';
-import { ChatMessageOrigin, ChatMessageOutcome } from 'agents';
+import type { IConversationDraftServicePort } from './ConversationServicePorts';
+import { ChatMessageOrigin, ChatMessageOutcome } from './ConversationState';
 import { ConversationRunRef } from 'common';
 
 export interface IConversationDraftWorkflowHost {
-  draftContext(): common.UIAbilityContext;
+  draftService(): IConversationDraftServicePort;
   acceptsDraftRun(ref: ConversationRunRef): boolean;
   publishDraft(ref: ConversationRunRef, event: NoteDraftReadyEvent): void;
   addDraftMessage(
@@ -44,7 +43,6 @@ export interface IConversationDraftGateway {
 
 class AiConversationDraftGateway implements IConversationDraftGateway {
   private readonly host: IConversationDraftWorkflowHost;
-  private service: AiService | null = null;
 
   constructor(host: IConversationDraftWorkflowHost) { this.host = host; }
 
@@ -80,9 +78,8 @@ class AiConversationDraftGateway implements IConversationDraftGateway {
     );
   }
 
-  private ai(): AiService {
-    if (this.service === null) { this.service = new AiService(this.host.draftContext()); }
-    return this.service;
+  private ai(): IConversationDraftServicePort {
+    return this.host.draftService();
   }
 }
 

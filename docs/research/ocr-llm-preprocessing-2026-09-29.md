@@ -32,12 +32,12 @@
 
 图片请求先进入 `classify_image_intent`。没有附带文字或文字为 `[图片]` 时，意图默认为 `chat`；只有意图为 `note_generation` 时才进入 `image_note_reply`，其余进入 `image_reply`：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:259-269`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:394-407`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:259-269`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:394-407`
 
 默认的 `image_reply` 路径调用 `analyzeImage`，保存 OCR 素材，再直接调用 `formatAnalyzeReply` 形成一条 AI 消息：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:479-497`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:479-497`
 
 ### 3. `analyzeImage` 只运行 Capture 与 Classify
 
@@ -100,7 +100,7 @@
 
 `formatAnalyzeReply` 从 `result.ocrText` 取正文，最多裁到 1600 个字符，然后拼接类型、学科、章节、置信度与“识别内容”。它没有再发起 LLM 调用：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:950-960`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:950-960`
 
 所以用户看到的“识别内容”是经过本地规则清洗后的 Capture 文本，而不是经过 LLM 修订的内容。
 
@@ -108,8 +108,8 @@
 
 默认图片识别路径没有 OCR 正文确认步骤。识别成功后，workflow 会先通过 `safeSaveOcrResult` 保存为会话的待处理素材，再显示识别结果：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:479-497`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:1129-1136`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:479-497`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:1129-1136`
 - `entry/src/main/ets/services/AgentMemoryService.ets:83-107`
 
 这里保存的是会话记忆中的 OCR 素材，不是最终 `KnowledgeUnit`。
@@ -123,13 +123,13 @@
 
 证据：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:505-547`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:549-597`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:598-612`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:505-547`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:549-597`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:598-612`
 
 用户确认草稿后，`ConversationDraftWorkflow` 才调用确认 gateway；`AiService.confirmDraft` 再通过 `Dispatcher.dispatch(..., { persist: true })` 写入最终 `KnowledgeUnit`：
 
-- `entry/src/main/ets/workflows/conversation/ConversationDraftWorkflow.ets:106-122`
+- `agents/src/main/ets/conversation/ConversationDraftWorkflow.ets:106-122`
 - `entry/src/main/ets/services/AiService.ets:404-428`
 
 ## 术语与设计依据

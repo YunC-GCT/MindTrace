@@ -334,7 +334,7 @@ finalize / needs_input → END
 
 - [docs/specs/018-agent-workflow-architecture.md](../../specs/018-agent-workflow-architecture.md)
 - [docs/adr/0008-capturegraph-self-built-runtime.md](../../adr/0008-capturegraph-self-built-runtime.md)
-- [entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets](../../../entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets)
+- [agents/src/main/ets/conversation/ConversationWorkflow.ets](../../../agents/src/main/ets/conversation/ConversationWorkflow.ets)
 - [agents/src/main/ets/conversation/ConversationState.ets](../../../agents/src/main/ets/conversation/ConversationState.ets)
 - [entry/src/main/ets/services/AgentMemoryService.ets](../../../entry/src/main/ets/services/AgentMemoryService.ets)
 - [agents/src/main/ets/chat/ReplyService.ets](../../../agents/src/main/ets/chat/ReplyService.ets)

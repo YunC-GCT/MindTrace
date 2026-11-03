@@ -65,3 +65,24 @@ export type {
   RegenerateConversationRequest, TextConversationRequest,
 } from './conversation/ConversationState';
 export { CHAT_TOOL_REPLY_ENABLED, ConversationToolReplyFlags } from './conversation/ConversationToolReplyFlags';
+
+// 对话图（2026-11-03 由 entry/workflows/conversation 上移，UI 上下文经端口注入）
+export { ConversationWorkflow } from './conversation/ConversationWorkflow';
+export {
+  ConversationWorkflowPorts, ConversationWorkflowPortsFactory,
+} from './conversation/ConversationWorkflowPorts';
+export type {
+  ConversationWorkflowPortsInput,
+  IConversationCapturePort, IConversationIntentPort, IConversationNoteRoutePort,
+  IConversationReplyPort, IConversationToolPort,
+} from './conversation/ConversationWorkflowPorts';
+export type {
+  IConversationDraftServicePort, IConversationMemoryServicePort,
+} from './conversation/ConversationServicePorts';
+export { ConversationDraftWorkflow } from './conversation/ConversationDraftWorkflow';
+export { ConversationMemoryProjection } from './conversation/ConversationMemoryProjection';
+export type {
+  ConversationErrorMessageEvent, ConversationMessageEvent, ConversationReplaceContentEvent,
+  ConversationRunEventStatus, ConversationStatusMessageEvent, ConversationStreamMessageEvent,
+  ConversationWorkflowCallbacks,
+} from './conversation/ConversationTypes';

@@ -22,13 +22,13 @@ test('Chat 工具回复默认关闭，可灰度开启', () => {
 });
 
 test('ConversationWorkflow 有 tool_reply 节点且只在开关开启时接线', () => {
-  const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+  const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
   assert.match(workflow, /toolReplyEnabled\(\)/);
   assert.match(workflow, /graph\.addNode\('tool_reply'/);
   assert.match(workflow, /return 'tool_reply'/);
   assert.match(workflow, /useTools: boolean = false/);
   assert.match(workflow, /this\.toolReplyService\.complete\(/);
-  const ports = read('entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets');
+  const ports = read('agents/src/main/ets/conversation/ConversationWorkflowPorts.ets');
   assert.match(ports, /interface IConversationToolPort/);
   assert.match(ports, /class ConversationToolAdapter implements IConversationToolPort/);
   assert.match(ports, /ToolCatalog\.createReadOnlyRegistry\(\)/);

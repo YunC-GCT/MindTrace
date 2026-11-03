@@ -321,7 +321,7 @@ AgentFloatWindow 是一个**健康的自绘聊天浮窗**: 11 文件 1124 行, �
 - `agents/src/main/ets/chat/ReplyService.ets:54,81,123` — enableThinking 硬编码 false
 - `entry/src/main/ets/services/ChatStatusMachine.ets:12` — ChatModels 反向消费
 - `agents/src/main/ets/conversation/ConversationState.ets:29-47` — ConversationRequest 无思考参数
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:19,312-348` — 流式链路与 reasoning 透传
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:19,312-348` — 流式链路与 reasoning 透传
 - `common/src/main/ets/llm/LlmTypes.ets:144,184` / `LlmClient.ets:86-88,281-285,495-520` — enableThinking 参数链与 reasoning emit
 - 全仓 grep: `renderKey`/`promptAction`/`deepThink`/`notesVersion`/`realReply|restoreDraft|retryDraft|regenerateNote|requestRegeneration|listRecoverableDrafts`/各组件 import — Q2 裁决
 - `docs/specs/index.md:47` / `docs/specs/018-agent-workflow-architecture.md:43,70` — spec 018 facade 语义

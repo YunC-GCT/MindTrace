@@ -10,8 +10,8 @@ const controller = read('entry/src/main/ets/services/A2AController.ets');
 const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
 const UI_CALLERS = [
   'agents/src/main/ets/chat/ModelRouter.ets',
-  'entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets',
-  'entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets',
+  'agents/src/main/ets/conversation/ConversationWorkflow.ets',
+  'agents/src/main/ets/conversation/ConversationWorkflowPorts.ets',
 ];
 
 test('A2A passes plain_text_math explicitly to ReplyService.complete', () => {

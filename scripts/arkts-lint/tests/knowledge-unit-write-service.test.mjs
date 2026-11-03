@@ -61,8 +61,8 @@ test('write result distinguishes committed data from post-commit warnings', () =
 
 test('callers do not duplicate centralized notesVersion and cache side effects', () => {
   const editor = read('entry/src/main/ets/overlays/NoteDetailOverlay/NoteDetailOverlay.ets');
-  const conversation = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
-  const conversationTypes = read('entry/src/main/ets/workflows/conversation/ConversationTypes.ets');
+  const conversation = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+  const conversationTypes = read('agents/src/main/ets/conversation/ConversationTypes.ets');
   const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
   // 写后副作用拆成两个文件：notes_changed（不依赖 UI Kit）+ 卡片刷新（FormKit，仅主进程）
   const effects = read('entry/src/main/ets/services/KnowledgeUnitPostCommitEffects.ets')

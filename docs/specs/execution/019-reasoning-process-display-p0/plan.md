@@ -91,7 +91,7 @@ entry/src/test/
   - **Rationale**: Chat memory 与最终回答区应保存/展示真实回答，而不是思考链。该边界确保即使 UI 累积 reasoning，也不会污染 assistant content 的持久化。
   - **Alternatives considered**: 把所有事件 delta 都并入 `StreamReplyResult.content`；会重新引入思考文本污染最终回答的问题。
 
-- **Decision**: `entry/src/main/ets/services/AgentChatService.ets`、`entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets` 与 `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` 采用结构化事件通道分发：`thinking` 累积到 ChatMsg.reasoning，`text` 累积到 ChatMsg.content，保留未实现事件类型 default 兜底。
+- **Decision**: `entry/src/main/ets/services/AgentChatService.ets`、`agents/src/main/ets/conversation/ConversationWorkflow.ets` 与 `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` 采用结构化事件通道分发：`thinking` 累积到 ChatMsg.reasoning，`text` 累积到 ChatMsg.content，保留未实现事件类型 default 兜底。
   - **Rationale**: ChatMsg 已有 `reasoning` 与 `content` 字段，P0 零新增字段即可满足功能；默认兜底保证 P1 之前保留事件不会破坏 P0 消费端。
   - **Alternatives considered**: 新增 ChatMsg 字段或分离 UI-only 状态；会引入旧会话兼容风险，不符合 #111 范围。
 
@@ -170,7 +170,7 @@ entry/src/test/
 | Contract | Location | Required Change |
 |----------|----------|-----------------|
 | ReplyEventSink | `agents/src/main/ets/chat/ReplyService.ets` | 接收结构化 stream event；只把 text 事件计入最终回答内容 |
-| Conversation callbacks | `entry/src/main/ets/workflows/conversation/ConversationTypes.ets` | append 回调接受结构化 event 或等价语义对象，不再使用旧 `kind` union |
+| Conversation callbacks | `agents/src/main/ets/conversation/ConversationTypes.ets` | append 回调接受结构化 event 或等价语义对象，不再使用旧 `kind` union |
 | AgentChat callbacks | `entry/src/main/ets/services/AgentChatService.ets` | adapter 透传结构化事件，不过滤 thinking |
 | FloatWindow append | `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` | thinking -> reasoning；text -> content；tool_* default 兜底 |
 

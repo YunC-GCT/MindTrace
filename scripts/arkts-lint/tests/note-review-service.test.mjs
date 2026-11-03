@@ -39,6 +39,56 @@ function relation(overrides = {}) {
   };
 }
 
+// ConversationWorkflow 现在要求显式端口（组合根在 entry）；这些用例只跑分类节点，
+// 用一个最小桩即可。
+function stubConversationPorts() {
+  return {
+    intent: {
+      classify: async () => 'chat',
+      classifyWithCancellation: async () => 'chat',
+      classifyLocalIntent: () => undefined,
+      inlineNoteMaterial: () => '',
+    },
+    reply: {
+      isConfigured: async () => true,
+      complete: async () => '',
+      completeRouted: async () => ({ text: '', degraded: false }),
+      stream: async () => ({ content: '', interrupted: false, usedFallback: false }),
+      normalize: (value) => value,
+    },
+    capture: {},
+    noteRoute: { select: () => undefined },
+    draftService: {
+      restoreDraft: async () => ({}),
+      confirmDraft: async (_event, candidate) => candidate,
+      cancelDraft: async () => {},
+      retryDraft: async () => ({}),
+      listRecoverableDrafts: async () => [],
+      regenerateNoteDraft: async () => ({}),
+    },
+    memoryService: {
+      saveMessage: async () => {},
+      saveOcrResult: async () => '',
+      getStructuredContextForNoteGeneration: async () => ({}),
+      updateLearnerProfileIfNeeded: async () => {},
+      summarizeSessionIfNeeded: async () => {},
+      getPendingNoteMaterials: async () => [],
+      getContextForReply: async () => '',
+      getContextForNoteGeneration: async () => '',
+      getLearnerProfileContext: async () => '',
+    },
+    evidence: {
+      build: async () => ({ query: '', topK: 0, citations: [], relations: [], contextText: '', degraded: false, reason: '' }),
+      formatRetrievalStatus: () => '',
+      formatSources: () => '',
+      sanitizeAnswer: (_ctx, answer) => answer,
+      createStreamFilter: () => ({ push: (delta) => delta, flush: () => '' }),
+      createStrictStreamFilter: () => ({ push: (delta) => delta, flush: () => '' }),
+      hasVerifiedCitation: () => false,
+    },
+  };
+}
+
 function loadReviewService() {
   return loadNoteReviewEtsModule(
     'entry/src/main/ets/services/NoteReviewService.ets',
@@ -55,7 +105,7 @@ function loadReviewService() {
 
 function loadConversationWorkflow(overrides = {}) {
   return loadNoteReviewEtsModule(
-    'entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets',
+    'agents/src/main/ets/conversation/ConversationWorkflow.ets',
     {
       mocks: {
         common: {
@@ -466,7 +516,7 @@ test('ConversationWorkflow terminal note review finishes the real message and sk
       return {};
     },
   };
-  const workflow = new ConversationWorkflow(callbacks);
+  const workflow = new ConversationWorkflow(callbacks, stubConversationPorts());
   let completeCalls = 0;
   workflow.replyService = {
     normalize(value) {
@@ -530,7 +580,7 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
       return {};
     },
   };
-  const workflow = new ConversationWorkflow(callbacks);
+  const workflow = new ConversationWorkflow(callbacks, stubConversationPorts());
   workflow.replyService = {
     async isConfigured() { return true; },
     normalize(value) {
@@ -621,7 +671,7 @@ test('ConversationWorkflow classify_intent keeps explicit review/note-query on c
     onProgress() {},
     isCurrentRun() { return true; },
     getContext() { return {}; },
-  });
+  }, stubConversationPorts());
   const graph = workflow.buildGraph();
   const next = await graph.nodes.classify_intent({
     request: { kind: 'text', userContent: '根据我的笔记解释极限', responseMode: 'complete' },
@@ -646,7 +696,7 @@ test('ConversationWorkflow classify_intent routes explicit note-generation via u
     onProgress() {},
     isCurrentRun() { return true; },
     getContext() { return {}; },
-  });
+  }, stubConversationPorts());
   const graph = workflow.buildGraph();
   for (const userContent of ['存笔记：极限定义', '把极限整理成笔记并解释一下', '创建笔记：极限定义']) {
     const next = await graph.nodes.classify_intent({

@@ -9,7 +9,7 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const classifier = read('agents/src/main/ets/chat/IntentClassifier.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
-const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
 const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
 
 test('IntentClassifier exposes its public intent and reply APIs', () => {
@@ -45,7 +45,7 @@ test('ConversationWorkflow owns intent orchestration and AgentChatService stays 
 });
 
 test('ConversationWorkflow owns reply implementation without duplicate facade logic', () => {
-  assert.match(workflow, /private clip\(text: string, limit: number\): string/);
+  assert.match(workflow, /applyEvidenceToAnswer\(this\.getEvidenceService\(\)/);
   assert.match(workflow, /private createImageRecognitionReplyContext\(/);
   assert.match(workflow, /private readonly replyService: IConversationReplyPort/);
   assert.match(replyService, /async complete\(/);

@@ -10,7 +10,7 @@
  *   UI draft command -> ownership lookup -> conversation run executor -> workflow operation.
  */
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
-import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
+import { ConversationWorkflow } from 'agents';
 import {
   ConversationRunRequestKind,
 } from './ConversationRunCoordinator';

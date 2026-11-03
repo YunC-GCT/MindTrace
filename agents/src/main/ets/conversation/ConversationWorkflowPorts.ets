@@ -1,14 +1,14 @@
 /**
- * ConversationWorkflowPorts.ets - conversation workflow 的可注入外部效果端口
+ * ConversationWorkflowPorts.ets — 对话图的端口集合与默认适配器
  *
- * 路径: entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets
- * 职责: 把 LLM / OCR / Capture / ToolLoop 等外部效果收在可注入端口后面，保持 workflow 可测。
- * 依赖: AiService、IntentClassifier、ReplyService、ModelRouter、LocalChatProvider、common 契约。
+ * 路径: agents/src/main/ets/conversation/ConversationWorkflowPorts.ets
+ * 职责: 定义意图 / 回复 / 抽取 / 草稿服务 / 记忆服务 / 证据 / 复习七组端口，
+ *       并提供规则型默认适配器；AiService / AgentMemoryService 的实现由 entry 组合根注入
+ * 依赖: common、../chat/*、./ConversationToolReplyFlags、./ConversationServicePorts
  *
- * Data flow:
- *   Workflow request -> typed port -> external service -> typed domain result.
+ * 数据流:
+ *   entry ConversationWorkflowPortsFactory → 本文件端口 → ConversationWorkflow
  */
-import { common } from '@kit.AbilityKit';
 import {
   CancellationToken,
   ChatMessage,
@@ -18,25 +18,28 @@ import {
   LlmConfig,
   LocalChatProvider,
   Logger,
-  NoteDraftReadyEvent,
-  NoteGenerationRoute,
-  NoteGenerationProgressSink,
   NoteContextClarification,
-  SourceFragment,
-  SourceBundle,
+  NoteDraftReadyEvent,
+  NoteGenerationProgressSink,
+  NoteGenerationRoute,
   NoteTopicCandidate,
+  SourceBundle,
+  SourceFragment,
   ToolCatalog,
   ToolLoop,
   ToolRegistry,
 } from 'common';
 import type { StreamEvent, ToolLoopOptions } from 'common';
-import { AiService } from '../../services/AiService';
-import { IntentClassifier, ReplyContext, TextIntent } from 'agents';
-import { ReplyEventSink, ReplyService, StreamReplyResult } from 'agents';
 import { ConversationRunRef } from 'common';
-import { ModelRouter } from 'agents';
-import type { RoutedReply } from 'agents';
-import { ConversationToolReplyFlags } from 'agents';
+import type { NoteEvidencePort, NoteReviewPort } from 'common';
+import { IntentClassifier } from '../chat/IntentClassifier';
+import type { ReplyContext, TextIntent } from '../chat/IntentClassifier';
+import { ReplyService } from '../chat/ReplyService';
+import type { ReplyEventSink, StreamReplyResult } from '../chat/ReplyService';
+import { ModelRouter } from '../chat/ModelRouter';
+import type { RoutedReply } from '../chat/ModelRouter';
+import { ConversationToolReplyFlags } from './ConversationToolReplyFlags';
+import type { IConversationDraftServicePort, IConversationMemoryServicePort } from './ConversationServicePorts';
 
 const replyPortLog: Logger = new Logger('ConversationReplyPort');
 
@@ -241,131 +244,18 @@ class ConversationToolAdapter implements IConversationToolPort {
   }
 }
 
-class ConversationCaptureAdapter implements IConversationCapturePort {
-  private readonly ai: AiService;
-
-  constructor(context: common.UIAbilityContext) { this.ai = new AiService(context); }
-
-  async analyzeImage(
-    imageUri: string,
-    userText: string,
-    token?: CancellationToken,
-  ): Promise<ClassificationResult> {
-    return await this.ai.analyzeImage(imageUri, userText, token);
-  }
-
-  async generateNoteDraftWithSources(
-    runId: string,
-    instruction: string,
-    sourceText: string,
-    pendingSources: SourceFragment[],
-    token?: CancellationToken,
-    originSessionId?: string,
-    parentConversationRunId?: string,
-    route?: NoteGenerationRoute,
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteDraftReadyEvent> {
-    return await this.ai.generateNoteDraftWithSources(
-      runId,
-      instruction,
-      sourceText,
-      pendingSources,
-      token,
-      originSessionId,
-      parentConversationRunId,
-      route,
-      progressSink,
-    );
-  }
-
-  async generateNoteDraftWithBundle(
-    runId: string,
-    instruction: string,
-    bundle: SourceBundle,
-    pendingSourceIds: string[],
-    contextBudgetTokens: number,
-    token?: CancellationToken,
-    originSessionId?: string,
-    parentConversationRunId?: string,
-    route?: NoteGenerationRoute,
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteDraftReadyEvent> {
-    return await this.ai.generateNoteDraftWithBundle(
-      runId,
-      instruction,
-      bundle,
-      pendingSourceIds,
-      contextBudgetTokens,
-      token,
-      originSessionId,
-      parentConversationRunId,
-      route,
-      progressSink,
-    );
-  }
-
-  async saveNoteContextClarification(
-    runId: string,
-    instruction: string,
-    bundle: SourceBundle,
-    topics: NoteTopicCandidate[],
-    pendingSourceIds: string[],
-    contextBudgetTokens: number,
-    originSessionId?: string,
-    parentConversationRunId?: string,
-    route?: NoteGenerationRoute,
-  ): Promise<NoteContextClarification> {
-    return await this.ai.saveNoteContextClarification(
-      runId,
-      instruction,
-      bundle,
-      topics,
-      pendingSourceIds,
-      contextBudgetTokens,
-      originSessionId,
-      parentConversationRunId,
-      route,
-    );
-  }
-
-  async resumeNoteContextClarification(
-    runId: string,
-    topicId: string,
-    token?: CancellationToken,
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteDraftReadyEvent> {
-    return await this.ai.resumeNoteContextClarification(runId, topicId, token, progressSink);
-  }
-
-  async regenerateNoteDraft(
-    runId: string,
-    noteId: string,
-    instruction: string,
-    sourceText: string,
-    token?: CancellationToken,
-    originSessionId?: string,
-    parentConversationRunId?: string,
-    progressSink?: NoteGenerationProgressSink,
-  ): Promise<NoteDraftReadyEvent> {
-    return await this.ai.regenerateNoteDraft(
-      runId,
-      noteId,
-      instruction,
-      sourceText,
-      token,
-      originSessionId,
-      parentConversationRunId,
-      progressSink,
-    );
-  }
-}
-
 export class ConversationWorkflowPorts {
   readonly intent: IConversationIntentPort;
   readonly reply: IConversationReplyPort;
   readonly capture: IConversationCapturePort;
   readonly noteRoute: IConversationNoteRoutePort;
   readonly toolReply?: IConversationToolPort;
+  /** 草稿服务与记忆服务的实现留在 entry，由组合根注入。 */
+  readonly draftService?: IConversationDraftServicePort;
+  readonly memoryService?: IConversationMemoryServicePort;
+  /** 证据 / 复习实现同样由组合根注入（entry 持有 RDB 与 RAG）。 */
+  readonly evidence?: NoteEvidencePort;
+  readonly review?: NoteReviewPort;
 
   constructor(
     intent: IConversationIntentPort,
@@ -373,18 +263,36 @@ export class ConversationWorkflowPorts {
     capture: IConversationCapturePort,
     noteRoute?: IConversationNoteRoutePort,
     toolReply?: IConversationToolPort,
+    draftService?: IConversationDraftServicePort,
+    memoryService?: IConversationMemoryServicePort,
+    evidence?: NoteEvidencePort,
+    review?: NoteReviewPort,
   ) {
     this.intent = intent;
     this.reply = reply;
     this.capture = capture;
     this.noteRoute = noteRoute ?? new AutomaticConversationNoteRouteAdapter();
     this.toolReply = toolReply;
+    this.draftService = draftService;
+    this.memoryService = memoryService;
+    this.evidence = evidence;
+    this.review = review;
   }
+}
 
-  static production(
-    context: common.UIAbilityContext,
-    noteRoute?: IConversationNoteRoutePort,
-  ): ConversationWorkflowPorts {
+/** 组合根输入：只收 entry 才能构造的实现（AiService / AgentMemoryService / RDB 证据链）。 */
+export interface ConversationWorkflowPortsInput {
+  filesDir: string;
+  capture: IConversationCapturePort;
+  draftService: IConversationDraftServicePort;
+  memoryService: IConversationMemoryServicePort;
+  evidence: NoteEvidencePort;
+  review: NoteReviewPort;
+  noteRoute?: IConversationNoteRoutePort;
+}
+
+export class ConversationWorkflowPortsFactory {
+  static production(input: ConversationWorkflowPortsInput): ConversationWorkflowPorts {
     const classifier: IntentClassifier = new IntentClassifier();
     const replyService: ReplyService = new ReplyService(classifier);
     const localChat: LocalChatProvider = new LocalChatProvider();
@@ -394,16 +302,20 @@ export class ConversationWorkflowPorts {
     }).catch((e: Error): void => {
       replyPortLog.error('localChat init crashed: ' + e.message);
     });
-    const router: ModelRouter = new ModelRouter(context.filesDir, replyService, localChat);
+    const router: ModelRouter = new ModelRouter(input.filesDir, replyService, localChat);
     // 保持既有构造签名不变；流式路由复用同一个 localChat 实例
     const replyAdapter: ConversationReplyAdapter = new ConversationReplyAdapter(replyService, router);
     replyAdapter.attachLocalChat(localChat);
     return new ConversationWorkflowPorts(
       new ConversationIntentAdapter(classifier),
       replyAdapter,
-      new ConversationCaptureAdapter(context),
-      noteRoute,
+      input.capture,
+      input.noteRoute,
       new ConversationToolAdapter(classifier),
+      input.draftService,
+      input.memoryService,
+      input.evidence,
+      input.review,
     );
   }
 }

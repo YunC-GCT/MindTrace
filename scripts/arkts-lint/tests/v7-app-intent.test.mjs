@@ -50,7 +50,7 @@ test('普通问答应交给 LLM 兜底（local undefined），低置信转 clari
 });
 
 test('Workflow 接线：统一意图 + clarify 节点 + 状态透传', () => {
-  const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+  const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
   assert.match(workflow, /appIntentRouter\.classify\(/);
   assert.match(workflow, /graph\.addNode\('clarify_reply'/);
   assert.match(workflow, /appIntentClarify === true/);

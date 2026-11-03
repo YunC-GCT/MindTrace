@@ -8,10 +8,10 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const facade = read('entry/src/main/ets/services/AgentChatService.ets');
 const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
-const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
-const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
+const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const memoryProjection = read('agents/src/main/ets/conversation/ConversationMemoryProjection.ets');
 const state = read('agents/src/main/ets/conversation/ConversationState.ets');
-const workflowTypes = read('entry/src/main/ets/workflows/conversation/ConversationTypes.ets');
+const workflowTypes = read('agents/src/main/ets/conversation/ConversationTypes.ets');
 const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
@@ -33,18 +33,20 @@ const errorHarness = ts.transpileModule(
     + withoutImports(read('common/src/main/ets/utils/NoteRetrievalQuery.ets'))
     + withoutImports(read('entry/src/main/ets/services/NoteEvidenceService.ets'))
     + withoutImports(read('common/src/main/ets/utils/StreamErrorText.ets'))
+    + withoutImports(read('agents/src/main/ets/conversation/ConversationFormatting.ets'))
+    + withoutImports(read('agents/src/main/ets/conversation/ConversationRunRegistry.ets'))
     + withoutImports(workflow),
   { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } },
 ).outputText;
-const { ConversationWorkflow, NoteEvidenceService } = await import('data:text/javascript;base64,' + Buffer.from(errorHarness).toString('base64'));
+const { ConversationWorkflow, NoteEvidenceService, applyEvidenceToAnswer, ConversationRunRegistry } = await import('data:text/javascript;base64,' + Buffer.from(errorHarness).toString('base64'));
 
 test('ordinary reply visibly distinguishes a retrieval miss from an unavailable database', () => {
   const instance = Object.create(ConversationWorkflow.prototype);
   instance.evidenceService = new NoteEvidenceService();
   const evidence = { query: '极限', topK: 5, citations: [], relations: [], contextText: '', degraded: false, reason: 'no-match' };
-  assert.match(instance.applyEvidenceToAnswer(evidence, '普通回答'), /笔记检索：未命中/);
-  assert.match(instance.applyEvidenceToAnswer({ ...evidence, degraded: true, reason: 'search-failed' }, '普通回答'), /笔记检索：失败/);
-  assert.equal(instance.applyEvidenceToAnswer(undefined, '图片回答'), '图片回答');
+  assert.match(applyEvidenceToAnswer(instance.evidenceService, evidence, '普通回答'), /笔记检索：未命中/);
+  assert.match(applyEvidenceToAnswer(instance.evidenceService, { ...evidence, degraded: true, reason: 'search-failed' }, '普通回答'), /笔记检索：失败/);
+  assert.equal(applyEvidenceToAnswer(instance.evidenceService, undefined, '图片回答'), '图片回答');
 });
 
 test('stream, complete and stream fallback render and persist exactly one retrieval result', async () => {
@@ -57,9 +59,7 @@ test('stream, complete and stream fallback render and persist exactly one retrie
       let displayed = '';
       let finished = 0;
       instance.evidenceService = new NoteEvidenceService();
-      instance.cancellationTokens = new Map();
-      instance.runOrigins = new Map();
-      instance.reportedErrorRuns = new Set();
+      instance.runs = new ConversationRunRegistry();
       instance.memoryProjection = {
         async saveAssistant(_ref, content) { saved.push(content); },
         async updateLearnerProfile() {}, async summarize() {},
@@ -109,7 +109,7 @@ test('unexpected retrieval exception remains observable instead of looking like 
 function deliveredFailure(error) {
   const messages = [];
   const instance = Object.create(ConversationWorkflow.prototype);
-  instance.reportedErrorRuns = new Set();
+  instance.runs = new ConversationRunRegistry();
   instance.cbs = { onError: (_ref, message) => messages.push(message) };
   const ref = { sessionId: 'session', runId: 'run' };
   instance.reportRunError(ref, error);
@@ -287,9 +287,7 @@ function timingFields(line) {
 function timingInstance(mode) {
   const instance = Object.create(ConversationWorkflow.prototype);
   instance.evidenceService = new NoteEvidenceService();
-  instance.cancellationTokens = new Map();
-  instance.runOrigins = new Map();
-  instance.reportedErrorRuns = new Set();
+  instance.runs = new ConversationRunRegistry();
   instance.memoryProjection = { async saveAssistant() {}, async updateLearnerProfile() {}, async summarize() {} };
   instance.cbs = {
     isCurrentRun: () => true, onProgress() {}, addAiMsgEmpty: () => 42,

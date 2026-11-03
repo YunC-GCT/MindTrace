@@ -8,15 +8,14 @@
  * Data flow:
  *   Current run message/OCR -> context eligibility guard -> RDB memory projection.
  */
-import { common } from '@kit.AbilityKit';
 import { CancellationToken, ClassificationResult, SourceFragment, sourceFingerprint } from 'common';
-import { AgentMemoryService } from '../../services/AgentMemoryService';
+import type { IConversationMemoryServicePort } from './ConversationServicePorts';
 import { AgentMemoryRecord, NoteGenerationContextResult } from 'common';
-import { ChatMessageOrigin } from 'agents';
+import { ChatMessageOrigin } from './ConversationState';
 import { ConversationRunRef } from 'common';
 
 export interface IConversationMemoryProjectionHost {
-  memoryContext(): common.UIAbilityContext;
+  memoryService(): IConversationMemoryServicePort;
   acceptsMemoryRun(ref: ConversationRunRef): boolean;
   memoryOrigin(ref: ConversationRunRef): ChatMessageOrigin;
   commitMemoryHistory(ref: ConversationRunRef): Promise<boolean>;
@@ -27,7 +26,6 @@ export interface IConversationMemoryProjectionHost {
 
 export class ConversationMemoryProjection {
   private readonly host: IConversationMemoryProjectionHost;
-  private memory: AgentMemoryService | null = null;
 
   private constructor(host: IConversationMemoryProjectionHost) {
     this.host = host;
@@ -190,11 +188,8 @@ export class ConversationMemoryProjection {
     }
   }
 
-  private service(): AgentMemoryService {
-    if (this.memory === null) {
-      this.memory = new AgentMemoryService(this.host.memoryContext());
-    }
-    return this.memory;
+  private service(): IConversationMemoryServicePort {
+    return this.host.memoryService();
   }
 
   private static errorMessage(error: Object): string {

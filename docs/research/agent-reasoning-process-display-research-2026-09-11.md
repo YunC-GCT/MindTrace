@@ -357,8 +357,8 @@ MindTrace 的思考展示链路**骨架全通但两端哑火**: 传输层 (reque
 - `entry/src/main/ets/services/AgentChatService.ets:9-20,22-58,60-101` — 回调接口/adapter/facade
 - `entry/src/main/ets/services/ChatStatusMachine.ets:20-41` — 12 步文案表
 - `agents/src/main/ets/conversation/ConversationState.ets:3-60` — Step/Progress/Request 三形态/State
-- `entry/src/main/ets/workflows/conversation/ConversationTypes.ets:5-16` — ConversationWorkflowCallbacks 11 项
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:39-54,122-231,280-364,489-565` — 图结构/流式链路/记忆
+- `agents/src/main/ets/conversation/ConversationTypes.ets:5-16` — ConversationWorkflowCallbacks 11 项
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:39-54,122-231,280-364,489-565` — 图结构/流式链路/记忆
 - `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets:104-185` — 回调装配/appendAiMsg 二分流/send 分流
 - `entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatBubble.ets:15-139` — reasoning 面板 :64-92, 三态 :95-117, 长文 :124-125
 - `entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets:13-53` — ChatMsg 6 字段

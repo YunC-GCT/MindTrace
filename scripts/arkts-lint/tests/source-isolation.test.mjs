@@ -13,8 +13,8 @@ const models = read('common/src/main/ets/models/NoteGenerationModels.ets');
 const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const repoImpl = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
-const convWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
-const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
+const convWorkflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const memoryProjection = read('agents/src/main/ets/conversation/ConversationMemoryProjection.ets');
 const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 
 // === Legacy source isolation tests ===

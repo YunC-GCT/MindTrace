@@ -991,7 +991,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.9 ConversationWorkflow — Multi-turn chat with state + Router
 
 **Pattern**: Multi-turn chat with state (记忆 + 流式 + 意图路由) + Router / Classifier (kind/intent/responseMode 三层)
-**位置**: [`ConversationWorkflow.ets:1-664`](../../entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets)
+**位置**: [`ConversationWorkflow.ets:1-664`](../../agents/src/main/ets/conversation/ConversationWorkflow.ets)
 
 - `ConversationState` (`ConversationState.ets:49-60`) 含`sessionId / memoryContext / learnerProfileContext / draftRunId / draftStatus` 等多轮状态字段 **无** UIAbilityContext/ArkUI/callback/DAO/LlmClient/ToolRegistry (符合 spec 018 §4)
 - 9 节点 + 6 条件边(`ConversationWorkflow.ets:124-232`):

@@ -8,7 +8,7 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 test('identity policies are distinct and session fallback is removed', () => {
   const identity = read('common/src/main/ets/utils/ConversationIdentity.ets');
-  const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+  const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
   const session = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatSession.ets');
   const window = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
   assert.match(identity, /class SessionIdPolicy/);

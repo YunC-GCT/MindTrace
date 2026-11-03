@@ -13,7 +13,7 @@ import { CancellationToken, NoteContextClarification, NoteDraftReadyEvent, NoteG
 import {
   ConversationMessageEvent,
   ConversationWorkflowCallbacks,
-} from '../workflows/conversation/ConversationTypes';
+} from 'agents';
 import {
   ChatMessageOrigin,
   ChatMessageOutcome,

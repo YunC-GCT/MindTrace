@@ -83,7 +83,7 @@ import {
   ConversationSessionReducer,
 } from '../../services/ConversationSessionReducer';
 import { ConversationSessionSnapshot } from 'common';
-import { IConversationNoteRoutePort } from '../../workflows/conversation/ConversationWorkflowPorts';
+import { IConversationNoteRoutePort } from '../../services/AgentChatContracts';
 import { ChatHistorySaveResult } from '../../services/ChatHistoryPersistence';
 import { ChatHistoryClearControl, getChatHistoryClearControl } from '../../services/ChatHistoryClearControl';
 import {

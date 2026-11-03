@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const localChatPath = 'common/src/main/ets/llm/LocalChatProvider.ets';
-const portsPath = 'entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets';
+const portsPath = 'agents/src/main/ets/conversation/ConversationWorkflowPorts.ets';
 
 test('LocalChatProvider exposes askStream with isStream=true and delta callback', () => {
   const source = read(localChatPath);

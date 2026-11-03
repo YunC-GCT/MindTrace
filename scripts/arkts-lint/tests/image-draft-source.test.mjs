@@ -14,8 +14,8 @@ const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const captureChain = read('common/src/main/ets/models/CaptureChain.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const ocrNode = read('agents/src/main/ets/graph/nodes/OcrNode.ets');
-const convWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
-const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
+const convWorkflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const memoryProjection = read('agents/src/main/ets/conversation/ConversationMemoryProjection.ets');
 const convState = read('agents/src/main/ets/conversation/ConversationState.ets');
 const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 

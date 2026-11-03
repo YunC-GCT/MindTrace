@@ -20,7 +20,6 @@
  *   - copyState 用显式字段复制,不写解构赋值
  */
 
-import { common } from '@kit.AbilityKit';
 import {
   KnowledgeUnit,
   ClassificationResult,
@@ -29,10 +28,10 @@ import {
   Logger,
   StateGraph,
 } from 'common';
-import { ReplyContext } from 'agents';
-import type { TextIntent } from 'agents';
-import { AppIntentRouter } from 'agents';
-import type { AppIntentDecision } from 'agents';
+import { ReplyContext } from '../chat/IntentClassifier';
+import type { TextIntent } from '../chat/IntentClassifier';
+import { AppIntentRouter } from '../chat/AppIntentRouter';
+import type { AppIntentDecision } from '../chat/AppIntentRules';
 import {
   ConversationProgressStep,
   ConversationState,
@@ -40,9 +39,10 @@ import {
   ConversationRequest,
   ChatMessageOrigin,
   ChatMessageOutcome,
-} from 'agents';
+} from './ConversationState';
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
-import { StreamReplyResult } from 'agents';
+import { applyEvidenceToAnswer, evidenceFooter, matchesFallbackShape } from './ConversationFormatting';
+import type { StreamReplyResult } from '../chat/ReplyService';
 import { streamErrorText } from 'common';
 import {
   NoteDraftReadyEvent,
@@ -57,16 +57,16 @@ import {
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from 'common';
 import { NoteGenerationContextResult } from 'common';
-import { NoteEvidenceService } from '../../services/NoteEvidenceService';
 import type { NoteEvidencePort, NoteEvidenceStreamFilterPort } from 'common';
+import type { IConversationDraftServicePort, IConversationMemoryServicePort } from './ConversationServicePorts';
 import { NoteReviewAnswer } from 'common';
-import { NoteReviewService } from '../../services/NoteReviewService';
 import type { NoteReviewFinalization, NoteReviewPlan, NoteReviewPort } from 'common';
 import { ConversationRunRef } from 'common';
 import { requireConversationRunRef } from 'common';
 import { CancellationToken } from 'common';
 import { ConversationDraftWorkflow, IConversationDraftWorkflowHost } from './ConversationDraftWorkflow';
 import { ConversationMemoryProjection, IConversationMemoryProjectionHost } from './ConversationMemoryProjection';
+import { ConversationRunRegistry } from './ConversationRunRegistry';
 import {
   ConversationWorkflowPorts,
   IConversationCapturePort,
@@ -110,6 +110,7 @@ interface ImageNoteReplyResult {
 
 export class ConversationWorkflow implements IConversationDraftWorkflowHost, IConversationMemoryProjectionHost {
   private cbs: ConversationWorkflowCallbacks;
+  private readonly ports: ConversationWorkflowPorts;
   private readonly intentClassifier: IConversationIntentPort;
   private readonly appIntentRouter: AppIntentRouter = new AppIntentRouter();
   private readonly replyService: IConversationReplyPort;
@@ -118,16 +119,14 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   private readonly noteRoute: IConversationNoteRoutePort;
   private evidenceService: NoteEvidencePort | null = null;
   private reviewService: NoteReviewPort | null = null;
-  private readonly cancellationTokens: Map<string, CancellationToken> = new Map<string, CancellationToken>();
-  private readonly runOrigins: Map<string, ChatMessageOrigin> = new Map<string, ChatMessageOrigin>();
-  private readonly reportedErrorRuns: Set<string> = new Set<string>();
+  private readonly runs: ConversationRunRegistry = new ConversationRunRegistry();
   private readonly draftWorkflow: ConversationDraftWorkflow;
   private readonly memoryProjection: ConversationMemoryProjection;
 
-  constructor(callbacks: ConversationWorkflowCallbacks, ports?: ConversationWorkflowPorts) {
+  constructor(callbacks: ConversationWorkflowCallbacks, ports: ConversationWorkflowPorts) {
     this.cbs = callbacks;
-    const resolvedPorts: ConversationWorkflowPorts = ports
-      ?? ConversationWorkflowPorts.production(callbacks.getContext());
+    this.ports = ports;
+    const resolvedPorts: ConversationWorkflowPorts = ports;
     this.intentClassifier = resolvedPorts.intent;
     this.replyService = resolvedPorts.reply;
     this.toolReplyService = resolvedPorts.toolReply;
@@ -137,7 +136,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     this.memoryProjection = ConversationMemoryProjection.create(this);
   }
 
-  draftContext(): common.UIAbilityContext { return this.cbs.getContext(); }
+  draftService(): IConversationDraftServicePort { return ConversationWorkflow.requireDraftService(this.ports); }
 
   acceptsDraftRun(ref: ConversationRunRef): boolean { return this.cbs.isCurrentRun(ref); }
 
@@ -154,7 +153,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
 
   draftOrigin(ref: ConversationRunRef): ChatMessageOrigin { return this.originFor(ref); }
 
-  memoryContext(): common.UIAbilityContext { return this.cbs.getContext(); }
+  memoryService(): IConversationMemoryServicePort { return ConversationWorkflow.requireMemoryService(this.ports); }
 
   acceptsMemoryRun(ref: ConversationRunRef): boolean { return this.cbs.isCurrentRun(ref); }
 
@@ -183,14 +182,11 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     if (cancellationToken === undefined) {
       throw new Error('STALE_CONVERSATION_RUN');
     }
-    this.cancellationTokens.set(runRef.runId, cancellationToken);
-    this.runOrigins.set(runRef.runId, request.kind === 'image'
+    this.runs.begin(runRef, request.kind === 'image'
       ? 'image'
-      : request.kind === 'regenerate' ? 'note-regeneration' : 'chat');
-    this.reportedErrorRuns.delete(runRef.runId);
+      : request.kind === 'regenerate' ? 'note-regeneration' : 'chat', cancellationToken);
     const removeCancellationHook: () => void = this.cbs.registerCancellationHook(runRef, (): void => {
-      this.cancellationTokens.delete(runRef.runId);
-      this.runOrigins.delete(runRef.runId);
+      this.runs.dropCancellation(runRef);
     });
     const initial: ConversationState = {
       request: request,
@@ -208,9 +204,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     } finally {
       this.cbs.onFinish(runRef);
       removeCancellationHook();
-      this.cancellationTokens.delete(runRef.runId);
-      this.runOrigins.delete(runRef.runId);
-      this.reportedErrorRuns.delete(runRef.runId);
+      this.runs.end(runRef);
       workflowLog.info('run finish kind=' + request.kind);
     }
   }
@@ -793,7 +787,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       const reply: string = useTools && this.toolReplyService !== undefined
         ? await this.toolReplyService.complete(replyContext, this.cancellationToken(ref))
         : await this.replyService.complete(replyContext, this.cancellationToken(ref));
-      await this.addAiMessage(ref, this.applyEvidenceToAnswer(evidence, reply));
+      await this.addAiMessage(ref, applyEvidenceToAnswer(this.getEvidenceService(), evidence, reply));
       await this.safeUpdateLearnerProfileIfNeeded(ref);
       await this.safeSummarizeIfNeeded(ref);
     } catch (e) {
@@ -898,7 +892,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         streamResult.usedFallback ? 'true' : 'false',
         errorMarked ? 'error' : 'ok', errorMarked);
       if (streamResult.usedFallback && !emptyAnswer) {
-        await this.appendAssistantReply(ref, this.applyEvidenceToAnswer(evidence, streamResult.content), msgId);
+        await this.appendAssistantReply(ref, applyEvidenceToAnswer(this.getEvidenceService(), evidence, streamResult.content), msgId);
         return;
       }
       const normalizedEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayAnswer };
@@ -914,14 +908,14 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         return;
       }
       this.setStep(ref, 'completed');
-      const sources: string = this.evidenceFooter(evidence);
+      const sources: string = evidenceFooter(this.getEvidenceService(), evidence);
       if (sources.length > 0) {
         const sourcesEvent: StreamEvent = { type: 'text', delta: '\n\n' + sources };
         const messageEvent: ConversationMessageEvent = { kind: 'stream', event: sourcesEvent };
         this.cbs.updateAiMsg(ref, msgId, messageEvent);
       }
       const persistedAnswer: string = this.replyService.normalize(
-        this.applyEvidenceToAnswer(evidence, streamResult.content),
+        applyEvidenceToAnswer(this.getEvidenceService(), evidence, streamResult.content),
       );
       this.cbs.finishAiMsg(ref, msgId, 'completed');
       await this.safeSaveAssistantMessage(ref, persistedAnswer, msgId);
@@ -1260,42 +1254,15 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   }
 
 
-  private clip(text: string, limit: number): string {
-    if (text.length <= limit) { return text; }
-    return text.substring(0, limit) + '\n...';
-  }
-
-  /**
-   * 重连结果是否只是兜底/检索状态文案, 而不是模型对用户问题的回答。
-   *
-   * 局限: IConversationReplyPort.complete() 只回 string, 没有 usedFallback 标记,
-   * 这里只能按文本特征识别。判断必须在 applyEvidenceToAnswer 之前做 —— 正常回答
-   * 追加的证据来源块本身就以“笔记检索：”开头, 之后再判断会把成功重连误判成兜底。
-   */
-  private static matchesFallbackShape(text: string): boolean {
-    const probe: string = text.trim();
-    if (probe.length === 0) {
-      return false;
-    }
-    if (probe.indexOf('我是 MindTrace AI 数学助手') >= 0) {
-      return true;
-    }
-    if (probe.indexOf('笔记检索：') >= 0) {
-      return true;
-    }
-    return false;
-  }
-
   private setStep(ref: ConversationRunRef, step: ConversationProgressStep): void {
     this.ensureNotCancelled(ref);
     this.cbs.onProgress(ref, step);
   }
 
   private reportRunError(ref: ConversationRunRef, error: Object): void {
-    if (this.reportedErrorRuns.has(ref.runId)) {
+    if (!this.runs.markErrorReported(ref)) {
       return;
     }
-    this.reportedErrorRuns.add(ref.runId);
     this.cbs.onError(ref, ConversationWorkflow.userFacingWorkflowError(error));
   }
 
@@ -1425,7 +1392,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
       return false;
     }
     const reconnectedNormalized: string = this.replyService.normalize(reconnected);
-    if (ConversationWorkflow.matchesFallbackShape(reconnectedNormalized)) {
+    if (matchesFallbackShape(reconnectedNormalized)) {
       // 重连拿到的不是回答, 而是兜底文案: 不能当正常回答展示, 更不能标（已重连）
       const normalizedPartial: string = this.replyService.normalize(partialContent);
       const displayContent: string = (normalizedPartial.length > 0 ? normalizedPartial + '\n\n' : '')
@@ -1437,7 +1404,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
         + ' chars=' + reconnectedNormalized.length.toString());
       return false;
     }
-    const recovered: string = this.replyService.normalize(this.applyEvidenceToAnswer(evidence, reconnected));
+    const recovered: string = this.replyService.normalize(applyEvidenceToAnswer(this.getEvidenceService(), evidence, reconnected));
     if (recovered.trim().length === 0) {
       // 重连请求本身成功但正文仍为空: 按失败处理, 不能让用户看到空回复 + （已重连）
       const emptyText: string = '模型未返回内容，请重试';
@@ -1462,7 +1429,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   }
 
   private cancellationToken(ref: ConversationRunRef): CancellationToken | undefined {
-    return this.cancellationTokens.get(ref.runId);
+    return this.runs.token(ref);
   }
 
   private ensureNotCancelled(ref: ConversationRunRef): void {
@@ -1529,35 +1496,38 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   }
 
   // DEV-006: 模型正文只保留真实 noteId 引用, 并追加由 RDB 证据生成的确定性来源块
-  private applyEvidenceToAnswer(evidence: NoteEvidenceContext | undefined, answer: string): string {
-    if (evidence === undefined) {
-      return answer;
-    }
-    const sanitized: string = this.getEvidenceService().sanitizeAnswer(evidence, answer);
-    return sanitized + '\n\n' + this.evidenceFooter(evidence);
-  }
-
-  private evidenceFooter(evidence: NoteEvidenceContext | undefined): string {
-    if (evidence === undefined) {
-      return '';
-    }
-    return evidence.citations.length > 0
-      ? this.getEvidenceService().formatSources(evidence)
-      : this.getEvidenceService().formatRetrievalStatus(evidence);
-  }
-
   private getEvidenceService(): NoteEvidencePort {
     if (this.evidenceService === null) {
-      this.evidenceService = new NoteEvidenceService();
+      this.evidenceService = ConversationWorkflow.requireEvidence(this.ports);
     }
     return this.evidenceService;
   }
 
   private getReviewService(): NoteReviewPort {
     if (this.reviewService === null) {
-      this.reviewService = new NoteReviewService();
+      this.reviewService = ConversationWorkflow.requireReview(this.ports);
     }
     return this.reviewService;
+  }
+
+  private static requireDraftService(ports: ConversationWorkflowPorts): IConversationDraftServicePort {
+    if (ports.draftService === undefined) { throw new Error('CONVERSATION_DRAFT_SERVICE_MISSING'); }
+    return ports.draftService;
+  }
+
+  private static requireMemoryService(ports: ConversationWorkflowPorts): IConversationMemoryServicePort {
+    if (ports.memoryService === undefined) { throw new Error('CONVERSATION_MEMORY_SERVICE_MISSING'); }
+    return ports.memoryService;
+  }
+
+  private static requireEvidence(ports: ConversationWorkflowPorts): NoteEvidencePort {
+    if (ports.evidence === undefined) { throw new Error('CONVERSATION_EVIDENCE_PORT_MISSING'); }
+    return ports.evidence;
+  }
+
+  private static requireReview(ports: ConversationWorkflowPorts): NoteReviewPort {
+    if (ports.review === undefined) { throw new Error('CONVERSATION_REVIEW_PORT_MISSING'); }
+    return ports.review;
   }
 
   private async safeBuildEvidence(query: string): Promise<NoteEvidenceContext | undefined> {
@@ -1581,7 +1551,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   }
 
   private originFor(ref: ConversationRunRef): ChatMessageOrigin {
-    return this.runOrigins.get(ref.runId) ?? 'chat';
+    return this.runs.origin(ref);
   }
 
   private async safeSaveOcrResult(

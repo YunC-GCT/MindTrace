@@ -9,7 +9,7 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const machine = read('entry/src/main/ets/services/ChatStatusMachine.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const workflowAdapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');
-const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
 const chatModels = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets');
 const conversationState = read('agents/src/main/ets/conversation/ConversationState.ets');
 

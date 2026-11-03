@@ -10,7 +10,7 @@ test('Issue 104 keeps incremental regeneration behind the four agreed seams', ()
   const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
   // 2026-11-02：增量逻辑已迁入 NoteRegenerateWorkflow，Dispatcher 只留路由委托。
   const incrementalWorkflow = read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets')
-  const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets')
+  const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets')
   const facade = read('entry/src/main/ets/services/AgentChatService.ets')
   const repository = read('entry/src/main/ets/database/NoteGenerationRepository.ets')
   const writer = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets')

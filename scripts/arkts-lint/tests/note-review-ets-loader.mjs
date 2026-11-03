@@ -34,6 +34,11 @@ const COMMON_MODEL_FILES = [
   'common/src/main/ets/models/KnowledgeUnitWriteModels.ets',
   'common/src/main/ets/models/NoteEvidenceModels.ets',
   'common/src/main/ets/models/NoteReviewModels.ets',
+  'common/src/main/ets/models/CommonTypes.ets',
+  'common/src/main/ets/models/NoteGenerationModels.ets',
+  'common/src/main/ets/models/CaptureChain.ets',
+  'common/src/main/ets/render/ContentProtocol.ets',
+  'common/src/main/ets/render/ContentExcerptBuilder.ets',
   'common/src/main/ets/models/GalaxyModels.ets',
   'common/src/main/ets/utils/NoteRetrievalQuery.ets',
   'common/src/main/ets/utils/GalaxyGraphProjection.ets',
@@ -67,6 +72,11 @@ const AGENTS_CHAT_FILES = [
   'agents/src/main/ets/chat/AppIntentRouter.ets',
   'agents/src/main/ets/conversation/ConversationState.ets',
   'agents/src/main/ets/conversation/ConversationToolReplyFlags.ets',
+  'agents/src/main/ets/conversation/ConversationFormatting.ets',
+  'agents/src/main/ets/conversation/ConversationServicePorts.ets',
+  'agents/src/main/ets/conversation/ConversationDraftWorkflow.ets',
+  'agents/src/main/ets/conversation/ConversationMemoryProjection.ets',
+  'agents/src/main/ets/conversation/ConversationWorkflowPorts.ets',
 ];
 
 function loadAgentsModule(options) {

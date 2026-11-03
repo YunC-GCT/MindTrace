@@ -21,7 +21,7 @@ import {
   ChatSession,
   replaceChatMsgContent,
 } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
+import { ConversationMessageEvent } from 'agents';
 
 export type ConversationSessionEvent =
   | 'add-user-message'

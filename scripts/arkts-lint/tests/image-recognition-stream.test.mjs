@@ -10,11 +10,10 @@ const repoRoot = path.resolve(here, '..', '..', '..');
 const intentPath = path.join(repoRoot, 'agents', 'src', 'main', 'ets', 'chat', 'IntentClassifier.ets');
 const workflowPath = path.join(
   repoRoot,
-  'entry',
+  'agents',
   'src',
   'main',
   'ets',
-  'workflows',
   'conversation',
   'ConversationWorkflow.ets',
 );

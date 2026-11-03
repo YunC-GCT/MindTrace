@@ -9,7 +9,7 @@ const inputViewModel = readFileSync(
   'utf8',
 );
 const conversation = readFileSync(
-  resolve(root, 'entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets'),
+  resolve(root, 'agents/src/main/ets/conversation/ConversationWorkflow.ets'),
   'utf8',
 );
 const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiService.ets'), 'utf8');

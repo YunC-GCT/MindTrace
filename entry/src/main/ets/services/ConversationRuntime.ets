@@ -13,11 +13,11 @@ import {
   ConversationRequest,
   ImageConversationRequest,
 } from 'agents';
-import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
+import { ConversationWorkflow } from 'agents';
 import {
   ConversationWorkflowPorts,
   IConversationNoteRoutePort,
-} from '../workflows/conversation/ConversationWorkflowPorts';
+} from 'agents';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ConversationDraftCoordinator } from './ConversationDraftCoordinator';
 import { ConversationRunRef } from 'common';
@@ -28,6 +28,7 @@ import {
   ConversationRunStartResult,
   ConversationRunTerminal,
 } from './ConversationRunCoordinator';
+import { buildProductionConversationPorts } from './ConversationPortsProduction';
 import { ConversationWorkflowAdapter } from './ConversationWorkflowAdapter';
 
 type ConversationRunLifecycleOwner = 'runtime' | 'workflow';
@@ -44,7 +45,7 @@ export class ConversationRuntime {
   constructor(callbacks: AgentChatCallbacks, noteRoute?: IConversationNoteRoutePort) {
     this.callbacks = callbacks;
     this.adapter = new ConversationWorkflowAdapter(callbacks, this.coordinator);
-    const ports: ConversationWorkflowPorts = ConversationWorkflowPorts.production(callbacks.getContext(), noteRoute);
+    const ports: ConversationWorkflowPorts = buildProductionConversationPorts(callbacks.getContext(), noteRoute);
     this.workflow = new ConversationWorkflow(this.adapter, ports);
     this.draftCoordinator = new ConversationDraftCoordinator(
       this.workflow,

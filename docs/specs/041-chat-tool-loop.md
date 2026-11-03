@@ -2,7 +2,7 @@
 
 > **Status**: implemented (2026-11-02, default off) — 默认关闭，无用户可见行为变更
 > **Related**: [spec 014](./014-tool-calling-protocol.md) · [spec 039](./039-agent-workflow-first.md) · [ADR-0012](../adr/0012-tool-calling-protocol.md)
-> **Code**: `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets` · `ConversationWorkflowPorts.ets` · `ConversationToolReplyFlags.ets` · `common/src/main/ets/tools/ToolLoop.ets`
+> **Code**: `agents/src/main/ets/conversation/ConversationWorkflow.ets` · `ConversationWorkflowPorts.ets` · `ConversationToolReplyFlags.ets` · `common/src/main/ets/tools/ToolLoop.ets`
 > **Verified by**: `node scripts/agent-gate/index.mjs`；默认关闭，无真机行为变更
 
 ## 1. 目标

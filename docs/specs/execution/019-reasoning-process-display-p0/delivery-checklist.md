@@ -39,9 +39,9 @@ Initial grep inventory for old `(delta, kind)` stream contract:
 - `ReplyEventSink = (event: StreamEvent)` structured event sink.
   - Stream `onDelta` forwards structured events; only `text` events contribute to final answer content.
   - Three explicit `enableThinking: false` overrides must be removed from complete/stream/fallback paths.
-- `entry/src/main/ets/workflows/conversation/ConversationTypes.ets`
+- `agents/src/main/ets/conversation/ConversationTypes.ets`
   - `appendAiMsg(id, delta, kind?)` old callback shape.
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets`
   - Stream sink forwards `(delta, kind)` to callbacks.
   - Interruption message is appended without `kind`; after migration it must append through a final-answer text event.
   - Persistence must save only `StreamReplyResult.content`, which should be true text-only final answer content.
@@ -103,8 +103,8 @@ Stage these #111 implementation files:
 - `common/src/test/List.test.ets`
 - `agents/src/main/ets/chat/ReplyService.ets`
 - `entry/src/main/ets/services/AgentChatService.ets`
-- `entry/src/main/ets/workflows/conversation/ConversationTypes.ets`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
+- `agents/src/main/ets/conversation/ConversationTypes.ets`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets`
 - `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets`
 - `entry/src/test/AgentChatStreamEvents.test.ets`
 - `entry/src/test/List.test.ets`

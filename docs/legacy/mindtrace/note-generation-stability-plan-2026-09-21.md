@@ -26,7 +26,7 @@
 - `common/src/main/ets/Index.ets`: exports new helpers for tests and agents module consumers.
 - `agents/src/main/ets/agents/KnowledgeModel.ets`: calls normalization helpers after model JSON parsing.
 - `agents/src/main/ets/agents/TruthCheckService.ets`: fixes integral differential detection.
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`: prefers inline material for explicit save requests to reduce context pollution.
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets`: prefers inline material for explicit save requests to reduce context pollution.
 - `common/src/test/NoteGenerationModels.test.ets`: regression tests for light fallback and pipeline evidence.
 - `agents/src/test/TruthCheckNode.test.ets`: regression test for `du` integral differential.
 
@@ -83,7 +83,7 @@
 ## Task 4: Conversation Inline Material Preference
 
 **Files:**
-- Modify: `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets`
+- Modify: `agents/src/main/ets/conversation/ConversationWorkflow.ets`
 - Test: focused manual emulator verification.
 
 **Interfaces:**
