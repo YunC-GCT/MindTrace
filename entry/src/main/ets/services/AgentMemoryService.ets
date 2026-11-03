@@ -13,12 +13,12 @@ import {
   LearnerProfile,
   ChatMessageWriteRequest,
   NoteGenerationContextResult,
-} from '../models/AgentMemoryModels';
+} from 'common';
 import { WritePathValidator } from './WritePathValidator';
-import { SessionIdPolicy } from './ConversationIdentity';
+import { SessionIdPolicy } from 'common';
 import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
 import { getChatHistoryClearControl } from './ChatHistoryClearControl';
-import type { ChatProjectionWriter } from '../models/ConversationSnapshotModels';
+import type { ChatProjectionWriter } from 'common';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
 import { NoteContextValidityReviewer } from './NoteContextValidityReviewer';
 

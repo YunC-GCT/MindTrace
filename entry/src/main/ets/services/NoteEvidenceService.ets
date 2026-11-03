@@ -6,7 +6,7 @@
 //       产出可追溯证据上下文: prompt 注入文本 + noteId/version/excerpt 引用 +
 //       已确认关系快照; 并对模型输出做虚构引用清洗
 // 依赖: common DatabaseHelper/ToolCatalog/ToolRegistry/ToolResult;
-//       ../database/KnowledgeRelationDao; ../models/NoteEvidenceModels
+//       ../database/KnowledgeRelationDao; common (NoteEvidenceModels)
 // 约束: 引用只来自真实 knowledge_unit 行; 不写库; 不引入向量检索
 // ============================================================================
 
@@ -14,14 +14,14 @@ import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper, ToolCatalog, ToolRegistry, ToolResult } from 'common';
 import type { NoteDetail, NoteReadPort } from 'common';
 import { KnowledgeRelationDao, GraphExpansion, GraphExpansionLimits } from '../database/KnowledgeRelationDao';
-import { NoteRetrievalQuery } from './NoteRetrievalQuery';
+import { NoteRetrievalQuery } from 'common';
 import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import {
   NoteEvidenceCitation,
   NoteEvidenceContext,
   NoteEvidenceRelation,
   NoteEvidenceRole,
-} from '../models/NoteEvidenceModels';
+} from 'common';
 
 const EVIDENCE_TOOL_NAME: string = 'note_query_rag';
 const EVIDENCE_DEFAULT_TOP_K: number = 5;

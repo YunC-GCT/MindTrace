@@ -1,7 +1,7 @@
 /**
  * RagQueryPlan.ets — RAG 检索查询规划（纯函数，无 IO）
  *
- * 路径: entry/src/main/ets/services/RagQueryPlan.ets
+ * 路径: common/src/main/ets/utils/RagQueryPlan.ets
  * 职责: 依据查询长度选执行策略：≥3 字走 FTS5 trigram MATCH（BM25 排序）；<3 字 trigram 无法命中，
  *       退化为 LIKE 子串扫描（笔记量小，可接受）。
  * 依赖: 无（纯函数，便于 Node 侧契约测试）。

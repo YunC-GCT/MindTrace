@@ -12,7 +12,7 @@ import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper } from 'common';
 import { NoteDao } from '../database/NoteDao';
-import { KnowledgeUnitPostCommitEffect } from '../models/KnowledgeUnitWriteModels';
+import { KnowledgeUnitPostCommitEffect } from 'common';
 import { KnowledgeUnitNotesChangedEffect } from './KnowledgeUnitNotesChangedEffect';
 import { KnowledgeUnitUiEffects } from './KnowledgeUnitUiEffects';
 import { KnowledgeUnitChapterEdgeEffect } from './KnowledgeUnitChapterEdgeEffect';

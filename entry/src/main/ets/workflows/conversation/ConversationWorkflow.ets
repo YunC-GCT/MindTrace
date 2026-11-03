@@ -43,7 +43,7 @@ import {
 } from './ConversationState';
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
 import { StreamReplyResult } from '../../services/ReplyService';
-import { streamErrorText } from '../../services/StreamErrorText';
+import { streamErrorText } from 'common';
 import {
   NoteDraftReadyEvent,
   NoteContextClarification,
@@ -55,17 +55,17 @@ import {
   sourceFingerprint,
 } from 'common';
 import type { StreamEvent } from 'common';
-import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
-import { NoteGenerationContextResult } from '../../models/AgentMemoryModels';
+import { NoteEvidenceContext } from 'common';
+import { NoteGenerationContextResult } from 'common';
 import { NoteEvidenceService, NoteEvidenceStreamFilter } from '../../services/NoteEvidenceService';
-import { NoteReviewAnswer } from '../../models/NoteReviewModels';
+import { NoteReviewAnswer } from 'common';
 import {
   NoteReviewFinalization,
   NoteReviewPlan,
   NoteReviewService,
 } from '../../services/NoteReviewService';
-import { ConversationRunRef } from '../../services/ConversationIdentity';
-import { requireConversationRunRef } from '../../services/ConversationIdentity';
+import { ConversationRunRef } from 'common';
+import { requireConversationRunRef } from 'common';
 import { CancellationToken } from 'common';
 import { ConversationDraftWorkflow, IConversationDraftWorkflowHost } from './ConversationDraftWorkflow';
 import { ConversationMemoryProjection, IConversationMemoryProjectionHost } from './ConversationMemoryProjection';

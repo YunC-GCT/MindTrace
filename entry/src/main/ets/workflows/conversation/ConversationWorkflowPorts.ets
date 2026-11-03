@@ -33,7 +33,7 @@ import type { StreamEvent, ToolLoopOptions } from 'common';
 import { AiService } from '../../services/AiService';
 import { IntentClassifier, ReplyContext, TextIntent } from '../../services/IntentClassifier';
 import { ReplyEventSink, ReplyService, StreamReplyResult } from '../../services/ReplyService';
-import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { ConversationRunRef } from 'common';
 import { ModelRouter } from '../../services/ModelRouter';
 import type { RoutedReply } from '../../services/ModelRouter';
 import { ConversationToolReplyFlags } from './ConversationToolReplyFlags';

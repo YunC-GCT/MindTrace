@@ -20,7 +20,7 @@ import {
 } from '../workflows/conversation/ConversationWorkflowPorts';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ConversationDraftCoordinator } from './ConversationDraftCoordinator';
-import { ConversationRunRef } from './ConversationIdentity';
+import { ConversationRunRef } from 'common';
 import {
   ConversationRunCoordinator,
   ConversationRunRequest,

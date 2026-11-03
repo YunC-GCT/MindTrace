@@ -10,20 +10,20 @@ import {
   NoteEvidenceCitation,
   NoteEvidenceContext,
   NoteEvidenceRelation,
-} from '../models/NoteEvidenceModels';
+} from 'common';
 import {
   NoteReviewAnswer,
   NoteReviewIntent,
   NoteReviewStatus,
   copyNoteEvidenceCitations,
-} from '../models/NoteReviewModels';
+} from 'common';
 import {
   NoteEvidenceOptions,
   NoteEvidenceService,
   NoteEvidenceStreamFilter,
 } from './NoteEvidenceService';
 import type { NoteReadPort } from 'common';
-import { NoteRetrievalQuery } from './NoteRetrievalQuery';
+import { NoteRetrievalQuery } from 'common';
 
 // ADR-0021 Step 3：组合根在 DB 初始化后注入只读端口；未注入时 NoteEvidenceService 走既有 SQL 路径
 // （保持测试与旧行为不变）。端口实现由 entry 组合根从 common 的 RdbNoteReadStore 构造。

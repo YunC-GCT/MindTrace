@@ -1,7 +1,7 @@
 /**
  * NoteDedupe.ets — 笔记重复判定（纯函数，无 IO）
  *
- * 路径: entry/src/main/ets/services/NoteDedupe.ets
+ * 路径: common/src/main/ets/utils/NoteDedupe.ets
  * 职责: 同一道题被重复拍照/重复发送时，判断是否与已有笔记重复，避免「重复整理」。
  *       判定只用归一化文本相似度，不依赖 LLM；写入口（KnowledgeUnitWriteService）调用。
  * 依赖: 无（纯字符串函数，便于 Node 契约测试）。

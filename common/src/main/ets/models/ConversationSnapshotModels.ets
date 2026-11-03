@@ -1,15 +1,15 @@
 /**
- * ConversationSnapshotModels.ets - UI-independent conversation persistence contracts.
+ * ConversationSnapshotModels.ets — 与 UI 无关的会话快照契约
  *
- * Path: entry/src/main/ets/models/ConversationSnapshotModels.ets
- * Responsibility: Define the stable snapshot shape consumed by business services.
- * Dependencies: none.
+ * 路径: common/src/main/ets/models/ConversationSnapshotModels.ets
+ * 职责: 定义业务服务消费的稳定会话快照形状与投影写入端口
+ * 依赖: ./AgentMemoryModels
  *
- * Data flow:
- *   Chat UI adapter -> conversation snapshot DTO -> projection/deletion services.
+ * 数据流:
+ *   聊天 UI 适配器 → 会话快照 DTO → 投影 / 删除服务
  *
- * ArkTS 1.1 strict adaptation:
- *   - DTOs contain only persistence data; no UI model or component imports.
+ * ArkTS 1.1 strict 适配:
+ *   - DTO 只含持久化数据，不 import 任何 UI 模型或组件
  */
 
 import { ChatMessageWriteRequest } from './AgentMemoryModels';

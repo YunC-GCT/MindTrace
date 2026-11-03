@@ -1,7 +1,7 @@
 import { relationalStore } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AgentMemoryRecord, AgentMemoryType } from '../models/AgentMemoryModels';
-import { ProfileScopePolicy, SessionIdPolicy } from '../services/ConversationIdentity';
+import { AgentMemoryRecord, AgentMemoryType } from 'common';
+import { ProfileScopePolicy, SessionIdPolicy } from 'common';
 
 export class AgentMemoryDao {
   private store: relationalStore.RdbStore;

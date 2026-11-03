@@ -1,9 +1,15 @@
-// ============================================================================
-//  models/NoteReviewModels.ets — 笔记可追溯复习回答冻结契约
-// ============================================================================
-// 职责: 定义复习回答的意图、状态、反馈、来源解析结果和后端只读端口。
-// 约束: UI 和测试只消费本文件的类型; 来源必须来自 NoteEvidenceService 构造的真实引用。
-// ============================================================================
+/**
+ * NoteReviewModels.ets — 笔记可追溯复习回答的冻结契约
+ *
+ * 路径: common/src/main/ets/models/NoteReviewModels.ets
+ * 职责: 定义复习意图、状态、反馈、来源解析结果、只读端口与拷纯函数
+ * 依赖: ./NoteEvidenceModels
+ *
+ * 数据流:
+ *   NoteReviewService → 本文件类型 → 对话 workflow / 复习来源卡片
+ *
+ * 约束: UI 和测试只消费本文件的类型；来源必须来自 NoteEvidenceService 构造的真实引用
+ */
 
 import { NoteEvidenceCitation } from './NoteEvidenceModels';
 

@@ -22,8 +22,8 @@ import type {
   AgentJobKind,
   AgentJobPriority,
   AgentJobStatus,
-} from '../models/AgentJobModels';
-import { shouldRecoverAgentJob } from '../models/AgentJobModels';
+} from 'common';
+import { shouldRecoverAgentJob } from 'common';
 
 const COLUMNS: string = 'job_id, kind, priority, payload_text, source, status, attempt,'
   + ' fingerprint, lease_owner, lease_expires_at, error, created_at, updated_at';

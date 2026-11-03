@@ -60,9 +60,9 @@ function loadSourceService() {
         'entry/src/main/ets/database/NoteDao.ets': {
           NoteDao: class NoteDao {},
         },
-        'entry/src/main/ets/models/KnowledgeUnitWriteModels.ets': {},
-        'entry/src/main/ets/models/NoteEvidenceModels.ets': {},
-        'entry/src/main/ets/models/NoteReviewModels.ets': {},
+        'common/src/main/ets/models/KnowledgeUnitWriteModels.ets': {},
+        'common/src/main/ets/models/NoteEvidenceModels.ets': {},
+        'common/src/main/ets/models/NoteReviewModels.ets': {},
       },
     },
   );

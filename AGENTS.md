@@ -75,7 +75,7 @@
 9. **端A2A 配置三件事** — 改 `agent_config.json` 后必须：① 平台重新导入 AgentCard ② 重新发真机测试 ③ 重启小艺。缺一条小艺仍读旧卡，表现为 `extension ability not exist` 或发了不回。
 10. **两种 AgentID 不是一回事** — 小艺开放平台**生成**的 `AgentID`（形如 `agent` + 32 位十六进制）用于应用内 `FunctionComponent` 拉起智能体；`agent_config.json` 里的 `agentId`（如 `mindtrace-note-agent`）只是端A2A 的应用内标识。填错时 `isAgentSupport()` 恒为 false，入口永远显示「暂不支持」。
 10. **不虚报可用** — 端A2A 的改动没跑过 `scripts/a2a-smoke/a2a_smoke.py` 且拿到 `ok: true`，不得写成“已通 / 可用 / 完成”。
-11. **受限 Kit 不得经 `common` barrel 导出** — `@kit.DataAugmentationKit`（`localChatModel`）只允许在 `entry` 的 UI 进程加载。经 barrel 导出后，`AgentExtAbility` 仅 import `LlmConfig` 也会把该 Kit 带进扩展进程，导致网络栈初始化失败（`proxy SendRequest failed 201`）、A2A 的 LLM 调用永不返回。新 Kit 进 `common` 前先确认它在扩展进程里能安全求值。
+11. **受限 Kit 的求值必须延迟** — `@kit.DataAugmentationKit`（`localChatModel`）只在 UI 进程可用。放进 `common` 必须满足两条：`import type` 只取类型，运行时用 `await import()` 在调用点加载（参照 `common/src/main/ets/llm/LocalChatProvider.ets`）。模块顶层静态求值会在 `:agent` 扩展进程触发初始化，导致网络栈失败（`proxy SendRequest failed 201`）、A2A 的 LLM 调用永不返回（2026-10-24 事故）。新增受限 Kit 前先确认它在扩展进程里能安全求值。
 
 ---
 
@@ -138,6 +138,27 @@
 **LLM 截断处理**: 聊天回复在 `finish_reason === 'length'` 时**不再抛错**——流式在末尾追加 `*(回复因长度限制被截断)*`，非流式返回 partial + 同一标记（`LlmResponseParser` / `LlmClient`）。`ReplyService` 仍显式传 `CHAT_REPLY_MAX_TOKENS = 12000`。**注意**：note generation 的 JSON 路径（`GenerationJsonCaller`）遇到同一标记会抛 `LLM_TRUNCATED`，消息形如 `... response truncated by max_tokens`；这不是聊天回复的 StreamEvent 解析问题，修法是提高生成预算 / 压缩 prompt，而不是改流式解析。
 
 **5 module 拓扑**: 3 HAP (`entry` `type:entry` / `skill` / `cardservice` `type:feature`) + 2 HSP (`common` / `agents` `type:shared`); 跨 module import 必须完整路径
+
+### 模块归属判据 (2026-11-03)
+
+放哪儿不看「像不像业务」，只看两个问题：
+
+1. **`:agent` 进程要执行它吗？** 要 → `common`（纯契约 / 模型 / 工具）或 `agents`（编排与业务规则）。两者都会在扩展进程加载。
+2. **它碰的是规则还是能力？** 规则（纯计算、判定、映射）可以跨模块；能力（RDB 句柄、Kit、UI 渲染）只能留在能执行它的模块。
+
+| 内容 | 归属 |
+|---|---|
+| 领域模型 / DTO（双进程共用词汇） | `common/models` |
+| 纯算法 / 纯函数（无 IO） | `common/utils` 或 `agents` |
+| 端口契约 | `common/ports` |
+| 编排（workflow / graph / executor / router） | `agents` |
+| RDB 实现（DAO）、事务仓储 | `entry/database`，agents 只能经端口使用 |
+| 设备 Kit 封装（OCR / 3D 渲染 / CoreFile / DataAugmentation） | `entry` |
+| 组合根、工厂、适配器 | `entry` |
+| UI 状态、页面、ability、A2A 协议 | `entry` |
+| 运行时调度（`WriteJobScheduler`） | `entry`（UI 进程单执行者） |
+
+**`entry` 不是业务层，是壳 + 组合根**：页面、ability、装配、设备能力。业务规则没理由留在 `entry`；留在那里的唯一合法理由是它必须碰 entry 的 DAO 或 entry-only Kit，而那种情况应该先问「能不能用 `common/ports` 反转」。
 
 **共享原子件**: `entry/src/main/ets/shared/atoms/` 与 `shared/molecules/` (spec 012)
 

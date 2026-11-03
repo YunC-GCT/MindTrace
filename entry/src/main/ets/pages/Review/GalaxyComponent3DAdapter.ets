@@ -18,7 +18,7 @@ import {
 import { TEXT, TEXT_2, BG_CARD, BORDER, R_MD, S_2 } from 'common'
 import { AppIcon } from '../../shared/atoms/AppIcon'
 import { findGalaxyTemplate, rotateGalaxyPoint, galaxyEdgeRotation, projectGalaxyPoint, galaxyRaycastPosition } from './GalaxyNativeScene'
-import type { GalaxyGraphEdge, GalaxyGraphNode, GalaxyGraphSnapshot } from './GalaxyGraphProjection'
+import type { GalaxyGraphEdge, GalaxyGraphNode, GalaxyGraphSnapshot } from 'common'
 import {
   GalaxyNoopCallbacks,
   GalaxyPerformanceSample,

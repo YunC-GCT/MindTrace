@@ -18,7 +18,7 @@ import {
   KnowledgeUnitWriteErrorCode,
   KnowledgeUnitWriteRepository,
   KnowledgeUnitWriteResult,
-} from '../models/KnowledgeUnitWriteModels';
+} from 'common';
 import { WritePathValidator } from './WritePathValidator';
 
 // 首装冷启动偶发卡死兜底：索引同步/副作用最多等 5s，超时降级为告警，不阻塞主写链路。

@@ -1,7 +1,7 @@
 /**
  * NoteRetrievalQuery.ets — 关键词检索请求的保守主题清洗
  *
- * 路径: entry/src/main/ets/services/NoteRetrievalQuery.ets
+ * 路径: common/src/main/ets/utils/NoteRetrievalQuery.ets
  * 职责: 去除句首请求用语和句尾问句包装，保留主题内部文字及数学表达式。
  * 依赖: 无平台依赖；不调用 LLM、不扩展同义词、不拆分数学符号。
  * 数据流: 普通聊天 / 笔记复习 → normalize → note_query_rag

@@ -84,7 +84,7 @@ Supersedes [spec 003](../legacy/mindtrace/spec-003-knowledge-model-decomposition
 
 ### 3) 写前重复检测（不再重复整理）
 
-- 新增 [`NoteDedupe.ets`](../../entry/src/main/ets/services/NoteDedupe.ets)（纯函数）：标题/正文归一化 + 字二元组 Jaccard 相似度（标题相同且正文相似、或正文 ≥0.92 判重）；
+- 新增 [`NoteDedupe.ets`](../../common/src/main/ets/utils/NoteDedupe.ets)（纯函数）：标题/正文归一化 + 字二元组 Jaccard 相似度（标题相同且正文相似、或正文 ≥0.92 判重）；
 - `NoteDao.findDuplicate` 查最近 120 条候选；`KnowledgeUnitWriteService.create/createWithCommitKey` 写前查重，命中则**跳过写入**并返回已有笔记（`warnings: DUPLICATE_SKIPPED`，`duplicate: true`），不新增行、不刷索引、不重复触发后续副作用；
 - 与既有 commitKey 幂等互补：commitKey 管「同一批次重复确认」，内容相似度管「跨批次/跨入口重复整理」。
 

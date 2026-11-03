@@ -15,13 +15,12 @@ import {
 } from 'common'
 import { promptAction } from '@kit.ArkUI'
 import { NoteDetailOverlay } from '../../overlays/NoteDetailOverlay/NoteDetailOverlay'
-import {
-  KnowledgeGalaxyViewModel,
-  PlanetNode,
-} from '../../viewmodels/KnowledgeGalaxyViewModel'
+import { KnowledgeGalaxyViewModel } from '../../viewmodels/KnowledgeGalaxyViewModel'
+import { PlanetNode } from 'common'
 import { unitToNoteItem } from '../../utils/NoteItemMapper'
 import { GalaxyComponent3DAdapter } from './GalaxyComponent3DAdapter'
-import { GalaxyGraphSnapshot, projectGalaxyGraph } from './GalaxyGraphProjection'
+import { projectGalaxyGraph } from 'common'
+import type { GalaxyGraphSnapshot } from 'common'
 import type { GalaxyRendererEvent, GalaxyRendererMode } from './GalaxyRendererSelection'
 import { chooseInitialGalaxyRenderer, nextGalaxyRendererMode } from './GalaxyRendererSelection'
 import {

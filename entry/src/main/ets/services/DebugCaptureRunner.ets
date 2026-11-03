@@ -23,7 +23,7 @@ import { RagKitProbe } from './RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
 import { A2AChatContext, A2AChatContextResult } from './A2AChatContext';
 import { AppIntentDecision, classifyAppIntentLocal } from './AppIntentRules';
-import { isDuplicateOf } from './NoteDedupe';
+import { isDuplicateOf } from 'common';
 import {
   LegacyDedupeEntry,
   LegacyDuplicateGroup,
@@ -57,7 +57,7 @@ import {
 } from './A2APlanModels';
 import { A2APlanStore } from './A2APlanStore';
 import { NoteEvidenceService } from './NoteEvidenceService';
-import { NoteEvidenceContext } from '../models/NoteEvidenceModels';
+import { NoteEvidenceContext } from 'common';
 
 const TAG: string = 'E2E';
 interface AuditRow {

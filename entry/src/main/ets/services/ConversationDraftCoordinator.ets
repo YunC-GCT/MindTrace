@@ -14,7 +14,7 @@ import { ConversationWorkflow } from '../workflows/conversation/ConversationWork
 import {
   ConversationRunRequestKind,
 } from './ConversationRunCoordinator';
-import { ConversationRunRef } from './ConversationIdentity';
+import { ConversationRunRef } from 'common';
 
 type DraftEventExecutor = (
   sessionId: string,

@@ -18,7 +18,7 @@ import {
   SessionIdPolicy,
   createConversationRunRef,
   conversationRunIdPolicy,
-} from './ConversationIdentity';
+} from 'common';
 import { CancellationToken } from 'common';
 
 export type ConversationRunTerminal = 'completed' | 'failed' | 'cancelled';

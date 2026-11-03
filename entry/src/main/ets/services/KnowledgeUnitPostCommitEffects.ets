@@ -10,7 +10,7 @@
  */
 import { common } from '@kit.AbilityKit';
 import { KnowledgeUnit } from 'common';
-import { KnowledgeUnitPostCommitEffect } from '../models/KnowledgeUnitWriteModels';
+import { KnowledgeUnitPostCommitEffect } from 'common';
 import { KnowledgeUnitUiEffectProvider } from './KnowledgeUnitUiEffects';
 import { CardSnapshotService } from './CardSnapshotService';
 

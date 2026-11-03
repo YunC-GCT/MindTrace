@@ -4,13 +4,13 @@
  * 路径: entry/src/main/ets/services/WriteJobPersistence.ets
  * 职责: 把调度器的持久化接缝（enqueue/claim/finish/recover）落到 AgentJobDao；
  *       输入指纹复用 capture-input 算法（normalizeForDedupe + sourceFingerprint）。
- * 依赖: common（sourceFingerprint）、./NoteDedupe、../database/AgentJobDao、../models/AgentJobModels。
+ * 依赖: common（sourceFingerprint、AgentJobModels）、./NoteDedupe、../database/AgentJobDao。
  * 数据流: WriteJobScheduler hooks → AgentJobPersistence → AgentJobDao → agent_job
  */
 import { sourceFingerprint } from 'common';
-import { normalizeForDedupe } from './NoteDedupe';
+import { normalizeForDedupe } from 'common';
 import { AgentJobDao } from '../database/AgentJobDao';
-import type { AgentJob } from '../models/AgentJobModels';
+import type { AgentJob } from 'common';
 
 export interface WriteJobPersistenceHooks {
   /** 入队（幂等）：返回持久 jobId，调度器用它执行/claim。 */

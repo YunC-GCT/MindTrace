@@ -12,7 +12,7 @@
  *   - Reducer inputs and results use named interfaces and explicit collection types.
  */
 
-import { ChatMessageIdPolicy, ConversationRunRef, requireConversationRunRef } from './ConversationIdentity';
+import { ChatMessageIdPolicy, ConversationRunRef, requireConversationRunRef } from 'common';
 import {
   appendChatMsgError,
   appendChatMsgStatus,

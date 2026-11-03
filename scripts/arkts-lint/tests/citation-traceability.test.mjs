@@ -24,7 +24,7 @@ const relationDao = read('entry/src/main/ets/database/KnowledgeRelationDao.ets')
 
 // Evidence models live in the entry HAP (they reference entry-owned note and
 // graph records); keep this path aligned with the production module boundary.
-const evidenceModels = read('entry/src/main/ets/models/NoteEvidenceModels.ets');
+const evidenceModels = read('common/src/main/ets/models/NoteEvidenceModels.ets');
 const evidenceService = read('entry/src/main/ets/services/NoteEvidenceService.ets');
 
 // === Legacy citation traceability tests (must still pass) ===

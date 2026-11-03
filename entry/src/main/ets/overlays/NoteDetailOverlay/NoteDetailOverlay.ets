@@ -34,7 +34,7 @@ import { invalidateMarkdownText } from '../../utils/MarkdownParseCache'
 import {
   KnowledgeUnitWriteErrorCode,
   KnowledgeUnitWriteResult,
-} from '../../models/KnowledgeUnitWriteModels'
+} from 'common'
 import { NoteDraftReadyEvent, IncrementalDiffItem } from 'common'
 import {
   NOTE_DETAIL_STABILITY_QUIET_MS,

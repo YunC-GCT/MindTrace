@@ -13,7 +13,7 @@ import { WriteJobPersistenceFlags } from './WriteJobConfig';
 import { WriteJobScheduler } from './WriteJobScheduler';
 import { AgentJobPersistence } from './WriteJobPersistence';
 import { AgentJobDao } from '../database/AgentJobDao';
-import type { AgentJob } from '../models/AgentJobModels';
+import type { AgentJob } from 'common';
 import { AgentIngestService } from './AgentIngestService';
 import { AgentInboxQueue } from './AgentInboxQueue';
 

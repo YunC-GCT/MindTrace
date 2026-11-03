@@ -14,7 +14,7 @@
  */
 import type { ReplyContext } from './IntentClassifier';
 import { NoteEvidenceService } from './NoteEvidenceService';
-import type { NoteEvidenceContext } from '../models/NoteEvidenceModels';
+import type { NoteEvidenceContext } from 'common';
 
 const EVIDENCE_TIMEOUT_MS: number = 1200;
 const EVIDENCE_TOP_K: number = 5;

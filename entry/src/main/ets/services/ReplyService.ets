@@ -27,7 +27,7 @@ import type {
   CancellationToken,
 } from 'common';
 import { IntentClassifier, ReplyContext } from './IntentClassifier';
-import type { ReplyStyle } from './ReplyStyleRules';
+import type { ReplyStyle } from 'common';
 import { DebugFaults } from './DebugFaults';
 import type { DebugFault } from './DebugFaults';
 

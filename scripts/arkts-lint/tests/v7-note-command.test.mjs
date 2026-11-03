@@ -212,7 +212,7 @@ test('幂等复用回填 unit：写服务 / 适配器暴露 queryById', () => {
   assert.match(service, /async queryById\(id: string\): Promise<KnowledgeUnit \| null>/);
   const adapter = read('entry/src/main/ets/adapters/NoteDaoAdapter.ets');
   assert.match(adapter, /async queryById\(id: string\): Promise<KnowledgeUnit \| null>/);
-  const repo = read('entry/src/main/ets/models/KnowledgeUnitWriteModels.ets');
+  const repo = read('common/src/main/ets/models/KnowledgeUnitWriteModels.ets');
   assert.match(repo, /queryById\?\(id: string\): Promise<KnowledgeUnit \| null>/);
 });
 

@@ -1,7 +1,7 @@
 /**
  * ConversationIdentity.ets - Conversation identity generation and validation.
  *
- * Path: entry/src/main/ets/services/ConversationIdentity.ets
+ * Path: common/src/main/ets/utils/ConversationIdentity.ets
  * Responsibility: Own the distinct policies for session, run, and UI message identities.
  * Dependencies: None.
  *

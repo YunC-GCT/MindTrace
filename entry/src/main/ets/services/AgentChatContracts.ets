@@ -10,10 +10,10 @@
  */
 import { common } from '@kit.AbilityKit';
 import { NoteContextClarification, NoteDraftReadyEvent } from 'common';
-import { NoteReviewAnswer } from '../models/NoteReviewModels';
+import { NoteReviewAnswer } from 'common';
 import { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
 import { ChatMessageOrigin, ChatMessageOutcome } from '../workflows/conversation/ConversationState';
-import { ConversationRunRef } from './ConversationIdentity';
+import { ConversationRunRef } from 'common';
 
 export interface AgentChatCallbacks {
   addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin) => number;

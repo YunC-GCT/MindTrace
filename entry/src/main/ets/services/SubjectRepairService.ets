@@ -38,7 +38,7 @@ import {
 } from 'agents';
 import { NoteDao } from '../database/NoteDao';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
-import { KnowledgeUnitWriteResult } from '../models/KnowledgeUnitWriteModels';
+import { KnowledgeUnitWriteResult } from 'common';
 import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFactory';
 
 const DOMAIN: number = 0x0001;

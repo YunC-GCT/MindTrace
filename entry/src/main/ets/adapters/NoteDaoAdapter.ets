@@ -11,7 +11,7 @@
 // 2026-09-05 · D2 Ticket #5
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
 import { NoteCommitResult, NoteDaoInterface } from 'agents';
-import { KnowledgeUnitWriteResult } from '../models/KnowledgeUnitWriteModels';
+import { KnowledgeUnitWriteResult } from 'common';
 import { KnowledgeUnitWriteService } from '../services/KnowledgeUnitWriteService';
 
 export class NoteDaoAdapter implements NoteDaoInterface {

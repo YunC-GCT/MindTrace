@@ -1,10 +1,16 @@
-// ============================================================================
-//  pages/Review/GalaxyGraphProjection.ets - pure 3D galaxy data projection
-//  ----------------------------------------------------------------------------
-//  Converts Review domain nodes into renderer DTOs. No ArkUI or renderer state.
-// ============================================================================
-
-import type { GalaxyLink, PlanetNode, SubjectSystem } from '../../viewmodels/KnowledgeGalaxyViewModel'
+/**
+ * GalaxyGraphProjection.ets — 知识星系的纯数据投影
+ *
+ * 路径: common/src/main/ets/utils/GalaxyGraphProjection.ets
+ * 职责: 把学科系模型投影成渲染器 DTO（节点 + 边），过滤错题与无 id 节点，去重
+ * 依赖: ../models/GalaxyModels
+ *
+ * 数据流:
+ *   KnowledgeGalaxyViewModel.systems → projectGalaxyGraph → GalaxyGraphSnapshot → 3D / Web 渲染
+ *
+ * 约束: 不碰 ArkUI、渲染器状态或 Kit；可 Node 单测
+ */
+import type { GalaxyLink, PlanetNode, SubjectSystem } from '../models/GalaxyModels'
 
 const WRONG_NOTE_TYPE: string = '错题'
 

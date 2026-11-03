@@ -18,10 +18,10 @@
  */
 
 import { TextIntent } from '../../services/IntentClassifier';
-import { NoteEvidenceContext } from '../../models/NoteEvidenceModels';
+import { NoteEvidenceContext } from 'common';
 import { NoteReviewPlan } from '../../services/NoteReviewService';
 import { ClassificationResult } from 'common';
-import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { ConversationRunRef } from 'common';
 
 export type ChatMessageOrigin = 'chat' | 'image' | 'note-regeneration' | 'system' | 'legacy';
 export type ChatMessageOutcome = 'completed' | 'interrupted' | 'cancelled' | 'failed';

@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
-const errorText = read('entry/src/main/ets/services/StreamErrorText.ets');
+const errorText = read('common/src/main/ets/utils/StreamErrorText.ets');
 const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
 
 const mappings = [

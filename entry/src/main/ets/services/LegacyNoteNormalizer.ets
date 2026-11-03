@@ -9,7 +9,7 @@
  * 依赖: agents 的 KnowledgeTaxonomy（别名归一/CANONICAL_SUBJECTS），无 IO。
  */
 import { CANONICAL_SUBJECTS, normalizeSubjectName } from 'agents';
-import { DedupeCandidate, isDuplicateOf } from './NoteDedupe';
+import { DedupeCandidate, isDuplicateOf } from 'common';
 
 const OTHER_SUBJECT: string = '其他';
 const CONTENT_EXCERPT_LIMIT: number = 240;

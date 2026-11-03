@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { webview } from '@kit.ArkWeb'
-import type { GalaxyGraphSnapshot } from './GalaxyGraphProjection'
+import type { GalaxyGraphSnapshot } from 'common'
 import {
   GalaxyNoopCallbacks,
   GalaxyPerformanceSample,

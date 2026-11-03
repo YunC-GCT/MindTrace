@@ -29,8 +29,8 @@ import type {
   NoteWriteSnapshot,
   NoteWriteStore,
 } from 'common';
-import { KnowledgeUnitWriteError, KnowledgeUnitWriteErrorCode } from '../models/KnowledgeUnitWriteModels';
-import type { KnowledgeUnitPersistenceResult } from '../models/KnowledgeUnitWriteModels';
+import { KnowledgeUnitWriteError, KnowledgeUnitWriteErrorCode } from 'common';
+import type { KnowledgeUnitPersistenceResult } from 'common';
 import type { NoteDao } from './NoteDao';
 import type { NoteGenerationRepository } from './NoteGenerationRepository';
 

@@ -1,4 +1,14 @@
-import { NoteTopicCandidate, SourceBundle } from 'common';
+/**
+ * AgentMemoryModels.ets — 会话记忆与笔记生成上下文的持久化 DTO
+ *
+ * 路径: common/src/main/ets/models/AgentMemoryModels.ets
+ * 职责: 定义会话消息、代理记忆、学习者画像、笔记生成候选与上下文的纯数据形状
+ * 依赖: ./NoteGenerationModels
+ *
+ * 数据流:
+ *   AgentMemoryService / NoteGenerationContextBuilder → 本文件 DTO → AgentMemoryDao / ChatMessageDao
+ */
+import { NoteTopicCandidate, SourceBundle } from './NoteGenerationModels';
 
 export type ChatRole = 'system' | 'user' | 'assistant';
 

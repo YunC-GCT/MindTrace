@@ -15,7 +15,7 @@
  */
 
 import { ChatSession } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { sessionIdPolicy } from './ConversationIdentity';
+import { sessionIdPolicy } from 'common';
 
 /**
  * 会话创建器 (静态方法, 无状态)

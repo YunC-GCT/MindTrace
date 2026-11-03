@@ -12,8 +12,8 @@
 import { ChatMsg, chatMessageRunParts } from './ChatModels'
 import { UserMessageBubble } from './UserMessageBubble'
 import { AiMessageBubble } from './AiMessageBubble'
-import { NoteEvidenceCitation } from '../../../models/NoteEvidenceModels'
-import { NoteReviewFeedback } from '../../../models/NoteReviewModels'
+import { NoteEvidenceCitation } from 'common'
+import { NoteReviewFeedback } from 'common'
 
 @Component
 export struct ChatBubble {

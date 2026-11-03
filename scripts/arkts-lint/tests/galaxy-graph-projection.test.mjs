@@ -7,7 +7,7 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '../../..');
 const projectionPath = resolve(
   root,
-  'entry/src/main/ets/pages/Review/GalaxyGraphProjection.ets',
+  'common/src/main/ets/utils/GalaxyGraphProjection.ets',
 );
 
 async function loadProjection() {

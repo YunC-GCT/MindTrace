@@ -476,3 +476,82 @@ export type {
   StudyPlanWriteRecord,
   StudyPlanWriteStore,
 } from './ports/StudyPlanPorts';
+
+// ========== 业务 DTO（2026-11-03 由 entry/models 下沉，UI 与 :agent 双进程共用） ==========
+export type {
+  AgentJob, AgentJobEnqueueInput, AgentJobEnqueueResult,
+  AgentJobKind, AgentJobPriority, AgentJobStatus,
+} from './models/AgentJobModels';
+export { agentJobPriorityRank, isTerminalAgentJobStatus, shouldRecoverAgentJob } from './models/AgentJobModels';
+
+export type {
+  AgentMemoryContext, AgentMemoryRecord, AgentMemoryType,
+  ChatMessageRecord, ChatMessageWriteRequest, ChatRole,
+  LearnerLevel, LearnerProfile,
+  NoteGenerationContextBuildInput, NoteGenerationContextCandidate,
+  NoteGenerationContextCandidateKind, NoteGenerationContextResult,
+} from './models/AgentMemoryModels';
+
+export type {
+  ChatProjectionWriter, ConversationMessageSnapshot,
+  ConversationSessionSnapshot, ConversationSnapshotRole,
+} from './models/ConversationSnapshotModels';
+
+export { KnowledgeUnitWriteError, KnowledgeUnitWriteErrorCode } from './models/KnowledgeUnitWriteModels';
+export type {
+  KnowledgeUnitPersistenceResult, KnowledgeUnitPostCommitEffect,
+  KnowledgeUnitRevision, KnowledgeUnitWriteRepository, KnowledgeUnitWriteResult,
+  NoteGenerationBaseProvider,
+} from './models/KnowledgeUnitWriteModels';
+
+export type {
+  NoteEvidenceCitation, NoteEvidenceContext, NoteEvidenceRelation, NoteEvidenceRole,
+} from './models/NoteEvidenceModels';
+
+export {
+  copyNoteEvidenceCitation, copyNoteEvidenceCitations, copyNoteReviewAnswer,
+} from './models/NoteReviewModels';
+export type {
+  NoteReviewAnswer, NoteReviewFeedback, NoteReviewIntent,
+  NoteReviewSourceResolver, NoteReviewSourceResult, NoteReviewSourceStatus,
+  NoteReviewStatus,
+} from './models/NoteReviewModels';
+
+// ========== 知识星系与检索清洗（2026-11-03 纯算法上移） ==========
+export {
+  ChapterOrbit, GalaxyLink, PlanetNode, SubjectSystem,
+} from './models/GalaxyModels';
+export type { GalaxyLinkType } from './models/GalaxyModels';
+
+export { projectGalaxyGraph } from './utils/GalaxyGraphProjection';
+export type {
+  GalaxyGraphEdge, GalaxyGraphEdgeType, GalaxyGraphNode, GalaxyGraphSnapshot,
+} from './utils/GalaxyGraphProjection';
+
+export { NoteRetrievalQuery } from './utils/NoteRetrievalQuery';
+
+// ========== 对话与笔记纯规则（2026-11-03 由 entry/services 上移） ==========
+export { streamErrorText } from './utils/StreamErrorText';
+
+export {
+  PROFILE_GLOBAL_SCOPE_ID,
+  ChatMessageIdPolicy, ConversationIdentityError, ConversationRunIdPolicy,
+  ProfileScopePolicy, SessionIdPolicy,
+  chatMessageIdPolicy, conversationRunIdPolicy, createConversationRunRef,
+  requireConversationRunRef, sessionIdPolicy,
+} from './utils/ConversationIdentity';
+export type {
+  ConversationIdentityErrorCode, ConversationIdentityKind,
+  ConversationIdentitySource, ConversationRunRef,
+} from './utils/ConversationIdentity';
+
+export {
+  bigramSimilarity, findDuplicate, isDuplicateOf, normalizeForDedupe,
+} from './utils/NoteDedupe';
+export type { DedupeCandidate } from './utils/NoteDedupe';
+
+export { planRagQuery } from './utils/RagQueryPlan';
+export type { RagQueryPlan } from './utils/RagQueryPlan';
+
+export { buildMathStyleRules } from './utils/ReplyStyleRules';
+export type { ReplyStyle } from './utils/ReplyStyleRules';

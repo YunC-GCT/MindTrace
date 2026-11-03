@@ -26,7 +26,7 @@ import {
   NoteGenerationResult,
   ReviewStatus,
 } from 'common';
-import { ChatMessageRecord } from '../main/ets/models/AgentMemoryModels';
+import { ChatMessageRecord } from 'common';
 import { WritePathValidator } from '../main/ets/services/WritePathValidator';
 import { ConversationRunCoordinator } from '../main/ets/services/ConversationRunCoordinator';
 import { AgentChatCallbacks } from '../main/ets/services/AgentChatService';

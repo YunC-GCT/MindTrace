@@ -47,7 +47,7 @@ import {
   CHAT_HISTORY_SCHEMA_VERSION,
   CHAT_HISTORY_V1_SCHEMA_VERSION,
 } from './ChatHistorySchema';
-import { ConversationRunIdPolicy, SessionIdPolicy } from './ConversationIdentity';
+import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
 import { getChatHistoryClearControl } from './ChatHistoryClearControl';
 export { CHAT_HISTORY_SCHEMA_VERSION } from './ChatHistorySchema';

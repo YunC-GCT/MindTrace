@@ -24,8 +24,8 @@ import {
   IncrementalManifest,
   parseIncrementalSections,
 } from 'common';
-import { NoteGenerationBaseProvider } from '../models/KnowledgeUnitWriteModels';
-import { ConversationRunIdPolicy, SessionIdPolicy } from '../services/ConversationIdentity';
+import { NoteGenerationBaseProvider } from 'common';
+import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 
 export class NoteGenerationRepository implements NoteGenerationRepositoryContract {
   private store: relationalStore.RdbStore;

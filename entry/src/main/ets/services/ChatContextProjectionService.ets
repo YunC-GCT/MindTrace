@@ -17,7 +17,7 @@ import {
   ChatProjectionWriter,
   ConversationMessageSnapshot,
   ConversationSessionSnapshot,
-} from '../models/ConversationSnapshotModels';
+} from 'common';
 import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
 import { getChatHistoryClearControl } from './ChatHistoryClearControl';
 import { AgentMemoryService } from './AgentMemoryService';

@@ -12,7 +12,7 @@ import { common } from '@kit.AbilityKit';
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
 import { AiService } from '../../services/AiService';
 import { ChatMessageOrigin, ChatMessageOutcome } from './ConversationState';
-import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { ConversationRunRef } from 'common';
 
 export interface IConversationDraftWorkflowHost {
   draftContext(): common.UIAbilityContext;

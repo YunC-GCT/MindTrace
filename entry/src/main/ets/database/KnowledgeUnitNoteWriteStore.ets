@@ -23,7 +23,7 @@ import type {
   NoteWriteCommand,
   NoteWriteStore,
 } from 'common';
-import type { KnowledgeUnitWriteResult } from '../models/KnowledgeUnitWriteModels';
+import type { KnowledgeUnitWriteResult } from 'common';
 import type { KnowledgeUnitWriteService } from '../services/KnowledgeUnitWriteService';
 import type { NoteDao } from './NoteDao';
 import type { NoteGenerationRepository } from './NoteGenerationRepository';

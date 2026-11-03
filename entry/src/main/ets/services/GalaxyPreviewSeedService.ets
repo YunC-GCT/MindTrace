@@ -10,7 +10,7 @@ import { preferences, relationalStore } from '@kit.ArkData';
 import { DatabaseHelper, KnowledgeRelation, KnowledgeUnit } from 'common';
 import { NoteDao } from '../database/NoteDao';
 import { KnowledgeRelationDao } from '../database/KnowledgeRelationDao';
-import { KnowledgeUnitWriteResult } from '../models/KnowledgeUnitWriteModels';
+import { KnowledgeUnitWriteResult } from 'common';
 import { GalaxyPreviewData, ENABLE_GALAXY_PREVIEW_UNITS } from './GalaxyPreviewData';
 import { GalaxyPreviewSeeder, GalaxyPreviewSeedStore } from './GalaxyPreviewSeeder';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';

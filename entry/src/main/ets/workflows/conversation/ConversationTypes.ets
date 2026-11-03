@@ -21,9 +21,9 @@ import { common } from '@kit.AbilityKit';
 import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
 import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
 import type { StreamEvent } from 'common';
-import { ConversationRunRef } from '../../services/ConversationIdentity';
+import { ConversationRunRef } from 'common';
 import { CancellationToken } from 'common';
-import { NoteReviewAnswer } from '../../models/NoteReviewModels';
+import { NoteReviewAnswer } from 'common';
 export type ConversationRunEventStatus = 'pending' | 'running' | 'success' | 'failed';
 
 export interface ConversationStreamMessageEvent {

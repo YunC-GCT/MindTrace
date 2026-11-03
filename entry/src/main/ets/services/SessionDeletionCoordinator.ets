@@ -15,9 +15,9 @@ import fileIo from '@ohos.file.fs';
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper } from 'common';
-import { ConversationSessionSnapshot } from '../models/ConversationSnapshotModels';
+import { ConversationSessionSnapshot } from 'common';
 import { ChatHistorySaveResult } from './ChatHistoryPersistence';
-import { SessionIdPolicy } from './ConversationIdentity';
+import { SessionIdPolicy } from 'common';
 import { NoteGenerationRepository } from '../database/NoteGenerationRepository';
 
 export type SessionDeletionState = 'completed' | 'cleanup-pending' | 'failed-before-commit';

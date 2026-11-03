@@ -9,7 +9,7 @@
  *   UI command -> AgentChatService -> ConversationRuntime.
  */
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
-import { ConversationRunRef } from './ConversationIdentity';
+import { ConversationRunRef } from 'common';
 import { ConversationRunStartResult } from './ConversationRunCoordinator';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ConversationRuntime } from './ConversationRuntime';

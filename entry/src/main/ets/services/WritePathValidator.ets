@@ -3,7 +3,7 @@
  *
  * 路径: entry/src/main/ets/services/WritePathValidator.ets
  * 职责: 唯一负责校验进入 RDB 的 KnowledgeUnit / StudyPlanItem / ChatMessageRecord / AgentMemoryRecord
- * 依赖: common KnowledgeUnit, StudyPlanItem; ../models/AgentMemoryModels
+ * 依赖: common KnowledgeUnit, StudyPlanItem, AgentMemoryModels
  *
  * 数据流:
  *   NoteDaoAdapter / AgentMemoryService / StudyPlanService → validateXxx → 入库
@@ -13,8 +13,8 @@
  *   - 静态方法不持有状态,方便 ArkTS Hypium seam 测试注入
  */
 import { KnowledgeUnit, StudyPlanItem } from 'common';
-import { AgentMemoryRecord, ChatMessageRecord } from '../models/AgentMemoryModels';
-import { ProfileScopePolicy, SessionIdPolicy } from './ConversationIdentity';
+import { AgentMemoryRecord, ChatMessageRecord } from 'common';
+import { ProfileScopePolicy, SessionIdPolicy } from 'common';
 
 export class WritePathValidator {
   static validateKnowledgeUnit(unit: KnowledgeUnit): void {

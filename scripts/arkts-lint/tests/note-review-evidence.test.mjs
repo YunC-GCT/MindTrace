@@ -79,7 +79,7 @@ function loadEvidenceService(runtime = {}) {
           },
         },
         'entry/src/main/ets/database/KnowledgeRelationDao.ets': { KnowledgeRelationDao: relationDao },
-        'entry/src/main/ets/models/NoteEvidenceModels.ets': {},
+        'common/src/main/ets/models/NoteEvidenceModels.ets': {},
       },
     },
   );
@@ -115,7 +115,7 @@ test('retrieval status distinguishes hits, no match, unavailable storage and par
 });
 
 test('topic normalization preserves mathematical symbols and words inside the topic', () => {
-  const { NoteRetrievalQuery } = loadNoteReviewEtsModule('entry/src/main/ets/services/NoteRetrievalQuery.ets');
+  const { NoteRetrievalQuery } = loadNoteReviewEtsModule('common/src/main/ets/utils/NoteRetrievalQuery.ets');
   for (const topic of ['阶乘 n!', 'f(x)=x^2', String.raw`\frac{1}{x}`, '机器学习的学习率', '能量守恒']) {
     assert.equal(NoteRetrievalQuery.normalize(topic), topic);
     assert.equal(NoteRetrievalQuery.normalize('请帮我解释一下' + topic + '？'), topic);

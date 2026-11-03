@@ -8,7 +8,7 @@ import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
-const models = loadNoteReviewEtsModule('entry/src/main/ets/models/AgentJobModels.ets');
+const models = loadNoteReviewEtsModule('common/src/main/ets/models/AgentJobModels.ets');
 
 test('P0 模型：终态集合 / 优先级 / 恢复判定', () => {
   assert.equal(models.isTerminalAgentJobStatus('done'), true);

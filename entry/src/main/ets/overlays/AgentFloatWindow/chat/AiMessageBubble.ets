@@ -24,8 +24,8 @@ import {
   W_MEDIUM,
   W_SEMIBOLD,
 } from 'common'
-import { NoteEvidenceCitation } from '../../../models/NoteEvidenceModels'
-import { NoteReviewAnswer, NoteReviewFeedback } from '../../../models/NoteReviewModels'
+import { NoteEvidenceCitation } from 'common'
+import { NoteReviewAnswer, NoteReviewFeedback } from 'common'
 import type { NoteContextClarification } from 'common'
 import { AgentRunPart } from './AgentRunModels'
 import { AgentRunPanel } from './AgentRunPanel'

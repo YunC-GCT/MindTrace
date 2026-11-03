@@ -20,11 +20,11 @@ import {
   ConversationProgressStep,
 } from '../workflows/conversation/ConversationState';
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { NoteReviewAnswer } from '../models/NoteReviewModels';
+import { NoteReviewAnswer } from 'common';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { ConversationRunCoordinator } from './ConversationRunCoordinator';
-import { ConversationRunRef } from './ConversationIdentity';
+import { ConversationRunRef } from 'common';
 
 export class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   private readonly callbacks: AgentChatCallbacks;

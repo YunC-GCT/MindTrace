@@ -8,7 +8,7 @@
 
 ## 0. 先看结论（TL;DR）
 
-1. Agent 编排已完成 **workflow-first 收口**：`CommandExecutor`（统一入口）→ `CommandRouter`（preflight+路由）→ 四条 workflow（capture / generation / regenerate / prepared）；旧的 `DispatchGraph` / `CaptureBranch` / `NoteAgent` 已删除（spec 039）。**注意**：capture 是唯一实体图；generation / regenerate / prepared 仍是 27–29 行转发壳，真实逻辑在 `core/dispatch/*Branch`（见 spec 039 §13.1）。
+1. Agent 编排已完成 **workflow-first 收口**：`CommandExecutor`（统一入口，333 行）→ `CommandRouter`（preflight+路由，120 行）→ 四条 workflow（capture 225 / generation 691 / regenerate 261 / prepared 183）。**四条都是实体实现**；旧的 `DispatchGraph` / `CaptureBranch` / `NoteAgent` / `PreparedBranch` / `IncrementalBranch` / `GenerationBranch` 全部删除，`core/dispatch/` 只剩策略与端口适配（`DispatchOptions` / `GenerationEvaluator` / `NoteOutcomeMapper` / `RunEventSink` / `UnitSupport` / `BatchSupport`）（spec 039；2026-11-03 复核）。
 2. 写入链路做了**双 lane 调度器 + 持久队列 + 跨进程 handoff**：`WriteJobScheduler`（interactive/background 双 lane、并发上限）→ `WriteJobPersistence` hooks → `agent_job` 表（schema v20）→ 启动恢复/租约；flag 已灰度打开（spec 038 / 040 / ADR-0024）。队列承接 UI 侧 inbox / 恢复 / 兜底；A2A 单次整理是扩展内联。
 3. App 与 A2A 两条入口**共用同一编排**：都经 `CapturePipeline → CommandExecutor → workflow → NoteDao`，没有第二套笔记写入逻辑；调度方式不同（App 交互式直连，A2A 单次整理扩展内联，队列只兜底）。
 4. 端A2A（小艺）侧：文本整理真机通；**图片入站是平台能力缺口**——小艺客户端不下发 image part（也不下发识别文字），应用侧无法拿到图片；卡片/App 跳转方案已按用户要求移除，当前纯文本引导（详见 §6）。
@@ -29,7 +29,7 @@ HSP agents (CommandExecutor/Router/4 workflows/CaptureGraph/nodes)
 - `entry` 依赖 `agents` + `common`；`agents` 只依赖 `common`；`agents` **不 import entry**（gate 有边界规则）。
 - 进程：
   - **UI 进程**：`EntryAbility` → 页面/VM → services → CapturePipeline → CommandExecutor → workflows → DAO。
-  - **`:agent` 进程**：`AgentExtAbility`（小艺端A2A，手写 JSON-RPC 单帧快照）→ IntentRouter → text/OCR/chat 处理；自己 `DatabaseHelper.init`，可内联写库。
+  - **`:agent` 进程**：`AgentExtAbility`（协议：手写 JSON-RPC + 单帧快照，299 行）→ `A2AController`（策略：意图/计划/内联整理/记忆/回执，1104 行）→ `IngestGateway` → `AgentIngestService` → `CapturePipeline`；自己 `DatabaseHelper.init`，可内联写库。
   - **agentUI 卡片**：`AgentUIExtAbility`（半屏卡片）与 agent 同进程；当前 A2A 回复已不再发卡片，代码保留为 dormant 能力（见 §6）。
 
 ---
@@ -39,28 +39,50 @@ HSP agents (CommandExecutor/Router/4 workflows/CaptureGraph/nodes)
 ### 2.1 分层图
 
 ```
-入口适配层
-  ├─ UI:        pages/ + viewmodels/            (用户操作)
-  ├─ A2A:       AgentExtAbility.ets (协议) → A2AController.ets (策略) → IngestGateway.ets (inline/queue)
-  ├─ 无头整理:  share/inbox → services/IngestGateway.ets
-  └─ 调度:      entry/services/WriteJobScheduler.ets  (App 写路径)
+L0 入口适配层
+  ├─ UI:        pages/ (8 目录) + viewmodels/ (8 个 VM)
+  ├─ 应用入口:  entryability/EntryAbility.ets        启动 / DB init / 保留清理 / 图片整理
+  ├─ A2A 协议:  agentextability/AgentExtAbility.ets  299 行：JSON-RPC 2.0 解析 + part 提取 + 单帧 task 快照
+  ├─ A2A 策略:  services/A2AController.ets           1104 行：意图 / 计划 / 内联整理 / 记忆 / 回执 / 回复
+  ├─ 无头整理:  services/IngestGateway.ets           66 行：唯一 inline-vs-background 决策点
+  └─ 写调度:    services/WriteJobScheduler.ets       App 写路径双 lane + 持久队列
 
-编排层（agents module）
-  ├─ agents/core/CommandExecutor.ets   dispatchCommand / dispatchSetCommand
-  ├─ agents/core/CommandRouter.ets     preflight(审批哈希/取消) + resolve(kind)→workflow
-  ├─ agents/workflows/WorkflowContext.ets
-  ├─ agents/workflows/NoteCaptureWorkflow.ets
-  ├─ agents/workflows/NoteGenerationWorkflow.ets
-  ├─ agents/workflows/NoteRegenerateWorkflow.ets
-  ├─ agents/workflows/NotePreparedWorkflow.ets
-  ├─ agents/core/dispatch/*            Generation/Incremental/Prepared branch + Evaluator/Mapper/Sink
-  └─ agents/graph/CaptureGraph.ets     capture 子图（Classify/Structure/TruthCheck/Persist/Ocr 节点）
+L1 产品服务层（entry/services/）
+  ├─ 整理:  services/ai/  CapturePipeline · DraftPipeline · ClarificationPipeline · AiService
+  ├─ 对话:  ConversationRuntime · AgentChatService · ReplyService · StreamingReplyDocument · RendererScheduler
+  ├─ 写入:  WriteJobScheduler / Persistence / Bootstrap / Producer · AsyncSemaphore · AsyncMutex
+  ├─ 知识:  KnowledgeUnitWriteService · NoteEditService · RagRetrievalService · NoteReviewService
+  ├─ A2A:   A2AIntentRouter · A2AConversationStore · A2AImageContextStore · A2APlanStore
+  │         A2AErrorTaxonomy · A2AContextCleanup
+  └─ 运维:  DataRetentionService
 
-领域 / 数据层（common）
-  ├─ common NoteCommand / NoteOutcome（ADR-0019）
-  ├─ common/workflow 内核（LangGraph 模型，ADR-0008：无 runtime checkpoint / 无图内 HITL）
-  ├─ common DatabaseHelper（schema v20）
-  └─ DAO：NoteDao / RunStoreDao / AgentJobDao / 各 generation/log 表
+L2 编排层（agents HSP）
+  ├─ core/CommandExecutor.ets (333)    生命周期 + run_event + 选 workflow
+  ├─ core/CommandRouter.ets (120)      preflight（取消 / 审批哈希）+ kind → workflow
+  ├─ workflows/WorkflowContext.ets (36)  只暴露五组：WritePorts / Observability / RunControl / DispatchMode / DispatchDomain
+  ├─ workflows/Note*Workflow.ets         capture 225 · generation 691 · regenerate 261 · prepared 183
+  ├─ core/dispatch/                      DispatchOptions(五组) · GenerationEvaluator · NoteOutcomeMapper
+  │                                      RunEventSink · UnitSupport · BatchSupport
+  └─ graph/CaptureGraph.ets + nodes/     Classify · Ocr · Structure · TruthCheck · Persist
+
+L3 契约 / 内核层（common HSP）
+  ├─ models/       NoteCommand / NoteOutcome（ADR-0019）· KnowledgeGraph · StudyPlan
+  ├─ workflow/     StateGraph · RunContext · RunBudget · RunErrors · tool-calling
+  ├─ ports/        NoteWritePort · NoteReadPort · NoteSearchPort · RunStore · ReviewPorts
+  │                StudyPlanPorts · ArtifactStorePort
+  ├─ llm/          LlmClient · LlmGuard · LlmConfig · providers · ContentProtocol
+  └─ DatabaseHelper schema v20 · 跨进程 busy_timeout=5000 + appendEvent 重试
+
+旁路：entry/workflows/conversation/  ConversationWorkflow（对话领域图，复用 common/workflow 内核，
+      不经过 CommandExecutor；其中的笔记写入仍经 AiService → CapturePipeline 回到 L2）
+```
+
+依赖方向（单向，gate 守）：
+
+```
+pages → viewmodels → services ─┬→ agents → common
+agentextability → services ────┘
+skill / cardservice → common (仅契约)
 ```
 
 关键点：
@@ -83,10 +105,11 @@ UI/VM → AiService.captureText → CapturePipeline.ingestTextOutcome
 
 **B. 小艺 A2A 文字整理（不打开 App）**
 ```
-小艺 → AgentExtAbility.onData → A2AIntentRouter（text_ingest / image_qa / ocr / …）
-  → AgentIngestService.ingestTextBatch → AiService.ingestTextOutcome
-  → CapturePipeline → CommandExecutor → 同 A
-  → sendAnswer("已整理入库：…")
+小艺 → AgentExtAbility.onData（JSON-RPC 解析 + part 提取）
+  → A2AController.handle（意图 / 计划 / 会话记忆 / 90s deadline）
+  → IngestGateway.ingest(..., INGEST_MODE_INLINE)     ← 唯一模式决策点
+  → AgentIngestService → CapturePipeline → CommandExecutor → 同 A
+  → A2AReplyPort.send(单帧 task 快照，"已整理入库：…")
 ```
 > 真机证据：`ok=true`，回复 `已整理入库：计算12减4乘2的值并写出运算顺序（初中数学）· 本次整理 1 条`；hilog `INTENT text_ingest → TEXT_PLAN → INGEST_TEXT done`。
 
@@ -96,7 +119,8 @@ UI/VM → AiService.captureText → CapturePipeline.ingestTextOutcome
   ├─ flag 关：内存双 lane 队列（AsyncSemaphore/AsyncMutex + 写段串行）
   └─ flag 开：WriteJobPersistence.enqueue → AgentJobDao(agent_job) → claim(租约) → executor → finish(终态)
             启动：WriteJobBootstrap → recoverAllRunning(孤儿) + recover(queued) → submitRecovered
-            跨进程兜底：WriteJobProducer（当前无生产调用方；A2A 单次整理走扩展内联）
+            跨进程兜底：WriteJobProducer（当前无生产调用方）
+A2A 单次整理：IngestGateway(INLINE) → AgentIngestService → CapturePipeline，不经调度器（ADR-0024 §2.7）
 ```
 
 ---
@@ -105,14 +129,15 @@ UI/VM → AiService.captureText → CapturePipeline.ingestTextOutcome
 
 | 层 | 位置 | 职责 | 约束 |
 |---|---|---|---|
-| UI | `entry/src/main/ets/pages/`, `overlays/` | 渲染、手势、动效 | 不直接 import CaptureGraph/CommandExecutor/NoteDao |
-| ViewModel | `entry/src/main/ets/viewmodels/` | UI state、用户意图、调用 service | 不持 RDB 句柄 |
-| Business Service | `entry/src/main/ets/services/` | 编排、AI、笔记生成、检索、A2A 适配 | 不持 UI 引用；写路径统一走 CapturePipeline/CommandExecutor |
-| Agent 编排 | `agents/` | CommandExecutor/Router/workflows/Graph | 只依赖 common；不 import entry |
-| 共享契约/数据 | `common/` | NoteCommand/Outcome、workflow 内核、DB/RDB、LLM 客户端 | 受限 Kit 不得经 barrel 进 :agent 进程 |
-| 扩展 | `skill/`, `cardservice/` | 小艺 skill / 桌面卡片 | 不新建 module |
+| UI | `entry/src/main/ets/pages/`（8 目录）、`overlays/` | 渲染、手势、动效 | 不直接 import CaptureGraph/CommandExecutor/NoteDao |
+| ViewModel | `entry/src/main/ets/viewmodels/`（8 个） | UI state、用户意图、调用 service | 不持 RDB 句柄 |
+| 入口适配 | `entry/src/main/ets/agentextability/` | JSON-RPC 解析、part 提取、单帧快照 | 不含意图/计划/写入策略（下沉到 A2AController） |
+| Business Service | `entry/src/main/ets/services/`、`services/ai/` | 编排、AI、笔记生成、检索、调度、A2A 策略 | 不持 UI 引用；写路径统一走 CapturePipeline/CommandExecutor；无头整理统一走 IngestGateway |
+| Agent 编排 | `agents/`（HSP） | CommandExecutor/Router/workflows/CaptureGraph | 只依赖 common；不 import entry |
+| 共享契约/数据 | `common/`（HSP） | NoteCommand/Outcome、workflow 内核、ports、DB/RDB、LLM 客户端 | 受限 Kit 不得经 barrel 进 :agent 进程 |
+| 扩展 | `skill/`, `cardservice/`（HAP feature） | 小艺 skill / 桌面卡片 | 不新建 module |
 
-产品域当前闭环：capture（拍照/相册/文字/A2A）→ 结构化 → 生成 → 持久化（note_revision / note_generation_* / RunStore）→ 详情/复习/RAG/知识星系；后台写路径由 scheduler 限流与串行化。
+产品域当前闭环：capture（拍照/相册/文字/A2A）→ 结构化 → 生成 → 持久化（note_revision / note_generation_* / RunStore）→ 详情/复习/RAG/知识星系；后台写路径由 scheduler 限流与串行化，A2A 侧走内联 + 90s deadline，历史数据由 retention 定期清理。
 
 ---
 
@@ -152,6 +177,8 @@ d8e4b9e   spec 039 S3：workflow-first 收口
 ---
 
 ## 6. 已知问题 / 风险（请重点 review）
+
+> **2026-11-03 复核**：R1/R2 的写入加固见 §15；R5 见 §16（默认关闭）；R8 见 §17；R6/R7 见 §18 + [spec 043](../specs/043-data-retention.md)。下表保留 2026-11-02 的原始判断，作为决策留痕。
 
 | # | 问题 | 说明 / 影响 | 当前处理 |
 |---|---|---|---|
@@ -264,7 +291,6 @@ d8e4b9e   spec 039 S3：workflow-first 收口
 - A2A 会话 / 图片 / 计划文件：7 天清理，扩展 `A2AController.prepare()` 执行（`A2AContextCleanup`）。
 - `run_event` / 终态 `run_store` / 终态 `agent_job`：30 天清理，App 启动时 `DataRetentionService` 执行；新增 `created_at` / `updated_at` 索引。
 - 验证：`agent-gate` **PASS（pass=1221 fail=0）**；`build-hsp-hap` 成功；真机 A2A 幂等入库成功。
-| 进度唯一口径 | `docs/agents/phase-tracker.md` |
 
 验证命令：
 
@@ -280,3 +306,17 @@ python scripts/a2a-smoke/a2a_smoke.py --text "整理成笔记：..."  # A2A smok
 ## 9. 一句话请 Claude 判断
 
 > 当前“CommandExecutor/Router + 4 workflows + CaptureGraph 子图”的编排分层，与“UI/VM/Service/agents/common”的产品分层，是否足够清晰、可演进？最大的结构性风险是不是双进程写库与 A2A 内联执行？比赛冻结期建议只修哪些、不动哪些？
+
+---
+
+## 19. 2026-11-03 架构图刷新
+
+R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 的分层图与数据流：
+
+- **0 → 4 条实体 workflow**：`PreparedBranch` / `IncrementalBranch` / `GenerationBranch` 全部并入 `Note*Workflow`，`core/dispatch/` 不再有分支壳。
+- **A2A 两段式**：`AgentExtAbility`（299 行，协议/快照）与 `A2AController`（1104 行，策略）职责分离；无头整理统一从 `IngestGateway`（66 行）进入。
+- **新增 L1 条目**：`WriteJobScheduler/Persistence/Bootstrap/Producer`（写调度）、`DataRetentionService`（保留清理）、`A2AErrorTaxonomy`（错误语义）。
+- **L3 补齐 ports**：`NoteWritePort / NoteReadPort / NoteSearchPort / RunStore / ReviewPorts / StudyPlanPorts / ArtifactStorePort` 在 `common`，entry 侧 `adapters/` + `services/*Factory` 注入。
+- **依赖方向**：`pages → viewmodels → services → (agents | common)`，`agentextability → services`，`agents` 不 import entry（gate 守）。
+
+统计口径：`agents/core` 453 行 + `workflows` 1360 行 + `graph`；`entry/services` 约 100 个文件，其中 A2A 相关 10 个、写调度 9 个。

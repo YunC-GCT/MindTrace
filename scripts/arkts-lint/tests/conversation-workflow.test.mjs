@@ -30,9 +30,9 @@ const LOG_STUB = 'class Logger {'
 const errorHarness = ts.transpileModule(
   LOG_STUB
     + withoutImports(read('common/src/main/ets/llm/LlmErrorBodyFormatter.ets'))
-    + withoutImports(read('entry/src/main/ets/services/NoteRetrievalQuery.ets'))
+    + withoutImports(read('common/src/main/ets/utils/NoteRetrievalQuery.ets'))
     + withoutImports(read('entry/src/main/ets/services/NoteEvidenceService.ets'))
-    + withoutImports(read('entry/src/main/ets/services/StreamErrorText.ets'))
+    + withoutImports(read('common/src/main/ets/utils/StreamErrorText.ets'))
     + withoutImports(workflow),
   { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } },
 ).outputText;

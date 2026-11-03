@@ -10,7 +10,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 const sections = loadNoteReviewEtsModule('agents/src/main/ets/agents/StructuredSections.ets');
-const dedupe = loadNoteReviewEtsModule('entry/src/main/ets/services/NoteDedupe.ets');
+const dedupe = loadNoteReviewEtsModule('common/src/main/ets/utils/NoteDedupe.ets');
 const taxonomy = loadNoteReviewEtsModule('agents/src/main/ets/agents/KnowledgeTaxonomy.ets');
 const arr = (value) => Array.from(value);
 

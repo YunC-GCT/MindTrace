@@ -24,8 +24,8 @@ import {
   NoteReviewStatus,
   copyNoteEvidenceCitation,
   copyNoteReviewAnswer,
-} from '../../../models/NoteReviewModels'
-import { NoteEvidenceCitation, NoteEvidenceRole } from '../../../models/NoteEvidenceModels'
+} from 'common'
+import { NoteEvidenceCitation, NoteEvidenceRole } from 'common'
 import type { NoteContextClarification, NoteTopicCandidate, StreamEvent } from 'common'
 import {
   AgentRunPart,
@@ -38,7 +38,7 @@ import {
   finishAgentRun,
   projectLegacyAgentRun,
 } from './AgentRunModels'
-import { ChatMessageIdPolicy, SessionIdPolicy } from '../../../services/ConversationIdentity'
+import { ChatMessageIdPolicy, SessionIdPolicy } from 'common'
 
 export { ChatMessageOrigin, ChatMessageOutcome } from '../../../workflows/conversation/ConversationState'
 

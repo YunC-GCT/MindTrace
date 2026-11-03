@@ -1,7 +1,7 @@
 /**
  * AgentJobModels.ets — WriteJob 持久队列的类型与纯函数（spec 040 P0）
  *
- * 路径: entry/src/main/ets/models/AgentJobModels.ets
+ * 路径: common/src/main/ets/models/AgentJobModels.ets
  * 职责: 定义持久队列 `agent_job` 的行模型、状态机/优先级纯函数；不依赖 Kit，可 Node 单测。
  * 依赖: 无
  * 数据流: WriteJobScheduler/AgentJobDao → AgentJob 模型 → agent_job 表

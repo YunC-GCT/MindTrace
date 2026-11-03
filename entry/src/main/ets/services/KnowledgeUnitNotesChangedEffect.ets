@@ -9,7 +9,7 @@
  *          扩展进程（小艺端A2A :agent）也要走正规写路径，不能被它拖进受限 Kit。
  */
 import { KnowledgeUnit } from 'common';
-import { KnowledgeUnitPostCommitEffect } from '../models/KnowledgeUnitWriteModels';
+import { KnowledgeUnitPostCommitEffect } from 'common';
 import { UiDataCacheService } from './UiDataCacheService';
 
 export class KnowledgeUnitNotesChangedEffect implements KnowledgeUnitPostCommitEffect {

@@ -25,6 +25,57 @@ function modulePathForRequest(fromRelativePath, request) {
   return `${candidate}.ets`;
 }
 
+// 'common' 是模块名而非文件路径，Node 侧无法 require。这里只装配纯模型/纯算法文件
+// （无 Kit 依赖），够加载 entry 服务的单测用；需要别的符号时请用 options.mocks 覆盖。
+const COMMON_MODEL_FILES = [
+  'common/src/main/ets/models/AgentJobModels.ets',
+  'common/src/main/ets/models/AgentMemoryModels.ets',
+  'common/src/main/ets/models/ConversationSnapshotModels.ets',
+  'common/src/main/ets/models/KnowledgeUnitWriteModels.ets',
+  'common/src/main/ets/models/NoteEvidenceModels.ets',
+  'common/src/main/ets/models/NoteReviewModels.ets',
+  'common/src/main/ets/models/GalaxyModels.ets',
+  'common/src/main/ets/utils/NoteRetrievalQuery.ets',
+  'common/src/main/ets/utils/GalaxyGraphProjection.ets',
+  'common/src/main/ets/utils/StreamErrorText.ets',
+  'common/src/main/ets/utils/ConversationIdentity.ets',
+  'common/src/main/ets/utils/NoteDedupe.ets',
+  'common/src/main/ets/utils/RagQueryPlan.ets',
+  'common/src/main/ets/utils/ReplyStyleRules.ets',
+];
+
+function loadCommonFacade(options) {
+  const facade = {};
+  const cache = options.cache ?? new Map();
+  for (const file of COMMON_MODEL_FILES) {
+    Object.assign(facade, loadNoteReviewEtsModule(file, { ...options, cache }));
+  }
+  return facade;
+}
+
+// 测试可以用 options.mocks.common 覆盖；没覆盖到的符号回落到真实纯模型文件。
+function loadCommonModule(options) {
+  const facade = loadCommonFacade(options);
+  const override = options.mocks !== undefined
+    && Object.prototype.hasOwnProperty.call(options.mocks, 'common')
+    ? options.mocks['common']
+    : undefined;
+  if (override === undefined) {
+    return facade;
+  }
+  return new Proxy(override, {
+    get(target, prop) {
+      if (prop in target) {
+        return target[prop];
+      }
+      return prop in facade ? facade[prop] : undefined;
+    },
+    has(target, prop) {
+      return prop in target || prop in facade;
+    },
+  });
+}
+
 export function loadNoteReviewEtsModule(relativePath, options = {}) {
   const normalizedPath = normalizeRelativePath(relativePath);
   const cache = options.cache ?? new Map();
@@ -47,14 +98,14 @@ export function loadNoteReviewEtsModule(relativePath, options = {}) {
   cache.set(normalizedPath, module);
 
   const localRequire = (request) => {
+    if (request === 'common') {
+      return loadCommonModule(options);
+    }
     const resolvedRequest = modulePathForRequest(normalizedPath, request);
     if (options.mocks !== undefined && Object.prototype.hasOwnProperty.call(options.mocks, resolvedRequest)) {
       return options.mocks[resolvedRequest];
     }
     if (!request.startsWith('.')) {
-      if (options.mocks !== undefined && Object.prototype.hasOwnProperty.call(options.mocks, request)) {
-        return options.mocks[request];
-      }
       return require(request);
     }
     return loadNoteReviewEtsModule(resolvedRequest, { ...options, cache });

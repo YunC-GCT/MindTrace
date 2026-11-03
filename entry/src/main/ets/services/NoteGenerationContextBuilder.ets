@@ -12,7 +12,7 @@ import {
   NoteGenerationContextBuildInput,
   NoteGenerationContextCandidate,
   NoteGenerationContextResult,
-} from '../models/AgentMemoryModels';
+} from 'common';
 
 const DEFAULT_CONTEXT_WINDOW_TOKENS: number = 65536;
 const OUTPUT_TOKEN_RESERVE: number = 12000;

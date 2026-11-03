@@ -17,7 +17,7 @@ import type {
   SourceBundle,
   SourceFragment,
 } from 'common';
-import { NoteGenerationContextResult } from '../models/AgentMemoryModels';
+import { NoteGenerationContextResult } from 'common';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
 
 interface ReviewedFragment {

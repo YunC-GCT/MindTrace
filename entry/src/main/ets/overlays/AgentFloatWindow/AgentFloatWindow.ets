@@ -41,13 +41,13 @@ import {
   setChatMsgNoteReviewFeedbackValue,
   transitionChatMessageOutcome,
 } from './chat/ChatModels';
-import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
+import { NoteEvidenceCitation } from 'common';
 import {
   NoteReviewAnswer,
   NoteReviewFeedback,
   NoteReviewSourceResult,
   copyNoteEvidenceCitation,
-} from '../../models/NoteReviewModels';
+} from 'common';
 import { NoteReviewSourceService } from '../../services/NoteReviewSourceService';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
@@ -66,7 +66,7 @@ import {
   ConversationRunRef,
   chatMessageIdPolicy,
   conversationRunIdPolicy,
-} from '../../services/ConversationIdentity';
+} from 'common';
 import { ConversationMessageEvent } from '../../workflows/conversation/ConversationTypes';
 import { AiService } from '../../services/AiService';
 import { DraftRecoveryService } from '../../services/DraftRecoveryService';
@@ -82,7 +82,7 @@ import {
   ConversationSessionReduceResult,
   ConversationSessionReducer,
 } from '../../services/ConversationSessionReducer';
-import { ConversationSessionSnapshot } from '../../models/ConversationSnapshotModels';
+import { ConversationSessionSnapshot } from 'common';
 import { IConversationNoteRoutePort } from '../../workflows/conversation/ConversationWorkflowPorts';
 import { ChatHistorySaveResult } from '../../services/ChatHistoryPersistence';
 import { ChatHistoryClearControl, getChatHistoryClearControl } from '../../services/ChatHistoryClearControl';

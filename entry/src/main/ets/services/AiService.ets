@@ -55,7 +55,7 @@ import { CommandExecutor, NoteDaoInterface } from 'agents';
 import { common } from '@kit.AbilityKit';
 import { ImageUriResolver, ResolvedImageFile } from './ImageUriResolver';
 import { SubjectVocabularyService } from './SubjectVocabularyService';
-import { ConversationRunIdPolicy, SessionIdPolicy } from './ConversationIdentity';
+import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from './AgentMemoryService';
 import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';

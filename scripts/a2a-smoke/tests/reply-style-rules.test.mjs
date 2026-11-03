@@ -10,7 +10,7 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const requireFromLint = createRequire(resolve(root, 'scripts/arkts-lint/package.json'));
 const ts = requireFromLint('typescript');
 
-const source = read('entry/src/main/ets/services/ReplyStyleRules.ets');
+const source = read('common/src/main/ets/utils/ReplyStyleRules.ets');
 
 async function loadRules() {
   const js = ts.transpileModule(source, {

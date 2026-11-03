@@ -1,14 +1,15 @@
 /**
  * KnowledgeUnitWriteModels.ets — KnowledgeUnit 写入契约
  *
- * 路径: entry/src/main/ets/models/KnowledgeUnitWriteModels.ets
+ * 路径: common/src/main/ets/models/KnowledgeUnitWriteModels.ets
  * 职责: 定义事务仓储、revision、写入结果和写后副作用边界
- * 依赖: common KnowledgeUnit
+ * 依赖: ./CommonTypes (KnowledgeUnit), ./NoteGenerationModels (NoteGenerationCommitResult)
  *
  * 数据流:
  *   写入调用方 → KnowledgeUnitWriteService → repository / post-commit effects
  */
-import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
+import { KnowledgeUnit } from './CommonTypes';
+import { NoteGenerationCommitResult } from './NoteGenerationModels';
 
 export enum KnowledgeUnitWriteErrorCode {
   VERSION_CONFLICT = 'VERSION_CONFLICT',
