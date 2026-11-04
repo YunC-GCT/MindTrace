@@ -37,6 +37,8 @@ const errorHarness = ts.transpileModule(
     + withoutImports(read('agents/src/main/ets/chat/StreamErrorText.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationFormatting.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationRunRegistry.ets'))
+    + withoutImports(read('agents/src/main/ets/conversation/ConversationRunEvents.ets'))
+    + withoutImports(read('agents/src/main/ets/core/dispatch/RunEventSink.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationNodeHost.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationReviewHandler.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationNoteHandler.ets'))

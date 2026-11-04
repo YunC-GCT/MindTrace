@@ -763,6 +763,8 @@ Token 事件只记数量与耗时，**不落正文**（沿用日志脱敏约束�
 
 Kit 的准入另按 [spec 033](./specs/033-process-boundaries.md) 的进程可达性矩阵判定，与模块名无关。
 
+**可观测性**：两条编排线共用同一个 `RunEventSink` 契约。笔记写入发 `dispatch.*`，对话发 `conversation.start / step / terminal`，都落 `run_store` / `run_event`；sink 失败只记日志，不影响业务结果。
+
 ### 18.4 本轮迁移记录（2026-11-03 → 11-04）
 
 | 批次 | 内容 |

@@ -236,6 +236,7 @@ export function createPorts(overrides = {}) {
       ...(overrides.review ?? {}),
     },
     toolReply: overrides.toolReply,
+    runEvents: overrides.runEvents,
   };
   return ports;
 }

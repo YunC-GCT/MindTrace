@@ -27,6 +27,7 @@ import {
 import type { AgentMemoryRecord, CancellationToken } from 'common';
 
 import { AiService } from './AiService';
+import { AiServicePorts } from './ai/AiServicePorts';
 import { AgentMemoryService } from './AgentMemoryService';
 import { createNoteEvidenceService } from './EvidenceComposition';
 import { DefaultNoteReviewEvidenceProvider } from './NoteReviewEvidenceProviders';
@@ -253,6 +254,7 @@ export function buildProductionConversationPorts(
     draftService: new ConversationDraftServiceAdapter(ai),
     memoryService: new ConversationMemoryServiceAdapter(new AgentMemoryService(context)),
     evidence: createNoteEvidenceService(),
+    runEvents: AiServicePorts.buildRunEventSinkIfReady(),
     review: new NoteReviewService(new DefaultNoteReviewEvidenceProvider(createNoteEvidenceService())),
     noteRoute: noteRoute,
   };

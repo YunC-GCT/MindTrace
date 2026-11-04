@@ -67,6 +67,12 @@ import { CancellationToken } from 'common';
 import { ConversationDraftWorkflow, IConversationDraftWorkflowHost } from './ConversationDraftWorkflow';
 import { ConversationMemoryProjection, IConversationMemoryProjectionHost } from './ConversationMemoryProjection';
 import { ConversationRunRegistry } from './ConversationRunRegistry';
+import {
+  CONVERSATION_EVENT_START, CONVERSATION_EVENT_STEP, CONVERSATION_EVENT_TERMINAL,
+  conversationEvent, conversationStartPayload, conversationStepPayload, conversationTerminalPayload,
+} from './ConversationRunEvents';
+import { NullRunEventSink } from '../core/dispatch/RunEventSink';
+import type { RunEventSink } from '../core/dispatch/RunEventSink';
 import { ConversationReviewHandler } from './ConversationReviewHandler';
 import { ConversationNoteHandler } from './ConversationNoteHandler';
 import { ConversationReplyHandler } from './ConversationReplyHandler';
@@ -110,6 +116,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   private readonly draftWorkflow: ConversationDraftWorkflow;
   private readonly memoryProjection: ConversationMemoryProjection;
   private readonly reviewNodes: ConversationReviewHandler;
+  private readonly runEvents: RunEventSink;
   private readonly noteHandler: ConversationNoteHandler;
   private readonly replyHandler: ConversationReplyHandler;
 
@@ -125,6 +132,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     this.draftWorkflow = ConversationDraftWorkflow.create(this);
     this.memoryProjection = ConversationMemoryProjection.create(this);
     this.reviewNodes = new ConversationReviewHandler(this);
+    this.runEvents = ports.runEvents ?? new NullRunEventSink();
     this.noteHandler = new ConversationNoteHandler(this);
     this.replyHandler = new ConversationReplyHandler(this);
   }
@@ -215,12 +223,21 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     const graph: StateGraph<ConversationState, ConversationStep> = this.buildGraph();
     workflowLog.info('run start kind=' + request.kind);
     this.cbs.onStart(runRef);
+    this.emitRunEvent(runRef.runId, CONVERSATION_EVENT_START,
+      conversationStartPayload(request.kind, this.runs.origin(runRef)));
+    let terminalOutcome: string = 'completed';
+    let terminalReason: string = '';
     try {
       await graph.run(initial);
     } catch (error) {
+      const message: string = ConversationWorkflow.errorMessage(error);
+      terminalOutcome = message.indexOf('CONVERSATION_CANCELLED') >= 0 ? 'cancelled' : 'failed';
+      terminalReason = message;
       this.reportRunError(runRef, error);
-      throw new Error(ConversationWorkflow.errorMessage(error));
+      throw new Error(message);
     } finally {
+      this.emitRunEvent(runRef.runId, CONVERSATION_EVENT_TERMINAL,
+        conversationTerminalPayload(terminalOutcome, terminalReason));
       this.cbs.onFinish(runRef);
       removeCancellationHook();
       this.runs.end(runRef);
@@ -592,6 +609,18 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   setStep(ref: ConversationRunRef, step: ConversationProgressStep): void {
     this.ensureNotCancelled(ref);
     this.cbs.onProgress(ref, step);
+    this.emitRunEvent(ref.runId, CONVERSATION_EVENT_STEP, conversationStepPayload(step));
+  }
+
+  /** 尽力而为：sink 失败不影响对话本身。 */
+  private emitRunEvent(runId: string, kind: string, payloadJson: string): void {
+    try {
+      this.runEvents.emit(runId, conversationEvent(kind, payloadJson)).catch((): void => {
+        // 可观测性失败静默
+      });
+    } catch (e) {
+      // 同步抛错同样吞掉
+    }
   }
 
   private reportRunError(ref: ConversationRunRef, error: Object): void {

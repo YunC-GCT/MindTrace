@@ -349,3 +349,18 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 **规则同步**：`AGENTS.md` §模块归属判据 与 `docs/specs/033-process-boundaries.md` §R5 都补了 common 准入与 barrel 策略；`docs/system-architecture-layered.md` 新增 §18「当前实现」。
 
 **验证**：`agent-gate` PASS（1242 单测）；`build-hsp-hap` 4/4。
+
+## 21. 2026-11-04 对话链路接入 run 事件
+
+笔记写入一直有 `RunEventSink` → `run_store` / `run_event`，对话链路完全没有，排障只能翻 hilog。本轮把两条编排线的可观测性拉齐：
+
+- 新增 `agents/conversation/ConversationRunEvents.ets`：`conversation.start` / `conversation.step` / `conversation.terminal` 三个 kind 与 payload 口径（不落正文）
+- `ConversationWorkflowPorts` 增加可选 `runEvents`；工作流在 `run()` 发 start/terminal、`setStep()` 发 step
+- 发出是**尽力而为**：sink 抛错或 reject 都被吞掉，不影响对话本身
+- entry 侧由 `ConversationPortsProduction` 注入 `AiServicePorts.buildRunEventSinkIfReady()`，与笔记写入共用 `RunStoreEventSink`
+
+测试新增 3 条：正常链路写出 start→step→terminal、失败链路终态为 failed、sink 抛错不阻塞对话。
+
+**已知偏差**：测试里跨 vm realm 的 `Error` 拿不到 message，失败终态的 `reason` 只能是字符串断言，真机上是完整错误文案。
+
+**验证**：`agent-gate` PASS（1245 单测）；`build-hsp-hap` 4/4。

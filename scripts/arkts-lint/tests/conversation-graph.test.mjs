@@ -205,6 +205,56 @@ test('取消：token 抛错时终态为 cancelled', async () => {
   assert.ok(state.events.some((e) => e.type === 'error' || e.type === 'terminate'));
 });
 
+// ── I. run 事件 ───────────────────────────────────────────
+
+function recordingSink() {
+  const events = [];
+  return {
+    events,
+    sink: {
+      async emit(runId, event) { events.push({ runId, kind: event.kind, payload: event.payloadJson }); },
+      async settle() {},
+    },
+  };
+}
+
+test('run 事件：一次文本对话写出 start / step / terminal', async () => {
+  const recorder = recordingSink();
+  const { workflow } = createWorkflow({ ports: { runEvents: recorder.sink } });
+  await workflow.run(TEXT_COMPLETE, createRunRef());
+
+  const kinds = recorder.events.map((e) => e.kind);
+  assert.equal(kinds[0], 'conversation.start');
+  assert.equal(kinds[kinds.length - 1], 'conversation.terminal');
+  assert.ok(kinds.filter((k) => k === 'conversation.step').length >= 2, '应记录每一步');
+  const start = JSON.parse(recorder.events[0].payload);
+  assert.equal(start.requestKind, 'text');
+  const terminal = JSON.parse(recorder.events[recorder.events.length - 1].payload);
+  assert.equal(terminal.outcome, 'completed');
+});
+
+test('run 事件：模型失败时终态记为 failed，且不影响抛错', async () => {
+  const recorder = recordingSink();
+  const { workflow } = createWorkflow({
+    ports: {
+      runEvents: recorder.sink,
+      reply: { complete: async () => { throw new Error('MODEL_DOWN'); } },
+    },
+  });
+  await assert.rejects(() => workflow.run(TEXT_COMPLETE, createRunRef()));
+  const terminal = JSON.parse(recorder.events[recorder.events.length - 1].payload);
+  assert.equal(terminal.outcome, 'failed');
+  // 跨 vm realm 的 Error 拿不到 message，这里只断言 reason 字段存在且为字符串
+  assert.equal(typeof terminal.reason, 'string');
+});
+
+test('run 事件：sink 抛错不阻塞对话', async () => {
+  const failing = { async emit() { throw new Error('SINK_DOWN'); }, async settle() {} };
+  const { workflow, state } = createWorkflow({ ports: { runEvents: failing } });
+  await workflow.run(TEXT_COMPLETE, createRunRef());
+  assert.ok(state.events.some((e) => e.type === 'add'), '对话应正常完成');
+});
+
 // ── H. 端口契约（源码级） ─────────────────────────────────
 
 test('契约：工作流不直接构造 entry 服务，也不依赖平台 Kit', () => {

@@ -40,6 +40,7 @@ import { ModelRouter } from '../chat/ModelRouter';
 import type { RoutedReply } from '../chat/ModelRouter';
 import { ConversationToolReplyFlags } from './ConversationToolReplyFlags';
 import type { IConversationDraftServicePort, IConversationMemoryServicePort } from './ConversationServicePorts';
+import type { RunEventSink } from '../core/dispatch/RunEventSink';
 
 const replyPortLog: Logger = new Logger('ConversationReplyPort');
 
@@ -256,6 +257,8 @@ export class ConversationWorkflowPorts {
   /** 证据 / 复习实现同样由组合根注入（entry 持有 RDB 与 RAG）。 */
   readonly evidence?: NoteEvidencePort;
   readonly review?: NoteReviewPort;
+  /** run 事件 sink：对话链路与笔记写入共用同一套 run_store / run_event。 */
+  readonly runEvents?: RunEventSink;
 
   constructor(
     intent: IConversationIntentPort,
@@ -267,6 +270,7 @@ export class ConversationWorkflowPorts {
     memoryService?: IConversationMemoryServicePort,
     evidence?: NoteEvidencePort,
     review?: NoteReviewPort,
+    runEvents?: RunEventSink,
   ) {
     this.intent = intent;
     this.reply = reply;
@@ -277,6 +281,7 @@ export class ConversationWorkflowPorts {
     this.memoryService = memoryService;
     this.evidence = evidence;
     this.review = review;
+    this.runEvents = runEvents;
   }
 }
 
@@ -289,6 +294,7 @@ export interface ConversationWorkflowPortsInput {
   evidence: NoteEvidencePort;
   review: NoteReviewPort;
   noteRoute?: IConversationNoteRoutePort;
+  runEvents?: RunEventSink;
 }
 
 export class ConversationWorkflowPortsFactory {
@@ -316,6 +322,7 @@ export class ConversationWorkflowPortsFactory {
       input.memoryService,
       input.evidence,
       input.review,
+      input.runEvents,
     );
   }
 }
