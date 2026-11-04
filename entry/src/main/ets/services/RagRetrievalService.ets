@@ -16,7 +16,7 @@
  *   NoteEvidenceService.build(query) → search(query, topK) → RagHit[] → join knowledge_unit → NoteEvidenceCitation
  */
 import { relationalStore } from '@kit.ArkData';
-import { planRagQuery, RagQueryPlan } from 'common';
+import { planRagQuery, RagQueryPlan } from './RagQueryPlan';
 
 const PROBE_FTS_TABLE: string = 'note_fts';
 const PROBE_SEED_TEXT: string = '函数在一点的连续性 极限 连续函数';

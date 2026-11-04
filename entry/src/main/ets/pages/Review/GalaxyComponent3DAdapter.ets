@@ -18,12 +18,13 @@ import {
 import { TEXT, TEXT_2, BG_CARD, BORDER, R_MD, S_2 } from 'common'
 import { AppIcon } from '../../shared/atoms/AppIcon'
 import { findGalaxyTemplate, rotateGalaxyPoint, galaxyEdgeRotation, projectGalaxyPoint, galaxyRaycastPosition } from './GalaxyNativeScene'
-import type { GalaxyGraphEdge, GalaxyGraphNode, GalaxyGraphSnapshot } from 'common'
+
 import {
   GalaxyNoopCallbacks,
   GalaxyPerformanceSample,
   GalaxyRendererCallbacks,
 } from './GalaxyRendererContracts'
+import type { GalaxyGraphEdge, GalaxyGraphNode, GalaxyGraphSnapshot } from './GalaxyGraphProjection';
 
 const CAMERA_DEFAULT_DISTANCE: number = 120
 const CAMERA_MIN_DISTANCE: number = 38

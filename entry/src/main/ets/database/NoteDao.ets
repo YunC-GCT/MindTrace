@@ -14,7 +14,7 @@
 import { relationalStore } from '@kit.ArkData';
 import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult } from 'common';
 import { NoteFtsIndex } from './NoteFtsIndex';
-import { DedupeCandidate, findDuplicate } from 'common';
+
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitRevision,
@@ -23,6 +23,7 @@ import {
   KnowledgeUnitWriteRepository,
   NoteGenerationBaseProvider,
 } from 'common';
+import { DedupeCandidate, findDuplicate } from 'agents';
 
 interface NoteCommitLookup {
   noteId: string;

@@ -1,7 +1,8 @@
 // NoteTools.test.ets — P1 只读工具行为测试 (spec 014 §4, Hypium, on-device)
 // 前提: common 单测环境不 init RDB → DatabaseHelper.getStore() 为 null → 工具走 'store not ready' 分支
 import { describe, it, expect } from '@ohos/hypium';
-import { ToolRegistry, createReadOnlyNoteTools } from '../main/ets/Index';
+import { ToolRegistry } from '../main/ets/Index';
+import { createReadOnlyNoteTools } from '../main/ets/tools/NoteQueryTools';
 import type { AgentTool, ToolResult } from '../main/ets/Index';
 
 function registeredRegistry(): ToolRegistry {

@@ -71,7 +71,7 @@ import { OcrService } from '../OcrService';
 import { SubjectVocabularyService } from '../SubjectVocabularyService';
 import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 import { NoteGenerationRepositoryFactory } from '../NoteGenerationRepositoryFactory';
-import { normalizeForDedupe } from 'common';
+
 import { AgentMemoryService } from '../AgentMemoryService';
 import { NoteGenerationContextBuilder } from 'agents';
 import { CaptureTiming } from './CaptureTiming';
@@ -81,7 +81,7 @@ import { DraftCommitService } from './DraftCommitService';
 import { DraftPipeline } from './DraftPipeline';
 import { ClarificationPipeline } from './ClarificationPipeline';
 import { CancellationToken } from 'common';
-
+import { normalizeForDedupe } from 'agents';
 
 const log: Logger = new Logger('CapturePipeline');
 

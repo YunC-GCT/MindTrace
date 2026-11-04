@@ -95,3 +95,24 @@ export { NoteEvidenceService, NoteEvidenceStreamFilter } from './evidence/NoteEv
 
 // 笔记生成上下文预处理（2026-11-03 由 entry/services 上移）
 export { NoteGenerationContextBuilder } from './note/NoteGenerationContextBuilder';
+
+// 笔记生成与校验的领域规则（2026-11-04 由 entry/services 上移）
+export { NoteContextValidityReviewer } from './note/NoteContextValidityReviewer';
+export { WritePathValidator } from './note/WritePathValidator';
+export {
+  groupExactDuplicates, groupNearDuplicates, normalizeKey, normalizeLegacySubject,
+} from './note/LegacyNoteNormalizer';
+export type {
+  LegacyDedupeEntry, LegacyDuplicateGroup, LegacySubjectInput,
+} from './note/LegacyNoteNormalizer';
+export { ModelSelector } from './chat/ModelSelector';
+export type { ModelAvailability } from './chat/ModelSelector';
+
+// 笔记判重与回复排版规则（2026-11-04 由 common/utils 回迁）
+export {
+  bigramSimilarity, findDuplicate, isDuplicateOf, normalizeForDedupe,
+} from './note/NoteDedupe';
+export type { DedupeCandidate } from './note/NoteDedupe';
+export { buildMathStyleRules } from './chat/ReplyStyleRules';
+export type { ReplyStyle } from './chat/ReplyStyleRules';
+export { streamErrorText } from './chat/StreamErrorText';

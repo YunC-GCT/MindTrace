@@ -4,13 +4,9 @@
 
 import { relationalStore } from '@kit.ArkData'
 import {
-  DatabaseHelper,
-  KnowledgeRelation,
-  KnowledgeUnit,
-  NoteItem,
-  subjectColor,
-  typeColor,
-} from "common"
+  DatabaseHelper, KnowledgeRelation, KnowledgeUnit, NoteItem,
+} from 'common';
+import { subjectColor, typeColor } from '../utils/NoteTaxonomy';
 import { ChapterOrbit, GalaxyLink, GalaxyLinkType, PlanetNode, SubjectSystem } from 'common'
 import { KnowledgeRelationDao } from "../database/KnowledgeRelationDao"
 import { NoteDao } from "../database/NoteDao"

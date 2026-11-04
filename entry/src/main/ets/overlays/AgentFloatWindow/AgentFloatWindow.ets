@@ -21,7 +21,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import window from '@ohos.window';
 import { AgentChatService, AgentChatCallbacks } from '../../services/AgentChatService';
 import { getChatFilesDirSeam } from '../../services/ChatFilesDirSeam';
-import { ModelSelector } from '../../services/ModelSelector';
+import { ModelSelector } from '../../services/ModelCatalog';
 import { SessionCreator } from '../../services/SessionCreator';
 import { CameraKitLauncher } from '../../services/CameraKitLauncher';
 import { AlbumPickerLauncher } from '../../services/AlbumPickerLauncher';

@@ -158,6 +158,8 @@
 | UI 状态、页面、ability、A2A 协议 | `entry` |
 | 运行时调度（`WriteJobScheduler`） | `entry`（UI 进程单执行者） |
 
+**`common` 的准入比 `agents` 更严**：只放「≥2 个模块或 ≥2 个进程真实使用，且不含业务阈值 / 用户文案 / 配色渲染」的东西；数据访问实现（RDB 适配器、具体工具）留在 common 内部但**不进 barrel**，消费方按文件深路径引用。单模块使用的业务规则一律回它所属的模块。
+
 **`entry` 不是业务层，是壳 + 组合根**：页面、ability、装配、设备能力。业务规则没理由留在 `entry`；留在那里的唯一合法理由是它必须碰 entry 的 DAO 或 entry-only Kit，而那种情况应该先问「能不能用 `common/ports` 反转」。
 
 **共享原子件**: `entry/src/main/ets/shared/atoms/` 与 `shared/molecules/` (spec 012)

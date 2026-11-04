@@ -9,7 +9,7 @@ import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const taxonomy = loadNoteReviewEtsModule('agents/src/main/ets/agents/KnowledgeTaxonomy.ets');
-const mod = loadNoteReviewEtsModule('entry/src/main/ets/services/LegacyNoteNormalizer.ets', {
+const mod = loadNoteReviewEtsModule('agents/src/main/ets/note/LegacyNoteNormalizer.ets', {
   mocks: { agents: taxonomy },
 });
 const normalizer = mod;

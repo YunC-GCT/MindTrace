@@ -1,7 +1,7 @@
 /**
  * NoteContextValidityReviewer.ets - semantic review for ambiguous note context fragments.
  *
- * Path: entry/src/main/ets/services/NoteContextValidityReviewer.ets
+ * Path: agents/src/main/ets/note/NoteContextValidityReviewer.ets
  * Responsibility: Ask the configured model only about fragments that deterministic
  * cleanup could not assign to a topic, while keeping source text and IDs authoritative.
  */
@@ -18,7 +18,7 @@ import type {
   SourceFragment,
 } from 'common';
 import { NoteGenerationContextResult } from 'common';
-import { NoteGenerationContextBuilder } from 'agents';
+import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
 
 interface ReviewedFragment {
   sourceId: string;

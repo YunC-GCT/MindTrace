@@ -706,3 +706,76 @@ Token 事件只记数量与耗时，**不落正文**（沿用日志脱敏约束�
 | 笔记 / 计划的数据归属 | RDB 与平台实现归 entry，接口在 common，写操作经审批 + 幂等 Port | 建议采纳，需与「App Store 归谁」一并写进 §17.1；只读实现归属已由 ADR-0021 定为 common |
 | Video 是否端侧只产脚本 | 暂缓 mp4 renderer，先定「只产脚本」与产物隐私 / 存储 / 取消 | **已拍板：只产脚本，不做 mp4**（ADR-0022） |
 | ReviewAgent 是否负责出题评分 | 不要直接展开 `study_plan`，先定待办 vs 间隔复习 | **已拍板：新建 `review_item` / `review_log`，`study_plan` 保持待办**（ADR-0022） |
+
+---
+
+## 18. 当前实现（2026-11-04）
+
+> §1–§17 记录的是 v5 / v7 的**设计态**。本节记录**代码实际落点**；两者冲突时以本节为准。
+
+### 18.1 模块职责
+
+| 模块 | 文件数（`.ets`） | 职责 | 边界 |
+|---|---|---|---|
+| `common`（HSP） | 83 | 契约、图内核、跨模块共享的纯规则 | 准入最严，见 §18.3 |
+| `agents`（HSP） | 71 | 编排与业务规则 | 只依赖 `common`，不 import `entry` |
+| `entry`（HAP） | `services/` 103 | 组合根、设备适配、尚未端口化的实现 | 依赖 `agents` + `common` |
+| `skill` / `cardservice`（HAP） | — | 小艺 skill、桌面卡片 | 只依赖 `common` |
+
+依赖方向固定：`entry / skill / cardservice → agents → common`。
+
+### 18.2 目录落点
+
+**common —— 契约与内核**
+
+| 目录 | 文件 | 内容 |
+|---|---|---|
+| `ports/` | 18 | `NoteReadPort` / `NoteWritePort` / `NoteSearchPort` / `NoteEvidencePort` / `NoteEvidenceDataPorts` / `NoteReviewPort` / `ReviewPorts` / `RunStore` / `ArtifactStorePort` / `StudyPlanPorts` / `DebugFaultPort`，以及实现目录 `impl/`（不进 barrel） |
+| `models/` | 14 | 命令与终态、生成、证据、复习、记忆、会话快照、图谱、星系、笔记类型词表 |
+| `llm/` | 16 | `LlmClient` / `LlmGuard` / `LlmConfig` / 供应商目录 / 模型解析 / 本地模型（懒加载 Kit） |
+| `workflow/` | 8 | `StateGraph` / `RunContext` / `RunBudget` / `RunErrors` / tool-calling |
+| `utils/` | 8 | `ConversationIdentity` / `NoteRetrievalQuery` / `LatexRiskNormalizer` / `logger` / `uuid` 等 |
+| `tools/` | 4 | `ToolCatalog` / `ToolRegistry` / `ToolLoop` / `NoteQueryTools`（实现不进 barrel） |
+| `kit/` `render/` `ocr/` `security/` `capability/` `data/` `constants/` | 13 | 能力门面契约、MM-MD 协议、OCR 契约、`ApiKeyVault`、能力探测、Mock 数据、设计令牌 |
+
+**agents —— 编排与业务规则**
+
+| 目录 | 文件 | 内容 |
+|---|---|---|
+| `conversation/` | 14 | 对话图：`ConversationWorkflow`（872 行）+ `Review/Note/Reply` 三个节点处理器 + `NodeHost` 宿主接口 + 端口、契约、格式化、运行注册表 |
+| `agents/` | 13 | 子 agent 与生成能力：`KnowledgeModel` / `TypeClassifier` / `PromptBuilder` / `TruthCheckService` / 草稿合成器 |
+| `graph/` | 10 | `CaptureGraph` + 五个节点 + 问题切分/合并 |
+| `core/` | 8 | `CommandExecutor` / `CommandRouter` / `dispatch/` |
+| `workflows/` | 5 | 四条笔记 workflow（capture / generation / regenerate / prepared）+ `WorkflowContext` |
+| `chat/` | 8 | 意图分类与回复：`IntentClassifier` / `ReplyService` / `ModelRouter` / `ModelSelector` / `AppIntentRouter` / `AppIntentRules` / `ReplyStyleRules` / `StreamErrorText` |
+| `note/` | 5 | `NoteGenerationContextBuilder` / `NoteContextValidityReviewer` / `WritePathValidator` / `LegacyNoteNormalizer` / `NoteDedupe` |
+| `evidence/` `review/` `mcp/` `models/` | 7 | 证据服务、复习计划、OCR 工具、编排内部模型 |
+
+**entry/services —— 组合根与适配**
+
+按角色分四类：组合根（`ConversationPortsProduction` / `EvidenceComposition` / `NoteReviewEvidenceProviders`）、设备与数据实现（`CoreVisionOcrRecognizer` / `RagNoteEvidenceSearch` / `RdbNoteGraph` / `RagRetrievalService` / `WriteJobScheduler`）、产品服务（笔记、复习、检索、导出）、UI 门面（`ModelCatalog` / `AgentChatContracts`）。
+
+### 18.3 三条硬规则
+
+1. **common 准入**：只放「≥2 个模块或 ≥2 个进程真实使用，且不含业务阈值 / 用户文案 / 配色渲染」的东西。单模块使用的业务规则回它所属的模块。
+2. **barrel 只导出契约**：`common/Index.ets` 不导出数据访问实现（`ports/impl/*`、`tools/NoteQueryTools`）；消费方按文件深路径引用，避免把 RDB 与 ArkData 带进每个 import 方。
+3. **数据访问端口化**：任何要上移到 `agents` 的逻辑，数据面必须先在 `common/ports` 定义契约，实现留 `entry`（先例：检索 / 图谱双端口、证据 provider、草稿与记忆服务端口）。
+
+Kit 的准入另按 [spec 033](./specs/033-process-boundaries.md) 的进程可达性矩阵判定，与模块名无关。
+
+### 18.4 本轮迁移记录（2026-11-03 → 11-04）
+
+| 批次 | 内容 |
+|---|---|
+| 模型下沉 | 六个领域 DTO、星系模型、笔记类型词表 → `common/models` |
+| 纯规则上移 | `NoteRetrievalQuery` / `ConversationIdentity` 等 → `common/utils`；`ReplyStyleRules` / `StreamErrorText` / `NoteDedupe` 定稿落 `agents` |
+| 对话链路 | 图、四个处理器目录从 `entry/workflows` 整体迁入 `agents/conversation`，`entry/workflows` 目录删除 |
+| 证据 / 复习 / 生成 | `NoteEvidenceService` / `NoteReviewService` / `NoteGenerationContextBuilder` 上移，数据面经端口注入 |
+| 边界收口 | `ports/impl` 与 `NoteQueryTools` 退出 barrel；`NoteTaxonomy` 拆成词表（common）与取色（entry） |
+
+### 18.5 验证
+
+```bash
+node scripts/agent-gate/index.mjs        # RESULT: PASS（1242 单测）
+node scripts/build-hsp-hap.mjs           # 4 个产物，BUILD SUCCESSFUL
+```

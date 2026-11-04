@@ -41,12 +41,12 @@ const COMMON_MODEL_FILES = [
   'common/src/main/ets/render/ContentExcerptBuilder.ets',
   'common/src/main/ets/models/GalaxyModels.ets',
   'common/src/main/ets/utils/NoteRetrievalQuery.ets',
-  'common/src/main/ets/utils/GalaxyGraphProjection.ets',
-  'common/src/main/ets/utils/StreamErrorText.ets',
+  'entry/src/main/ets/pages/Review/GalaxyGraphProjection.ets',
+  'agents/src/main/ets/chat/StreamErrorText.ets',
   'common/src/main/ets/utils/ConversationIdentity.ets',
-  'common/src/main/ets/utils/NoteDedupe.ets',
-  'common/src/main/ets/utils/RagQueryPlan.ets',
-  'common/src/main/ets/utils/ReplyStyleRules.ets',
+  'agents/src/main/ets/note/NoteDedupe.ets',
+  'entry/src/main/ets/services/RagQueryPlan.ets',
+  'agents/src/main/ets/chat/ReplyStyleRules.ets',
 ];
 
 // 测试可以用 options.mocks.common 覆盖；没覆盖到的符号回落到真实纯模型文件。

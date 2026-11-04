@@ -27,7 +27,7 @@ import type {
   CancellationToken,
 } from 'common';
 import { IntentClassifier, ReplyContext } from './IntentClassifier';
-import type { ReplyStyle } from 'common';
+import type { ReplyStyle } from './ReplyStyleRules';
 import type { DebugFault, DebugFaultSource } from 'common';
 
 const replyLog: Logger = new Logger('ReplyService');

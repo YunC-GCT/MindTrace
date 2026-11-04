@@ -14,13 +14,13 @@ import {
   ChatMessageWriteRequest,
   NoteGenerationContextResult,
 } from 'common';
-import { WritePathValidator } from './WritePathValidator';
+import { WritePathValidator } from 'agents';
 import { SessionIdPolicy } from 'common';
 import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
 import { getChatHistoryClearControl } from './ChatHistoryClearControl';
 import type { ChatProjectionWriter } from 'common';
 import { NoteGenerationContextBuilder } from 'agents';
-import { NoteContextValidityReviewer } from './NoteContextValidityReviewer';
+import { NoteContextValidityReviewer } from 'agents';
 
 const RECENT_REPLY_LIMIT: number = 28;
 const RECENT_NOTE_LIMIT: number = 100;

@@ -17,13 +17,9 @@
  */
 
 import {
-  BG_CARD, BORDER, GLASS_8, TEXT, TEXT_2, TEXT_3, TEXT_4,
-  S_1, S_2, S_3, S_4,
-  R_MD, R_LG,
-  F_XS, F_SM, F_MD,
-  W_BOLD, W_SEMIBOLD,
-  glassSurfaceColor,
-} from "common"
+  BG_CARD, BORDER, GLASS_8, TEXT, TEXT_2, TEXT_3, TEXT_4, S_1, S_2, S_3, S_4, R_MD, R_LG, F_XS, F_SM, F_MD, W_BOLD, W_SEMIBOLD,
+} from 'common';
+import { glassSurfaceColor } from '../../utils/NoteTaxonomy';
 import { MathPreviewText } from "../../shared/atoms/MathPreviewText"
 
 function subjectMark(subject: string): string {

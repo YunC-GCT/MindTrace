@@ -24,8 +24,8 @@ import {
   SourceFragment,
   StreamEvent,
   sourceFingerprint,
-  streamErrorText,
 } from 'common';
+import { streamErrorText } from '../chat/StreamErrorText';
 import type { CancellationToken } from 'common';
 import type { ReplyContext } from '../chat/IntentClassifier';
 import type { StreamReplyResult } from '../chat/ReplyService';

@@ -15,7 +15,9 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry, NoteReadPortAdapter, RdbNoteReadStore } from 'common';
+import { LlmConfig, OcrConfig, DatabaseHelper, OcrRecognizerRegistry, ImageSearchIndexRegistry } from 'common';
+import { NoteReadPortAdapter } from 'common/src/main/ets/ports/impl/NoteReadPortAdapter';
+import { RdbNoteReadStore } from 'common/src/main/ets/ports/impl/RdbNoteReadStore';
 import type { KnowledgeUnit, NoteOutcome } from 'common';
 import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';

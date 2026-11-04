@@ -1,7 +1,7 @@
 /**
  * GalaxyGraphProjection.ets — 知识星系的纯数据投影
  *
- * 路径: common/src/main/ets/utils/GalaxyGraphProjection.ets
+ * 路径: entry/src/main/ets/pages/Review/GalaxyGraphProjection.ets
  * 职责: 把学科系模型投影成渲染器 DTO（节点 + 边），过滤错题与无 id 节点，去重
  * 依赖: ../models/GalaxyModels
  *
@@ -10,7 +10,7 @@
  *
  * 约束: 不碰 ArkUI、渲染器状态或 Kit；可 Node 单测
  */
-import type { GalaxyLink, PlanetNode, SubjectSystem } from '../models/GalaxyModels'
+import type { GalaxyLink, PlanetNode, SubjectSystem } from 'common'
 
 const WRONG_NOTE_TYPE: string = '错题'
 

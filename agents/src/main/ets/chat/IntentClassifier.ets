@@ -16,8 +16,8 @@
 import { ChatMessage, JSON_ONLY_RULES, LATEX_GENERATION_RULES, LlmConfig, LlmGuard } from 'common';
 import type { LlmGuardValidationResult } from 'common';
 import type { CancellationToken } from 'common';
-import { buildMathStyleRules } from 'common';
-import type { ReplyStyle } from 'common';
+import { buildMathStyleRules } from './ReplyStyleRules';
+import type { ReplyStyle } from './ReplyStyleRules';
 
 export type TextIntent = 'note_generation' | 'chat';
 export type ReplyKind = 'chat' | 'image_recognition';

@@ -43,7 +43,7 @@ import {
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
 import { applyEvidenceToAnswer, evidenceFooter, matchesFallbackShape } from './ConversationFormatting';
 import type { StreamReplyResult } from '../chat/ReplyService';
-import { streamErrorText } from 'common';
+import { streamErrorText } from '../chat/StreamErrorText';
 import {
   NoteDraftReadyEvent,
   NoteContextClarification,

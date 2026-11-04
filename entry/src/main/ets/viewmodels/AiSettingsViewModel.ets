@@ -14,8 +14,8 @@ import type {
 } from "common"
 import { OcrTool } from "agents"
 import type { OcrRecognitionResult } from "agents"
-import { ModelSelector } from "../services/ModelSelector"
-import type { ModelAvailability } from "../services/ModelSelector"
+import { ModelSelector } from "../services/ModelCatalog"
+import type { ModelAvailability } from "../services/ModelCatalog"
 
 // PR2-T2 P3: 用户添加的自定义 vendor 列表
 // PR2-T2 ticket #83 L1 (2026-09-08): 不用 extends CustomVendorConfig,直接声明全部字段

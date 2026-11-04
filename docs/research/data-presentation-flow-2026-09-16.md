@@ -159,7 +159,7 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
   - **KG 关联**: `prerequisites` / `related` / `embedding`
   - **用户元数据**: `userId` / `version`(乐观锁)
 - 数据库列定义(`common/src/main/ets/DatabaseHelper.ets:16-40`):22 列,`embedding` / `tags` / `prerequisites` / `related` 全部 `TEXT DEFAULT '[]'`(JSON 字符串)。
-- 类型边界: `category` 枚举在 `NoteTaxonomy` (`common/src/main/ets/data/NoteTaxonomy.ets`) 中规定为 `概念/定理/公式/证明题/计算题`(AGENTS.md 标记的5 类),但写入端 `KnowledgeModel.toKnowledgeUnit` 仅作 `category: ext.type` 透传,**未做枚举校验**。
+- 类型边界: `category` 枚举在 `NoteTaxonomy` (`entry/src/main/ets/utils/NoteTaxonomy.ets`) 中规定为 `概念/定理/公式/证明题/计算题`(AGENTS.md 标记的5 类),但写入端 `KnowledgeModel.toKnowledgeUnit` 仅作 `category: ext.type` 透传,**未做枚举校验**。
 
 ---
 
@@ -326,7 +326,7 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 | 4 | **`@State` 初始空 vs `aboutToAppear` 异步拉的竞态** | `ReviewGraphView.onNotesVersionChange` 触发 `reloadGalaxy(true)` 后,**`stopRotation()`** 在 `reloadGalaxy` 内的 `.then` 才调(`ReviewGraphView.ets:158-162`)。用户在动画期间切 Tab / 改 notesVersion,`this.timerId !== -1` 但 `this.selectedNote` 已变,定时器写入状态可能与新一轮 reload 冲突。 | `entry/src/main/ets/pages/Review/ReviewGraphView.ets:151-175, 214-228` |
 | 5 | **`DatabaseHelper.init` 首次并发不安全** | `if (DatabaseHelper.store !== null) return store;` 短路只对**已成功**的 store 有效,**首次并发**(比如 HomePage.onPageShow 和 KnowledgeGalaxyViewModel.load 同时触发 init)会**两次调 `getRdbStore` 回调**,各自跑 `ensureSchema`(`DatabaseHelper.ets:248-265`)。HarmonyOS RDB 文档未明确禁止,但 `ensureSchema` 中的 `ALTER TABLE` 与 `PRAGMA table_info` **不是事务**,并发会撞车。 | `common/src/main/ets/DatabaseHelper.ets:247-265`;多个并发调用点见 §4.3 |
 | 6 | **`AgentMemoryService.safe*` 系列静默失败** | `ConversationWorkflow` 中 `safeSaveUserMessage` / `safeSaveAssistantMessage` / `safeSaveOcrResult` 全是 `console.warn`(`ConversationWorkflow.ets:547-617`)。如果保存失败,**聊天记录会丢,用户无感知**。对话上下文由这个 store 拼,如果丢消息会让 LLM 丢失 history。 | `agents/src/main/ets/conversation/ConversationWorkflow.ets:547-617`;底层 `entry/src/main/ets/services/AgentMemoryService.ets:234-252` |
-| 7 | **`category` 枚举不校验** | `KnowledgeUnit.category` 应是 5 类枚举(`common/src/main/ets/data/NoteTaxonomy.ets`),但 `WritePathValidator` 只校验 `id/title/content/subject/category` 非空,**不查枚举**。AI 返回未知 category 时会落库,后续 `typeColor(note.type)` / `subjectColor(note.subject)` 拿不到颜色,UI 显示空色或默认色。 | `entry/src/main/ets/services/WritePathValidator.ets:19-25`;`common/src/main/ets/models/CommonTypes.ets:64`(`category: string` 而非枚举) |
+| 7 | **`category` 枚举不校验** | `KnowledgeUnit.category` 应是 5 类枚举(`entry/src/main/ets/utils/NoteTaxonomy.ets`),但 `WritePathValidator` 只校验 `id/title/content/subject/category` 非空,**不查枚举**。AI 返回未知 category 时会落库,后续 `typeColor(note.type)` / `subjectColor(note.subject)` 拿不到颜色,UI 显示空色或默认色。 | `agents/src/main/ets/note/WritePathValidator.ets:19-25`;`common/src/main/ets/models/CommonTypes.ets:64`(`category: string` 而非枚举) |
 
 ### 中优先(资源/状态一致性)
 

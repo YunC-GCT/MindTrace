@@ -1,15 +1,15 @@
 /**
  * LegacyNoteNormalizer.ets — 历史笔记清理的纯函数（学科推断 / 重复分组）
  *
- * 路径: entry/src/main/ets/services/LegacyNoteNormalizer.ets
+ * 路径: agents/src/main/ets/note/LegacyNoteNormalizer.ets
  * 职责: 用于一次性/可重复执行的旧数据清理：
  *       1) 历史笔记 subject 不在标准枚举时，先按别名归一，再按标题/章节/正文关键词推断，
  *          都失败才落「其他」；
  *       2) 把笔记按「归一化标题 + 归一化正文」分组，找出可安全删除的重复项（只删完全一致的）。
  * 依赖: agents 的 KnowledgeTaxonomy（别名归一/CANONICAL_SUBJECTS），无 IO。
  */
-import { CANONICAL_SUBJECTS, normalizeSubjectName } from 'agents';
-import { DedupeCandidate, isDuplicateOf } from 'common';
+import { CANONICAL_SUBJECTS, normalizeSubjectName } from '../agents/KnowledgeTaxonomy';
+import { DedupeCandidate, isDuplicateOf } from './NoteDedupe';
 
 const OTHER_SUBJECT: string = '其他';
 const CONTENT_EXCERPT_LIMIT: number = 240;

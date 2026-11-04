@@ -10,7 +10,7 @@ import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
-const planModule = loadNoteReviewEtsModule('common/src/main/ets/utils/RagQueryPlan.ets');
+const planModule = loadNoteReviewEtsModule('entry/src/main/ets/services/RagQueryPlan.ets');
 const planRagQuery = planModule.planRagQuery;
 
 test('queries with 3+ characters use FTS5 MATCH with rank ordering', () => {

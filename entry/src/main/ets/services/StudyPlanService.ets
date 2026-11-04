@@ -18,7 +18,7 @@
 import { LlmClient, StudyPlanItem } from "common"
 import type { ChatMessage, LlmCallResult } from "common"
 import { StudyPlanDao } from "../database/StudyPlanDao"
-import { WritePathValidator } from "./WritePathValidator"
+import { WritePathValidator } from "agents"
 
 export class StudyPlanService {
   static async generateAndPersist(knownTitles: string[], dao: StudyPlanDao | null): Promise<StudyPlanItem[]> {

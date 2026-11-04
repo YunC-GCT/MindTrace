@@ -1,7 +1,7 @@
 /**
  * WritePathValidator.ets — 写入路径校验
  *
- * 路径: entry/src/main/ets/services/WritePathValidator.ets
+ * 路径: agents/src/main/ets/note/WritePathValidator.ets
  * 职责: 唯一负责校验进入 RDB 的 KnowledgeUnit / StudyPlanItem / ChatMessageRecord / AgentMemoryRecord
  * 依赖: common KnowledgeUnit, StudyPlanItem, AgentMemoryModels
  *

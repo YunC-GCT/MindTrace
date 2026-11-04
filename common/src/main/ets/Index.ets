@@ -30,21 +30,15 @@ export {
   DUR_INSTANT, DUR_FAST, DUR_BASE, DUR_SLOW, DUR_SLOWER, DUR_SLOWEST, DUR_BREATH,
 } from './constants/ColorTokens';
 
+// ========== 笔记类型词表（agents 与 entry 共用） ==========
+export {
+  NOTE_TYPE_ALL_KEY, NOTE_TYPE_KEYS, isKnownNoteType, noteTypeFilterKeys, normalizeNoteType,
+} from './models/NoteTypeVocabulary';
+
 // ========== Mock 笔记数据 (UI 开发期) ==========
 export {
   NoteItem, NOTES, stripMD, recentDate,
 } from './data/MockNotes';
-
-// ========== 笔记分类与取色 ==========
-export {
-  NOTE_TYPE_ALL_KEY,
-  NOTE_TYPE_KEYS,
-  noteTypeFilterKeys,
-  typeChar, typeColor, typeGlassColor,
-  subjectColor, subjectColorByIndex, subjectGlassColor, subjectBorderColor,
-  glassToneColor, glassSurfaceColor, glassHighlightColor, glassShadowColor, borderToneColor,
-  normalizeNoteType, isKnownNoteType,
-} from './data/NoteTaxonomy';
 
 // ========== Agent 共享类型 (Dispatcher 侧) ==========
 export {
@@ -339,7 +333,6 @@ export { RunBudget, createRunBudget } from './workflow/RunBudget';
 export { CancellationError, DeadlineExceededError, isCancellationError, isDeadlineExceededError } from './workflow/RunErrors';
 export { RunContext, createRootRunContext, createChildRunContext } from './workflow/RunContext';
 export type { ToolLoopOptions } from './workflow/tool-calling/ToolCallingState';
-export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools } from './tools/NoteQueryTools';
 
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
 //   OcrConfig:  单例, preferences 持久化 endpoint + enabled, 真机部署改 IP
@@ -437,12 +430,9 @@ export type {
   NoteSummary,
 } from './ports/NoteReadPort';
 // 只读实现跨 HAP 共享（ADR-0021）；写实现留在 entry，不经本 barrel 导出。
-export { NoteReadPortAdapter } from './ports/impl/NoteReadPortAdapter';
-export { RdbNoteReadStore } from './ports/impl/RdbNoteReadStore';
 // 检索端口（ADR-0021）：正文/标签/全文命中归这里，读端口的 search 只匹配元数据。
 export { NOTE_SEARCH_DEFAULT_TOP_K, NOTE_SEARCH_MAX_TOP_K } from './ports/NoteSearchPort';
 export type { NoteSearchHit, NoteSearchPort, NoteSearchQuery } from './ports/NoteSearchPort';
-export { RdbNoteSearchAdapter } from './ports/impl/RdbNoteSearchAdapter';
 // 复习读端口（ADR-0022 / #238）：只读投影，SM-2 属 review.plan 工具。
 export {
   ReviewPortError,
@@ -452,8 +442,6 @@ export {
   REVIEW_READ_ERROR_READ_FAILED,
 } from './ports/ReviewPorts';
 export type { ReviewItem, ReviewLogEntry, ReviewReadPort, ReviewReadStore } from './ports/ReviewPorts';
-export { ReviewReadPortAdapter } from './ports/impl/ReviewReadPortAdapter';
-export { RdbReviewReadStore } from './ports/impl/RdbReviewReadStore';
 export type { ArtifactDescriptor, ArtifactFileIo, ArtifactStorePort } from './ports/ArtifactStorePort';
 export {
   StudyPlanError,
@@ -523,16 +511,9 @@ export {
 } from './models/GalaxyModels';
 export type { GalaxyLinkType } from './models/GalaxyModels';
 
-export { projectGalaxyGraph } from './utils/GalaxyGraphProjection';
-export type {
-  GalaxyGraphEdge, GalaxyGraphEdgeType, GalaxyGraphNode, GalaxyGraphSnapshot,
-} from './utils/GalaxyGraphProjection';
-
 export { NoteRetrievalQuery } from './utils/NoteRetrievalQuery';
 
 // ========== 对话与笔记纯规则（2026-11-03 由 entry/services 上移） ==========
-export { streamErrorText } from './utils/StreamErrorText';
-
 export {
   PROFILE_GLOBAL_SCOPE_ID,
   ChatMessageIdPolicy, ConversationIdentityError, ConversationRunIdPolicy,
@@ -544,17 +525,6 @@ export type {
   ConversationIdentityErrorCode, ConversationIdentityKind,
   ConversationIdentitySource, ConversationRunRef,
 } from './utils/ConversationIdentity';
-
-export {
-  bigramSimilarity, findDuplicate, isDuplicateOf, normalizeForDedupe,
-} from './utils/NoteDedupe';
-export type { DedupeCandidate } from './utils/NoteDedupe';
-
-export { planRagQuery } from './utils/RagQueryPlan';
-export type { RagQueryPlan } from './utils/RagQueryPlan';
-
-export { buildMathStyleRules } from './utils/ReplyStyleRules';
-export type { ReplyStyle } from './utils/ReplyStyleRules';
 
 // ========== 调试故障注入端口（2026-11-03） ==========
 export type { DebugFault, DebugFaultSource } from './ports/DebugFaultPort';

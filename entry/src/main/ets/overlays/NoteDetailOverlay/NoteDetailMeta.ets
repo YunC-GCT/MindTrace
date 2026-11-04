@@ -3,23 +3,9 @@
 // ============================================================================
 
 import {
-  BG_CARD, TEXT, TEXT_2, TEXT_3, BORDER, MINT,
-  S_1, S_2, S_3, S_4, S_5,
-  R_MD, R_LG,
-  F_XS, F_SM, F_XL,
-  W_MEDIUM, W_SEMIBOLD, W_BOLD,
-  NoteItem,
-  KnowledgeUnit,
-  ContentExcerptBuilder,
-  ContentProtocol,
-  NOTE_SUMMARY_MAX_LENGTH,
-  DifficultyLevel,
-  ReviewStatus,
-  recentDate,
-  typeColor,
-  typeGlassColor,
-  glassSurfaceColor,
-} from 'common'
+  BG_CARD, TEXT, TEXT_2, TEXT_3, BORDER, MINT, S_1, S_2, S_3, S_4, S_5, R_MD, R_LG, F_XS, F_SM, F_XL, W_MEDIUM, W_SEMIBOLD, W_BOLD, NoteItem, KnowledgeUnit, ContentExcerptBuilder, ContentProtocol, NOTE_SUMMARY_MAX_LENGTH, DifficultyLevel, ReviewStatus, recentDate,
+} from 'common';
+import { typeColor, typeGlassColor, glassSurfaceColor } from '../../utils/NoteTaxonomy';
 import { MathTextRenderer } from '../../shared/atoms/MathTextRenderer'
 import { ChipTag } from './ChipTag'
 import { NoteDetailRenderMetrics } from '../../services/NoteDetailRenderMetrics'

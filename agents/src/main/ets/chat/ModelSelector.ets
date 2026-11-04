@@ -1,7 +1,7 @@
 /**
  * ModelSelector.ets — 模型选择业务
  *
- * 路径: entry/src/main/ets/services/ModelSelector.ets
+ * 路径: agents/src/main/ets/chat/ModelSelector.ets
  * 职责: 模型状态读取 + 显示名格式化 + 可用性判定(usable / degraded / 中文原因)
  * 依赖: common (LlmConfig + resolveModel + model-catalog)
  *

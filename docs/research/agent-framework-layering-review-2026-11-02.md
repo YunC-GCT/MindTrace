@@ -320,3 +320,32 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 - **依赖方向**：`pages → viewmodels → services → (agents | common)`，`agentextability → services`，`agents` 不 import entry（gate 守）。
 
 统计口径：`agents/core` 453 行 + `workflows` 1360 行 + `graph`；`entry/services` 约 100 个文件，其中 A2A 相关 10 个、写调度 9 个。
+
+## 20. 2026-11-04 common 边界收口
+
+复查发现 common 出现两类交织，按「common 只放 ≥2 模块/进程使用且无业务阈值、文案、配色」收紧：
+
+**迁出（6 个）**
+
+| 文件 | 去向 | 依据 |
+|---|---|---|
+| `utils/ReplyStyleRules` | `agents/chat` | 只有 `IntentClassifier` 使用，是回复 prompt 规则 |
+| `utils/StreamErrorText` | `agents/chat` | 只有回复链路使用 |
+| `utils/NoteDedupe` | `agents/note` | 判重阈值属业务规则 |
+| `utils/RagQueryPlan` | `entry/services` | 生成 FTS/LIKE SQL，属数据访问策略 |
+| `utils/GalaxyGraphProjection` | `entry/pages/Review` | 渲染投影，仅页面使用 |
+| `data/NoteTaxonomy` | `entry/utils` | 取色与图标是 UI 关注点 |
+
+`NoteTaxonomy` 做了拆分：类型词表（概念/定理/公式/证明题/计算题 + 归一化）留在 `common/models/NoteTypeVocabulary.ets`——`TypeClassifier` / `PromptBuilder` / `CaptureStructurer` 都在用，属真共享；配色与图标回 entry。
+
+**barrel 收口**
+
+`common/Index.ets` 不再导出 `ports/impl/*`（5 个 RDB 适配器）与 `tools/NoteQueryTools` 的四类工具；`EntryAbility`、`ohosTest`、`common/src/test` 改为深路径引用。消费方统一走 `ToolCatalog.createReadOnlyRegistry()`。
+
+**过程中的事故**
+
+批量改 import 的脚本用「最后一个 import 分号」定位插入点，在 `GalaxyComponent3DAdapter.ets` 把一行 import 插入到 `for` 循环中间，编译报 `importDeclNode.parent.statements is not iterable`。已按行号修复并复核循环体。结论：跨文件改 import 不能靠正则猜插入点，应按每个文件的 import 头边界处理。
+
+**规则同步**：`AGENTS.md` §模块归属判据 与 `docs/specs/033-process-boundaries.md` §R5 都补了 common 准入与 barrel 策略；`docs/system-architecture-layered.md` 新增 §18「当前实现」。
+
+**验证**：`agent-gate` PASS（1242 单测）；`build-hsp-hap` 4/4。

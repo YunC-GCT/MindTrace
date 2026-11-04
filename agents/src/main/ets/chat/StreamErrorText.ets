@@ -1,7 +1,7 @@
 /**
  * StreamErrorText.ets — 流式回复错误的中文文案映射
  *
- * 路径: common/src/main/ets/utils/StreamErrorText.ets
+ * 路径: agents/src/main/ets/chat/StreamErrorText.ets
  * 职责: 将 LLM 错误码/原始消息按优先级映射为用户可理解的中文提示
  * 依赖: 无 (纯函数)
  *

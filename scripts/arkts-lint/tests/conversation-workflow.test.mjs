@@ -34,7 +34,7 @@ const errorHarness = ts.transpileModule(
     + withoutImports(read('common/src/main/ets/llm/LlmErrorBodyFormatter.ets'))
     + withoutImports(read('common/src/main/ets/utils/NoteRetrievalQuery.ets'))
     + withoutImports(read('agents/src/main/ets/evidence/NoteEvidenceService.ets'))
-    + withoutImports(read('common/src/main/ets/utils/StreamErrorText.ets'))
+    + withoutImports(read('agents/src/main/ets/chat/StreamErrorText.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationFormatting.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationRunRegistry.ets'))
     + withoutImports(read('agents/src/main/ets/conversation/ConversationNodeHost.ets'))

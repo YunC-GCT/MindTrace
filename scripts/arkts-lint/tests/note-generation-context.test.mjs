@@ -145,7 +145,7 @@ test('note-generation context budget leaves output safety and protocol reserve i
 });
 
 test('NoteContextValidityReviewer only asks the model about unresolved non-OCR fragments', () => {
-  const reviewer = readRepoFile('entry/src/main/ets/services/NoteContextValidityReviewer.ets');
+  const reviewer = readRepoFile('agents/src/main/ets/note/NoteContextValidityReviewer.ets');
 
   assert.match(reviewer, /private static ambiguousFragments/);
   assert.match(reviewer, /for \(const topic of context\.topics\)/);
@@ -159,7 +159,7 @@ test('NoteContextValidityReviewer only asks the model about unresolved non-OCR f
 });
 
 test('NoteContextValidityReviewer applies semantic review without allowing source-id drift', () => {
-  const reviewer = readRepoFile('entry/src/main/ets/services/NoteContextValidityReviewer.ets');
+  const reviewer = readRepoFile('agents/src/main/ets/note/NoteContextValidityReviewer.ets');
 
   assert.match(reviewer, /const allowedIds: string\[\] = ambiguous\.map/);
   assert.match(reviewer, /allowedIds\.includes\(sourceId\)/);
@@ -353,7 +353,7 @@ test('uncertain material enters free-text clarification when semantic review is 
   assert.equal(deterministic.budgetDeferred, true);
 
   const Reviewer = loadNoteReviewEtsModule(
-    'entry/src/main/ets/services/NoteContextValidityReviewer.ets',
+    'agents/src/main/ets/note/NoteContextValidityReviewer.ets',
     {
       mocks: {
         common: {

@@ -1,7 +1,7 @@
 /**
  * ReplyStyleRules.ets — 回复通道的数学排版规则（UI 默认 markdown / A2A 纯文本）
  *
- * 路径: common/src/main/ets/utils/ReplyStyleRules.ets
+ * 路径: agents/src/main/ets/chat/ReplyStyleRules.ets
  * 职责: 为回复链路提供显式 style：markdown 返回现有 IntentClassifier 第 12–16 条公式规则原文；
  *       plain_text_math 返回禁用 $/LaTeX 的纯文本数学规则。
  * 依赖: 无（纯函数，不 import 任何 Kit）

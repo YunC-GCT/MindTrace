@@ -1,8 +1,7 @@
-// ============================================================================
+
+import type { GalaxyGraphSnapshot } from './GalaxyGraphProjection';// ============================================================================
 //  pages/Review/GalaxyRendererContracts.ets - shared 3D renderer seam
 // ============================================================================
-
-import type { GalaxyGraphSnapshot } from 'common'
 
 export class GalaxyPerformanceSample {
   renderer: string = ''

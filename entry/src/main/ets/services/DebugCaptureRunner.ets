@@ -23,7 +23,7 @@ import { RagKitProbe } from './RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
 import { A2AChatContext, A2AChatContextResult } from './A2AChatContext';
 import { AppIntentDecision, classifyAppIntentLocal } from 'agents';
-import { isDuplicateOf } from 'common';
+
 import {
   LegacyDedupeEntry,
   LegacyDuplicateGroup,
@@ -31,7 +31,7 @@ import {
   groupExactDuplicates,
   groupNearDuplicates,
   normalizeLegacySubject,
-} from './LegacyNoteNormalizer';
+} from 'agents';
 import { NoteDao } from '../database/NoteDao';
 import { RunStoreDao } from '../database/RunStoreDao';
 import { A2AInboxIngestService, IngestSummary } from './A2AInboxIngestService';
@@ -59,6 +59,7 @@ import { A2APlanStore } from './A2APlanStore';
 import type { NoteEvidenceService } from 'agents';
 import { createNoteEvidenceService } from './EvidenceComposition';
 import { NoteEvidenceContext } from 'common';
+import { isDuplicateOf } from 'agents';
 
 const TAG: string = 'E2E';
 interface AuditRow {

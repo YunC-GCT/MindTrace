@@ -16,7 +16,10 @@
  */
 
 import { relationalStore } from '@kit.ArkData'
-import { DatabaseHelper, KnowledgeUnit, NoteItem, StudyPlanItem, subjectColor } from "common"
+import {
+  DatabaseHelper, KnowledgeUnit, NoteItem, StudyPlanItem,
+} from 'common';
+import { subjectColor } from '../utils/NoteTaxonomy';
 import { NoteDao } from "../database/NoteDao"
 import { StudyPlanDao } from "../database/StudyPlanDao"
 import { unitsToNoteItems } from "../utils/NoteItemMapper"
