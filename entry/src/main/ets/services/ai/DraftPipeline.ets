@@ -71,13 +71,13 @@ import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 import { NoteGenerationRepositoryFactory } from '../NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from '../AgentMemoryService';
 import { RagHit, RagRetrievalService } from '../RagRetrievalService';
-import { NoteGenerationContextBuilder } from 'agents';
+
 import { CaptureTiming } from './CaptureTiming';
 import { AiServicePorts } from './AiServicePorts';
 import { ClarificationRegistry } from './ClarificationRegistry';
 import { DraftCommitService } from './DraftCommitService';
 import { CancellationToken } from 'common';
-
+import { NoteGenerationContextBuilder } from 'agents/src/main/ets/note/Index';
 
 const log: Logger = new Logger('DraftPipeline');
 

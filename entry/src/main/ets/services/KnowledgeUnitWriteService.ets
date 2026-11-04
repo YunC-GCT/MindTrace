@@ -19,7 +19,7 @@ import {
   KnowledgeUnitWriteRepository,
   KnowledgeUnitWriteResult,
 } from 'common';
-import { WritePathValidator } from 'agents';
+import { WritePathValidator } from 'agents/src/main/ets/note/Index';
 
 // 首装冷启动偶发卡死兜底：索引同步/副作用最多等 5s，超时降级为告警，不阻塞主写链路。
 const INDEX_SYNC_TIMEOUT_MS: number = 5000;

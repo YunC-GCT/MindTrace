@@ -23,9 +23,6 @@ import {
   resolveModel,
 } from 'common';
 import type { NoteOutcome, ProviderCatalog, ResolvedModel } from 'common';
-import { IntentClassifier, ReplyContext } from 'agents';
-import { ReplyService } from 'agents';
-import type { LlmCallPolicy } from 'agents';
 
 import { CaptureReceipt, CaptureReceiptStore, formatReceipt, matchesReceiptIntent } from './CaptureReceipt';
 import { AgentInboxItem, buildInboxItem } from './AgentInboxModels';
@@ -74,7 +71,8 @@ import { AgentImagePart, AgentPart, collectImageParts, joinTextParts } from './A
 import { OcrService } from './OcrService';
 import { A2AChatContext, A2AChatContextResult } from './A2AChatContext';
 import type { NoteEvidenceContext } from 'common';
-import type { ReplyStyle } from 'agents';
+import { IntentClassifier, ReplyContext, ReplyService } from 'agents/src/main/ets/chat/Index';
+import type { LlmCallPolicy, ReplyStyle } from 'agents/src/main/ets/chat/Index';
 
 const TAG: string = 'MindTraceA2A';
 const DOMAIN: number = 0xA2A0;

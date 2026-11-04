@@ -13,7 +13,7 @@ import { ConversationRunRef } from 'common';
 import { ConversationRunStartResult } from './ConversationRunCoordinator';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ConversationRuntime } from './ConversationRuntime';
-import { IConversationNoteRoutePort } from 'agents';
+import { IConversationNoteRoutePort } from 'agents/src/main/ets/conversation/Index';
 
 export { AgentChatCallbacks } from './AgentChatContracts';
 

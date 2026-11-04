@@ -23,7 +23,7 @@ import {
   KnowledgeUnitWriteRepository,
   NoteGenerationBaseProvider,
 } from 'common';
-import { DedupeCandidate, findDuplicate } from 'agents';
+import { DedupeCandidate, findDuplicate } from 'agents/src/main/ets/note/Index';
 
 interface NoteCommitLookup {
   noteId: string;

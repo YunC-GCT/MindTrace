@@ -25,22 +25,14 @@ import {
   SourceFragment,
 } from 'common';
 import type { AgentMemoryRecord, CancellationToken } from 'common';
-import {
-  NoteReviewService,
-  ConversationWorkflowPorts,
-  ConversationWorkflowPortsFactory,
-} from 'agents';
-import type {
-  ConversationWorkflowPortsInput,
-  IConversationCapturePort,
-  IConversationDraftServicePort,
-  IConversationMemoryServicePort,
-  IConversationNoteRoutePort,
-} from 'agents';
+
 import { AiService } from './AiService';
 import { AgentMemoryService } from './AgentMemoryService';
 import { createNoteEvidenceService } from './EvidenceComposition';
 import { DefaultNoteReviewEvidenceProvider } from './NoteReviewEvidenceProviders';
+import { NoteReviewService } from 'agents/src/main/ets/review/Index';
+import { ConversationWorkflowPorts, ConversationWorkflowPortsFactory } from 'agents/src/main/ets/conversation/Index';
+import type { ConversationWorkflowPortsInput, IConversationCapturePort, IConversationDraftServicePort, IConversationMemoryServicePort, IConversationNoteRoutePort } from 'agents/src/main/ets/conversation/Index';
 
 class ConversationCaptureAdapter implements IConversationCapturePort {
   private readonly ai: AiService;

@@ -11,9 +11,10 @@
 import { common } from '@kit.AbilityKit';
 import { NoteContextClarification, NoteDraftReadyEvent } from 'common';
 import { NoteReviewAnswer } from 'common';
-import { ConversationMessageEvent } from 'agents';
-import { ChatMessageOrigin, ChatMessageOutcome } from 'agents';
+
 import { ConversationRunRef } from 'common';
+import { ChatMessageOrigin, ChatMessageOutcome, ConversationMessageEvent } from 'agents/src/main/ets/conversation/Index';
+import type { ConversationProgressStep, IConversationNoteRoutePort } from 'agents/src/main/ets/conversation/Index';
 
 export interface AgentChatCallbacks {
   addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin) => number;
@@ -46,8 +47,8 @@ export interface AgentChatCallbacks {
 }
 
 // UI 层（overlays）不得直接 import 'agents'：这里代为转发对话图契约（ui-layer-dependency 规则）。
-export type { ConversationMessageEvent } from 'agents';
-export type { IConversationNoteRoutePort } from 'agents';
 export type {
-  ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep,
-} from 'agents';
+  ChatMessageOrigin, ChatMessageOutcome, ConversationMessageEvent,
+  ConversationProgressStep, IConversationNoteRoutePort,
+} from 'agents/src/main/ets/conversation/Index';
+

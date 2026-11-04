@@ -758,7 +758,7 @@ Token 事件只记数量与耗时，**不落正文**（沿用日志脱敏约束�
 ### 18.3 三条硬规则
 
 1. **common 准入**：只放「≥2 个模块或 ≥2 个进程真实使用，且不含业务阈值 / 用户文案 / 配色渲染」的东西。单模块使用的业务规则回它所属的模块。
-2. **barrel 只导出契约**：`common/Index.ets` 不导出数据访问实现（`ports/impl/*`、`tools/NoteQueryTools`）；消费方按文件深路径引用，避免把 RDB 与 ArkData 带进每个 import 方。
+2. **barrel 只导出契约**：`common/Index.ets` 不导出数据访问实现（`ports/impl/*`、`tools/NoteQueryTools`）；`agents/Index.ets` 只留编排入口与捕获契约，`chat` / `conversation` / `note` / `evidence` / `review` 各自维护子 barrel（`agents/src/main/ets/<dir>/Index.ets`）。消费方按子 barrel 或深路径引用，避免一次 `import 'agents'` 拉入整张图。
 3. **数据访问端口化**：任何要上移到 `agents` 的逻辑，数据面必须先在 `common/ports` 定义契约，实现留 `entry`（先例：检索 / 图谱双端口、证据 provider、草稿与记忆服务端口）。
 
 Kit 的准入另按 [spec 033](./specs/033-process-boundaries.md) 的进程可达性矩阵判定，与模块名无关。

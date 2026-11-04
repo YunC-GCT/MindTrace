@@ -73,7 +73,7 @@ import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 import { NoteGenerationRepositoryFactory } from '../NoteGenerationRepositoryFactory';
 
 import { AgentMemoryService } from '../AgentMemoryService';
-import { NoteGenerationContextBuilder } from 'agents';
+
 import { CaptureTiming } from './CaptureTiming';
 import { AiServicePorts } from './AiServicePorts';
 import { ClarificationRegistry } from './ClarificationRegistry';
@@ -81,7 +81,7 @@ import { DraftCommitService } from './DraftCommitService';
 import { DraftPipeline } from './DraftPipeline';
 import { ClarificationPipeline } from './ClarificationPipeline';
 import { CancellationToken } from 'common';
-import { normalizeForDedupe } from 'agents';
+import { NoteGenerationContextBuilder, normalizeForDedupe } from 'agents/src/main/ets/note/Index';
 
 const log: Logger = new Logger('CapturePipeline');
 

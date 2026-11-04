@@ -10,21 +10,14 @@
  */
 import { common } from '@kit.AbilityKit';
 import { CancellationToken, NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
-import {
-  ConversationMessageEvent,
-  ConversationWorkflowCallbacks,
-} from 'agents';
-import {
-  ChatMessageOrigin,
-  ChatMessageOutcome,
-  ConversationProgressStep,
-} from 'agents';
+
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { NoteReviewAnswer } from 'common';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { ConversationRunCoordinator } from './ConversationRunCoordinator';
 import { ConversationRunRef } from 'common';
+import { ConversationMessageEvent, ConversationWorkflowCallbacks, ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from 'agents/src/main/ets/conversation/Index';
 
 export class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   private readonly callbacks: AgentChatCallbacks;

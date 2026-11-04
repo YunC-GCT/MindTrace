@@ -41,7 +41,7 @@ import { WriteJobBootstrap } from '../services/WriteJobBootstrap';
 import { IngestGateway, INGEST_MODE_INLINE } from '../services/IngestGateway';
 import { DataRetentionService } from '../services/DataRetentionService';
 import { DebugFaultSourceAdapter } from '../services/DebugFaults';
-import { configureDebugFaultSource } from 'agents';
+
 import {
   AgentIngestRequest,
   buildIngestRequest,
@@ -58,6 +58,7 @@ import {
   NOTE_DETAIL_BENCHMARK_CONFIG_KEY,
   NoteDetailBenchmarkLaunchConfig,
 } from '../services/NoteDetailBenchmarkLaunch';
+import { configureDebugFaultSource } from 'agents/src/main/ets/chat/Index';
 
 const DOMAIN = 0x0000;
 /** 系统分享图片进来的两种 action（相册/文件管理器 → 分享 → MindTrace） */

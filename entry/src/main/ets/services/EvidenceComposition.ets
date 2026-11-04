@@ -11,9 +11,10 @@
  *   EntryAbility.configureEvidenceReadPort → createNoteEvidenceService → 证据端口
  */
 import type { NoteReadPort } from 'common';
-import { NoteEvidenceService } from 'agents';
+
 import { RagNoteEvidenceSearch } from './RagNoteEvidenceSearch';
 import { RdbNoteGraph } from './RdbNoteGraph';
+import { NoteEvidenceService } from 'agents/src/main/ets/evidence/Index';
 
 // ADR-0021 Step 3：组合根在 DB 初始化后注入只读端口；未注入时证据扩展只返回检索命中。
 let configuredReadPort: NoteReadPort | undefined = undefined;

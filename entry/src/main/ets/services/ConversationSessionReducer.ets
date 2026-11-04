@@ -21,7 +21,7 @@ import {
   ChatSession,
   replaceChatMsgContent,
 } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { ConversationMessageEvent } from 'agents';
+import { ConversationMessageEvent } from 'agents/src/main/ets/conversation/Index';
 
 export type ConversationSessionEvent =
   | 'add-user-message'

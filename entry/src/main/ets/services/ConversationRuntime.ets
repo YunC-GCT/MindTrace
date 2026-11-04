@@ -9,15 +9,7 @@
  *   Accepted UI request -> run coordinator -> conversation workflow -> scoped callbacks.
  */
 import { CancellationToken, KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
-import {
-  ConversationRequest,
-  ImageConversationRequest,
-} from 'agents';
-import { ConversationWorkflow } from 'agents';
-import {
-  ConversationWorkflowPorts,
-  IConversationNoteRoutePort,
-} from 'agents';
+
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ConversationDraftCoordinator } from './ConversationDraftCoordinator';
 import { ConversationRunRef } from 'common';
@@ -30,6 +22,7 @@ import {
 } from './ConversationRunCoordinator';
 import { buildProductionConversationPorts } from './ConversationPortsProduction';
 import { ConversationWorkflowAdapter } from './ConversationWorkflowAdapter';
+import { ConversationRequest, ImageConversationRequest, ConversationWorkflow, ConversationWorkflowPorts, IConversationNoteRoutePort } from 'agents/src/main/ets/conversation/Index';
 
 type ConversationRunLifecycleOwner = 'runtime' | 'workflow';
 type ConversationRunOperation<T> = (ref: ConversationRunRef) => Promise<T>;

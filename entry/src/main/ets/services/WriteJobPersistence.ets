@@ -11,7 +11,7 @@ import { sourceFingerprint } from 'common';
 
 import { AgentJobDao } from '../database/AgentJobDao';
 import type { AgentJob } from 'common';
-import { normalizeForDedupe } from 'agents';
+import { normalizeForDedupe } from 'agents/src/main/ets/note/Index';
 
 export interface WriteJobPersistenceHooks {
   /** 入队（幂等）：返回持久 jobId，调度器用它执行/claim。 */

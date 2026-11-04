@@ -58,7 +58,7 @@ import { SubjectVocabularyService } from './SubjectVocabularyService';
 import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 import { NoteGenerationRepositoryFactory } from './NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from './AgentMemoryService';
-import { NoteGenerationContextBuilder } from 'agents';
+
 import { CaptureTiming } from './ai/CaptureTiming';
 import { AiServicePorts } from './ai/AiServicePorts';
 import { ClarificationRegistry } from './ai/ClarificationRegistry';
@@ -67,6 +67,7 @@ import { DraftPipeline } from './ai/DraftPipeline';
 import { ClarificationPipeline } from './ai/ClarificationPipeline';
 import { CapturePipeline } from './ai/CapturePipeline';
 import { CancellationToken } from 'common';
+import { NoteGenerationContextBuilder } from 'agents/src/main/ets/note/Index';
 
 const log: Logger = new Logger('AiService');
 export class AiService {

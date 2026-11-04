@@ -10,11 +10,12 @@
  *   UI draft command -> ownership lookup -> conversation run executor -> workflow operation.
  */
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
-import { ConversationWorkflow } from 'agents';
+
 import {
   ConversationRunRequestKind,
 } from './ConversationRunCoordinator';
 import { ConversationRunRef } from 'common';
+import { ConversationWorkflow } from 'agents/src/main/ets/conversation/Index';
 
 type DraftEventExecutor = (
   sessionId: string,

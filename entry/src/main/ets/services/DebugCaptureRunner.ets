@@ -22,16 +22,7 @@ import { RagHit, RagRetrievalService } from './RagRetrievalService';
 import { RagKitProbe } from './RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
 import { A2AChatContext, A2AChatContextResult } from './A2AChatContext';
-import { AppIntentDecision, classifyAppIntentLocal } from 'agents';
 
-import {
-  LegacyDedupeEntry,
-  LegacyDuplicateGroup,
-  LegacySubjectInput,
-  groupExactDuplicates,
-  groupNearDuplicates,
-  normalizeLegacySubject,
-} from 'agents';
 import { NoteDao } from '../database/NoteDao';
 import { RunStoreDao } from '../database/RunStoreDao';
 import { A2AInboxIngestService, IngestSummary } from './A2AInboxIngestService';
@@ -56,10 +47,12 @@ import {
   remainingPlanCount,
 } from './A2APlanModels';
 import { A2APlanStore } from './A2APlanStore';
-import type { NoteEvidenceService } from 'agents';
+
 import { createNoteEvidenceService } from './EvidenceComposition';
 import { NoteEvidenceContext } from 'common';
-import { isDuplicateOf } from 'agents';
+import { AppIntentDecision, classifyAppIntentLocal } from 'agents/src/main/ets/chat/Index';
+import { LegacyDedupeEntry, LegacyDuplicateGroup, LegacySubjectInput, groupExactDuplicates, groupNearDuplicates, normalizeLegacySubject, isDuplicateOf } from 'agents/src/main/ets/note/Index';
+import type { NoteEvidenceService } from 'agents/src/main/ets/evidence/Index';
 
 const TAG: string = 'E2E';
 interface AuditRow {

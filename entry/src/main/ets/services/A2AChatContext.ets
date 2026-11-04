@@ -12,10 +12,11 @@
  *   - 证据构建最多等 1200ms；超时/异常降级为空上下文，不阻断聊天（和 App 对话一致）；
  *   - 返回 evidence 供调用方在回答后做 sanitizeAnswer。
  */
-import type { ReplyContext } from 'agents';
-import type { NoteEvidenceService } from 'agents';
+
 import { createNoteEvidenceService } from './EvidenceComposition';
 import type { NoteEvidenceContext } from 'common';
+import type { ReplyContext } from 'agents/src/main/ets/chat/Index';
+import type { NoteEvidenceService } from 'agents/src/main/ets/evidence/Index';
 
 const EVIDENCE_TIMEOUT_MS: number = 1200;
 const EVIDENCE_TOP_K: number = 5;

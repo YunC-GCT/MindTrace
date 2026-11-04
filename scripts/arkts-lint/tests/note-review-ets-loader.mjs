@@ -135,6 +135,7 @@ export function loadNoteReviewEtsModule(relativePath, options = {}) {
   cache.set(normalizedPath, module);
 
   const localRequire = (request) => {
+    // common / agents 是模块名：先走各自 facade（内部会合并 options.mocks）
     if (request === 'common') {
       return loadCommonModule(options);
     }
@@ -145,7 +146,14 @@ export function loadNoteReviewEtsModule(relativePath, options = {}) {
     if (options.mocks !== undefined && Object.prototype.hasOwnProperty.call(options.mocks, resolvedRequest)) {
       return options.mocks[resolvedRequest];
     }
+    if (options.mocks !== undefined && Object.prototype.hasOwnProperty.call(options.mocks, request)) {
+      return options.mocks[request];
+    }
     if (!request.startsWith('.')) {
+      // 子 barrel 与深路径（agents/... / common/... / entry/...）：按仓库内路径加载
+      if (/^(agents|common|entry)\/src\//.test(request)) {
+        return loadNoteReviewEtsModule(`${request}.ets`, { ...options, cache });
+      }
       return require(request);
     }
     return loadNoteReviewEtsModule(resolvedRequest, { ...options, cache });

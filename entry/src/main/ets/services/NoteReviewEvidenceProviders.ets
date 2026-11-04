@@ -15,8 +15,8 @@ import {
   NoteEvidenceOptions,
   NoteEvidenceStreamFilterPort,
 } from 'common';
-import { NoteReviewEvidenceProvider } from 'agents';
-import type { NoteEvidenceService } from 'agents';
+import { NoteReviewEvidenceProvider } from 'agents/src/main/ets/review/Index';
+import type { NoteEvidenceService } from 'agents/src/main/ets/evidence/Index';
 
 export class DefaultNoteReviewEvidenceProvider extends NoteReviewEvidenceProvider {
   private readonly service: NoteEvidenceService;
