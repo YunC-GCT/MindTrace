@@ -55,7 +55,11 @@ test('完全重复分组：同标题同正文只保留最早一条', () => {
 });
 
 test('清理接线：审计/应用两个 e2e，应用时才 UPDATE/DELETE', () => {
-  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
+  const runner = [
+    read('entry/src/main/ets/debug/DebugCaptureRunner.ets'),
+    read('entry/src/main/ets/debug/DebugSchedulerProbes.ets'),
+    read('entry/src/main/ets/debug/DebugAgentProbes.ets'),
+  ].join('\n');
   assert.ok(runner.includes('static async runLegacyCleanup(ctx: common.UIAbilityContext, apply: boolean)'));
   assert.ok(runner.includes('UPDATE knowledge_unit SET subject = ?, updated_at = ? WHERE id = ?'));
   assert.ok(runner.includes('dao.deleteById(group.removeIds[k])'));

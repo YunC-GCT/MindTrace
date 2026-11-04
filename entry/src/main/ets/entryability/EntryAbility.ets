@@ -24,6 +24,8 @@ import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
 import { DebugDraftRunner } from '../services/DebugDraftRunner';
 import { DebugCaptureRunner } from '../debug/DebugCaptureRunner';
+import { DebugSchedulerProbes } from '../debug/DebugSchedulerProbes';
+import { DebugAgentProbes } from '../debug/DebugAgentProbes';
 import { ImageSearchWorkerProbe } from '../services/ImageSearchWorkerProbe';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';
@@ -307,43 +309,43 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     if (mode === 'a2aTextIngestProbe') {
-      this.runDebugProbe('a2aTextIngestProbe', DebugCaptureRunner.runA2ATextIngestProbe(this.context));
+      this.runDebugProbe('a2aTextIngestProbe', DebugAgentProbes.runA2ATextIngestProbe(this.context));
       return;
     }
     if (mode === 'a2aImageContextClear') {
-      this.runDebugProbe('a2aImageContextClear', DebugCaptureRunner.runA2AImageContextClear(this.context));
+      this.runDebugProbe('a2aImageContextClear', DebugAgentProbes.runA2AImageContextClear(this.context));
       return;
     }
     if (mode === 'a2aImageIngestProbe') {
-      this.runDebugProbe('a2aImageIngestProbe', DebugCaptureRunner.runA2AImageIngestProbe(this.context));
+      this.runDebugProbe('a2aImageIngestProbe', DebugAgentProbes.runA2AImageIngestProbe(this.context));
       return;
     }
     if (mode === 'schedulerPersistEnqueue') {
-      this.runDebugProbe('schedulerPersistEnqueue', DebugCaptureRunner.runSchedulerPersistEnqueue(this.context));
+      this.runDebugProbe('schedulerPersistEnqueue', DebugSchedulerProbes.runSchedulerPersistEnqueue(this.context));
       return;
     }
     if (mode === 'schedulerPersistDrain') {
-      this.runDebugProbe('schedulerPersistDrain', DebugCaptureRunner.runSchedulerPersistDrain(this.context));
+      this.runDebugProbe('schedulerPersistDrain', DebugSchedulerProbes.runSchedulerPersistDrain(this.context));
       return;
     }
     if (mode === 'schedulerInbox') {
-      this.runDebugProbe('schedulerInbox', DebugCaptureRunner.runSchedulerInbox(this.context));
+      this.runDebugProbe('schedulerInbox', DebugSchedulerProbes.runSchedulerInbox(this.context));
       return;
     }
     if (mode === 'schedulerStress') {
-      this.runDebugProbe('schedulerStress', DebugCaptureRunner.runSchedulerStress());
+      this.runDebugProbe('schedulerStress', DebugSchedulerProbes.runSchedulerStress());
       return;
     }
     if (mode === 'schedulerIntegration') {
-      this.runDebugProbe('schedulerIntegration', DebugCaptureRunner.runSchedulerIntegration(this.context));
+      this.runDebugProbe('schedulerIntegration', DebugSchedulerProbes.runSchedulerIntegration(this.context));
       return;
     }
     if (mode === 'schedulerProbe') {
-      this.runDebugProbe('schedulerProbe', DebugCaptureRunner.runSchedulerProbe(this.context));
+      this.runDebugProbe('schedulerProbe', DebugSchedulerProbes.runSchedulerProbe(this.context));
       return;
     }
     if (mode === 'concurrencyProbe') {
-      this.runDebugProbe('concurrencyProbe', DebugCaptureRunner.runConcurrencyProbe(this.context));
+      this.runDebugProbe('concurrencyProbe', DebugSchedulerProbes.runConcurrencyProbe(this.context));
       return;
     }
     if (mode === 'legacyCleanupAudit') {
@@ -359,7 +361,7 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     if (mode === 'appIntentProbe') {
-      this.runDebugProbe('appIntentProbe', DebugCaptureRunner.runAppIntentProbe(this.context));
+      this.runDebugProbe('appIntentProbe', DebugAgentProbes.runAppIntentProbe(this.context));
       return;
     }
     if (mode === 'dedupeProbe') {
@@ -371,7 +373,7 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     if (mode === 'agentChatContext') {
-      this.runDebugProbe('agentChatContext', DebugCaptureRunner.runAgentChatContext(this.context));
+      this.runDebugProbe('agentChatContext', DebugAgentProbes.runAgentChatContext(this.context));
       return;
     }
     if (mode === 'noteAudit') {
@@ -379,15 +381,15 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     if (mode === 'agentImagePlan') {
-      this.runDebugProbe('agentImagePlan', DebugCaptureRunner.runAgentImagePlan(this.context));
+      this.runDebugProbe('agentImagePlan', DebugAgentProbes.runAgentImagePlan(this.context));
       return;
     }
     if (mode === 'agentTextPlan') {
-      this.runDebugProbe('agentTextPlan', DebugCaptureRunner.runAgentTextPlan(this.context));
+      this.runDebugProbe('agentTextPlan', DebugAgentProbes.runAgentTextPlan(this.context));
       return;
     }
     if (mode === 'agentTextBatch') {
-      this.runDebugProbe('agentTextBatch', DebugCaptureRunner.runAgentTextBatch(this.context));
+      this.runDebugProbe('agentTextBatch', DebugAgentProbes.runAgentTextBatch(this.context));
       return;
     }
     if (mode === 'captureSetS3') {

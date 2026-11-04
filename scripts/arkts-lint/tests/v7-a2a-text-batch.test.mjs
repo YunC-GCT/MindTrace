@@ -37,6 +37,10 @@ test('文本批量整理有 deadline：provider 挂起时转待整理', () => {
 test('e2e agentTextBatch 已注册（真机可自检）', () => {
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(entry, /mode === 'agentTextBatch'/);
-  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
+  const runner = [
+    read('entry/src/main/ets/debug/DebugCaptureRunner.ets'),
+    read('entry/src/main/ets/debug/DebugSchedulerProbes.ets'),
+    read('entry/src/main/ets/debug/DebugAgentProbes.ets'),
+  ].join('\n');
   assert.match(runner, /static async runAgentTextBatch\(/);
 });

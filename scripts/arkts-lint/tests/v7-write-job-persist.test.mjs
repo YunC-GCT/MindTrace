@@ -153,7 +153,11 @@ test('P3 持久化 flag 可 e2e 覆盖；run/重启 e2e 模式接线', () => {
   assert.ok(config.includes('class WriteJobPersistenceFlags'));
   assert.ok(config.includes('static isEnabled()'));
   assert.ok(config.includes('static setEnabled('));
-  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
+  const runner = [
+    read('entry/src/main/ets/debug/DebugCaptureRunner.ets'),
+    read('entry/src/main/ets/debug/DebugSchedulerProbes.ets'),
+    read('entry/src/main/ets/debug/DebugAgentProbes.ets'),
+  ].join('\n');
   assert.ok(runner.includes('runSchedulerPersistEnqueue'));
   assert.ok(runner.includes('runSchedulerPersistDrain'));
   assert.ok(runner.includes('stage=persist-enqueue jobId='));
