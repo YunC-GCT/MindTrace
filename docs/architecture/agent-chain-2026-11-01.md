@@ -1,5 +1,10 @@
 # Agent 链路现状与优化路线（2026-11-01）
 
+<!-- HISTORICAL-BANNER -->
+> **历史快照（2026-11-04 标注）**：本文是 2026-11-01 的链路现状记录，早于对话图/证据/复习上移与
+> barrel 收口，其中的目录与文件已不存在。现状见 [system-architecture-layered.md §18](../system-architecture-layered.md#18-当前实现2026-11-04)。
+
+
 > 范围：App 内相册/拍照整理、App 对话、小艺端A2A（文本/OCR/聊天）、笔记生成（草稿/确认）。
 > 数据来源：本仓库代码 + 2026-10-31/11-01 真机 e2e（设备 3XTYD24C16203663，MRO-W00 / HarmonyOS 7.0.0）。
 

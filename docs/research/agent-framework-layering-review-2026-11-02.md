@@ -378,3 +378,13 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 **处理**：删除源文件与其 Hypium 测试，并从 `entry/src/test/List.test.ets` 摘掉注册；spec 020 / 021 的状态行补了删除说明。若未来要切 `custom_span` 后端，从 `b4637c31` 恢复即可。
 
 **验证**：`agent-gate` PASS（1245 单测）；`build-hsp-hap` 4/4。
+
+## 23. 2026-11-04 文档清理
+
+- **ADR-0021 补「barrel 边界与例外说明」**：明确 `ports/impl/*` 与 `NoteQueryTools` 是「只读实现跨 HAP 共享」的有意例外，并且不进 barrel；同时列出三类能力的归属对照（只读投影 / 证据检索与图谱 / 写路径），判断顺序是「先看有没有第二个 HAP 要用，再看实现是否只读」。
+- **过期文档加横幅**：`system-architecture-layered.md`（§1–§17 是设计态，指向 §18）、`architecture/agent-chain-2026-11-01.md`（快照早于本轮迁移）、`architecture/agent-architecture-proposal-2026-11-01.md`（已由 spec 039 落地）、`architecture/review-v7-2026-10-27.md`（评审的是设计态）。
+- **架构索引同步**：`docs/architecture/index.md` 三行标注过期/评审态，并加一条「现状统一看 §18」。
+
+选择加横幅而非删除：这几份是 ADR / spec 追溯链上的节点（如 spec 039 引用提案），删掉会断链。
+
+**验证**：`agent-gate` PASS（文档变更，单测跳过）。

@@ -43,3 +43,21 @@ accepted（2026-10-30）
 - **组合根注入**：只在 `entry` 内成立；`skill` 仍要自带实现，等于两套映射。
 - **写实现也放 common**：`agents` 能 import common，直接破坏「编排层不写库」。
 - **新建 `infra` module**：违反红线 5（不新建第 6 个 module）。
+
+## 补充：barrel 边界与例外说明（2026-11-04）
+
+`common` 的模块准入在 2026-11-04 收紧为「≥2 个模块或 ≥2 个进程真实使用，且不含业务阈值 / 用户文案 / 配色」（见 [`AGENTS.md`](../../AGENTS.md) §模块归属判据）。**本 ADR 允许的只读实现是这个准入规则的有意例外**，不是漏网：
+
+- 例外内容：`common/src/main/ets/ports/impl/`（`NoteReadPortAdapter` / `RdbNoteReadStore` / `RdbNoteSearchAdapter` / `ReviewReadPortAdapter` / `RdbReviewReadStore`）与 `tools/NoteQueryTools`。
+- 理由：`skill` / `cardservice` 两个 HAP 依赖 `common` 而不依赖 `entry`，只读投影必须跨 HAP 共享；这条在 §Context 已论证。
+- 代价控制：**这些实现不进 `common/Index.ets` barrel**，消费方（`EntryAbility`、`ohosTest`）按文件深路径引用；`ToolCatalog.createReadOnlyRegistry()` 是工具层的唯一正门。这样即便文件在 common，也不会被每个 `import 'common'` 顺带加载。
+
+同时明确一条**新边界**（与上面的例外区分）：
+
+| 能力 | 契约 | 实现 | 原因 |
+|---|---|---|---|
+| 只读投影（笔记 / 复习 / 检索排序） | `common/ports/` | `common/ports/impl/` | 跨 HAP 共享（本 ADR） |
+| 证据检索 / 图谱扩展 | `common/ports/NoteEvidenceDataPorts` | `entry/services/RagNoteEvidenceSearch`、`RdbNoteGraph` | 依赖 FTS / 工具兜底 / `KnowledgeRelationDao`，只有 entry 消费 |
+| 写路径 | `common/ports/NoteWritePort` | `entry/database/` | 只有应用进程能写库 |
+
+判断顺序：**先看有没有第二个 HAP 要用，再看实现是否只读**；两者都成立才进 `common/ports/impl/`，否则留在 `entry`。

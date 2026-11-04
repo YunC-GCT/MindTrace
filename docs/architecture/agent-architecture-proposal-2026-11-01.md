@@ -1,5 +1,11 @@
 # Agent 架构重构提案：workflow-first 目标架构（2026-11-01）
 
+<!-- HISTORICAL-BANNER -->
+> **已实现（2026-11-04 标注）**：本提案的目标架构已由 [spec 039](../../docs/specs/039-agent-workflow-first.md) 落地；
+> 文中 `Dispatcher.ets` / `DispatchGraph.ets` / `NoteAgent.ets` 等路径已删除，现状见
+> [system-architecture-layered.md §18](../system-architecture-layered.md#18-当前实现2026-11-04)。
+
+
 > **Status**: proposed (2026-11-01)
 > **Related**: [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 018](../specs/018-agent-workflow-architecture.md) · [spec 038](../specs/038-write-job-scheduler.md) · [v7 外评审](./review-v7-2026-10-27.md)
 > **Code**: `agents/src/main/ets/core/Dispatcher.ets` · `agents/src/main/ets/core/dispatch/DispatchGraph.ets` · `agents/src/main/ets/subagents/NoteAgent.ets` · `common/src/main/ets/workflow/StateGraph.ets` · `entry/src/main/ets/services/ai/RunStoreEventSink.ets` · `entry/src/main/ets/services/WriteJobScheduler.ets`
