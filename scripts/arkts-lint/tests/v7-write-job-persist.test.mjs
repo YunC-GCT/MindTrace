@@ -127,10 +127,14 @@ test('P2 跨进程 producer：flag 关闭/DB 不可用回退、入队走 enqueue
 });
 
 test('A2A 整理：用户整理意图在扩展内联完成（无需打开 App），超时回退队列', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.ok(controller.includes('private ingestPlanItemNow('));
-  assert.ok(controller.includes('private ingestTextBatchNow('));
-  assert.ok(controller.includes('private ingestPendingItemsSequentially('));
+  assert.ok(controller.includes('ingestTextBatchNow('));
+  assert.ok(controller.includes('ingestPendingItemsSequentially('));
   assert.ok(controller.includes('this.ingestPlanItemNow(taskId, plan, item)'));
   assert.ok(controller.includes('this.ingestTextBatchNow(taskId, request)'));
   assert.ok(controller.includes('this.enqueueTexts([item.text])'));

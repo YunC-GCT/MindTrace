@@ -92,8 +92,12 @@ test('main graph preflight enforces approval before write (A4 4e)', () => {
 });
 
 test('A2A ingest records a receipt and reports the count (P4)', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
-  assert.match(controller, /private recordA2aIngestReceipt\(\): void/);
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
+  assert.match(controller, /recordA2aIngestReceipt\(\): void/);
   assert.match(controller, /source: 'a2a'/);
   assert.match(controller, /本次整理 1 条/);
   const receipt = read('entry/src/main/ets/services/CaptureReceipt.ets');

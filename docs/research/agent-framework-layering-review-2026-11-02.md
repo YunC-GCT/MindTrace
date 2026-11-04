@@ -388,3 +388,23 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 选择加横幅而非删除：这几份是 ADR / spec 追溯链上的节点（如 spec 039 引用提案），删掉会断链。
 
 **验证**：`agent-gate` PASS（文档变更，单测跳过）。
+
+## 24. 2026-11-05 拆分 A2AController
+
+`entry/src/main/ets/services/A2AController.ets` 1103 → 755 行，抽出整理/计划链路：
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `A2AController` | 755 | 生命周期（prepare / cancelActive / handle 分发）、图片问答、OCR 检查点、问答链路与回话端口 |
+| `A2AIngestHandler` | 455 | 文本批处理、90s deadline、多题计划推进（继续/第 N 题/全部/取消）、入队兜底、回执 |
+| `A2AConstants` | 12 | 日志域/标签与 `INGEST_DEADLINE_MS`，控制器与处理器共用 |
+
+- 宿主接口 `IA2AIngestHost` 只有两个方法：`ingestContext()` 与 `sendIngestAnswer()`——整理组原本就只依赖这两个入口
+- 控制器实现该接口并持有 handler；`handle()` 的整理分支改为 `this.ingestHandler.*`
+- `A2AConstants` 解决两文件共用常量的问题（原先 `TAG`/`DOMAIN`/`INGEST_DEADLINE_MS` 定义在控制器模块作用域）
+
+**测试**：11 个测试文件改为「Controller + IngestHandler + Constants」拼接断言；三处正则断言放宽以接受 `this.host.ingestContext()`。
+
+**验证**：`agent-gate` PASS（1245 单测）；`build-hsp-hap` 4/4。
+
+**未拆分**：问答链路（`runQuery` + `answerFrom*` + `answerWithResolvedModel` 等 10 个方法）仍在控制器内，与图片、生命周期共享 `A2ARequestSession` 状态，下一刀需要先抽 session 注册表。

@@ -190,19 +190,27 @@ test('dispatchSetCommand returns per-item outcomes with aggregate counts (A3d)',
 
 test('A2A ingest receipt consumes NoteOutcome instead of exception text (A3d)', () => {
   const ingest = read('entry/src/main/ets/services/AgentIngestService.ets');
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.match(ingest, /static async ingestOutcome/);
   assert.match(ingest, /service\.ingestTextOutcome/);
-  assert.match(controller, /IngestGateway\.ingest\(this\.context, request, INGEST_MODE_INLINE\)/);
+  assert.match(controller, /IngestGateway\.ingest\((?:this\.context|this\.host\.ingestContext\(\)), request, INGEST_MODE_INLINE\)/);
   assert.match(controller, /this\.ingestWithDeadline\(item\.text\)/);
-  assert.match(controller, /IngestGateway\.ingestText\(this\.context, text, INGEST_SOURCE_XIAOYI, INGEST_MODE_INLINE\)/);
+  assert.match(controller, /IngestGateway\.ingestText\((?:this\.context|this\.host\.ingestContext\(\)), text, INGEST_SOURCE_XIAOYI, INGEST_MODE_INLINE\)/);
   assert.match(controller, /outcome\.kind === 'committed'/);
   assert.match(controller, /outcome\.kind === 'cancelled'/);
   assert.match(controller, /retryable/);
 });
 
 test('幂等复用（committed 无 unit）不报 INGEST_FAILED', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.match(controller, /已整理过：这条内容已在知识库里/);
   assert.match(controller, /const unit: KnowledgeUnit \| undefined = outcome\.unit;/);
 });

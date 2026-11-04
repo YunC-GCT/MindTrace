@@ -20,17 +20,21 @@ test('IngestGateway 统一 inline/background 模式', () => {
 });
 
 test('A2A 控制器只经 IngestGateway，不直连 AgentIngestService', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.match(controller, /IngestGateway\.plan\(request\)/);
-  assert.match(controller, /IngestGateway\.ingest\(this\.context, request, INGEST_MODE_INLINE\)/);
-  assert.match(controller, /IngestGateway\.ingestText\(this\.context, text, INGEST_SOURCE_XIAOYI, INGEST_MODE_INLINE\)/);
+  assert.match(controller, /IngestGateway\.ingest\((?:this\.context|this\.host\.ingestContext\(\)), request, INGEST_MODE_INLINE\)/);
+  assert.match(controller, /IngestGateway\.ingestText\((?:this\.context|this\.host\.ingestContext\(\)), text, INGEST_SOURCE_XIAOYI, INGEST_MODE_INLINE\)/);
   assert.equal(controller.includes('AgentIngestService.ingestTextBatch'), false);
   assert.equal(controller.includes('AgentIngestService.ingestSingleText'), false);
 });
 
 test('分享/卡片选图经 IngestGateway，inbox 走 background', () => {
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
-  assert.match(entry, /IngestGateway\.ingest\(this\.context, request, INGEST_MODE_INLINE\)/);
+  assert.match(entry, /IngestGateway\.ingest\((?:this\.context|this\.host\.ingestContext\(\)), request, INGEST_MODE_INLINE\)/);
   assert.equal(entry.includes('AgentIngestService.ingest('), false);
   const inbox = read('entry/src/main/ets/services/A2AInboxIngestService.ets');
   assert.match(inbox, /IngestGateway\.ingestText\(/);

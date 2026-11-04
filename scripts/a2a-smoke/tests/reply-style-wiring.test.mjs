@@ -6,7 +6,11 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
-const controller = read('entry/src/main/ets/services/A2AController.ets');
+const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
 const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
 const UI_CALLERS = [
   'agents/src/main/ets/chat/ModelRouter.ets',

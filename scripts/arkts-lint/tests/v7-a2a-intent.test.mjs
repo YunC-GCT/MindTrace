@@ -63,7 +63,11 @@ test('OCR 多页规划：保留来源图并写进摘要', () => {
 });
 
 test('扩展接线：意图路由 + OCR checkpoint（回复继续前不写库）', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.match(controller, /routeA2AIntent\(text, images\.length > 0, plan !== null\)/);
   assert.match(controller, /INTENT_OCR/);
   assert.match(controller, /private handleOcrCheckpoint\(/);
@@ -74,7 +78,11 @@ test('扩展接线：意图路由 + OCR checkpoint（回复继续前不写库）
 
 
 test('A2A 聊天接入 RAG：证据上下文注入 + 引用校验（P0-1）', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.match(controller, /A2AChatContext\.build\(query/);
   assert.match(controller, /A2AChatContextResult/);
   assert.match(controller, /A2AChatContext\.sanitize\(session\.evidence, answer\)/);
@@ -100,7 +108,11 @@ test('A2A 图片意图：带图但无整理短语 → image_qa；带「整理」
 
 test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后落盘', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.ok(ability.includes('readContextId'));
   assert.ok(controller.includes('conversationKey'));
   assert.ok(controller.includes('A2AConversationStore.loadWithFallback(this.context, conversationKey)'));
@@ -120,7 +132,11 @@ test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后�
 
 
 test('「上一条」问题走确定性记忆回答（不依赖模型是否用 memoryContext）', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.ok(controller.includes('matchesRememberIntent(query)'));
   assert.ok(controller.includes('answerFromConversationMemory'));
   assert.ok(controller.includes("你上一条消息是：「"));
@@ -138,7 +154,11 @@ test('记忆键合并：contextId 与 default 按时间合并（跨请求无 con
   assert.ok(store.includes("A2AConversationStore.load(context, 'default')"));
   assert.ok(store.includes('merged.sort('));
   assert.ok(store.includes('MAX_TURNS'));
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.ok(controller.includes('loadWithFallback(this.context, conversationKey)'));
   assert.ok(controller.includes("A2AConversationStore.append(this.context, 'default'"));
 });
@@ -170,7 +190,11 @@ test('图片整理意图：带图 +「整理雅可比」→ OCR 整理；带图�
 
 test('无图/纯图片消息：纯文本引导（不再发卡片、不跳 App）', () => {
   const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.equal(ability.includes('sendAnswerWithImageCard'), false);
   assert.equal(controller.includes('sendAnswerWithImageCard'), false);
   assert.equal(ability.includes('buildPickCardPartJson'), false);

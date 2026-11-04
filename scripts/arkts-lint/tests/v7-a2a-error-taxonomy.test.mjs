@@ -38,7 +38,11 @@ test('A2A 错误文案保持既有口径', () => {
 });
 
 test('controller / ability 只经 taxonomy 拼错误文案', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.match(controller, /import \{ a2aErrorText \} from '\.\/A2AErrorTaxonomy'/);
   for (const legacy of ['A2A_INGEST_TIMEOUT_TEXT', 'A2A_TIMEOUT_TEXT', 'A2A_CONFIG_TIMEOUT_TEXT', 'MODEL_NOT_READY']) {
     assert.equal(controller.includes('const ' + legacy), false, legacy + ' should be removed');

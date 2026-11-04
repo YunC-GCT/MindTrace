@@ -185,7 +185,11 @@ test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
   assert.ok(ability.includes("mode === 'schedulerStress'"));
   // 扩展进程（适配器 + 控制器）不得读 UI 灰度配置；A2A 走内联路径
   const ext = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.ok(!ext.includes('WriteJobFlags.setEnabled(true)'));
   assert.ok(!controller.includes('WriteJobFlags.setEnabled(true)'));
   assert.ok(!ext.includes('WRITE_JOB_UI_ENABLED'));

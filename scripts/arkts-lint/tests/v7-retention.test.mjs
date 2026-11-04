@@ -20,7 +20,11 @@ test('A2A context files are pruned after 7 days', () => {
   assert.match(cleanup, /A2AConversationStore\.prune/);
   assert.match(cleanup, /A2AImageContextStore\.prune/);
   assert.match(cleanup, /A2APlanStore\.prune/);
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.match(controller, /A2AContextCleanup\.run\(this\.context\)/);
 });
 

@@ -75,11 +75,15 @@ test('质量统计：待复核题数与摘要标注', () => {
 });
 
 test('扩展入口接线：多题先回规划，再按指令逐题整理；计划可落盘/清除', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
-  assert.match(controller, /private handleTextPlanMessage\(/);
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
+  assert.match(controller, /handleTextPlanMessage\(/);
   assert.match(controller, /formatA2APlanSummary\(plan\)/);
-  assert.match(controller, /private handlePlanTurn\(/);
-  assert.match(controller, /private ingestPlanItem\(/);
+  assert.match(controller, /handlePlanTurn\(/);
+  assert.match(controller, /ingestPlanItem\(/);
   assert.match(controller, /A2APlanStore\.save\(this\.context, plan\.taskId, plan\)/);
   const store = read('entry/src/main/ets/services/A2APlanStore.ets');
   assert.match(store, /static async load\(context: common\.Context, taskId: string\)/);
@@ -91,9 +95,13 @@ test('扩展入口接线：多题先回规划，再按指令逐题整理；计�
 
 
 test('A2A 入库 deadline：超时转待整理队列（P0-2 第一片）', () => {
-  const controller = read('entry/src/main/ets/services/A2AController.ets');
+  const controller = [
+    read('entry/src/main/ets/services/A2AController.ets'),
+    read('entry/src/main/ets/services/A2AIngestHandler.ets'),
+    read('entry/src/main/ets/services/A2AConstants.ets'),
+  ].join('\n');
   assert.match(controller, /INGEST_DEADLINE_MS: number = 90000/);
-  assert.match(controller, /private ingestWithDeadline\(text: string\): Promise<NoteOutcome>/);
+  assert.match(controller, /ingestWithDeadline\(text: string\): Promise<NoteOutcome>/);
   assert.match(controller, /INGEST_DEADLINE: ' \+ INGEST_DEADLINE_MS/);
   assert.match(controller, /a2aErrorText\('A2A_INGEST_TIMEOUT'\)/);
   assert.match(controller, /this\.enqueueTexts\(\[item\.text\]\)/);
