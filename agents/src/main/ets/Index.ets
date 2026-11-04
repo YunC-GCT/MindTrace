@@ -92,3 +92,6 @@ export { NoteReviewEvidenceProvider, NoteReviewService } from './review/NoteRevi
 
 // 证据链（2026-11-03 由 entry/services 上移，数据经检索/图谱端口注入）
 export { NoteEvidenceService, NoteEvidenceStreamFilter } from './evidence/NoteEvidenceService';
+
+// 笔记生成上下文预处理（2026-11-03 由 entry/services 上移）
+export { NoteGenerationContextBuilder } from './note/NoteGenerationContextBuilder';

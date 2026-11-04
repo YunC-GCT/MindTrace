@@ -24,7 +24,7 @@ function sourceFingerprint(text) {
 
 function loadContextBuilder() {
   return loadNoteReviewEtsModule(
-    'entry/src/main/ets/services/NoteGenerationContextBuilder.ets',
+    'agents/src/main/ets/note/NoteGenerationContextBuilder.ets',
     {
       mocks: {
         common: { sourceFingerprint },
@@ -75,7 +75,7 @@ function pending(id, content, updatedAt = 1) {
 }
 
 test('NoteGenerationContextBuilder collects only durable note material before rendering sources', () => {
-  const builder = readRepoFile('entry/src/main/ets/services/NoteGenerationContextBuilder.ets');
+  const builder = readRepoFile('agents/src/main/ets/note/NoteGenerationContextBuilder.ets');
 
   assert.match(builder, /class NoteGenerationContextBuilder/);
   assert.match(builder, /input\.inlineMaterial\.trim\(\)\.length > 0/);
@@ -95,7 +95,7 @@ test('NoteGenerationContextBuilder collects only durable note material before re
 });
 
 test('NoteGenerationContextBuilder dedupes overlap while preserving source provenance', () => {
-  const builder = readRepoFile('entry/src/main/ets/services/NoteGenerationContextBuilder.ets');
+  const builder = readRepoFile('agents/src/main/ets/note/NoteGenerationContextBuilder.ets');
   const models = readRepoFile('common/src/main/ets/models/NoteGenerationModels.ets');
 
   assert.match(models, /provenanceIds\?: string\[\]/);
@@ -111,7 +111,7 @@ test('NoteGenerationContextBuilder dedupes overlap while preserving source prove
 });
 
 test('NoteGenerationContextBuilder detects competing topics and narrows by explicit instruction', () => {
-  const builder = readRepoFile('entry/src/main/ets/services/NoteGenerationContextBuilder.ets');
+  const builder = readRepoFile('agents/src/main/ets/note/NoteGenerationContextBuilder.ets');
 
   assert.match(builder, /const topics: NoteTopicCandidate\[\] = NoteGenerationContextBuilder\.detectTopics\(merged\)/);
   assert.match(builder, /detectInstructionTopics\(input\.instruction, topics\)/);
@@ -125,7 +125,7 @@ test('NoteGenerationContextBuilder detects competing topics and narrows by expli
 });
 
 test('note-generation context budget leaves output safety and protocol reserve intact', () => {
-  const builder = readRepoFile('entry/src/main/ets/services/NoteGenerationContextBuilder.ets');
+  const builder = readRepoFile('agents/src/main/ets/note/NoteGenerationContextBuilder.ets');
   const llmConfig = readRepoFile('common/src/main/ets/llm/LlmConfig.ets');
 
   assert.match(llmConfig, /export const DEFAULT_CONTEXT_WINDOW_TOKENS: number = 65536/);

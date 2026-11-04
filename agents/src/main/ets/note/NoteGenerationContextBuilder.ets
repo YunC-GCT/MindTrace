@@ -1,9 +1,13 @@
 /**
- * NoteGenerationContextBuilder.ets - deterministic note-generation context preparation.
+ * NoteGenerationContextBuilder.ets — 笔记生成上下文的确定性预处理
  *
- * Path: entry/src/main/ets/services/NoteGenerationContextBuilder.ets
- * Responsibility: Normalize, atomize, deduplicate, isolate topics and apply the
- * model-window budget before any note-generation prompt is constructed.
+ * 路径: agents/src/main/ets/note/NoteGenerationContextBuilder.ets
+ * 职责: 在构造任何生成 prompt 之前完成归一化、原子化、去重、主题隔离与
+ *       模型窗口预算裁剪
+ * 依赖: common（NoteGenerationModels / AgentMemoryModels）
+ *
+ * 数据流:
+ *   会话消息 + OCR 记忆 → build → NoteGenerationContextResult（bundle / topics / budget）
  */
 import { NoteTopicCandidate, SourceBundle, SourceFragment, SourceKind, sourceFingerprint } from 'common';
 import {

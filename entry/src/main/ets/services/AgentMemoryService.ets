@@ -19,7 +19,7 @@ import { SessionIdPolicy } from 'common';
 import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
 import { getChatHistoryClearControl } from './ChatHistoryClearControl';
 import type { ChatProjectionWriter } from 'common';
-import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
+import { NoteGenerationContextBuilder } from 'agents';
 import { NoteContextValidityReviewer } from './NoteContextValidityReviewer';
 
 const RECENT_REPLY_LIMIT: number = 28;

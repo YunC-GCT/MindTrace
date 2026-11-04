@@ -18,7 +18,7 @@ import type {
   SourceFragment,
 } from 'common';
 import { NoteGenerationContextResult } from 'common';
-import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
+import { NoteGenerationContextBuilder } from 'agents';
 
 interface ReviewedFragment {
   sourceId: string;

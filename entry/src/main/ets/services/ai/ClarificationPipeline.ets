@@ -66,7 +66,7 @@ import { SubjectVocabularyService } from '../SubjectVocabularyService';
 import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 import { NoteGenerationRepositoryFactory } from '../NoteGenerationRepositoryFactory';
 import { AgentMemoryService } from '../AgentMemoryService';
-import { NoteGenerationContextBuilder } from '../NoteGenerationContextBuilder';
+import { NoteGenerationContextBuilder } from 'agents';
 import { CaptureTiming } from './CaptureTiming';
 import { AiServicePorts } from './AiServicePorts';
 import { ClarificationRegistry } from './ClarificationRegistry';

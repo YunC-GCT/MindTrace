@@ -49,7 +49,8 @@ export function createRuntime(respond = () => { throw new Error('Unexpected LLM 
     }
   }
   const { CommandExecutor } = load('agents/src/main/ets/core/CommandExecutor.ets');
-  options.mocks.agents = { Dispatcher: CommandExecutor, CommandExecutor };
+  const { NoteGenerationContextBuilder } = load('agents/src/main/ets/note/NoteGenerationContextBuilder.ets');
+  options.mocks.agents = { Dispatcher: CommandExecutor, CommandExecutor, NoteGenerationContextBuilder };
   const { KnowledgeModel } = load('agents/src/main/ets/agents/KnowledgeModel.ets');
   return { common, load, requests, dispatcher: new CommandExecutor(), model: new KnowledgeModel(new LlmClient()) };
 }
