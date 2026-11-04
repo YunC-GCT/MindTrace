@@ -259,7 +259,7 @@
 
 ### 4.2 🔴 P0 — `KnowledgeModel` God Class (870 LOC)
 
-**位置**: `agents/src/main/ets/agents/KnowledgeModel.ets`
+**位置**: `agents/src/main/ets/subagents/KnowledgeModel.ets`
 
 **职责清单** (一文件 7+ 职责):
 | 职责 | 行数 | 备注 |
@@ -527,7 +527,7 @@
 - `common/src/main/ets/render/ContentProtocol.ets` 有完整文件头注释 (L1-14)
 - `common/src/main/ets/llm/LlmClient.ets` 有 `// ...` 块注释 (L1-22) 但不是 AGENTS.md 规定的 `/** ... */` 模板
 - `entry/src/main/ets/services/AiService.ets` 有 `// ============` ASCII banner (L1-22) 但不是模板
-- `agents/src/main/ets/agents/KnowledgeModel.ets` 有完整 `/** ... */` (L1-25)
+- `agents/src/main/ets/subagents/KnowledgeModel.ets` 有完整 `/** ... */` (L1-25)
 - 抽样观察: 4 种风格并存,**没有统一**
 
 **修复方向** (Phase 4 ticket #1 / MD 标准化):

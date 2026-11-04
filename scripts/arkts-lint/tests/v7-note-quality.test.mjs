@@ -9,9 +9,9 @@ import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
-const sections = loadNoteReviewEtsModule('agents/src/main/ets/agents/StructuredSections.ets');
+const sections = loadNoteReviewEtsModule('agents/src/main/ets/subagents/StructuredSections.ets');
 const dedupe = loadNoteReviewEtsModule('agents/src/main/ets/note/NoteDedupe.ets');
-const taxonomy = loadNoteReviewEtsModule('agents/src/main/ets/agents/KnowledgeTaxonomy.ets');
+const taxonomy = loadNoteReviewEtsModule('agents/src/main/ets/subagents/KnowledgeTaxonomy.ets');
 const arr = (value) => Array.from(value);
 
 test('五类笔记标准字段：缺字段能被检出（表单内容纰漏）', () => {
@@ -51,7 +51,7 @@ test('学科收敛：别名归一且未知学科不再新建', () => {
   assert.equal(taxonomy.normalizeSubjectName('数学').subject, '其他');
   const resolution = taxonomy.resolveSubjectName('量子数学', []);
   assert.equal(resolution.decision, 'new');
-  const structurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
+  const structurer = read('agents/src/main/ets/subagents/CaptureStructurer.ets');
   assert.match(structurer, /resolution\.decision === 'new'/);
   assert.match(structurer, /return KNOWLEDGE_FALLBACK_SUBJECT/);
   assert.match(structurer, /missingSectionLabels\(normalizedCategory/);
@@ -123,7 +123,7 @@ test('快速路由：文字整理跳过分类 LLM（structure 自分类）', () 
   assert.ok(classify.includes('input.skipClassification === true'));
   const structure = read('agents/src/main/ets/graph/nodes/StructureNode.ets');
   assert.ok(structure.includes('input.skipClassification === true'));
-  const structurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
+  const structurer = read('agents/src/main/ets/subagents/CaptureStructurer.ets');
   assert.ok(structurer.includes('skipClassifierHint: boolean = false'));
   assert.ok(structurer.includes('this.buildExternalHint(ocrText, type, subject, chapter)'));
   const pipeline = read('entry/src/main/ets/services/ai/CapturePipeline.ets');

@@ -20,8 +20,8 @@
 
 import { describe, it, expect } from '@ohos/hypium';
 import { StructureNodeFactory } from '../main/ets/graph/nodes/StructureNode';
-import { KnowledgeModel } from '../main/ets/agents/KnowledgeModel';
-import { GenerationJsonError } from '../main/ets/agents/GenerationJsonCaller';
+import { KnowledgeModel } from '../main/ets/subagents/KnowledgeModel';
+import { GenerationJsonError } from '../main/ets/subagents/GenerationJsonCaller';
 import { AgentState } from '../main/ets/graph/AgentState';
 import { KnowledgeUnit, LlmError, DifficultyLevel, ReviewStatus } from 'common';
 

@@ -43,7 +43,7 @@ The canonical contract is:
 }
 ```
 
-Commit `c8a66f0` changed `agents/src/main/ets/agents/KnowledgeModel.ets` so that:
+Commit `c8a66f0` changed `agents/src/main/ets/subagents/KnowledgeModel.ets` so that:
 
 1. `status` is read first.
 2. `overallStatus` is accepted only when `status` is absent (`undefined`).
@@ -326,7 +326,7 @@ Missing evidence / next red test:
 
 ## 10. Files to inspect first
 
-- `agents/src/main/ets/agents/KnowledgeModel.ets`
+- `agents/src/main/ets/subagents/KnowledgeModel.ets`
 - `agents/src/main/ets/core/Dispatcher.ets`
 - `entry/src/main/ets/database/NoteGenerationRepository.ets`
 - `agents/src/main/ets/conversation/ConversationWorkflow.ets`

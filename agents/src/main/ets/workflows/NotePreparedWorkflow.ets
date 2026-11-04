@@ -29,7 +29,7 @@ import { AgentState, copyAgentState } from '../graph/AgentState';
 import type { CaptureNodeResult, CaptureStep } from '../graph/AgentState';
 import { TruthCheckNodeFactory } from '../graph/nodes/TruthCheckNode';
 import { PersistNodeFactory } from '../graph/nodes/PersistNode';
-import { TruthCheckService } from '../agents/TruthCheckService';
+import { TruthCheckService } from '../subagents/TruthCheckService';
 import type { NoteDaoInterface } from '../models/NoteDaoInterface';
 import { copyRegeneratedUnit, seedTextFromRequest } from '../core/dispatch/UnitSupport';
 import type { NoteWorkflow, WorkflowContext } from './WorkflowContext';

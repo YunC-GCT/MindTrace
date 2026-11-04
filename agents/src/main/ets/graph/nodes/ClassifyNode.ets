@@ -2,7 +2,7 @@
 // 2026-09-05 · D2 Ticket #4
 import { AgentState, CaptureGraphError, CaptureNode, CaptureNodeResult, copyAgentState } from '../AgentState';
 import { ClassificationResult, RunContext } from 'common';
-import { TypeClassifier } from '../../agents/TypeClassifier';
+import { TypeClassifier } from '../../subagents/TypeClassifier';
 
 export class ClassifyNodeFactory {
   static create(classifier: TypeClassifier): CaptureNode {

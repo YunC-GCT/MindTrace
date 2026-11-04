@@ -2,7 +2,7 @@
 // 2026-09-05 · D2 Ticket #5
 import { AgentState, CaptureGraphError, CaptureNode, CaptureNodeResult, copyAgentState } from '../AgentState';
 import { RunContext, TruthCheckResult } from 'common';
-import { TruthCheckService } from '../../agents/TruthCheckService';
+import { TruthCheckService } from '../../subagents/TruthCheckService';
 
 export class TruthCheckNodeFactory {
   static create(service: TruthCheckService): CaptureNode {

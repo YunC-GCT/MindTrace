@@ -3,12 +3,12 @@
 > **归档 2026-10-30**：本规格已被 [spec 015](../../specs/015-knowledge-model-decomposition-v2.md) 取代（003）/ 被 [spec 018](../../specs/018-agent-workflow-architecture.md) 的 ConversationWorkflow 取代（007），正文冻结保留；现行口径见 `docs/specs/index.md`。
 > **Status**: superseded by [spec 015)](../../specs/015-knowledge-model-decomposition-v2.md) (2026-09-06; ADR-0006 amended)
 > **Source ADR**: [`../adr/0006-knowledge-model-decomposition-plan.md`)](../../adr/0006-knowledge-model-decomposition-plan.md)
-> **Files affected**: `agents/src/main/ets/agents/KnowledgeModel.ets` (split into 3 files); `agents/src/main/ets/agents/TypeClassifier.ets` (consumer, unchanged interface); `agents/src/main/ets/core/Dispatcher.ets` (orchestrator, calls the 3 services)
+> **Files affected**: `agents/src/main/ets/subagents/KnowledgeModel.ets` (split into 3 files); `agents/src/main/ets/subagents/TypeClassifier.ets` (consumer, unchanged interface); `agents/src/main/ets/core/Dispatcher.ets` (orchestrator, calls the 3 services)
 > **Test files**: new `agents/src/test/StructureService.test.ets` (Hypium), `agents/src/test/TruthCheckService.test.ets` (Hypium), `agents/src/test/PromptBuilder.test.ets` (Hypium)
 
 ## Why this ticket
 
-`agents/src/main/ets/agents/KnowledgeModel.ets` is **870 LOC** with 7+ responsibilities per the audit (§4.2):
+`agents/src/main/ets/subagents/KnowledgeModel.ets` is **870 LOC** with 7+ responsibilities per the audit (§4.2):
 1. `structure()` — pipeline orchestration
 2. `buildPrompt()` — prompt construction
 3. AI call (LlmClient + LlmGuard wrapping)
@@ -21,7 +21,7 @@ Per the audit, this violates the "deep module" principle: too many seams in one 
 
 ## What we will build
 
-Three new classes in `agents/src/main/ets/agents/`:
+Three new classes in `agents/src/main/ets/subagents/`:
 
 ```ts
 // 1. Prompt construction (~200 LOC)
@@ -66,7 +66,7 @@ class Dispatcher {
 
 ## Public surface change
 
-`TypeClassifier` and any caller of `KnowledgeModel` (`agents/src/main/ets/agents/TypeClassifier.ets`, etc.) currently call `structureService.structure(req)` after ADR-0006 migration. The interface is preserved; only the class name changes (`KnowledgeModel` → `StructureService`).
+`TypeClassifier` and any caller of `KnowledgeModel` (`agents/src/main/ets/subagents/TypeClassifier.ets`, etc.) currently call `structureService.structure(req)` after ADR-0006 migration. The interface is preserved; only the class name changes (`KnowledgeModel` → `StructureService`).
 
 `Dispatcher` has a new internal seam — `promptBuilder` and `truthCheck` — but its public `dispatch(req)` is unchanged.
 
@@ -77,10 +77,10 @@ This is a non-trivial refactor. **Three atomic PRs** for reviewability:
 ### PR 1: extract `PromptBuilder`
 
 ```bash
-git mv agents/src/main/ets/agents/KnowledgeModel.ets \
-       agents/src/main/ets/agents/_KnowledgeModel.ets.legacy
+git mv agents/src/main/ets/subagents/KnowledgeModel.ets \
+       agents/src/main/ets/subagents/_KnowledgeModel.ets.legacy
 # extract PromptBuilder into a new file
-# new file: agents/src/main/ets/agents/PromptBuilder.ets
+# new file: agents/src/main/ets/subagents/PromptBuilder.ets
 # update KnowledgeModel to call PromptBuilder.build() (1 line change)
 # existing tests pass (behavior preserved)
 ```
@@ -90,7 +90,7 @@ After PR 1: 2 files, no behavior change.
 ### PR 2: extract `TruthCheckService`
 
 ```bash
-# new file: agents/src/main/ets/agents/TruthCheckService.ets
+# new file: agents/src/main/ets/subagents/TruthCheckService.ets
 # update KnowledgeModel to call truthCheck.check() (1 line change)
 # add agents/src/test/TruthCheckService.test.ets (4 math tests)
 ```
@@ -100,7 +100,7 @@ After PR 2: 3 files, 1 new test file. The truthCheck logic is now in 1 file.
 ### PR 3: extract `StructureService`, delete `KnowledgeModel`
 
 ```bash
-# new file: agents/src/main/ets/agents/StructureService.ets
+# new file: agents/src/main/ets/subagents/StructureService.ets
 # StructureService contains the orchestration logic (the rest of
 # KnowledgeModel minus PromptBuilder and TruthCheckService)
 # Dispatcher updated to wire the 3 services

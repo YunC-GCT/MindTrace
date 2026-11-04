@@ -19,7 +19,7 @@ import type {
   NoteWritePort,
   RunContext,
 } from 'common';
-import type { KnowledgeModel } from '../../agents/KnowledgeModel';
+import type { KnowledgeModel } from '../../subagents/KnowledgeModel';
 import type { NoteDaoInterface } from '../../models/NoteDaoInterface';
 import type { RunEventSink } from './RunEventSink';
 

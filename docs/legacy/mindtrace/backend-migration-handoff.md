@@ -310,7 +310,7 @@ entry/src/main/ets/
 |---|---|---|
 | `common/src/main/ets/llm/LlmTypes.ets` | 双方都消费 `ChatMessage` / `LlmCallRequest` / `LlmToolCall` | 加字段双方确认, 别动既有字段语义 |
 | `common/src/main/ets/Index.ets` re-export 列表 | 双方都依赖模块入口 | 加 re-export 双方确认, **禁止 `export const { X, Y } from ...`**(arkts-no-destruct-decls 10605074, 血泪) |
-| `agents/src/main/ets/agents/` 子代理(除 KnowledgeModel 已拆外) | 双方都可能扩展 | 若你新增, 走 `agents/agents/<newname>.ets` 平行结构, 不改既有 |
+| `agents/src/main/ets/subagents/` 子代理(除 KnowledgeModel 已拆外) | 双方都可能扩展 | 若你新增, 走 `agents/agents/<newname>.ets` 平行结构, 不改既有 |
 
 ### 7.5 边界冲突时的升级路径
 

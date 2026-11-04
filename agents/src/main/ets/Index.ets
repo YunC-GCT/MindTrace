@@ -19,13 +19,13 @@ export type { DispatchRunEvent, RunEventSink } from './core/dispatch/RunEventSin
 //   当前为 stub,接 DispatchPayload discriminated union
 //   D 接手: 替换 TypeClassifier.classify body
 //   spec 015: KnowledgeModel 重构为轻量编排 agent, 常量/提示词/真值检查拆分为协作服务
-export { TypeClassifier } from './agents/TypeClassifier';
-export type { TypeClassifierTextResult } from './agents/TypeClassifier';
-export { KnowledgeModel } from './agents/KnowledgeModel';
-export { PromptBuilder } from './agents/PromptBuilder';
-export { TruthCheckService } from './agents/TruthCheckService';
-export { normalizeSubjectName, sanitizeNoteTitle, CANONICAL_SUBJECTS } from './agents/KnowledgeTaxonomy';
-export type { SubjectNormalization, TitleSanitization } from './agents/KnowledgeTaxonomy';
+export { TypeClassifier } from './subagents/TypeClassifier';
+export type { TypeClassifierTextResult } from './subagents/TypeClassifier';
+export { KnowledgeModel } from './subagents/KnowledgeModel';
+export { PromptBuilder } from './subagents/PromptBuilder';
+export { TruthCheckService } from './subagents/TruthCheckService';
+export { normalizeSubjectName, sanitizeNoteTitle, CANONICAL_SUBJECTS } from './subagents/KnowledgeTaxonomy';
+export type { SubjectNormalization, TitleSanitization } from './subagents/KnowledgeTaxonomy';
 export { planCaptureSet } from './graph/captureSetPlanner';
 export type { PlannedProblem, SetImageText, SetPlan } from './graph/captureSetPlanner';
 export { OcrTool } from './mcp/tools/OcrTool';

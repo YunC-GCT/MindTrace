@@ -60,7 +60,7 @@
 
 - truth 检查输入 = `captureText + '\n' + 草稿内容`（TruthCheckNode 简化后的契约, §23.2）—— **会话原文也在检查范围内**。
 - 会话历史里有一条早前 assistant 回复含换元公式: `\int_{-\infty}^{\infty} f(x)\,dx=\int_{-\infty}^{\infty}\varphi(u)\,du=1`。第二个积分微元是 `du`（换元法, 数学上完全正确）。
-- P0-6 修复版 `patchIntegralDx`（agents/src/main/ets/agents/TruthCheckService.ets:244）窗口内只认 `dx` —— 窗口 `\varphi(u)\,du=1` 含 `du` 无 `dx` → 误判"缺 dx" → 注入错误内容 + 记 issue → truthFlag=false → TRUTH_CHECK_ERROR（Dispatcher.ets evaluateStandardCandidate ~L955）。
+- P0-6 修复版 `patchIntegralDx`（agents/src/main/ets/subagents/TruthCheckService.ets:244）窗口内只认 `dx` —— 窗口 `\varphi(u)\,du=1` 含 `du` 无 `dx` → 误判"缺 dx" → 注入错误内容 + 记 issue → truthFlag=false → TRUTH_CHECK_ERROR（Dispatcher.ets evaluateStandardCandidate ~L955）。
 - Python 完整复现命中（@1433）。**触发点在源文本上, 修复轮改草稿救不了**。
 - 这是 P0-6 修的"dx 离指数太远"窗口问题的孪生兄弟: 同类假阳性, 换了个马甲（微元不叫 dx）。
 
@@ -82,8 +82,8 @@ git 状态: 分支 `develop`, 基线 `4b40e9a`（Merge PR #138 multi-device-rese
 
 | 文件 | 涉及批次 |
 |---|---|
-| agents/src/main/ets/agents/KnowledgeModel.ets | P1, P0-3, P0-4, P0-5, P0-6, P0-7 |
-| agents/src/main/ets/agents/TruthCheckService.ets | P0-6 |
+| agents/src/main/ets/subagents/KnowledgeModel.ets | P1, P0-3, P0-4, P0-5, P0-6, P0-7 |
+| agents/src/main/ets/subagents/TruthCheckService.ets | P0-6 |
 | agents/src/main/ets/core/Dispatcher.ets | P0-7（deep→standard 降级 ~L339）等 |
 | agents/src/main/ets/graph/nodes/PersistNode.ets | P1 |
 | agents/src/main/ets/graph/nodes/StructureNode.ets | P1 |
@@ -102,7 +102,7 @@ git 状态: 分支 `develop`, 基线 `4b40e9a`（Merge PR #138 multi-device-rese
 
 | 文件 | 内容 |
 |---|---|
-| agents/src/main/ets/agents/GenerationJsonCaller.ets | 统一 callJson seam（P1） |
+| agents/src/main/ets/subagents/GenerationJsonCaller.ets | 统一 callJson seam（P1） |
 | agents/src/test/GenerationJsonCaller.test.ets | 13 用例 |
 | agents/src/test/PersistNode.test.ets | 5 用例 |
 | agents/src/test/StructureNode.test.ets | 5 用例 |

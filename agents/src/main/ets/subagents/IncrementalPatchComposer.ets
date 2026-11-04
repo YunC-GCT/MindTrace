@@ -1,7 +1,7 @@
 /**
  * IncrementalPatchComposer.ets — 计划约束下的增量 replace patch 生成
  *
- * 路径: agents/src/main/ets/agents/IncrementalPatchComposer.ets
+ * 路径: agents/src/main/ets/subagents/IncrementalPatchComposer.ets
  * 职责: 计划约束下的增量 replace patch 生成，保持现有生成行为。
  * 依赖: common、GenerationJsonCaller
  * 数据流: KnowledgeModel → compose（计划筛选 / JSON 校验）→ IncrementalPatchResponse

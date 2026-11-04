@@ -10,7 +10,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 test('PromptBuilder turns the known subjects into a closed vocabulary', () => {
-  const prompt = read('agents/src/main/ets/agents/PromptBuilder.ets');
+  const prompt = read('agents/src/main/ets/subagents/PromptBuilder.ets');
   assert.match(prompt, /buildPrompt\(ocrText: string, knownSubjects: string\[\] = \[\]\): string/);
   assert.match(prompt, /knownSubjects\.join\(' \/ '\)/);
   assert.match(prompt, /必须从这里选/);
@@ -26,8 +26,8 @@ test('the vocabulary travels from the dispatcher down to the prompt', () => {
   const optionsSource = dispatcher + '\n' + dispatchOptions;
   const state = read('agents/src/main/ets/graph/AgentState.ets');
   const node = read('agents/src/main/ets/graph/nodes/StructureNode.ets');
-  const model = read('agents/src/main/ets/agents/KnowledgeModel.ets');
-  const structurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
+  const model = read('agents/src/main/ets/subagents/KnowledgeModel.ets');
+  const structurer = read('agents/src/main/ets/subagents/CaptureStructurer.ets');
 
   assert.match(optionsSource, /subjectVocabulary\?: string\[\];/);
   assert.match(captureBranch, /subjectVocabulary: domain\.subjectVocabulary \?\? \[\]/);

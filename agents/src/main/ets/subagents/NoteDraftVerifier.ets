@@ -1,7 +1,7 @@
 /**
  * NoteDraftVerifier.ets — standard/deep 共用的只读笔记验证
  *
- * 路径: agents/src/main/ets/agents/NoteDraftVerifier.ets
+ * 路径: agents/src/main/ets/subagents/NoteDraftVerifier.ets
  * 职责: standard/deep 共用的只读笔记验证，保持现有生成行为。
  * 依赖: common、GenerationJsonCaller
  * 数据流: DraftComposer / DeepDraftComposer → verify → 只读验证结果

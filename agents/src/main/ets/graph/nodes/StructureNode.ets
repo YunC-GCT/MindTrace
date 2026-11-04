@@ -1,8 +1,8 @@
 // MindTrace - StructureNode
 // 2026-09-05 · D2 Ticket #5
 import { AgentState, CaptureNode, CaptureGraphError, CaptureNodeResult, copyAgentState } from '../AgentState';
-import { KnowledgeModel } from '../../agents/KnowledgeModel';
-import { GenerationJsonError } from '../../agents/GenerationJsonCaller';
+import { KnowledgeModel } from '../../subagents/KnowledgeModel';
+import { GenerationJsonError } from '../../subagents/GenerationJsonCaller';
 import {
   CaptureProvenance,
   DispatchPayload,

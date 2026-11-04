@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 
-const mod = loadNoteReviewEtsModule('agents/src/main/ets/agents/KnowledgeTaxonomy.ets');
+const mod = loadNoteReviewEtsModule('agents/src/main/ets/subagents/KnowledgeTaxonomy.ets');
 const normalizeSubjectName = mod.normalizeSubjectName;
 const sanitizeNoteTitle = mod.sanitizeNoteTitle;
 const resolveSubjectName = mod.resolveSubjectName;

@@ -206,7 +206,7 @@
 
 ## #241 NoteAgent 薄包装 + 迁 capture
 
-- [x] `NoteAgent` 只包现有节点与服务，不改 prompt、不重写 `TruthCheck` — 新增 `agents/src/main/ets/agents/NoteAgent.ets`
+- [x] `NoteAgent` 只包现有节点与服务，不改 prompt、不重写 `TruthCheck` — 新增 `agents/src/main/ets/subagents/NoteAgent.ets`
 - [x] `TruthCheck` 留在子图最后一个节点（`structure → truth_check → persist`）
 - [x] `Dispatcher` 只改 capture 分支，其余三条（generation / regenerate / prepared）未动
 - [x] 同切片删旧 capture 装配：`Dispatcher.buildGraph` 已删除，无 flag / 双 runtime

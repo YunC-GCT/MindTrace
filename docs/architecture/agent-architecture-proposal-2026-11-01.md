@@ -2,7 +2,7 @@
 
 > **Status**: proposed (2026-11-01)
 > **Related**: [ADR-0008](../adr/0008-capturegraph-self-built-runtime.md) · [ADR-0019](../adr/0019-note-command-and-outcome.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md) · [spec 018](../specs/018-agent-workflow-architecture.md) · [spec 038](../specs/038-write-job-scheduler.md) · [v7 外评审](./review-v7-2026-10-27.md)
-> **Code**: `agents/src/main/ets/core/Dispatcher.ets` · `agents/src/main/ets/core/dispatch/DispatchGraph.ets` · `agents/src/main/ets/agents/NoteAgent.ets` · `common/src/main/ets/workflow/StateGraph.ets` · `entry/src/main/ets/services/ai/RunStoreEventSink.ets` · `entry/src/main/ets/services/WriteJobScheduler.ets`
+> **Code**: `agents/src/main/ets/core/Dispatcher.ets` · `agents/src/main/ets/core/dispatch/DispatchGraph.ets` · `agents/src/main/ets/subagents/NoteAgent.ets` · `common/src/main/ets/workflow/StateGraph.ets` · `entry/src/main/ets/services/ai/RunStoreEventSink.ets` · `entry/src/main/ets/services/WriteJobScheduler.ets`
 > **Verified by**: 现状基线 `node scripts/agent-gate/index.mjs` → `RESULT: PASS`（pass=1165，0 lint error）；本提案尚未实现，实施证据待各切片补齐
 
 ## 1. 结论

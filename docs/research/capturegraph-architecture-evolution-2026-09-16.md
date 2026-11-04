@@ -215,12 +215,12 @@ type CaptureNode = (state: AgentState) => Promise<{ state: AgentState }>;      /
 
 ### 4.5 KnowledgeModel (spec 015 拆分)
 
-文件: [`agents/src/main/ets/agents/KnowledgeModel.ets`](../../agents/src/main/ets/agents/KnowledgeModel.ets) (≈54 LOC, 拆分前 878)
+文件: [`agents/src/main/ets/subagents/KnowledgeModel.ets`](../../agents/src/main/ets/subagents/KnowledgeModel.ets) (≈54 LOC, 拆分前 878)
 
 | 关注点(拆分前) | 新归属 | file:line |
 | --- | --- | --- |
-| prompt 构造+ `KNOWLEDGE_*` 常量 | `PromptBuilder` | [`PromptBuilder.ets:9-58`](../../agents/src/main/ets/agents/PromptBuilder.ets) |
-| 4 项校验+ `patchIntegralDx` | `TruthCheckService` | [`TruthCheckService.ets:30-283`](../../agents/src/main/ets/agents/TruthCheckService.ets) |
+| prompt 构造+ `KNOWLEDGE_*` 常量 | `PromptBuilder` | [`PromptBuilder.ets:9-58`](../../agents/src/main/ets/subagents/PromptBuilder.ets) |
+| 4 项校验+ `patchIntegralDx` | `TruthCheckService` | [`TruthCheckService.ets:30-283`](../../agents/src/main/ets/subagents/TruthCheckService.ets) |
 | 编排 (`structure*` / `repair*` / `draftToKnowledgeUnit`) | **`KnowledgeModel`** (保留者) | `:114-511, 1100-1117` |
 
 **spec 018 ownership 更新**: `TruthCheckService` 生产调用权收敛到 TruthCheckNode; `KnowledgeModel` 不再调 TruthCheck。验证 `TruthCheckService` 由`TruthCheckNode.ets:5,13` import。
@@ -229,7 +229,7 @@ LLM 用 `this.llm` (`:102-106`), 类型 `LlmCaller` (re-export of `LlmClient.cal
 
 ### 4.6 TruthCheck 节点短路力学
 
-文件: [`agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7-38`](../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets) · 4 项校验([`TruthCheckService.ets:42-113`](../../agents/src/main/ets/agents/TruthCheckService.ets)):
+文件: [`agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7-38`](../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets) · 4 项校验([`TruthCheckService.ets:42-113`](../../agents/src/main/ets/subagents/TruthCheckService.ets)):
 1. **bracePair** (`:115-154`) —`{`/`}` 深度, 自动闭合
 2. **divisionByZero** (`:156-165`) — 子串 `/0`
 3. **equationCheck** (`:166-188`) — 矛盾恒等式+ `≠` + 平凡等式
@@ -904,7 +904,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.2 TypeClassifier — Single-shot LLM + Pure function fallback
 
 **Pattern**: Single-shot LLM call (主路径 + Pure function fallback (rule-based))
-**位置**: [`TypeClassifier.ets:1-363`](../../agents/src/main/ets/agents/TypeClassifier.ets)
+**位置**: [`TypeClassifier.ets:1-363`](../../agents/src/main/ets/subagents/TypeClassifier.ets)
 
 - 公开 3 入口 (`classify / recognizeText / classifyText`), 内部统一走`callClassifier` (`:212-231`) 单次 LLM 调用
 - LLM 失败显式 catch (`:123-133`) 落到 `ruleFallback` (`:292-299`) — 5 类题 + 6 学科的关键词匹配 (`CATEGORY_RULES / SUBJECT_RULES :41-56`), 不调 LLM
@@ -916,7 +916,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.3 KnowledgeModel — Plan-and-Execute + Reflexion
 
 **Pattern**: Plan-and-Execute (`structureStandardDraft` outline→ evidence→ draft) + Reflexion (外层 Dispatcher 调`repairStandardDraft` / `repairDeepDraft` / `repairIncrementalSections`)
-**位置**: [`KnowledgeModel.ets:1-1252`](../../agents/src/main/ets/agents/KnowledgeModel.ets) (split 后~554 LOC)
+**位置**: [`KnowledgeModel.ets:1-1252`](../../agents/src/main/ets/subagents/KnowledgeModel.ets) (split 后~554 LOC)
 
 - `structureStandardDraft` (`:235-258`) 三阶段 ①`callStandardArtifacts` outline+evidence+draft (`:691-720`); ①`normalizeStandardResult` 归一化(`:785-844`); ①`callIndependentVerifier` 独立验证 (`:722-783`) →①`applyVerification` (`:846-869`) — 典型 **Plan-and-Execute** (Planner 生成 3 份产物+ Executor 验证)
 - `repairStandardDraft` (`:260-287`) **Reflexion**: verification 失败 →`callEvidenceRepair` 修复 → 再 verify →`mergeVerifiedEvidence` (`:871-941`) 保留 `supported` 证据冻结, 只替换 contradicted。形成验证-修复-再验证循环, 但循环在 Dispatcher 编排层(`Dispatcher.dispatchStandardGeneration`, `Dispatcher.ets:585-751`), 修到 `best.hardIssueCount === 0` (`:666-669`)
@@ -929,7 +929,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.4 TruthCheckService — Pure function
 
 **Pattern**: Pure function (4 项数学校验 纯文本 → 文本+`truthFlag`)
-**位置**: [`TruthCheckService.ets:1-283`](../../agents/src/main/ets/agents/TruthCheckService.ets)
+**位置**: [`TruthCheckService.ets:1-283`](../../agents/src/main/ets/subagents/TruthCheckService.ets)
 
 - 公开面`check(input) →MvpTruthCheckResult` (`:32-34`); 4 检查 `checkBracePairing` (`:115-154`) + `checkDivisionByZero` (`:156-165`) + `checkEquation` (`:166-188`) + `checkLatexInternal` (`:189-231`)
 - **CaptureGraph `truth_check` 节点的唯一实现** (`TruthCheckNode.ets:13`), **spec 015 后所有权已从 KnowledgeModel 移到 Capture pipeline**
@@ -940,7 +940,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.5 PromptBuilder — Pure function（Builder 不算 GoF 模式）
 
 **Pattern**: Pure function (类只封装常量 + 单方法 命名上像 Builder 但行为是函数)
-**位置**: [`PromptBuilder.ets:1-58`](../../agents/src/main/ets/agents/PromptBuilder.ets)
+**位置**: [`PromptBuilder.ets:1-58`](../../agents/src/main/ets/subagents/PromptBuilder.ets)
 
 - 公开 `build(input)` (`:19-21`) + `buildPrompt(ocrText)` (`:23-57`), 后者返回*模板字符串* (类别枚举 + 字段规范 + 渲染要求)
 - 持有 7 个常量(`KNOWLEDGE_INPUT_LIMIT` 见 `:9-15`), 全部 `export const`, KnowledgeModel `KnowledgeModel.ets:88-96` import 作为 budget - 与 GoF Builder 模式差异: **非**分步构造复杂对象(无 setter 链 / 无 Director), 而是一次性返回字符串
@@ -1269,7 +1269,7 @@ private async handleWant(want: Want): Promise<void> {
 | `common/src/main/ets/llm/{LlmClient,LlmGuard,LlmTypes,LlmResponseParser}.ets` | 60-522 / 5-66 / 13-225 / 26-55 |
 | `agents/src/main/ets/graph/{CaptureGraph,AgentState,nodes/*.ets}.ets` | 1-99 / 1-98 / 17-84 |
 | `agents/src/main/ets/core/Dispatcher.ets` | 68-1531 (关键段已逐节标) |
-| `agents/src/main/ets/agents/{KnowledgeModel,TruthCheckService,PromptBuilder,TypeClassifier}.ets` | 关键段已逐节标 |
+| `agents/src/main/ets/subagents/{KnowledgeModel,TruthCheckService,PromptBuilder,TypeClassifier}.ets` | 关键段已逐节标 |
 | `agents/src/main/ets/mcp/tools/OcrTool.ets` | 1-427 |
 | `agents/src/main/ets/models/NoteDaoInterface.ets` | 全文 (略) |
 | `entry/src/main/ets/services/{AiService,AgentChatService,ReplyService}.ets` | 关键段已逐节标 |

@@ -1,7 +1,7 @@
 /**
  * DeepDraftComposer.ets — deep 顺序生成、ledger 与来源证据闭包
  *
- * 路径: agents/src/main/ets/agents/DeepDraftComposer.ets
+ * 路径: agents/src/main/ets/subagents/DeepDraftComposer.ets
  * 职责: deep 顺序生成、ledger 与来源证据闭包，保持现有生成行为。
  * 依赖: common、GenerationJsonCaller、NoteDraftVerifier、GenerationDraftSupport
  * 数据流: KnowledgeModel / composer → 本 Module → 生成或验证结果

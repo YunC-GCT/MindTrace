@@ -4,10 +4,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
-const km = readFileSync(resolve(root, 'agents/src/main/ets/agents/KnowledgeModel.ets'), 'utf8');
-const truthCheck = readFileSync(resolve(root, 'agents/src/main/ets/agents/TruthCheckService.ets'), 'utf8');
-const prompt = readFileSync(resolve(root, 'agents/src/main/ets/agents/PromptBuilder.ets'), 'utf8');
-const structurer = readFileSync(resolve(root, 'agents/src/main/ets/agents/CaptureStructurer.ets'), 'utf8');
+const km = readFileSync(resolve(root, 'agents/src/main/ets/subagents/KnowledgeModel.ets'), 'utf8');
+const truthCheck = readFileSync(resolve(root, 'agents/src/main/ets/subagents/TruthCheckService.ets'), 'utf8');
+const prompt = readFileSync(resolve(root, 'agents/src/main/ets/subagents/PromptBuilder.ets'), 'utf8');
+const structurer = readFileSync(resolve(root, 'agents/src/main/ets/subagents/CaptureStructurer.ets'), 'utf8');
 
 test('KnowledgeModel is the orchestrating agent: structure and structureWithClassification implemented', () => {
   assert.match(km, /export class KnowledgeModel {/);

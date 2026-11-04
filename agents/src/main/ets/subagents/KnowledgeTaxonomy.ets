@@ -1,7 +1,7 @@
 /**
  * KnowledgeTaxonomy.ets — 学科名归一 + 标题去复核标记。
  *
- * 路径: agents/src/main/ets/agents/KnowledgeTaxonomy.ets
+ * 路径: agents/src/main/ets/subagents/KnowledgeTaxonomy.ets
  * 职责: 把 LLM 自由生成的 subject / title 收敛到可枚举的学科名，并把「复核提示」
  *       从标题里剥出去交给 needsUserInput，而不是让它们长在标题上。
  * 依赖: 无（纯字符串函数，Node 侧 loader 可直接装载做契约测试）。

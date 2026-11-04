@@ -13,7 +13,7 @@
 
 呈现段最严重的不是渲染,而是 **3 个 ViewModel 全部静默吞错 + DB 写后端从不让用户知道失败**:
 
-1. **写入端 bug(对呈现段是致命约束)**: `agents/src/main/ets/agents/KnowledgeModel.ets:1222-1223` `KnowledgeModel.toKnowledgeUnit` 把 `prerequisites: []` 和 `related: []` 硬编码为空数组。**所有从 AI 入库的新笔记,其关系字段都为空**——即便把渲染逻辑修到完美,数据本身就是空的,所以"关系线空"不是 UI bug,是数据 bug。
+1. **写入端 bug(对呈现段是致命约束)**: `agents/src/main/ets/subagents/KnowledgeModel.ets:1222-1223` `KnowledgeModel.toKnowledgeUnit` 把 `prerequisites: []` 和 `related: []` 硬编码为空数组。**所有从 AI 入库的新笔记,其关系字段都为空**——即便把渲染逻辑修到完美,数据本身就是空的,所以"关系线空"不是 UI bug,是数据 bug。
 2. **渲染端 bug(纵深问题)**: `entry/src/main/ets/pages/Review/ReviewGraphView.ets:1220-1225` + `:1677-1688` — `RelationLine` 只在用户 **点行星** 触发 `focusedPlanetId` 后才渲染,即便关系线存在,用户也得先点;并且 `KnowledgeGalaxyViewModel.ets:498` `buildLinks` 按学科内 `bundles` 查找,**跨学科关系永远找不到**。
 3. **错误处理 bug(用户看不见失败)**: 3 个 ViewModel 全部 `console.warn` + 返回空 / false,**无任何用户可见反馈**。`HomePage` 和 `NotesPage` 的 `vm.loadNotes` 失败时只 `promptAction.showToast` 弹"加载失败"或"Failed to load notes",`KnowledgeGalaxyViewModel.load` 失败时 `ReviewGraphView` 弹"知识星系加载失败"但 UI 继续渲染空星系列。`SubjectDetailPage` 失败 toast 之后 `ensureSubject()` 会把 `subject` 清空,导致用户连学科都找不到。
 
@@ -338,10 +338,10 @@ embedding: [],
 
 #### Bug 链 A — **写入端硬编码空(数据层,确定性)**
 
-`agents/src/main/ets/agents/KnowledgeModel.ets:1222-1223`(`toKnowledgeUnit`):
+`agents/src/main/ets/subagents/KnowledgeModel.ets:1222-1223`(`toKnowledgeUnit`):
 
 ```ts
-// agents/src/main/ets/agents/KnowledgeModel.ets:1213-1228 (节选)
+// agents/src/main/ets/subagents/KnowledgeModel.ets:1213-1228 (节选)
 return {
   id: id,
   title: ...,
@@ -481,7 +481,7 @@ RelationLine(link: GalaxyLink) {
 
 | # | 位置 | 为什么是漏洞 | 证据(file:line) |
 |---|---|---|---|
-| 1 | **`KnowledgeModel.toKnowledgeUnit` 硬编码 prerequisites/related 为空** | **root cause of"关系线空"**。所有 AI 入库的新笔记的 KG 关联字段是 `[]`,即便渲染逻辑修好,关系线也空。 | `agents/src/main/ets/agents/KnowledgeModel.ets:1222-1223` |
+| 1 | **`KnowledgeModel.toKnowledgeUnit` 硬编码 prerequisites/related 为空** | **root cause of"关系线空"**。所有 AI 入库的新笔记的 KG 关联字段是 `[]`,即便渲染逻辑修好,关系线也空。 | `agents/src/main/ets/subagents/KnowledgeModel.ets:1222-1223` |
 | 2 | **`KnowledgeGalaxyViewModel` 绕过 `UiDataCacheService`** | 写入时 Home/Notes 走 cache 失效,Galaxy 走 `queryAll`,**双跑 + 不同字段**;Home 改 `notesVersion` 后 Galaxy 通过 `@Watch` 触发重拉,但 cache 中 notesSnapshot 没失效(`KnowledgeGalaxyViewModel.deleteNote` 没调 `UiDataCacheService.invalidateNotesSnapshots`)。 | `entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets:235-243, 262-277` |
 | 3 | **`SubjectGalaxyView.RelationLine` focus-gated** | 用户必须主动点行星(`focusedPlanetId`),关系线才渲染;touch 设备无 hover,用户难以发现。 | `entry/src/main/ets/pages/Review/ReviewGraphView.ets:1220-1225, 1304-1329, 1677-1688` |
 | 4 | **`buildLinks` 按学科内 bundles 查找** | 跨学科关系(同一 note 引其他学科 ID)永远 `findBundleById` 返回 null,链接被静默丢。 | `entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets:498, 627-659, 665-676` |

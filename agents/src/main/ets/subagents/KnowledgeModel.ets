@@ -1,7 +1,7 @@
 /**
  * KnowledgeModel.ets — 保持外部 Interface 的兼容 facade
  *
- * 路径: agents/src/main/ets/agents/KnowledgeModel.ets
+ * 路径: agents/src/main/ets/subagents/KnowledgeModel.ets
  * 职责: 组装 CaptureStructurer 与三个生成路线 Module，并转发既有 Capture / 生成入口。
  * 依赖: CaptureStructurer、DraftComposer、DeepDraftComposer、IncrementalPatchComposer、common
  *

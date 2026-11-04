@@ -67,11 +67,11 @@ import {
   CaptureSetResult,
 } from 'common';
 import type { DispatchPayload, CancellationToken } from 'common';
-import { KnowledgeModel } from '../../agents/KnowledgeModel';
+import { KnowledgeModel } from '../../subagents/KnowledgeModel';
 import { AgentState } from '../../graph/AgentState';
 import { CaptureGraph } from '../../graph/CaptureGraph';
 import { TruthCheckNodeFactory } from '../../graph/nodes/TruthCheckNode';
-import { TruthCheckService } from '../../agents/TruthCheckService';
+import { TruthCheckService } from '../../subagents/TruthCheckService';
 import type { NoteOutcome } from 'common';
 
 const evaluatorLog = new Logger('GenerationEvaluator');

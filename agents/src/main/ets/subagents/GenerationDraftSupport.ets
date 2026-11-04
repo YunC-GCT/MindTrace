@@ -1,7 +1,7 @@
 /**
  * GenerationDraftSupport.ets — 生成路线共享的解析、格式、预算与进度辅助函数
  *
- * 路径: agents/src/main/ets/agents/GenerationDraftSupport.ets
+ * 路径: agents/src/main/ets/subagents/GenerationDraftSupport.ets
  * 职责: 生成路线共享的解析、格式、预算与进度辅助函数，保持现有生成行为。
  * 依赖: common（领域类型、LlmConfig 与草稿 schema）
  * 数据流: 生成路线 / verifier → 辅助函数 → 领域值、请求配置或进度回调

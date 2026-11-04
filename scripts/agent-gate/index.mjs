@@ -251,13 +251,15 @@ function main() {
     checks.push({ name: 'arkts-lint', status: 'SKIP', detail: 'no .ets changes', errors: [], warnings: [] });
   }
 
-  for (const [name, script] of [
+  for (const [name, script, extraArgs] of [
     ['naming-lint', 'scripts/naming-lint/index.mjs'],
     ['link-check', 'scripts/link-check/index.mjs'],
     ['doc-trace', 'scripts/doc-trace/index.mjs'],
     ['process-boundary', 'scripts/process-boundary/check.mjs'],
+    // Hypium 测试不参与 HAP 构建，只能在门禁里守生成物与 barrel 符号
+    ['hypium-check', 'scripts/prepare-knowledge-hypium.mjs', ['--check']],
   ]) {
-    const r = runNode(script);
+    const r = runNode(script, extraArgs ?? []);
     checks.push({
       name,
       status: r.status === 0 ? 'PASS' : 'FAIL',

@@ -49,8 +49,8 @@ flowchart TD
     Dispatcher["Dispatcher.dispatch<br/>agents/src/main/ets/core/Dispatcher.ets:98"]
     CapGraph["CaptureGraph<br/>agents/src/main/ets/graph/CaptureGraph.ets:16"]
     TruthN["TruthCheckNode<br/>agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7"]
-    TruthSvc["TruthCheckService<br/>agents/src/main/ets/agents/TruthCheckService.ets:30"]
-    StructN["StructureNode(KnowledgeModel)<br/>agents/src/main/ets/agents/KnowledgeModel.ets:114"]
+    TruthSvc["TruthCheckService<br/>agents/src/main/ets/subagents/TruthCheckService.ets:30"]
+    StructN["StructureNode(KnowledgeModel)<br/>agents/src/main/ets/subagents/KnowledgeModel.ets:114"]
     PersistN["PersistNode<br/>agents/src/main/ets/graph/nodes/PersistNode.ets:7"]
   end
 
@@ -121,13 +121,13 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 - **节点工厂**:
   - `OcrNodeFactory`(`agents/src/main/ets/graph/nodes/OcrNode.ets`)— `capture` 节点
   - `ClassifyNodeFactory`(`agents/src/main/ets/graph/nodes/ClassifyNode.ets`)— `classify` 节点
-  - `StructureNodeFactory`(`agents/src/main/ets/agents/KnowledgeModel.ets`)— `structure` 节点,委派 `KnowledgeModel.structure()`(行 114)
+  - `StructureNodeFactory`(`agents/src/main/ets/subagents/KnowledgeModel.ets`)— `structure` 节点,委派 `KnowledgeModel.structure()`(行 114)
   - `TruthCheckNodeFactory`(`agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7-38`)— `truth_check` 节点
   - `PersistNodeFactory`(`agents/src/main/ets/graph/nodes/PersistNode.ets:7-85`)— `persist` 节点
 
 ### 1.4 KnowledgeModel.structure(主入库构造)
 
-- 文件: `agents/src/main/ets/agents/KnowledgeModel.ets:114-170`
+- 文件: `agents/src/main/ets/subagents/KnowledgeModel.ets:114-170`
 - 签名: `async structure(ocrText, type?, subject?, chapter='', source='camera_capture'): Promise<KnowledgeUnit>`
 - 流程:
   1. `resolveClassificationHint` 调 `TypeClassifier` 拿 5 类 hint(`KnowledgeModel.ets:122-138`)。
@@ -141,7 +141,7 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 - **失败短路**: `if (!result.truthFlag)` 时设 `next.error = { kind:'TRUTH_CHECK_ERROR', message, step:'truth_check', retriable:false }`(`TruthCheckNode.ets:27-34`)。
 - **graph.run** 接住这个 error: `CaptureGraph.run`(`agents/src/main/ets/graph/CaptureGraph.ets:49-60`)在异常/错误时把 `state.error` 保留返回;`CaptureGraph` 构造里 `isErrorFn = (s) => s.error !== undefined`(`CaptureGraph.ets:23`),StateGraph 内核短路后续节点(`common/src/main/ets/workflow/StateGraph.ets`)。
 - **结果**: TruthCheck 失败 → `state.error.kind === 'TRUTH_CHECK_ERROR'` → `Dispatcher.dispatchRequest`(`Dispatcher.ets:124-140`)返回 `{ success:false, route:'D1', errorMessage }`,**不写库**。
-- TruthCheck 4 项(括号配对 / 除零 / 等式矛盾 / LaTeX 语法)由 `TruthCheckService.check` 实现,见 `agents/src/main/ets/agents/TruthCheckService.ets:32-113`。**仅 sync,无 LLM 调用**。
+- TruthCheck 4 项(括号配对 / 除零 / 等式矛盾 / LaTeX 语法)由 `TruthCheckService.check` 实现,见 `agents/src/main/ets/subagents/TruthCheckService.ets:32-113`。**仅 sync,无 LLM 调用**。
 
 ### 1.6 PersistNode → NoteDaoAdapter → KnowledgeUnitWriteService
 

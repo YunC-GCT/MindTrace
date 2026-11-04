@@ -63,14 +63,14 @@
 
 对于图片，`TypeClassifier` 调用 `OcrTool.recognize(imageUri)` 获取文字，并合并可选的用户补充文本：
 
-- `agents/src/main/ets/agents/TypeClassifier.ets:92-100`
-- `agents/src/main/ets/agents/TypeClassifier.ets:147-160`
-- `agents/src/main/ets/agents/TypeClassifier.ets:165-172`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:92-100`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:147-160`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:165-172`
 
 随后执行的 `preprocessText` 是纯确定性字符串规则：统一换行、删除 NUL 与替换字符、折叠空白、删除固定噪声行、移除空行并按字符上限截断：
 
-- `agents/src/main/ets/agents/TypeClassifier.ets:174-199`
-- `agents/src/main/ets/agents/TypeClassifier.ets:201-213`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:174-199`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:201-213`
 
 这里没有 `LlmClient` 或 `LlmGuard` 调用，因此它不是 LLM 预处理。
 
@@ -88,11 +88,11 @@
 
 分类 prompt 明确要求模型只返回 JSON，并仅识别 `category`、`subject`、`chapter`、`confidence`：
 
-- `agents/src/main/ets/agents/TypeClassifier.ets:223-242`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:223-242`
 
 分类成功或规则兜底时，结果对象的 `ocrText` 都直接赋值为传入的 `text`。模型输出只用于分类字段，不会覆盖 OCR 正文：
 
-- `agents/src/main/ets/agents/TypeClassifier.ets:113-143`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:113-143`
 
 这意味着默认链路中确实发生了一次 LLM 调用，但它是**分类调用**，不是 OCR 正文预处理调用。若分类 LLM 失败，代码会退回本地规则分类；识别正文仍保留。
 

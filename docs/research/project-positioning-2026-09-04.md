@@ -108,7 +108,7 @@ common ──► (叶子)
 
 ## §4 业务亮点
 
-**来源**: `README.md`, `agents/src/main/ets/agents/`, `common/src/main/ets/llm/`, `entry/src/main/ets/pages/`, `audit-full-2026-09-01.md` §2-§4。
+**来源**: `README.md`, `agents/src/main/ets/subagents/`, `common/src/main/ets/llm/`, `entry/src/main/ets/pages/`, `audit-full-2026-09-01.md` §2-§4。
 
 ### 4.1 AI 业务核心(亮点 1:端到端 LLM pipeline)
 
@@ -414,8 +414,8 @@ README.md      # 状态条 + 维护手册
 
 **业务核心**:
 - `agents/src/main/ets/core/Dispatcher.ets`
-- `agents/src/main/ets/agents/TypeClassifier.ets`
-- `agents/src/main/ets/agents/KnowledgeModel.ets`
+- `agents/src/main/ets/subagents/TypeClassifier.ets`
+- `agents/src/main/ets/subagents/KnowledgeModel.ets`
 - `agents/src/main/ets/mcp/tools/OcrTool.ets`
 - `common/src/main/ets/llm/LlmClient.ets` `LlmGuard.ets` `LlmConfig.ets` `LlmOutputRules.ets` `LlmTypes.ets`
 - `common/src/main/ets/render/ContentProtocol.ets` `ContentExcerptBuilder.ets`

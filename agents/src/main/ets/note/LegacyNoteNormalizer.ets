@@ -8,7 +8,7 @@
  *       2) 把笔记按「归一化标题 + 归一化正文」分组，找出可安全删除的重复项（只删完全一致的）。
  * 依赖: agents 的 KnowledgeTaxonomy（别名归一/CANONICAL_SUBJECTS），无 IO。
  */
-import { CANONICAL_SUBJECTS, normalizeSubjectName } from '../agents/KnowledgeTaxonomy';
+import { CANONICAL_SUBJECTS, normalizeSubjectName } from '../subagents/KnowledgeTaxonomy';
 import { DedupeCandidate, isDuplicateOf } from './NoteDedupe';
 
 const OTHER_SUBJECT: string = '其他';

@@ -1,7 +1,7 @@
 /**
  * DraftComposer.ets — light/standard 草稿生成
  *
- * 路径: agents/src/main/ets/agents/DraftComposer.ets
+ * 路径: agents/src/main/ets/subagents/DraftComposer.ets
  * 职责: light/standard 草稿生成，保持现有生成行为。
  * 依赖: common、GenerationJsonCaller、NoteDraftVerifier、GenerationDraftSupport
  * 数据流: KnowledgeModel → light/standard 生成 → 草稿与只读验证结果

@@ -1,7 +1,7 @@
 /**
  * StructuredSections.ets — 结构化字段的「标准表单」契约（纯函数）
  *
- * 路径: agents/src/main/ets/agents/StructuredSections.ets
+ * 路径: agents/src/main/ets/subagents/StructuredSections.ets
  * 职责: 1) 定义五类笔记的标准字段（标题集合与同义词），
  *       2) 把模型返回的 fields 规范化成标准标签、补齐顺序，
  *       3) 校验缺字段（交给 LlmGuard 触发重试，避免「表单内容纰漏」）。

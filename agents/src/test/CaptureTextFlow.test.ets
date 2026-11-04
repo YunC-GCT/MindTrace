@@ -17,7 +17,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import { CaptureGraph } from '../main/ets/graph/CaptureGraph';
 import { AgentState, CaptureNodeResult } from '../main/ets/graph/AgentState';
 import { OcrNodeFactory } from '../main/ets/graph/nodes/OcrNode';
-import { TypeClassifier } from '../main/ets/agents/TypeClassifier';
+import { TypeClassifier } from '../main/ets/subagents/TypeClassifier';
 
 export default function captureTextFlowTest(): void {
   describe('CaptureGraph.text_flow', () => {

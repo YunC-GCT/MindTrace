@@ -38,7 +38,7 @@ import {
   buildIncrementalManifest,
 } from 'common';
 import type { NoteCommand, NoteOutcome } from 'common';
-import { KnowledgeModel } from '../agents/KnowledgeModel';
+import { KnowledgeModel } from '../subagents/KnowledgeModel';
 import { copyRegeneratedUnit } from '../core/dispatch/UnitSupport';
 import type { NoteWorkflow, WorkflowContext } from './WorkflowContext';
 

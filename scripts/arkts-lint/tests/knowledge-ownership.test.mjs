@@ -27,10 +27,10 @@ function productionSources() {
 const fixture = () => new Map([
   ['agents/src/main/ets/graph/AgentState.ets', 'export interface AgentState { text: string }'],
   ['agents/src/main/ets/graph/CaptureGraph.ets', 'export class CaptureGraph {}'],
-  ['agents/src/main/ets/agents/TruthCheckService.ets',
+  ['agents/src/main/ets/subagents/TruthCheckService.ets',
     'export class TruthCheckService { check(text: string) { return this.truthCheck(text); } truthCheck(text: string) { return true; } }'],
   ['agents/src/main/ets/Index.ets',
-    "export { AgentState } from './graph/AgentState'; export { CaptureGraph } from './graph/CaptureGraph'; export { TruthCheckService } from './agents/TruthCheckService';"],
+    "export { AgentState } from './graph/AgentState'; export { CaptureGraph } from './graph/CaptureGraph'; export { TruthCheckService } from './subagents/TruthCheckService';"],
 ]);
 
 for (const source of [
@@ -54,7 +54,7 @@ for (const source of [
 ]) {
   test(`guard detects TruthCheck escaping into any future module: ${source}`, () => {
     const files = fixture();
-    files.set('agents/src/main/ets/agents/FutureComposer.ets', source);
+    files.set('agents/src/main/ets/subagents/FutureComposer.ets', source);
     assert.equal(ownershipViolations(files).length, 1);
   });
 }
@@ -77,7 +77,7 @@ test('all production sources preserve Capture and TruthCheck ownership', () => {
 });
 
 test('KnowledgeModel compatibility methods contain delegation only after phase-one extraction', () => {
-  const text = productionSources().get('agents/src/main/ets/agents/KnowledgeModel.ets');
+  const text = productionSources().get('agents/src/main/ets/subagents/KnowledgeModel.ets');
   const ast = ts.createSourceFile('KnowledgeModel.ets', text, ts.ScriptTarget.Latest, true);
   const methods = ast.statements.find(ts.isClassDeclaration).members.filter(ts.isMethodDeclaration);
   assert.deepEqual(methods.map(m => m.name.getText(ast)), [
@@ -95,7 +95,7 @@ test('KnowledgeModel compatibility methods contain delegation only after phase-o
 
 test('deep and incremental own their implementations, with one shared read-only verifier', () => {
   const sources = productionSources();
-  const source = name => sources.get(`agents/src/main/ets/agents/${name}.ets`);
+  const source = name => sources.get(`agents/src/main/ets/subagents/${name}.ets`);
   const methods = name => {
     const ast = ts.createSourceFile(name, source(name), ts.ScriptTarget.Latest, true);
     return ast.statements.filter(ts.isClassDeclaration).flatMap(c =>

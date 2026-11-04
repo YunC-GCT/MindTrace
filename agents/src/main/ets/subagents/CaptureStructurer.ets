@@ -1,7 +1,7 @@
 /**
  * CaptureStructurer.ets — Capture 结构化业务闭包
  *
- * 路径: agents/src/main/ets/agents/CaptureStructurer.ets
+ * 路径: agents/src/main/ets/subagents/CaptureStructurer.ets
  * 职责: 承载分类 hint、classic LLM 结构化、响应校验归一化和 Capture / 草稿的 KnowledgeUnit 投影。
  * 依赖: common/src/main/ets/Index、TypeClassifier、PromptBuilder、GenerationJsonCaller
  *

@@ -1,7 +1,7 @@
 /**
  * GenerationJsonCaller.ets — 知识生成路径统一 JSON 调用 seam
  *
- * 路径: agents/src/main/ets/agents/GenerationJsonCaller.ets
+ * 路径: agents/src/main/ets/subagents/GenerationJsonCaller.ets
  * 职责: 统一 KnowledgeModel 六条生成路线 (light / incremental / deep / evidence /
  *   standard / verifier) 的 LLM JSON 调用生命周期 — 传输错误包装、截断识别、
  *   JSON 候选提取与选择、schema/domain 两段校验、守门重试 (buildGuardRetryMessage)、

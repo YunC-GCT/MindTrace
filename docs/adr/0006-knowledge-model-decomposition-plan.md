@@ -1,6 +1,6 @@
 # 0006 — KnowledgeModel decomposition plan
 
-`agents/src/main/ets/agents/KnowledgeModel.ets` is 870 LOC with 7+ responsibilities (per audit §4.2). It mixes structure building, AI call wrapping, JSON schema validation, and 4-check truth verification. We accept the audit's recommendation: split into 3 collaborators.
+`agents/src/main/ets/subagents/KnowledgeModel.ets` is 870 LOC with 7+ responsibilities (per audit §4.2). It mixes structure building, AI call wrapping, JSON schema validation, and 4-check truth verification. We accept the audit's recommendation: split into 3 collaborators.
 
 ## Considered Options
 
@@ -20,9 +20,9 @@
 
 | 计划 | 实际 | 说明 |
 |---|---|---|
-| `StructureService`（~300 行） | **没有这个类**。结构化逻辑在 `agents/src/main/ets/agents/CaptureStructurer.ets`（**643 行**，`export class CaptureStructurer` @ `:65`） | 名字没沿用，职责也没压到 300 行以内 |
-| `TruthCheckService`（~250 行） | `agents/src/main/ets/agents/TruthCheckService.ets` ✓ | 与计划一致 |
-| `PromptBuilder`（~200 行） | `agents/src/main/ets/agents/PromptBuilder.ets` ✓ | 与计划一致 |
+| `StructureService`（~300 行） | **没有这个类**。结构化逻辑在 `agents/src/main/ets/subagents/CaptureStructurer.ets`（**643 行**，`export class CaptureStructurer` @ `:65`） | 名字没沿用，职责也没压到 300 行以内 |
+| `TruthCheckService`（~250 行） | `agents/src/main/ets/subagents/TruthCheckService.ets` ✓ | 与计划一致 |
+| `PromptBuilder`（~200 行） | `agents/src/main/ets/subagents/PromptBuilder.ets` ✓ | 与计划一致 |
 | `KnowledgeModel` 只做编排 | `KnowledgeModel.ets` 从 870 行降到 **105 行** | 拆分目标达成 |
 
 结论：**拆分的意图成立，命名与行数承诺没兑现**。Consequences 里「each class ≤ 300 LOC」应视为未达成的期望，不再当约束引用；真要压 `CaptureStructurer`，那是一张新的重构票，不是本 ADR 的欠账。

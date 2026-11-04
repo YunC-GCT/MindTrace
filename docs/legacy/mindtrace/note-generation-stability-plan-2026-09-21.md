@@ -24,8 +24,8 @@
 
 - `common/src/main/ets/models/NoteGenerationModels.ets`: owns typed note-generation contracts and deterministic normalization helpers.
 - `common/src/main/ets/Index.ets`: exports new helpers for tests and agents module consumers.
-- `agents/src/main/ets/agents/KnowledgeModel.ets`: calls normalization helpers after model JSON parsing.
-- `agents/src/main/ets/agents/TruthCheckService.ets`: fixes integral differential detection.
+- `agents/src/main/ets/subagents/KnowledgeModel.ets`: calls normalization helpers after model JSON parsing.
+- `agents/src/main/ets/subagents/TruthCheckService.ets`: fixes integral differential detection.
 - `agents/src/main/ets/conversation/ConversationWorkflow.ets`: prefers inline material for explicit save requests to reduce context pollution.
 - `common/src/test/NoteGenerationModels.test.ets`: regression tests for light fallback and pipeline evidence.
 - `agents/src/test/TruthCheckNode.test.ets`: regression test for `du` integral differential.
@@ -35,7 +35,7 @@
 **Files:**
 - Modify: `common/src/main/ets/models/NoteGenerationModels.ets`
 - Modify: `common/src/main/ets/Index.ets`
-- Modify: `agents/src/main/ets/agents/KnowledgeModel.ets`
+- Modify: `agents/src/main/ets/subagents/KnowledgeModel.ets`
 - Test: `common/src/test/NoteGenerationModels.test.ets`
 
 **Interfaces:**
@@ -53,7 +53,7 @@
 **Files:**
 - Modify: `common/src/main/ets/models/NoteGenerationModels.ets`
 - Modify: `common/src/main/ets/Index.ets`
-- Modify: `agents/src/main/ets/agents/KnowledgeModel.ets`
+- Modify: `agents/src/main/ets/subagents/KnowledgeModel.ets`
 - Test: `common/src/test/NoteGenerationModels.test.ets`
 
 **Interfaces:**
@@ -69,7 +69,7 @@
 ## Task 3: Truth Check Differential Detection
 
 **Files:**
-- Modify: `agents/src/main/ets/agents/TruthCheckService.ets`
+- Modify: `agents/src/main/ets/subagents/TruthCheckService.ets`
 - Test: `agents/src/test/TruthCheckNode.test.ets`
 
 **Interfaces:**
@@ -196,7 +196,7 @@ Dispatcher.dispatch
 涉及文件：
 
 - `common/src/main/ets/models/NoteGenerationModels.ets`
-- `agents/src/main/ets/agents/KnowledgeModel.ets`
+- `agents/src/main/ets/subagents/KnowledgeModel.ets`
 
 ### 3.2 deep section 数量失控
 
@@ -214,7 +214,7 @@ Dispatcher.dispatch
 涉及文件：
 
 - `common/src/main/ets/models/NoteGenerationModels.ets`
-- `agents/src/main/ets/agents/KnowledgeModel.ets`
+- `agents/src/main/ets/subagents/KnowledgeModel.ets`
 - `agents/src/main/ets/core/Dispatcher.ets`
 
 ### 3.3 deep evidence 被错误判为不可追溯
@@ -231,7 +231,7 @@ Dispatcher.dispatch
 
 涉及文件：
 
-- `agents/src/main/ets/agents/KnowledgeModel.ets`
+- `agents/src/main/ets/subagents/KnowledgeModel.ets`
 - `common/src/main/ets/models/NoteGenerationModels.ets`
 
 ## 4. 目前仍需处理或确认的问题
@@ -419,7 +419,7 @@ devecocli build --modules agents@ohosTest
 
 **Files:**
 
-- Modify: `agents/src/main/ets/agents/KnowledgeModel.ets`
+- Modify: `agents/src/main/ets/subagents/KnowledgeModel.ets`
 - Test: `agents/src/test/KnowledgeModelNoteGeneration.test.ets`
 
 **实现边界：**
@@ -436,7 +436,7 @@ devecocli build --modules agents@ohosTest
 **Files:**
 
 - Modify: `agents/src/test/KnowledgeModelNoteGeneration.test.ets`
-- Modify: `agents/src/main/ets/agents/KnowledgeModel.ets`（仅在测试确认问题存在时）
+- Modify: `agents/src/main/ets/subagents/KnowledgeModel.ets`（仅在测试确认问题存在时）
 
 - [ ] 添加无等号公式进入 ledger 的测试。
 - [ ] 先确认当前测试在旧逻辑下能暴露缺失。
@@ -448,7 +448,7 @@ devecocli build --modules agents@ohosTest
 **Files:**
 
 - Modify: `agents/src/test/KnowledgeModelNoteGeneration.test.ets`
-- Modify: `agents/src/main/ets/agents/KnowledgeModel.ets`
+- Modify: `agents/src/main/ets/subagents/KnowledgeModel.ets`
 
 - [ ] 添加第一个 section metadata 不完整、第二个 section metadata 完整的测试。
 - [ ] 先确认当前结果确实丢失后续 metadata。
@@ -577,7 +577,7 @@ deep 路线只有满足以下条件才算完成：
 
 ## Lint 结果
 
-`node scripts/arkts-lint/index.mjs` 当前报告 20 errors、441 warnings。明确命中的 `agents/src/main/ets/agents/KnowledgeModel.ets:1636` 的 `throw llmErr` 属于已有代码，未由本轮改动引入；本轮生产代码已经通过 DevEco ArkTS 编译。其余 lint 输出主要是仓库既有 warning，暂不在 deep 稳定性任务中顺带重构。
+`node scripts/arkts-lint/index.mjs` 当前报告 20 errors、441 warnings。明确命中的 `agents/src/main/ets/subagents/KnowledgeModel.ets:1636` 的 `throw llmErr` 属于已有代码，未由本轮改动引入；本轮生产代码已经通过 DevEco ArkTS 编译。其余 lint 输出主要是仓库既有 warning，暂不在 deep 稳定性任务中顺带重构。
 
 ## 下一步
 

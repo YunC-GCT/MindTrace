@@ -10,7 +10,7 @@ Supersedes [spec 003](../legacy/mindtrace/spec-003-knowledge-model-decomposition
 
 ## 现状基线(2026-09-06)
 
-`agents/src/main/ets/agents/KnowledgeModel.ets` 878 行:
+`agents/src/main/ets/subagents/KnowledgeModel.ets` 878 行:
 
 | 段 | 行(约) | 内容 |
 |---|---|---|
@@ -76,7 +76,7 @@ Supersedes [spec 003](../legacy/mindtrace/spec-003-knowledge-model-decomposition
 
 ### 2) 结构化字段标准表单
 
-- 新增 [`StructuredSections.ets`](../../agents/src/main/ets/agents/StructuredSections.ets)（纯函数）：
+- 新增 [`StructuredSections.ets`](../../agents/src/main/ets/subagents/StructuredSections.ets)（纯函数）：
   - 五类笔记的标准字段：概念（定义/性质/示例/相关概念）、定理（陈述/条件/结论/证明思路/应用）、公式（表达式/参数/适用范围/推导/备注）、证明题（命题/已知/证明过程/关键思路/结论）、计算题（问题/步骤/答案/方法总结/常见错误）；
   - 同义词映射（定理内容→陈述、前提→条件、答案解析→答案…）；标签规范化 + 标准顺序 + 丢弃空值/占位值（`无/暂无/略/待补充`）；
   - `missingSectionLabels` 检出缺字段。

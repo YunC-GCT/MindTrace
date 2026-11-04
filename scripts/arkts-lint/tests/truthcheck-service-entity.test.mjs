@@ -7,10 +7,10 @@ import ts from 'typescript';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
-const tcs = read('agents/src/main/ets/agents/TruthCheckService.ets');
-const km = read('agents/src/main/ets/agents/KnowledgeModel.ets');
-const captureStructurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
-const draftVerifier = read('agents/src/main/ets/agents/NoteDraftVerifier.ets');
+const tcs = read('agents/src/main/ets/subagents/TruthCheckService.ets');
+const km = read('agents/src/main/ets/subagents/KnowledgeModel.ets');
+const captureStructurer = read('agents/src/main/ets/subagents/CaptureStructurer.ets');
+const draftVerifier = read('agents/src/main/ets/subagents/NoteDraftVerifier.ets');
 const tcsTestPath = resolve(root, 'agents/src/test/TruthCheckService.test.ets');
 
 // Execute production service, node, graph and dispatcher, not a mirror of their rules.
@@ -18,7 +18,7 @@ const tcsTestPath = resolve(root, 'agents/src/test/TruthCheckService.test.ets');
 const runtimeSources = [
   'common/src/main/ets/workflow/StateGraph.ets',
   'agents/src/main/ets/graph/AgentState.ets',
-  'agents/src/main/ets/agents/TruthCheckService.ets',
+  'agents/src/main/ets/subagents/TruthCheckService.ets',
   'agents/src/main/ets/graph/nodes/TruthCheckNode.ets',
   'agents/src/main/ets/graph/CaptureGraph.ets',
   'common/src/main/ets/models/CaptureChain.ets',
@@ -100,7 +100,7 @@ test('soft verifier advice does not mislabel a hard local gate failure', () => {
 });
 
 test('generation and verification prompts separate derived math from source quotations and metadata', () => {
-  assert.match(read('agents/src/main/ets/agents/GenerationDraftSupport.ets'), /Distinguish source givens, derived conclusions, and unconfirmed conditions/);
+  assert.match(read('agents/src/main/ets/subagents/GenerationDraftSupport.ets'), /Distinguish source givens, derived conclusions, and unconfirmed conditions/);
   assert.match(draftVerifier, /Do not reject a valid derivation merely because its conclusion is not verbatim/);
   assert.match(draftVerifier, /confidence metadata alone is not grounds for a hard issue/);
   assert.match(draftVerifier, /Give each issue a Chinese message/);
