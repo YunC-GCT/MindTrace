@@ -23,7 +23,7 @@ import { ReminderFacadeImpl } from '../kit/ReminderFacadeImpl';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
 import { DebugDraftRunner } from '../services/DebugDraftRunner';
-import { DebugCaptureRunner } from '../services/DebugCaptureRunner';
+import { DebugCaptureRunner } from '../debug/DebugCaptureRunner';
 import { ImageSearchWorkerProbe } from '../services/ImageSearchWorkerProbe';
 import { FormCardFacadeImpl } from '../kit/FormCardFacadeImpl';
 import { CardSnapshotService } from '../services/CardSnapshotService';

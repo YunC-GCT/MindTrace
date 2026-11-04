@@ -92,7 +92,7 @@ test('P0-2/P0-3 探针与报告接线：阶段耗时日志 + 去重/延迟/质�
   const pipeline = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
   assert.match(pipeline, /CAPTURE_STAGE step=/);
   assert.match(pipeline, /CAPTURE_TOTAL kind=/);
-  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
   assert.match(runner, /static async runDedupeProbe\(/);
   assert.match(runner, /static async runLatencyProbe\(/);
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');

@@ -49,7 +49,7 @@ L0 入口适配层
 
 L1 产品服务层（entry/services/）
   ├─ 整理:  services/ai/  CapturePipeline · DraftPipeline · ClarificationPipeline · AiService
-  ├─ 对话:  ConversationRuntime · AgentChatService · ReplyService · StreamingReplyDocument · RendererScheduler
+  ├─ 对话:  ConversationRuntime · AgentChatService · ReplyService · RendererScheduler
   ├─ 写入:  WriteJobScheduler / Persistence / Bootstrap / Producer · AsyncSemaphore · AsyncMutex
   ├─ 知识:  KnowledgeUnitWriteService · NoteEditService · RagRetrievalService · NoteReviewService
   ├─ A2A:   A2AIntentRouter · A2AConversationStore · A2AImageContextStore · A2APlanStore
@@ -362,5 +362,19 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 测试新增 3 条：正常链路写出 start→step→terminal、失败链路终态为 failed、sink 抛错不阻塞对话。
 
 **已知偏差**：测试里跨 vm realm 的 `Error` 拿不到 message，失败终态的 `reason` 只能是字符串断言，真机上是完整错误文案。
+
+**验证**：`agent-gate` PASS（1245 单测）；`build-hsp-hap` 4/4。
+
+## 22. 2026-11-04 删除死代码 StreamingReplyDocument
+
+`entry/src/main/ets/services/StreamingReplyDocument.ets`（1274 行）全仓搜索确认**生产零引用**：
+
+- `entry/src/main`、`agents/src`、`common/src`、`skill`、`cardservice` 均无 import
+- 唯一使用点是 `entry/src/test/StreamingReplyDocument.test.ets`（Hypium）
+- git 历史只有一次新增提交（`b4637c31`），之后没有任何改动或接入
+
+它对应 `styled_string` / `custom_span` 那条渲染后端的文档模型；当前聊天渲染走 ArkWeb（`RendererScheduler` + `RendererScheduler`/`ChatBubble`），这条链路没有接上。
+
+**处理**：删除源文件与其 Hypium 测试，并从 `entry/src/test/List.test.ets` 摘掉注册；spec 020 / 021 的状态行补了删除说明。若未来要切 `custom_span` 后端，从 `b4637c31` 恢复即可。
 
 **验证**：`agent-gate` PASS（1245 单测）；`build-hsp-hap` 4/4。

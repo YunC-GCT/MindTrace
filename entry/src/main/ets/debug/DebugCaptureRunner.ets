@@ -1,6 +1,6 @@
 /**
  * DebugCaptureRunner.ets — 批量链路自检（仅调试入口可见时使用）
- * 路径: entry/src/main/ets/services/DebugCaptureRunner.ets
+ * 路径: entry/src/main/ets/debug/DebugCaptureRunner.ets
  * 职责: 用 rawfile 里的样例题图跑完「取图 → OCR → 结构化 → 落库 → 卡片快照」整链，
  *       每个阶段打一条 [E2E] 日志，失败不中断后续图（与批量入口的语义一致）。
  * 依赖: AiService / CardSnapshotService / CoreVisionImageSearchIndex / ResourceManager / CoreFileKit / CaptureReceipt
@@ -14,29 +14,29 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DatabaseHelper, ImageSearchIndexRegistry } from 'common';
 import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ImageSearchHit, KnowledgeUnit, NoteOutcome } from 'common';
-import { AiService } from './AiService';
-import { CardSnapshotService } from './CardSnapshotService';
-import { CoreVisionImageSearchIndex } from './CoreVisionImageSearchIndex';
-import { CaptureReceipt, CaptureReceiptStore } from './CaptureReceipt';
-import { RagHit, RagRetrievalService } from './RagRetrievalService';
-import { RagKitProbe } from './RagKitProbe';
-import { AgentIngestService, AgentTextBatchResult } from './AgentIngestService';
-import { A2AChatContext, A2AChatContextResult } from './A2AChatContext';
+import { AiService } from '../services/AiService';
+import { CardSnapshotService } from '../services/CardSnapshotService';
+import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
+import { CaptureReceipt, CaptureReceiptStore } from '../services/CaptureReceipt';
+import { RagHit, RagRetrievalService } from '../services/RagRetrievalService';
+import { RagKitProbe } from '../services/RagKitProbe';
+import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
+import { A2AChatContext, A2AChatContextResult } from '../services/A2AChatContext';
 
 import { NoteDao } from '../database/NoteDao';
 import { RunStoreDao } from '../database/RunStoreDao';
-import { A2AInboxIngestService, IngestSummary } from './A2AInboxIngestService';
-import { AgentInboxQueue } from './AgentInboxQueue';
-import { A2AImageContextStore } from './A2AImageContextStore';
-import { buildInboxItem } from './AgentInboxModels';
-import { WRITE_JOB_RUN_PREFIX } from './WriteJobEvents';
-import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from './WriteJobScheduler';
-import { WRITE_JOB_PERSIST_ENABLED, WRITE_JOB_UI_ENABLED, WriteJobPersistenceFlags } from './WriteJobConfig';
-import { AgentJobPersistence } from './WriteJobPersistence';
-import { WriteJobBootstrap } from './WriteJobBootstrap';
+import { A2AInboxIngestService, IngestSummary } from '../services/A2AInboxIngestService';
+import { AgentInboxQueue } from '../services/AgentInboxQueue';
+import { A2AImageContextStore } from '../services/A2AImageContextStore';
+import { buildInboxItem } from '../services/AgentInboxModels';
+import { WRITE_JOB_RUN_PREFIX } from '../services/WriteJobEvents';
+import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from '../services/WriteJobScheduler';
+import { WRITE_JOB_PERSIST_ENABLED, WRITE_JOB_UI_ENABLED, WriteJobPersistenceFlags } from '../services/WriteJobConfig';
+import { AgentJobPersistence } from '../services/WriteJobPersistence';
+import { WriteJobBootstrap } from '../services/WriteJobBootstrap';
 import { AgentJobDao } from '../database/AgentJobDao';
-import { AgentImagePart } from './AgentImageParts';
-import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
+import { AgentImagePart } from '../services/AgentImageParts';
+import { AgentIngestRequest, buildIngestRequest, INGEST_SOURCE_XIAOYI } from '../services/AgentIngestRequest';
 import {
   A2APlan,
   A2APlanItem,
@@ -45,10 +45,10 @@ import {
   formatA2APlanSummary,
   nextPlanItem,
   remainingPlanCount,
-} from './A2APlanModels';
-import { A2APlanStore } from './A2APlanStore';
+} from '../services/A2APlanModels';
+import { A2APlanStore } from '../services/A2APlanStore';
 
-import { createNoteEvidenceService } from './EvidenceComposition';
+import { createNoteEvidenceService } from '../services/EvidenceComposition';
 import { NoteEvidenceContext } from 'common';
 import { AppIntentDecision, classifyAppIntentLocal } from 'agents/src/main/ets/chat/Index';
 import { LegacyDedupeEntry, LegacyDuplicateGroup, LegacySubjectInput, groupExactDuplicates, groupNearDuplicates, normalizeLegacySubject, isDuplicateOf } from 'agents/src/main/ets/note/Index';

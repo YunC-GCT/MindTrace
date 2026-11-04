@@ -22,7 +22,10 @@ test('identity policies are distinct and session fallback is removed', () => {
 
 test('run coordinator and snapshot decoder expose the required seams', () => {
   const coordinator = read('entry/src/main/ets/services/ConversationRunCoordinator.ets');
-  const persistence = read('entry/src/main/ets/services/ChatHistoryPersistence.ets');
+  const persistence = [
+  read('entry/src/main/ets/services/ChatHistoryPersistence.ets'),
+  read('entry/src/main/ets/services/ChatHistoryWire.ets'),
+].join('\n');
   const service = read('entry/src/main/ets/services/AgentChatService.ets');
   const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
   const adapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');

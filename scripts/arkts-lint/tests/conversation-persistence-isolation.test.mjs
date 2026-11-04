@@ -6,7 +6,10 @@ function read(path) {
   return readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
 }
 
-const history = read('entry/src/main/ets/services/ChatHistoryPersistence.ets');
+const history = [
+  read('entry/src/main/ets/services/ChatHistoryPersistence.ets'),
+  read('entry/src/main/ets/services/ChatHistoryWire.ets'),
+].join('\n');
 const schema = read('common/src/main/ets/DatabaseHelper.ets');
 const chatDao = read('entry/src/main/ets/database/ChatMessageDao.ets');
 const generation = read('entry/src/main/ets/database/NoteGenerationRepository.ets');

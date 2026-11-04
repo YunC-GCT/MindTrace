@@ -37,7 +37,7 @@ test('build-profile 注册了两个 Worker，否则不会被打包', () => {
 });
 
 test('自检覆盖真正卡死过的场景：同一轮连查两次', () => {
-  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
   assert.match(runner, /'一元二次方程'/);
   assert.match(runner, /'平方根'/);
   assert.match(runner, /stage=search q=/);

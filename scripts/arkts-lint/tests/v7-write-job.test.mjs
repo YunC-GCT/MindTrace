@@ -175,7 +175,7 @@ test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
   assert.ok(recorder.includes('WRITE_JOB_RUN_PREFIX + event.phase'));
   assert.ok(recorder.includes('WRITE_JOB_RUN_PREFIX + event.jobId'));
   assert.ok(recorder.includes('appendEvent'));
-  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
   assert.ok(runner.includes('runSchedulerStress'));
   const ability = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.ok(ability.includes("mode === 'schedulerStress'"));
@@ -200,7 +200,7 @@ test('T3d 失败相事件：phase=failed + error，统计 failed', async () => {
 });
 
 test('T8b S2 复查接线：inbox e2e、终态 DAO、report 解析 stress', () => {
-  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
   assert.ok(runner.includes('runSchedulerInbox'));
   assert.ok(runner.includes('A2AInboxIngestService.consume'));
   assert.ok(runner.includes('countRecordsByRunPrefixAndStatus'));

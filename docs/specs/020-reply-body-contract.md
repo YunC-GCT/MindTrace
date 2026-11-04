@@ -1,6 +1,6 @@
 # 020 — Reply Body 契约:流式直出正文 + ReplyService 解码 seam + 持久化门 + 渲染单入口
 
-> **Status**: partial (2026-09-12 设计 — `ReplyService` + `StreamingReplyDocument` 已落地; `ReplyBody` 独立类型未引入, 契约靠 transport 分流)
+> **Status**: partial (2026-09-12 设计 — `ReplyService` 已落地; `StreamingReplyDocument` 于 2026-11-04 因零引用删除; `ReplyBody` 独立类型未引入, 契约靠 transport 分流)
 > **Source**: [research](../research/llm-json-answer-parsing-2026-09-12.md) · [ADR-0016](../adr/0016-reply-contract-by-transport.md) · grill 决议 (Q1-Q5) · 渲染入口 parity 核查 (2026-09-12, 结论录入 §5)
 > **Related**: ADR-0004 (call 层收敛) · ADR-0015 (StreamEvent 通道) · [spec 018](./018-agent-workflow-architecture.md) §7 (单后端 — transport 契约分流≠双轨, 见 ADR-0016) · **[spec 019](./019-reasoning-process-display-p0.md) (前置依赖, §0)**
 

@@ -24,7 +24,7 @@ import { OnDeviceModelSection } from "./OnDeviceModelSection"
 import { XiaoyiEntrySection } from "./XiaoyiEntrySection"
 import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
 import { DebugFaults } from "../../services/DebugFaults"
-import { DebugCaptureRunner } from "../../services/DebugCaptureRunner"
+import { DebugCaptureRunner } from "../../debug/DebugCaptureRunner"
 import { common } from "@kit.AbilityKit"
 import type { DebugFault } from 'common'
 

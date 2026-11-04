@@ -187,7 +187,7 @@ test('图片材料探针隔离：e2e-probe key 不镜像 default，并可清理'
   assert.ok(store.includes('mirrorToDefault: boolean = true'));
   assert.ok(store.includes('mirrorToDefault && key !=='));
   assert.ok(store.includes('static async clear'));
-  const runner = read('entry/src/main/ets/services/DebugCaptureRunner.ets');
+  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
   assert.ok(runner.includes("probeKey: string = 'e2e-probe'"));
   assert.ok(runner.includes('save(ctx, probeKey, ocrText, false)'));
   assert.ok(runner.includes('runA2AImageContextClear'));
