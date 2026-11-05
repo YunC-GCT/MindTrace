@@ -20,7 +20,7 @@
 import { common } from '@kit.AbilityKit';
 import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
 import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
-import type { StreamEvent } from 'common';
+import type { NoteEvidenceCitation, StreamEvent } from 'common';
 import { ConversationRunRef } from 'common';
 import { CancellationToken } from 'common';
 import { NoteReviewAnswer } from 'common';
@@ -48,10 +48,17 @@ export interface ConversationErrorMessageEvent {
   content: string;
 }
 
+/** 结构化来源：命中笔记由界面渲染成来源卡片，不再拼进回答正文。 */
+export interface ConversationSourcesMessageEvent {
+  kind: 'sources';
+  citations: NoteEvidenceCitation[];
+}
+
 export type ConversationMessageEvent = ConversationStreamMessageEvent
   | ConversationReplaceContentEvent
   | ConversationStatusMessageEvent
-  | ConversationErrorMessageEvent;
+  | ConversationErrorMessageEvent
+  | ConversationSourcesMessageEvent;
 
 export interface ConversationWorkflowCallbacks {
   addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number;

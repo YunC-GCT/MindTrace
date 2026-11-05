@@ -35,6 +35,7 @@ export struct ChatBubble {
         noteReview: this.msg.noteReview === undefined ? null : this.msg.noteReview,
         noteContextClarification: this.msg.noteContextClarification === undefined
           ? null : this.msg.noteContextClarification,
+        citations: this.msg.citations === undefined ? [] : this.msg.citations,
         onSourceTap: this.onSourceTap,
         onFeedback: (feedback: NoteReviewFeedback): void => { this.onFeedback(this.msg.id, feedback) },
         onTopicSelect: (runId: string, topicId: string): void => {

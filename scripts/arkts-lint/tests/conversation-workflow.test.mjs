@@ -68,6 +68,7 @@ test('stream, complete and stream fallback render and persist exactly one retrie
       const saved = [];
       let displayed = '';
       let finished = 0;
+      let sources = [];
       instance.evidenceService = new NoteEvidenceService();
       instance.runs = new ConversationRunRegistry();
   instance.replyHandler = new ConversationReplyHandler(instance);
@@ -82,7 +83,8 @@ test('stream, complete and stream fallback render and persist exactly one retrie
         addAiMsg(_ref, content, _origin, outcome) { displayed = content; if (outcome === 'completed') { finished += 1; } return 42; },
         updateAiMsg(_ref, _id, event) {
           if (event.kind === 'replace-content') { displayed = event.content; }
-          else if (event.event.type === 'text') { displayed += event.event.delta; }
+          else if (event.kind === 'sources') { sources = event.citations; }
+          else if (event.kind === 'stream' && event.event.type === 'text') { displayed += event.event.delta; }
         },
         finishAiMsg() { finished += 1; },
         onError(_ref, message) { assert.fail(message); },
@@ -103,8 +105,18 @@ test('stream, complete and stream fallback render and persist exactly one retrie
         await instance.replyHandler.handleStream(ref, '', '', '解释极限', evidence, undefined);
       }
       assert.deepEqual(saved, [displayed], mode);
-      assert.equal((displayed.match(/笔记检索：/g) ?? []).length, 1, mode);
-      assert.match(displayed, evidence.citations.length > 0 ? /命中 1 条/ : evidence.degraded ? /失败/ : /未命中/);
+      if (evidence.citations.length > 0) {
+        if (mode === 'complete') {
+          assert.match(displayed, /参考来源：《极限定义》/, mode);
+        } else {
+          assert.equal(sources.length, evidence.citations.length, mode);
+          assert.equal((displayed.match(/笔记检索：/g) ?? []).length, 0, mode);
+        }
+      } else {
+        assert.equal(sources.length, 0, mode);
+        assert.equal((displayed.match(/笔记检索：/g) ?? []).length, 1, mode);
+        assert.match(displayed, evidence.degraded ? /失败/ : /未命中/);
+      }
       assert.equal(finished, 1);
     }
   }

@@ -204,6 +204,10 @@ export class ConversationReplyHandler {
         errorMarked ? 'error' : 'ok', errorMarked);
       if (streamResult.usedFallback && !emptyAnswer) {
         await this.appendAssistantReply(ref, applyEvidenceToAnswer(this.host.evidencePort(), evidence, streamResult.content), msgId);
+        if (evidence !== undefined && evidence.citations.length > 0) {
+          const fallbackSources: ConversationMessageEvent = { kind: 'sources', citations: evidence.citations };
+          this.host.nodeCallbacks().updateAiMsg(ref, msgId, fallbackSources);
+        }
         return;
       }
       const normalizedEvent: ConversationMessageEvent = { kind: 'replace-content', content: displayAnswer };
@@ -219,14 +223,28 @@ export class ConversationReplyHandler {
         return;
       }
       this.host.setStep(ref, 'completed');
-      const sources: string = evidenceFooter(this.host.evidencePort(), evidence);
-      if (sources.length > 0) {
-        const sourcesEvent: StreamEvent = { type: 'text', delta: '\n\n' + sources };
-        const messageEvent: ConversationMessageEvent = { kind: 'stream', event: sourcesEvent };
-        this.host.nodeCallbacks().updateAiMsg(ref, msgId, messageEvent);
+      if (evidence !== undefined && evidence.citations.length > 0) {
+        // 命中来源交给界面渲染成卡片，不再拼进回答正文。
+        const sourcesEvent: ConversationMessageEvent = { kind: 'sources', citations: evidence.citations };
+        this.host.nodeCallbacks().updateAiMsg(ref, msgId, sourcesEvent);
+      } else if (!useTools) {
+        const status: string = evidenceFooter(this.host.evidencePort(), evidence);
+        if (status.length > 0) {
+          const statusEvent: StreamEvent = { type: 'text', delta: '\n\n' + status };
+          const messageEvent: ConversationMessageEvent = { kind: 'stream', event: statusEvent };
+          this.host.nodeCallbacks().updateAiMsg(ref, msgId, messageEvent);
+        }
       }
+      // 命中来源走结构化卡片；未命中/降级的状态行仍随正文展示并持久化。
+      const persistedBase: string = evidence === undefined
+        ? streamResult.content
+        : this.host.evidencePort().sanitizeAnswer(evidence, streamResult.content);
+      const hasCitations: boolean = evidence !== undefined && evidence.citations.length > 0;
+      const statusLine: string = evidence !== undefined && !hasCitations && !useTools
+        ? evidenceFooter(this.host.evidencePort(), evidence)
+        : '';
       const persistedAnswer: string = this.host.replyPort().normalize(
-        applyEvidenceToAnswer(this.host.evidencePort(), evidence, streamResult.content),
+        statusLine.length > 0 ? persistedBase + '\n\n' + statusLine : persistedBase,
       );
       this.host.nodeCallbacks().finishAiMsg(ref, msgId, 'completed');
       await this.host.safeSaveAssistantMessage(ref, persistedAnswer, msgId);

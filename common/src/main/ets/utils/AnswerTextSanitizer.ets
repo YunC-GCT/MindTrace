@@ -57,3 +57,49 @@ export function markdownToPlainText(text: string): string {
   plain = plain.replace(/\n{3,}/g, '\n\n');
   return plain.trim();
 }
+
+/** 把模型复述 JSON 时留下的字面 `\n` 还原成换行；不碰 `\\n` 这类 LaTeX 片段。 */
+export function normalizeEscapedNewlines(text: string): string {
+  let output: string = '';
+  let index: number = 0;
+  while (index < text.length) {
+    const char: string = text.charAt(index);
+    if (char === '\\' && index + 1 < text.length && text.charAt(index + 1) === 'n'
+      && (index === 0 || text.charAt(index - 1) !== '\\')) {
+      output += '\n';
+      index += 2;
+      continue;
+    }
+    output += char;
+    index += 1;
+  }
+  return output;
+}
+
+/** 来源卡片摘要：纯文本 + 句中截断，避免把公式或半个句子截开展示。 */
+export function citationSnippet(text: string, maxChars: number = 80): string {
+  const plain: string = markdownToPlainText(text).replace(/\s+/g, ' ');
+  if (plain.length <= maxChars) {
+    return plain;
+  }
+  const head: string = plain.substring(0, maxChars);
+  const candidates: number[] = [
+    head.lastIndexOf('。'),
+    head.lastIndexOf('；'),
+    head.lastIndexOf('！'),
+    head.lastIndexOf('？'),
+    head.lastIndexOf('，'),
+    head.lastIndexOf(';'),
+    head.lastIndexOf('.'),
+  ];
+  let cut: number = -1;
+  for (let i = 0; i < candidates.length; i += 1) {
+    if (candidates[i] > cut) {
+      cut = candidates[i];
+    }
+  }
+  if (cut >= maxChars / 2) {
+    return head.substring(0, cut + 1);
+  }
+  return head + '…';
+}

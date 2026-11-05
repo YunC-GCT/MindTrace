@@ -24,11 +24,20 @@ test('流式中的半个标记也被隐藏', () => {
   assert.equal(stripCitationMarkers('结论见 [noteId=KB-mvw99'), '结论见 ');
 });
 
-test('evidenceFooter 走同一套清洗', () => {
+test('evidenceFooter 命中时只输出标题索引', () => {
   const fakePort = {
     formatSources: () => '- [关键词命中] [noteId=n1 version=2] 《极限》：内容',
     formatRetrievalStatus: () => '笔记检索：命中 1 条。',
   };
-  const evidence = { citations: [{ noteId: 'n1' }], relations: [] };
-  assert.equal(evidenceFooter(fakePort, evidence), '- [关键词命中] 《极限》：内容');
+  const evidence = { citations: [{ noteId: 'n1', title: '极限' }], relations: [] };
+  assert.equal(evidenceFooter(fakePort, evidence), '参考来源：《极限》');
+});
+
+test('evidenceFooter 未命中时保留检索状态', () => {
+  const fakePort = {
+    formatSources: () => '',
+    formatRetrievalStatus: () => '笔记检索：未命中已保存笔记。',
+  };
+  const evidence = { citations: [], relations: [] };
+  assert.equal(evidenceFooter(fakePort, evidence), '笔记检索：未命中已保存笔记。');
 });

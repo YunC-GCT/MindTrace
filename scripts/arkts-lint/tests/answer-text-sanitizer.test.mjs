@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 
 const mod = loadNoteReviewEtsModule('common/src/main/ets/utils/AnswerTextSanitizer.ets');
-const { stripEchoedEvidence, markdownToPlainText } = mod;
+const { stripEchoedEvidence, markdownToPlainText, citationSnippet, normalizeEscapedNewlines } = mod;
 
 test('剥离模型复述的证据块行', () => {
   const raw = '拉格朗日中值定理说明平均变化率可被某点导数取到。\n'
@@ -27,6 +27,20 @@ test('剥离被复述的工具 JSON 行，短 JSON 不动', () => {
   assert.equal(cleaned.includes('"hits"'), false);
   const shortJson = '{a:1}';
   assert.ok(stripEchoedEvidence('说明 ' + shortJson).includes(shortJson));
+});
+
+test('字面 \\n 还原为换行，双反斜杠 LaTeX 不误伤', () => {
+  assert.equal(normalizeEscapedNewlines('第一行\\n第二行'), '第一行\n第二行');
+  assert.equal(normalizeEscapedNewlines('\\\\nabla'), '\\\\nabla');
+});
+
+test('来源摘要按句子截断且去除公式标记', () => {
+  const raw = '## 定义 导数是差商极限。它表示曲线切线斜率，也用于近似计算与误差估计。';
+  const snippet = citationSnippet(raw, 20);
+  assert.equal(snippet.includes('#'), false);
+  assert.equal(snippet.includes('$'), false);
+  assert.ok(snippet.length <= 21);
+  assert.ok(snippet.endsWith('。') || snippet.endsWith('…'));
 });
 
 test('纯文本降级去掉 markdown 与公式分隔符', () => {

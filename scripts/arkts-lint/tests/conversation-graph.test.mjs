@@ -216,7 +216,7 @@ test('证据命中：回答尾部追加来源块', async () => {
   });
   await workflow.run(TEXT_COMPLETE, createRunRef());
   const added = state.events.filter((e) => e.type === 'add');
-  assert.ok(added.some((e) => e.content.indexOf('参考来源：极限') >= 0), '回答应带来源块');
+  assert.ok(added.some((e) => e.content.indexOf('参考来源：《极限》') >= 0), '回答应带紧凑来源索引');
 });
 
 // ── G. 失败与取消 ─────────────────────────────────────────

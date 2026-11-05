@@ -551,3 +551,17 @@ stage=done ragEval=1 total=14 hit1=11 hit5=13 miss=0 negatives=1 falsePositives=
 - 展示层兜底：`stripEchoedEvidence` 去掉复述的证据行与长 JSON；`markdownToPlainText` 让真正的渲染失败也只显示可读纯文本；来源摘录同样纯文本化。
 
 **真机验证**：同一问题重跑，原始标记节点从 3 个降为 1 个，且该节点是 KaTeX 的 MathML `annotation`（渲染产物，不可见）；公式、列表、标题均正常渲染。
+
+## 31. 2026-11-05 笔记来源展示重设计
+
+**问题**：命中来源原本拼在回答正文里（状态行 + 每条摘录），摘录是 160 字硬截断，常把公式或句子截成半截，渲染时报错、出现 `…` 残片；同时内部 noteId 曾经直接暴露。
+
+**设计**：命中来源改为回答下方的结构化卡片，正文不再拼长文本。
+
+- 新事件 `ConversationSourcesMessageEvent`：workflow 在收尾时推送 `citations`，经 reducer 落到 `ChatMsg.citations`。
+- `ChatSourcePanel`：默认折叠为「参考来源 · N 条」一行；展开后每条显示角色（关键词命中/前置/关联）、标题、最多两行纯文本摘要；点击行打开既有只读来源浮层。
+- 摘要用 `citationSnippet`：先 `markdownToPlainText` 去公式/标题标记，再按句号/分号截断，避免半句或半公式。
+- 未命中/检索失败仍保留一行状态文案；工具链路径不再显示会误导的「未命中」（工具卡片已表达检索过程）。
+- 顺带修复模型复述 JSON 时留下的字面 `\n`：`normalizeEscapedNewlines` 在展示层还原换行，且不影响 `\n` 这类 LaTeX 片段。
+
+**真机验证**：`参考来源 5 条`面板正常展开，首行 `[关键词命中] 泰勒公式余项估计`；回答正文不再出现来源长文本，字面 `\n` 计数为 0。

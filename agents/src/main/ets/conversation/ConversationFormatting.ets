@@ -20,11 +20,18 @@ export function evidenceFooter(
   if (evidence === undefined) {
     return '';
   }
-  const footer: string = evidence.citations.length > 0
-    ? evidencePort.formatSources(evidence)
-    : evidencePort.formatRetrievalStatus(evidence);
-  // noteId/version 是内部追溯信息，不展示给用户；引用校验仍用原始 citations。
-  return stripCitationMarkers(footer);
+  if (evidence.citations.length === 0) {
+    return stripCitationMarkers(evidencePort.formatRetrievalStatus(evidence));
+  }
+  // 命中时只留一行标题索引；摘录交给来源卡片，正文里不再拼长文本。
+  const titles: string[] = [];
+  for (let i = 0; i < evidence.citations.length && i < 3; i += 1) {
+    titles.push('《' + evidence.citations[i].title + '》');
+  }
+  const more: string = evidence.citations.length > 3
+    ? ' 等 ' + evidence.citations.length.toString() + ' 条'
+    : '';
+  return stripCitationMarkers('参考来源：' + titles.join('、') + more);
 }
 
 export function applyEvidenceToAnswer(

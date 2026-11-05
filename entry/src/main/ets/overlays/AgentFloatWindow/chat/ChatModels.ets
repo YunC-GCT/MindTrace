@@ -80,6 +80,9 @@ export interface ChatMsg {
   // 多主题笔记生成澄清卡片;旧会话缺失或损坏时按可选字段丢弃
   noteContextClarification?: NoteContextClarification
 
+  // 本轮回答命中的结构化来源;旧会话缺失或损坏时按可选字段丢弃
+  citations?: NoteEvidenceCitation[]
+
 }
 
 export function chatItemKey(message: ChatMsg): string {
@@ -90,7 +93,9 @@ export function chatItemKey(message: ChatMsg): string {
   const runPart: string = '_run' + agentRunRevision(chatMessageRunParts(message))
   const reviewPart: string = '_review' + noteReviewRevision(message.noteReview)
   const clarificationPart: string = '_clarification' + noteContextClarificationRevision(message.noteContextClarification)
-  return idPart + contentLengthPart + reasoningLengthPart + streamingPart + runPart + reviewPart + clarificationPart
+  const sourcesPart: string = '_sources' + (message.citations === undefined ? '0' : message.citations.length.toString())
+  return idPart + contentLengthPart + reasoningLengthPart + streamingPart + runPart + reviewPart
+    + clarificationPart + sourcesPart
 }
 
 export function chatMessageReasoning(message: ChatMsg): string {
@@ -125,6 +130,10 @@ export function copyChatMsgForMemory(message: ChatMsg): ChatMsg {
     sanitizeNoteContextClarification(message.noteContextClarification)
   if (clarification !== undefined) {
     next.noteContextClarification = clarification
+  }
+  const citations: NoteEvidenceCitation[] | undefined = sanitizeNoteEvidenceCitations(message.citations)
+  if (citations !== undefined) {
+    next.citations = citations
   }
   copyMessageMetadata(message, next)
   return next
@@ -164,6 +173,10 @@ export function copyChatMsgForPersistence(message: ChatMsg): ChatMsg {
     sanitizeNoteContextClarification(message.noteContextClarification)
   if (clarification !== undefined) {
     next.noteContextClarification = clarification
+  }
+  const citations: NoteEvidenceCitation[] | undefined = sanitizeNoteEvidenceCitations(message.citations)
+  if (citations !== undefined) {
+    next.citations = citations
   }
   copyMessageMetadata(message, next)
   return next
@@ -478,6 +491,30 @@ function sanitizeNoteEvidenceCitation(citation: NoteEvidenceCitation): NoteEvide
     chapter: citation.chapter,
   }
   return copyNoteEvidenceCitation(checked)
+}
+
+function sanitizeNoteEvidenceCitations(citations: NoteEvidenceCitation[] | undefined): NoteEvidenceCitation[] | undefined {
+  if (citations === undefined || citations === null || !Array.isArray(citations)) {
+    return undefined
+  }
+  const checked: NoteEvidenceCitation[] = []
+  for (const citation of citations) {
+    const safe: NoteEvidenceCitation | undefined = sanitizeNoteEvidenceCitation(citation)
+    if (safe !== undefined) {
+      checked.push(safe)
+    }
+  }
+  return checked.length > 0 ? checked : undefined
+}
+
+/** 追加来源卡片数据；不改动正文。 */
+export function applyChatMsgSources(message: ChatMsg, citations: NoteEvidenceCitation[]): ChatMsg {
+  const next: ChatMsg = copyChatMsgForMemory(message)
+  const safe: NoteEvidenceCitation[] | undefined = sanitizeNoteEvidenceCitations(citations)
+  if (safe !== undefined) {
+    next.citations = safe
+  }
+  return next
 }
 
 function noteReviewRevision(review: NoteReviewAnswer | undefined): string {
