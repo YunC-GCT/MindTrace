@@ -190,6 +190,7 @@ test('写入口查重接线：服务层跳过重复、DAO 提供候选查询', (
   assert.ok((service.match(/if \(duplicate !== null\)/g) ?? []).length >= 2, 'create 与 createWithCommitKey 都要查重');
   const dao = read('entry/src/main/ets/database/NoteDao.ets');
   assert.match(dao, /async findDuplicate\(unit: KnowledgeUnit\): Promise<KnowledgeUnit \| null>/);
+  assert.match(dao, /'signature': extractMathSignature\(unit\.title\)/);
   assert.match(dao, /queryRecentDedupeCandidates\(500\)/);
 });
 

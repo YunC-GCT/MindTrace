@@ -28,5 +28,6 @@ export const RAG_EVAL_CASES: RagEvalCase[] = [
   { query: '向量组线性相关', expectTitle: '向量组线性相关' },
   { query: '一加一等于几', expectTitle: '一加一等于二' },
   { query: '9+9 的加法计算怎么算', expectTitle: '9+9 的加法计算' },
+  { query: '两个 21 的和是多少', expectTitle: '计算 21 加 21 并写出运算步骤' },
   { query: '今天天气怎么样', expectTitle: '' },
 ];

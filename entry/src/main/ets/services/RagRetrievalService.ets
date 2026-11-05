@@ -16,7 +16,7 @@
  *   NoteEvidenceService.build(query) → search(query, topK) → RagHit[] → join knowledge_unit → NoteEvidenceCitation
  */
 import { relationalStore } from '@kit.ArkData';
-import { mergeQueryTerms, planQueryTerms } from 'common';
+import { extractMathSignature, mergeQueryTerms, planQueryTerms } from 'common';
 import { QueryKeywordExtractor } from './QueryKeywordExtractor';
 import { planRagQuery, planShortTermQuery, planTermQuery, RagQueryPlan, RagTermQueryPlan } from './RagQueryPlan';
 
@@ -60,6 +60,14 @@ export class RagRetrievalService {
     if (terms.length === 1 && terms[0] === trimmed) {
       return [];
     }
+    // 数学签名直出：不同措辞的同一道题（「两个 21 的和」↔「计算 21 加 21」）靠签名命中。
+    const signature: string = extractMathSignature(trimmed);
+    if (signature.length > 0) {
+      const signatureHits: RagHit[] = await RagRetrievalService.queryBySignature(store, signature, topK);
+      if (signatureHits.length > 0) {
+        return signatureHits;
+      }
+    }
     // 系统分词的内容词作为查询扩展；失败时沿用纯规则拆分。
     const keywords: string[] = await QueryKeywordExtractor.extract(trimmed);
     const expandedTerms: string[] = keywords.length > 0
@@ -81,6 +89,35 @@ export class RagRetrievalService {
       return [];
     }
     return await RagRetrievalService.runTermQuery(store, shortPlan);
+  }
+
+  private static async queryBySignature(store: relationalStore.RdbStore, signature: string,
+    topK: number): Promise<RagHit[]> {
+    let resultSet: relationalStore.ResultSet | undefined = undefined;
+    try {
+      resultSet = await store.querySql(
+        'SELECT id, title, content, subject, chapter FROM knowledge_unit '
+          + 'WHERE signature = ? ORDER BY updated_at DESC LIMIT ?',
+        [signature, topK]);
+      const hits: RagHit[] = [];
+      while (resultSet.goToNextRow()) {
+        hits.push({
+          unitId: resultSet.getString(resultSet.getColumnIndex('id')),
+          title: resultSet.getString(resultSet.getColumnIndex('title')),
+          content: resultSet.getString(resultSet.getColumnIndex('content')),
+          subject: resultSet.getString(resultSet.getColumnIndex('subject')),
+          chapter: resultSet.getString(resultSet.getColumnIndex('chapter')),
+        });
+      }
+      return hits;
+    } catch (error) {
+      console.warn('rag signature search failed: ' + (error as Error).message);
+      return [];
+    } finally {
+      if (resultSet !== undefined) {
+        resultSet.close();
+      }
+    }
   }
 
   private static async runWholeQuery(store: relationalStore.RdbStore, plan: RagQueryPlan,

@@ -57,7 +57,7 @@ test('short-term fallback: only sub-3-char terms use LIKE', () => {
 
 test('schema v19 creates note_fts with trigram tokenizer and backfills from knowledge_unit', () => {
   const db = read('common/src/main/ets/DatabaseHelper.ets');
-  assert.match(db, /DB_SCHEMA_VERSION: number = 20/);
+  assert.match(db, /DB_SCHEMA_VERSION: number = 21/);
   assert.match(db, /CREATE VIRTUAL TABLE IF NOT EXISTS note_fts USING fts5\(/);
   assert.match(db, /tokenize='trigram'/);
   assert.match(db, /SQL_BACKFILL_NOTE_FTS/);
@@ -85,6 +85,8 @@ test('RagRetrievalService.search uses the plan and returns empty on failure', ()
   assert.match(service, /const plan: RagQueryPlan = planRagQuery\(trimmed\)/);
   assert.match(service, /plan\.mode === 'fts'/);
   assert.match(service, /return \[\];/);
+  assert.match(service, /queryBySignature\(store, signature, topK\)/);
+  assert.match(service, /WHERE signature = \?/);
 });
 
 

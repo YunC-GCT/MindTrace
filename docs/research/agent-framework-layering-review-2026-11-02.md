@@ -652,3 +652,21 @@ scanned=186 duplicateGroups=26 strictGroups=20 duplicateNotes=52 removed=52 fail
 - 分词探针可用（init 约 0.9s、单次约 40ms）；`ragEval` 仍 `hit@5=13/13 miss=0`（查询扩展无回归）。
 - `dedupeSimilarityProbe`：同题「算式 ↔ 文字表述」仍 `addedSecond=0`。
 - 观察：一次生成阶段的模型调用偶发挂起超过 4 分钟（重跑 26.7s 完成），属于模型网络偶发，非本轮改动引入。
+
+## 36. 2026-11-05 数学签名进入检索主链路
+
+**背景**：换一种说法问同一道题（「两个 21 的和是多少」vs 笔记「计算 21 加 21」）时，FTS 与词 OR 都没有共同关键词，检索不到。
+
+**实现**：
+
+- schema v21：`knowledge_unit` 新增 `signature` 列；启动时对空值按标题计算并回填（`DatabaseHelper.backfillNoteSignatures`）。
+- `NoteDao.toBucket` 写入时计算签名，新建/更新自动维护。
+- `RagRetrievalService.search` 在整句 FTS 之后、词 OR 之前增加签名直查：
+  `SELECT ... FROM knowledge_unit WHERE signature = ? ORDER BY updated_at DESC LIMIT ?`。
+- 评测集新增用例：`两个 21 的和是多少` → 期望命中 `计算 21 加 21 并写出运算步骤`。
+
+**真机验证**：
+
+- `ragEval total=15 hit1=12 hit5=14 miss=0`，新用例 `rank=0`（签名直出）。
+- `ragSearch notes=137 missingFts=0 citations=7`，迁移与回填正常。
+- 相似去重探针本次因模型调用偶发挂起未跑完（此前已验证 `dedupeSimilarity=1`，签名列不改判重规则）。

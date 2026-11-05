@@ -13,7 +13,7 @@
 //  ============================================================================
 
 import { relationalStore } from '@kit.ArkData';
-import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult } from 'common';
+import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult, extractMathSignature } from 'common';
 import type { NoteSimilarityCandidate } from 'common';
 import { NoteFtsIndex } from './NoteFtsIndex';
 
@@ -571,6 +571,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       'prerequisites': NoteDao.stringifyArray(unit.prerequisites),
       'related': NoteDao.stringifyArray(unit.related),
       'embedding': NoteDao.stringifyNumberArray(unit.embedding),
+      'signature': extractMathSignature(unit.title),
       'user_id': unit.userId,
       'version': unit.version,
     };

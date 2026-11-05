@@ -2,7 +2,7 @@
  * DatabaseHelper.ets — 数据库初始化与 schema 迁移
  *
  * 路径: common/src/main/ets/DatabaseHelper.ets
- * 职责: 打开 MindTrace.db、建表/迁移到 schema v20、初始化 RDB 单例。
+ * 职责: 打开 MindTrace.db、建表/迁移到 schema v21、初始化 RDB 单例。
  * 依赖: @kit.ArkData (relationalStore)。
  */
 // MindTrace - 数据库初始化工具
@@ -12,13 +12,19 @@
 
 import { relationalStore } from "@kit.ArkData";
 import { BusinessError } from "@kit.BasicServicesKit";
+import { extractMathSignature } from "./utils/MathSignature";
+
+interface SignatureBackfillRow {
+  id: string;
+  title: string;
+}
 
 const STORE_CONFIG: relationalStore.StoreConfig = {
   name: "MindTrace.db",
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 20;
+const DB_SCHEMA_VERSION: number = 21;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -45,6 +51,7 @@ CREATE TABLE IF NOT EXISTS knowledge_unit (
   prerequisites TEXT NOT NULL DEFAULT "[]",
   related TEXT NOT NULL DEFAULT "[]",
   embedding TEXT NOT NULL DEFAULT "[]",
+  signature TEXT NOT NULL DEFAULT "",
   user_id TEXT NOT NULL DEFAULT "",
   version INTEGER NOT NULL DEFAULT 1
 )`;
@@ -354,6 +361,8 @@ const SQL_MIGRATE_CHECKPOINT_APPROVED: string =
   'ALTER TABLE note_generation_checkpoint ADD COLUMN approved_at INTEGER NOT NULL DEFAULT 0';
 const SQL_MIGRATE_STUDY_PLAN_VERSION: string =
   "ALTER TABLE study_plan ADD COLUMN version INTEGER NOT NULL DEFAULT 1";
+const SQL_MIGRATE_NOTE_SIGNATURE: string =
+  "ALTER TABLE knowledge_unit ADD COLUMN signature TEXT NOT NULL DEFAULT \"\"";
 
 const SQL_CREATE_STUDY_PLAN_OP: string = `
 CREATE TABLE IF NOT EXISTS study_plan_op (
@@ -683,6 +692,13 @@ export class DatabaseHelper {
       await DatabaseHelper.executeSql(store, SQL_BACKFILL_NOTE_FTS);
     }
 
+    // v21：数学签名列（按标题计算后回填），供检索与查重直出。
+    const hasSignature: boolean = await DatabaseHelper.hasColumn(store, "knowledge_unit", "signature");
+    if (!hasSignature) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_NOTE_SIGNATURE);
+    }
+    await DatabaseHelper.backfillNoteSignatures(store);
+
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_MESSAGE_KEY);
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_SEQUENCE);
     await DatabaseHelper.executeSql(store, SQL_INDEX_CHAT_MESSAGE_STABLE_ORDER);
@@ -693,6 +709,56 @@ export class DatabaseHelper {
     if (store.version < DB_SCHEMA_VERSION) {
       store.version = DB_SCHEMA_VERSION;
     }
+  }
+
+  /** v21 签名回填：只处理 signature 为空的行，按标题计算；失败保持空串。 */
+  private static async backfillNoteSignatures(store: relationalStore.RdbStore): Promise<void> {
+    try {
+      const rows: SignatureBackfillRow[] = await new Promise<SignatureBackfillRow[]>(
+        (resolve: (value: SignatureBackfillRow[]) => void, reject: (reason: Error) => void): void => {
+          store.querySql('SELECT id, title FROM knowledge_unit WHERE signature = ""', [],
+            (err: BusinessError, rs: relationalStore.ResultSet) => {
+              if (err) {
+                reject(new Error(err.message));
+                return;
+              }
+              const collected: SignatureBackfillRow[] = [];
+              try {
+                while (rs.goToNextRow()) {
+                  collected.push({
+                    id: rs.getString(rs.getColumnIndex('id')),
+                    title: rs.getString(rs.getColumnIndex('title')),
+                  });
+                }
+              } finally {
+                rs.close();
+              }
+              resolve(collected);
+            });
+        });
+      for (let i = 0; i < rows.length; i += 1) {
+        const signature: string = extractMathSignature(rows[i].title);
+        if (signature.length > 0) {
+          await DatabaseHelper.executeSqlArgs(store,
+            'UPDATE knowledge_unit SET signature = ? WHERE id = ?', [signature, rows[i].id]);
+        }
+      }
+    } catch (error) {
+      console.warn('[DatabaseHelper] signature backfill skipped: ' + (error as Error).message);
+    }
+  }
+
+  private static async executeSqlArgs(store: relationalStore.RdbStore, sql: string,
+    args: Array<string | number>): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      store.executeSql(sql, args, (err: BusinessError) => {
+        if (err) {
+          reject(new Error('DatabaseHelper.executeSqlArgs failed: ' + err.message));
+          return;
+        }
+        resolve();
+      });
+    });
   }
 
   private static async executeSql(store: relationalStore.RdbStore, sql: string): Promise<void> {
