@@ -24,6 +24,8 @@ test('A2A 控制器只经 IngestGateway，不直连 AgentIngestService', () => {
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(controller, /IngestGateway\.plan\(request\)/);
   assert.match(controller, /IngestGateway\.ingest\((?:this\.context|this\.host\.ingestContext\(\)), request, INGEST_MODE_INLINE\)/);

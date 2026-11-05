@@ -22,6 +22,8 @@ test('A2A 文本路径：首题同步回执，其余入待整理队列', () => {
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(controller, /IngestGateway\.ingest\((?:this\.context|this\.host\.ingestContext\(\)), request, INGEST_MODE_INLINE\)/);
   assert.match(controller, /handleTextBatch\(/);
@@ -35,6 +37,8 @@ test('文本批量整理有 deadline：provider 挂起时转待整理', () => {
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(controller, /ingestBatchWithDeadline\(/);
   assert.match(controller, /INGEST_TEXT_DEADLINE exceeded/);

@@ -189,6 +189,8 @@ test('T8 S2 接线：UI 进程灰度 + run_event recorder + stress e2e', () => {
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.ok(!ext.includes('WriteJobFlags.setEnabled(true)'));
   assert.ok(!controller.includes('WriteJobFlags.setEnabled(true)'));

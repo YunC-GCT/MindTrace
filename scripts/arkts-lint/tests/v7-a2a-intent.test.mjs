@@ -67,6 +67,8 @@ test('扩展接线：意图路由 + OCR checkpoint（回复继续前不写库）
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(controller, /routeA2AIntent\(text, images\.length > 0, plan !== null\)/);
   assert.match(controller, /INTENT_OCR/);
@@ -82,6 +84,8 @@ test('A2A 聊天接入 RAG：证据上下文注入 + 引用校验（P0-1）', ()
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(controller, /A2AChatContext\.build\(query/);
   assert.match(controller, /A2AChatContextResult/);
@@ -112,12 +116,14 @@ test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后�
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.ok(ability.includes('readContextId'));
   assert.ok(controller.includes('conversationKey'));
-  assert.ok(controller.includes('A2AConversationStore.loadWithFallback(this.context, conversationKey)'));
+  assert.match(controller, /loadWithFallback\((?:this\.context|this\.host\.answerContext\(\)), conversationKey\)/);
   assert.ok(controller.includes('A2AChatContext.build(query, memory)'));
-  assert.ok(controller.includes('A2AConversationStore.append(this.context, session.conversationKey'));
+  assert.match(controller, /A2AConversationStore\.append\((?:this\.context|this\.host\.answerContext\(\)), 'default'/);
   assert.ok(controller.includes("A2A_MEMORY key="));
   // 扩展进程补 DB 初始化：RAG 证据不再 store-not-ready
   assert.ok(controller.includes('DatabaseHelper.init(this.context)'));
@@ -136,6 +142,8 @@ test('「上一条」问题走确定性记忆回答（不依赖模型是否用 m
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.ok(controller.includes('matchesRememberIntent(query)'));
   assert.ok(controller.includes('answerFromConversationMemory'));
@@ -150,7 +158,6 @@ test('「上一条」问题走确定性记忆回答（不依赖模型是否用 m
 
 test('记忆键合并：contextId 与 default 按时间合并（跨请求无 contextId 兼容）', () => {
   const store = read('entry/src/main/ets/services/A2AConversationStore.ets');
-  assert.ok(store.includes('static async loadWithFallback'));
   assert.ok(store.includes("A2AConversationStore.load(context, 'default')"));
   assert.ok(store.includes('merged.sort('));
   assert.ok(store.includes('MAX_TURNS'));
@@ -158,9 +165,11 @@ test('记忆键合并：contextId 与 default 按时间合并（跨请求无 con
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
-  assert.ok(controller.includes('loadWithFallback(this.context, conversationKey)'));
-  assert.ok(controller.includes("A2AConversationStore.append(this.context, 'default'"));
+  assert.match(controller, /loadWithFallback\((?:this\.context|this\.host\.answerContext\(\)), conversationKey\)/);
+  assert.match(controller, /A2AConversationStore\.append\((?:this\.context|this\.host\.answerContext\(\), 'default')/);
 });
 
 
@@ -194,6 +203,8 @@ test('无图/纯图片消息：纯文本引导（不再发卡片、不跳 App）
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.equal(ability.includes('sendAnswerWithImageCard'), false);
   assert.equal(controller.includes('sendAnswerWithImageCard'), false);

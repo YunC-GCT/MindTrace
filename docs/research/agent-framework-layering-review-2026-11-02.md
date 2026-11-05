@@ -408,3 +408,20 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 **验证**：`agent-gate` PASS（1245 单测）；`build-hsp-hap` 4/4。
 
 **未拆分**：问答链路（`runQuery` + `answerFrom*` + `answerWithResolvedModel` 等 10 个方法）仍在控制器内，与图片、生命周期共享 `A2ARequestSession` 状态，下一刀需要先抽 session 注册表。
+
+### 24.1 第二刀：问答链路（2026-11-05）
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `A2AController` | 518 | 生命周期（prepare / cancelActive / handle）、图片问答、OCR 检查点、`runQuery` 与 session 生命周期、`settle` / `sendAnswer` |
+| `A2AIngestHandler` | 455 | 整理与计划（上一刀） |
+| `A2AAnswerHandler` | 292 | 模型配置等待、请求模型解析、构建 `ReplyContext` 并调用 `ReplyService` |
+| `A2AConstants` | 62 | 日志域/标签、`INGEST_DEADLINE_MS`、`A2A_POLICY`、回复风格、字符计数 |
+| `A2ASession` | 30 | `A2ARequestSession`（token / deadline / 回答状态 / 模型解析结果） |
+
+- 宿主接口 `IA2AAnswerHost`：`answerContext` / `configReady` / `finishSession` / `failSession` / `currentRequestId`——`configReady` 由 `prepare()` 写入、回答链只读，因此走宿主而不是把可变状态搬到新类
+- `A2A_REPLY_STYLE` 从 `ReplyStyle` 改为字面量 `'plain_text_math'`，这样常量可以住进 `A2AConstants` 而不引入 `common` 依赖
+
+**验证**：`agent-gate` PASS（1245 单测）；`build-hsp-hap` 4/4。仍**未经真机验证**。
+
+**剩余**：控制器 518 行里 `runQuery` 与 session 生命周期、图片问答、OCR 检查点仍在一起；再拆需要把 `A2ARequestSession` 的创建/取消也搬进数据类，收益递减，暂不继续。

@@ -131,6 +131,8 @@ test('A2A 整理：用户整理意图在扩展内联完成（无需打开 App）
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.ok(controller.includes('private ingestPlanItemNow('));
   assert.ok(controller.includes('ingestTextBatchNow('));

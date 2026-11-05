@@ -13,7 +13,10 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { A2AIngestHandler } from './A2AIngestHandler';
-import { DOMAIN, INGEST_DEADLINE_MS, TAG } from './A2AConstants';
+import { A2AAnswerHandler } from './A2AAnswerHandler';
+import type { IA2AAnswerHost } from './A2AAnswerHandler';
+import type { A2ARequestSession } from './A2ASession';
+import { A2A_POLICY, DOMAIN, INGEST_DEADLINE_MS, TAG, a2aAttempts, a2aBudgetMs } from './A2AConstants';
 import type { IA2AIngestHost } from './A2AIngestHandler';
 import type { common } from '@kit.AbilityKit';
 import {
@@ -78,87 +81,10 @@ import { IntentClassifier, ReplyContext, ReplyService } from 'agents/src/main/et
 import type { LlmCallPolicy, ReplyStyle } from 'agents/src/main/ets/chat/Index';
 
 
-/** 与 TaskSnapshot.unicodeCharCount 同口径：日志里的 chars= 不能拿 string.length 冒充「字」。 */
-function unicodeCharCount(text: string): number {
-  let count: number = 0;
-  for (let i = 0; i < text.length; i++) {
-    const code: number = text.charCodeAt(i);
-    if (code >= 0xD800 && code <= 0xDBFF && i + 1 < text.length) {
-      const next: number = text.charCodeAt(i + 1);
-      if (next >= 0xDC00 && next <= 0xDFFF) {
-        i += 1;
-      }
-    }
-    count += 1;
-  }
-  return count;
-}
-
-/**
- * A2A 单次回复预算（计划 §4.1–§4.3）——超时/重试/输出预算的数字只在这里定义。
- * 自洽关系：35000 >= 4000 + 1 * (25000 + 0) + 6000。
- * task_need = 4096；LlmClient 会再按清单取 min(4096, listing.maxOutputTokens)，
- * 清单未知时保持 4096。
- */
-export interface A2APolicy {
-  configTimeoutMs: number;
-  maxRetries: number;
-  requestTimeoutMs: number;
-  backoffMs: number;
-  marginMs: number;
-  deadlineMs: number;
-  taskNeedTokens: number;
-}
-
-export const A2A_POLICY: A2APolicy = {
-  configTimeoutMs: 4000,
-  maxRetries: 0,
-  requestTimeoutMs: 25000,
-  backoffMs: 0,
-  marginMs: 6000,
-  deadlineMs: 35000,
-  taskNeedTokens: 4096,
-};
-
-/**
- * A2A 回复风格（#234）：小艺渲染层会吞掉 $...$ / LaTeX，扩展通道只发纯文本数学。
- * App 内聊天走 ReplyService 默认的 'markdown'，公式渲染不受影响。
- * 回退只需改成 'markdown' 并重建（小艺会重新出现公式被吞的现象）。
- */
-const A2A_REPLY_STYLE: ReplyStyle = 'plain_text_math';
-
-function a2aAttempts(): number {
-  return A2A_POLICY.maxRetries + 1;
-}
-
-/** config + attempts * (inner + backoff) + margin，启动时自检 35000 是否自洽。 */
-function a2aBudgetMs(): number {
-  return A2A_POLICY.configTimeoutMs
-    + a2aAttempts() * (A2A_POLICY.requestTimeoutMs + A2A_POLICY.backoffMs)
-    + A2A_POLICY.marginMs;
-}
 
 /** 错误码/分类/文案统一在 A2AErrorTaxonomy；这里只保留入库 deadline。 */
 
 /** 单次请求的预算与状态：保证 deadline 只取消一次、timeout 只发一次 */
-interface A2ARequestSession {
-  taskId: string;
-  /** 本轮原始 query：用于会话记忆与回执判定 */
-  query: string;
-  token: CancellationToken;
-  startedAt: number;
-  /** 实际发起模型调用的时刻；0 表示尚未调用 */
-  requestStartedAt: number;
-  deadlineTimer: number;
-  responded: boolean;
-  requestedModel: string;
-  canonicalModel: string;
-  attempts: number;
-  /** 本轮回合注入的 RAG 证据（回答后做引用校验） */
-  evidence?: NoteEvidenceContext;
-  /** 会话键：contextId 优先，回退 taskId；用于多轮记忆 */
-  conversationKey: string;
-}
 
 /** 扩展适配器交给控制器的请求形状（协议字段已解析完）。 */
 export interface A2ARequestInput {
@@ -177,23 +103,45 @@ export interface A2AReplyPort {
 /** 扩展进程内的模型配置初始化（只做一次），runQuery 前必须等它 */
 let configReady: Promise<void> | null = null;
 
-export class A2AController implements IA2AIngestHost {
+export class A2AController {
   private readonly context: common.Context;
   private readonly reply: A2AReplyPort;
   /** 当前请求的 jsonrpc id，仅用于 settle 日志（快照回填由 AgentExtAbility 负责） */
-  private currentRequestId: string = '';
+  private currentRequestIdValue: string = '';
   /** 当前在跑的请求：新请求重入或 onDestroy 时用它取消 token / 清 deadline */
   private activeSession: A2ARequestSession | null = null;
   private readonly ingestHandler: A2AIngestHandler;
+  private readonly answerHandler: A2AAnswerHandler;
 
   constructor(context: common.Context, reply: A2AReplyPort) {
     this.context = context;
     this.reply = reply;
     this.ingestHandler = new A2AIngestHandler(this);
+    this.answerHandler = new A2AAnswerHandler(this);
   }
 
   ingestContext(): common.Context {
     return this.context;
+  }
+
+  answerContext(): common.Context {
+    return this.context;
+  }
+
+  finishSession(session: A2ARequestSession, code: A2AErrorCode, text: string, reason: string): void {
+    this.settle(session, code, text, reason);
+  }
+
+  failSession(session: A2ARequestSession, e: Error): void {
+    this.handleFailure(session, e);
+  }
+
+  currentRequestId(): string {
+    return this.currentRequestIdValue;
+  }
+
+  configReady(): Promise<void> | null {
+    return configReady;
   }
 
   sendIngestAnswer(taskId: string, text: string, requestStartedAt: number): void {
@@ -253,7 +201,7 @@ export class A2AController implements IA2AIngestHost {
   /** 请求入口：取消上一轮 → 解析图片/文本 → 读计划 → 意图路由 → 分派。 */
   handle(input: A2ARequestInput): void {
     this.cancelActive();
-    this.currentRequestId = input.requestId;
+    this.currentRequestIdValue = input.requestId;
     const parts: AgentPart[] = input.parts;
     const images: AgentImagePart[] = collectImageParts(parts);
     const query: string = input.query;
@@ -441,20 +389,20 @@ export class A2AController implements IA2AIngestHost {
         if (session.responded) {
           return;
         }
-        this.awaitConfig()
+        this.answerHandler.awaitConfig()
           .then((ready: boolean): void => {
             if (session.responded) {
               return;
             }
             if (!ready) {
               // 配置没能读到，用当前缓存值（可能是默认值）尽量补齐审计字段。
-              this.fillModelFieldsFromCachedConfig(session);
+              this.answerHandler.fillModelFieldsFromCachedConfig(session);
               this.settle(session, 'A2A_CONFIG_READ_TIMEOUT',
                 a2aErrorText('A2A_CONFIG_READ_TIMEOUT', A2A_POLICY.configTimeoutMs.toString()),
                 'config wait exceeded ' + A2A_POLICY.configTimeoutMs.toString() + 'ms');
               return;
             }
-            this.answerWithResolvedModel(session, built.replyContext);
+            this.answerHandler.answerWithResolvedModel(session, built.replyContext);
           })
           .catch((e: Error): void => {
             if (session.responded) {
@@ -524,191 +472,6 @@ export class A2AController implements IA2AIngestHost {
   }
 
   /** 配置读取最多等 T_config；超时返回 false，由调用方回配置超时 task。 */
-  private awaitConfig(): Promise<boolean> {
-    return new Promise<boolean>((resolve: (ready: boolean) => void): void => {
-      let done: boolean = false;
-      let timer: number = 0;
-      const finish = (ready: boolean): void => {
-        if (done) {
-          return;
-        }
-        done = true;
-        clearTimeout(timer);
-        resolve(ready);
-      };
-      timer = setTimeout((): void => {
-        finish(false);
-      }, A2A_POLICY.configTimeoutMs);
-      if (configReady === null) {
-        // onCreate 还没跑：让 4s 计时器给出 A2A_CONFIG_READ_TIMEOUT。
-        return;
-      }
-      configReady.then((): void => {
-        finish(true);
-      }).catch((): void => {
-        // init 内部已记录错误；按“配置可用”继续，由 isConfigured 决定是否调模型。
-        finish(true);
-      });
-    });
-  }
-
-  /**
-   * 审计用的 requestedModel：优先用户显式写入的原始 ID（可能是旧别名），
-   * 没有显式选择时回落到 getModel() 的生效值。canonicalModel 由 resolver 给出。
-   */
-  private readRequestedModel(config: LlmConfig, vendorId: string): string {
-    const activeModels: Record<string, string> = config.getAllActiveVendorModels();
-    const activeModel: string | undefined = activeModels[vendorId];
-    if (activeModel !== undefined && activeModel.trim().length > 0) {
-      return activeModel.trim();
-    }
-    return config.getModel();
-  }
-
-  /** 配置等待超时时，用当前缓存（可能是默认值）尽量补齐日志里的模型字段。 */
-  private fillModelFieldsFromCachedConfig(session: A2ARequestSession): void {
-    try {
-      const config: LlmConfig = LlmConfig.getInstance();
-      const vendorId: string = config.getVendorId();
-      const requestedModel: string = this.readRequestedModel(config, vendorId);
-      const resolved: ResolvedModel = resolveModel(vendorId, requestedModel);
-      session.requestedModel = requestedModel;
-      session.canonicalModel = resolved.canonicalId.length > 0 ? resolved.canonicalId : requestedModel;
-    } catch (_e) {
-      // 配置完全不可读时保留空字段；reason 已说明是 config wait。
-    }
-  }
-
-  /**
-   * 解析本次实际请求的模型，再走配置检查 + ReplyService。
-   * 未知 ID：不静默替换，回 ID + 解析原因。
-   * 清单已知但条目不可用：显式降级到同 provider catalog 默认，并在回复里标注。
-   * 清单为空（Phase 1 只覆盖 deepseek）：按 deferred 语义继续用原 ID，只记 code。
-   */
-  private answerWithResolvedModel(session: A2ARequestSession, context: ReplyContext): void {
-    const config: LlmConfig = LlmConfig.getInstance();
-    const vendorId: string = config.getVendorId();
-    const requestedModel: string = this.readRequestedModel(config, vendorId);
-    const resolved: ResolvedModel = resolveModel(vendorId, requestedModel);
-    session.requestedModel = requestedModel;
-    session.canonicalModel = resolved.canonicalId.length > 0 ? resolved.canonicalId : requestedModel;
-    let modelOverride: string = '';
-    let degradedNote: string = '';
-    const catalog: ProviderCatalog | null = getProviderCatalog(vendorId);
-    if (!resolved.usable) {
-      if (catalog !== null && catalog.models.length > 0) {
-        if (resolved.reason === 'MODEL_ID_UNRESOLVED') {
-          // 未知 ID 不静默换成另一个型号。
-          this.settle(session, 'A2A_MODEL_ID_UNRESOLVED',
-            a2aErrorText('A2A_MODEL_ID_UNRESOLVED', session.canonicalModel + '（' + resolved.reason + '）'),
-            resolved.reason);
-          return;
-        }
-        // 清单有该条目但不可用：显式降级到同 provider catalog 默认，并在回复里标注。
-        const fallbackResolved: ResolvedModel = resolveModel(vendorId, catalog.defaultModelId);
-        if (!fallbackResolved.usable) {
-          this.settle(session, 'A2A_MODEL_UNUSABLE',
-            a2aErrorText('A2A_MODEL_UNUSABLE', session.canonicalModel + '（' + resolved.reason + '）'),
-            resolved.reason);
-          return;
-        }
-        modelOverride = fallbackResolved.canonicalId;
-        session.canonicalModel = modelOverride;
-        degradedNote = '\n\n已降级：' + requestedModel + ' / ' + resolved.reason;
-        hilog.warn(DOMAIN, TAG,
-          'A2A_MODEL_UNUSABLE requestedModel=%{public}s canonicalModel=%{public}s reason=%{public}s attempts=%{public}d',
-          session.requestedModel, session.canonicalModel, resolved.reason, session.attempts);
-      } else {
-        // 其它 vendor 暂无 catalog：这是 deferred 读取，不是“模型被替换”。
-        hilog.warn(DOMAIN, TAG,
-          'A2A_MODEL_ID_UNRESOLVED requestedModel=%{public}s canonicalModel=%{public}s reason=%{public}s attempts=%{public}d',
-          session.requestedModel, session.canonicalModel, resolved.reason, session.attempts);
-      }
-    }
-    this.answerAndSettle(session, context, resolved.reason, modelOverride, degradedNote);
-  }
-
-  private answerAndSettle(
-    session: A2ARequestSession,
-    context: ReplyContext,
-    resolveReason: string,
-    modelOverride: string,
-    degradedNote: string,
-  ): void {
-    this.answerIfConfigured(session, context, modelOverride, degradedNote)
-      .then((answer: string): void => {
-        if (session.responded) {
-          return;
-        }
-        const reason: string = resolveReason.length > 0 ? resolveReason : 'OK';
-        const safeAnswer: string = A2AChatContext.sanitize(session.evidence, answer);
-        A2AConversationStore.append(this.context, session.conversationKey, session.query, safeAnswer)
-          .then((): void => {
-            hilog.info(DOMAIN, TAG, 'A2A_MEMORY_SAVED key=%{public}s', session.conversationKey);
-          })
-          .catch((e: Error): void => {
-            hilog.warn(DOMAIN, TAG, 'A2A_MEMORY_SAVE_FAILED key=%{public}s err=%{public}s',
-              session.conversationKey, e.message);
-          });
-        if (session.conversationKey !== 'default') {
-          A2AConversationStore.append(this.context, 'default', session.query, safeAnswer)
-            .catch((): void => {});
-        }
-        this.settle(session, 'A2A_REPLY_SENT', safeAnswer, reason);
-      })
-      .catch((e: Error): void => {
-        if (session.responded) {
-          return;
-        }
-        this.handleFailure(session, e);
-      });
-  }
-
-  /**
-   * 配置就绪 -> 走 ReplyService（与 UI 聊天同一条链路，明确不经过 ModelRouter）；
-   * 未就绪 -> 不调模型，直接返回未就绪文案。
-   */
-  private async answerIfConfigured(
-    session: A2ARequestSession,
-    context: ReplyContext,
-    modelOverride: string,
-    degradedNote: string,
-  ): Promise<string> {
-    if (session.responded) {
-      return '';
-    }
-    const configured: boolean = await LlmConfig.getInstance().isConfigured();
-    if (session.responded || session.token.isCancelled()) {
-      // deadline 已经回过 timeout；不要再发第二次。
-      return '';
-    }
-    if (!configured) {
-      hilog.info(DOMAIN, TAG, 'LlmConfig 未配置（端侧模型未就绪），跳过模型调用');
-      return a2aErrorText('A2A_MODEL_NOT_READY');
-    }
-    const policy: LlmCallPolicy = {
-      // LlmClient 会再按清单取 min(4096, listing.maxOutputTokens)。
-      maxTokens: A2A_POLICY.taskNeedTokens,
-      timeoutMs: A2A_POLICY.requestTimeoutMs,
-      maxRetries: A2A_POLICY.maxRetries,
-      model: modelOverride,
-    };
-    session.attempts = a2aAttempts();
-    session.requestStartedAt = Date.now();
-    hilog.info(DOMAIN, TAG,
-      'A2A LLM call requestedModel=%{public}s canonicalModel=%{public}s attempts=%{public}d timeoutMs=%{public}d maxTokens=%{public}d',
-      session.requestedModel, session.canonicalModel, session.attempts,
-      policy.timeoutMs, policy.maxTokens);
-    const raw: string = await new ReplyService(new IntentClassifier())
-      .complete(context, session.token, policy, A2A_REPLY_STYLE);
-    const elapsed: number = Date.now() - session.requestStartedAt;
-    const text: string = raw.length > 0 ? raw : '模型没有返回内容，换个问法试试。';
-    const withNote: string = degradedNote.length > 0 ? text + degradedNote : text;
-    hilog.info(DOMAIN, TAG, 'LLM 返回 %{public}d 字，耗时 %{public}d ms',
-      unicodeCharCount(withNote), elapsed);
-    return withNote;
-  }
-
   private handleFailure(session: A2ARequestSession, e: Error): void {
     const reason: string = e instanceof Error && e.message.length > 0 ? e.message : String(e);
     if (session.token.isCancelled() || reason === 'CONVERSATION_CANCELLED') {
@@ -743,7 +506,7 @@ export class A2AController implements IA2AIngestHost {
     const elapsedMs: number = Date.now() - session.startedAt;
     hilog.info(DOMAIN, TAG,
       '%{public}s requestId=%{public}s taskId=%{public}s requestedModel=%{public}s canonicalModel=%{public}s reason=%{public}s attempts=%{public}d elapsedMs=%{public}d',
-      code, this.currentRequestId, session.taskId, session.requestedModel, session.canonicalModel,
+      code, this.currentRequestIdValue, session.taskId, session.requestedModel, session.canonicalModel,
       reason, session.attempts, elapsedMs);
     this.sendAnswer(session.taskId, text, session.requestStartedAt);
   }

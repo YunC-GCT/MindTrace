@@ -194,6 +194,8 @@ test('A2A ingest receipt consumes NoteOutcome instead of exception text (A3d)', 
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(ingest, /static async ingestOutcome/);
   assert.match(ingest, /service\.ingestTextOutcome/);
@@ -210,6 +212,8 @@ test('幂等复用（committed 无 unit）不报 INGEST_FAILED', () => {
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(controller, /已整理过：这条内容已在知识库里/);
   assert.match(controller, /const unit: KnowledgeUnit \| undefined = outcome\.unit;/);

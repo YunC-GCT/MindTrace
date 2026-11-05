@@ -10,6 +10,8 @@ const controller = [
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
 const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
 const UI_CALLERS = [
@@ -19,7 +21,7 @@ const UI_CALLERS = [
 ];
 
 test('A2A passes plain_text_math explicitly to ReplyService.complete', () => {
-  assert.match(controller, /const A2A_REPLY_STYLE: ReplyStyle = 'plain_text_math'/);
+  assert.match(controller, /A2A_REPLY_STYLE: ('plain_text_math'|ReplyStyle) = 'plain_text_math'/);
   assert.match(controller, /\.complete\(context, session\.token, policy, A2A_REPLY_STYLE\)/);
 });
 

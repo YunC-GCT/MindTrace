@@ -79,6 +79,8 @@ test('扩展入口接线：多题先回规划，再按指令逐题整理；计�
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(controller, /handleTextPlanMessage\(/);
   assert.match(controller, /formatA2APlanSummary\(plan\)/);
@@ -99,6 +101,8 @@ test('A2A 入库 deadline：超时转待整理队列（P0-2 第一片）', () =>
     read('entry/src/main/ets/services/A2AController.ets'),
     read('entry/src/main/ets/services/A2AIngestHandler.ets'),
     read('entry/src/main/ets/services/A2AConstants.ets'),
+    read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
+    read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
   assert.match(controller, /INGEST_DEADLINE_MS: number = 90000/);
   assert.match(controller, /ingestWithDeadline\(text: string\): Promise<NoteOutcome>/);
