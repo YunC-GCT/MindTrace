@@ -96,6 +96,7 @@ Each spec has these sections:
 - [`041-chat-tool-loop.md`](./041-chat-tool-loop.md) — Chat 工具回复：ToolLoop 接入 conversation workflow（默认关闭，无行为变更）
 - [`042-a2a-error-taxonomy.md`](./042-a2a-error-taxonomy.md) — A2A 错误码 / 分类 / 用户文案统一映射
 - [`043-data-retention.md`](./043-data-retention.md) — 数据保留与清理：A2A 上下文 7 天 / run 与 job 历史 30 天
+- [`044-rag-recall-and-evidence-quality.md`](./044-rag-recall-and-evidence-quality.md) — RAG 召回质量：查询归一 + 词 OR 召回 + 证据预算 + 召回评测集（037 补篇）
 
 ## Conventions in these specs
 
