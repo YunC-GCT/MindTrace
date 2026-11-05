@@ -184,7 +184,7 @@ test('note_query_rag must produce stable sort order (AC-RAG-01)', () => {
   assert.match(noteSearchRanking, /right\.score - left\.score/);
   assert.match(noteSearchRanking, /right\.updatedAt - left\.updatedAt/);
   assert.match(noteSearchRanking, /left\.noteId < right\.noteId/);
-  assert.match(noteSearchAdapter, /rankNoteHits\(rows, needle, topK\)/);
+  assert.match(noteSearchAdapter, /rankNoteHitsByTerms\(rows, terms, topK\)/);
 });
 
 test('note_query_rag must return excerpt field in results (AC-RAG-01)', () => {

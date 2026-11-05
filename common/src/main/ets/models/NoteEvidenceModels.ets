@@ -51,6 +51,8 @@ export interface NoteEvidenceContext {
 export interface NoteEvidenceOptions {
   topK?: number;
   maxDepth?: number;
+  /** 注入 prompt 的证据文本上限（字符）；默认 2400，超出按分数从尾部截断。 */
+  maxContextChars?: number;
   subject?: string;
   chapter?: string;
   tag?: string;

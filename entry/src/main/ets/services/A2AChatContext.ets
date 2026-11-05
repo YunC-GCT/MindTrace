@@ -14,6 +14,8 @@
  */
 
 import { createNoteEvidenceService } from './EvidenceComposition';
+import { DatabaseHelper } from 'common';
+import type { common } from '@kit.AbilityKit';
 import type { NoteEvidenceContext } from 'common';
 import type { ReplyContext } from 'agents/src/main/ets/chat/Index';
 import type { NoteEvidenceService } from 'agents/src/main/ets/evidence/Index';
@@ -31,7 +33,8 @@ export interface A2AChatContextResult {
 
 export class A2AChatContext {
   /** 构建聊天回合上下文（证据注入；超时/失败自动降级为空证据）。 */
-  static async build(query: string, memoryContext: string = ''): Promise<A2AChatContextResult> {
+  static async build(query: string, memoryContext: string = '',
+    initContext?: common.Context): Promise<A2AChatContextResult> {
     const fallback: A2AChatContextResult = {
       replyContext: {
         memoryContext: memoryContext,
@@ -47,6 +50,15 @@ export class A2AChatContext {
     const trimmed: string = query.trim();
     if (trimmed.length === 0) {
       return fallback;
+    }
+    // 扩展进程的消息可能先于 prepare() 里的 DB 初始化到达；先等库就绪再检索，
+    // 否则 getStore() 为空会走成 search-failed。失败时仍按降级路径继续。
+    if (initContext !== undefined) {
+      try {
+        await DatabaseHelper.init(initContext);
+      } catch (e) {
+        // DB 不可用时证据检索会自行降级，不阻断聊天。
+      }
     }
     try {
       const service: NoteEvidenceService = createNoteEvidenceService();

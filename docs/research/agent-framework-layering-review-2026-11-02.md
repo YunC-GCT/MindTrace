@@ -474,3 +474,31 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 | missingChunk | 111 | 95 | 95 |
 
 **未做**：95 条「有 FTS 无 chunk」的旧笔记（galaxy 种子 + v19 前存量）未回填；主检索走 `note_fts`，不影响召回，等向量检索接入时再统一回填。
+
+## 27. 2026-11-05 RAG 召回 v2 + 工具循环护栏（044 落地）
+
+**RAG 召回**（spec 044 R1–R5）：
+
+- `QueryTerms`：全角归一、复用 `NoteRetrievalQuery` 边界清洗、剥离「等于几/怎么算」等尾巴，`的/和/与/及` 作分隔符，单字词在有长词时丢弃。
+- `RagQueryPlan`：整句命中优先（既有行为不变），miss 后词 OR 兜底；FTS 词未命中再走短词 LIKE。
+- `RdbNoteSearchAdapter`：`note_query_rag` 与 FTS 共用同一套拆分；`NoteSearchRanking` 增加命中词数加成。
+- `NoteEvidenceService`：`maxContextChars`（默认 2400）预算，超出从尾部裁剪并标 `budget-truncated`。
+- `ConversationFormatting`：`[RAG] citations=… answerRefs=… keptRefs=… coverage=…` 覆盖率日志。
+
+**真机评测**（`e2e=ragEval`，14 条查询含 1 条负样本）：
+
+```
+stage=done ragEval=1 total=14 hit1=11 hit5=13 miss=0 negatives=1 falsePositives=0 skipped=0 ms=335
+```
+
+`一加一等于几`、`9+9 的加法计算怎么算` 均从 miss 变为 rank=0；`ragSearch` 复跑 `citations=7 degraded=0 contextChars=1603`，无回归。
+
+**工具循环 P0 护栏**：
+
+- `ExecuteToolsNode`：单工具 8s 超时、异常转 `ok:false` 回喂、结果超 4000 字截断、每次调用记 `[ToolLoop] tool name=… ok=… ms=… chars=…`。
+- `ConversationReplyHandler`：工具循环失败回退普通回复，不再直接终结整轮。
+- 真机 `e2e=toolLoopProbe`：模型真实调用 `note_query_rag`（`ok=1 ms=13 chars=2586`），5.1s 返回 766 字答案。
+
+**仍未做**：工具循环默认关闭（`CHAT_TOOL_REPLY_ENABLED`），开启前需产品决定「工具结果如何呈现」；流式工具循环未实现（041 明确非目标）。
+
+**顺带修复（A2A 证据）**：真机冒烟暴露 `A2A_EVIDENCE citations=0 degraded=1 reason=search-failed`。根因是扩展进程的 `DatabaseHelper.init` 是 fire-and-forget，消息先于建库到达时证据检索查空库。修法：把 DB init 串进 `configReady` 链，并让 `A2AChatContext.build` 内部等待库就绪。真机复测 `A2A_EVIDENCE citations=1 degraded=0 reason=`，回复正常（723 字 / 3.8s）。

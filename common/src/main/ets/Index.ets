@@ -512,6 +512,8 @@ export {
 export type { GalaxyLinkType } from './models/GalaxyModels';
 
 export { NoteRetrievalQuery } from './utils/NoteRetrievalQuery';
+export { normalizeQueryText, planQueryTerms } from './utils/QueryTerms';
+export type { QueryTermPlan } from './utils/QueryTerms';
 
 // ========== 对话与笔记纯规则（2026-11-03 由 entry/services 上移） ==========
 export {

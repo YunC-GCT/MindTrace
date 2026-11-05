@@ -308,6 +308,10 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('ragProbe', DebugCaptureRunner.runRagProbe(this.context));
       return;
     }
+    if (mode === 'ragEval') {
+      this.runDebugProbe('ragEval', DebugCaptureRunner.runRagEval(this.context));
+      return;
+    }
     if (mode === 'ragLegacyAudit') {
       this.runDebugProbe('ragLegacyAudit', DebugCaptureRunner.runRagLegacyCleanup(this.context, false));
       return;
@@ -382,6 +386,10 @@ export default class EntryAbility extends UIAbility {
     }
     if (mode === 'agentChatContext') {
       this.runDebugProbe('agentChatContext', DebugAgentProbes.runAgentChatContext(this.context));
+      return;
+    }
+    if (mode === 'toolLoopProbe') {
+      this.runDebugProbe('toolLoopProbe', DebugAgentProbes.runToolLoopProbe(this.context));
       return;
     }
     if (mode === 'noteAudit') {

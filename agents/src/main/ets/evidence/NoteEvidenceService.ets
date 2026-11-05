@@ -38,6 +38,9 @@ const EVIDENCE_MAX_TOP_K: number = 10;
 const EVIDENCE_DEFAULT_DEPTH: number = 1;
 const EVIDENCE_MAX_DEPTH: number = 2;
 const EVIDENCE_MAX_CITATIONS: number = 10;
+const EVIDENCE_DEFAULT_CONTEXT_CHARS: number = 2400;
+const EVIDENCE_MIN_CONTEXT_CHARS: number = 400;
+const EVIDENCE_MAX_CONTEXT_CHARS: number = 8000;
 const EVIDENCE_EXCERPT_LIMIT: number = 160;
 const CITATION_MARKER: string = '[noteId=';
 const CITATION_UNVERIFIED: string = '[未验证引用]';
@@ -95,6 +98,10 @@ export class NoteEvidenceService implements NoteEvidencePort {
     citations = NoteEvidenceService.capCitations(citations);
     NoteEvidenceService.filterRelationsForCitations(relations, citations);
     NoteEvidenceService.refreshCitationRoles(citations, relations);
+    const budget: number = NoteEvidenceService.clampContextChars(options?.maxContextChars);
+    if (NoteEvidenceService.trimToBudget(citations, relations, budget) && reason.length === 0) {
+      reason = 'budget-truncated';
+    }
     const context: NoteEvidenceContext = {
       query: normalizedQuery,
       topK: topK,
@@ -317,6 +324,37 @@ export class NoteEvidenceService implements NoteEvidencePort {
     }
     lines.push('引用规范：正文引用证据时写成 [noteId=... version=...]；上面没有出现的 noteId 一律不得引用，也不得编造来源。');
     return lines.join('\n');
+  }
+
+  private static clampContextChars(value: number | undefined): number {
+    if (value === undefined || value <= 0) {
+      return EVIDENCE_DEFAULT_CONTEXT_CHARS;
+    }
+    if (value < EVIDENCE_MIN_CONTEXT_CHARS) {
+      return EVIDENCE_MIN_CONTEXT_CHARS;
+    }
+    if (value > EVIDENCE_MAX_CONTEXT_CHARS) {
+      return EVIDENCE_MAX_CONTEXT_CHARS;
+    }
+    return value;
+  }
+
+  /** 044 R4：按字符预算从尾部裁引用与关系；返回是否发生了截断。 */
+  private static trimToBudget(citations: NoteEvidenceCitation[], relations: NoteEvidenceRelation[],
+    budget: number): boolean {
+    let truncated: boolean = false;
+    while (citations.length > 0
+      && NoteEvidenceService.formatContext(citations, relations).length > budget) {
+      citations.pop();
+      NoteEvidenceService.filterRelationsForCitations(relations, citations);
+      truncated = true;
+    }
+    while (relations.length > 0
+      && NoteEvidenceService.formatContext(citations, relations).length > budget) {
+      relations.pop();
+      truncated = true;
+    }
+    return truncated;
   }
 
   private static capCitations(citations: NoteEvidenceCitation[]): NoteEvidenceCitation[] {

@@ -82,9 +82,18 @@ export class ConversationReplyHandler {
       this.host.setStep(ref, 'reply_model_call');
       const replyContext: ReplyContext = this.host.createReplyContext(memoryContext, learnerProfileContext, userContent, evidence);
       const toolReply: IConversationToolPort | undefined = this.host.toolReplyPort();
-      const reply: string = useTools && toolReply !== undefined
-        ? await toolReply.complete(replyContext, this.host.cancellationToken(ref))
-        : await this.host.replyPort().complete(replyContext, this.host.cancellationToken(ref));
+      let reply: string = '';
+      if (useTools && toolReply !== undefined) {
+        try {
+          reply = await toolReply.complete(replyContext, this.host.cancellationToken(ref));
+        } catch (toolError) {
+          // 工具循环失败不阻断回答：退回普通回复，行为与未开启工具时一致。
+          replyLog.warn('[ToolReply] fallback to plain reply: ' + this.host.errorMessage(toolError));
+          reply = await this.host.replyPort().complete(replyContext, this.host.cancellationToken(ref));
+        }
+      } else {
+        reply = await this.host.replyPort().complete(replyContext, this.host.cancellationToken(ref));
+      }
       await this.host.addAiMessage(ref, applyEvidenceToAnswer(this.host.evidencePort(), evidence, reply));
       await this.host.safeUpdateLearnerProfileIfNeeded(ref);
       await this.host.safeSummarizeIfNeeded(ref);

@@ -160,10 +160,12 @@ export class A2AController {
     }
     // 扩展进程独立于 UI 进程，模型配置必须在这里重新初始化，否则会用默认 endpoint
     // 扩展进程初始化同一个 DB：聊天证据（RAG）与内联整理都需要，否则 A2A_EVIDENCE 恒为 store-not-ready。
-    DatabaseHelper.init(this.context).catch((e: Error) => {
-      hilog.warn(DOMAIN, TAG, 'DB init failed %{public}s', e.message);
-    });
-    configReady = LlmConfig.getInstance().init(this.context)
+    // 必须串进 configReady：请求可能在 init 完成前就到达，fire-and-forget 会让证据检索扑空。
+    configReady = DatabaseHelper.init(this.context)
+      .catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'DB init failed %{public}s', e.message);
+      })
+      .then((): Promise<void> => LlmConfig.getInstance().init(this.context).then((): void => {}))
       .then((): void => {
         const cfg: LlmConfig = LlmConfig.getInstance();
         const keys: Record<string, string> = cfg.getAllVendorApiKeys();
@@ -380,7 +382,7 @@ export class A2AController {
         const memory: string = A2AConversationStore.format(turns);
         hilog.info(DOMAIN, TAG, 'A2A_MEMORY key=%{public}s turns=%{public}d chars=%{public}d',
           conversationKey, turns.length, memory.length);
-        return A2AChatContext.build(query, memory);
+        return A2AChatContext.build(query, memory, this.context);
       })
       .then((built: A2AChatContextResult): void => {
         session.evidence = built.evidence;

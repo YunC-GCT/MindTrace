@@ -21,8 +21,8 @@ import { fileIo } from '@kit.CoreFileKit';
 import { relationalStore } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { DatabaseHelper, ImageSearchIndexRegistry } from 'common';
-import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ImageSearchHit, KnowledgeUnit, NoteOutcome } from 'common';
+import { DatabaseHelper, ImageSearchIndexRegistry, LlmClient, ToolCatalog, ToolLoop } from 'common';
+import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ChatMessage, ImageSearchHit, KnowledgeUnit, LlmCallResult, NoteOutcome } from 'common';
 import { AiService } from '../services/AiService';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
@@ -158,7 +158,7 @@ export class DebugAgentProbes {
     const query: string = '连续性的定义是什么？';
     const startedAt: number = Date.now();
     try {
-      const built: A2AChatContextResult = await A2AChatContext.build(query);
+      const built: A2AChatContextResult = await A2AChatContext.build(query, '', ctx);
       const sampleAnswer: string = '连续性的定义见 [noteId=fake-id version=1]。';
       const sanitized: string = A2AChatContext.sanitize(built.evidence, sampleAnswer);
       hilog.info(DOMAIN, TAG, '%{public}s',
@@ -172,6 +172,28 @@ export class DebugAgentProbes {
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s',
         'stage=done chatContext=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** 工具循环探针：直接跑 ToolLoop + 只读工具目录，验证护栏与真实工具调用。 */
+  static async runToolLoopProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const startedAt: number = Date.now();
+    try {
+      await DatabaseHelper.init(ctx);
+      const messages: ChatMessage[] = [
+        { role: 'system', content: '你是数学笔记助手。需要检索用户已保存笔记时，调用 note_query_rag。' },
+        { role: 'user', content: '查一下我笔记里关于连续性的内容' },
+      ];
+      const loop: ToolLoop = new ToolLoop(new LlmClient());
+      const result: LlmCallResult = await loop.run(
+        messages, ToolCatalog.createReadOnlyRegistry());
+      const text: string = result.text !== undefined ? result.text : '';
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done toolLoop=1 chars=' + text.length.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done toolLoop=0 err=' + (error as Error).message);
     }
   }
 

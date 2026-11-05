@@ -15,6 +15,7 @@
 export const RAG_TITLE_WEIGHT: number = 4;
 export const RAG_TAG_WEIGHT: number = 3;
 export const RAG_SUMMARY_WEIGHT: number = 2;
+export const RAG_DISTINCT_TERM_BONUS: number = 2;
 export const RAG_EXCERPT_LEAD: number = 60;
 export const RAG_EXCERPT_LENGTH: number = 160;
 
@@ -122,6 +123,73 @@ export function rankNoteHits(rows: ScoredCandidate[], needle: string, topK: numb
     }
     row.matchedFields = matched;
     row.excerpt = buildExcerpt(row.content, row.summary, needle);
+    scored.push(row);
+  }
+  scored.sort((left: ScoredCandidate, right: ScoredCandidate): number => compareHits(left, right));
+  const ranked: ScoredCandidate[] = [];
+  for (let index = 0; index < scored.length && index < topK; index += 1) {
+    ranked.push(scored[index]);
+  }
+  return ranked;
+}
+
+// 044 R3: 多词召回打分。单词权重与 rankNoteHits 一致，另加「命中词数」加成，
+// 避免「计算」这类泛词把只命中一个词的长笔记顶过真正相关的多词命中。
+export function rankNoteHitsByTerms(rows: ScoredCandidate[], terms: string[], topK: number): ScoredCandidate[] {
+  const normalized: string[] = [];
+  for (let i = 0; i < terms.length; i += 1) {
+    const term: string = terms[i].trim().toLowerCase();
+    if (term.length > 0 && normalized.indexOf(term) < 0) {
+      normalized.push(term);
+    }
+  }
+  const scored: ScoredCandidate[] = [];
+  for (const row of rows) {
+    let score: number = 0;
+    let distinct: number = 0;
+    let bestNeedle: string = normalized.length > 0 ? normalized[0] : '';
+    let bestNeedleScore: number = 0;
+    const matched: string[] = [];
+    for (let i = 0; i < normalized.length; i += 1) {
+      const term: string = normalized[i];
+      const titleHits: number = countOccurrences(row.title.toLowerCase(), term);
+      const tagHits: number = countOccurrences(row.tags.toLowerCase(), term);
+      const summaryHits: number = countOccurrences(row.summary.toLowerCase(), term);
+      const contentHits: number = countOccurrences(row.content.toLowerCase(), term);
+      const termScore: number = titleHits * RAG_TITLE_WEIGHT
+        + tagHits * RAG_TAG_WEIGHT
+        + summaryHits * RAG_SUMMARY_WEIGHT
+        + contentHits;
+      if (termScore > 0) {
+        distinct += 1;
+        if (termScore > bestNeedleScore) {
+          bestNeedleScore = termScore;
+          bestNeedle = term;
+        }
+      }
+      score += termScore;
+      if (titleHits > 0 && matched.indexOf('title') < 0) {
+        matched.push('title');
+      }
+      if (tagHits > 0 && matched.indexOf('tags') < 0) {
+        matched.push('tags');
+      }
+      if (summaryHits > 0 && matched.indexOf('summary') < 0) {
+        matched.push('summary');
+      }
+      if (contentHits > 0 && matched.indexOf('content') < 0) {
+        matched.push('content');
+      }
+    }
+    if (score <= 0) {
+      continue;
+    }
+    if (distinct > 1) {
+      score += (distinct - 1) * RAG_DISTINCT_TERM_BONUS;
+    }
+    row.score = score;
+    row.matchedFields = matched;
+    row.excerpt = buildExcerpt(row.content, row.summary, bestNeedle);
     scored.push(row);
   }
   scored.sort((left: ScoredCandidate, right: ScoredCandidate): number => compareHits(left, right));

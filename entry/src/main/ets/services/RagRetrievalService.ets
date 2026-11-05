@@ -16,7 +16,8 @@
  *   NoteEvidenceService.build(query) → search(query, topK) → RagHit[] → join knowledge_unit → NoteEvidenceCitation
  */
 import { relationalStore } from '@kit.ArkData';
-import { planRagQuery, RagQueryPlan } from './RagQueryPlan';
+import { planQueryTerms } from 'common';
+import { planRagQuery, planShortTermQuery, planTermQuery, RagQueryPlan, RagTermQueryPlan } from './RagQueryPlan';
 
 const PROBE_FTS_TABLE: string = 'note_fts';
 const PROBE_SEED_TEXT: string = '函数在一点的连续性 极限 连续函数';
@@ -40,8 +41,8 @@ export interface RagFtsDiagnostic {
 export class RagRetrievalService {
   /**
    * RAG 检索：自管 FTS5（trigram）。
-   * - ≥3 字：MATCH（rank 排序）
-   * - <3 字：LIKE 子串 fallback
+   * - 先用整句跑原有计划（≥3 字 MATCH / <3 字 LIKE），命中即返回，既有行为不变；
+   * - 整句未命中时，按 044 R2 拆词做词 OR 兜底（避免带疑问词的提问必然 miss）。
    * 任何失败返回空数组（由调用方回退 note.search）。
    */
   static async search(store: relationalStore.RdbStore, query: string, topK: number): Promise<RagHit[]> {
@@ -50,14 +51,51 @@ export class RagRetrievalService {
       return [];
     }
     const plan: RagQueryPlan = planRagQuery(trimmed);
+    const direct: RagHit[] = await RagRetrievalService.runWholeQuery(store, plan, trimmed, topK);
+    if (direct.length > 0) {
+      return direct;
+    }
+    const terms: string[] = planQueryTerms(trimmed).terms;
+    if (terms.length === 1 && terms[0] === trimmed) {
+      return [];
+    }
+    const termPlan: RagTermQueryPlan | null = planTermQuery(terms, topK);
+    if (termPlan !== null) {
+      const termHits: RagHit[] = await RagRetrievalService.runTermQuery(store, termPlan);
+      if (termHits.length > 0) {
+        return termHits;
+      }
+      if (termPlan.mode === 'like') {
+        return [];
+      }
+    }
+    // 长词 OR 未命中时再试短词（如「数列极限的定义」→「定义」）。
+    const shortPlan: RagTermQueryPlan | null = planShortTermQuery(terms, topK);
+    if (shortPlan === null) {
+      return [];
+    }
+    return await RagRetrievalService.runTermQuery(store, shortPlan);
+  }
+
+  private static async runWholeQuery(store: relationalStore.RdbStore, plan: RagQueryPlan,
+    trimmed: string, topK: number): Promise<RagHit[]> {
+    if (plan.mode === 'fts') {
+      return await RagRetrievalService.queryHits(store, plan.sql, [trimmed, topK]);
+    }
+    const pattern: string = '%' + trimmed + '%';
+    return await RagRetrievalService.queryHits(store, plan.sql, [pattern, pattern, topK]);
+  }
+
+  private static async runTermQuery(store: relationalStore.RdbStore,
+    plan: RagTermQueryPlan): Promise<RagHit[]> {
+    return await RagRetrievalService.queryHits(store, plan.sql, plan.bindValues);
+  }
+
+  private static async queryHits(store: relationalStore.RdbStore, sql: string,
+    bindArgs: Array<string | number>): Promise<RagHit[]> {
     let resultSet: relationalStore.ResultSet | undefined = undefined;
     try {
-      if (plan.mode === 'fts') {
-        resultSet = await store.querySql(plan.sql, [trimmed, topK]);
-      } else {
-        const pattern: string = '%' + trimmed + '%';
-        resultSet = await store.querySql(plan.sql, [pattern, pattern, topK]);
-      }
+      resultSet = await store.querySql(sql, bindArgs);
       const hits: RagHit[] = [];
       while (resultSet.goToNextRow()) {
         const hit: RagHit = {
@@ -71,7 +109,7 @@ export class RagRetrievalService {
       }
       return hits;
     } catch (error) {
-      console.warn('rag search failed query=' + trimmed + ' err=' + (error as Error).message);
+      console.warn('rag search failed sql=' + sql + ' err=' + (error as Error).message);
       return [];
     } finally {
       if (resultSet !== undefined) {

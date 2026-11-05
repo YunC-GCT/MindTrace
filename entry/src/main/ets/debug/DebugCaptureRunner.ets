@@ -59,6 +59,7 @@ import { A2APlanStore } from '../services/A2APlanStore';
 
 import { createNoteEvidenceService } from '../services/EvidenceComposition';
 import { NoteEvidenceContext } from 'common';
+import { RAG_EVAL_CASES, RagEvalCase } from './RagEvalCases';
 import { AppIntentDecision, classifyAppIntentLocal } from 'agents/src/main/ets/chat/Index';
 import { LegacyDedupeEntry, LegacyDuplicateGroup, LegacySubjectInput, groupExactDuplicates, groupNearDuplicates, normalizeLegacySubject, isDuplicateOf } from 'agents/src/main/ets/note/Index';
 import type { NoteEvidenceService } from 'agents/src/main/ets/evidence/Index';
@@ -442,6 +443,89 @@ export class DebugCaptureRunner {
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s',
         'stage=done ragLegacyCleanup=0 err=' + (error as Error).message);
+    }
+  }
+
+  private static async countWithBind(store: relationalStore.RdbStore, sql: string,
+    args: Array<string | number>): Promise<number> {
+    const rs: relationalStore.ResultSet = await store.querySql(sql, args);
+    try {
+      if (rs.goToFirstRow()) {
+        return rs.getLong(rs.getColumnIndex('c'));
+      }
+      return 0;
+    } finally {
+      rs.close();
+    }
+  }
+
+  /** 044 R5：召回评测。逐条跑固定查询集，输出 hit@1 / hit@5 / miss / 负样本假阳性。 */
+  static async runRagEval(ctx: common.UIAbilityContext): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragEval=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    const service: NoteEvidenceService = createNoteEvidenceService();
+    let total: number = 0;
+    let hit1: number = 0;
+    let hit5: number = 0;
+    let miss: number = 0;
+    let negatives: number = 0;
+    let falsePositives: number = 0;
+    let skipped: number = 0;
+    try {
+      for (let i = 0; i < RAG_EVAL_CASES.length; i += 1) {
+        const item: RagEvalCase = RAG_EVAL_CASES[i];
+        if (item.expectTitle.length > 0) {
+          const exists: number = await DebugCaptureRunner.countWithBind(store,
+            'SELECT COUNT(*) AS c FROM knowledge_unit WHERE title = ?', [item.expectTitle]);
+          if (exists === 0) {
+            skipped += 1;
+            hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-eval-case q=' + item.query + ' skip=no-note');
+            continue;
+          }
+        }
+        total += 1;
+        const context: NoteEvidenceContext = await service.build(item.query, { topK: 5, graphMode: 'none' });
+        let rank: number = -1;
+        for (let k = 0; k < context.citations.length; k += 1) {
+          if (item.expectTitle.length > 0 && context.citations[k].title.indexOf(item.expectTitle) >= 0) {
+            rank = k;
+            break;
+          }
+        }
+        if (item.expectTitle.length === 0) {
+          negatives += 1;
+          if (context.citations.length > 0) {
+            falsePositives += 1;
+          }
+          hilog.info(DOMAIN, TAG, '%{public}s',
+            'stage=rag-eval-case q=' + item.query + ' negative=1 citations=' + context.citations.length.toString());
+          continue;
+        }
+        if (rank === 0) {
+          hit1 += 1;
+        }
+        if (rank >= 0) {
+          hit5 += 1;
+        } else {
+          miss += 1;
+        }
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=rag-eval-case q=' + item.query + ' rank=' + rank.toString()
+            + ' citations=' + context.citations.length.toString());
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done ragEval=1 total=' + total.toString()
+          + ' hit1=' + hit1.toString() + ' hit5=' + hit5.toString() + ' miss=' + miss.toString()
+          + ' negatives=' + negatives.toString() + ' falsePositives=' + falsePositives.toString()
+          + ' skipped=' + skipped.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done ragEval=0 err=' + (error as Error).message);
     }
   }
 

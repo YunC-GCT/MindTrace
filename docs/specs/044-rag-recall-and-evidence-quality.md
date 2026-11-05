@@ -1,6 +1,6 @@
 # 044 — RAG 召回质量与证据质量
 
-> **Status**: proposed (2026-11-05)
+> **Status**: implemented, device-verified (2026-11-05)
 > **Source**: [037-rag-retrieval-data-augmentation.md](./037-rag-retrieval-data-augmentation.md)（R2–R3 已落地，R5 未做）· [ADR-0018](../adr/0018-note-evidence-provenance.md) · [ADR-0021](../adr/0021-shared-read-port-implementation-in-common.md)
 > **Files affected**: `common/src/main/ets/utils/NoteRetrievalQuery.ets` · `common/src/main/ets/ports/impl/NoteSearchRanking.ets` · `common/src/main/ets/ports/impl/RdbNoteSearchAdapter.ets` · `entry/src/main/ets/services/RagQueryPlan.ets` · `entry/src/main/ets/services/RagRetrievalService.ets` · `entry/src/main/ets/services/RagNoteEvidenceSearch.ets` · `agents/src/main/ets/evidence/NoteEvidenceService.ets` · `entry/src/main/ets/debug/DebugCaptureRunner.ets` · `entry/src/main/ets/entryability/EntryAbility.ets`
 > **Test files**: `scripts/arkts-lint/tests/v7-rag-retrieval.test.mjs` · `scripts/arkts-lint/tests/rag-query-terms.test.mjs`（新）· `scripts/arkts-lint/tests/rag-ranking.test.mjs`（新）· `scripts/arkts-lint/tests/rag-eval.test.mjs`（新）
@@ -142,12 +142,26 @@ _answer 里出现的 `[noteId=...]` 必须落在 citations 内_（现有 `saniti
 
 ## 7. Acceptance criteria
 
-- [ ] `一加一等于几` → 命中 `一加一等于二`；`9+9 的加法计算怎么算` → 命中 `9+9 的加法计算`
-- [ ] 既有查询（`连续性` / `极限`）结果不变，`citations=7 degraded=0` 不回归
-- [ ] 评测集 `hit@5 ≥ 0.85`，负样本不产生引用（无假阳性）
-- [ ] `NoteEvidenceService` 在 `maxContextChars` 内打包，citations 与 context 对齐
-- [ ] `node scripts/agent-gate/index.mjs` PASS（含 process-boundary / hypium-check）
-- [ ] 真机 `e2e=ragEval` 输出汇总，数值记录进 review 文档
+- [x] `一加一等于几` → 命中 `一加一等于二`；`9+9 的加法计算怎么算` → 命中 `9+9 的加法计算`（真机 `rank=0`）
+- [x] 既有查询（`连续性` / `极限`）结果不变，`citations=7 degraded=0` 不回归
+- [x] 评测集 `hit@5 = 13/13`（≥ 0.85），负样本 `falsePositives=0`
+- [x] `NoteEvidenceService` 在 `maxContextChars` 内打包，citations 与 context 对齐（单测 3 条）
+- [x] `node scripts/agent-gate/index.mjs` PASS（1273 单测）
+- [x] 真机 `e2e=ragEval`：`total=14 hit1=11 hit5=13 miss=0 falsePositives=0 skipped=0 ms=335`
+
+## 11. 落地记录（2026-11-05）
+
+| 切片 | 提交内容 | 关键文件 |
+|---|---|---|
+| R1 | `QueryTerms` 纯函数：全角归一、边界清洗复用、疑问尾巴剥离、`的/和/与/及` 作分隔符、单字噪声过滤 | `common/utils/QueryTerms.ets` |
+| R2 | 整句优先 + 词 OR 兜底 + 短词 LIKE 二次兜底 | `entry/services/RagQueryPlan.ets` · `RagRetrievalService.ets` |
+| R3 | 工具召回与 FTS 共用 query plan；多词加权排序（命中词数加成） | `common/ports/impl/RdbNoteSearchAdapter.ets` · `NoteSearchRanking.ets` |
+| R4 | 证据字符预算（默认 2400）+ 引用覆盖率日志 | `NoteEvidenceService.ets` · `ConversationFormatting.ets` |
+| R5 | 评测集 + `e2e=ragEval` 探针 + 离线契约测试 | `entry/debug/RagEvalCases.ets` · `DebugCaptureRunner.ets` |
+
+**真机结果**（设备 `3XTYD24C16203663`）：`hit@1 = 11/13`、`hit@5 = 13/13`、负样本零假阳性，耗时 335ms。原先失败的两条查询（带疑问词/语序不同）都排到第 1。
+
+**未覆盖**：超长 query（>200 字）的词表截断策略、embedding 通道（037 R5）。
 
 ## 8. Out of scope
 

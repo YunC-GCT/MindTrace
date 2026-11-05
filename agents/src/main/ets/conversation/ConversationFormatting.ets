@@ -9,6 +9,9 @@
  *   ConversationWorkflow 节点 → 本文件纯函数 → 展示文本
  */
 import type { NoteEvidenceContext, NoteEvidencePort } from 'common';
+import { Logger } from 'common';
+
+const formatLog: Logger = new Logger('ConversationFormat');
 
 export function evidenceFooter(
   evidencePort: NoteEvidencePort,
@@ -31,7 +34,37 @@ export function applyEvidenceToAnswer(
     return answer;
   }
   const sanitized: string = evidencePort.sanitizeAnswer(evidence, answer);
+  logCitationCoverage(evidence, answer, sanitized);
   return sanitized + '\n\n' + evidenceFooter(evidencePort, evidence);
+}
+
+/** 044 R4：回答里引用了多少 noteId、清洗后留下多少；只记日志，不改变回答。 */
+export function logCitationCoverage(
+  evidence: NoteEvidenceContext,
+  rawAnswer: string,
+  sanitizedAnswer: string,
+): void {
+  const rawRefs: number = countMarker(rawAnswer);
+  if (rawRefs === 0) {
+    return;
+  }
+  const keptRefs: number = countMarker(sanitizedAnswer);
+  const coverage: number = keptRefs / rawRefs;
+  formatLog.info('[RAG] citations=' + evidence.citations.length.toString()
+    + ' answerRefs=' + rawRefs.toString()
+    + ' keptRefs=' + keptRefs.toString()
+    + ' droppedRefs=' + (rawRefs - keptRefs).toString()
+    + ' coverage=' + coverage.toFixed(2));
+}
+
+function countMarker(text: string): number {
+  let count: number = 0;
+  let index: number = text.indexOf('[noteId=');
+  while (index >= 0) {
+    count += 1;
+    index = text.indexOf('[noteId=', index + 8);
+  }
+  return count;
 }
 
 /**

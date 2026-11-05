@@ -7,14 +7,16 @@
  * 依赖: @kit.ArkData（relationalStore，仅类型）、DatabaseHelper（store 来源）、
  *       ./NoteSearchRanking（纯打分）、../NoteSearchPort（契约）。
  *
- * 行为等价：与既有 `note_query_rag` 工具同 SQL/同权重/同排序，切换实现不得改变输出。
+ * 行为说明：召回按 044 R3 的关键词拆分做多词 OR（不再是单条整句 instr），
+ * 打分复用 NoteSearchRanking 的字段权重并加「命中词数」加成；过滤条件与返回形状不变。
  */
 import type { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper } from '../../DatabaseHelper';
 import { NOTE_SEARCH_MAX_TOP_K } from '../NoteSearchPort';
 import type { NoteSearchHit, NoteSearchPort, NoteSearchQuery } from '../NoteSearchPort';
-import { rankNoteHits } from './NoteSearchRanking';
+import { rankNoteHitsByTerms } from './NoteSearchRanking';
 import type { ScoredCandidate } from './NoteSearchRanking';
+import { planQueryTerms } from '../../utils/QueryTerms';
 
 const TABLE: string = 'knowledge_unit';
 const SEARCH_COLUMNS: string = 'id, title, tags, summary, content, subject, chapter, updated_at, version';
@@ -49,9 +51,17 @@ export class RdbNoteSearchAdapter implements NoteSearchPort {
     }
     const where: string[] = [];
     const bindArgs: string[] = [];
-    where.push('(instr(lower(title), ?) > 0 OR instr(lower(tags), ?) > 0'
-      + ' OR instr(lower(summary), ?) > 0 OR instr(lower(content), ?) > 0)');
-    bindArgs.push(needle, needle, needle, needle);
+    // 044 R3：整句命中往往过于严格，按同一套关键词拆分做多词 OR 召回，排序按命中词数加权。
+    const searchTerms: string[] = planQueryTerms(query.query).terms;
+    const terms: string[] = searchTerms.length > 0 ? searchTerms : [needle];
+    const clauses: string[] = [];
+    for (let i = 0; i < terms.length; i += 1) {
+      const term: string = terms[i].toLowerCase();
+      clauses.push('(instr(lower(title), ?) > 0 OR instr(lower(tags), ?) > 0'
+        + ' OR instr(lower(summary), ?) > 0 OR instr(lower(content), ?) > 0)');
+      bindArgs.push(term, term, term, term);
+    }
+    where.push('(' + clauses.join(' OR ') + ')');
     const subject: string = query.subject === undefined ? '' : query.subject.trim();
     if (subject.length > 0) {
       where.push('subject = ?');
@@ -78,7 +88,7 @@ export class RdbNoteSearchAdapter implements NoteSearchPort {
     const sql: string = 'SELECT ' + SEARCH_COLUMNS + ' FROM ' + TABLE + ' WHERE ' + where.join(' AND ')
       + ' ORDER BY updated_at DESC, id ASC';
     const rows: ScoredCandidate[] = await this.queryCandidates(sql, bindArgs);
-    const ranked: ScoredCandidate[] = rankNoteHits(rows, needle, topK);
+    const ranked: ScoredCandidate[] = rankNoteHitsByTerms(rows, terms, topK);
     return ranked.map((row: ScoredCandidate): NoteSearchHit => RdbNoteSearchAdapter.toHit(row));
   }
 

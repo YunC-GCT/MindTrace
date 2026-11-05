@@ -12,6 +12,8 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 const planModule = loadNoteReviewEtsModule('entry/src/main/ets/services/RagQueryPlan.ets');
 const planRagQuery = planModule.planRagQuery;
+const planTermQuery = planModule.planTermQuery;
+const planShortTermQuery = planModule.planShortTermQuery;
 
 test('queries with 3+ characters use FTS5 MATCH with rank ordering', () => {
   const plan = planRagQuery('连续性');
@@ -30,6 +32,27 @@ test('2-character queries fall back to LIKE substring scan', () => {
 test('blank query still produces a deterministic plan (caller rejects empty)', () => {
   const plan = planRagQuery('   ');
   assert.equal(plan.mode, 'like');
+});
+
+test('term fallback: long terms use FTS OR, short terms fall back to LIKE', () => {
+  const fts = planTermQuery(['加法计算', '9+9'], 5);
+  assert.equal(fts.mode, 'fts');
+  assert.equal(fts.bindValues[0], '"加法计算" OR "9+9"');
+  assert.equal(fts.bindValues[1], 5);
+  const like = planTermQuery(['导数'], 5);
+  assert.equal(like.mode, 'like');
+  assert.ok(like.sql.includes('(content LIKE ? OR title LIKE ?)'));
+  assert.deepEqual(Array.from(like.bindValues), ['%导数%', '%导数%', 5]);
+  assert.equal(planTermQuery([], 5), null);
+  const quoted = planTermQuery(['a"b'], 5);
+  assert.equal(quoted.bindValues[0], '"a""b"');
+});
+
+test('short-term fallback: only sub-3-char terms use LIKE', () => {
+  const plan = planShortTermQuery(['数列极限', '定义'], 5);
+  assert.equal(plan.mode, 'like');
+  assert.deepEqual(Array.from(plan.bindValues), ['%定义%', '%定义%', 5]);
+  assert.equal(planShortTermQuery(['数列极限'], 5), null);
 });
 
 test('schema v19 creates note_fts with trigram tokenizer and backfills from knowledge_unit', () => {

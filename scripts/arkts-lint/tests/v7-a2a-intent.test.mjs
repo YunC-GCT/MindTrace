@@ -122,13 +122,15 @@ test('A2A 多轮记忆：contextId 会话键 + memoryContext 注入 + 回答后�
   assert.ok(ability.includes('readContextId'));
   assert.ok(controller.includes('conversationKey'));
   assert.match(controller, /loadWithFallback\((?:this\.context|this\.host\.answerContext\(\)), conversationKey\)/);
-  assert.ok(controller.includes('A2AChatContext.build(query, memory)'));
+  assert.ok(controller.includes('A2AChatContext.build(query, memory, this.context)'));
   assert.match(controller, /A2AConversationStore\.append\((?:this\.context|this\.host\.answerContext\(\)), 'default'/);
   assert.ok(controller.includes("A2A_MEMORY key="));
   // 扩展进程补 DB 初始化：RAG 证据不再 store-not-ready
   assert.ok(controller.includes('DatabaseHelper.init(this.context)'));
+  assert.match(controller, /configReady = DatabaseHelper\.init\(this\.context\)/,
+    'DB init 必须串进 configReady，否则请求先到会查空库');
   const chat = read('entry/src/main/ets/services/A2AChatContext.ets');
-  assert.ok(chat.includes("static async build(query: string, memoryContext: string = '')"));
+  assert.ok(chat.includes('static async build(query: string, memoryContext: string = \'\','));
   assert.ok(chat.includes('memoryContext: memoryContext'));
   const store = read('entry/src/main/ets/services/A2AConversationStore.ets');
   assert.ok(store.includes('static keyOf(taskId: string, contextId: string)'));
