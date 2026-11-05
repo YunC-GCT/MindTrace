@@ -209,7 +209,7 @@ test('确认页支持全选/取消全选，待复核题有提示（036 阶段4 U
 });
 
 
-test('首装冷启动卡死兜底：确认/批量/索引副作用都有看门狗超时', () => {
+test('首装冷启动卡死兜底：确认/批量副作用都有看门狗超时，索引改为事务内同步', () => {
   const confirm = readRepoFile('entry/src/main/ets/services/ai/DraftCommitService.ets');
   assert.ok(confirm.includes('CONFIRM_TIMEOUT_MS: number = 120000'), '确认提交 120s 超时');
   assert.ok(confirm.includes('withConfirmTimeout'), '确认提交包裹看门狗');
@@ -218,7 +218,9 @@ test('首装冷启动卡死兜底：确认/批量/索引副作用都有看门狗
   assert.ok(pipeline.includes('dispatchWithTimeout'), '批量提交看门狗');
   assert.ok(pipeline.includes('90000 + 45000 * commands.length'), '按题数放宽超时');
   const write = readRepoFile('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
-  assert.ok(write.includes('INDEX_SYNC_TIMEOUT_MS: number = 5000'), '索引同步 5s 兜底');
+  assert.ok(!write.includes('INDEX_SYNC_TIMEOUT_MS'), '索引不再走提交后异步同步（事务内完成，无需看门狗）');
   assert.ok(write.includes('POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000'), 'post-commit 副作用 5s 兜底');
   assert.ok(write.includes('private static async withTimeout'), '统一超时工具');
+  const dao = readRepoFile('entry/src/main/ets/database/NoteDao.ets');
+  assert.ok(dao.includes('NoteFtsIndex.applyToTransaction(transaction'), '索引与笔记同事务提交');
 });

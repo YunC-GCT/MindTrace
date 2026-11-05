@@ -385,6 +385,66 @@ export class DebugCaptureRunner {
     }
   }
 
+  /**
+   * 旧笔记清理：删除「根本没进 note_fts」的笔记（索引异步同步被中断的批量写入产物）。
+   * audit 只计数与样本；apply=true 才真正删除。
+   * 注意：不要按「无 rag_chunk」删——galaxy 预置笔记和 v19 之前的笔记都没有 chunk，
+   * 但它们在 note_fts 里、检索可用。
+   */
+  static async runRagLegacyCleanup(ctx: common.UIAbilityContext, apply: boolean): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragLegacyCleanup=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    const sql: string = 'SELECT k.id AS id, k.title AS title FROM knowledge_unit k'
+      + ' WHERE NOT EXISTS (SELECT 1 FROM note_fts f WHERE f.unit_id = k.id)';
+    try {
+      const rs: relationalStore.ResultSet = await store.querySql(sql, []);
+      const ids: string[] = [];
+      const samples: string[] = [];
+      try {
+        while (rs.goToNextRow()) {
+          const id: string = rs.getString(rs.getColumnIndex('id'));
+          ids.push(id);
+          if (samples.length < 5) {
+            samples.push(rs.getString(rs.getColumnIndex('title')) + '(' + id + ')');
+          }
+        }
+      } finally {
+        rs.close();
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=rag-legacy candidates=' + ids.length.toString() + ' apply=' + (apply ? '1' : '0')
+          + ' sample=' + (samples.length > 0 ? samples.join('|') : '-'));
+      let removed: number = 0;
+      let failed: number = 0;
+      if (apply) {
+        const dao: NoteDao = new NoteDao(store);
+        for (let i = 0; i < ids.length; i += 1) {
+          try {
+            await dao.deleteById(ids[i]);
+            removed += 1;
+          } catch (e) {
+            failed += 1;
+            hilog.warn(DOMAIN, TAG, 'rag legacy delete failed id=%{public}s %{public}s',
+              ids[i], (e as Error).message);
+          }
+        }
+        await CardSnapshotService.refresh(ctx);
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done ragLegacyCleanup=1 apply=' + (apply ? '1' : '0')
+          + ' candidates=' + ids.length.toString()
+          + ' removed=' + removed.toString() + ' failed=' + failed.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done ragLegacyCleanup=0 err=' + (error as Error).message);
+    }
+  }
+
   /** App 意图规则自检（纯本地，不调模型）：逐条输出意图决策。 */
 
   static async runCaptureSetS3(ctx: common.UIAbilityContext): Promise<void> {
@@ -501,6 +561,8 @@ export class DebugCaptureRunner {
       const ftsCount: number = await DebugProbeSupport.countRows(searchStore, 'note_fts');
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=rag-index ragChunks=' + chunkCount.toString() + ' ftsRows=' + ftsCount.toString());
+      const coverage: string = await DebugCaptureRunner.noteIndexCoverage(searchStore);
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-coverage ' + coverage);
       const evidenceService: NoteEvidenceService = createNoteEvidenceService();
       const evidence: NoteEvidenceContext = await evidenceService.build('连续性', { topK: 3 });
       hilog.info(DOMAIN, TAG, '%{public}s',
@@ -514,6 +576,63 @@ export class DebugCaptureRunner {
       const e: Error = error as Error;
       hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSearch=0 err=' + e.message);
     }
+  }
+
+  /**
+   * 索引覆盖诊断：note_fts 是「尽力而为」同步（超时只告警），历史笔记可能没进索引。
+   * 输出缺失条数与样本标题，用来判断是否需要补建。
+   */
+  static async noteIndexCoverage(store: relationalStore.RdbStore): Promise<string> {
+    try {
+      const total: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
+      const missingFts: number = await DebugCaptureRunner.countMatching(store,
+        'SELECT COUNT(*) AS c FROM knowledge_unit k WHERE NOT EXISTS'
+          + ' (SELECT 1 FROM note_fts f WHERE f.unit_id = k.id)');
+      const stats: string[] = [
+        'notes=' + total.toString(),
+        'missingFts=' + missingFts.toString(),
+      ];
+      if (missingFts > 0) {
+        const samples: string[] = await DebugCaptureRunner.sampleRows(store,
+          'SELECT k.id AS id, k.title AS title FROM knowledge_unit k WHERE NOT EXISTS'
+            + ' (SELECT 1 FROM note_fts f WHERE f.unit_id = k.id)'
+            + ' ORDER BY k.created_at DESC LIMIT 5');
+        stats.push('missingFtsSample=' + (samples.length > 0 ? samples.join('|') : '-'));
+      }
+      const missingChunk: number = await DebugCaptureRunner.countMatching(store,
+        "SELECT COUNT(*) AS c FROM knowledge_unit k WHERE length(trim(k.content)) > 0 AND NOT EXISTS"
+          + ' (SELECT 1 FROM rag_chunk r WHERE r.unit_id = k.id)');
+      stats.push('missingChunk=' + missingChunk.toString());
+      return stats.join(' ');
+    } catch (error) {
+      return 'coverage=? err=' + (error as Error).message;
+    }
+  }
+
+  private static async countMatching(store: relationalStore.RdbStore, sql: string): Promise<number> {
+    const rs: relationalStore.ResultSet = await store.querySql(sql, []);
+    try {
+      if (rs.goToFirstRow()) {
+        return rs.getLong(rs.getColumnIndex('c'));
+      }
+      return 0;
+    } finally {
+      rs.close();
+    }
+  }
+
+  private static async sampleRows(store: relationalStore.RdbStore, sql: string): Promise<string[]> {
+    const rs: relationalStore.ResultSet = await store.querySql(sql, []);
+    const samples: string[] = [];
+    try {
+      while (rs.goToNextRow()) {
+        samples.push(rs.getString(rs.getColumnIndex('title'))
+          + '(' + rs.getString(rs.getColumnIndex('id')) + ')');
+      }
+    } finally {
+      rs.close();
+    }
+    return samples;
   }
 
   /** e2e 辅助：统计表行数（仅调试）。 */

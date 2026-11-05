@@ -448,3 +448,29 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 - 同一脚本在 GBK 控制台打印数学下标字符（如 `x₀`）会 `UnicodeEncodeError`，把已拿到的回复判成失败。**已修**：启动时把 stdout/stderr 强制为 UTF-8。
 
 **未覆盖**：A2A 图片/OCR 链路（需小艺侧传图）；`conversation.*` run 事件落库未直接查库校验，仅有源码与单测保证。
+
+## 26. 2026-11-05 索引写入事务化 + 存量清理
+
+**诊断**：`ragSearch` 探针新增 `stage=rag-coverage`（`notes` / `missingFts` / `missingChunk` + 缺失样本）。首轮结果 `notes=196 ftsRows=180 ragChunks=139`，即 16 条笔记完全没进 `note_fts`。
+
+**根因**：`KnowledgeUnitWriteService.syncIndex` 在事务提交后异步补同步，套了 5s 超时且超时只告警；`NoteFtsIndex.upsert` 的写入顺序是 `note_fts` → `rag_chunk`，中途被杀会留下「有 FTS 无 chunk」或「两者都没有」的笔记。另外 v19 迁移只回填了 `note_fts`，没有回填 `rag_chunk`，v19 之前的笔记（含 galaxy 种子）普遍没有分块。
+
+**根治**：
+- `NoteFtsIndex` 改为 `applyToTransaction(transaction, unit)` / `removeFromTransaction(transaction, unitId)`，全部走 `Transaction.execute`
+- `NoteDao` 四条写路径（create/update × commitKey 变体）与 `deleteById` 在同一事务内完成 `knowledge_unit + note_revision + note_fts + rag_chunk + rag_embedding`
+- `KnowledgeUnitWriteService` 删除 `syncIndex` 与 `INDEX_SYNC_TIMEOUT_MS`，`finalizeWrite` 只保留 post-commit 副作用
+- 相关契约测试从「提交后异步同步 + 5s 兜底」改为「事务内同步」；删除流测试指向 `NoteFtsIndex.removeFromTransaction`
+
+**存量清理**：新增 `ragLegacyAudit` / `ragLegacyCleanup` 探针（audit 只计数，apply 才删除）。首次按「无 chunk」筛出 111 条，审计发现包含 galaxy 种子笔记（`galaxy_preview_*`，RAG 正在命中），改为只删「`note_fts` 里根本没有」的笔记：`candidates=16 removed=16 failed=0`。
+
+**验证**：
+
+| 指标 | 清理前 | 清理后 | 新写一条 A2A 笔记后 |
+|---|---|---|---|
+| notes | 196 | 180 | 181 |
+| ftsRows | 180 | 180 | 181 |
+| ragChunks | 139 | 139 | 140 |
+| missingFts | 16 | 0 | 0 |
+| missingChunk | 111 | 95 | 95 |
+
+**未做**：95 条「有 FTS 无 chunk」的旧笔记（galaxy 种子 + v19 前存量）未回填；主检索走 `note_fts`，不影响召回，等向量检索接入时再统一回填。

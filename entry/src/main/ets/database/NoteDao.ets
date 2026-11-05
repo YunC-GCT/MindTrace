@@ -1,7 +1,8 @@
 // ============================================================================
 //  database/NoteDao.ets — 知识单元数据访问层
 //  ----------------------------------------------------------------------------
-//  职责: RDB CRUD、KnowledgeUnit/revision 事务写入与 ValuesBucket 互转。
+//  路径: entry/src/main/ets/database/NoteDao.ets
+//  职责: RDB CRUD、KnowledgeUnit/revision 事务写入与 ValuesBucket 互转；索引随事务一起提交。
 //  接口:
 //    createWithRevision(unit, metadata): Promise<KnowledgeUnitPersistenceResult>
 //    updateWithRevision(unit, expectedVersion, metadata): Promise<KnowledgeUnitPersistenceResult>
@@ -51,6 +52,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
     try {
       const rowId: number = await transaction.insert('knowledge_unit', NoteDao.toBucket(unit));
       await transaction.insert('note_revision', NoteDao.toRevisionBucket(unit, generationMetadata));
+      await NoteFtsIndex.applyToTransaction(transaction, unit);
       await transaction.commit();
       const result: KnowledgeUnitPersistenceResult = { rowId: rowId, unit: unit };
       return result;
@@ -84,6 +86,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       }
       const rowId: number = await transaction.insert('knowledge_unit', NoteDao.toBucket(unit));
       await transaction.insert('note_revision', NoteDao.toRevisionBucket(unit, generationMetadata));
+      await NoteFtsIndex.applyToTransaction(transaction, unit);
       const commitBucket: relationalStore.ValuesBucket = {
         'commit_key': commit.commitKey,
         'run_id': commit.runId,
@@ -136,6 +139,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
         );
       }
       await transaction.insert('note_revision', NoteDao.toRevisionBucket(updated, generationMetadata));
+      await NoteFtsIndex.applyToTransaction(transaction, updated);
       await transaction.commit();
       const result: KnowledgeUnitPersistenceResult = { rowId: 0, unit: updated };
       return result;
@@ -181,6 +185,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
         throw new KnowledgeUnitWriteError(KnowledgeUnitWriteErrorCode.VERSION_CONFLICT, 'KnowledgeUnit version conflict for id=' + unit.id);
       }
       await transaction.insert('note_revision', NoteDao.toRevisionBucket(updated, generationMetadata));
+      await NoteFtsIndex.applyToTransaction(transaction, updated);
       const commitBucket: relationalStore.ValuesBucket = {
         'commit_key': commit.commitKey,
         'run_id': commit.runId,
@@ -273,27 +278,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       edgeToPredicates.equalTo('to_unit_id', id);
       await transaction.delete(edgeToPredicates);
 
-      const chunkPredicates = new relationalStore.RdbPredicates('rag_chunk');
-      chunkPredicates.equalTo('unit_id', id);
-      const chunkResultSet: relationalStore.ResultSet = await transaction.query(chunkPredicates, ['id']);
-      const chunkIds: string[] = [];
-      try {
-        if (chunkResultSet.goToFirstRow()) {
-          do {
-            const chunkId: string = chunkResultSet.getString(chunkResultSet.getColumnIndex('id'));
-            chunkIds.push(chunkId);
-          } while (chunkResultSet.goToNextRow());
-        }
-      } finally {
-        chunkResultSet.close();
-      }
-
-      for (const chunkId of chunkIds) {
-        const embeddingPredicates = new relationalStore.RdbPredicates('rag_embedding');
-        embeddingPredicates.equalTo('chunk_id', chunkId);
-        await transaction.delete(embeddingPredicates);
-      }
-      await transaction.delete(chunkPredicates);
+      await NoteFtsIndex.removeFromTransaction(transaction, id);
 
       const predicates = new relationalStore.RdbPredicates('knowledge_unit');
       predicates.equalTo('id', id);
@@ -301,7 +286,6 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       const store: relationalStore.Transaction = transaction;
       await store.delete(predicates);
       await transaction.commit();
-      await NoteFtsIndex.remove(id);
     } catch (e) {
       await NoteDao.rollback(transaction);
       const message: string = e instanceof Error ? e.message : String(e);

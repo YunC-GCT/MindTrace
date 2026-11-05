@@ -9,7 +9,6 @@
  *   manual / AI adapter → create / update → repository commit → post-commit effects
  */
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
-import { NoteFtsIndex } from '../database/NoteFtsIndex';
 import { AsyncMutex } from './AsyncMutex';
 import {
   KnowledgeUnitPersistenceResult,
@@ -21,8 +20,7 @@ import {
 } from 'common';
 import { WritePathValidator } from 'agents/src/main/ets/note/Index';
 
-// 首装冷启动偶发卡死兜底：索引同步/副作用最多等 5s，超时降级为告警，不阻塞主写链路。
-const INDEX_SYNC_TIMEOUT_MS: number = 5000;
+// 首装冷启动偶发卡死兜底：副作用最多等 5s，超时降级为告警，不阻塞主写链路。
 const POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000;
 
 export class KnowledgeUnitWriteService {
@@ -134,7 +132,7 @@ export class KnowledgeUnitWriteService {
     );
     console.info('[ConfirmTrace] service=createWithCommitKey-ok');
     const warnings: string[] = await this.finalizeWrite(
-      persisted.unit, persisted.duplicate !== true, persisted.duplicate !== true);
+      persisted.unit, persisted.duplicate !== true);
     return {
       committed: true,
       rowId: persisted.rowId,
@@ -204,30 +202,14 @@ export class KnowledgeUnitWriteService {
     }
   }
 
-  /** 写区串行段：索引同步（可选）+ post-commit effects（并发时会卡死，必须互斥）。 */
-  private async finalizeWrite(unit: KnowledgeUnit, isCreate: boolean,
-    syncIndex: boolean = true): Promise<string[]> {
+  /** 写区串行段：post-commit effects（并发时会卡死，必须互斥）。索引已在写库事务内同步。 */
+  private async finalizeWrite(unit: KnowledgeUnit, isCreate: boolean): Promise<string[]> {
     return await KnowledgeUnitWriteService.writeSection.runExclusive(async (): Promise<string[]> => {
-      if (syncIndex) {
-        await this.syncIndex(unit);
-      }
       return await this.runPostCommit(unit, isCreate);
     });
   }
 
-  /** 索引同步（尽力而为 + 超时兜底）：检索索引失败绝不影响笔记写入结果。 */
-  private async syncIndex(unit: KnowledgeUnit): Promise<void> {
-    console.info('[ConfirmTrace] index-sync-begin');
-    try {
-      await KnowledgeUnitWriteService.withTimeout(
-        NoteFtsIndex.upsert(unit), INDEX_SYNC_TIMEOUT_MS, 'note-index');
-      console.info('[ConfirmTrace] index-sync-ok');
-    } catch (e) {
-      console.warn('[KnowledgeUnitWriteService] index sync skipped: ' + (e as Error).message);
-    }
-  }
-
-  /** Promise.race 超时兜底：只用于「可降级」的附加动作（索引/UI 副作用），不改变事务结果。 */
+  /** Promise.race 超时兜底：只用于「可降级」的 UI 副作用，不改变事务结果。 */
   private static async withTimeout(task: Promise<void>, timeoutMs: number, label: string): Promise<void> {
     let timer: number = 0;
     const timeout: Promise<void> = new Promise<void>((resolve: () => void): void => {

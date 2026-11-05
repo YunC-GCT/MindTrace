@@ -308,6 +308,14 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('ragProbe', DebugCaptureRunner.runRagProbe(this.context));
       return;
     }
+    if (mode === 'ragLegacyAudit') {
+      this.runDebugProbe('ragLegacyAudit', DebugCaptureRunner.runRagLegacyCleanup(this.context, false));
+      return;
+    }
+    if (mode === 'ragLegacyCleanup') {
+      this.runDebugProbe('ragLegacyCleanup', DebugCaptureRunner.runRagLegacyCleanup(this.context, true));
+      return;
+    }
     if (mode === 'a2aTextIngestProbe') {
       this.runDebugProbe('a2aTextIngestProbe', DebugAgentProbes.runA2ATextIngestProbe(this.context));
       return;

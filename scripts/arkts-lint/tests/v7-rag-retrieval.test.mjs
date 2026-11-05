@@ -42,18 +42,18 @@ test('schema v19 creates note_fts with trigram tokenizer and backfills from know
   assert.match(db, /FROM knowledge_unit/);
 });
 
-test('note_fts is kept in sync on create/update/delete, best-effort only', () => {
+test('note_fts is written inside the note transaction on create/update/delete', () => {
   const index = read('entry/src/main/ets/database/NoteFtsIndex.ets');
-  assert.match(index, /static async upsert\(unit: KnowledgeUnit\)/);
-  assert.match(index, /static async remove\(unitId: string\)/);
+  assert.match(index, /static async applyToTransaction\(transaction: relationalStore\.Transaction, unit: KnowledgeUnit\)/);
+  assert.match(index, /static async removeFromTransaction\(transaction: relationalStore\.Transaction, unitId: string\)/);
   assert.match(index, /DELETE FROM note_fts WHERE unit_id = \?/);
-  const write = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
-  assert.ok((write.match(/this\.finalizeWrite\(/g) ?? []).length >= 4,
-    '四条写路径（create/update + commitKey 变体）统一走 finalizeWrite');
-  assert.match(write, /NoteFtsIndex\.upsert\(unit\), INDEX_SYNC_TIMEOUT_MS/);
-  assert.match(write, /writeSection\.runExclusive/);
   const dao = read('entry/src/main/ets/database/NoteDao.ets');
-  assert.match(dao, /await NoteFtsIndex\.remove\(id\)/);
+  assert.ok((dao.match(/await NoteFtsIndex\.applyToTransaction\(transaction, /g) ?? []).length >= 4,
+    '四条写路径（create/update + commitKey 变体）都在事务内同步索引');
+  assert.match(dao, /await NoteFtsIndex\.removeFromTransaction\(transaction, id\)/);
+  const write = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
+  assert.equal(/INDEX_SYNC_TIMEOUT_MS/.test(write), false, '索引不再走提交后异步同步 + 超时降级');
+  assert.match(write, /writeSection\.runExclusive/);
 });
 
 test('RagRetrievalService.search uses the plan and returns empty on failure', () => {
@@ -86,11 +86,11 @@ test('note generation injects related existing_note fragments (R4)', () => {
 });
 
 
-test('rag_chunk runtime sync: deterministic chunks written on note upsert (037)', () => {
+test('rag_chunk runtime sync: deterministic chunks written in the note transaction (037)', () => {
   const index = read('entry/src/main/ets/database/NoteFtsIndex.ets');
-  assert.match(index, /private static async syncChunks\(/);
+  assert.match(index, /private static async syncChunksInTransaction\(transaction: relationalStore\.Transaction/);
   assert.match(index, /private static splitChunks\(unitId: string, content: string\): ChunkRow\[\]/);
   assert.match(index, /INSERT INTO rag_chunk \(id, unit_id, chunk_index, title, content, content_hash, token_count, created_at, updated_at\)/);
-  assert.match(index, /DELETE FROM rag_embedding WHERE chunk_id = \?/);
+  assert.match(index, /DELETE FROM rag_embedding WHERE chunk_id IN/);
   assert.match(index, /const CHUNK_SIZE: number = 400/);
 });
