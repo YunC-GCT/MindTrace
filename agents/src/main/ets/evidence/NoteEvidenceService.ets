@@ -24,7 +24,7 @@ import type {
   NoteGraphPort,
   NoteReadPort,
 } from 'common';
-import { NoteRetrievalQuery } from 'common';
+import { markdownToPlainText, NoteRetrievalQuery } from 'common';
 import {
   NoteEvidenceCitation,
   NoteEvidenceContext,
@@ -142,7 +142,7 @@ export class NoteEvidenceService implements NoteEvidencePort {
     for (const citation of limited) {
       lines.push('- ' + NoteEvidenceService.roleLabel(citation.role)
         + ' [noteId=' + citation.noteId + ' version=' + citation.version.toString() + '] '
-        + '《' + citation.title + '》：' + citation.excerpt);
+        + '《' + citation.title + '》：' + markdownToPlainText(citation.excerpt));
     }
     if (context.citations.length > limited.length) {
       lines.push('- 其余 ' + (context.citations.length - limited.length).toString() + ' 条证据已省略。');

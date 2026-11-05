@@ -1,5 +1,8 @@
 // ============================================================================
 //  shared/atoms/MathTextRenderer.ets - KaTeX Web renderer wrapper
+//  ----------------------------------------------------------------------------
+//  路径: entry/src/main/ets/shared/atoms/MathTextRenderer.ets
+//  职责: 用 WebView + KaTeX 渲染 markdown/公式；渲染失败时降级为可读纯文本。
 // ============================================================================
 
 import {
@@ -7,6 +10,7 @@ import {
   F_BASE,
   LatexRiskNormalizer,
   ContentProtocol,
+  markdownToPlainText,
 } from 'common'
 import type { ContentValidationResult, LatexRiskResult } from 'common'
 import webview from '@ohos.web.webview'
@@ -632,7 +636,9 @@ export struct MathTextRenderer {
   private plainFallbackText = (): string => {
     const prepared: PreparedMathRender = this.preparedRender()
     const fallback: string = prepared.input.fallbackText.trim()
-    return fallback.length > 0 ? fallback : this.text.trim()
+    const raw: string = fallback.length > 0 ? fallback : this.text.trim()
+    // 渲染失败时不要直接把 $$ / ## / ** 丢给用户，至少降级成可读纯文本。
+    return markdownToPlainText(raw)
   }
 
   private preparedRender = (): PreparedMathRender => {

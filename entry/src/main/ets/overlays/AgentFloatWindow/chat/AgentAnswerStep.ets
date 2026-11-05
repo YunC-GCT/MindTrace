@@ -9,7 +9,7 @@
  *   AgentRunPart(answer) -> AgentAnswerStep -> Text/Markdown/Formula
  */
 
-import { ContentProtocol, F_SM, R_MD, S_2, S_3, TEXT, stripCitationMarkers } from 'common'
+import { ContentProtocol, F_SM, R_MD, S_2, S_3, TEXT, stripCitationMarkers, stripEchoedEvidence } from 'common'
 import { FormulaSplitRenderer } from '../../../shared/molecules/FormulaSplitRenderer'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 
@@ -54,7 +54,8 @@ export struct AgentAnswerStep {
   }
 
   private displayText = (): string => {
-    return stripCitationMarkers(this.content)
+    // 展示层兜底：内部引用标记与模型复述的证据块都不该直接给用户看。
+    return stripEchoedEvidence(stripCitationMarkers(this.content))
   }
 
   private containsFormulaSyntax = (text: string): boolean => {

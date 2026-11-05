@@ -529,3 +529,25 @@ stage=done ragEval=1 total=14 hit1=11 hit5=13 miss=0 negatives=1 falsePositives=
   真机显示 `检索笔记 · 已完成 · 命中 8 条 · 已截断`、`查询相关笔记 · 已完成 · 返回 11 条`。
 - **引用去噪**：新增 `common/utils/CitationText.stripCitationMarkers`，来源块与答案正文展示时都去掉 `[noteId=... version=...]`；真机整页 `noteId` 出现次数为 0。引用校验仍在证据层完成，不受影响。
 - 测试：`conversation-formatting`（标记清洗）、`tool-loop-streaming`（工具事件顺序、结果摘要）；gate 1286 单测。
+
+## 30. 2026-11-05 回答渲染修复（裸公式 / 复述证据）
+
+真机现象：答案里出现原始 `$$`/`###`/`[关键词命中]`，公式未编译。
+
+**根因**（用真机抓到的答案离线跑校验器确认）：
+
+1. 模型输出**裸公式行**（没有 `$$`）和**裸行内命令**（如「存在一点 \xi \in (a,b)」）。
+2. 复述的证据摘录里有被 `buildExcerpt` 截断的公式（`\frac{f(b)-f(a)}{…`），括号不闭合。
+3. `ContentProtocol` 因此判定 `fallbackRequired`，`MathTextRenderer` 直接把整块降级成纯文本——原始 LaTeX/Markdown 就露出来了。
+4. 模型还会整行复述 `- [关键词命中] …`、`参考来源：` 和工具 JSON。
+
+**修复**：
+
+- 提示词新增两条：不复述证据块/工具 JSON（12）；行内数学必须 `$...$`、独立公式必须 `$$...$$`（13）。
+- `ContentProtocol` 增加修复而不是降级：
+  - `balanceBraces`：补齐 `\frac{a}{…` 这类未闭合括号；
+  - `balanceLeftRight`：补 `\right.` / `\left.` 占位；
+  - `wrapNakedInlineTex`：整行无 `$` 时，把白名单内数学命令包进 `$...$`（路径等普通文本不误伤）。
+- 展示层兜底：`stripEchoedEvidence` 去掉复述的证据行与长 JSON；`markdownToPlainText` 让真正的渲染失败也只显示可读纯文本；来源摘录同样纯文本化。
+
+**真机验证**：同一问题重跑，原始标记节点从 3 个降为 1 个，且该节点是 KaTeX 的 MathML `annotation`（渲染产物，不可见）；公式、列表、标题均正常渲染。
