@@ -16,7 +16,8 @@
  *   NoteEvidenceService.build(query) → search(query, topK) → RagHit[] → join knowledge_unit → NoteEvidenceCitation
  */
 import { relationalStore } from '@kit.ArkData';
-import { planQueryTerms } from 'common';
+import { mergeQueryTerms, planQueryTerms } from 'common';
+import { QueryKeywordExtractor } from './QueryKeywordExtractor';
 import { planRagQuery, planShortTermQuery, planTermQuery, RagQueryPlan, RagTermQueryPlan } from './RagQueryPlan';
 
 const PROBE_FTS_TABLE: string = 'note_fts';
@@ -59,7 +60,12 @@ export class RagRetrievalService {
     if (terms.length === 1 && terms[0] === trimmed) {
       return [];
     }
-    const termPlan: RagTermQueryPlan | null = planTermQuery(terms, topK);
+    // 系统分词的内容词作为查询扩展；失败时沿用纯规则拆分。
+    const keywords: string[] = await QueryKeywordExtractor.extract(trimmed);
+    const expandedTerms: string[] = keywords.length > 0
+      ? mergeQueryTerms(terms, keywords, 8)
+      : terms;
+    const termPlan: RagTermQueryPlan | null = planTermQuery(expandedTerms, topK);
     if (termPlan !== null) {
       const termHits: RagHit[] = await RagRetrievalService.runTermQuery(store, termPlan);
       if (termHits.length > 0) {
@@ -70,7 +76,7 @@ export class RagRetrievalService {
       }
     }
     // 长词 OR 未命中时再试短词（如「数列极限的定义」→「定义」）。
-    const shortPlan: RagTermQueryPlan | null = planShortTermQuery(terms, topK);
+    const shortPlan: RagTermQueryPlan | null = planShortTermQuery(expandedTerms, topK);
     if (shortPlan === null) {
       return [];
     }

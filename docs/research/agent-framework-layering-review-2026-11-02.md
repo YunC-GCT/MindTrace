@@ -630,3 +630,25 @@ scanned=186 duplicateGroups=26 strictGroups=20 duplicateNotes=52 removed=52 fail
 - 再次审计：`strictGroups=0 duplicateNotes=0`，剩余 6 组松匹配为刻意保留（种子组 + 「解一元一次方程」泛标题组）。
 
 **踩坑记录**：清理模式名是 `legacyCleanupApply`，此前误用不存在的 `legacyCleanup`，导致只打印 `launch-param` 后直接返回，看起来像「脚本跑不通」。探针模式名与文档需保持一致。
+
+## 35. 2026-11-05 分词查询扩展 + 灰区语义仲裁
+
+**L1 查询扩展**：
+
+- 新增 `QueryKeywordExtractor`（entry）：懒加载 `@kit.NaturalLanguageKit`（受限 Kit 不得静态 import，否则 A2A 扩展进程会加载），按词性抽取名词/动词/数量词，过滤停用词，最多 6 个；任何失败返回空数组。
+- `mergeQueryTerms`（common 纯函数）：把分词关键词与规则拆分的词合并、去重、按长度截断。
+- `RagRetrievalService` 的词 OR 兜底改用扩展后的词表；整句命中路径不变。
+
+**L3 灰区仲裁**：
+
+- `NoteDedupe.similarityScore`：连续相似度（同标题 1.0、同数学签名 0.95、同数字序列 0.9，其余按标题相似度/包含度/正文相似度加权）。
+- 阈值：`≥0.9` 直接判重；`[0.5, 0.9)` 交给 `NoteSimilarityJudgePort` 仲裁；`<0.5` 不判重。
+- `LlmNoteSimilarityJudge`（entry）：一次 8s 超时的 YES/NO 判定，未配置/失败一律返回 false（宁可不判重）。
+- 写入服务注入 judge：硬规则未命中时，用 DAO 的 `findSimilarCandidates` 取候选、打分、灰区调用模型；命中则复用已有笔记（不新增）。
+- 组合根 `KnowledgeUnitWriteServiceFactory` 装配 judge。
+
+**真机验证**：
+
+- 分词探针可用（init 约 0.9s、单次约 40ms）；`ragEval` 仍 `hit@5=13/13 miss=0`（查询扩展无回归）。
+- `dedupeSimilarityProbe`：同题「算式 ↔ 文字表述」仍 `addedSecond=0`。
+- 观察：一次生成阶段的模型调用偶发挂起超过 4 分钟（重跑 26.7s 完成），属于模型网络偶发，非本轮改动引入。

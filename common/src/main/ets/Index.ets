@@ -513,9 +513,12 @@ export type { GalaxyLinkType } from './models/GalaxyModels';
 
 export { NoteRetrievalQuery } from './utils/NoteRetrievalQuery';
 export { stripCitationMarkers } from './utils/CitationText';
+export type {
+  NoteSimilarityCandidate, NoteSimilarityJudgePort,
+} from './models/NoteSimilarityModels';
 export { citationSnippet, markdownToPlainText, normalizeEscapedNewlines, stripEchoedEvidence } from './utils/AnswerTextSanitizer';
 export { extractMathSignature, normalizeMathText } from './utils/MathSignature';
-export { normalizeQueryText, planQueryTerms } from './utils/QueryTerms';
+export { mergeQueryTerms, normalizeQueryText, planQueryTerms } from './utils/QueryTerms';
 export type { QueryTermPlan } from './utils/QueryTerms';
 
 // ========== 对话与笔记纯规则（2026-11-03 由 entry/services 上移） ==========

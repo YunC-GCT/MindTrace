@@ -10,6 +10,7 @@
  */
 import { KnowledgeUnit } from './CommonTypes';
 import { NoteGenerationCommitResult } from './NoteGenerationModels';
+import { NoteSimilarityCandidate } from './NoteSimilarityModels';
 
 export enum KnowledgeUnitWriteErrorCode {
   VERSION_CONFLICT = 'VERSION_CONFLICT',
@@ -59,6 +60,8 @@ export interface KnowledgeUnitWriteRepository {
   ): Promise<KnowledgeUnitPersistenceResult>;
   /** 查重复笔记（同一道题重复整理时跳过写入）；返回已有笔记或 null。 */
   findDuplicate?(unit: KnowledgeUnit): Promise<KnowledgeUnit | null>;
+  /** 查重候选（供灰区相似度打分与语义仲裁）；实现可缺省。 */
+  findSimilarCandidates?(unit: KnowledgeUnit): Promise<NoteSimilarityCandidate[]>;
   /** 读取当前单元（幂等复用/回执需要 title/subject）；实现可缺省。 */
   queryById?(id: string): Promise<KnowledgeUnit | null>;
 }

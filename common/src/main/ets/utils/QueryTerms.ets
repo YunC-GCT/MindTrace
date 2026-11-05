@@ -104,6 +104,22 @@ export function normalizeQueryText(input: string): string {
   return converted.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+/** 合并基础词与外部关键词（如分词结果），去重并按长度降序截断。 */
+export function mergeQueryTerms(base: string[], extra: string[], maxTerms: number = MAX_TERMS): string[] {
+  const merged: string[] = [];
+  for (let i = 0; i < base.length; i += 1) {
+    QueryTermsHelper.addUnique(merged, base[i]);
+  }
+  for (let i = 0; i < extra.length; i += 1) {
+    const term: string = extra[i].trim();
+    if (term.length > 0) {
+      QueryTermsHelper.addUnique(merged, term);
+    }
+  }
+  merged.sort((left: string, right: string): number => right.length - left.length);
+  return merged.slice(0, maxTerms);
+}
+
 export function planQueryTerms(query: string): QueryTermPlan {
   const raw: string = query.trim();
   const normalized: string = normalizeQueryText(raw);

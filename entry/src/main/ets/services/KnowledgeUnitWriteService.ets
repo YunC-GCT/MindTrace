@@ -9,6 +9,7 @@
  *   manual / AI adapter → create / update → repository commit → post-commit effects
  */
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
+import type { NoteSimilarityCandidate, NoteSimilarityJudgePort } from 'common';
 import { AsyncMutex } from './AsyncMutex';
 import {
   KnowledgeUnitPersistenceResult,
@@ -19,6 +20,11 @@ import {
   KnowledgeUnitWriteResult,
 } from 'common';
 import { WritePathValidator } from 'agents/src/main/ets/note/Index';
+import {
+  SIMILARITY_GRAY_MIN,
+  SIMILARITY_HARD_DUPLICATE,
+  similarityScore,
+} from 'agents/src/main/ets/note/Index';
 
 // 首装冷启动偶发卡死兜底：副作用最多等 5s，超时降级为告警，不阻塞主写链路。
 const POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000;
@@ -28,10 +34,13 @@ export class KnowledgeUnitWriteService {
   private static readonly writeSection: AsyncMutex = new AsyncMutex();
   private repository: KnowledgeUnitWriteRepository;
   private effects: KnowledgeUnitPostCommitEffect[];
+  private readonly judge: NoteSimilarityJudgePort | undefined;
 
-  constructor(repository: KnowledgeUnitWriteRepository, effects: KnowledgeUnitPostCommitEffect[]) {
+  constructor(repository: KnowledgeUnitWriteRepository, effects: KnowledgeUnitPostCommitEffect[],
+    judge?: NoteSimilarityJudgePort) {
     this.repository = repository;
     this.effects = effects;
+    this.judge = judge;
   }
 
   async create(unit: KnowledgeUnit, generationMetadata: string = ''): Promise<KnowledgeUnitWriteResult> {
@@ -190,13 +199,62 @@ export class KnowledgeUnitWriteService {
     }
   }
 
-  /** 写前查重：同一道题重复整理时复用已有笔记（不新增行、不刷索引）。 */
+  /**
+   * 写前查重：先走确定性规则；拿不准的灰区（0.6–0.9）交给模型仲裁，
+   * 避免「换个说法」的同一道题被重复写入。
+   */
   private async findDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
-    if (this.repository.findDuplicate === undefined) {
+    let hard: KnowledgeUnit | null = null;
+    if (this.repository.findDuplicate !== undefined) {
+      try {
+        hard = await this.repository.findDuplicate(unit);
+      } catch (e) {
+        hard = null;
+      }
+    }
+    if (hard !== null) {
+      return hard;
+    }
+    if (this.judge === undefined || this.repository.findSimilarCandidates === undefined) {
+      return null;
+    }
+    let candidates: NoteSimilarityCandidate[] = [];
+    try {
+      candidates = await this.repository.findSimilarCandidates(unit);
+    } catch (e) {
+      return null;
+    }
+    let best: NoteSimilarityCandidate | null = null;
+    let bestScore: number = 0;
+    for (let i = 0; i < candidates.length; i += 1) {
+      const score: number = similarityScore(unit.title, unit.content,
+        candidates[i].title, candidates[i].content);
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidates[i];
+      }
+    }
+    if (best === null || bestScore < SIMILARITY_GRAY_MIN) {
+      return null;
+    }
+    if (bestScore >= SIMILARITY_HARD_DUPLICATE) {
+      return await this.loadCandidate(best.id);
+    }
+    let sameNote: boolean = false;
+    try {
+      sameNote = await this.judge.isSameNote(unit.title, unit.content, best.title, best.content);
+    } catch (e) {
+      sameNote = false;
+    }
+    return sameNote ? await this.loadCandidate(best.id) : null;
+  }
+
+  private async loadCandidate(id: string): Promise<KnowledgeUnit | null> {
+    if (this.repository.queryById === undefined) {
       return null;
     }
     try {
-      return await this.repository.findDuplicate(unit);
+      return await this.repository.queryById(id);
     } catch (e) {
       return null;
     }

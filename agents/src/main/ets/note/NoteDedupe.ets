@@ -31,6 +31,8 @@ const TITLE_SIMILAR_MIN: number = 0.92;
 const CONTENT_DUP_MIN: number = 0.92;
 const CONTAINMENT_MIN_RATIO: number = 0.75;
 const CONTAINMENT_CONTENT_MIN: number = 0.6;
+export const SIMILARITY_HARD_DUPLICATE: number = 0.9;
+export const SIMILARITY_GRAY_MIN: number = 0.5;
 // 结构助词/连词不携带主题信息，去掉后「泰勒公式的余项估计」与「泰勒公式余项估计」等价。
 const STRUCTURAL_CHARS: string[] = ['的', '了', '与', '和', '及', '之', '其'];
 const CN_NUMERAL_CHARS: string = '零一二三四五六七八九十百千';
@@ -199,4 +201,32 @@ export function findDuplicate(title: string, content: string, candidates: Dedupe
     }
   }
   return null;
+}
+
+/**
+ * 连续相似度（0..1），供灰区仲裁使用：
+ * 确定性规则命中的给高分，其余按标题相似度 / 包含度 / 正文相似度加权。
+ */
+export function similarityScore(title: string, content: string,
+  candidateTitle: string, candidateContent: string): number {
+  const titleNorm: string = normalizeForDedupe(title);
+  const candidateNorm: string = normalizeForDedupe(candidateTitle);
+  if (titleNorm.length > 0 && titleNorm === candidateNorm) {
+    return 1;
+  }
+  if (titleNorm.length >= MIN_TITLE_CHARS) {
+    const signature: string = extractMathSignature(title);
+    if (signature.length > 0 && signature === extractMathSignature(candidateTitle)) {
+      return 0.95;
+    }
+    const digits: string = digitsOf(titleNorm);
+    if (digits.length >= 2 && digits === digitsOf(candidateNorm)) {
+      return 0.9;
+    }
+  }
+  const titleSimilarity: number = bigramSimilarity(titleNorm, candidateNorm);
+  const containment: number = bigramContainment(titleNorm, candidateNorm);
+  const contentSimilarity: number = bigramSimilarity(
+    normalizeForDedupe(content), normalizeForDedupe(candidateContent));
+  return 0.45 * titleSimilarity + 0.2 * containment + 0.35 * contentSimilarity;
 }

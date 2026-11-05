@@ -79,6 +79,44 @@ test('主题包含：短标题被完整包含且正文实质重合时判重', ()
   assert.equal(dedupe.isDuplicateOf('泰勒公式余项', content, candidate), true);
 });
 
+test('连续相似度：同标题/同签名为高分，无关题低分，泛化题落灰区', () => {
+  const sameTitle = dedupe.similarityScore(
+    '计算 21 加 21', '任意正文',
+    '计算 21 加 21', '另一种正文',
+  );
+  assert.equal(sameTitle, 1);
+  const sameSignature = dedupe.similarityScore(
+    '两个 21 的和', '求两个 21 相加',
+    '计算 21 加 21', '21+21=42',
+  );
+  assert.equal(sameSignature, 0.95);
+  const unrelated = dedupe.similarityScore(
+    '洛必达法则求极限', '0/0 型求导',
+    '矩阵的秩与初等变换', '行阶梯形非零行数',
+  );
+  assert.ok(unrelated < dedupe.SIMILARITY_GRAY_MIN);
+  const gray = dedupe.similarityScore(
+    '极限的定义', '函数极限的 epsilon-delta 定义。',
+    '极限定义是什么', '用 epsilon-delta 语言描述函数极限。',
+  );
+  assert.ok(gray >= dedupe.SIMILARITY_GRAY_MIN && gray < dedupe.SIMILARITY_HARD_DUPLICATE);
+});
+
+test('灰区仲裁接线：写入服务注入 judge、DAO 提供候选', () => {
+  const service = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
+  assert.match(service, /NoteSimilarityJudgePort/);
+  assert.match(service, /similarityScore\(unit\.title, unit\.content/);
+  assert.match(service, /SIMILARITY_GRAY_MIN/);
+  assert.match(service, /isSameNote\(unit\.title, unit\.content/);
+  const dao = read('entry/src/main/ets/database/NoteDao.ets');
+  assert.match(dao, /async findSimilarCandidates\(unit: KnowledgeUnit\)/);
+  const factory = read('entry/src/main/ets/services/KnowledgeUnitWriteServiceFactory.ets');
+  assert.match(factory, /new LlmNoteSimilarityJudge\(\)/);
+  const judge = read('entry/src/main/ets/services/LlmNoteSimilarityJudge.ets');
+  assert.match(judge, /implements NoteSimilarityJudgePort/);
+  assert.match(judge, /只输出 YES 或 NO/);
+});
+
 test('数学签名判重：算式与文字表述是同一道题', () => {
   const candidate = {
     id: 's',

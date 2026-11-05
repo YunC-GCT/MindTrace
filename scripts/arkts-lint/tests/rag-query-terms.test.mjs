@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { loadNoteReviewEtsModule } from './note-review-ets-loader.mjs';
 
 const mod = loadNoteReviewEtsModule('common/src/main/ets/utils/QueryTerms.ets');
-const { planQueryTerms, normalizeQueryText } = mod;
+const { planQueryTerms, normalizeQueryText, mergeQueryTerms } = mod;
 
 test('口语疑问尾巴被剥离，留下主题词', () => {
   const plan = planQueryTerms('一加一等于几');
@@ -61,6 +61,11 @@ test('并列词分隔后保留长词，丢弃单字噪声', () => {
 test('长词与短词混合时都保留，供短词兜底', () => {
   const plan = planQueryTerms('数列极限的定义');
   assert.deepEqual(Array.from(plan.terms), ['数列极限', '定义']);
+});
+
+test('外部关键词合并：去重、按长度降序、可限流', () => {
+  const merged = Array.from(mergeQueryTerms(['加法计算', '9+9'], ['计算', '加法', '加法计算'], 3));
+  assert.deepEqual(merged, ['加法计算', '9+9', '计算']);
 });
 
 test('空输入得到空词表；纯停用词回退整句', () => {

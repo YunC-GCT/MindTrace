@@ -17,6 +17,7 @@ import { KnowledgeUnitNotesChangedEffect } from './KnowledgeUnitNotesChangedEffe
 import { KnowledgeUnitUiEffects } from './KnowledgeUnitUiEffects';
 import { KnowledgeUnitChapterEdgeEffect } from './KnowledgeUnitChapterEdgeEffect';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
+import { LlmNoteSimilarityJudge } from './LlmNoteSimilarityJudge';
 
 export class KnowledgeUnitWriteServiceFactory {
   /**
@@ -38,6 +39,6 @@ export class KnowledgeUnitWriteServiceFactory {
     }
     // createOnly: 只在新笔记首次落库后补同章节边，编辑已有笔记不重复补。
     effects.push(new KnowledgeUnitChapterEdgeEffect(store));
-    return new KnowledgeUnitWriteService(new NoteDao(store), effects);
+    return new KnowledgeUnitWriteService(new NoteDao(store), effects, new LlmNoteSimilarityJudge());
   }
 }

@@ -14,6 +14,7 @@
 
 import { relationalStore } from '@kit.ArkData';
 import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult } from 'common';
+import type { NoteSimilarityCandidate } from 'common';
 import { NoteFtsIndex } from './NoteFtsIndex';
 
 import {
@@ -306,6 +307,16 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
     } catch (e) {
       return null;
     }
+  }
+
+  /** 灰度查重候选：把最近的笔记映射成相似度打分/仲裁需要的形状。 */
+  async findSimilarCandidates(unit: KnowledgeUnit): Promise<NoteSimilarityCandidate[]> {
+    const candidates: DedupeCandidate[] = await this.queryRecentDedupeCandidates(500);
+    const result: NoteSimilarityCandidate[] = [];
+    for (let i = 0; i < candidates.length; i += 1) {
+      result.push({ id: candidates[i].id, title: candidates[i].title, content: candidates[i].content });
+    }
+    return result;
   }
 
   private async queryRecentDedupeCandidates(limit: number): Promise<DedupeCandidate[]> {

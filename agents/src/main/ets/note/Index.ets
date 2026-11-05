@@ -18,7 +18,8 @@ export type {
   LegacyDedupeEntry, LegacyDuplicateGroup, LegacySubjectInput,
 } from './LegacyNoteNormalizer';
 export {
-  bigramSimilarity, findDuplicate, isDuplicateOf, normalizeForDedupe,
+  SIMILARITY_GRAY_MIN, SIMILARITY_HARD_DUPLICATE,
+  bigramSimilarity, findDuplicate, isDuplicateOf, normalizeForDedupe, similarityScore,
 } from './NoteDedupe';
 export type {
   DedupeCandidate,

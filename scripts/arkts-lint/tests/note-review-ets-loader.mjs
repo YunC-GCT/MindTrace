@@ -157,6 +157,19 @@ export function loadNoteReviewEtsModule(relativePath, options = {}) {
       if (/^(agents|common|entry)\/src\//.test(request)) {
         return loadNoteReviewEtsModule(`${request}.ets`, { ...options, cache });
       }
+      // 系统 Kit 在 Node 侧不可用：给最小桩，保证纯逻辑测试能加载；默认降级路径。
+      if (request === '@kit.NaturalLanguageKit') {
+        if (options.mocks !== undefined && Object.prototype.hasOwnProperty.call(options.mocks, request)) {
+          return options.mocks[request];
+        }
+        return {
+          textProcessing: {
+            init: async () => false,
+            getWordSegment: async () => [],
+            release: async () => true,
+          },
+        };
+      }
       return require(request);
     }
     return loadNoteReviewEtsModule(resolvedRequest, { ...options, cache });
