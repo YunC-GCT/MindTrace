@@ -116,6 +116,7 @@ export class ConversationReplyHandler {
     userContent: string,
     evidence: NoteEvidenceContext | undefined,
     reviewPlan: NoteReviewPlan | undefined,
+    useTools: boolean = false,
   ): Promise<void> {
     if (reviewPlan !== undefined && reviewPlan.kind !== 'none') {
       await this.host.reviewHandler().handleStream(ref, memoryContext, learnerProfileContext, reviewPlan);
@@ -138,28 +139,30 @@ export class ConversationReplyHandler {
       let displayedText: string = '';
       let streamResult: StreamReplyResult | undefined = undefined;
       try {
-        streamResult = await this.host.replyPort().stream(
-          replyContext,
-          (event: StreamEvent): void => {
-            if (event.type !== 'text') {
-              const messageEvent: ConversationMessageEvent = { kind: 'stream', event: event };
-              this.host.nodeCallbacks().updateAiMsg(ref, msgId, messageEvent);
-              return;
-            }
-            if (event.delta.length > 0 && firstChunkMs < 0) {
-              firstChunkMs = Date.now() - streamStartedAt;
-            }
-            streamedChars += event.delta.length;
-            const safeText: string = citationFilter.push(event.delta);
-            if (safeText.length > 0) {
-              displayedText += safeText;
-              const safeEvent: StreamEvent = { type: 'text', delta: safeText };
-              const messageEvent: ConversationMessageEvent = { kind: 'stream', event: safeEvent };
-              this.host.nodeCallbacks().updateAiMsg(ref, msgId, messageEvent);
-            }
-          },
-          this.host.cancellationToken(ref),
-        );
+        const sink = (event: StreamEvent): void => {
+          if (event.type !== 'text') {
+            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: event };
+            this.host.nodeCallbacks().updateAiMsg(ref, msgId, messageEvent);
+            return;
+          }
+          if (event.delta.length > 0 && firstChunkMs < 0) {
+            firstChunkMs = Date.now() - streamStartedAt;
+          }
+          streamedChars += event.delta.length;
+          const safeText: string = citationFilter.push(event.delta);
+          if (safeText.length > 0) {
+            displayedText += safeText;
+            const safeEvent: StreamEvent = { type: 'text', delta: safeText };
+            const messageEvent: ConversationMessageEvent = { kind: 'stream', event: safeEvent };
+            this.host.nodeCallbacks().updateAiMsg(ref, msgId, messageEvent);
+          }
+        };
+        const toolPort = this.host.toolReplyPort();
+        if (useTools && toolPort !== undefined) {
+          streamResult = await toolPort.stream(replyContext, sink, this.host.cancellationToken(ref));
+        } else {
+          streamResult = await this.host.replyPort().stream(replyContext, sink, this.host.cancellationToken(ref));
+        }
       } catch (e) {
         const streamTotalMs: number = Date.now() - streamStartedAt;
         const interruptedTail: string = citationFilter.flush();

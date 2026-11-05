@@ -46,6 +46,42 @@ test('图装配：开启工具回复后加入 tool_reply 并接到 END', () => {
   assert.equal(graph.edges.tool_reply, 'END');
 });
 
+test('工具意图闸门：笔记检索走 tool_reply，普通问答保持流式', async () => {
+  let toolCalls = 0;
+  let streamCalls = 0;
+  const { workflow } = createWorkflow({
+    toolReplyEnabled: true,
+    toolShouldUse: (text) => text.includes('笔记'),
+    ports: {
+      toolReply: {
+        isEnabled: () => true,
+        complete: async () => {
+          toolCalls += 1;
+          return '工具回答';
+        },
+        stream: async (_ctx, sink) => {
+          toolCalls += 1;
+          sink({ type: 'text', delta: '工具回答' });
+          return { content: '工具回答', interrupted: false, usedFallback: false };
+        },
+      },
+      reply: {
+        stream: async (_ctx, sink) => {
+          streamCalls += 1;
+          sink({ type: 'text', delta: '流式回答' });
+          return { content: '流式回答', interrupted: false, usedFallback: false };
+        },
+        complete: async () => '普通回答',
+      },
+    },
+  });
+  await workflow.run({ kind: 'text', userContent: '查一下我笔记里的连续性', responseMode: 'stream' }, createRunRef());
+  assert.equal(toolCalls, 1, '笔记意图应走工具链');
+  await workflow.run({ kind: 'text', userContent: '什么是导数', responseMode: 'stream' }, createRunRef());
+  assert.equal(streamCalls, 1, '普通问答应保持流式');
+  assert.equal(toolCalls, 1, '普通问答不应触发工具链');
+});
+
 // ── B. 文本链路 ───────────────────────────────────────────
 
 test('文本 complete：走 classify → load_context → save_input → complete_reply，只落一条消息', async () => {

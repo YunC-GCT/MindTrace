@@ -59,10 +59,11 @@ export interface IConversationReplyPort {
   normalize(content: string): string;
 }
 
-/** Chat 工具回复端口（spec 041，默认关闭）：只读工具循环，非流式。 */
+/** Chat 工具回复端口（spec 041）：只读工具循环；支持流式最终回答。 */
 export interface IConversationToolPort {
   isEnabled(): boolean;
   complete(context: ReplyContext, token?: CancellationToken): Promise<string>;
+  stream(context: ReplyContext, sink: ReplyEventSink, token?: CancellationToken): Promise<StreamReplyResult>;
 }
 
 export interface IConversationCapturePort {
@@ -242,6 +243,31 @@ class ConversationToolAdapter implements IConversationToolPort {
     const result: LlmCallResult = await loop.run(messages, registry, options);
     token?.throwIfCancelled();
     return result.text !== undefined ? result.text : '';
+  }
+
+  /** 流式工具循环：最终回答逐字推送，工具轮只执行不产出正文。 */
+  async stream(context: ReplyContext, sink: ReplyEventSink,
+    token?: CancellationToken): Promise<StreamReplyResult> {
+    token?.throwIfCancelled();
+    const registry: ToolRegistry = ToolCatalog.createReadOnlyRegistry();
+    const messages: ChatMessage[] = this.classifier.buildReplyMessages(context, 'markdown');
+    const options: ToolLoopOptions = { callOptions: { cancellationToken: token } };
+    const loop: ToolLoop = new ToolLoop(new LlmClient());
+    let content: string = '';
+    const onEvent = (event: StreamEvent): void => {
+      if (event.type === 'text') {
+        content += event.delta;
+      }
+      sink(event);
+    };
+    const result: LlmCallResult = await loop.runStreaming(messages, registry, options, onEvent);
+    token?.throwIfCancelled();
+    const streamed: StreamReplyResult = {
+      content: content.length > 0 ? content : (result.text !== undefined ? result.text : ''),
+      interrupted: false,
+      usedFallback: false,
+    };
+    return streamed;
   }
 }
 

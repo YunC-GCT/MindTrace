@@ -41,6 +41,7 @@ import {
   ChatMessageOutcome,
 } from './ConversationState';
 import { ConversationMessageEvent, ConversationWorkflowCallbacks } from './ConversationTypes';
+import { ConversationToolReplyFlags } from './ConversationToolReplyFlags';
 import { applyEvidenceToAnswer, evidenceFooter, matchesFallbackShape } from './ConversationFormatting';
 import type { StreamReplyResult } from '../chat/ReplyService';
 import { streamErrorText } from '../chat/StreamErrorText';
@@ -306,7 +307,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     return await this.draftWorkflow.listRecoverable();
   }
 
-  /** Chat 工具回复默认关闭；开启后 text 请求走 tool_reply（非流式）。 */
+  /** Chat 工具回复：命中笔记检索意图时走流式工具链，最终回答仍然逐字推送。 */
   private toolReplyEnabled(): boolean {
     return this.toolReplyService !== undefined && this.toolReplyService.isEnabled();
   }
@@ -434,7 +435,7 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     });
     if (this.toolReplyEnabled()) {
       graph.addNode('tool_reply', async (input: ConversationState): Promise<ConversationState> => {
-        await this.replyHandler.handleComplete(
+        await this.replyHandler.handleStream(
           input.runRef,
           input.memoryContext ?? '',
           input.learnerProfileContext ?? '',
@@ -517,7 +518,8 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     });
     graph.addEdge('load_reply_context', 'save_reply_input');
     graph.addConditionalEdge('save_reply_input', (state: ConversationState): ConversationStep => {
-      if (this.toolReplyEnabled() && state.request.kind === 'text') {
+      if (this.toolReplyEnabled() && state.request.kind === 'text'
+        && ConversationToolReplyFlags.shouldUseTools(state.request.userContent)) {
         return 'tool_reply';
       }
       if (state.request.kind === 'text' && state.request.responseMode === 'stream') {

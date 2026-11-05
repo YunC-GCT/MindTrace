@@ -45,19 +45,18 @@ import type { ResolvedModel } from './model-resolver';
 import { applyFieldWrites, planModelRequest, putField } from './ModelRequestBuilder';
 import type { ModelRequestPlan, ModelRequestSelection } from './ModelRequestBuilder';
 import { LlmErrorBodyFormatter } from './LlmErrorBodyFormatter';
-import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
+import { LlmResponseParser } from './LlmResponseParser';
+import { parseStreamEventsFromSseData as parseSseChunkEvents } from './LlmStreamParser';
 import { Logger } from '../utils/logger';
 import { CancellationError } from '../workflow/RunErrors';
 import {
   LlmResponse,
-  LlmStreamChunk,
-  LlmStreamChoice,
-  LlmStreamDelta,
   LlmStreamCallback,
   StreamEvent,
   LlmCallRequest,
   LlmCallResult,
   LlmError,
+  LlmToolCall,
 } from './LlmTypes';
 
 // composeRequest 的结果: body 已是 JSON.stringify 就绪的 wire 形状。
@@ -70,6 +69,13 @@ interface ComposedRequest {
   capability: ModelCapability;
   thinkingEnabled: boolean;
   effort: string;
+}
+
+// 流式 tool_calls 的拼接中间态：同一 index 的 arguments 分片累加。
+interface StreamToolCallAccumulator {
+  id: string;
+  name: string;
+  argumentsJson: string;
 }
 
 export class LlmClient implements LlmCaller {
@@ -86,9 +92,7 @@ export class LlmClient implements LlmCaller {
       if (request.onDelta === undefined) {
         throw new LlmError('call: stream=true requires onDelta callback', 'STREAM_FAILED');
       }
-      await this.callStreamInternal(request, request.onDelta);
-      const streamedResult: LlmCallResult = { streamed: true };
-      return streamedResult;
+      return await this.callStreamInternal(request, request.onDelta);
     }
     return await this.callJsonInternal(request);
   }
@@ -306,7 +310,7 @@ export class LlmClient implements LlmCaller {
   private async callStreamInternal(
     request: LlmCallRequest,
     onEvent: LlmStreamCallback,
-  ): Promise<void> {
+  ): Promise<LlmCallResult> {
     // 1. 校验 API key — PR2-T2 L3 (2026-09-08): per-vendor key
     const apiKey: string | null = await this.config.getApiKey(this.config.getVendorId());
     if (apiKey === null) {
@@ -333,7 +337,8 @@ export class LlmClient implements LlmCaller {
       + ' thinking=' + capability.thinking + ' effort=' + effortText + ' stream=true');
     const httpRequest = http.createHttp();
 
-    return new Promise<void>((resolve: (value: void) => void, reject: (reason: Error) => void): void => {
+    return new Promise<LlmCallResult>((resolve: (value: LlmCallResult) => void,
+      reject: (reason: Error) => void): void => {
       let sseLineBuffer: string = '';
       let streamEnded: boolean = false;
       let dataReceived: boolean = false;
@@ -343,6 +348,8 @@ export class LlmClient implements LlmCaller {
       let thinkingChars: number = 0;
       let textEvents: number = 0;
       let textChars: number = 0;
+      let streamedText: string = '';
+      const toolAcc: Map<number, StreamToolCallAccumulator> = new Map<number, StreamToolCallAccumulator>();
       const trackedEventSink: LlmStreamCallback = (event: StreamEvent): void => {
         request.cancellationToken?.throwIfCancelled();
         if (event.type === 'thinking') {
@@ -351,6 +358,21 @@ export class LlmClient implements LlmCaller {
         } else if (event.type === 'text') {
           textEvents += 1;
           textChars += event.delta.length;
+          streamedText += event.delta;
+        } else if (event.type === 'tool_call') {
+          const index: number = event.index !== undefined ? event.index : 0;
+          let acc: StreamToolCallAccumulator | undefined = toolAcc.get(index);
+          if (acc === undefined) {
+            acc = { id: '', name: '', argumentsJson: '' };
+            toolAcc.set(index, acc);
+          }
+          if (event.toolCallId !== undefined && event.toolCallId.length > 0) {
+            acc.id = event.toolCallId;
+          }
+          if (event.toolName !== undefined && event.toolName.length > 0) {
+            acc.name = event.toolName;
+          }
+          acc.argumentsJson += event.argumentsJson !== undefined ? event.argumentsJson : event.delta;
         }
         onEvent(event);
       };
@@ -460,16 +482,26 @@ export class LlmClient implements LlmCaller {
           this.processSseBufferFinal(sseLineBuffer, trackedEventSink);
         }
 
+        const streamedResult: LlmCallResult = {
+          streamed: true,
+          text: streamedText,
+        };
+        const toolCalls: LlmToolCall[] = LlmClient.collectStreamedToolCalls(toolAcc);
+        if (toolCalls.length > 0) {
+          streamedResult.toolCalls = toolCalls;
+        }
+
         llmLog.info('stream completed chunks=' + chunkCount.toString()
           + ' bytes=' + receivedBytes.toString()
           + ' thinkingEvents=' + thinkingEvents.toString()
           + ' thinkingChars=' + thinkingChars.toString()
           + ' textEvents=' + textEvents.toString()
           + ' textChars=' + textChars.toString()
+          + ' toolCalls=' + toolCalls.length.toString()
           + ' remaining=' + sseLineBuffer.length.toString());
 
         httpRequest.destroy();
-        resolve();
+        resolve(streamedResult);
       });
 
       // 发起流式请求
@@ -614,33 +646,33 @@ export class LlmClient implements LlmCaller {
 
   /**
    * Seam A: 单条 SSE data JSON payload -> 结构化 StreamEvent 数组。
-   * 有效 JSON 中 choices 为空或 delta 为 null 时返回空数组;非法/不完整 JSON 保持抛出供 buffer 重试。
+   * 解析逻辑在 LlmStreamParser（纯函数，可单测）；非法/不完整 JSON 仍抛出供 buffer 重试。
    */
   public static parseStreamEventsFromSseData(dataStr: string): StreamEvent[] {
-    const chunk: LlmStreamChunk = JSON.parse(dataStr) as LlmStreamChunk;
-    if (chunk.choices.length === 0) {
-      return [];
-    }
-    const events: StreamEvent[] = [];
-    const choice: LlmStreamChoice = chunk.choices[0];
-    const delta: LlmStreamDelta | null = choice.delta;
-    if (delta !== undefined && delta !== null) {
-      const reasoning: string = delta.reasoning_content ?? '';
-      if (reasoning.length > 0) {
-        const thinkingEvent: StreamEvent = { type: 'thinking', delta: reasoning };
-        events.push(thinkingEvent);
+    return parseSseChunkEvents(dataStr);
+  }
+
+  /** 把流式累积的 tool_calls 还原成按 index 排序的完整调用列表。 */
+  private static collectStreamedToolCalls(acc: Map<number, StreamToolCallAccumulator>): LlmToolCall[] {
+    const indexes: number[] = [];
+    acc.forEach((_value: StreamToolCallAccumulator, key: number): void => {
+      indexes.push(key);
+    });
+    indexes.sort((left: number, right: number): number => left - right);
+    const calls: LlmToolCall[] = [];
+    for (let i = 0; i < indexes.length; i += 1) {
+      const item: StreamToolCallAccumulator | undefined = acc.get(indexes[i]);
+      if (item === undefined || item.name.length === 0) {
+        continue;
       }
-      const content: string = delta.content ?? '';
-      if (content.length > 0) {
-        const textEvent: StreamEvent = { type: 'text', delta: content };
-        events.push(textEvent);
-      }
+      const call: LlmToolCall = {
+        id: item.id.length > 0 ? item.id : 'call_' + indexes[i].toString(),
+        type: 'function',
+        function: { name: item.name, arguments: item.argumentsJson },
+      };
+      calls.push(call);
     }
-    if (choice.finish_reason === 'length') {
-      const truncationEvent: StreamEvent = { type: 'text', delta: '\n\n' + TRUNCATION_MARKER };
-      events.push(truncationEvent);
-    }
-    return events;
+    return calls;
   }
 
   /**

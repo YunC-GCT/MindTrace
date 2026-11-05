@@ -502,3 +502,22 @@ stage=done ragEval=1 total=14 hit1=11 hit5=13 miss=0 negatives=1 falsePositives=
 **仍未做**：工具循环默认关闭（`CHAT_TOOL_REPLY_ENABLED`），开启前需产品决定「工具结果如何呈现」；流式工具循环未实现（041 明确非目标）。
 
 **顺带修复（A2A 证据）**：真机冒烟暴露 `A2A_EVIDENCE citations=0 degraded=1 reason=search-failed`。根因是扩展进程的 `DatabaseHelper.init` 是 fire-and-forget，消息先于建库到达时证据检索查空库。修法：把 DB init 串进 `configReady` 链，并让 `A2AChatContext.build` 内部等待库就绪。真机复测 `A2A_EVIDENCE citations=1 degraded=0 reason=`，回复正常（723 字 / 3.8s）。
+
+## 28. 2026-11-05 开启聊天工具循环（041）
+
+- `CHAT_TOOL_REPLY_ENABLED = true`，但新增意图闸门 `ConversationToolReplyFlags.shouldUseTools`：只有「笔记 / 知识库 / 错题 / 复习 / 我保存过 / 我记得 / 查一下我」才走 `tool_reply`；普通数学问答继续 `stream_reply`。
+- 呈现：工具结论并入最终回答，来源块沿用 `applyEvidenceToAnswer` 的证据脚注，不展示原始工具 JSON。
+- 真机（设备 `3XTYD24C16203663`）：
+  - 「查一下我笔记里关于连续性的内容」→ `note_query_rag ok=1 ms=107 chars=4012` + 3 次 `note_get`，21s 返回；
+  - 「什么是导数」→ `StreamTiming path=text firstChunkMs=638 totalMs=2844 chars=904`，无工具调用，流式保持。
+- 测试：图级闸门用例（笔记意图走工具、普通问答走流式）+ flag 单测；gate 1274 单测。
+
+**流式化（2026-11-05 同日）**：新增 `ToolCallingStreamingWorkflow` + `LlmStreamParser`，SSE 里按 index 拼接 `tool_calls` 增量；`tool_reply` 节点改走 `handleStream(..., true)`。真机对比：
+
+| 指标 | 非流式（旧） | 流式（新） |
+|---|---|---|
+| 首字 | 约 20s（整包） | 3.4–3.8s |
+| 总耗时 | 约 20–21s | 7.7–7.9s |
+| 正文 | 整段出现 | 逐字推送（1610–1802 字） |
+
+**工具结果预算**：`ToolResultBudget` 优先保结构——对象按 `hits`/任意数组字段丢尾部、顶层数组（`note_query` 返回 `[...]`）按条丢弃、无数组时缩短超长字符串；真机 `note_query chars=3958 truncated=1 dropped=2`，回喂给模型的仍是合法 JSON。旧实现直接按字符截断，会把 JSON 切成半截。

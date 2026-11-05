@@ -78,8 +78,17 @@ export function loadConversationGraph(options = {}) {
       },
       // 相对导入的模块必须按文件路径打桩才生效
       'agents/src/main/ets/conversation/ConversationToolReplyFlags.ets': options.toolReplyEnabled === true
-        ? { ConversationToolReplyFlags: { isEnabled: () => true }, CHAT_TOOL_REPLY_ENABLED: true }
-        : { ConversationToolReplyFlags: { isEnabled: () => false }, CHAT_TOOL_REPLY_ENABLED: false },
+        ? {
+          ConversationToolReplyFlags: {
+            isEnabled: () => true,
+            shouldUseTools: (text) => options.toolShouldUse === undefined ? true : options.toolShouldUse(text),
+          },
+          CHAT_TOOL_REPLY_ENABLED: true,
+        }
+        : {
+          ConversationToolReplyFlags: { isEnabled: () => false, shouldUseTools: () => false },
+          CHAT_TOOL_REPLY_ENABLED: false,
+        },
       'agents/src/main/ets/chat/AppIntentRouter.ets': {
         AppIntentRouter: options.AppIntentRouter ?? class {
           async classify() {

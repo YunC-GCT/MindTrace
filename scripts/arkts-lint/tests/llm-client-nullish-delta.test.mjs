@@ -7,13 +7,14 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
+const streamParser = read('common/src/main/ets/llm/LlmStreamParser.ets');
 
 test('structured SSE parsing tolerates null reasoning_content', () => {
-  assert.match(llmClient, /const reasoning: string = delta\.reasoning_content \?\? ''/);
-  assert.doesNotMatch(llmClient, /tryEmitSseDelta/);
+  assert.match(streamParser, /const reasoning: string = delta\.reasoning_content \?\? ''/);
+  assert.doesNotMatch(streamParser, /tryEmitSseDelta/);
 });
 
 test('structured SSE parsing tolerates null content', () => {
-  assert.match(llmClient, /const content: string = delta\.content \?\? ''/);
-  assert.doesNotMatch(llmClient, /delta\.reasoning_content\.length|delta\.content\.length/);
+  assert.match(streamParser, /const content: string = delta\.content \?\? ''/);
+  assert.doesNotMatch(streamParser, /delta\.reasoning_content\.length|delta\.content\.length/);
 });
