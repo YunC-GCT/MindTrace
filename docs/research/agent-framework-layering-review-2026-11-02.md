@@ -425,3 +425,26 @@ R6/R7 落地后，重新按代码实测校正 §0 / §1 / §2.1 / §2.2 / §3 �
 **验证**：`agent-gate` PASS（1245 单测）；`build-hsp-hap` 4/4。仍**未经真机验证**。
 
 **剩余**：控制器 518 行里 `runQuery` 与 session 生命周期、图片问答、OCR 检查点仍在一起；再拆需要把 `A2ARequestSession` 的创建/取消也搬进数据类，收益递减，暂不继续。
+
+## 25. 2026-11-05 真机验证（重构后首轮）
+
+设备 `3XTYD24C16203663`，安装最新 `common/agents` HSP + `entry` HAP（`node scripts/device-runner.mjs install`）。
+
+| 场景 | 命令 | 结果 |
+|---|---|---|
+| A2A 文本整理 | `a2a_smoke.py --text "存笔记：9+9=18"` | `ok:true`，回复 31 字；hilog `INTENT text_ingest` → `INGEST_TEXT done` → `A2A_REPLY_SENT` |
+| A2A 问答 | `a2a_smoke.py --text "用一句话解释什么是导数"` | 回复含公式 `f′(x₀) = lim(h→0) …`，界面渲染正常 |
+| App 批量自检 | `device-runner e2e true` | `stage=done ok=2 failed=0 totalMs=40215`（OCR 入库 698 字、卡片刷新、检索 5 命中 ×2） |
+| UI 对话 | 手动 4 轮（3+5 / 勾股定理 / 9+9 / 连续性） | `run start` → `intent chat` → 流式 → `run finish`；39–782 字，`StreamTiming outcome=ok` |
+| RAG 证据服务 | `device-runner e2e ragSearch` | `rag-hit hits=5` ×2，`rag-evidence citations=7 degraded=0 contextChars=1603` |
+| A2A 对话上下文 | `device-runner e2e agentChatContext` | `citations=1 degraded=0 fakeRefRemoved=1` |
+
+对话侧证据注入在 UI 上可见：「函数在一点连续是什么意思」→「笔记检索：命中 2 条」+ 参考来源列表。
+
+**观察（非本次重构引入）**
+
+- 短查询召回差：「一加一等于几」「9+9 的加法计算怎么算」均未命中，但「连续性」命中。`RagRetrievalService` 把整句当 FTS 短语匹配（<3 字才 LIKE），属检索策略问题，与端口化无关。
+- `a2a_smoke.py` 的 `wait_reply` 原先按「文本不在基线集合」判定新回复，同一句重复发送时历史里的相同气泡会导致漏抓（首次 `ok:false` 时界面与 hilog 实际都有回复）。**已修**：基线改为 `Counter`，按出现次数增量判定；重复发送同一句复测 `ok:true`。
+- 同一脚本在 GBK 控制台打印数学下标字符（如 `x₀`）会 `UnicodeEncodeError`，把已拿到的回复判成失败。**已修**：启动时把 stdout/stderr 强制为 UTF-8。
+
+**未覆盖**：A2A 图片/OCR 链路（需小艺侧传图）；`conversation.*` run 事件落库未直接查库校验，仅有源码与单测保证。

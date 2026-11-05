@@ -25,6 +25,15 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections import Counter
+
+# Windows 控制台默认 GBK，模型回复里的数学下标（如 x₀）会让 print 直接抛
+# UnicodeEncodeError，导致已经拿到回复却被判失败。
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
 
 DEFAULT_HDC = os.environ.get("HDC") or (
     r"C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe")
@@ -345,15 +354,23 @@ NON_AGENT_REPLY_PATTERN = re.compile(
 
 
 def wait_reply(hdc, before, sent="", timeout=45.0):
-    """轮询等待小艺回复：只认小艺窗口里、且不像运营商/系统通知的新文本。"""
+    """轮询等待小艺回复：只认小艺窗口里、且不像运营商/系统通知的新文本。
+
+    before 是基准快照的文本计数。同一句话重复发送时，历史里已经有相同气泡，
+    按集合去重会把新气泡一起滤掉，所以这里按「出现次数增加」判定新增。
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(2)
         nodes = walk(dump_layout(hdc))
+        seen = Counter()
         fresh = []
         for node in nodes:
             text = node["text"]
-            if not text or text in before:
+            if not text:
+                continue
+            seen[text] += 1
+            if seen[text] <= before.get(text, 0):
                 continue
             if len(text) <= 2 or text.strip() == sent.strip():
                 continue
@@ -509,7 +526,7 @@ def main():
                 raise RuntimeError(f"界面里找不到智能体「{args.agent}」，确认已发真机测试并重启小艺")
 
         # 基准快照要在进入智能体会话之后取，否则侧栏/历史都会被当成新回复
-        before = {n["text"] for n in walk(dump_layout(hdc))}
+        before = Counter(n["text"] for n in walk(dump_layout(hdc)))
         send_message(hdc, args.text)
         time.sleep(2)
         reply = wait_reply(hdc, before, sent=args.text, timeout=args.wait_seconds)
