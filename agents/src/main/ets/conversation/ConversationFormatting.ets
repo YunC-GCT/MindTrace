@@ -9,7 +9,7 @@
  *   ConversationWorkflow 节点 → 本文件纯函数 → 展示文本
  */
 import type { NoteEvidenceContext, NoteEvidencePort } from 'common';
-import { Logger } from 'common';
+import { Logger, stripCitationMarkers } from 'common';
 
 const formatLog: Logger = new Logger('ConversationFormat');
 
@@ -20,9 +20,11 @@ export function evidenceFooter(
   if (evidence === undefined) {
     return '';
   }
-  return evidence.citations.length > 0
+  const footer: string = evidence.citations.length > 0
     ? evidencePort.formatSources(evidence)
     : evidencePort.formatRetrievalStatus(evidence);
+  // noteId/version 是内部追溯信息，不展示给用户；引用校验仍用原始 citations。
+  return stripCitationMarkers(footer);
 }
 
 export function applyEvidenceToAnswer(

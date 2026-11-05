@@ -67,6 +67,14 @@ export class ToolCallingStreamingWorkflow {
       current.push(assistant);
       for (let i = 0; i < toolCalls.length; i += 1) {
         const call = toolCalls[i];
+        const callEvent: StreamEvent = {
+          type: 'tool_call',
+          delta: '',
+          toolCallId: call.id,
+          toolName: call.function.name,
+          argumentsJson: call.function.arguments,
+        };
+        sink(callEvent);
         const startedAt: number = Date.now();
         const toolResult = await ToolExecutionGuard.execute(
           this.registry, call.function.name, call.function.arguments);
@@ -76,6 +84,15 @@ export class ToolCallingStreamingWorkflow {
           + ' chars=' + fitted.content.length.toString()
           + ' truncated=' + (fitted.truncated ? '1' : '0')
           + ' dropped=' + fitted.dropped.toString());
+        const resultEvent: StreamEvent = {
+          type: 'tool_result',
+          delta: '',
+          toolCallId: call.id,
+          toolName: call.function.name,
+          ok: toolResult.ok,
+          result: fitted.content,
+        };
+        sink(resultEvent);
         const toolMessage: ChatMessage = {
           role: 'tool',
           content: fitted.content,

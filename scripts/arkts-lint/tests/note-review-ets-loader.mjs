@@ -41,6 +41,7 @@ const COMMON_MODEL_FILES = [
   'common/src/main/ets/render/ContentExcerptBuilder.ets',
   'common/src/main/ets/models/GalaxyModels.ets',
   'common/src/main/ets/utils/NoteRetrievalQuery.ets',
+  'common/src/main/ets/utils/CitationText.ets',
   'entry/src/main/ets/pages/Review/GalaxyGraphProjection.ets',
   'agents/src/main/ets/chat/StreamErrorText.ets',
   'common/src/main/ets/utils/ConversationIdentity.ets',

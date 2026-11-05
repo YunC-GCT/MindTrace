@@ -521,3 +521,11 @@ stage=done ragEval=1 total=14 hit1=11 hit5=13 miss=0 negatives=1 falsePositives=
 | 正文 | 整段出现 | 逐字推送（1610–1802 字） |
 
 **工具结果预算**：`ToolResultBudget` 优先保结构——对象按 `hits`/任意数组字段丢尾部、顶层数组（`note_query` 返回 `[...]`）按条丢弃、无数组时缩短超长字符串；真机 `note_query chars=3958 truncated=1 dropped=2`，回喂给模型的仍是合法 JSON。旧实现直接按字符截断，会把 JSON 切成半截。
+
+## 29. 2026-11-05 对话 UI 打磨（工具步骤 + 引用去噪）
+
+- **工具步骤可见**：`ToolCallingStreamingWorkflow` 在工具执行前后向 UI 推送 `tool_call` / `tool_result` 事件，`AgentRunPanel` 用既有 `AgentToolStep` 渲染「检索笔记 / 查询相关笔记 / 读取笔记详情」卡片，状态在运行中 → 已完成之间切换。
+- **工具结果摘要**：新增 `summarizeToolResult`（`AgentRunModels`），把 JSON 折成一行人话：
+  真机显示 `检索笔记 · 已完成 · 命中 8 条 · 已截断`、`查询相关笔记 · 已完成 · 返回 11 条`。
+- **引用去噪**：新增 `common/utils/CitationText.stripCitationMarkers`，来源块与答案正文展示时都去掉 `[noteId=... version=...]`；真机整页 `noteId` 出现次数为 0。引用校验仍在证据层完成，不受影响。
+- 测试：`conversation-formatting`（标记清洗）、`tool-loop-streaming`（工具事件顺序、结果摘要）；gate 1286 单测。

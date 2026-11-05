@@ -512,6 +512,7 @@ export {
 export type { GalaxyLinkType } from './models/GalaxyModels';
 
 export { NoteRetrievalQuery } from './utils/NoteRetrievalQuery';
+export { stripCitationMarkers } from './utils/CitationText';
 export { normalizeQueryText, planQueryTerms } from './utils/QueryTerms';
 export type { QueryTermPlan } from './utils/QueryTerms';
 

@@ -9,11 +9,14 @@ const budget = loadNoteReviewEtsModule('common/src/main/ets/workflow/tool-callin
 const workflowModule = loadNoteReviewEtsModule(
   'common/src/main/ets/workflow/tool-calling/ToolCallingStreamingWorkflow.ets');
 const registryModule = loadNoteReviewEtsModule('common/src/main/ets/tools/ToolRegistry.ets');
+const runModels = loadNoteReviewEtsModule(
+  'entry/src/main/ets/overlays/AgentFloatWindow/chat/AgentRunModels.ets');
 
 const { parseStreamEventsFromSseData } = parser;
 const { fitToolResult } = budget;
 const { ToolCallingStreamingWorkflow } = workflowModule;
 const { ToolRegistry } = registryModule;
+const { summarizeToolResult } = runModels;
 
 test('SSE chunk 中的 tool_calls 增量被解析成 tool_call 事件', () => {
   const events = parseStreamEventsFromSseData(JSON.stringify({
@@ -85,7 +88,15 @@ test('无数组字段时缩短超长字符串，JSON 保持可解析', () => {
   assert.ok(parsed.answer.length <= 401);
 });
 
-test('流式工具循环：第一轮调工具，第二轮逐字输出最终回答', async () => {
+test('工具结果摘要：JSON 折成人话，长文本截断', () => {
+  assert.equal(summarizeToolResult('{"hits":[{},{}],"count":2}'), '命中 2 条');
+  assert.equal(summarizeToolResult('[{"id":1},{"id":2},{"id":3}]'), '返回 3 条');
+  assert.ok(summarizeToolResult('{"hits":[],"truncated":true}').includes('已截断'));
+  assert.equal(summarizeToolResult(''), '');
+  assert.ok(summarizeToolResult('x'.repeat(200)).endsWith('…'));
+});
+
+test('流式工具循环：先推 tool_call/tool_result，再推最终回答', async () => {
   let round = 0;
   const requests = [];
   const llm = {
@@ -120,13 +131,16 @@ test('流式工具循环：第一轮调工具，第二轮逐字输出最终回�
   registry.register(tool);
   const workflow = new ToolCallingStreamingWorkflow(llm, registry);
   const deltas = [];
+  const eventTypes = [];
   const result = await workflow.run([{ role: 'user', content: '查笔记' }], {},
     (event) => {
+      eventTypes.push(event.type);
       if (event.type === 'text') {
         deltas.push(event.delta);
       }
     });
   assert.deepEqual(deltas, ['答案', '来了']);
+  assert.deepEqual(eventTypes, ['tool_call', 'tool_result', 'text', 'text']);
   assert.equal(result.text, '答案来了');
   assert.equal(requests.length, 2);
   assert.equal(executed.length, 1);

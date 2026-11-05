@@ -10,7 +10,7 @@
  */
 
 import { BORDER, DANGER, F_XS, MINT, R_MD, S_1, S_2, S_3, TEXT_2, TEXT_3, TEXT_4, W_SEMIBOLD } from 'common'
-import { AgentRunPartStatus } from './AgentRunModels'
+import { AgentRunPartStatus, summarizeToolResult } from './AgentRunModels'
 
 @Component
 export struct AgentToolStep {
@@ -79,6 +79,7 @@ export struct AgentToolStep {
   }
 
   private displayName = (): string => {
+    if (this.toolName === 'note_query_rag') { return '检索笔记' }
     if (this.toolName === 'note_query') { return '查询相关笔记' }
     if (this.toolName === 'note_get') { return '读取笔记详情' }
     if (this.toolName === 'review_due_query') { return '检查待复习内容' }
@@ -97,9 +98,7 @@ export struct AgentToolStep {
   }
 
   private resultSummary = (): string => {
-    const normalized: string = this.result.split('\n').join(' ').trim()
-    if (normalized.length <= 88) { return normalized }
-    return normalized.substring(0, 88) + '…'
+    return summarizeToolResult(this.result)
   }
 
   private detailText = (): string => {
