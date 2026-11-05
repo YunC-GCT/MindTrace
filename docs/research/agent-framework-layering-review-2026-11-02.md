@@ -565,3 +565,68 @@ stage=done ragEval=1 total=14 hit1=11 hit5=13 miss=0 negatives=1 falsePositives=
 - 顺带修复模型复述 JSON 时留下的字面 `\n`：`normalizeEscapedNewlines` 在展示层还原换行，且不影响 `\n` 这类 LaTeX 片段。
 
 **真机验证**：`参考来源 5 条`面板正常展开，首行 `[关键词命中] 泰勒公式余项估计`；回答正文不再出现来源长文本，字面 `\n` 计数为 0。
+
+## 32. 2026-11-05 去重与旧知回溯优化
+
+**重复整理问题**：真机发现同一道「计算 21 加 21」被整理出 4 条笔记——每次生成正文措辞不同，旧的正文相似度阈值（0.75/0.92）抓不住；而两次生成还可能一个用阿拉伯数字、一个用中文数字（`80 加 80` vs `八十加八十`）。
+
+修复（`NoteDedupe`）：
+
+- 归一化去掉结构助词（的/了/与/和/及/之/其），并把中文数字段转成阿拉伯数字（八十 → 80）。
+- 标题归一后长度 ≥6 且完全相同 → 直接判重（同一主题重新生成必产生不同正文，不能靠正文相似度兜底）。
+- 新增「数学签名」规则：标题数字序列相同且标题包含度 ≥0.5 或正文相似 ≥0.5 → 判重。
+- 新增「主题包含」规则：短标题被长标题完整包含（长度比 ≥0.75）且正文相似 ≥0.6。
+- 候选池从最近 120 条扩大到 500 条，避免旧笔记落在窗口外。
+
+**旧知回溯**：`NoteSearchRanking.rankNoteHitsByTerms` 从「词频」改为「查询词覆盖度」：
+
+- 中文长词补二元组 token，按标题 ×6 / 标签 ×4 / 摘要 ×3 / 正文 ×1 计覆盖数，再叠加覆盖率和命中词数加成；
+- 标题命中可以压过更新更晚但只命正文的笔记；更新时间只做同分排序，不再间接偏向新笔记。
+
+**真机验证**：
+
+- 新增 `e2e=dedupeSimilarityProbe`：同一道题换说法再整理 → `addedSecond=0`、`dedupeSimilarity=1`。
+- `ragEval` 不变：`hit@5=13/13 miss=0`；`ragSearch` 不变：`citations=7`。
+
+## 33. 2026-11-05 笔记相似度技术路径确认
+
+**真机可行性（MRO-W00 / API 26，项目 compatible 24）**
+
+| 路径 | 结果 |
+|---|---|
+| 系统文本嵌入 `@ohos.data.intelligence` | syscap 支持，`getTextEmbeddingModel` 成功，但本地 `BASIC_MODEL` 与系统云模型 `loadModel()` 都返回 `31300000 Inner error`。当前不可用，疑似模型包/账号授权未就绪 |
+| 中文分词 `@hms.ai.nlp.textProcessing` | 可用：`init` 约 0.9s，单次分词约 40ms，返回词性（n/v/vn/m/ude1 等） |
+| 检索 Kit 向量通道 `@hms.data.retrieval` | 依赖底层 embedding；037 R1 曾报 1021201002，暂不优先 |
+| 云端 embedding（OpenAI 兼容 `/v1/embeddings`） | 技术上可接；当前 DeepSeek 无 embedding 接口，需要用户另配厂商 |
+| 端侧 MindSpore Lite | API 存在，需要自带并转换 `.ms` 模型（几十 MB），重工程 |
+
+**本轮落地：数学语义签名（不依赖模型）**
+
+- 新增 `common/utils/MathSignature.ets`：中文数字/全角运算归一，解析「两个 X 的和」「X 加 Y」「X 除以 Y」「X 的平方」等表述，按优先级生成结构化签名（`12 - 4 × 2` → `sub(12,mul(4,2))`）。
+- `NoteDedupe` 增加签名判重：`计算 21 加 21` 与「两个 21 的和」视为同一道题。
+- 真机 `dedupeSimilarityProbe` 改为「算式 → 文字表述」两次整理：`addedSecond=0`、`dedupeSimilarity=1`（16.5s）。
+
+**建议的分层方案**（尚未全部落地）：
+
+1. L0 归一：数字/全角/LaTeX/Markdown 清洗；
+2. L1 确定性相似度：分词关键词（系统 NLP）+ 数学签名 + 标题主题 + 字符 n-gram 包含度；
+3. L2 语义相似度：`EmbeddingPort`（系统 → 云端 → 无），向量写入既有 `rag_embedding`，用于去重候选重排与混合召回（RRF）；
+4. L3 边界仲裁：相似度落在灰区时用现有聊天模型做一次「是否同一道题」判定，命中则走更新而非新建。
+
+## 34. 2026-11-05 重复笔记清理执行
+
+**执行**：`e2e=legacyCleanupApply`（严格规则：标题归一相同或数学签名相同；跳过含 galaxy 种子的组与泛标题组）。
+
+```
+scanned=186 duplicateGroups=26 strictGroups=20 duplicateNotes=52 removed=52 failed=0
+```
+
+最大几组：洛必达法则 15→1、计算 12+7×3 7→1、计算 12×8-15 6→1、求 7 的平方根 6→1、计算 21 加 21 4→1。
+
+**清理后验证**：
+
+- `stage=rag-coverage notes=134 ftsRows=134 missingFts=0 missingChunk=74`（删除同时清掉了 FTS/分块/关系边）；
+- `ragEval hit@5=13/13 miss=0`、`ragSearch citations=7`，检索无回归；
+- 再次审计：`strictGroups=0 duplicateNotes=0`，剩余 6 组松匹配为刻意保留（种子组 + 「解一元一次方程」泛标题组）。
+
+**踩坑记录**：清理模式名是 `legacyCleanupApply`，此前误用不存在的 `legacyCleanup`，导致只打印 `launch-param` 后直接返回，看起来像「脚本跑不通」。探针模式名与文档需保持一致。

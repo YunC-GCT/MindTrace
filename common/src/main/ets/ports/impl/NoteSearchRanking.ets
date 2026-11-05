@@ -16,6 +16,12 @@ export const RAG_TITLE_WEIGHT: number = 4;
 export const RAG_TAG_WEIGHT: number = 3;
 export const RAG_SUMMARY_WEIGHT: number = 2;
 export const RAG_DISTINCT_TERM_BONUS: number = 2;
+export const RAG_TITLE_TOKEN_WEIGHT: number = 6;
+export const RAG_TAG_TOKEN_WEIGHT: number = 4;
+export const RAG_SUMMARY_TOKEN_WEIGHT: number = 3;
+export const RAG_CONTENT_TOKEN_WEIGHT: number = 1;
+export const RAG_COVERAGE_SCALE: number = 10;
+export const RAG_MAX_QUERY_TOKENS: number = 24;
 export const RAG_EXCERPT_LEAD: number = 60;
 export const RAG_EXCERPT_LENGTH: number = 160;
 
@@ -135,59 +141,71 @@ export function rankNoteHits(rows: ScoredCandidate[], needle: string, topK: numb
 
 // 044 R3: 多词召回打分。单词权重与 rankNoteHits 一致，另加「命中词数」加成，
 // 避免「计算」这类泛词把只命中一个词的长笔记顶过真正相关的多词命中。
+// 2026-11-05 升级：按查询词覆盖度打分而不是词频——标题命中权重最高，
+// 长笔记/旧笔记不会因为正文长而占优，也不会因为更新晚而挤掉真正相关的旧知。
 export function rankNoteHitsByTerms(rows: ScoredCandidate[], terms: string[], topK: number): ScoredCandidate[] {
-  const normalized: string[] = [];
-  for (let i = 0; i < terms.length; i += 1) {
-    const term: string = terms[i].trim().toLowerCase();
-    if (term.length > 0 && normalized.indexOf(term) < 0) {
-      normalized.push(term);
-    }
-  }
+  const tokens: string[] = buildQueryTokens(terms);
   const scored: ScoredCandidate[] = [];
   for (const row of rows) {
-    let score: number = 0;
-    let distinct: number = 0;
-    let bestNeedle: string = normalized.length > 0 ? normalized[0] : '';
-    let bestNeedleScore: number = 0;
-    const matched: string[] = [];
-    for (let i = 0; i < normalized.length; i += 1) {
-      const term: string = normalized[i];
-      const titleHits: number = countOccurrences(row.title.toLowerCase(), term);
-      const tagHits: number = countOccurrences(row.tags.toLowerCase(), term);
-      const summaryHits: number = countOccurrences(row.summary.toLowerCase(), term);
-      const contentHits: number = countOccurrences(row.content.toLowerCase(), term);
-      const termScore: number = titleHits * RAG_TITLE_WEIGHT
-        + tagHits * RAG_TAG_WEIGHT
-        + summaryHits * RAG_SUMMARY_WEIGHT
-        + contentHits;
-      if (termScore > 0) {
-        distinct += 1;
-        if (termScore > bestNeedleScore) {
-          bestNeedleScore = termScore;
-          bestNeedle = term;
+    const title: string = row.title.toLowerCase();
+    const tags: string = row.tags.toLowerCase();
+    const summary: string = row.summary.toLowerCase();
+    const content: string = row.content.toLowerCase();
+    let titleMatched: number = 0;
+    let tagMatched: number = 0;
+    let summaryMatched: number = 0;
+    let contentMatched: number = 0;
+    let matchedDistinct: number = 0;
+    let bestNeedle: string = '';
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token: string = tokens[i];
+      let hit: boolean = false;
+      if (title.indexOf(token) >= 0) {
+        titleMatched += 1;
+        hit = true;
+      }
+      if (tags.indexOf(token) >= 0) {
+        tagMatched += 1;
+        hit = true;
+      }
+      if (summary.indexOf(token) >= 0) {
+        summaryMatched += 1;
+        hit = true;
+      }
+      if (content.indexOf(token) >= 0) {
+        contentMatched += 1;
+        hit = true;
+      }
+      if (hit) {
+        matchedDistinct += 1;
+        if (bestNeedle.length === 0 || token.length > bestNeedle.length) {
+          bestNeedle = token;
         }
       }
-      score += termScore;
-      if (titleHits > 0 && matched.indexOf('title') < 0) {
-        matched.push('title');
-      }
-      if (tagHits > 0 && matched.indexOf('tags') < 0) {
-        matched.push('tags');
-      }
-      if (summaryHits > 0 && matched.indexOf('summary') < 0) {
-        matched.push('summary');
-      }
-      if (contentHits > 0 && matched.indexOf('content') < 0) {
-        matched.push('content');
-      }
     }
-    if (score <= 0) {
+    if (matchedDistinct === 0) {
       continue;
     }
-    if (distinct > 1) {
-      score += (distinct - 1) * RAG_DISTINCT_TERM_BONUS;
+    const coverage: number = tokens.length === 0 ? 0 : matchedDistinct / tokens.length;
+    row.score = titleMatched * RAG_TITLE_TOKEN_WEIGHT
+      + tagMatched * RAG_TAG_TOKEN_WEIGHT
+      + summaryMatched * RAG_SUMMARY_TOKEN_WEIGHT
+      + contentMatched * RAG_CONTENT_TOKEN_WEIGHT
+      + (matchedDistinct - 1) * RAG_DISTINCT_TERM_BONUS
+      + Math.round(coverage * RAG_COVERAGE_SCALE);
+    const matched: string[] = [];
+    if (titleMatched > 0) {
+      matched.push('title');
     }
-    row.score = score;
+    if (tagMatched > 0) {
+      matched.push('tags');
+    }
+    if (summaryMatched > 0) {
+      matched.push('summary');
+    }
+    if (contentMatched > 0) {
+      matched.push('content');
+    }
     row.matchedFields = matched;
     row.excerpt = buildExcerpt(row.content, row.summary, bestNeedle);
     scored.push(row);
@@ -198,4 +216,38 @@ export function rankNoteHitsByTerms(rows: ScoredCandidate[], terms: string[], to
     ranked.push(scored[index]);
   }
   return ranked;
+}
+
+/** 查询词 → 检索 token：中文长词补二元组（覆盖换序与「的」等结构差异），拉丁/公式整词保留。 */
+export function buildQueryTokens(terms: string[]): string[] {
+  const tokens: string[] = [];
+  for (let i = 0; i < terms.length; i += 1) {
+    const term: string = terms[i].trim().toLowerCase();
+    if (term.length === 0) {
+      continue;
+    }
+    addToken(tokens, term);
+    if (isCjkOnly(term) && term.length > 2) {
+      for (let k = 0; k + 1 < term.length; k += 1) {
+        addToken(tokens, term.substring(k, k + 2));
+      }
+    }
+  }
+  return tokens.slice(0, RAG_MAX_QUERY_TOKENS);
+}
+
+function addToken(tokens: string[], token: string): void {
+  if (token.length > 0 && tokens.indexOf(token) < 0 && tokens.length < RAG_MAX_QUERY_TOKENS) {
+    tokens.push(token);
+  }
+}
+
+function isCjkOnly(text: string): boolean {
+  for (let i = 0; i < text.length; i += 1) {
+    const code: number = text.charCodeAt(i);
+    if (code < 0x4e00 || code > 0x9fff) {
+      return false;
+    }
+  }
+  return true;
 }

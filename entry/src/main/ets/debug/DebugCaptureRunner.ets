@@ -18,7 +18,8 @@
  */
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
-import { relationalStore } from '@kit.ArkData';
+import { intelligence, relationalStore } from '@kit.ArkData';
+import { textProcessing } from '@kit.NaturalLanguageKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DatabaseHelper, ImageSearchIndexRegistry } from 'common';
@@ -61,7 +62,8 @@ import { createNoteEvidenceService } from '../services/EvidenceComposition';
 import { NoteEvidenceContext } from 'common';
 import { RAG_EVAL_CASES, RagEvalCase } from './RagEvalCases';
 import { AppIntentDecision, classifyAppIntentLocal } from 'agents/src/main/ets/chat/Index';
-import { LegacyDedupeEntry, LegacyDuplicateGroup, LegacySubjectInput, groupExactDuplicates, groupNearDuplicates, normalizeLegacySubject, isDuplicateOf } from 'agents/src/main/ets/note/Index';
+import { LegacyDedupeEntry, LegacyDuplicateGroup, LegacySubjectInput, groupExactDuplicates, groupNearDuplicates, isDuplicateOf, normalizeForDedupe, normalizeLegacySubject } from 'agents/src/main/ets/note/Index';
+import { extractMathSignature } from 'common';
 import type { NoteEvidenceService } from 'agents/src/main/ets/evidence/Index';
 import { DebugProbeSupport } from './DebugProbeSupport';
 
@@ -291,6 +293,182 @@ export class DebugCaptureRunner {
     }
   }
 
+  /** 相似去重探针：同一道题换个说法再整理一次，写入口应该判重跳过、笔记数不增加。 */
+  static async runDedupeSimilarityProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done dedupeSimilarity=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    const addend: number = (Date.now() % 80) + 11;
+    const expression: string = '计算 ' + addend.toString() + ' 加 ' + addend.toString() + ' 的结果并写出运算步骤';
+    const text: string = expression;
+    // 换成文字表述：签名规则应把它与上面的算式判为同一道题。
+    const variant: string = '帮我整理：两个 ' + addend.toString() + ' 的和是多少';
+    try {
+      const before: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
+      const first: NoteOutcome = await AgentIngestService.ingestSingleTextDirect(ctx, text);
+      const afterFirst: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=dedupe-similarity first=' + first.kind
+          + ' addedFirst=' + (afterFirst - before).toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+      const second: NoteOutcome = await AgentIngestService.ingestSingleTextDirect(ctx, variant);
+      const afterSecond: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
+      const addedFirst: number = afterFirst - before;
+      const addedSecond: number = afterSecond - afterFirst;
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=dedupe-similarity first=' + first.kind + ' second=' + second.kind
+          + ' addedFirst=' + addedFirst.toString() + ' addedSecond=' + addedSecond.toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done dedupeSimilarity=' + (addedSecond === 0 ? '1' : '0')
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done dedupeSimilarity=0 err=' + (error as Error).message);
+    }
+  }
+
+  /**
+   * 系统文本嵌入能力探针：确认 syscap、模型加载耗时、向量维度与语义区分度。
+   * 这是「笔记相似度 / 语义召回」方案能否落地的先决条件。
+   */
+  static async runEmbeddingProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const startedAt: number = Date.now();
+    const syscap: string = 'SystemCapability.DistributedDataManager.DataIntelligence.Core';
+    const supported: boolean = canIUse(syscap);
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=embedding syscap=' + (supported ? '1' : '0'));
+    if (!supported) {
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=done embedding=0 err=unsupported');
+      return;
+    }
+    let localError: string = '';
+    try {
+      const config: intelligence.ModelConfig = {
+        version: intelligence.ModelVersion.BASIC_MODEL,
+        isNpuAvailable: false,
+        cachePath: ctx.cacheDir,
+      };
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=embedding local-obtain-begin');
+      const model: intelligence.TextEmbedding = await intelligence.getTextEmbeddingModel(config);
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=embedding local-obtain-ok');
+      const loadStartedAt: number = Date.now();
+      await model.loadModel();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=embedding local-load-ok ms=' + (Date.now() - loadStartedAt).toString());
+      await DebugCaptureRunner.runEmbeddingInference(model);
+      await model.releaseModel();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done embedding=1 path=local ms=' + (Date.now() - startedAt).toString());
+      return;
+    } catch (error) {
+      localError = (error as Error).message;
+      hilog.warn(DOMAIN, TAG, '%{public}s', 'stage=embedding local-failed err=' + localError);
+    }
+    try {
+      const clouds: Array<intelligence.CloudModelInfo> = await intelligence.getSupportedCloudModel();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=embedding cloud-count=' + clouds.length.toString());
+      if (clouds.length === 0) {
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=done embedding=0 err=local:' + localError + ' cloud:none');
+        return;
+      }
+      const cloudConfig: intelligence.ModelConfig = {
+        version: intelligence.ModelVersion.BASIC_MODEL,
+        isNpuAvailable: false,
+        modelInfo: clouds[0],
+        networkPolicy: intelligence.NetworkPolicy.WIFI_AND_CELLULAR,
+      };
+      const cloudModel: intelligence.TextEmbedding = await intelligence.getTextEmbeddingModel(cloudConfig);
+      await cloudModel.loadModel();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=embedding cloud-load-ok type=' + clouds[0].modelType);
+      await DebugCaptureRunner.runEmbeddingInference(cloudModel);
+      await cloudModel.releaseModel();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done embedding=1 path=cloud ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done embedding=0 err=local:' + localError + ' cloud:' + (error as Error).message);
+    }
+  }
+
+  private static async runEmbeddingInference(model: intelligence.TextEmbedding): Promise<void> {
+    const texts: string[] = [
+      '导数定义',
+      '函数在一点的瞬时变化率',
+      '拉格朗日中值定理的条件',
+      '今天天气怎么样',
+    ];
+    const inferStartedAt: number = Date.now();
+    const vectors: Array<Array<number>> = await model.getEmbedding(texts);
+    hilog.info(DOMAIN, TAG, '%{public}s',
+      'stage=embedding infer ms=' + (Date.now() - inferStartedAt).toString()
+        + ' dim=' + vectors[0].length.toString());
+    hilog.info(DOMAIN, TAG, '%{public}s',
+      'stage=embedding sim related=' + DebugCaptureRunner.cosine(vectors[0], vectors[1]).toFixed(3)
+        + ' math=' + DebugCaptureRunner.cosine(vectors[1], vectors[2]).toFixed(3)
+        + ' unrelated=' + DebugCaptureRunner.cosine(vectors[0], vectors[3]).toFixed(3));
+  }
+
+  /** 中文分词能力探针：关键词抽取与词性可用于纯算法相似度。 */
+  static async runSegmentationProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const syscap: string = 'SystemCapability.AI.NaturalLanguage.TextProcessing';
+    const supported: boolean = canIUse(syscap);
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=segmentation syscap=' + (supported ? '1' : '0'));
+    if (!supported) {
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=done segmentation=0 err=unsupported');
+      return;
+    }
+    const startedAt: number = Date.now();
+    try {
+      const inited: boolean = await textProcessing.init();
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=segmentation init=' + (inited ? '1' : '0'));
+      const words: Array<textProcessing.WordSegment> = await textProcessing.getWordSegment(
+        '计算 21 加 21 的结果并写出运算步骤，拉格朗日中值定理的条件是什么');
+      let joined: string = '';
+      for (let i = 0; i < words.length; i += 1) {
+        joined += words[i].word + '/' + words[i].wordTag + ' ';
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=segmentation words=' + joined);
+      await textProcessing.release();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done segmentation=1 ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      const e: Error = error as Error;
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done segmentation=0 err=' + e.message);
+    }
+  }
+
+  private static cosine(left: Array<number>, right: Array<number>): number {
+    if (left.length === 0 || left.length !== right.length) {
+      return 0;
+    }
+    let dot: number = 0;
+    let leftNorm: number = 0;
+    let rightNorm: number = 0;
+    for (let i = 0; i < left.length; i += 1) {
+      dot += left[i] * right[i];
+      leftNorm += left[i] * left[i];
+      rightNorm += right[i] * right[i];
+    }
+    if (leftNorm <= 0 || rightNorm <= 0) {
+      return 0;
+    }
+    return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+  }
+
+  private static titleOfEntry(entries: LegacyDedupeEntry[], id: string): string {
+    for (let i = 0; i < entries.length; i += 1) {
+      if (entries[i].id === id) {
+        return entries[i].titleKey;
+      }
+    }
+    return '';
+  }
+
   /** M3 集成自检：flag 开启时 ingestSingleText 必须经调度器包装路径返回结果（看 delta）。 */
 
   static async runLegacyCleanup(ctx: common.UIAbilityContext, apply: boolean): Promise<void> {
@@ -353,12 +531,54 @@ export class DebugCaptureRunner {
           groups.push(nearGroups[i]);
         }
       }
-      let removed: number = 0;
-      const dao: NoteDao = new NoteDao(store);
+      // 清理只处理「同一标题归一」或「同一数学签名」的组：
+      // 标题相似的泛化题名（如「解一元一次方程」系列）可能是不同题目，不自动删除；
+      // 含 galaxy 预置笔记的组整组跳过，既不删种子也不删用户笔记。
+      const strictGroups: LegacyDuplicateGroup[] = [];
       for (let i = 0; i < groups.length; i += 1) {
         const group: LegacyDuplicateGroup = groups[i];
+        if (group.keepId.indexOf('galaxy_preview_') === 0) {
+          continue;
+        }
+        let hasPreview: boolean = false;
+        for (let k = 0; k < group.removeIds.length; k += 1) {
+          if (group.removeIds[k].indexOf('galaxy_preview_') === 0) {
+            hasPreview = true;
+          }
+        }
+        if (hasPreview) {
+          continue;
+        }
+        const baseTitle: string = DebugCaptureRunner.titleOfEntry(entries, group.keepId);
+        const baseNorm: string = normalizeForDedupe(baseTitle);
+        const baseSignature: string = extractMathSignature(baseTitle);
+        let sameTopic: boolean = true;
+        for (let k = 0; k < group.removeIds.length; k += 1) {
+          const title: string = DebugCaptureRunner.titleOfEntry(entries, group.removeIds[k]);
+          const norm: string = normalizeForDedupe(title);
+          const signature: string = extractMathSignature(title);
+          if (norm !== baseNorm && !(baseSignature.length > 0 && signature === baseSignature)) {
+            sameTopic = false;
+            break;
+          }
+        }
+        if (sameTopic) {
+          strictGroups.push(group);
+        }
+      }
+      let removed: number = 0;
+      let plannedRemoves: number = 0;
+      const dao: NoteDao = new NoteDao(store);
+      for (let i = 0; i < strictGroups.length; i += 1) {
+        const group: LegacyDuplicateGroup = strictGroups[i];
+        const removeTitles: string[] = [];
+        for (let k = 0; k < group.removeIds.length; k += 1) {
+          removeTitles.push(group.removeIds[k] + '(' + DebugCaptureRunner.titleOfEntry(entries, group.removeIds[k]) + ')');
+        }
+        plannedRemoves += group.removeIds.length;
         hilog.info(DOMAIN, TAG, '%{public}s',
-          'legacy duplicate keep=' + group.keepId + ' remove=' + group.removeIds.join(',')
+          'legacy duplicate keep=' + group.keepId + '(' + DebugCaptureRunner.titleOfEntry(entries, group.keepId) + ')'
+            + ' remove=' + removeTitles.join(',')
             + (apply ? ' apply=1' : ' apply=0'));
         if (!apply) {
           continue;
@@ -378,6 +598,8 @@ export class DebugCaptureRunner {
           + ' scanned=' + processed.toString()
           + ' subjectFixes=' + subjectFixes.length.toString()
           + ' duplicateGroups=' + groups.length.toString()
+          + ' strictGroups=' + strictGroups.length.toString()
+          + ' duplicateNotes=' + plannedRemoves.toString()
           + ' removed=' + removed.toString()
           + ' ms=' + (Date.now() - startedAt).toString());
     } catch (error) {

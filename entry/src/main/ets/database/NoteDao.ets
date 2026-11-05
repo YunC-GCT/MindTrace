@@ -297,7 +297,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
   /** 重复笔记检测：最近 120 条里按标题/正文相似度找同一道题（写入口调用）。 */
   async findDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
     try {
-      const candidates: DedupeCandidate[] = await this.queryRecentDedupeCandidates(120);
+      const candidates: DedupeCandidate[] = await this.queryRecentDedupeCandidates(500);
       const matched: DedupeCandidate | null = findDuplicate(unit.title, unit.content, candidates);
       if (matched === null) {
         return null;

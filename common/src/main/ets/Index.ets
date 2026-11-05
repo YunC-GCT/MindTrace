@@ -514,6 +514,7 @@ export type { GalaxyLinkType } from './models/GalaxyModels';
 export { NoteRetrievalQuery } from './utils/NoteRetrievalQuery';
 export { stripCitationMarkers } from './utils/CitationText';
 export { citationSnippet, markdownToPlainText, normalizeEscapedNewlines, stripEchoedEvidence } from './utils/AnswerTextSanitizer';
+export { extractMathSignature, normalizeMathText } from './utils/MathSignature';
 export { normalizeQueryText, planQueryTerms } from './utils/QueryTerms';
 export type { QueryTermPlan } from './utils/QueryTerms';
 

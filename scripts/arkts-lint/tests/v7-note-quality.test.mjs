@@ -59,6 +59,74 @@ test('学科收敛：别名归一且未知学科不再新建', () => {
   assert.match(structurer, /standardMatched === 0/, '完全没有标准字段才重试');
 });
 
+test('结构助词归一：只差「的」的同一标题判重', () => {
+  const content = '泰勒公式的余项分为佩亚诺余项与拉格朗日余项，用于误差估计。';
+  const candidate = {
+    id: 't',
+    title: '泰勒公式的余项估计',
+    content: '泰勒公式的余项分为佩亚诺余项与拉格朗日余项，用于误差估计与不等式证明。',
+  };
+  assert.equal(dedupe.isDuplicateOf('泰勒公式余项估计', content, candidate), true);
+});
+
+test('主题包含：短标题被完整包含且正文实质重合时判重', () => {
+  const content = '泰勒公式余项包括佩亚诺余项和拉格朗日余项。';
+  const candidate = {
+    id: 'c',
+    title: '泰勒公式余项估计',
+    content: '泰勒公式余项包括佩亚诺余项和拉格朗日余项，可用于误差估计。',
+  };
+  assert.equal(dedupe.isDuplicateOf('泰勒公式余项', content, candidate), true);
+});
+
+test('数学签名判重：算式与文字表述是同一道题', () => {
+  const candidate = {
+    id: 's',
+    title: '计算 21 加 21 的结果并写出运算步骤',
+    content: '## 问题\n计算 21+21\n## 答案\n42',
+  };
+  assert.equal(
+    dedupe.isDuplicateOf('两个 21 的和是多少', '求两个 21 相加的结果，答案是 42。', candidate),
+    true,
+  );
+});
+
+test('标题归一相同（≥6 字）即判重，正文措辞不同也算', () => {
+  const candidate = {
+    id: 't',
+    title: '计算 21 加 21',
+    content: '## 问题\n求两个 21 的和\n## 步骤\n21+21=42\n## 答案\n42',
+  };
+  assert.equal(
+    dedupe.isDuplicateOf('计算 21 加 21', '另一种讲法：把两个 21 相加，结果是 42。', candidate),
+    true,
+  );
+});
+
+test('中文数字归一：80 加 80 与 八十加八十 判重，不同数字不误杀', () => {
+  assert.equal(dedupe.cnNumeralToArabic('八十'), '80');
+  assert.equal(dedupe.cnNumeralToArabic('二十一'), '21');
+  assert.equal(dedupe.cnNumeralToArabic('一百零五'), '105');
+  const candidate = {
+    id: 'a',
+    title: '计算 80 加 80 的结果并写出步骤',
+    content: '## 问题\n计算 80+80\n## 答案\n160',
+  };
+  assert.equal(
+    dedupe.isDuplicateOf('计算八十加八十并写出运算步骤', '## 问题\n求八十加八十\n## 答案\n一百六十', candidate),
+    true,
+  );
+  const different = {
+    id: 'b',
+    title: '计算 21 加 21 的结果并写出步骤',
+    content: '## 问题\n计算 21+21\n## 答案\n42',
+  };
+  assert.equal(
+    dedupe.isDuplicateOf('计算八十加八十并写出运算步骤', '## 问题\n求八十加八十\n## 答案\n一百六十', different),
+    false,
+  );
+});
+
 test('重复检测：同题不同措辞判重，不同题不误杀', () => {
   const title = '解一元二次方程 x^2-5x+6=0';
   const content = '## 问题\n求方程 x^2-5x+6=0 的解\n## 步骤\n因式分解 (x-2)(x-3)=0\n## 答案\nx=2 或 x=3';
@@ -84,7 +152,7 @@ test('写入口查重接线：服务层跳过重复、DAO 提供候选查询', (
   assert.ok((service.match(/if \(duplicate !== null\)/g) ?? []).length >= 2, 'create 与 createWithCommitKey 都要查重');
   const dao = read('entry/src/main/ets/database/NoteDao.ets');
   assert.match(dao, /async findDuplicate\(unit: KnowledgeUnit\): Promise<KnowledgeUnit \| null>/);
-  assert.match(dao, /queryRecentDedupeCandidates\(120\)/);
+  assert.match(dao, /queryRecentDedupeCandidates\(500\)/);
 });
 
 
@@ -98,9 +166,11 @@ test('P0-2/P0-3 探针与报告接线：阶段耗时日志 + 去重/延迟/质�
     read('entry/src/main/ets/debug/DebugAgentProbes.ets'),
   ].join('\n');
   assert.match(runner, /static async runDedupeProbe\(/);
+  assert.match(runner, /static async runDedupeSimilarityProbe\(/);
   assert.match(runner, /static async runLatencyProbe\(/);
   const entry = read('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(entry, /mode === 'dedupeProbe'/);
+  assert.match(entry, /mode === 'dedupeSimilarityProbe'/);
   assert.match(entry, /mode === 'latencyProbe'/);
   const audit = read('scripts/quality/note-quality-audit.mjs');
   assert.match(audit, /MAX_DUPLICATE_RATIO/);
