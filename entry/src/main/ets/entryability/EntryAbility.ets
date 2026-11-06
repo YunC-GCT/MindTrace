@@ -312,6 +312,10 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('ragEval', DebugCaptureRunner.runRagEval(this.context));
       return;
     }
+    if (mode === 'ragSpotCheck') {
+      this.runDebugProbe('ragSpotCheck', DebugCaptureRunner.runRagSpotCheck(this.context));
+      return;
+    }
     if (mode === 'ragLegacyAudit') {
       this.runDebugProbe('ragLegacyAudit', DebugCaptureRunner.runRagLegacyCleanup(this.context, false));
       return;

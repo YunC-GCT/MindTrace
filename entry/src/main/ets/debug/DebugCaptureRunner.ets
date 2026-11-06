@@ -47,6 +47,8 @@ import { A2AImageContextStore } from '../services/A2AImageContextStore';
 import { KnowledgeUnitWriteServiceFactory } from '../services/KnowledgeUnitWriteServiceFactory';
 import { TEST_CORPUS } from './TestCorpusSeed';
 import type { TestCorpusNote } from './TestCorpusSeed';
+import { RAG_SPOT_CASES } from './RagSpotCases';
+import type { RagSpotCase } from './RagSpotCases';
 import { buildInboxItem } from '../services/AgentInboxModels';
 import { WRITE_JOB_RUN_PREFIX } from '../services/WriteJobEvents';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from '../services/WriteJobScheduler';
@@ -1041,6 +1043,54 @@ export class DebugCaptureRunner {
       return await NoteVectorIndex.scoreStats(store, query);
     } catch (error) {
       return 'err';
+    }
+  }
+
+  /** 泛化抽查：样本外问法的命中率，检验效果不是只对调过的评测集成立。 */
+  static async runRagSpotCheck(ctx: common.UIAbilityContext): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSpot=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    const service: NoteEvidenceService = createNoteEvidenceService();
+    let hit1: number = 0;
+    let hit5: number = 0;
+    let miss: number = 0;
+    try {
+      for (let i = 0; i < RAG_SPOT_CASES.length; i += 1) {
+        const item: RagSpotCase = RAG_SPOT_CASES[i];
+        const context: NoteEvidenceContext = await service.build(item.query, { topK: 5, graphMode: 'none' });
+        let rank: number = -1;
+        let first: string = '';
+        for (let k = 0; k < context.citations.length; k += 1) {
+          if (k === 0) {
+            first = context.citations[0].title;
+          }
+          if (context.citations[k].title.indexOf(item.expectTitle) >= 0) {
+            rank = k;
+            break;
+          }
+        }
+        if (rank === 0) {
+          hit1 += 1;
+        }
+        if (rank >= 0) {
+          hit5 += 1;
+        } else {
+          miss += 1;
+        }
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=rag-spot-case q=' + item.query + ' rank=' + rank.toString()
+            + ' expect=' + item.expectTitle + ' first=' + first);
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done ragSpot=1 total=' + RAG_SPOT_CASES.length.toString()
+          + ' hit1=' + hit1.toString() + ' hit5=' + hit5.toString() + ' miss=' + miss.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSpot=0 err=' + (error as Error).message);
     }
   }
 
