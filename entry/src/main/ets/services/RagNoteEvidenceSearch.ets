@@ -19,6 +19,7 @@ import type {
   NoteReadPort,
 } from 'common';
 import { RagHit, RagRetrievalService } from './RagRetrievalService';
+import { LlmEvidenceJudge } from './LlmEvidenceJudge';
 
 const EVIDENCE_TOOL_NAME: string = 'note_query_rag';
 const EVIDENCE_EXCERPT_LIMIT: number = 160;
@@ -107,6 +108,7 @@ export class RagNoteEvidenceSearch implements NoteEvidenceSearchPort {
     const subjectFilter: string = options !== undefined && options.subject !== undefined ? options.subject.trim() : '';
     const chapterFilter: string = options !== undefined && options.chapter !== undefined ? options.chapter.trim() : '';
     const citations: NoteEvidenceCitation[] = [];
+    const judgeDocs: string[] = [];
     for (const hit of hits) {
       let row: NoteEvidenceRow | undefined = undefined;
       for (const candidate of rows) {
@@ -135,6 +137,16 @@ export class RagNoteEvidenceSearch implements NoteEvidenceSearchPort {
         subject: row.subject,
         chapter: row.chapter,
       });
+      judgeDocs.push(row.title + '：' + (row.summary.trim().length > 0 ? row.summary : row.content));
+    }
+    // 语料里没有对应主题时不要让模型拿无关片段硬答；判定失败按「能回答」处理。
+    if (citations.length > 0) {
+      const answerable: boolean = await LlmEvidenceJudge.isAnswerable(query, judgeDocs);
+      if (!answerable) {
+        console.info('[EvidenceJudge] drop n=' + citations.length.toString() + ' q=' + query);
+        const empty: NoteEvidenceCitation[] = [];
+        return empty;
+      }
     }
     return citations;
   }

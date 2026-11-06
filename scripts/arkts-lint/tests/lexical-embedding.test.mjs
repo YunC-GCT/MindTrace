@@ -64,10 +64,15 @@ test('查询改写：只在向量头部模糊时调用 LLM，失败不影响检�
   assert.match(rewriter, /只输出关键词/);
 });
 
-test('证据检索不引入置信度闸门（实测所有便宜信号都分不开）', () => {
+test('证据判定：LLM 判断答不上就不注入，判定失败保留证据', () => {
   const s = read('entry/src/main/ets/services/RagNoteEvidenceSearch.ets');
-  assert.doesNotMatch(s, /EVIDENCE_CONFIDENCE_MIN/);
-  assert.doesNotMatch(s, /\[EvidenceGate\]/);
+  assert.match(s, /LlmEvidenceJudge\.isAnswerable\(query, judgeDocs\)/);
+  assert.match(s, /\[EvidenceJudge\] drop/);
+  const judge = read('entry/src/main/ets/services/LlmEvidenceJudge.ets');
+  assert.match(judge, /JUDGE_TIMEOUT_MS: number = 1500/);
+  assert.match(judge, /只输出 YES 或 NO/);
+  // fail-open：判定失败必须返回 true，不能因为一次超时砍掉正常召回
+  assert.match(judge, /evidence judge failed[\s\S]*?return true;/);
 });
 
 test('向量：同文本余弦为 1，维度固定', () => {
