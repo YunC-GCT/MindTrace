@@ -32,6 +32,9 @@ const RELATIVE_CUTOFF_RATIO: number = 0.6;
 const RERANK_CANDIDATES: number = 12;
 // 只在余弦头部「分不开」时才重排。标题加权后头部更容易扎堆，
 // 触发线从 0.03 放宽到 0.05，让更多查询有机会用摘要重排修正第一名。
+// 只在余弦头部「分不开」时才重排。标题加权后头部更容易扎堆，
+// 触发线从 0.03 放宽到 0.05。再放宽到 0.2（几乎总是重排）实测反而更差：
+// hit5 17→16、耗时 33s→53s——通用 reranker 会推翻部分排对的强信号。
 const AMBIGUOUS_GAP: number = 0.05;
 const MAX_ENTRIES: number = 20000;
 
