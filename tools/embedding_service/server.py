@@ -20,6 +20,23 @@ from pydantic import BaseModel
 from sentence_transformers import CrossEncoder, SentenceTransformer
 import uvicorn
 
+try:
+    from onnx_backend import OnnxEmbedder, OnnxReranker
+    ONNX_IMPORT_OK = True
+except Exception as exc:  # onnxruntime 没装时退回 PyTorch
+    ONNX_IMPORT_OK = False
+    print(f"[onnx] unavailable, falling back to torch: {exc}", flush=True)
+
+# 嵌入：ONNX 与 PyTorch 输出完全一致（实测同一文本余弦 1.0000）。
+# 单进程基准 ONNX 快 3.5-4.3 倍（查询 42ms vs 145ms、笔记 231ms vs 990ms），
+# 但在本服务里与 PyTorch 重排模型同住时反而更慢（实测 309ms vs 145ms），
+# 疑似 3.4GB 常驻内存下的页缓存压力与 ORT/PyTorch 线程池争用。
+# 因此默认仍用 PyTorch；确认值得后再用 MT_USE_ONNX_EMBED=1 打开。
+USE_ONNX_EMBED = ONNX_IMPORT_OK and os.environ.get("MT_USE_ONNX_EMBED", "0") == "1"
+# 重排：仓库里的 bge-reranker-base ONNX 与 safetensors 不是同一权重（同一对文档分数对不上），
+#       默认仍走 PyTorch；确认权重一致后再用 MT_USE_ONNX_RERANK=1 打开。
+USE_ONNX_RERANK = ONNX_IMPORT_OK and os.environ.get("MT_USE_ONNX_RERANK", "0") == "1"
+
 MODEL_ID = os.environ.get("MT_EMBED_MODEL", "BAAI/bge-large-zh-v1.5")
 RERANK_MODEL_ID = os.environ.get("MT_RERANK_MODEL", "BAAI/bge-reranker-base")
 RERANK_ENABLED = os.environ.get("MT_ENABLE_RERANK", "1") != "0"
@@ -33,6 +50,47 @@ _lock = threading.Lock()
 _model: Optional[SentenceTransformer] = None
 _rerank_lock = threading.Lock()
 _reranker: Optional[CrossEncoder] = None
+_onnx_embedder = None
+_onnx_reranker = None
+
+
+def get_onnx_embedder():
+    global _onnx_embedder
+    with _lock:
+        if _onnx_embedder is None:
+            print(f"[embedding] loading onnx {MODEL_ID} ...", flush=True)
+            started = time.time()
+            _onnx_embedder = OnnxEmbedder(MODEL_ID)
+            print(f"[embedding] onnx loaded in {time.time() - started:.1f}s", flush=True)
+    return _onnx_embedder
+
+
+def get_onnx_reranker():
+    global _onnx_reranker
+    with _rerank_lock:
+        if _onnx_reranker is None:
+            print(f"[rerank] loading onnx {RERANK_MODEL_ID} ...", flush=True)
+            started = time.time()
+            _onnx_reranker = OnnxReranker(RERANK_MODEL_ID)
+            print(f"[rerank] onnx loaded in {time.time() - started:.1f}s", flush=True)
+    return _onnx_reranker
+
+
+def embed_texts(texts: List[str]):
+    if USE_ONNX_EMBED:
+        return get_onnx_embedder().embed(texts)
+    model = get_model()
+    with _lock:
+        return model.encode(texts, normalize_embeddings=True,
+                            convert_to_numpy=True, show_progress_bar=False)
+
+
+def rerank_scores(query: str, documents: List[str]) -> List[float]:
+    if USE_ONNX_RERANK:
+        return get_onnx_reranker().score(query, documents)
+    model = get_reranker()
+    with _rerank_lock:
+        return [float(value) for value in model.predict([(query, d) for d in documents])]
 
 
 def get_reranker() -> CrossEncoder:
@@ -84,14 +142,7 @@ def embeddings(request: EmbeddingRequest) -> dict:
         return {"object": "list", "data": [], "model": MODEL_ID,
                 "usage": {"prompt_tokens": 0, "total_tokens": 0}}
 
-    model = get_model()
-    with _lock:
-        vectors = model.encode(
-            texts,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
+    vectors = embed_texts(texts)
 
     data = [
         {
@@ -116,9 +167,7 @@ def rerank(request: "RerankRequest") -> dict:
     documents = [d for d in request.documents if isinstance(d, str)][:MAX_RERANK_DOCS]
     if not documents:
         return {"results": [], "model": RERANK_MODEL_ID}
-    model = get_reranker()
-    with _rerank_lock:
-        scores = model.predict([(request.query, d) for d in documents])
+    scores = rerank_scores(request.query, documents)
     results = [
         {"index": index, "relevance_score": float(score)}
         for index, score in enumerate(scores)
@@ -143,14 +192,15 @@ def lan_ip() -> str:
 if __name__ == "__main__":
     print("=" * 56, flush=True)
     print(f"  MindTrace Embedding Service  model={MODEL_ID}", flush=True)
-    print(f"  Rerank: {'on, ' + RERANK_MODEL_ID if RERANK_ENABLED else 'off'}", flush=True)
+    print(f"  Embed backend: {'onnxruntime' if USE_ONNX_EMBED else 'pytorch'}", flush=True)
+    print(f"  Rerank: {'off' if not RERANK_ENABLED else RERANK_MODEL_ID + ' (' + ('onnx' if USE_ONNX_RERANK else 'pytorch') + ')'}", flush=True)
     print(f"  App Embedding Endpoint: http://{lan_ip()}:{PORT}/v1", flush=True)
     print("  手机需与电脑在同一局域网; 首次启动会下载模型（约 1.3GB）", flush=True)
     print("=" * 56, flush=True)
     # 启动即加载：冷加载放在首次请求里会超过客户端读超时，导致第一次调用必然失败。
     print("[embedding] warming up, please wait ...", flush=True)
-    get_model()
+    embed_texts(["warmup"])
     if RERANK_ENABLED:
-        get_reranker()
+        rerank_scores("warmup", ["warmup"])
     print("[embedding] ready", flush=True)
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
