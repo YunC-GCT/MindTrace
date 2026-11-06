@@ -480,6 +480,12 @@ export default class EntryAbility extends UIAbility {
       });
       return;
     }
+    if (mode === 'draftPairs') {
+      DebugDraftRunner.runPairs(this.context).catch((e: Error) => {
+        hilog.error(0xE2E0, 'E2E', '%{public}s', '生成对照实验异常: ' + e.message);
+      });
+      return;
+    }
     if (mode !== 'true') {
       return;
     }
