@@ -19,7 +19,6 @@ import { PageHeader } from "./PageHeader"
 import { ConnectionStatus } from "./ConnectionStatus"
 import { ActionBar } from "./ActionBar"
 import { VendorPicker } from "./VendorPicker"
-import { OcrConfigSection } from "./OcrConfigSection"
 import { EmbeddingConfigSection } from "./EmbeddingConfigSection"
 import { OnDeviceModelSection } from "./OnDeviceModelSection"
 import { XiaoyiEntrySection } from "./XiaoyiEntrySection"
@@ -100,41 +99,12 @@ struct AiSettingsPage {
     })
   }
 
-  private saveOcr = (): void => {
-    this.vm.saveOcr().then((ok: boolean): void => {
-      try {
-        promptAction.showToast({ message: ok ? "OCR 配置已保存" : "OCR 配置保存失败", duration: 1500 })
-      } catch (_e) {}
-    })
-  }
-
-  private resetOcr = (): void => {
-    this.vm.resetOcr().then((ok: boolean): void => {
-      if (!ok) {
-        try { promptAction.showToast({ message: "OCR 重置失败", duration: 1500 }) } catch (_e) {}
-      }
-    })
-  }
-
   private test = (): void => {
     this.vm.test().then((ok: boolean): void => {
       if (!ok) {
         try { promptAction.showToast({ message: this.vm.statusText, duration: 1500 }) } catch (_e) {}
       }
     })
-  }
-
-  private ocrSummary(): string {
-    if (!this.vm.ocrEnabled) {
-      return "OCR 已关闭"
-    }
-    const modeLabel: string = this.vm.ocrMode === 'formula'
-      ? '公式模式'
-      : (this.vm.ocrMode === 'auto' ? '自动模式' : '快速模式')
-    if (this.vm.ocrEndpoint.trim().length === 0) {
-      return modeLabel + " / 未配置 OCR"
-    }
-    return modeLabel + " / " + this.vm.ocrEndpoint.trim()
   }
 
   // #224 隐藏入口: 2s 内连点标题 5 次展开调试行
@@ -309,43 +279,6 @@ struct AiSettingsPage {
             },
           })
 
-          Column() {
-            Text("OCR 服务")
-              .fontSize(F_SM)
-              .fontColor(TEXT)
-              .fontWeight(W_SEMIBOLD)
-            Text(this.ocrSummary())
-              .fontSize(F_XS)
-              .fontColor(TEXT_3)
-              .margin({ top: 4 })
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .width("100%")
-          .padding({ left: S_4, right: S_4, top: S_4, bottom: S_2 })
-
-          OcrConfigSection({
-            endpoint: this.vm.ocrEndpoint,
-            isEnabled: this.vm.ocrEnabled,
-            mode: this.vm.ocrMode,
-            statusText: this.vm.ocrStatusText,
-            testing: this.vm.ocrTesting,
-            onEndpointChange: (v: string): void => { this.vm.setOcrEndpoint(v) },
-            onEnabledChange: (v: boolean): void => { this.vm.setOcrEnabled(v) },
-            onModeChange: (v: string): void => { this.vm.setOcrMode(v) },
-            onReset: (): void => { this.vm.resetOcrEndpoint() },
-            onTest: (): void => {
-              this.vm.testOcr().then((ok: boolean): void => {
-                try {
-                  promptAction.showToast({
-                    message: ok ? "OCR 连接正常" : this.vm.ocrStatusText,
-                    duration: 1500,
-                  })
-                } catch (_e) {}
-              })
-            },
-          })
-
           EmbeddingConfigSection({
             isEnabled: this.vm.embeddingEnabled,
             model: this.vm.embeddingModel,
@@ -422,7 +355,7 @@ struct AiSettingsPage {
       .layoutWeight(1)
       // PR2-T2 ticket #83 follow-up (2026-09-08): ActionBar 移出 Scroll,save 按钮永远可见
       // (页面太长 + edit panel 展开后用户在 Scroll 底部,save 不可见)
-      ActionBar({ onReset: (): void => { this.resetOcr() }, onSave: (): void => { this.saveOcr() } })
+      ActionBar({ onSave: (): void => { this.saveLlm() } })
     }
     .width("100%")
     .height("100%")
