@@ -950,4 +950,6 @@ gray l1=0.727 vec=0.953 verdict=supplement
 [NoteSuggestion] action=merge  ... (多条，SAME 裁决)
 ```
 
-笔记总数 115 → 116：**只有 supplement 那一条新建**，其余 12 条全部判重。探针汇总里的 `created=0` 是计数竞态导致的误报（写入完成后立刻读 count 偶尔读不到），以库里的实际条数为准。
+笔记总数 115 → 116：**只有 supplement 那一条新建**，其余 12 条全部判重。
+
+**探针计数修复**：汇总最初报 `created=0`，与库里的 +1 不符——原因是写入提交到可见之间有短暂延迟，只读一次 count 偶尔读不到新行。改为最多轮询 10 × 80ms 等待可见；也不能用 `confirmDraft` 返回 unit 的 id 判断，它返回的是候选形状、不是落库结果。修复后同一批输入 `created=0 deduped=13`，库中条数 117 未变，报告与实际一致。

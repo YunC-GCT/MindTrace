@@ -54,7 +54,9 @@ export class DebugDraftRunner {
 
   /**
    * 生成笔记的相似度对照实验：同题异构（应判重）与相邻主题（不应判重）各生成一次。
-   * 判重结果用「笔记总数是否增加」判断——写入口命中重复时不新增行。
+   * 判重用「笔记总数是否增加」判断，并轮询等待写入可见——之前只读一次，
+   * 提交后偶尔读不到新行，把 supplement 那条误报成了判重。
+   * 注意：不能用返回 unit 的 id 判断，confirmDraft 返回的是候选形状，不是落库结果。
    */
   static async runPairs(ctx: common.UIAbilityContext): Promise<void> {
     const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
@@ -76,7 +78,7 @@ export class DebugDraftRunner {
         const event: NoteDraftReadyEvent = await service.generateNoteDraft(
           runId, item.instruction, item.sourceText);
         const unit: KnowledgeUnit = await service.confirmDraft(event, event.candidate);
-        const after: number = await DebugDraftRunner.countNotes(store);
+        const after: number = await DebugDraftRunner.countNotesAfterWrite(store, before);
         const reused: boolean = after === before;
         if (reused) {
           deduped += 1;
@@ -98,6 +100,18 @@ export class DebugDraftRunner {
     hilog.info(DOMAIN, TAG, '%{public}s',
       'stage=done draftPairs=1 created=' + created.toString() + ' deduped=' + deduped.toString()
         + ' failed=' + failed.toString() + ' totalMs=' + (Date.now() - startedAt).toString());
+  }
+
+  /** 写入后读条数：提交到可见之间存在短暂延迟，最多等 10 × 80ms。 */
+  private static async countNotesAfterWrite(store: relationalStore.RdbStore, before: number): Promise<number> {
+    let current: number = await DebugDraftRunner.countNotes(store);
+    for (let attempt = 0; attempt < 10 && current === before; attempt += 1) {
+      await new Promise<void>((resolve: () => void): void => {
+        setTimeout(resolve, 80);
+      });
+      current = await DebugDraftRunner.countNotes(store);
+    }
+    return current;
   }
 
   private static async countNotes(store: relationalStore.RdbStore): Promise<number> {
