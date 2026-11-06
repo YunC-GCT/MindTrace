@@ -37,6 +37,21 @@ test('BGE 查询指令：中文检索模型加前缀，m3 与其它模型不加'
   assert.match(cloud, /await this\.embed\(\[prefix \+ text\]\)/);
 });
 
+test('重排：头部候选交给交叉编码器，失败保持余弦顺序', () => {
+  const client = read('entry/src/main/ets/services/RerankClient.ets');
+  assert.match(client, /return base \+ '\/rerank'/);
+  assert.match(client, /const body: RerankBody = \{ query: query, documents: documents \}/);
+  assert.match(client, /RerankClient\.cooldownUntil = Date\.now\(\) \+ COOLDOWN_MS/);
+  assert.match(client, /MAX_DOC_CHARS: number = 240/);
+  const index = read('entry/src/main/ets/services/NoteVectorIndex.ets');
+  assert.match(index, /RERANK_CANDIDATES: number = 12/);
+  assert.match(index, /const ordered: VectorHit\[\] = await NoteVectorIndex\.rerank\(query, hits\)/);
+  assert.match(index, /if \(scores\.length !== count\) \{\s*return hits;/);
+  // 重排文档用「标题 + 摘要」：正文模板字既拖慢编码又没有区分度
+  assert.match(index, /k\.summary AS summary/);
+  assert.match(index, /title \+ '：' \+ summary/);
+});
+
 test('向量：同文本余弦为 1，维度固定', () => {
   const vector = build('导数定义与几何意义');
   assert.equal(vector.length, embedding.LEXICAL_DIMENSION);

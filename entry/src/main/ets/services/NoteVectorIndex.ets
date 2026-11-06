@@ -17,6 +17,7 @@ import { relationalStore } from '@kit.ArkData';
 import { cosineSimilarity, meanVector, subtractCentroid } from 'common';
 import type { EmbeddingPort, EmbeddingVector } from 'common';
 import { EmbeddingRuntime } from './EmbeddingRuntime';
+import { RerankClient } from './RerankClient';
 
 // 向量的最低可信余弦。2026-11-06 真机标定（BGE-large-zh-v1.5，25 条语料）：
 // 相关查询原始余弦 0.44–0.55，无关查询「今天天气怎么样」0.232，取 0.33 卡在中间。
@@ -24,6 +25,13 @@ import { EmbeddingRuntime } from './EmbeddingRuntime';
 const VECTOR_MIN_COSINE: number = 0.33;
 // 相对切尾：只保留与本次最高分差距不远的候选，压掉随语料增长冒出来的长尾噪声。
 const RELATIVE_CUTOFF_RATIO: number = 0.6;
+// 交叉编码器重排的候选数：只重排头部，其余保持余弦顺序。
+// 同领域语料的余弦分挤得很窄（实测 25 条笔记只占 0.372–0.515），重排是唯一能把第 9 名拉回来的手段。
+// 取 12 而不是 8：实测目标笔记可能排在第 9，取 8 会把它挡在候选之外。
+const RERANK_CANDIDATES: number = 12;
+// 只在余弦头部「分不开」时才重排：实测无条件重排会把 hit@1 从 16 拉到 13，
+// 因为通用 reranker 会推翻本来排对的强信号。top1 与 top2 差小于这个值才介入。
+const AMBIGUOUS_GAP: number = 0.03;
 const MAX_ENTRIES: number = 20000;
 
 interface VectorEntry {
@@ -43,12 +51,15 @@ export class NoteVectorIndex {
   private static stamp: string = '';
   /** 语料均值：查询与文档同时去掉公共词分量，压低公共词对分数的贡献。 */
   private static centroid: number[] = [];
+  /** chunkId → 正文，重排时作为 query-doc 对的文档侧。 */
+  private static texts: Map<string, string> = new Map<string, string>();
 
   /** 本地写完向量后主动失效，避免下一次检索多跑一次戳查询。 */
   static invalidate(): void {
     NoteVectorIndex.entries = [];
     NoteVectorIndex.stamp = '';
     NoteVectorIndex.centroid = [];
+    NoteVectorIndex.texts = new Map<string, string>();
   }
 
   /**
@@ -82,7 +93,42 @@ export class NoteVectorIndex {
       }
     }
     hits.sort((left: VectorHit, right: VectorHit): number => right.score - left.score);
-    return hits.slice(0, topK);
+    const ordered: VectorHit[] = await NoteVectorIndex.rerank(query, hits);
+    return ordered.slice(0, topK);
+  }
+
+  /** 余弦同领域压缩严重：只在头部无法区分时，对候选做交叉编码器重排。 */
+  private static async rerank(query: string, hits: VectorHit[]): Promise<VectorHit[]> {
+    if (hits.length <= 1) {
+      return hits;
+    }
+    // 头部差距足够大说明余弦已经分得开，重排只会引入噪声和延迟。
+    if (hits[0].score - hits[1].score >= AMBIGUOUS_GAP) {
+      return hits;
+    }
+    const count: number = Math.min(RERANK_CANDIDATES, hits.length);
+    const docs: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const text: string | undefined = NoteVectorIndex.texts.get(hits[i].chunkId);
+      docs.push(RerankClient.trimDocument(text !== undefined ? text : ''));
+    }
+    const scores: number[] = await RerankClient.score(query, docs);
+    if (scores.length !== count) {
+      return hits;
+    }
+    const order: number[] = [];
+    for (let i = 0; i < count; i += 1) {
+      order.push(i);
+    }
+    order.sort((left: number, right: number): number => scores[right] - scores[left]);
+    const reordered: VectorHit[] = [];
+    for (let i = 0; i < order.length; i += 1) {
+      reordered.push(hits[order[i]]);
+    }
+    for (let i = count; i < hits.length; i += 1) {
+      reordered.push(hits[i]);
+    }
+    return reordered;
   }
 
   /** 分数分布诊断：top / 中位数 / 均值 / 条目数，用于语料增长后重标阈值。 */
@@ -175,11 +221,14 @@ export class NoteVectorIndex {
 
   private static async load(store: relationalStore.RdbStore, model: string, stamp: string): Promise<void> {
     const loaded: VectorEntry[] = [];
+    const loadedTexts: Map<string, string> = new Map<string, string>();
     let resultSet: relationalStore.ResultSet | undefined = undefined;
     try {
       resultSet = await store.querySql(
-        'SELECT e.chunk_id AS chunk_id, c.unit_id AS unit_id, e.vector_json AS vector_json '
+        'SELECT e.chunk_id AS chunk_id, c.unit_id AS unit_id, e.vector_json AS vector_json, '
+          + 'c.title AS title, c.content AS content, k.summary AS summary '
           + 'FROM rag_embedding e INNER JOIN rag_chunk c ON c.id = e.chunk_id '
+          + 'INNER JOIN knowledge_unit k ON k.id = c.unit_id '
           + 'WHERE e.model = ? LIMIT ?', [model, MAX_ENTRIES]);
       while (resultSet.goToNextRow()) {
         const values: number[] = NoteVectorIndex.parseVector(
@@ -187,11 +236,19 @@ export class NoteVectorIndex {
         if (values.length === 0) {
           continue;
         }
+        const chunkId: string = resultSet.getString(resultSet.getColumnIndex('chunk_id'));
         loaded.push({
-          chunkId: resultSet.getString(resultSet.getColumnIndex('chunk_id')),
+          chunkId: chunkId,
           unitId: resultSet.getString(resultSet.getColumnIndex('unit_id')),
           values: values,
         });
+        // 重排用「标题 + 摘要」：正文开头多是「## 定义」这类模板字，既拖慢编码又不提供区分度。
+        const title: string = resultSet.getString(resultSet.getColumnIndex('title'));
+        const summary: string = resultSet.getString(resultSet.getColumnIndex('summary'));
+        const rerankText: string = summary.trim().length > 0
+          ? title + '：' + summary
+          : title + '：' + resultSet.getString(resultSet.getColumnIndex('content'));
+        loadedTexts.set(chunkId, rerankText);
       }
     } catch (error) {
       console.warn('vector index load failed: ' + (error as Error).message);
@@ -212,6 +269,7 @@ export class NoteVectorIndex {
     }
     NoteVectorIndex.centroid = centroid;
     NoteVectorIndex.entries = loaded;
+    NoteVectorIndex.texts = loadedTexts;
     NoteVectorIndex.stamp = stamp;
   }
 
