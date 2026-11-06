@@ -1096,6 +1096,38 @@ export class DebugCaptureRunner {
     }
   }
 
+  /**
+   * 强制重建全部向量。改了「用哪段文本做向量」之后必须跑一次：
+   * 模型名没变，补建逻辑不会认为旧向量过期。
+   */
+  static async runReindexEmbeddings(ctx: common.UIAbilityContext): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done reindexEmbeddings=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    try {
+      await store.executeSql('DELETE FROM rag_embedding', []);
+      NoteVectorIndex.invalidate();
+      let rebuilt: number = 0;
+      for (let round = 0; round < 20; round += 1) {
+        const written: number = await NoteEmbeddingService.backfillMissing(store);
+        rebuilt += written;
+        if (written === 0) {
+          break;
+        }
+      }
+      const coverage: string = await NoteEmbeddingService.coverage(store);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done reindexEmbeddings=1 rebuilt=' + rebuilt.toString()
+          + ' ' + coverage + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done reindexEmbeddings=0 err=' + (error as Error).message);
+    }
+  }
+
   /** 规模测试：把语料从 25 条扩到 100 条，验证阈值与重排触发线在更大语料下是否还稳。 */
   static async runSeedBulkCorpus(ctx: common.UIAbilityContext): Promise<void> {
     const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();

@@ -75,6 +75,15 @@ test('证据判定：LLM 判断答不上就不注入，判定失败保留证据'
   assert.match(judge, /evidence judge failed[\s\S]*?return true;/);
 });
 
+test('向量文本：正文保留、剥掉 markdown 标题行；摘要只用于重排', () => {
+  const s = read('entry/src/main/ets/services/NoteEmbeddingService.ets');
+  assert.match(s, /return title \+ '\\n' \+ NoteEmbeddingService\.stripMarkdownHeadings\(content\)/);
+  assert.match(s, /\^#\{1,6\}\[ \\t\]/);
+  const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
+  assert.match(runner, /runReindexEmbeddings/);
+  assert.match(runner, /DELETE FROM rag_embedding/);
+});
+
 test('向量：同文本余弦为 1，维度固定', () => {
   const vector = build('导数定义与几何意义');
   assert.equal(vector.length, embedding.LEXICAL_DIMENSION);
@@ -172,7 +181,7 @@ test('向量写入：确定性行 id + 提交后补建 + 覆盖诊断', () => {
   const service = read('entry/src/main/ets/services/NoteEmbeddingService.ets');
   assert.match(service, /INSERT OR REPLACE INTO rag_embedding/);
   assert.match(service, /const rowId: string = chunk\.id \+ ':' \+ vector\.model/);
-  assert.match(service, /texts\.push\(chunks\[i\]\.title \+ '\\n' \+ chunks\[i\]\.content\)/);
+  assert.match(service, /texts\.push\(NoteEmbeddingService\.buildEmbeddingText\(/);
   assert.match(service, /static async backfillMissing/);
   assert.match(service, /LEFT JOIN rag_embedding e ON e\.chunk_id = c\.id AND e\.model = \?/);
   assert.match(service, /EmbeddingRuntime\.active\(\)/);

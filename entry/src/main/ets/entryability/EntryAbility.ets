@@ -324,6 +324,10 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('ragOodCheck', DebugCaptureRunner.runOodCheck(this.context));
       return;
     }
+    if (mode === 'reindexEmbeddings') {
+      this.runDebugProbe('reindexEmbeddings', DebugCaptureRunner.runReindexEmbeddings(this.context));
+      return;
+    }
     if (mode === 'ragLegacyAudit') {
       this.runDebugProbe('ragLegacyAudit', DebugCaptureRunner.runRagLegacyCleanup(this.context, false));
       return;

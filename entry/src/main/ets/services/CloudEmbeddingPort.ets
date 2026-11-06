@@ -18,8 +18,11 @@ import type { EmbeddingPort, EmbeddingVector } from 'common';
 const BATCH_SIZE: number = 16;
 const CONNECT_TIMEOUT_MS: number = 5000;
 const READ_TIMEOUT_MS: number = 30000;
-// 本地服务没启动时不要每次都等连接超时：失败后静默 60 秒，检索直接走 FTS。
+// 本地服务没启动时不要每次都等连接超时：熔断后静默 60 秒，检索直接走 FTS。
 const COOLDOWN_MS: number = 60000;
+// 连续失败达到这个次数才熔断。单次瞬时失败不应该让批量补建整体停摆
+// （曾经因此让 100 条补建只完成 13 条就静默退出）。
+const COOLDOWN_FAILURES: number = 3;
 
 interface EmbeddingRequestBody {
   model: string;
@@ -37,6 +40,7 @@ export class CloudEmbeddingPort implements EmbeddingPort {
   dimension: number = 0;
   private readonly modelName: string;
   private static cooldownUntil: number = 0;
+  private static consecutiveFailures: number = 0;
 
   constructor(modelName: string) {
     this.modelName = modelName.trim();
@@ -105,10 +109,14 @@ export class CloudEmbeddingPort implements EmbeddingPort {
       });
     } catch (error) {
       request.destroy();
-      CloudEmbeddingPort.cooldownUntil = Date.now() + COOLDOWN_MS;
+      CloudEmbeddingPort.consecutiveFailures += 1;
+      if (CloudEmbeddingPort.consecutiveFailures >= COOLDOWN_FAILURES) {
+        CloudEmbeddingPort.cooldownUntil = Date.now() + COOLDOWN_MS;
+      }
       throw new Error('embedding network: ' + (error as Error).message);
     }
     request.destroy();
+    CloudEmbeddingPort.consecutiveFailures = 0;
     CloudEmbeddingPort.cooldownUntil = 0;
     if (response.responseCode !== 200) {
       throw new Error('embedding http ' + response.responseCode.toString()

@@ -25,6 +25,7 @@ interface ChunkRow {
   id: string;
   title: string;
   content: string;
+  summary: string;
 }
 
 export class NoteEmbeddingService {
@@ -40,8 +41,8 @@ export class NoteEmbeddingService {
     const port: EmbeddingPort = EmbeddingRuntime.active();
     const texts: string[] = [];
     for (let i = 0; i < chunks.length; i += 1) {
-      // 标题进向量：块正文可能不含关键词，标题补上主题信号。
-      texts.push(chunks[i].title + '\n' + chunks[i].content);
+      texts.push(NoteEmbeddingService.buildEmbeddingText(
+        chunks[i].title, chunks[i].summary, chunks[i].content));
     }
     const vectors: EmbeddingVector[] = await port.embed(texts);
     if (vectors.length !== chunks.length) {
@@ -107,17 +108,34 @@ export class NoteEmbeddingService {
       + ' missingUnits=' + missingUnits.toString();
   }
 
+  /**
+   * 向量文本：标题 + 正文（剥掉 markdown 标题行）。
+   * 试过用「标题：摘要」替代正文，实测 hit5 14→13——摘要太短，丢了正文里的术语细节；
+   * 摘要更适合做重排的判断依据（见 NoteVectorIndex.rerank），不适合做向量。
+   * 「## 定义」这类标题行是所有笔记共用的模板字，剥掉可以少一点公共噪声。
+   */
+  private static buildEmbeddingText(title: string, summary: string, content: string): string {
+    return title + '\n' + NoteEmbeddingService.stripMarkdownHeadings(content);
+  }
+
+  private static stripMarkdownHeadings(text: string): string {
+    return text.replace(/^#{1,6}[ \t].*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   private static async queryChunks(store: relationalStore.RdbStore, unitId: string): Promise<ChunkRow[]> {
     const rows: ChunkRow[] = [];
     let resultSet: relationalStore.ResultSet | undefined = undefined;
     try {
       resultSet = await store.querySql(
-        'SELECT id, title, content FROM rag_chunk WHERE unit_id = ? ORDER BY chunk_index ASC', [unitId]);
+        'SELECT c.id AS id, c.title AS title, c.content AS content, k.summary AS summary '
+          + 'FROM rag_chunk c INNER JOIN knowledge_unit k ON k.id = c.unit_id '
+          + 'WHERE c.unit_id = ? ORDER BY c.chunk_index ASC', [unitId]);
       while (resultSet.goToNextRow()) {
         rows.push({
           id: resultSet.getString(resultSet.getColumnIndex('id')),
           title: resultSet.getString(resultSet.getColumnIndex('title')),
           content: resultSet.getString(resultSet.getColumnIndex('content')),
+          summary: resultSet.getString(resultSet.getColumnIndex('summary')),
         });
       }
     } catch (error) {
