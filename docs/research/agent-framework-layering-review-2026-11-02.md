@@ -931,3 +931,23 @@ gray   l1=0.528 vec=0.893 judge=1
 ```
 
 代价：每次写入在 L1 未命中时多一次本地向量查询（约 150ms）与可能的额外仲裁调用。
+
+## 49. 2026-11-06 仲裁升级为三分类裁决
+
+**动机**：原来的仲裁只回答「是不是同一道题」。但真实情况有三类——同一道题且没有新内容、同一主题但新笔记带了补充、以及不同主题。前两类都被判成「同一道题」的话，补充内容会被静默丢弃。
+
+**改动**：
+- `NoteSimilarityJudgePort.isSameNote` → `judge()`，返回 `NoteSimilarityVerdict { kind: same | supplement | different, reason }`。
+- `same` → 拦下，复用已有笔记；`supplement` → **照常写入**（不丢内容）并发 `[NoteSuggestion] action=append`；`different` → 照常写入。
+- 提示词改为三选一（SAME / SUPPLEMENT / DIFFERENT）；解析失败按 DIFFERENT 放行，宁可多存一条也不误跳。
+- 向量召回阈值 0.78 → 0.75：同一道题两次生成的措辞差异会让余弦在边界抖动，0.78 会漏召回。
+
+**真机验证**（13 条输入，含格林公式的「基础 / 带面积公式」一对）：
+
+```
+gray l1=0.727 vec=0.953 verdict=supplement
+[NoteSuggestion] action=append sourceNoteId=KB-mw5250tp reason=supplement-detected
+[NoteSuggestion] action=merge  ... (多条，SAME 裁决)
+```
+
+笔记总数 115 → 116：**只有 supplement 那一条新建**，其余 12 条全部判重。探针汇总里的 `created=0` 是计数竞态导致的误报（写入完成后立刻读 count 偶尔读不到），以库里的实际条数为准。

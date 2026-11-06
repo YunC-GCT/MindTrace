@@ -84,6 +84,22 @@ export const DRAFT_PROBE_INPUTS: DraftProbeInput[] = [
       + '两者维数之和等于定义域维数。',
   },
 
+  // ===== 补充关系：同一主题，第二条带已有笔记没有的内容（应写入 + 发合并建议）=====
+  {
+    group: 'supplement',
+    label: 'supp-greens-a',
+    instruction: '整理格林公式',
+    sourceText: '格林公式把闭合曲线上的线积分化为区域上的二重积分，条件是 P、Q 在区域上有一阶连续偏导，'
+      + '且曲线取正向。',
+  },
+  {
+    group: 'supplement',
+    label: 'supp-greens-b',
+    instruction: '整理格林公式的应用：用它计算平面区域面积',
+    sourceText: '格林公式把闭合曲线上的线积分化为区域上的二重积分；取 P=-y/2、Q=x/2 '
+      + '可以得到面积公式 A=½∮(x dy − y dx)，这是用它求面积的典型用法。',
+  },
+
   // ===== 高等代数：相关但不同（不应判重）=====
   {
     group: 'related-different',

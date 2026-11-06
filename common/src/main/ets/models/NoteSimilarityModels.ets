@@ -11,7 +11,24 @@ export interface NoteSimilarityCandidate {
   content: string;
 }
 
-/** 灰区仲裁：确定性规则拿不准时，用模型判断两条笔记是否同一道题。 */
+/**
+ * 仲裁结论：
+ * - same：同一道题 / 同一知识点，且没有实质新内容 → 拦下，不重复写入
+ * - supplement：同一主题，但新笔记有已有笔记没有的内容 → 照常写入，另发合并建议
+ * - different：不同主题 → 照常写入
+ */
+export type NoteSimilarityVerdictKind = 'same' | 'supplement' | 'different';
+
+export interface NoteSimilarityVerdict {
+  kind: NoteSimilarityVerdictKind;
+  /** 一句话理由，用于日志与后续展示。 */
+  reason: string;
+}
+
+/**
+ * 灰区仲裁：确定性规则拿不准时，让模型判断两条笔记是什么关系。
+ * 由模型自己决定「要不要拦」——同题且无用新信息才拦，同题但有补充则放行并建议合并。
+ */
 export interface NoteSimilarityJudgePort {
-  isSameNote(leftTitle: string, leftContent: string, rightTitle: string, rightContent: string): Promise<boolean>;
+  judge(leftTitle: string, leftContent: string, rightTitle: string, rightContent: string): Promise<NoteSimilarityVerdict>;
 }

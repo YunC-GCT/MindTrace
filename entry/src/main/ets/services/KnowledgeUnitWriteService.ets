@@ -10,7 +10,7 @@
  */
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
 import { cosineSimilarity, DatabaseHelper } from 'common';
-import type { EmbeddingVector, NoteSimilarityCandidate, NoteSimilarityJudgePort } from 'common';
+import type { EmbeddingVector, NoteSimilarityCandidate, NoteSimilarityJudgePort, NoteSimilarityVerdict } from 'common';
 import { AsyncMutex } from './AsyncMutex';
 import { EmbeddingRuntime } from './EmbeddingRuntime';
 import { NoteVectorIndex } from './NoteVectorIndex';
@@ -32,9 +32,10 @@ import {
 
 // 首装冷启动偶发卡死兜底：副作用最多等 5s，超时降级为告警，不阻塞主写链路。
 const POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000;
-// 向量的「疑似重复」召回线。2026-11-06 实测：真实同题（不同措辞）余弦约 0.79，
-// 相邻但不同主题低于它。向量只负责召回候选，是否同一条仍由模型仲裁。
-const VECTOR_DUPLICATE_MIN: number = 0.78;
+// 向量的「疑似重复」召回线。2026-11-06 实测：真实同题（不同措辞）余弦 0.78–0.89，
+// 但同一道题两次生成的措辞差异会让分数在边界上抖动，0.78 会漏召回，取 0.75。
+// 向量只负责召回候选，是否同一条、是补充还是无关，仍由模型仲裁。
+const VECTOR_DUPLICATE_MIN: number = 0.75;
 
 export class KnowledgeUnitWriteService {
   /** 全局写区：索引同步 + post-commit effects 串行（S0 并发实验：并发 post-commit 会卡死）。 */
@@ -251,19 +252,31 @@ export class KnowledgeUnitWriteService {
     if (bestScore >= SIMILARITY_HARD_DUPLICATE) {
       return await this.loadCandidate(best.id);
     }
-    let sameNote: boolean = false;
-    try {
-      sameNote = await this.judge.isSameNote(unit.title, unit.content, best.title, best.content);
-    } catch (e) {
-      sameNote = false;
-    }
+    const verdict: NoteSimilarityVerdict = await this.judgeVerdict(unit.title, unit.content, best.title, best.content);
     // 2026-11-06 只观测不决策：记下灰区的 L1 分数、向量相似度与模型裁决，
     // 攒够样本后再定「用向量替代模型仲裁」的阈值。向量误合并不可逆，不能拍脑袋。
     const vectorSim: number = await KnowledgeUnitWriteService.vectorSimilarity(unit, best);
     console.info('[DedupeTrace] gray l1=' + bestScore.toFixed(3)
       + ' vec=' + (vectorSim < 0 ? 'na' : vectorSim.toFixed(3))
-      + ' judge=' + (sameNote ? '1' : '0'));
-    return sameNote ? await this.loadCandidate(best.id) : null;
+      + ' verdict=' + verdict.kind);
+    if (verdict.kind === 'supplement') {
+      KnowledgeUnitWriteService.logAppendSuggestion(unit, best.id);
+      return null;
+    }
+    return verdict.kind === 'same' ? await this.loadCandidate(best.id) : null;
+  }
+
+  /** 仲裁：模型自己判断「同题且无新内容 / 同题但有补充 / 不同主题」。 */
+  private async judgeVerdict(leftTitle: string, leftContent: string,
+    rightTitle: string, rightContent: string): Promise<NoteSimilarityVerdict> {
+    if (this.judge === undefined) {
+      return { kind: 'different', reason: 'no-judge' };
+    }
+    try {
+      return await this.judge.judge(leftTitle, leftContent, rightTitle, rightContent);
+    } catch (e) {
+      return { kind: 'different', reason: 'judge-failed' };
+    }
   }
 
   /**
@@ -291,15 +304,15 @@ export class KnowledgeUnitWriteService {
     if (candidate === null || candidate.id === unit.id) {
       return null;
     }
-    let sameNote: boolean = false;
-    try {
-      sameNote = await this.judge.isSameNote(unit.title, unit.content, candidate.title, candidate.content);
-    } catch (e) {
-      sameNote = false;
-    }
+    const verdict: NoteSimilarityVerdict =
+      await this.judgeVerdict(unit.title, unit.content, candidate.title, candidate.content);
     console.info('[DedupeTrace] vector vec=' + hits[0].score.toFixed(3)
-      + ' judge=' + (sameNote ? '1' : '0') + ' candidate=' + candidate.id);
-    return sameNote ? candidate : null;
+      + ' verdict=' + verdict.kind + ' candidate=' + candidate.id);
+    if (verdict.kind === 'supplement') {
+      KnowledgeUnitWriteService.logAppendSuggestion(unit, candidate.id);
+      return null;
+    }
+    return verdict.kind === 'same' ? candidate : null;
   }
 
   /**
@@ -310,6 +323,16 @@ export class KnowledgeUnitWriteService {
     const kind: string = unit.kind === undefined || unit.kind.length === 0 ? 'normal' : unit.kind;
     console.info('[NoteSuggestion] action=merge noteKind=' + kind + ' count=1 sourceNoteId='
       + existing.id + ' reason=duplicate-on-write');
+  }
+
+  /**
+   * 建议请求：模型判定「同主题但有补充」时，新笔记照常写入（不丢内容），
+   * 同时建议用户把它合并进已有笔记。本轮只记日志。
+   */
+  private static logAppendSuggestion(unit: KnowledgeUnit, sourceNoteId: string): void {
+    const kind: string = unit.kind === undefined || unit.kind.length === 0 ? 'normal' : unit.kind;
+    console.info('[NoteSuggestion] action=append noteKind=' + kind + ' count=1 sourceNoteId='
+      + sourceNoteId + ' reason=supplement-detected');
   }
 
   /** 文档间向量相似度；非稠密模型/服务不可用时返回 -1（只用于观测）。 */

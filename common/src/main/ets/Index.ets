@@ -515,6 +515,7 @@ export { NoteRetrievalQuery } from './utils/NoteRetrievalQuery';
 export { stripCitationMarkers } from './utils/CitationText';
 export type {
   NoteSimilarityCandidate, NoteSimilarityJudgePort,
+  NoteSimilarityVerdict, NoteSimilarityVerdictKind,
 } from './models/NoteSimilarityModels';
 export { citationSnippet, markdownToPlainText, normalizeEscapedNewlines, stripEchoedEvidence } from './utils/AnswerTextSanitizer';
 export { extractMathSignature, normalizeMathText } from './utils/MathSignature';

@@ -107,14 +107,28 @@ test('灰区仲裁接线：写入服务注入 judge、DAO 提供候选', () => {
   assert.match(service, /NoteSimilarityJudgePort/);
   assert.match(service, /similarityScore\(unit\.title, unit\.content/);
   assert.match(service, /SIMILARITY_GRAY_MIN/);
-  assert.match(service, /isSameNote\(unit\.title, unit\.content/);
+  assert.match(service, /judgeVerdict\(unit\.title, unit\.content/);
   const dao = read('entry/src/main/ets/database/NoteDao.ets');
   assert.match(dao, /async findSimilarCandidates\(unit: KnowledgeUnit\)/);
   const factory = read('entry/src/main/ets/services/KnowledgeUnitWriteServiceFactory.ets');
   assert.match(factory, /new LlmNoteSimilarityJudge\(\)/);
   const judge = read('entry/src/main/ets/services/LlmNoteSimilarityJudge.ets');
   assert.match(judge, /implements NoteSimilarityJudgePort/);
-  assert.match(judge, /只输出 YES 或 NO/);
+  // 仲裁输出三分类：同题无新内容 / 同题有补充 / 不同主题
+  assert.match(judge, /SAME（/);
+  assert.match(judge, /SUPPLEMENT（/);
+  assert.match(judge, /DIFFERENT（/);
+  assert.match(judge, /kind: 'supplement'/);
+});
+
+test('补充裁决：同主题有补充时照常写入并发合并建议，不丢内容', () => {
+  const service = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
+  assert.match(service, /verdict\.kind === 'supplement'/);
+  assert.match(service, /logAppendSuggestion/);
+  assert.match(service, /action=append/);
+  assert.match(service, /reason=supplement-detected/);
+  // supplement 分支必须返回 null（继续写入），而不是返回已有笔记（拦下）
+  assert.match(service, /logAppendSuggestion\(unit, best\.id\);\s*return null;/);
 });
 
 test('数学签名判重：算式与文字表述是同一道题', () => {
@@ -217,7 +231,7 @@ test('判重兜底：L1 未命中时用向量召回，再交模型仲裁', () =>
   const service = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
   assert.match(service, /private async findVectorDuplicate\(unit: KnowledgeUnit\)/);
   assert.match(service, /NoteVectorIndex\.search\(store, unit\.title \+ '\\n' \+ unit\.content/);
-  assert.match(service, /VECTOR_DUPLICATE_MIN: number = 0\.78/);
+  assert.match(service, /VECTOR_DUPLICATE_MIN: number = 0\.75/);
   assert.match(service, /\[DedupeTrace\] vector/);
   assert.match(service, /return await this\.findVectorDuplicate\(unit\)/);
   const dedupe = read('agents/src/main/ets/note/NoteDedupe.ets');
