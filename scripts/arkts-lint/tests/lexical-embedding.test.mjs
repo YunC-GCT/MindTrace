@@ -64,6 +64,12 @@ test('查询改写：只在向量头部模糊时调用 LLM，失败不影响检�
   assert.match(rewriter, /只输出关键词/);
 });
 
+test('证据检索不引入置信度闸门（实测所有便宜信号都分不开）', () => {
+  const s = read('entry/src/main/ets/services/RagNoteEvidenceSearch.ets');
+  assert.doesNotMatch(s, /EVIDENCE_CONFIDENCE_MIN/);
+  assert.doesNotMatch(s, /\[EvidenceGate\]/);
+});
+
 test('向量：同文本余弦为 1，维度固定', () => {
   const vector = build('导数定义与几何意义');
   assert.equal(vector.length, embedding.LEXICAL_DIMENSION);
