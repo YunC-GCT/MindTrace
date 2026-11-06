@@ -61,6 +61,29 @@ export const DRAFT_PROBE_INPUTS: DraftProbeInput[] = [
     sourceText: '线性映射的零空间维数称为零度，值域维数称为秩，两者之和等于定义域的维数。',
   },
 
+  // ===== 第三轮：同一主题的第三种说法（库里已有 a/b，用来验证向量兜底判重）=====
+  {
+    group: 'same-topic-c',
+    label: 'ma-continuity-c',
+    instruction: '整理什么叫函数在区间上一致地连续',
+    sourceText: '函数在区间上一致连续，是指不论取区间里的哪两个点，只要它们靠得足够近，'
+      + '函数值就靠得足够近，而且这个"足够近"的标准不随位置改变。',
+  },
+  {
+    group: 'same-topic-c',
+    label: 'ma-series-c',
+    instruction: '整理函数项级数在什么条件下可以逐项积分',
+    sourceText: '函数项级数在区间上一致收敛时，可以逐项积分再求和；若要逐项求导，'
+      + '还需要导函数级数本身一致收敛。',
+  },
+  {
+    group: 'same-topic-c',
+    label: 'la-kernel-c',
+    instruction: '整理线性变换把空间映到哪里、哪些向量会被映成零',
+    sourceText: '线性变换的像空间是所有像向量组成的子空间，核是被映成零向量的全体，'
+      + '两者维数之和等于定义域维数。',
+  },
+
   // ===== 高等代数：相关但不同（不应判重）=====
   {
     group: 'related-different',

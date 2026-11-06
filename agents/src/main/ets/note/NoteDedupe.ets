@@ -34,7 +34,9 @@ const CONTENT_DUP_MIN: number = 0.92;
 const CONTAINMENT_MIN_RATIO: number = 0.75;
 const CONTAINMENT_CONTENT_MIN: number = 0.6;
 export const SIMILARITY_HARD_DUPLICATE: number = 0.9;
-export const SIMILARITY_GRAY_MIN: number = 0.5;
+// 灰区下限。2026-11-06 真机对照实验：跨措辞的同题（「一致连续的定义」vs「能否用同一个 δ 控制」）
+// L1 常落在 0.4–0.5，原 0.5 的下限会把它们直接放行、连仲裁都不进。
+export const SIMILARITY_GRAY_MIN: number = 0.4;
 // 结构助词/连词不携带主题信息，去掉后「泰勒公式的余项估计」与「泰勒公式余项估计」等价。
 const STRUCTURAL_CHARS: string[] = ['的', '了', '与', '和', '及', '之', '其'];
 const CN_NUMERAL_CHARS: string = '零一二三四五六七八九十百千';

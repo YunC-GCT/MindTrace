@@ -213,6 +213,17 @@ test('schema v22：kind 列迁移与 DAO 写入默认值', () => {
   assert.match(dao, /SELECT id, title, content, kind FROM knowledge_unit/);
 });
 
+test('判重兜底：L1 未命中时用向量召回，再交模型仲裁', () => {
+  const service = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
+  assert.match(service, /private async findVectorDuplicate\(unit: KnowledgeUnit\)/);
+  assert.match(service, /NoteVectorIndex\.search\(store, unit\.title \+ '\\n' \+ unit\.content/);
+  assert.match(service, /VECTOR_DUPLICATE_MIN: number = 0\.78/);
+  assert.match(service, /\[DedupeTrace\] vector/);
+  assert.match(service, /return await this\.findVectorDuplicate\(unit\)/);
+  const dedupe = read('agents/src/main/ets/note/NoteDedupe.ets');
+  assert.match(dedupe, /SIMILARITY_GRAY_MIN: number = 0\.4/);
+});
+
 test('P0-2/P0-3 探针与报告接线：阶段耗时日志 + 去重/延迟/质量审计', () => {
   const pipeline = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
   assert.match(pipeline, /CAPTURE_STAGE step=/);

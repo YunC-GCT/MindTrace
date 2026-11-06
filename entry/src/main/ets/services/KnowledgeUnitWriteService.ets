@@ -9,10 +9,12 @@
  *   manual / AI adapter → create / update → repository commit → post-commit effects
  */
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
-import { cosineSimilarity } from 'common';
+import { cosineSimilarity, DatabaseHelper } from 'common';
 import type { EmbeddingVector, NoteSimilarityCandidate, NoteSimilarityJudgePort } from 'common';
 import { AsyncMutex } from './AsyncMutex';
 import { EmbeddingRuntime } from './EmbeddingRuntime';
+import { NoteVectorIndex } from './NoteVectorIndex';
+import type { VectorHit } from './NoteVectorIndex';
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitPostCommitEffect,
@@ -30,6 +32,9 @@ import {
 
 // 首装冷启动偶发卡死兜底：副作用最多等 5s，超时降级为告警，不阻塞主写链路。
 const POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000;
+// 向量的「疑似重复」召回线。2026-11-06 实测：真实同题（不同措辞）余弦约 0.79，
+// 相邻但不同主题低于它。向量只负责召回候选，是否同一条仍由模型仲裁。
+const VECTOR_DUPLICATE_MIN: number = 0.78;
 
 export class KnowledgeUnitWriteService {
   /** 全局写区：索引同步 + post-commit effects 串行（S0 并发实验：并发 post-commit 会卡死）。 */
@@ -204,8 +209,9 @@ export class KnowledgeUnitWriteService {
   }
 
   /**
-   * 写前查重：先走确定性规则；拿不准的灰区（0.6–0.9）交给模型仲裁，
-   * 避免「换个说法」的同一道题被重复写入。
+   * 写前查重：先走确定性规则；拿不准的灰区（0.4–0.9）交给模型仲裁。
+   * L1 对跨措辞的同题无能为力（标题差异大），此时用内容向量召回最近邻，
+   * 命中高位相似再交给同一个模型裁决——避免「换个说法」的同一道题重复写入。
    */
   private async findDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
     let hard: KnowledgeUnit | null = null;
@@ -239,7 +245,8 @@ export class KnowledgeUnitWriteService {
       }
     }
     if (best === null || bestScore < SIMILARITY_GRAY_MIN) {
-      return null;
+      // L1 抓不住跨措辞的同题（标题差异大、正文也够不到硬线），交给向量兜底。
+      return await this.findVectorDuplicate(unit);
     }
     if (bestScore >= SIMILARITY_HARD_DUPLICATE) {
       return await this.loadCandidate(best.id);
@@ -257,6 +264,42 @@ export class KnowledgeUnitWriteService {
       + ' vec=' + (vectorSim < 0 ? 'na' : vectorSim.toFixed(3))
       + ' judge=' + (sameNote ? '1' : '0'));
     return sameNote ? await this.loadCandidate(best.id) : null;
+  }
+
+  /**
+   * 向量召回兜底：L1 没找到时，用内容向量找最近邻，命中高位相似再交给模型仲裁。
+   * 向量只负责「值得看一眼」，判定同一条仍由 judge 决定；没有 judge 就不合并。
+   */
+  private async findVectorDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
+    if (this.judge === undefined || !EmbeddingRuntime.isDense()) {
+      return null;
+    }
+    const store = DatabaseHelper.getStore();
+    if (store === null) {
+      return null;
+    }
+    let hits: VectorHit[] = [];
+    try {
+      hits = await NoteVectorIndex.search(store, unit.title + '\n' + unit.content, 3, VECTOR_DUPLICATE_MIN);
+    } catch (e) {
+      return null;
+    }
+    if (hits.length === 0) {
+      return null;
+    }
+    const candidate: KnowledgeUnit | null = await this.loadCandidate(hits[0].unitId);
+    if (candidate === null || candidate.id === unit.id) {
+      return null;
+    }
+    let sameNote: boolean = false;
+    try {
+      sameNote = await this.judge.isSameNote(unit.title, unit.content, candidate.title, candidate.content);
+    } catch (e) {
+      sameNote = false;
+    }
+    console.info('[DedupeTrace] vector vec=' + hits[0].score.toFixed(3)
+      + ' judge=' + (sameNote ? '1' : '0') + ' candidate=' + candidate.id);
+    return sameNote ? candidate : null;
   }
 
   /**
