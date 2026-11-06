@@ -109,13 +109,12 @@ export class NoteEmbeddingService {
   }
 
   /**
-   * 向量文本：标题 + 正文（剥掉 markdown 标题行）。
-   * 试过用「标题：摘要」替代正文，实测 hit5 14→13——摘要太短，丢了正文里的术语细节；
-   * 摘要更适合做重排的判断依据（见 NoteVectorIndex.rerank），不适合做向量。
-   * 「## 定义」这类标题行是所有笔记共用的模板字，剥掉可以少一点公共噪声。
+   * 向量文本：标题 ×2 + 正文（剥掉 markdown 标题行）。
+   * 标题是主题最强的信号，但在 300-400 字正文里只出现一次会被稀释；
+   * 近邻笔记（罗尔定理 / 柯西中值定理 / 拉格朗日中值定理）的区别几乎全在标题上。
    */
   private static buildEmbeddingText(title: string, summary: string, content: string): string {
-    return title + '\n' + NoteEmbeddingService.stripMarkdownHeadings(content);
+    return title + '\n' + title + '\n' + NoteEmbeddingService.stripMarkdownHeadings(content);
   }
 
   private static stripMarkdownHeadings(text: string): string {

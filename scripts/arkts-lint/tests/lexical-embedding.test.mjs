@@ -75,9 +75,10 @@ test('证据判定：LLM 判断答不上就不注入，判定失败保留证据'
   assert.match(judge, /evidence judge failed[\s\S]*?return true;/);
 });
 
-test('向量文本：正文保留、剥掉 markdown 标题行；摘要只用于重排', () => {
+test('向量文本：标题加权 + 剥掉 markdown 标题行；摘要只用于重排', () => {
   const s = read('entry/src/main/ets/services/NoteEmbeddingService.ets');
-  assert.match(s, /return title \+ '\\n' \+ NoteEmbeddingService\.stripMarkdownHeadings\(content\)/);
+  assert.match(s, /title \+ '\\n' \+ title/, '标题重复以加权');
+  assert.match(s, /stripMarkdownHeadings\(content\)/);
   assert.match(s, /\^#\{1,6\}\[ \\t\]/);
   const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
   assert.match(runner, /runReindexEmbeddings/);

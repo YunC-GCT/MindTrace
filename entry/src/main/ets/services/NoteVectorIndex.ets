@@ -30,9 +30,9 @@ const RELATIVE_CUTOFF_RATIO: number = 0.6;
 // 同领域语料的余弦分挤得很窄（实测 25 条笔记只占 0.372–0.515），重排是唯一能把第 9 名拉回来的手段。
 // 取 12 而不是 8：实测目标笔记可能排在第 9，取 8 会把它挡在候选之外。
 const RERANK_CANDIDATES: number = 12;
-// 只在余弦头部「分不开」时才重排：实测无条件重排会把 hit@1 从 16 拉到 13，
-// 因为通用 reranker 会推翻本来排对的强信号。top1 与 top2 差小于这个值才介入。
-const AMBIGUOUS_GAP: number = 0.03;
+// 只在余弦头部「分不开」时才重排。标题加权后头部更容易扎堆，
+// 触发线从 0.03 放宽到 0.05，让更多查询有机会用摘要重排修正第一名。
+const AMBIGUOUS_GAP: number = 0.05;
 const MAX_ENTRIES: number = 20000;
 
 interface VectorEntry {
