@@ -47,6 +47,7 @@ const COMMON_MODEL_FILES = [
   'common/src/main/ets/utils/LexicalEmbedding.ets',
   'common/src/main/ets/utils/RrfFusion.ets',
   'common/src/main/ets/utils/EmbeddingModels.ets',
+  'common/src/main/ets/ports/EvidencePolicy.ets',
   'entry/src/main/ets/pages/Review/GalaxyGraphProjection.ets',
   'agents/src/main/ets/chat/StreamErrorText.ets',
   'common/src/main/ets/utils/ConversationIdentity.ets',

@@ -25,6 +25,13 @@ import type {
   NoteReadPort,
 } from 'common';
 import { markdownToPlainText, NoteRetrievalQuery } from 'common';
+import { defaultEvidencePolicy } from 'common';
+import type {
+  EvidenceCandidateRef,
+  EvidenceJudgePort,
+  EvidenceJudgement,
+  EvidencePolicy,
+} from 'common';
 import {
   NoteEvidenceCitation,
   NoteEvidenceContext,
@@ -54,11 +61,15 @@ export class NoteEvidenceService implements NoteEvidencePort {
   private readonly search: NoteEvidenceSearchPort;
   private readonly graph: NoteGraphPort;
   private readonly read: NoteReadPort | undefined;
+  /** 采用判定；未注入时不做判定（测试与无 LLM 场景）。 */
+  private readonly judge: EvidenceJudgePort | undefined;
 
-  constructor(search: NoteEvidenceSearchPort, graph: NoteGraphPort, read?: NoteReadPort) {
+  constructor(search: NoteEvidenceSearchPort, graph: NoteGraphPort, read?: NoteReadPort,
+    judge?: EvidenceJudgePort) {
     this.search = search;
     this.graph = graph;
     this.read = read;
+    this.judge = judge;
   }
 
   // 构建证据上下文; 任何失败都降级为 degraded 上下文, 不阻断回答
@@ -77,6 +88,41 @@ export class NoteEvidenceService implements NoteEvidencePort {
     }
     if (citations.length === 0) {
       return NoteEvidenceService.emptyContext(normalizedQuery, topK, 'no-match');
+    }
+    // 采用判定：候选是否真的能回答这个问题，由策略决定是否交给判定端口。
+    // 放在这里而不是检索实现里，工具兜底路径的候选也会被同一套策略约束。
+    const policy: EvidencePolicy = options?.policy === undefined
+      ? defaultEvidencePolicy()
+      : options.policy;
+    let rejected: number = 0;
+    if (policy.useJudge && this.judge !== undefined) {
+      const candidates: EvidenceCandidateRef[] = [];
+      for (const citation of citations) {
+        candidates.push({ noteId: citation.noteId, text: NoteEvidenceService.judgeText(citation) });
+      }
+      let judgement: EvidenceJudgement;
+      try {
+        judgement = await this.judge.judge(normalizedQuery, candidates, policy);
+      } catch (e) {
+        // 端口实现应当自己降级；这里兜底一次，按策略决定放行还是拒绝。
+        judgement = policy.mode === 'strict'
+          ? { adopted: [], rejected: citations.length, reason: 'judge-failed' }
+          : { adopted: NoteEvidenceService.candidateIds(candidates), rejected: 0, reason: 'judge-failed-open' };
+      }
+      rejected = judgement.rejected;
+      if (judgement.adopted.length === 0 && rejected > 0) {
+        return NoteEvidenceService.emptyContext(normalizedQuery, topK, 'evidence-rejected', rejected);
+      }
+      const adopted: NoteEvidenceCitation[] = [];
+      for (const citation of citations) {
+        if (judgement.adopted.indexOf(citation.noteId) >= 0) {
+          adopted.push(citation);
+        }
+      }
+      citations = adopted;
+      if (citations.length === 0) {
+        return NoteEvidenceService.emptyContext(normalizedQuery, topK, 'no-match', rejected);
+      }
     }
     const relations: NoteEvidenceRelation[] = [];
     let degraded: boolean = false;
@@ -110,8 +156,23 @@ export class NoteEvidenceService implements NoteEvidencePort {
       contextText: NoteEvidenceService.formatContext(citations, relations),
       degraded: degraded,
       reason: reason,
+      rejected: rejected,
     };
     return context;
+  }
+
+  /** 判定输入：标题 + 摘要，摘要缺失才退回摘录。 */
+  private static judgeText(citation: NoteEvidenceCitation): string {
+    const summary: string = citation.summary === undefined ? '' : citation.summary.trim();
+    return citation.title + '：' + (summary.length > 0 ? summary : citation.excerpt);
+  }
+
+  private static candidateIds(candidates: EvidenceCandidateRef[]): string[] {
+    const ids: string[] = [];
+    for (const candidate of candidates) {
+      ids.push(candidate.noteId);
+    }
+    return ids;
   }
 
   // 回答末尾的确定性来源块: 只列真实 noteId/version/excerpt
@@ -399,7 +460,8 @@ export class NoteEvidenceService implements NoteEvidencePort {
     return normalized.substring(0, EVIDENCE_EXCERPT_LIMIT) + '…';
   }
 
-  private static emptyContext(query: string, topK: number, reason: string): NoteEvidenceContext {
+  private static emptyContext(query: string, topK: number, reason: string,
+    rejected: number = 0): NoteEvidenceContext {
     const context: NoteEvidenceContext = {
       query: query,
       topK: topK,
@@ -408,6 +470,7 @@ export class NoteEvidenceService implements NoteEvidencePort {
       contextText: '',
       degraded: false,
       reason: reason,
+      rejected: rejected,
     };
     return context;
   }

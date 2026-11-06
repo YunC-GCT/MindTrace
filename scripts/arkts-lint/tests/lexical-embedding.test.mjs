@@ -64,15 +64,19 @@ test('查询改写：只在向量头部模糊时调用 LLM，失败不影响检�
   assert.match(rewriter, /只输出关键词/);
 });
 
-test('证据判定：LLM 判断答不上就不注入，判定失败保留证据', () => {
-  const s = read('entry/src/main/ets/services/RagNoteEvidenceSearch.ets');
-  assert.match(s, /LlmEvidenceJudge\.isAnswerable\(query, judgeDocs\)/);
-  assert.match(s, /\[EvidenceJudge\] drop/);
+test('证据判定：端口化后由策略决定，严格模式 fail-closed', () => {
+  const search = read('entry/src/main/ets/services/RagNoteEvidenceSearch.ets');
+  assert.doesNotMatch(search, /LlmEvidenceJudge/, '检索实现不再内嵌判定');
+  const service = read('agents/src/main/ets/evidence/NoteEvidenceService.ets');
+  assert.match(service, /EvidenceJudgePort/);
+  assert.match(service, /evidence-rejected/);
+  const adapter = read('entry/src/main/ets/services/LlmEvidenceJudgeAdapter.ets');
+  assert.match(adapter, /implements EvidenceJudgePort/);
+  assert.match(adapter, /policy\.mode === 'strict'[\s\S]*?judge-unavailable/);
   const judge = read('entry/src/main/ets/services/LlmEvidenceJudge.ets');
   assert.match(judge, /JUDGE_TIMEOUT_MS: number = 1500/);
   assert.match(judge, /只输出 YES 或 NO/);
-  // fail-open：判定失败必须返回 true，不能因为一次超时砍掉正常召回
-  assert.match(judge, /evidence judge failed[\s\S]*?return true;/);
+  assert.match(judge, /return 'unavailable';/);
 });
 
 test('向量文本：标题加权 + 剥掉 markdown 标题行；摘要只用于重排', () => {
@@ -83,6 +87,27 @@ test('向量文本：标题加权 + 剥掉 markdown 标题行；摘要只用于�
   const runner = read('entry/src/main/ets/debug/DebugCaptureRunner.ets');
   assert.match(runner, /runReindexEmbeddings/);
   assert.match(runner, /DELETE FROM rag_embedding/);
+});
+
+test('学习模式：请求携带证据策略，工作流映射成 policy', () => {
+  const state = read('agents/src/main/ets/conversation/ConversationState.ets');
+  assert.match(state, /evidenceMode\?: EvidenceMode/);
+  const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+  assert.match(workflow, /evidencePolicyFor\(input\.request\.evidenceMode\)/);
+  assert.match(workflow, /safeBuildEvidence\(input\.request\.userContent, policy\)/);
+});
+
+test('建议请求：生成与判重两个场景都发，走可选回调与日志', () => {
+  const types = read('agents/src/main/ets/conversation/ConversationTypes.ets');
+  assert.match(types, /onNoteSuggestion\?\(ref: ConversationRunRef, suggestion: NoteSuggestion\)/);
+  const handler = read('agents/src/main/ets/conversation/ConversationNoteHandler.ets');
+  assert.match(handler, /action: 'create'/);
+  assert.match(handler, /onNoteSuggestion/);
+  const write = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
+  assert.match(write, /action=merge/);
+  assert.match(write, /logMergeSuggestion/);
+  const adapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');
+  assert.match(adapter, /\[NoteSuggestion\] action=/);
 });
 
 test('向量：同文本余弦为 1，维度固定', () => {
@@ -225,8 +250,8 @@ test('云端 embedding：OpenAI 兼容 /embeddings，复用当前厂商端点与
 
 test('检索主链路：五路召回 + RRF 融合，向量失败不影响其余通道', () => {
   const service = read('entry/src/main/ets/services/RagRetrievalService.ets');
-  assert.match(service, /import \{ extractMathSignature, fuseRrf, mergeQueryTerms, planQueryTerms \} from 'common'/);
-  assert.match(service, /const fusedIds: string\[\] = fuseRrf\(channels, topK\)/);
+  assert.match(service, /import \{ extractMathSignature, fuseRrfScored, mergeQueryTerms, planQueryTerms \} from 'common'/);
+  assert.match(service, /const fused: RrfScored\[\] = fuseRrfScored\(channels, topK\)/);
   assert.match(service, /CHANNEL_WEIGHT_WHOLE/);
   assert.match(service, /CHANNEL_WEIGHT_SIGNATURE/);
   assert.match(service, /CHANNEL_WEIGHT_TERMS/);

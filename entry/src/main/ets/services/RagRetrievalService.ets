@@ -18,8 +18,8 @@
  *   NoteEvidenceService.build(query) → search(query, topK) → RagHit[] → join knowledge_unit
  */
 import { relationalStore } from '@kit.ArkData';
-import { extractMathSignature, fuseRrf, mergeQueryTerms, planQueryTerms } from 'common';
-import type { RrfChannel } from 'common';
+import { extractMathSignature, fuseRrfScored, mergeQueryTerms, planQueryTerms } from 'common';
+import type { RrfChannel, RrfScored } from 'common';
 import { QueryKeywordExtractor } from './QueryKeywordExtractor';
 import { NoteVectorIndex } from './NoteVectorIndex';
 import type { VectorHit } from './NoteVectorIndex';
@@ -129,11 +129,12 @@ export class RagRetrievalService {
       }
     }
 
-    const fusedIds: string[] = fuseRrf(channels, topK);
+    const fused: RrfScored[] = fuseRrfScored(channels, topK);
     const hits: RagHit[] = [];
-    for (let i = 0; i < fusedIds.length; i += 1) {
-      const hit: RagHit | undefined = byId.get(fusedIds[i]);
+    for (let i = 0; i < fused.length; i += 1) {
+      const hit: RagHit | undefined = byId.get(fused[i].id);
       if (hit !== undefined) {
+        hit.score = fused[i].score;
         hits.push(hit);
       }
     }

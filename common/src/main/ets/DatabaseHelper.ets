@@ -24,7 +24,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 21;
+const DB_SCHEMA_VERSION: number = 22;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -363,6 +363,10 @@ const SQL_MIGRATE_STUDY_PLAN_VERSION: string =
   "ALTER TABLE study_plan ADD COLUMN version INTEGER NOT NULL DEFAULT 1";
 const SQL_MIGRATE_NOTE_SIGNATURE: string =
   "ALTER TABLE knowledge_unit ADD COLUMN signature TEXT NOT NULL DEFAULT \"\"";
+// v22：笔记类型（normal / atomic / summary）。为原子笔记与汇总笔记分层铺路，
+// 本轮只落库不改行为；旧数据一律 normal。
+const SQL_MIGRATE_NOTE_KIND: string =
+  "ALTER TABLE knowledge_unit ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal'";
 
 const SQL_CREATE_STUDY_PLAN_OP: string = `
 CREATE TABLE IF NOT EXISTS study_plan_op (
@@ -698,6 +702,12 @@ export class DatabaseHelper {
       await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_NOTE_SIGNATURE);
     }
     await DatabaseHelper.backfillNoteSignatures(store);
+
+    // v22：笔记类型列；旧数据由 DEFAULT 填成 normal，不需要回填。
+    const hasKind: boolean = await DatabaseHelper.hasColumn(store, "knowledge_unit", "kind");
+    if (!hasKind) {
+      await DatabaseHelper.executeAddColumn(store, SQL_MIGRATE_NOTE_KIND);
+    }
 
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_MESSAGE_KEY);
     await DatabaseHelper.executeSql(store, SQL_BACKFILL_CHAT_SEQUENCE);

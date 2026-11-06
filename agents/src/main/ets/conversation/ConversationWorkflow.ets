@@ -57,6 +57,8 @@ import {
 } from 'common';
 import type { StreamEvent } from 'common';
 import { NoteEvidenceContext } from 'common';
+import { evidencePolicyFor } from 'common';
+import type { EvidencePolicy, NoteEvidenceOptions } from 'common';
 import { NoteGenerationContextResult } from 'common';
 import type { NoteEvidencePort, NoteEvidenceStreamFilterPort } from 'common';
 import type { IConversationDraftServicePort, IConversationMemoryServicePort } from './ConversationServicePorts';
@@ -402,7 +404,12 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
             next.evidence = reviewPlan.evidence;
           }
         } else {
-          next.evidence = await this.safeBuildEvidence(input.request.userContent);
+          // 学习模式（严格/混合/拓展）在这里变成证据采用策略；未指定时保持现状。
+          const policy: EvidencePolicy | undefined = input.request.kind === 'text'
+            && input.request.evidenceMode !== undefined
+            ? evidencePolicyFor(input.request.evidenceMode)
+            : undefined;
+          next.evidence = await this.safeBuildEvidence(input.request.userContent, policy);
         }
       }
       return next;
@@ -742,9 +749,14 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
     return ports.review;
   }
 
-  private async safeBuildEvidence(query: string): Promise<NoteEvidenceContext | undefined> {
+  private async safeBuildEvidence(query: string,
+    policy?: EvidencePolicy): Promise<NoteEvidenceContext | undefined> {
     try {
-      return await this.getEvidenceService().build(query);
+      const options: NoteEvidenceOptions = {};
+      if (policy !== undefined) {
+        options.policy = policy;
+      }
+      return await this.getEvidenceService().build(query, options);
     } catch (e) {
       console.warn('[ConversationWorkflow] build evidence context failed: ' + ConversationWorkflow.errorMessage(e));
       return {

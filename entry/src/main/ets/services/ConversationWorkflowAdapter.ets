@@ -10,6 +10,7 @@
  */
 import { common } from '@kit.AbilityKit';
 import { CancellationToken, NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
+import type { NoteSuggestion } from 'common';
 
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
 import { NoteReviewAnswer } from 'common';
@@ -154,6 +155,18 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
     if (this.accepts(ref, 'ocr-blank') && this.callbacks.onOcrBlank !== undefined) {
       this.callbacks.onOcrBlank(ref, imageUri);
     }
+  }
+
+  /** 建议请求：本轮只记日志，不渲染；UI 接入后在这里转发给卡片。 */
+  onNoteSuggestion?(ref: ConversationRunRef, suggestion: NoteSuggestion): void {
+    if (!this.accepts(ref, 'note-suggestion')) {
+      return;
+    }
+    console.info('[NoteSuggestion] action=' + suggestion.action
+      + ' noteKind=' + suggestion.noteKind
+      + ' count=' + suggestion.count.toString()
+      + ' reason=' + suggestion.reason
+      + (suggestion.sourceNoteId === undefined ? '' : ' sourceNoteId=' + suggestion.sourceNoteId));
   }
 
   private noteProgressContent(progress: NoteGenerationProgressEvent): string {

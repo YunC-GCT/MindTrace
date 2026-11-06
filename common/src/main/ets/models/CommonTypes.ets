@@ -63,6 +63,7 @@ export interface KnowledgeUnit {
   subject: string; // 学科（独立于 tags，如"高等数学"/"线性代数"）
   category: string; // 题型分类（五选一："概念"/"定理"/"公式"/"证明题"/"计算题"）
   chapter: string; // 章节/知识点短语（独立于 source，如"微分中值定理"）
+  kind?: string; // 笔记类型：normal / atomic / summary（原子笔记、汇总笔记分层用；缺省 normal）
   difficulty: DifficultyLevel; // 难度
   source: string; // 来源标记(camera_capture/manual/file_import)
   sourceImageId?: string; // 溯源: 来源图片 ID(无图片时为空)

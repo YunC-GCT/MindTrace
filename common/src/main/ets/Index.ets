@@ -528,8 +528,19 @@ export {
   meanVector,
   subtractCentroid,
 } from './utils/LexicalEmbedding';
-export { fuseRrf, RRF_DEFAULT_K } from './utils/RrfFusion';
-export type { RrfChannel } from './utils/RrfFusion';
+export { fuseRrf, fuseRrfScored, RRF_DEFAULT_K } from './utils/RrfFusion';
+export type { RrfChannel, RrfScored } from './utils/RrfFusion';
+export {
+  defaultEvidencePolicy,
+  evidencePolicyFor,
+} from './ports/EvidencePolicy';
+export type { EvidenceMode, EvidencePolicy } from './ports/EvidencePolicy';
+export type { NoteSuggestion, NoteSuggestionAction, NoteSuggestionKind } from './models/NoteSuggestionModels';
+export type {
+  EvidenceCandidateRef,
+  EvidenceJudgePort,
+  EvidenceJudgement,
+} from './ports/EvidenceJudgePort';
 export type { EmbeddingPort, EmbeddingVector } from './ports/EmbeddingPort';
 export {
   BGE_ZH_QUERY_PREFIX,

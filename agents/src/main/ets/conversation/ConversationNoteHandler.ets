@@ -20,6 +20,7 @@ import type {
   NoteGenerationRoute,
 } from 'common';
 import { LlmErrorBodyFormatter } from 'common';
+import type { NoteSuggestion } from 'common';
 import type { IConversationNodeHost } from './ConversationNodeHost';
 
 interface RegenerationInstruction {
@@ -122,6 +123,18 @@ export class ConversationNoteHandler {
         route,
       );
       this.host.nodeCallbacks().onDraftReady(ref, event);
+      // 建议请求：草稿生成完成时告诉上层「这里可以新建一条原子笔记」，
+      // 本轮只记录不渲染；用户确认后才走既有的 draft 确认链路。
+      const suggestion: NoteSuggestion = {
+        action: 'create',
+        noteKind: 'atomic',
+        count: 1,
+        reason: 'draft-ready',
+      };
+      const notifySuggestion = this.host.nodeCallbacks().onNoteSuggestion;
+      if (notifySuggestion !== undefined) {
+        notifySuggestion(ref, suggestion);
+      }
       this.host.nodeCallbacks().completeProgress(ref);
       return event;
     } catch (e) {

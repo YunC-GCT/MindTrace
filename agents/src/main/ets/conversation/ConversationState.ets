@@ -19,7 +19,7 @@
 
 import { TextIntent } from '../chat/IntentClassifier';
 import { NoteEvidenceContext } from 'common';
-import type { NoteReviewPlan } from 'common';
+import type { EvidenceMode, NoteReviewPlan } from 'common';
 import { ClassificationResult } from 'common';
 import { ConversationRunRef } from 'common';
 
@@ -63,12 +63,16 @@ export interface ImageConversationRequest {
   kind: 'image';
   imageUri: string;
   userContent: string;
+  /** 证据采用策略；缺省 balanced。与笔记生成路线（light/standard/deep）是两个正交的轴。 */
+  evidenceMode?: EvidenceMode;
 }
 
 export interface TextConversationRequest {
   kind: 'text';
   userContent: string;
   responseMode: 'complete' | 'stream';
+  /** 证据采用策略；缺省 balanced。 */
+  evidenceMode?: EvidenceMode;
 }
 
 export interface RegenerateConversationRequest {

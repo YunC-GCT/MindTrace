@@ -20,6 +20,8 @@ export interface DedupeCandidate {
   id: string;
   title: string;
   content: string;
+  /** 笔记类型（normal / atomic / summary）；缺省 normal。不同类型之间不判重。 */
+  kind?: string;
 }
 
 const MIN_TITLE_CHARS: number = 4;
@@ -152,7 +154,13 @@ function digitsOf(text: string): string {
 }
 
 /** 判断「新笔记」是否与一条候选重复。 */
-export function isDuplicateOf(title: string, content: string, candidate: DedupeCandidate): boolean {
+export function isDuplicateOf(title: string, content: string, candidate: DedupeCandidate,
+  kind: string = 'normal'): boolean {
+  // 原子笔记与汇总笔记允许同标题共存，类型不同直接不判重。
+  const candidateKind: string = candidate.kind === undefined ? 'normal' : candidate.kind;
+  if (candidateKind !== kind) {
+    return false;
+  }
   const titleNorm: string = normalizeForDedupe(title);
   const candidateTitle: string = normalizeForDedupe(candidate.title);
   const titleSimilarity: number = bigramSimilarity(titleNorm, candidateTitle);
@@ -194,9 +202,10 @@ export function isDuplicateOf(title: string, content: string, candidate: DedupeC
 }
 
 /** 在候选列表中找第一条重复笔记；没有返回 null。 */
-export function findDuplicate(title: string, content: string, candidates: DedupeCandidate[]): DedupeCandidate | null {
+export function findDuplicate(title: string, content: string, candidates: DedupeCandidate[],
+  kind: string = 'normal'): DedupeCandidate | null {
   for (let i = 0; i < candidates.length; i += 1) {
-    if (isDuplicateOf(title, content, candidates[i])) {
+    if (isDuplicateOf(title, content, candidates[i], kind)) {
       return candidates[i];
     }
   }

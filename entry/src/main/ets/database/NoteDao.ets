@@ -299,7 +299,8 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
   async findDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
     try {
       const candidates: DedupeCandidate[] = await this.queryRecentDedupeCandidates(500);
-      const matched: DedupeCandidate | null = findDuplicate(unit.title, unit.content, candidates);
+      const matched: DedupeCandidate | null = findDuplicate(unit.title, unit.content, candidates,
+        unit.kind === undefined ? 'normal' : unit.kind);
       if (matched === null) {
         return null;
       }
@@ -322,13 +323,14 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
   private async queryRecentDedupeCandidates(limit: number): Promise<DedupeCandidate[]> {
     const result: DedupeCandidate[] = [];
     const rs: relationalStore.ResultSet = await this.store.querySql(
-      'SELECT id, title, content FROM knowledge_unit ORDER BY created_at DESC LIMIT ' + limit.toString(), []);
+      'SELECT id, title, content, kind FROM knowledge_unit ORDER BY created_at DESC LIMIT ' + limit.toString(), []);
     try {
       while (rs.goToNextRow()) {
         result.push({
           id: rs.getString(rs.getColumnIndex('id')),
           title: rs.getString(rs.getColumnIndex('title')),
           content: rs.getString(rs.getColumnIndex('content')),
+          kind: NoteDao.readString(rs, 'kind', 'normal'),
         });
       }
     } finally {
@@ -512,6 +514,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       related: NoteDao.parseArray(NoteDao.readString(rs, 'related', '[]')),
       embedding: NoteDao.parseNumberArray(NoteDao.readString(rs, 'embedding', '[]')),
       userId: NoteDao.readString(rs, 'user_id', ''),
+      kind: NoteDao.readString(rs, 'kind', 'normal'),
       version: NoteDao.readLong(rs, 'version', 1),
     };
   }
@@ -542,6 +545,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       related: [],
       embedding: [],
       userId: NoteDao.readString(rs, 'user_id', ''),
+      kind: NoteDao.readString(rs, 'kind', 'normal'),
       version: NoteDao.readLong(rs, 'version', 1),
     };
   }
@@ -572,6 +576,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       'related': NoteDao.stringifyArray(unit.related),
       'embedding': NoteDao.stringifyNumberArray(unit.embedding),
       'signature': extractMathSignature(unit.title),
+      'kind': unit.kind === undefined || unit.kind.length === 0 ? 'normal' : unit.kind,
       'user_id': unit.userId,
       'version': unit.version,
     };
@@ -632,6 +637,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       related: NoteDao.parseArray(NoteDao.readString(rs, 'related', '[]')),
       embedding: NoteDao.parseNumberArray(NoteDao.readString(rs, 'embedding', '[]')),
       userId: NoteDao.readString(rs, 'user_id', ''),
+      kind: NoteDao.readString(rs, 'kind', 'normal'),
       version: NoteDao.readLong(rs, 'version', 1),
     };
     const revision: KnowledgeUnitRevision = {

@@ -20,7 +20,7 @@
 import { common } from '@kit.AbilityKit';
 import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
 import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
-import type { NoteEvidenceCitation, StreamEvent } from 'common';
+import type { NoteEvidenceCitation, NoteSuggestion, StreamEvent } from 'common';
 import { ConversationRunRef } from 'common';
 import { CancellationToken } from 'common';
 import { NoteReviewAnswer } from 'common';
@@ -83,4 +83,9 @@ export interface ConversationWorkflowCallbacks {
   onNoteReviewReady?(ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void;
   onNoteContextClarificationReady?(ref: ConversationRunRef, messageId: number, clarification: NoteContextClarification): void;
   onOcrBlank?(ref: ConversationRunRef, imageUri: string): void;
+  /**
+   * 笔记生成/合并建议：本轮只记录，不渲染、不落库。
+   * 用可选回调而不是消息事件——事件 reducer 对未知 kind 会落到错误提示。
+   */
+  onNoteSuggestion?(ref: ConversationRunRef, suggestion: NoteSuggestion): void;
 }

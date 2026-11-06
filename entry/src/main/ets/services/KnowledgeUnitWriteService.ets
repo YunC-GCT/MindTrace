@@ -49,6 +49,7 @@ export class KnowledgeUnitWriteService {
     WritePathValidator.validateKnowledgeUnit(unit);
     const duplicate: KnowledgeUnit | null = await this.findDuplicate(unit);
     if (duplicate !== null) {
+      KnowledgeUnitWriteService.logMergeSuggestion(unit, duplicate);
       return {
         committed: true,
         rowId: 0,
@@ -127,6 +128,7 @@ export class KnowledgeUnitWriteService {
     }
     const duplicate: KnowledgeUnit | null = await this.findDuplicate(unit);
     if (duplicate !== null) {
+      KnowledgeUnitWriteService.logMergeSuggestion(unit, duplicate);
       return {
         committed: true,
         rowId: 0,
@@ -255,6 +257,16 @@ export class KnowledgeUnitWriteService {
       + ' vec=' + (vectorSim < 0 ? 'na' : vectorSim.toFixed(3))
       + ' judge=' + (sameNote ? '1' : '0'));
     return sameNote ? await this.loadCandidate(best.id) : null;
+  }
+
+  /**
+   * 建议请求：判重命中时新内容不会落库，提示「可以合并到已有笔记」。
+   * 本轮只记日志；UI 接入后再把这条建议经会话事件发给用户。
+   */
+  private static logMergeSuggestion(unit: KnowledgeUnit, existing: KnowledgeUnit): void {
+    const kind: string = unit.kind === undefined || unit.kind.length === 0 ? 'normal' : unit.kind;
+    console.info('[NoteSuggestion] action=merge noteKind=' + kind + ' count=1 sourceNoteId='
+      + existing.id + ' reason=duplicate-on-write');
   }
 
   /** 文档间向量相似度；非稠密模型/服务不可用时返回 -1（只用于观测）。 */

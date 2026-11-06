@@ -16,11 +16,19 @@ export interface RrfChannel {
   ids: string[];
 }
 
+/** 融合结果：id + 融合分，分可用于下游的可信度判断与裁剪。 */
+export interface RrfScored {
+  id: string;
+  score: number;
+}
+
 export const RRF_DEFAULT_K: number = 60;
 
-export function fuseRrf(channels: RrfChannel[], limit: number, k: number = RRF_DEFAULT_K): string[] {
+/** 带分数的融合；`fuseRrf` 是它的 id-only 便捷形式。 */
+export function fuseRrfScored(channels: RrfChannel[], limit: number,
+  k: number = RRF_DEFAULT_K): RrfScored[] {
   if (limit <= 0 || channels.length === 0) {
-    const empty: string[] = [];
+    const empty: RrfScored[] = [];
     return empty;
   }
   const scores: Map<string, number> = new Map<string, number>();
@@ -49,5 +57,18 @@ export function fuseRrf(channels: RrfChannel[], limit: number, k: number = RRF_D
     }
     return firstSeen.indexOf(left) - firstSeen.indexOf(right);
   });
-  return ranked.slice(0, limit);
+  const output: RrfScored[] = [];
+  for (let i = 0; i < ranked.length && i < limit; i += 1) {
+    output.push({ id: ranked[i], score: scores.get(ranked[i]) ?? 0 });
+  }
+  return output;
+}
+
+export function fuseRrf(channels: RrfChannel[], limit: number, k: number = RRF_DEFAULT_K): string[] {
+  const scored: RrfScored[] = fuseRrfScored(channels, limit, k);
+  const ids: string[] = [];
+  for (let i = 0; i < scored.length; i += 1) {
+    ids.push(scored[i].id);
+  }
+  return ids;
 }

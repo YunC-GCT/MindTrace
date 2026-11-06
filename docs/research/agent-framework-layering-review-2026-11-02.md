@@ -889,3 +889,21 @@ negatives=4 falsePositives=0
 **语料外判定是概率性的**：同一配置连续三次 `ragOodCheck` 分别得到 0/5、2/5、1/5 有命中。「常微分方程组怎么写成矩阵形式」会被判成与「基础解系」相关——判定是有道理的边界情况，不能把 0/5 当成确定性保证，只能说从 5/5 降到了约 1/5。
 
 **样本外抽查**（`ragSpotCheck`）：`hit1 4/10、hit5 7/10`，与调优集走势一致，没有明显过拟合。
+
+## 47. 2026-11-06 结构调整：解耦「用户意图 / 来源可信度 / 笔记组织」
+
+**背景**：检索链路在一个函数里同时回答三个问题——够不够、用户想要什么、该不该写。三者纠缠导致：判定只覆盖 FTS 一路（工具兜底不过判定）、意图被折叠成两种、判重命中静默丢弃新内容。
+
+**Stage A｜证据策略**：新增 `EvidencePolicy` / `EvidenceJudgePort`（common）。判定从 `RagNoteEvidenceSearch` 上移到 `NoteEvidenceService`，**工具兜底路径现在也受同一策略约束**。判定层改为只汇报 `yes / no / unavailable`，放行与否由策略决定。新增 reason `evidence-rejected`；citation 带上 RRF 融合分与 summary（此前 `score` 硬编码 0）。
+
+**Stage B｜学习模式**：`TextConversationRequest` 增加 `evidenceMode`，在 `load_reply_context` 映射成策略。严格模式判定不可用时 **fail-closed**（用户确认）。本轮不做 UI，默认 balanced。
+
+**Stage C｜笔记类型**：schema v22，`knowledge_unit.kind`（normal/atomic/summary）。`NoteDedupe` 增加同类型约束——不同类型不判重，为原子笔记与汇总笔记共存铺路（现有数据全为 normal，行为不变）。
+
+**Stage D｜建议请求**：新增 `NoteSuggestion` 与可选回调 `onNoteSuggestion`。生成链路发 `create`，判重命中发 `merge`。本轮只记日志、不渲染。
+
+**与计划的偏差（编译后修正）**：
+- `NoteOutcome` 不含 `duplicate`，所以 merge 建议改由 `KnowledgeUnitWriteService` 在判重命中处直接记日志——只有它同时知道新笔记与已有笔记 id。
+- `AgentChatCallbacks`（UI 契约）没有对应方法，adapter 只记日志，不向 UI 转发。
+
+**验证**：gate PASS（1341 单测）；真机迁移后 `notes=100 vectors=100` 无损；`ragEval 13/16/2` 对比重构前 `13/17/1`，在判定 ±1 噪声内；`ragOodCheck 1/5`（噪声范围内）；判重命中打出 `[NoteSuggestion] action=merge ... reason=duplicate-on-write`。生成链路的 `create` 建议仅由单测覆盖，未真机触发。

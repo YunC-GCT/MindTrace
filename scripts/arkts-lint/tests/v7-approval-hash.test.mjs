@@ -9,7 +9,7 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 test('schema v18 adds note_generation_checkpoint.approved_at', () => {
   const db = read('common/src/main/ets/DatabaseHelper.ets');
-  assert.match(db, /DB_SCHEMA_VERSION: number = 21/);
+  assert.match(db, /DB_SCHEMA_VERSION: number = 22/);
   assert.match(db, /SQL_MIGRATE_CHECKPOINT_APPROVED/);
   assert.match(db, /ALTER TABLE note_generation_checkpoint ADD COLUMN approved_at INTEGER NOT NULL DEFAULT 0/);
   assert.match(db, /hasColumn\(store, "note_generation_checkpoint", "approved_at"\)/);

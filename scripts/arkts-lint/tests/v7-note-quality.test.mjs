@@ -195,6 +195,24 @@ test('写入口查重接线：服务层跳过重复、DAO 提供候选查询', (
 });
 
 
+test('笔记类型：不同类型不判重，缺省视为 normal', () => {
+  const atomic = { id: 'a', title: '矩阵的秩', content: '矩阵的秩等于非零行的个数。', kind: 'atomic' };
+  assert.equal(dedupe.isDuplicateOf('矩阵的秩', '矩阵的秩等于非零行的个数。', atomic), false);
+  assert.equal(dedupe.isDuplicateOf('矩阵的秩', '矩阵的秩等于非零行的个数。', atomic, 'atomic'), true);
+  const normal = { id: 'b', title: '矩阵的秩', content: '矩阵的秩等于非零行的个数。' };
+  assert.equal(dedupe.isDuplicateOf('矩阵的秩', '矩阵的秩等于非零行的个数。', normal), true);
+});
+
+test('schema v22：kind 列迁移与 DAO 写入默认值', () => {
+  const db = read('common/src/main/ets/DatabaseHelper.ets');
+  assert.match(db, /const DB_SCHEMA_VERSION: number = 22/);
+  assert.match(db, /SQL_MIGRATE_NOTE_KIND/);
+  assert.match(db, /ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal'/);
+  const dao = read('entry/src/main/ets/database/NoteDao.ets');
+  assert.match(dao, /'kind': unit\.kind === undefined/);
+  assert.match(dao, /SELECT id, title, content, kind FROM knowledge_unit/);
+});
+
 test('P0-2/P0-3 探针与报告接线：阶段耗时日志 + 去重/延迟/质量审计', () => {
   const pipeline = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
   assert.match(pipeline, /CAPTURE_STAGE step=/);
