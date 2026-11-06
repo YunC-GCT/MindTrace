@@ -49,6 +49,8 @@ import { TEST_CORPUS } from './TestCorpusSeed';
 import type { TestCorpusNote } from './TestCorpusSeed';
 import { RAG_SPOT_CASES } from './RagSpotCases';
 import type { RagSpotCase } from './RagSpotCases';
+import { BULK_CORPUS, OOD_QUERIES } from './TestCorpusBulk';
+import type { BulkNote, OodQuery } from './TestCorpusBulk';
 import { buildInboxItem } from '../services/AgentInboxModels';
 import { WRITE_JOB_RUN_PREFIX } from '../services/WriteJobEvents';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from '../services/WriteJobScheduler';
@@ -1091,6 +1093,97 @@ export class DebugCaptureRunner {
           + ' ms=' + (Date.now() - startedAt).toString());
     } catch (error) {
       hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSpot=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** 规模测试：把语料从 25 条扩到 100 条，验证阈值与重排触发线在更大语料下是否还稳。 */
+  static async runSeedBulkCorpus(ctx: common.UIAbilityContext): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done seedBulk=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    try {
+      const service = await KnowledgeUnitWriteServiceFactory.create(ctx, true);
+      let created: number = 0;
+      let duplicate: number = 0;
+      let failed: number = 0;
+      const base: number = Date.now();
+      for (let i = 0; i < BULK_CORPUS.length; i += 1) {
+        const spec: BulkNote = BULK_CORPUS[i];
+        const unit: KnowledgeUnit = {
+          id: 'bulk-' + (i < 10 ? '0' : '') + i.toString(),
+          title: spec.title,
+          content: spec.content,
+          summary: spec.summary,
+          tags: [],
+          subject: spec.subject,
+          category: '概念',
+          chapter: spec.subject,
+          difficulty: DifficultyLevel.MEDIUM,
+          source: 'file_import',
+          createdAt: base + i,
+          updatedAt: base + i,
+          reviewStatus: ReviewStatus.NEW,
+          nextReviewAt: 0,
+          intervalDays: 0,
+          easeFactor: 2.5,
+          repetitions: 0,
+          prerequisites: [],
+          related: [],
+          embedding: [],
+          userId: '',
+          version: 1,
+        };
+        try {
+          const result = await service.create(unit);
+          if (result.duplicate === true) {
+            duplicate += 1;
+          } else {
+            created += 1;
+          }
+        } catch (error) {
+          failed += 1;
+        }
+      }
+      const total: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=seed-bulk created=' + created.toString() + ' duplicate=' + duplicate.toString()
+          + ' failed=' + failed.toString() + ' total=' + total.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=done seedBulk=' + (failed === 0 ? '1' : '0'));
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done seedBulk=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** 语料外提问：这些主题笔记里根本没有，看检索会不会仍然硬凑出命中。 */
+  static async runOodCheck(ctx: common.UIAbilityContext): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragOod=0 err=store-null');
+      return;
+    }
+    try {
+      const service: NoteEvidenceService = createNoteEvidenceService();
+      let withHits: number = 0;
+      for (let i = 0; i < OOD_QUERIES.length; i += 1) {
+        const item: OodQuery = OOD_QUERIES[i];
+        const context: NoteEvidenceContext = await service.build(item.query, { topK: 5, graphMode: 'none' });
+        const first: string = context.citations.length > 0 ? context.citations[0].title : '-';
+        if (context.citations.length > 0) {
+          withHits += 1;
+        }
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=rag-ood-case q=' + item.query + ' citations=' + context.citations.length.toString()
+            + ' first=' + first);
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done ragOod=1 total=' + OOD_QUERIES.length.toString()
+          + ' withHits=' + withHits.toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragOod=0 err=' + (error as Error).message);
     }
   }
 

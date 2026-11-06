@@ -103,6 +103,10 @@ rem Keep this line for a faster download in mainland China; delete it if not nee
 set HF_ENDPOINT=https://hf-mirror.com
 rem Make Python print UTF-8 so the console does not show garbled Chinese.
 set PYTHONIOENCODING=utf-8
+rem Embedding model. bge-m3 is stronger than bge-large-zh-v1.5 on dense math corpora.
+rem The app's embedding model field must match this value, otherwise vectors are tagged
+rem with the old model and will not be rebuilt.
+set MT_EMBED_MODEL=BAAI/bge-m3
 
 "%PY%" server.py
 

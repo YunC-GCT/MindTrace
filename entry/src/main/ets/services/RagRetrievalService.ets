@@ -24,6 +24,7 @@ import { QueryKeywordExtractor } from './QueryKeywordExtractor';
 import { NoteVectorIndex } from './NoteVectorIndex';
 import type { VectorHit } from './NoteVectorIndex';
 import { EmbeddingRuntime } from './EmbeddingRuntime';
+import { QueryRewriter } from './QueryRewriter';
 import { planRagQuery, planShortTermQuery, planTermQuery, RagQueryPlan, RagTermQueryPlan } from './RagQueryPlan';
 
 const PROBE_FTS_TABLE: string = 'note_fts';
@@ -37,6 +38,10 @@ const CHANNEL_WEIGHT_SIGNATURE: number = 3;
 const CHANNEL_WEIGHT_TERMS: number = 2;
 const CHANNEL_WEIGHT_SHORT: number = 1;
 const CHANNEL_WEIGHT_VECTOR: number = 2;
+// 改写关键词是最贴近语义的检索词，给与「整句/签名」同级的权重。
+const CHANNEL_WEIGHT_REWRITE: number = 3;
+// 向量头部差距小于这个值说明分不开——此时才值得花一次 LLM 调用去改写查询。
+const AMBIGUOUS_HEAD_GAP: number = 0.03;
 // 2026-11-05 真机实测：词面向量分不开相关与无关（无关查询 0.163 压过相关 0.123），
 // 因此词面通道不进融合；只有配置了云端稠密模型才开启（EmbeddingRuntime.isDense）。
 // 每路多取一些候选再融合：融合的是名次，候选池太窄会让名次失真。
@@ -106,7 +111,22 @@ export class RagRetrievalService {
     }
 
     if (EmbeddingRuntime.isDense()) {
-      await RagRetrievalService.appendVectorChannel(store, trimmed, fetchK, channels, byId);
+      const vectorHits: VectorHit[] =
+        await RagRetrievalService.appendVectorChannel(store, trimmed, fetchK, channels, byId);
+      // 向量分不开时，用 LLM 把问题改写成检索关键词再补一路召回。
+      // 只在头部差距小的时候调，命中明确的查询不受影响、也不付这次调用。
+      if (RagRetrievalService.isAmbiguousHead(vectorHits)) {
+        const keywords: string[] = await QueryRewriter.rewrite(trimmed);
+        if (keywords.length > 0) {
+          const rewritePlan: RagTermQueryPlan | null = planTermQuery(keywords, fetchK);
+          if (rewritePlan !== null) {
+            RagRetrievalService.pushChannel(channels, CHANNEL_WEIGHT_REWRITE,
+              await RagRetrievalService.runTermQuery(store, rewritePlan), byId);
+            console.info('[RagRewrite] gap=' + (vectorHits[0].score - vectorHits[1].score).toFixed(3)
+              + ' keywords=' + keywords.join(' '));
+          }
+        }
+      }
     }
 
     const fusedIds: string[] = fuseRrf(channels, topK);
@@ -120,18 +140,22 @@ export class RagRetrievalService {
     return hits;
   }
 
+  private static isAmbiguousHead(hits: VectorHit[]): boolean {
+    return hits.length >= 2 && hits[0].score - hits[1].score < AMBIGUOUS_HEAD_GAP;
+  }
+
   /** 向量通道：块级余弦取 unit 最高分，再回查正文字段供引用。 */
   private static async appendVectorChannel(store: relationalStore.RdbStore, query: string, fetchK: number,
-    channels: RrfChannel[], byId: Map<string, RagHit>): Promise<void> {
+    channels: RrfChannel[], byId: Map<string, RagHit>): Promise<VectorHit[]> {
     let vectorHits: VectorHit[] = [];
     try {
       vectorHits = await NoteVectorIndex.search(store, query, fetchK);
     } catch (error) {
       console.warn('rag vector search failed: ' + (error as Error).message);
-      return;
+      return [];
     }
     if (vectorHits.length === 0) {
-      return;
+      return [];
     }
     const ids: string[] = [];
     for (let i = 0; i < vectorHits.length; i += 1) {
@@ -153,6 +177,7 @@ export class RagRetrievalService {
     if (channelIds.length > 0) {
       channels.push({ weight: CHANNEL_WEIGHT_VECTOR, ids: channelIds });
     }
+    return vectorHits;
   }
 
   private static pushChannel(channels: RrfChannel[], weight: number, hits: RagHit[],

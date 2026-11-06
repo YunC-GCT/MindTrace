@@ -19,10 +19,11 @@ import type { EmbeddingPort, EmbeddingVector } from 'common';
 import { EmbeddingRuntime } from './EmbeddingRuntime';
 import { RerankClient } from './RerankClient';
 
-// 向量的最低可信余弦。2026-11-06 真机标定（BGE-large-zh-v1.5，25 条语料）：
-// 相关查询原始余弦 0.44–0.55，无关查询「今天天气怎么样」0.232，取 0.33 卡在中间。
-// 换模型时需要重新标定；语料规模变化时靠下面的相对切尾兜底。
-const VECTOR_MIN_COSINE: number = 0.33;
+// 向量的最低可信余弦。2026-11-06 真机标定（100 条语料）：
+//   BAAI/bge-m3：无关查询 0.377–0.438，相关 0.49–0.56 → 取 0.46
+//   BAAI/bge-large-zh-v1.5：无关 0.232，相关 0.44–0.55 → 取 0.33
+// 两个模型的分数尺度差一个档，换模型必须重标，否则无关查询会全部漏进来。
+const VECTOR_MIN_COSINE: number = 0.46;
 // 相对切尾：只保留与本次最高分差距不远的候选，压掉随语料增长冒出来的长尾噪声。
 const RELATIVE_CUTOFF_RATIO: number = 0.6;
 // 交叉编码器重排的候选数：只重排头部，其余保持余弦顺序。

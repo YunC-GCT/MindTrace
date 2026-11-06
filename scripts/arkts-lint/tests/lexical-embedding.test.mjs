@@ -52,6 +52,18 @@ test('重排：头部候选交给交叉编码器，失败保持余弦顺序', ()
   assert.match(index, /title \+ '：' \+ summary/);
 });
 
+test('查询改写：只在向量头部模糊时调用 LLM，失败不影响检索', () => {
+  const svc = read('entry/src/main/ets/services/RagRetrievalService.ets');
+  assert.match(svc, /isAmbiguousHead\(vectorHits\)/);
+  assert.match(svc, /QueryRewriter\.rewrite\(trimmed\)/);
+  assert.match(svc, /CHANNEL_WEIGHT_REWRITE: number = 3/);
+  assert.match(svc, /AMBIGUOUS_HEAD_GAP: number = 0\.03/);
+  const rewriter = read('entry/src/main/ets/services/QueryRewriter.ets');
+  assert.match(rewriter, /REWRITE_TIMEOUT_MS: number = 1800/);
+  assert.match(rewriter, /COOLDOWN_MS: number = 60000/);
+  assert.match(rewriter, /只输出关键词/);
+});
+
 test('向量：同文本余弦为 1，维度固定', () => {
   const vector = build('导数定义与几何意义');
   assert.equal(vector.length, embedding.LEXICAL_DIMENSION);
