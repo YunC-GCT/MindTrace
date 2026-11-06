@@ -134,6 +134,12 @@ export class AiSettingsViewModel {
       this.embeddingApiKey = llm.getEmbeddingApiKey()
       this.embeddingEnabled = embModel.length > 0
       this.embeddingStatusText = embModel.length > 0 ? ("已启用：" + embModel) : "未启用"
+      if (embModel.length > 0) {
+        // 本地服务是手动启动的：进页面就探一次，让用户看到在线/离线，而不是靠猜。
+        EmbeddingRuntime.probe().then((text: string): void => {
+          this.embeddingStatusText = text
+        })
+      }
     } catch (_e) {
       ok = false
       this.embeddingEnabled = false

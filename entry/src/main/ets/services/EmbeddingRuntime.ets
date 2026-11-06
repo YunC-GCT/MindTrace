@@ -10,7 +10,7 @@
  *       配置变更后由设置页调用 refresh() 丢弃缓存的云端端口。
  */
 import { LlmConfig } from 'common';
-import type { EmbeddingPort } from 'common';
+import type { EmbeddingPort, EmbeddingVector } from 'common';
 import { CloudEmbeddingPort } from './CloudEmbeddingPort';
 import { LexicalEmbeddingPort } from './LexicalEmbeddingPort';
 
@@ -48,5 +48,21 @@ export class EmbeddingRuntime {
   static refresh(): void {
     EmbeddingRuntime.cloud = null;
     EmbeddingRuntime.cloudModelName = '';
+  }
+
+  /**
+   * 轻量连通性探针：真的取一次向量，返回可展示的状态文本。
+   * 本地服务是手动启动的，用户需要知道它现在到底在不在线。
+   */
+  static async probe(): Promise<string> {
+    if (!EmbeddingRuntime.isDense()) {
+      return '未启用';
+    }
+    try {
+      const vector: EmbeddingVector = await EmbeddingRuntime.active().embedQuery('ok');
+      return '在线 · ' + vector.dimension.toString() + ' 维';
+    } catch (e) {
+      return '离线：' + (e as Error).message;
+    }
   }
 }

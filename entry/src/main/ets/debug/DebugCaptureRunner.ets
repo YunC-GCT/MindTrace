@@ -1035,11 +1035,10 @@ export class DebugCaptureRunner {
     }
   }
 
-  /** 评测辅助：不设阈值取该查询的最高向量分，用于判断漏召回是分数不够还是别的原因。 */
+  /** 评测辅助：不设阈值统计该查询的分数分布，用于判断漏召回是分数不够还是模型混淆。 */
   private static async vectorTopScore(store: relationalStore.RdbStore, query: string): Promise<string> {
     try {
-      const hits: VectorHit[] = await NoteVectorIndex.search(store, query, 1, 0);
-      return hits.length > 0 ? hits[0].score.toFixed(3) : '-';
+      return await NoteVectorIndex.scoreStats(store, query);
     } catch (error) {
       return 'err';
     }

@@ -15,12 +15,18 @@
 
 import { createNoteEvidenceService } from './EvidenceComposition';
 import { DatabaseHelper } from 'common';
+import { EmbeddingRuntime } from './EmbeddingRuntime';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import type { common } from '@kit.AbilityKit';
 import type { NoteEvidenceContext } from 'common';
 import type { ReplyContext } from 'agents/src/main/ets/chat/Index';
 import type { NoteEvidenceService } from 'agents/src/main/ets/evidence/Index';
 
+const TAG: string = 'MindTraceA2A';
+const DOMAIN: number = 0xA2A0;
 const EVIDENCE_TIMEOUT_MS: number = 1200;
+// 稠密向量要在检索里多一次 HTTP 往返；沿用 1200ms 会把证据整段砍掉。
+const EVIDENCE_TIMEOUT_DENSE_MS: number = 2500;
 const EVIDENCE_TOP_K: number = 5;
 
 export interface A2AChatContextResult {
@@ -62,8 +68,15 @@ export class A2AChatContext {
     }
     try {
       const service: NoteEvidenceService = createNoteEvidenceService();
+      const dense: boolean = EmbeddingRuntime.isDense();
+      const timeoutMs: number = dense ? EVIDENCE_TIMEOUT_DENSE_MS : EVIDENCE_TIMEOUT_MS;
       const evidence: NoteEvidenceContext = await A2AChatContext.withTimeout(
-        service.build(trimmed, { topK: EVIDENCE_TOP_K }), EVIDENCE_TIMEOUT_MS);
+        service.build(trimmed, { topK: EVIDENCE_TOP_K }), timeoutMs);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'A2A_EVIDENCE mode=' + (dense ? 'dense' : 'lexical')
+          + ' citations=' + evidence.citations.length.toString()
+          + ' degraded=' + (evidence.degraded ? '1' : '0')
+          + ' reason=' + evidence.reason);
       return {
         replyContext: {
           memoryContext: memoryContext,
@@ -77,6 +90,7 @@ export class A2AChatContext {
         reason: evidence.reason,
       };
     } catch (e) {
+      hilog.warn(DOMAIN, TAG, '%{public}s', 'A2A_EVIDENCE failed: ' + (e as Error).message);
       return fallback;
     }
   }

@@ -20,8 +20,10 @@ import { EmbeddingRuntime } from './EmbeddingRuntime';
 
 // 向量的最低可信余弦。2026-11-06 真机标定（BGE-large-zh-v1.5，25 条语料）：
 // 相关查询原始余弦 0.44–0.55，无关查询「今天天气怎么样」0.232，取 0.33 卡在中间。
-// 换模型或语料规模变化较大时需要重新标定。
+// 换模型时需要重新标定；语料规模变化时靠下面的相对切尾兜底。
 const VECTOR_MIN_COSINE: number = 0.33;
+// 相对切尾：只保留与本次最高分差距不远的候选，压掉随语料增长冒出来的长尾噪声。
+const RELATIVE_CUTOFF_RATIO: number = 0.6;
 const MAX_ENTRIES: number = 20000;
 
 interface VectorEntry {
@@ -51,14 +53,59 @@ export class NoteVectorIndex {
 
   /**
    * @param minScore 最低余弦；检索用默认阈值。诊断探针传 0 可看到完整分数分布，用于调阈值。
+   * 判定是「绝对下限 + 相对切尾」：既要过绝对阈值，也不能比本次最高分低太多。
+   * 绝对阈值防无关查询，相对切尾让语料增长后自动收紧。
    */
   static async search(store: relationalStore.RdbStore, query: string, topK: number,
     minScore: number = VECTOR_MIN_COSINE): Promise<VectorHit[]> {
     if (topK <= 0 || query.trim().length === 0) {
       return [];
     }
-    const model: string = EmbeddingRuntime.activeModel();
-    await NoteVectorIndex.ensureFresh(store, model);
+    const all: VectorHit[] = await NoteVectorIndex.scanScores(store, query);
+    if (all.length === 0) {
+      return [];
+    }
+    let top: number = 0;
+    for (let i = 0; i < all.length; i += 1) {
+      if (all[i].score > top) {
+        top = all[i].score;
+      }
+    }
+    // 探针传 minScore=0 时保留全量，用于观察分布。
+    const cutoff: number = minScore > 0
+      ? Math.max(minScore, top * RELATIVE_CUTOFF_RATIO)
+      : minScore;
+    const hits: VectorHit[] = [];
+    for (let i = 0; i < all.length; i += 1) {
+      if (all[i].score >= cutoff) {
+        hits.push(all[i]);
+      }
+    }
+    hits.sort((left: VectorHit, right: VectorHit): number => right.score - left.score);
+    return hits.slice(0, topK);
+  }
+
+  /** 分数分布诊断：top / 中位数 / 均值 / 条目数，用于语料增长后重标阈值。 */
+  static async scoreStats(store: relationalStore.RdbStore, query: string): Promise<string> {
+    const all: VectorHit[] = await NoteVectorIndex.scanScores(store, query);
+    if (all.length === 0) {
+      return 'n=0';
+    }
+    all.sort((left: VectorHit, right: VectorHit): number => right.score - left.score);
+    let sum: number = 0;
+    for (let i = 0; i < all.length; i += 1) {
+      sum += all[i].score;
+    }
+    const median: number = all[Math.floor(all.length / 2)].score;
+    return 'n=' + all.length.toString()
+      + ' top=' + all[0].score.toFixed(3)
+      + ' p50=' + median.toFixed(3)
+      + ' mean=' + (sum / all.length).toFixed(3);
+  }
+
+  /** 全量扫描：每个 unit 取块内最高分，不做任何阈值过滤。 */
+  private static async scanScores(store: relationalStore.RdbStore, query: string): Promise<VectorHit[]> {
+    await NoteVectorIndex.ensureFresh(store, EmbeddingRuntime.activeModel());
     if (NoteVectorIndex.entries.length === 0) {
       return [];
     }
@@ -70,17 +117,12 @@ export class NoteVectorIndex {
     for (let i = 0; i < NoteVectorIndex.entries.length; i += 1) {
       const entry: VectorEntry = NoteVectorIndex.entries[i];
       const score: number = cosineSimilarity(queryVector, entry.values);
-      if (score < minScore) {
-        continue;
-      }
       const existing: VectorHit | undefined = best.get(entry.unitId);
       if (existing === undefined || score > existing.score) {
         best.set(entry.unitId, { unitId: entry.unitId, chunkId: entry.chunkId, score: score });
       }
     }
-    const hits: VectorHit[] = Array.from(best.values());
-    hits.sort((left: VectorHit, right: VectorHit): number => right.score - left.score);
-    return hits.slice(0, topK);
+    return Array.from(best.values());
   }
 
   /** 查询向量必须由写库用的同一个端口生成，否则两个向量不在同一空间。 */

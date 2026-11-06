@@ -9,8 +9,10 @@
  *   manual / AI adapter → create / update → repository commit → post-commit effects
  */
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
-import type { NoteSimilarityCandidate, NoteSimilarityJudgePort } from 'common';
+import { cosineSimilarity } from 'common';
+import type { EmbeddingVector, NoteSimilarityCandidate, NoteSimilarityJudgePort } from 'common';
 import { AsyncMutex } from './AsyncMutex';
+import { EmbeddingRuntime } from './EmbeddingRuntime';
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitPostCommitEffect,
@@ -246,7 +248,33 @@ export class KnowledgeUnitWriteService {
     } catch (e) {
       sameNote = false;
     }
+    // 2026-11-06 只观测不决策：记下灰区的 L1 分数、向量相似度与模型裁决，
+    // 攒够样本后再定「用向量替代模型仲裁」的阈值。向量误合并不可逆，不能拍脑袋。
+    const vectorSim: number = await KnowledgeUnitWriteService.vectorSimilarity(unit, best);
+    console.info('[DedupeTrace] gray l1=' + bestScore.toFixed(3)
+      + ' vec=' + (vectorSim < 0 ? 'na' : vectorSim.toFixed(3))
+      + ' judge=' + (sameNote ? '1' : '0'));
     return sameNote ? await this.loadCandidate(best.id) : null;
+  }
+
+  /** 文档间向量相似度；非稠密模型/服务不可用时返回 -1（只用于观测）。 */
+  private static async vectorSimilarity(unit: KnowledgeUnit,
+    candidate: NoteSimilarityCandidate): Promise<number> {
+    if (!EmbeddingRuntime.isDense()) {
+      return -1;
+    }
+    try {
+      const vectors: EmbeddingVector[] = await EmbeddingRuntime.active().embed([
+        unit.title + '\n' + unit.content,
+        candidate.title + '\n' + candidate.content,
+      ]);
+      if (vectors.length < 2) {
+        return -1;
+      }
+      return cosineSimilarity(vectors[0].values, vectors[1].values);
+    } catch (e) {
+      return -1;
+    }
   }
 
   private async loadCandidate(id: string): Promise<KnowledgeUnit | null> {
