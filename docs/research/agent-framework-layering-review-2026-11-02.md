@@ -670,3 +670,108 @@ scanned=186 duplicateGroups=26 strictGroups=20 duplicateNotes=52 removed=52 fail
 - `ragEval total=15 hit1=12 hit5=14 miss=0`，新用例 `rank=0`（签名直出）。
 - `ragSearch notes=137 missingFts=0 citations=7`，迁移与回填正常。
 - 相似去重探针本次因模型调用偶发挂起未跑完（此前已验证 `dedupeSimilarity=1`，签名列不改判重规则）。
+
+## 37. 2026-11-05 L2 检索向量化：确定性词面向量 + RRF 融合
+
+**背景**：`rag_embedding` 建表以来一直为空（系统 embedding `loadModel()` 返回 31300000，云端模型列表也拿不到）；检索是「命中即返回」的级联，弱通道的精确命中会被前一路的普通命中挤掉。
+
+**决策**：不等系统模型，先把端口与融合做完，向量来源保持可替换。
+
+- `EmbeddingPort`（common）：`provider / model / dimension / embed`，不含 Kit，任何进程可求值。
+- `LexicalEmbedding`（common 纯函数）：中文单字 + 二元组 + 拉丁整词 + 数学签名 token，带符号哈希到 512 维，`1+ln(tf)` 加权、L2 归一化；单字权重 0.5（吸收「的/和」插入造成的二元组错位），签名权重 2。
+- 不用系统分词做向量：分词结果必须「索引期与查询期完全一致」，而分词引擎在扩展进程不可用（process-boundary R4）；二元组是确定性的，任何进程得到同一向量。
+- `LexicalEmbeddingPort`（entry）：端口实现，标记 `model=lexical-v1`。
+- `NoteEmbeddingService`：chunk 级向量写入（确定性行 id，可重复执行）+ 缺失补建 + 覆盖率诊断；标题拼进块正文。
+- `NoteVectorIndex`：内存索引 + 全量余弦（千条以内无需 ANN）；新鲜度用 `COUNT / MAX(updated_at) / TOTAL(LENGTH(vector_json))` 三件套跨进程感知；只比较同 model 的向量。
+- `KnowledgeUnitEmbeddingEffect`：post-commit 补建，不进事务——纯 CPU 工作不进写锁，缺失可由补建自愈，不像 FTS 会永久漏召回。
+- `RagRetrievalService`：五路召回（整句 3 / 签名 3 / 词 OR 2 / 短词 LIKE 1 / 向量 2）按 RRF 融合（k=60，各路候选 ×3），取代原来的级联短路。
+
+**边界**：词面向量解决不了真正的语义替换（导数 ↔ 瞬时变化率），那是稠密模型的事；端口与按 model 过滤已留好，接入系统/云端 embedding 时旧向量自动视为待重建，重跑补建即可。
+
+**真机实测（关键负结果）**：
+
+- `stage=rag-vector backfilled=95`、`rag-vector-coverage ragChunks=95 vectors=95 missingUnits=0`——写入与补建链路正常。
+- 但词面余弦分不开相关与无关（95 个 chunk，minScore=0 看全量分布）：
+
+| 查询 | 性质 | 原始余弦 | 去均值后 |
+|---|---|---|---|
+| 导数定义与几何意义 | 相关 | 0.151 | 0.226 |
+| 极限 | 相关 | 0.140 | 0.123 |
+| 连续性 | 相关 | 0.092 | 0.201 |
+| **今天天气怎么样** | **无关** | **0.095** | **0.163** |
+
+- 无关查询的分数压过相关查询「极限」，去均值（`meanVector` / `subtractCentroid`）提高了相关分但没解决重叠；开着向量通道时「今天天气怎么样」被拉回 2 条无关笔记。
+- 结论：**TF 词面余弦在长块上不可用**——长文档的归一化把真正命中的少数词稀释，公共二元组贡献与主题词贡献同量级。改成 IDF 加权只是把同一个问题推后，词面方法本质上补不上「导数 ↔ 瞬时变化率」的语义鸿沟。
+- 处置：`VECTOR_CHANNEL_ENABLED = false`，向量通道不进检索融合；端口、写入、补建、索引、诊断全部保留（已验证可用），接上稠密模型后改回 true 即生效。关闭后 `ragEval total=15 hit1=12 hit5=14 miss=0 falsePositives=0`，与关闭前逐项一致，无回归。
+
+**验证**：gate PASS（1327 单测，含新契约）；`build-hsp-hap` 真实 ArkTS 编译通过；真机 `ragSearch` / `ragEval` 已跑（数据见上）。
+
+## 38. 2026-11-05 云端 embedding 接入 + 测试库重置
+
+**背景**：第 37 节的负结果说明词面向量补不上语义鸿沟，真正的 L2 只能靠稠密模型。系统 `@ohos.data.intelligence` 仍被模型包挡住（31300000），改走云端。
+
+**实现**：
+
+- `LlmConfig` 新增 `embedding_model`（空串 = 未启用）；复用当前服务厂商的 baseUrl 与 API Key，因此该厂商必须支持 OpenAI 兼容 `/embeddings`。
+- `CloudEmbeddingPort`（entry）：`POST {baseUrl}/embeddings`，`{model, input[]}` → `{data:[{index, embedding[]}]}`；单批 16 条、连接 10s/读 30s；失败抛异常不落半截数据。
+- `EmbeddingModels`（common 纯函数）：模型标识带 `cloud:` 前缀，检索只比较同标识向量，避免词面/稠密混算。
+- `EmbeddingRuntime`（entry）：配置了模型走云端，否则回落词面；`isDense()` 决定检索是否开启向量通道。
+- `NoteEmbeddingService`：写库改走活动端口；切换模型后旧向量由下一次补建覆盖；云端补建每次限 20 条笔记（每条一次请求）。
+- `NoteVectorIndex`：查询向量也由同一端口生成（云端每问一次多一次往返），戳里带上 model。
+- 设置页新增「语义检索」区块：开关 + 模型名 + 自检（真的调一次 /embeddings，并比较「导数定义」/「瞬时变化率」与无关句的余弦）。
+- 调试探针 `cloudEmbeddingProbe`：设备侧直接验证维度与区分度。
+- 调试探针 `clearNotes` / `clearNotesAudit`：测试库重置（逐条走 `NoteDao.deleteById` 保证级联，末尾兜底清挂靠行）。
+
+**说明**：`bm uninstall` 被安全策略拦截，改用应用内清空——只动笔记与其索引，不动密钥与设置。
+
+**重置结果（2026-11-06 00:02）**：`removed=135 failed=0`，随后 `notes=0 ragChunks=0 ftsRows=0 vectors=0`。
+
+**待办**：云端通道尚未用真实密钥验证；需在设置页填入支持 `/embeddings` 的厂商模型后跑 `cloudEmbeddingProbe` 与 `ragEval`。
+
+## 39. 2026-11-06 测试语料与语义召回基线
+
+**重置**：清空 135 条历史笔记（`clearNotes` 探针，逐条走 `NoteDao.deleteById` 保证级联），随后 `notes=0 ragChunks=0 ftsRows=0 vectors=0`，重装 HSP/HAP。
+
+**语料**：`TestCorpusSeed.ets` 手写 25 条大学数学笔记，不经过模型生成——输入固定，召回结果才可复现。分布：数学分析 8 / 高等数学 6 / 线性代数 6 / 概率论 5。数学分析偏定义与理论、高等数学偏计算，两组刻意不重叠，避免判重把相近条目误判。
+
+**评测集**：`RagEvalCases` 重写为 22 条，带 `kind` 分组：
+
+- `paraphrase` 10 条：刻意避开标题关键词（「存在一点其切线平行于两端连线」→ 拉格朗日中值定理），专测语义召回；
+- `exact` 8 条：直接用标题，测字面召回；
+- `negative` 4 条：闲聊类，命中必须为 0。
+
+**基线（仅词面通道，未配 embedding）**：
+
+```
+total=22 hit1=8 hit5=8 miss=10
+paraTotal=10 paraHit1=0 paraHit5=0
+negatives=4 falsePositives=0
+```
+
+同义改写 0/10、精确查询 8/8、负样本零误命中。这条基线把「语义召回」单独隔离出来：接上云端 embedding 后 `paraHit1` 的变化，就是该通道的净收益。
+
+**索引状态**：`notes=25 missingFts=0 missingChunk=0`、`model=lexical-v1 ragChunks=25 vectors=25 missingUnits=0`。
+
+## 40. 2026-11-06 本地 BGE 接入与稠密向量召回
+
+**部署**：`tools/embedding_service/`（FastAPI + sentence-transformers，端口 8001），`start.bat` 手动启动，手机指向 `http://<PC-IP>:8001/v1`。应用侧 embedding 的模型 / 端点 / 密钥三项与聊天厂商完全独立——聊天继续用 DeepSeek 不受影响。
+
+**关键修复：去均值对稠密向量有害**。中心化是为词面向量设计的（压公共二元组基线），稠密向量本身分布良好，减掉均值会把分数整体压扁：
+
+| 查询 | 原始余弦 | 去均值后 |
+|---|---|---|
+| 函数图像没有断开 → 连续与一致连续 | 0.453 ✓ | 0.095 |
+| 存在一点切线平行于弦 → 拉格朗日中值定理 | 0.440 ✓ | 0.158 |
+| 今天天气怎么样（无关） | 0.232 | 0.150 |
+
+处置：`NoteVectorIndex.load` 只在非稠密模型时计算并减去语料均值；阈值从 0.18 重标到 0.33（相关 0.44–0.71，无关 0.232）。
+
+**评测对比**（22 条：10 改写 + 8 精确 + 4 负样本）：
+
+| 配置 | hit1 | hit5 | miss | 同义改写 hit1 | 误命中 |
+|---|---|---|---|---|---|
+| 无向量（纯 FTS） | 8 | 8 | 10 | 0/10 | 0 |
+| BGE + 去均值 + 阈值 0.18 | 14 | 14 | 4 | 6/10 | 0 |
+| BGE 不去均值 + 阈值 0.33 | **16** | **17** | **1** | **8/10** | **0** |
+
+**剩余问题**：唯一的 miss 是「x 靠近某点时函数值靠近某个值，怎么写成一串不等式」→ ε-δ 定义，向量最高分 0.515 却指向了中值定理，属模型语义混淆而非管线缺陷；另有 1 条改写落在 rank=3（hit5 命中）。

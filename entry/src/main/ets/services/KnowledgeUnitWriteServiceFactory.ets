@@ -16,6 +16,7 @@ import { KnowledgeUnitPostCommitEffect } from 'common';
 import { KnowledgeUnitNotesChangedEffect } from './KnowledgeUnitNotesChangedEffect';
 import { KnowledgeUnitUiEffects } from './KnowledgeUnitUiEffects';
 import { KnowledgeUnitChapterEdgeEffect } from './KnowledgeUnitChapterEdgeEffect';
+import { KnowledgeUnitEmbeddingEffect } from './KnowledgeUnitEmbeddingEffect';
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService';
 import { LlmNoteSimilarityJudge } from './LlmNoteSimilarityJudge';
 
@@ -39,6 +40,8 @@ export class KnowledgeUnitWriteServiceFactory {
     }
     // createOnly: 只在新笔记首次落库后补同章节边，编辑已有笔记不重复补。
     effects.push(new KnowledgeUnitChapterEdgeEffect(store));
+    // 向量写在 post-commit：纯 CPU 计算不进事务；缺失可由 backfill 自愈，不阻塞写链路。
+    effects.push(new KnowledgeUnitEmbeddingEffect(store));
     return new KnowledgeUnitWriteService(new NoteDao(store), effects, new LlmNoteSimilarityJudge());
   }
 }

@@ -388,6 +388,22 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('embeddingProbe', DebugCaptureRunner.runEmbeddingProbe(this.context));
       return;
     }
+    if (mode === 'cloudEmbeddingProbe') {
+      this.runDebugProbe('cloudEmbeddingProbe', DebugCaptureRunner.runCloudEmbeddingProbe(this.context));
+      return;
+    }
+    if (mode === 'clearNotesAudit') {
+      this.runDebugProbe('clearNotesAudit', DebugCaptureRunner.runClearAllNotes(this.context, false));
+      return;
+    }
+    if (mode === 'clearNotes') {
+      this.runDebugProbe('clearNotes', DebugCaptureRunner.runClearAllNotes(this.context, true));
+      return;
+    }
+    if (mode === 'seedTestCorpus') {
+      this.runDebugProbe('seedTestCorpus', DebugCaptureRunner.runSeedTestCorpus(this.context));
+      return;
+    }
     if (mode === 'segmentationProbe') {
       this.runDebugProbe('segmentationProbe', DebugCaptureRunner.runSegmentationProbe(this.context));
       return;

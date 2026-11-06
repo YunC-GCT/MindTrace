@@ -22,13 +22,19 @@ import { intelligence, relationalStore } from '@kit.ArkData';
 import { textProcessing } from '@kit.NaturalLanguageKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { DatabaseHelper, ImageSearchIndexRegistry } from 'common';
+import { DatabaseHelper, ImageSearchIndexRegistry, LlmConfig, cosineSimilarity } from 'common';
+import { DifficultyLevel, ReviewStatus } from 'common';
+import type { EmbeddingVector } from 'common';
 import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ImageSearchHit, KnowledgeUnit, NoteOutcome } from 'common';
 import { AiService } from '../services/AiService';
 import { CardSnapshotService } from '../services/CardSnapshotService';
 import { CoreVisionImageSearchIndex } from '../services/CoreVisionImageSearchIndex';
 import { CaptureReceipt, CaptureReceiptStore } from '../services/CaptureReceipt';
 import { RagHit, RagRetrievalService } from '../services/RagRetrievalService';
+import { NoteEmbeddingService } from '../services/NoteEmbeddingService';
+import { NoteVectorIndex } from '../services/NoteVectorIndex';
+import type { VectorHit } from '../services/NoteVectorIndex';
+import { EmbeddingRuntime } from '../services/EmbeddingRuntime';
 import { RagKitProbe } from '../services/RagKitProbe';
 import { AgentIngestService, AgentTextBatchResult } from '../services/AgentIngestService';
 import { A2AChatContext, A2AChatContextResult } from '../services/A2AChatContext';
@@ -38,6 +44,9 @@ import { RunStoreDao } from '../database/RunStoreDao';
 import { A2AInboxIngestService, IngestSummary } from '../services/A2AInboxIngestService';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { A2AImageContextStore } from '../services/A2AImageContextStore';
+import { KnowledgeUnitWriteServiceFactory } from '../services/KnowledgeUnitWriteServiceFactory';
+import { TEST_CORPUS } from './TestCorpusSeed';
+import type { TestCorpusNote } from './TestCorpusSeed';
 import { buildInboxItem } from '../services/AgentInboxModels';
 import { WRITE_JOB_RUN_PREFIX } from '../services/WriteJobEvents';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from '../services/WriteJobScheduler';
@@ -413,6 +422,45 @@ export class DebugCaptureRunner {
         + ' unrelated=' + DebugCaptureRunner.cosine(vectors[0], vectors[3]).toFixed(3));
   }
 
+  /**
+   * 云端 embedding 探针：确认配置的模型真的可用，并测量语义区分度。
+   * 只看维度没意义——分不开「同义」与「无关」的模型接上也是白搭。
+   */
+  static async runCloudEmbeddingProbe(ctx: common.UIAbilityContext): Promise<void> {
+    const startedAt: number = Date.now();
+    try {
+      const model: string = LlmConfig.getInstance().getEmbeddingModel();
+      const config: LlmConfig = LlmConfig.getInstance();
+      const keyReady: boolean = await config.isConfigured();
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=cloud-embedding model=' + (model.length > 0 ? model : '(none)')
+          + ' apiKey=' + (keyReady ? '1' : '0')
+          + ' vendor=' + config.getVendorId()
+          + ' endpoint=' + config.getEmbeddingEndpoint()
+          + ' ownKey=' + (config.getEmbeddingApiKey().length > 0 ? '1' : '0'));
+      if (!EmbeddingRuntime.isDense()) {
+        hilog.info(DOMAIN, TAG, '%{public}s', 'stage=done cloudEmbedding=0 err=not-configured');
+        return;
+      }
+      const vectors: EmbeddingVector[] = await EmbeddingRuntime.active().embed([
+        '导数定义',
+        '函数在一点的瞬时变化率',
+        '矩阵的秩与初等变换',
+      ]);
+      const related: number = cosineSimilarity(vectors[0].values, vectors[1].values);
+      const unrelated: number = cosineSimilarity(vectors[0].values, vectors[2].values);
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=cloud-embedding dim=' + vectors[0].dimension.toString()
+          + ' related=' + related.toFixed(3) + ' unrelated=' + unrelated.toFixed(3));
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done cloudEmbedding=' + (related > unrelated ? '1' : '0')
+          + ' ms=' + (Date.now() - startedAt).toString());
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done cloudEmbedding=0 err=' + (error as Error).message);
+    }
+  }
+
   /** 中文分词能力探针：关键词抽取与词性可用于纯算法相似度。 */
   static async runSegmentationProbe(ctx: common.UIAbilityContext): Promise<void> {
     const syscap: string = 'SystemCapability.AI.NaturalLanguage.TextProcessing';
@@ -697,6 +745,9 @@ export class DebugCaptureRunner {
     let negatives: number = 0;
     let falsePositives: number = 0;
     let skipped: number = 0;
+    let paraTotal: number = 0;
+    let paraHit1: number = 0;
+    let paraHit5: number = 0;
     try {
       for (let i = 0; i < RAG_EVAL_CASES.length; i += 1) {
         const item: RagEvalCase = RAG_EVAL_CASES[i];
@@ -727,6 +778,15 @@ export class DebugCaptureRunner {
             'stage=rag-eval-case q=' + item.query + ' negative=1 citations=' + context.citations.length.toString());
           continue;
         }
+        if (item.kind === 'paraphrase') {
+          paraTotal += 1;
+          if (rank === 0) {
+            paraHit1 += 1;
+          }
+          if (rank >= 0) {
+            paraHit5 += 1;
+          }
+        }
         if (rank === 0) {
           hit1 += 1;
         }
@@ -737,12 +797,15 @@ export class DebugCaptureRunner {
         }
         hilog.info(DOMAIN, TAG, '%{public}s',
           'stage=rag-eval-case q=' + item.query + ' rank=' + rank.toString()
-            + ' citations=' + context.citations.length.toString());
+            + ' citations=' + context.citations.length.toString()
+            + ' vec=' + await DebugCaptureRunner.vectorTopScore(store, item.query));
       }
       hilog.info(DOMAIN, TAG, '%{public}s',
         'stage=done ragEval=1 total=' + total.toString()
           + ' hit1=' + hit1.toString() + ' hit5=' + hit5.toString() + ' miss=' + miss.toString()
           + ' negatives=' + negatives.toString() + ' falsePositives=' + falsePositives.toString()
+          + ' paraTotal=' + paraTotal.toString() + ' paraHit1=' + paraHit1.toString()
+          + ' paraHit5=' + paraHit5.toString()
           + ' skipped=' + skipped.toString()
           + ' ms=' + (Date.now() - startedAt).toString());
     } catch (error) {
@@ -838,18 +901,173 @@ export class DebugCaptureRunner {
     }
   }
 
+  /**
+   * 清空笔记库（测试前重置用）。apply=false 只报告数量，不动数据。
+   * 逐条走 NoteDao.deleteById，让 FTS/分块/向量/关系边跟着事务一起清干净；
+   * 最后再兜底清一遍可能残留的挂靠行（历史版本写入的孤儿）。
+   */
+  static async runClearAllNotes(ctx: common.UIAbilityContext, apply: boolean): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done clearNotes=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    const ids: string[] = [];
+    let resultSet: relationalStore.ResultSet | undefined = undefined;
+    try {
+      resultSet = await store.querySql('SELECT id FROM knowledge_unit', []);
+      while (resultSet.goToNextRow()) {
+        ids.push(resultSet.getString(resultSet.getColumnIndex('id')));
+      }
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done clearNotes=0 err=' + (error as Error).message);
+      return;
+    } finally {
+      if (resultSet !== undefined) {
+        resultSet.close();
+      }
+    }
+    hilog.info(DOMAIN, TAG, '%{public}s', 'stage=clear-notes notes=' + ids.length.toString()
+      + ' apply=' + (apply ? '1' : '0'));
+    if (!apply) {
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done clearNotes=1 dryRun=1 ms=' + (Date.now() - startedAt).toString());
+      return;
+    }
+    const dao: NoteDao = new NoteDao(store);
+    let removed: number = 0;
+    let failed: number = 0;
+    for (let i = 0; i < ids.length; i += 1) {
+      try {
+        await dao.deleteById(ids[i]);
+        removed += 1;
+      } catch (error) {
+        failed += 1;
+        hilog.warn(DOMAIN, TAG, '%{public}s',
+          'stage=clear-notes fail id=' + ids[i] + ' err=' + (error as Error).message);
+      }
+    }
+    try {
+      await store.executeSql('DELETE FROM rag_embedding', []);
+      await store.executeSql('DELETE FROM rag_chunk', []);
+      await store.executeSql('DELETE FROM note_fts', []);
+      await store.executeSql('DELETE FROM kg_edge', []);
+      await store.executeSql('DELETE FROM note_revision', []);
+      await store.executeSql('DELETE FROM review_item', []);
+      await store.executeSql('DELETE FROM knowledge_unit', []);
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, '%{public}s', 'stage=clear-notes sweep err=' + (error as Error).message);
+    }
+    NoteVectorIndex.invalidate();
+    hilog.info(DOMAIN, TAG, '%{public}s',
+      'stage=done clearNotes=1 removed=' + removed.toString() + ' failed=' + failed.toString()
+        + ' ms=' + (Date.now() - startedAt).toString());
+  }
+
+  /**
+   * 导入固定测试语料（25 条大学数学笔记）。走真实写入链路，因此同样会触发
+   * 判重、分块与向量生成——测试集就是正常写入的笔记，不是绕过链路塞进去的。
+   */
+  static async runSeedTestCorpus(ctx: common.UIAbilityContext): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done seedCorpus=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    try {
+      const service = await KnowledgeUnitWriteServiceFactory.create(ctx, true);
+      let created: number = 0;
+      let duplicate: number = 0;
+      let failed: number = 0;
+      const base: number = Date.now();
+      for (let i = 0; i < TEST_CORPUS.length; i += 1) {
+        const spec: TestCorpusNote = TEST_CORPUS[i];
+        const unit: KnowledgeUnit = {
+          id: spec.id,
+          title: spec.title,
+          content: spec.content,
+          summary: spec.summary,
+          tags: spec.tags,
+          subject: spec.subject,
+          category: spec.category,
+          chapter: spec.chapter,
+          difficulty: DifficultyLevel.MEDIUM,
+          source: 'file_import',
+          createdAt: base + i,
+          updatedAt: base + i,
+          reviewStatus: ReviewStatus.NEW,
+          nextReviewAt: 0,
+          intervalDays: 0,
+          easeFactor: 2.5,
+          repetitions: 0,
+          prerequisites: [],
+          related: [],
+          embedding: [],
+          userId: '',
+          version: 1,
+        };
+        try {
+          const result = await service.create(unit);
+          if (result.duplicate === true) {
+            duplicate += 1;
+            hilog.warn(DOMAIN, TAG, '%{public}s', 'stage=seed-corpus duplicate id=' + spec.id);
+          } else {
+            created += 1;
+          }
+        } catch (error) {
+          failed += 1;
+          hilog.warn(DOMAIN, TAG, '%{public}s',
+            'stage=seed-corpus fail id=' + spec.id + ' err=' + (error as Error).message);
+        }
+      }
+      const total: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=seed-corpus created=' + created.toString() + ' duplicate=' + duplicate.toString()
+          + ' failed=' + failed.toString() + ' total=' + total.toString()
+          + ' ms=' + (Date.now() - startedAt).toString());
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done seedCorpus=' + (failed === 0 && duplicate === 0 ? '1' : '0'));
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s',
+        'stage=done seedCorpus=0 err=' + (error as Error).message);
+    }
+  }
+
+  /** 评测辅助：不设阈值取该查询的最高向量分，用于判断漏召回是分数不够还是别的原因。 */
+  private static async vectorTopScore(store: relationalStore.RdbStore, query: string): Promise<string> {
+    try {
+      const hits: VectorHit[] = await NoteVectorIndex.search(store, query, 1, 0);
+      return hits.length > 0 ? hits[0].score.toFixed(3) : '-';
+    } catch (error) {
+      return 'err';
+    }
+  }
+
   /** RAG 检索自检：对既有笔记跑 FTS（≥3字）/ LIKE（2字）两种查询。 */
 
   static async runRagSearch(ctx: common.UIAbilityContext): Promise<void> {
     hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-search start');
     const startedAt: number = Date.now();
-    const queries: string[] = ['连续性', '极限'];
+    // 含一条无关查询用于测噪声底：阈值必须落在「相关」与「无关」之间。
+    const queries: string[] = ['连续性', '极限', '导数定义与几何意义', '今天天气怎么样'];
     try {
       const searchStore: relationalStore.RdbStore | null = DatabaseHelper.getStore();
       if (searchStore === null) {
         hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSearch=0 err=store-null');
         return;
       }
+      // 向量通道：循环补建直到没有遗漏（云端每次限量，25 条笔记需要多轮），再跑融合检索。
+      let backfilled: number = 0;
+      for (let round = 0; round < 10; round += 1) {
+        const written: number = await NoteEmbeddingService.backfillMissing(searchStore);
+        backfilled += written;
+        if (written === 0) {
+          break;
+        }
+      }
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-vector backfilled=' + backfilled.toString());
       for (let i = 0; i < queries.length; i++) {
         const query: string = queries[i];
         const hits: RagHit[] = await RagRetrievalService.search(searchStore, query, 5);
@@ -862,6 +1080,19 @@ export class DebugCaptureRunner {
         hilog.info(DOMAIN, TAG, '%{public}s',
           'stage=rag-hit q=' + query + ' hits=' + hits.length.toString()
             + ' first=' + firstId + ' title=' + firstTitle);
+        // minScore=0：看完整分数分布，用于校准向量通道阈值。
+        const vectorHits: VectorHit[] = await NoteVectorIndex.search(searchStore, query, 3, 0);
+        const topScore: string = vectorHits.length > 0 ? vectorHits[0].score.toFixed(3) : '-';
+        let vectorTitles: string = '-';
+        if (vectorHits.length > 0) {
+          const parts: string[] = [];
+          for (let k = 0; k < vectorHits.length; k++) {
+            parts.push(vectorHits[k].unitId.substring(0, 8) + '@' + vectorHits[k].score.toFixed(3));
+          }
+          vectorTitles = parts.join('|');
+        }
+        hilog.info(DOMAIN, TAG, '%{public}s',
+          'stage=rag-vector-top q=' + query + ' top=' + topScore + ' sample=' + vectorTitles);
       }
       const chunkCount: number = await DebugProbeSupport.countRows(searchStore, 'rag_chunk');
       const ftsCount: number = await DebugProbeSupport.countRows(searchStore, 'note_fts');
@@ -869,6 +1100,8 @@ export class DebugCaptureRunner {
         'stage=rag-index ragChunks=' + chunkCount.toString() + ' ftsRows=' + ftsCount.toString());
       const coverage: string = await DebugCaptureRunner.noteIndexCoverage(searchStore);
       hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-coverage ' + coverage);
+      const vectorCoverage: string = await NoteEmbeddingService.coverage(searchStore);
+      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-vector-coverage ' + vectorCoverage);
       const evidenceService: NoteEvidenceService = createNoteEvidenceService();
       const evidence: NoteEvidenceContext = await evidenceService.build('连续性', { topK: 3 });
       hilog.info(DOMAIN, TAG, '%{public}s',

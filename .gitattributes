@@ -12,6 +12,11 @@
 *.bash text eol=lf
 *.ps1 text eol=lf
 
+# Windows batch scripts: CRLF. cmd.exe mis-parses LF-only files
+# (errors like "'ho' is not recognized" from a broken `echo`).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # Source code: LF
 *.ts text eol=lf
 *.tsx text eol=lf

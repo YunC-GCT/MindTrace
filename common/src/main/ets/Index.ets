@@ -518,6 +518,27 @@ export type {
 } from './models/NoteSimilarityModels';
 export { citationSnippet, markdownToPlainText, normalizeEscapedNewlines, stripEchoedEvidence } from './utils/AnswerTextSanitizer';
 export { extractMathSignature, normalizeMathText } from './utils/MathSignature';
+export {
+  buildLexicalVector,
+  cosineSimilarity,
+  embeddingTokens,
+  LEXICAL_DIMENSION,
+  LEXICAL_EMBEDDING_MODEL,
+  LEXICAL_EMBEDDING_PROVIDER,
+  meanVector,
+  subtractCentroid,
+} from './utils/LexicalEmbedding';
+export { fuseRrf, RRF_DEFAULT_K } from './utils/RrfFusion';
+export type { RrfChannel } from './utils/RrfFusion';
+export type { EmbeddingPort, EmbeddingVector } from './ports/EmbeddingPort';
+export {
+  BGE_ZH_QUERY_PREFIX,
+  CLOUD_EMBEDDING_MODEL_PREFIX,
+  CLOUD_EMBEDDING_PROVIDER,
+  cloudEmbeddingModelId,
+  embeddingQueryPrefix,
+  isCloudEmbeddingModel,
+} from './utils/EmbeddingModels';
 export { mergeQueryTerms, normalizeQueryText, planQueryTerms } from './utils/QueryTerms';
 export type { QueryTermPlan } from './utils/QueryTerms';
 

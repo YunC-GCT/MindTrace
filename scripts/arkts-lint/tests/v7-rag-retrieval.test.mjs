@@ -85,7 +85,7 @@ test('RagRetrievalService.search uses the plan and returns empty on failure', ()
   assert.match(service, /const plan: RagQueryPlan = planRagQuery\(trimmed\)/);
   assert.match(service, /plan\.mode === 'fts'/);
   assert.match(service, /return \[\];/);
-  assert.match(service, /queryBySignature\(store, signature, topK\)/);
+  assert.match(service, /queryBySignature\(store, signature, fetchK\)/);
   assert.match(service, /WHERE signature = \?/);
 });
 

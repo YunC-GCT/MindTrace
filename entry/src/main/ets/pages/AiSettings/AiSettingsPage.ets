@@ -20,6 +20,7 @@ import { ConnectionStatus } from "./ConnectionStatus"
 import { ActionBar } from "./ActionBar"
 import { VendorPicker } from "./VendorPicker"
 import { OcrConfigSection } from "./OcrConfigSection"
+import { EmbeddingConfigSection } from "./EmbeddingConfigSection"
 import { OnDeviceModelSection } from "./OnDeviceModelSection"
 import { XiaoyiEntrySection } from "./XiaoyiEntrySection"
 import { AiSettingsViewModel } from "../../viewmodels/AiSettingsViewModel"
@@ -339,6 +340,29 @@ struct AiSettingsPage {
                   promptAction.showToast({
                     message: ok ? "OCR 连接正常" : this.vm.ocrStatusText,
                     duration: 1500,
+                  })
+                } catch (_e) {}
+              })
+            },
+          })
+
+          EmbeddingConfigSection({
+            isEnabled: this.vm.embeddingEnabled,
+            model: this.vm.embeddingModel,
+            endpoint: this.vm.embeddingEndpoint,
+            apiKey: this.vm.embeddingApiKey,
+            statusText: this.vm.embeddingStatusText,
+            testing: this.vm.embeddingTesting,
+            onEnabledChange: (v: boolean): void => { this.vm.setEmbeddingEnabled(v) },
+            onModelChange: (v: string): void => { this.vm.setEmbeddingModel(v) },
+            onEndpointChange: (v: string): void => { this.vm.setEmbeddingEndpoint(v) },
+            onApiKeyChange: (v: string): void => { this.vm.setEmbeddingApiKey(v) },
+            onTest: (): void => {
+              this.vm.testEmbedding().then((ok: boolean): void => {
+                try {
+                  promptAction.showToast({
+                    message: ok ? "embedding 可用" : this.vm.embeddingStatusText,
+                    duration: 2000,
                   })
                 } catch (_e) {}
               })
