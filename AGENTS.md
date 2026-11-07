@@ -3,7 +3,7 @@
 > **鸿蒙高校创新赛 · 复赛项目 → v1 端A2A 交付** — HarmonyOS 数学学习助手 (拍照 / OCR / 知识结构化 / 端侧 Agent)
 > 5 module: 3 HAP (`entry` / `skill` / `cardservice`) + 2 HSP (`common` / `agents`)
 > **DevEco Studio 与 hvigor CLI 均为合法开发入口**; CLI 构建 + `hdc` 装机已跑通, AI 可自行验证
-> 当前主线: **v1 端A2A 接入小艺** (复赛版本冻结, 不再加功能) · 进度与验收口径见 [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md)
+> 当前主线: **检索与笔记治理（RAG / 判重 / 建议）** (v1 端A2A 已交付; 测试态不推进上架) · 进度与验收口径见 [`docs/agents/phase-tracker.md`](./docs/agents/phase-tracker.md)
 > 项目: **MindTrace** (GitHub 仓库 `YunC-GCT/MindTrace`; 本地目录名因机器而异, 文档一律用相对路径)
 
 ---

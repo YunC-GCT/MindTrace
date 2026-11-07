@@ -34,6 +34,8 @@
 
 > **现状（2026-10-30 复核）**：A2A **已能就地入库**。`handleTask` 三条分支：① 回执意图命中 → 读 `receipts/last-capture.json` 回执（不调模型）；② 带图片或「存笔记」→ `AgentIngestService.ingest` → `OcrService`（仅图片）→ `AiService.ingestText` → `Dispatcher` → `KnowledgeUnitWriteService` 落库，失败退 `AgentInboxQueue`；③ 其余对话 → `ReplyService.complete`。**「小艺只能对话、不会写库」的旧结论作废**（`64008c3` 推翻）。剩余缺口：P4 结果回执（回复里还没有「本次整理 N 条」）、图片 part 客户端不下发。
 
+> **2026-11-07 补充（检索与判重质量线，不属于 P 阶段）**：RAG 已从「关键词检索」升级为五路混合召回——整句 FTS / 数学签名 / 词 OR / 短词 LIKE / 稠密向量，RRF 融合；稠密向量走本地 BGE 服务（`tools/embedding_service`，模型/端点未配置时自动退回词面）；向量头部差距 < 0.05 时做一次摘要重排，< 0.03 时追加一次 LLM 查询改写。回答前加 LLM 证据判定（`EvidencePolicy`：strict / balanced / expansive，默认 balanced），语料外负样本命中从 5/5 降到约 1/5（概率性）。写前判重升级为 L1 规则 + 向量兜底（0.75）+ LLM 三分类仲裁（same / supplement / different），supplement 照常写入并发 `action=append` 建议。状态：代码与真机探针已验证；学习模式与建议请求未接 UI（仅编排层 / 日志）。证据：`docs/research/agent-framework-layering-review-2026-11-02.md` §37–§49。
+
 ## 每阶段的完成定义 (DoD)
 一个阶段算「完成」必须同时满足四条，缺一条就是 🟡：
 
