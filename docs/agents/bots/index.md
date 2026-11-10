@@ -11,7 +11,7 @@
 | **ui** | deepseek-flash | `pages/` `overlays/` `viewmodels/` `shared/`、`tools/galaxy3d-preview` | ArkUI 页面与组件、状态管理与刷新链路、AI 浮窗交互（流式/进度/打断）、3D 知识星系渲染、空态/加载态/深色模式/三档断点 | `workflows/` `services/`、数据库 schema、`cardservice/`、`hvigorw`/签名/装机 |
 | **flow** | deepseek-flash | `workflows/` `services/` `models/` `database/` | StateGraph 节点与边/状态/中断点、材料理解与笔记生成、检索与关系扩展、来源解析、对话隔离与记忆投影、`LlmClient` 模型调用层、RDB 读写与迁移 | UI 布局动效、卡片与小艺入口、签名；schema 变更必须先过 architect |
 | **harmony** | deepseek-flash | `cardservice/` `skill/` `entry/.../agentextability/`、构建配置 | 元服务卡片（刷新链路/跳转/空态/生命周期）、小艺 A2A 单帧 `result.task`、`hvigorw` 构建与签名、`hdc` 真机验收、`.hap` 产物与 `build-profile.json5` | 业务逻辑、UI 组件、ADR；**唯一能跑 `hvigorw` 的 Bot** |
-| **ship** | deepseek-flash | 指标、合规、验收、对外材料 | 指标定义（定义/口径/采集点/当前值/是否已测）、数据契约、上架合规（权限逐条对应代码、隐私政策、卡片审核）、验收清单、答辩稿/BP/简历段落 | 代码、架构、ADR；没测过的数字一律标「未测」 |
+| **ship** | deepseek-flash | 指标、合规、验收、对外材料 | 指标定义（定义/口径/采集点/当前值/是否已测）、数据契约、上架合规（权限逐条对应代码、隐私政策、卡片审核）、验收清单、项目介绍与对外材料 | 代码、架构、ADR；没测过的数字一律标「未测」 |
 
 ## 本轮派活（2026-10-30）
 
