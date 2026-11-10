@@ -1,12 +1,12 @@
-# MindTrace 求职作品集
+# MindTrace 项目介绍
 
-> 面向招聘方的项目材料入口。正式提交件是 12 页 PDF；HTML 页面用于补充查看产品流程、架构、A2A 时序、检索与质量设计。
+> 项目介绍入口。正式材料是 12 页 PDF；HTML 页面用于补充查看产品流程、架构、A2A 时序、检索与质量设计。
 
 ## 交付物
 
 | 材料 | 路径 | 用途 |
 |---|---|---|
-| 作品集 PDF | [`MindTrace-Portfolio.pdf`](./MindTrace-Portfolio.pdf) | 直接上传或发给招聘方 |
+| 项目介绍 PDF | [`MindTrace-Portfolio.pdf`](./MindTrace-Portfolio.pdf) | 直接阅读或分享 |
 | 站点首页 | [`index.html`](./index.html) | 项目定位、关键数字、导航 |
 | 产品流程 | [`flow.html`](./flow.html) | 四条入口、确认链路、失败路径 |
 | 架构 | [`architecture.html`](./architecture.html) | 五模块、三条硬边界、本地/云端 |
@@ -20,7 +20,7 @@
 - 只引用有真机或自动化测试记录的结果；未验证、部分实现、平台阻塞项在质量页和 PDF 第 11 页单独标注。
 - 检索指标只使用公开基准 MathNet-Retrieve（CC-BY-4.0），评测脚本与原始记录可复现。
 - 项目处于测试态，未上架应用市场；不把“代码已实现”写成“已上线”。
-- 公开仓库仅用于作品评审，授权说明见根目录 [`NOTICE`](../NOTICE)。
+- 公开仓库仅用于项目介绍与技术交流，授权说明见根目录 [`NOTICE`](../NOTICE)。
 
 ## 重新生成 PDF
 

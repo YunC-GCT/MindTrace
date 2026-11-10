@@ -12,7 +12,7 @@ MindTrace 将数学截图、公式与零散文本整理为结构化笔记，经�
 
 当前阶段（2026 年 11 月）：v1 端A2A 链路已打通，小艺可直接整理入库并回执；主线转为检索质量与笔记治理。项目处于测试态，不推进上架。
 
-> **求职作品集**：[12 页 PDF](portfolio/MindTrace-Portfolio.pdf) · [HTML 设计说明](portfolio/index.html) · [作品集索引](portfolio/README.md)
+> **项目介绍**：[12 页 PDF](portfolio/MindTrace-Portfolio.pdf) · [HTML 设计说明](portfolio/index.html) · [项目介绍索引](portfolio/README.md)
 
 ## 二、功能实现状态
 
