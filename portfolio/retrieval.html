@@ -103,7 +103,7 @@
     <section class="section">
       <div class="section-head">
         <h2>结论与限制</h2>
-        <p>评测的价值不只是分数，而是推翻了之前的调参结论。</p>
+        <p>评测同时回答两个问题：哪条路线应作主召回，哪些增强在当前数据上不成立。</p>
       </div>
       <div class="grid-2">
         <article class="card">
@@ -116,7 +116,7 @@
         </article>
       </div>
       <div class="note" style="margin-top: 18px;">
-        仓库内自建的 100 条夹具只保留为冒烟用途，不再用于对外指标；对外只引用 MathNet-Retrieve 的公开口径。
+        评测脚本可复现：fetch-mathnet.mjs 下载数据，eval.mjs 跑 BM25 / 向量 / 混合 / 重排四组对照。
       </div>
     </section>
   </main>

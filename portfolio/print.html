@@ -309,10 +309,10 @@
 <!-- 08 mathnet -->
 <section class="page">
   <div class="page-head"><strong>MINDTRACE</strong><span>作品集 / 检索评测</span><span>08 / 12</span></div>
-  <h2 class="page-title">用公开基准推翻自己的调参结论</h2>
+  <h2 class="page-title">在公开基准上验证检索方案</h2>
   <p class="page-lead">
-    MathNet-Retrieve：15,000 条查询 / 117,088 条语料。这里使用 easy 档中文子集 334 条查询、固定 2,000 候选池；
-    不再使用自建 100 条夹具对外报指标。
+    MathNet-Retrieve：15,000 条查询 / 117,088 条语料。这里使用 easy 档中文子集 334 条查询、固定 2,000 候选池，
+    对比词面、向量、混合与重排四条路线。
   </p>
 
   <table class="table">
@@ -328,8 +328,8 @@
   <div class="grid-2" style="margin-top: 6mm;">
     <div class="card">
       <span class="tag">结论</span>
-      <h3>向量为主，等权 RRF 有害</h3>
-      <p>2,000 候选池上纯向量最好；等权 RRF 会把向量排对的条目挤下去。条件重排在该基准上是负优化（79 次触发、480s，hit@1 再降 10 条）。</p>
+      <h3>向量应作主召回</h3>
+      <p>2,000 候选池上纯向量最好；等权 RRF 会稀释向量排名。条件重排在该基准上是负优化（79 次触发、480s，hit@1 再降 10 条）。</p>
     </div>
     <div class="card">
       <span class="tag">限制</span>
@@ -546,8 +546,8 @@
   </table>
 
   <div class="note" style="margin-top: 5mm;">
-    说明：项目处于测试态，未上架；本作品集只引用有记录的真机或自动化测试结果。
-    自建 100 条语料仅作冒烟夹具，不用于对外指标。
+    说明：项目处于测试态，未上架；本作品集只引用有记录的真机或自动化测试结果，
+    检索指标只引用公开基准 MathNet-Retrieve。
   </div>
 
   <div class="page-foot"><span>MindTrace · 2026-11</span><span>12</span></div>
