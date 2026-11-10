@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A2A 草稿确认 · MindTrace</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="a2a.html">
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="index.html">MIND<span>TRACE</span></a>
+      <button class="nav-toggle" type="button" aria-label="打开导航">菜单</button>
+      <div class="nav-links">
+        <a href="index.html">概览</a>
+        <a href="flow.html">产品流程</a>
+        <a href="architecture.html">架构</a>
+        <a href="a2a.html">A2A</a>
+        <a href="retrieval.html">检索</a>
+        <a href="quality.html">质量</a>
+        <a href="MindTrace-Portfolio.pdf">PDF</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" style="grid-template-columns: 1fr; padding-bottom: 24px;">
+      <div>
+        <span class="eyebrow">A2A Checkpoint</span>
+        <h1 style="font-size: clamp(32px, 5vw, 48px);">在小艺里，<em>先看内容再保存</em></h1>
+        <p class="lead">A2A 单任务只允许一次最终回复。所以草稿必须落盘、跨轮次确认，失败要能转待整理，而不是让用户重发。</p>
+      </div>
+    </section>
+
+    <section class="section" style="border-top: 0; padding-top: 8px;">
+      <img class="diagram" src="assets/a2a-sequence.svg" alt="A2A 草稿确认时序图">
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>逐步看一次确认</h2>
+        <p>点击“下一步”查看每一步的状态变化。</p>
+      </div>
+      <div data-sequence>
+        <div class="seq-step active">
+          <div class="seq-kicker">STEP 1</div>
+          <h3>收到消息</h3>
+          <p>小艺发来“存笔记：矩阵的秩与初等变换”。扩展拿到 taskId、contextId 和纯文本 parts，先判断是聊天、整理、OCR 还是计划推进。</p>
+        </div>
+        <div class="seq-step">
+          <div class="seq-kicker">STEP 2</div>
+          <h3>进入草稿检查点</h3>
+          <p>命中整理意图后不直接写库，而是进入 beginDraftCheckpoint。单题走草稿；多题先建计划，再逐题预览。</p>
+        </div>
+        <div class="seq-step">
+          <div class="seq-kicker">STEP 3</div>
+          <h3>生成与质量门</h3>
+          <p>light 路由先跑，目标 3–6s；若正文为空或复述原文，取消该 run 并改用 standard。草稿生成不写正式笔记。</p>
+        </div>
+        <div class="seq-step">
+          <div class="seq-kicker">STEP 4</div>
+          <h3>落盘与预览</h3>
+          <p>草稿按 conversationKey 保存 24h，返回标题、学科/题型和最多 4 节关键内容，最后问“要我把这些内容整理成笔记保存吗？”</p>
+        </div>
+        <div class="seq-step">
+          <div class="seq-kicker">STEP 5</div>
+          <h3>二次操作</h3>
+          <p>“详细一点”走 standard 并补充推导与易错点；“简洁一点”“重新生成”走 light。新草稿成功后才覆盖旧草稿，失败保留旧稿。</p>
+        </div>
+        <div class="seq-step">
+          <div class="seq-kicker">STEP 6</div>
+          <h3>确认入库</h3>
+          <p>“确认”触发 confirmDraft：判重、幂等写入、回执。命中重复时复用已有笔记并说明；计划项回写进度 n/m。</p>
+        </div>
+        <div class="seq-step">
+          <div class="seq-kicker">STEP 7</div>
+          <h3>超时兜底</h3>
+          <p>8s 记慢日志；25s 未返回则取消 token、入待整理队列，只回一条“已转待整理”。打开 App 后自动补齐。</p>
+        </div>
+        <div class="seq-controls">
+          <button type="button" data-seq-prev>上一步</button>
+          <button type="button" data-seq-next>下一步</button>
+          <span class="seq-count" data-seq-count></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>命令只认短句</h2>
+        <p>避免把“保存到哪里”这类问题误判成确认；超过 10 个字符的命令不解析。</p>
+      </div>
+      <div class="chips">
+        <span class="chip active">确认 / 保存 / 好的</span>
+        <span class="chip">取消 / 不要了 / 算了</span>
+        <span class="chip">详细一点 / 展开讲讲</span>
+        <span class="chip">简洁一点 / 简单一点</span>
+        <span class="chip">重新生成 / 重来</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>真机指标</h2>
+        <p>设备 3XTYD24C16203663；同一 provider，数字用于量级参考，不是 SLA。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>动作</th><th>路由</th><th>耗时</th><th>结果</th></tr></thead>
+          <tbody>
+            <tr><td>生成草稿</td><td>light</td><td class="num-cell"><strong>3.2s</strong></td><td>标题 + 4 段要点 + 确认提示</td></tr>
+            <tr><td>详细一点</td><td>standard</td><td class="num-cell"><strong>11.4s</strong></td><td>636 字，补充推导与易错点</td></tr>
+            <tr><td>简洁一点</td><td>light</td><td class="num-cell"><strong>1.3s</strong></td><td>107 字，核心定义与结论</td></tr>
+            <tr><td>重新生成</td><td>light</td><td class="num-cell"><strong>2.5s</strong></td><td>247 字，保留标准字段</td></tr>
+            <tr><td>确认入库</td><td>判重 + 写入</td><td class="num-cell"><strong>220ms</strong></td><td>“已保存：矩阵的秩与初等变换（线性代数）。”</td></tr>
+            <tr><td>超时兜底</td><td>入队</td><td class="num-cell"><strong>25s</strong></td><td>只回一条，转待整理</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <span>MindTrace · 求职作品集</span>
+      <span>2026-11</span>
+      <a href="https://github.com/YunC-GCT/MindTrace">GitHub</a>
+      <a href="MindTrace-Portfolio.pdf">PDF</a>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

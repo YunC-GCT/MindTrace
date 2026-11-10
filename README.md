@@ -12,6 +12,8 @@ MindTrace 将数学截图、公式与零散文本整理为结构化笔记，经�
 
 当前阶段（2026 年 11 月）：v1 端A2A 链路已打通，小艺可直接整理入库并回执；主线转为检索质量与笔记治理。项目处于测试态，不推进上架。
 
+> **求职作品集**：[12 页 PDF](portfolio/MindTrace-Portfolio.pdf) · [HTML 设计说明](portfolio/index.html) · [作品集索引](portfolio/README.md)
+
 ## 二、功能实现状态
 
 以下为代码实现与真机探针验证状态（2026-11-07）。
@@ -24,7 +26,7 @@ MindTrace 将数学截图、公式与零散文本整理为结构化笔记，经�
 | AI 对话 | 已实现 | 支持流式输出、会话历史与生成进度 |
 | 个人笔记检索 | 已实现 | 五路混合召回（整句 FTS / 数学签名 / 词 OR / 短词 LIKE / 向量语义）+ RRF 融合，检索分随引用返回 |
 | 语义向量检索 | 已实现（需配置服务） | 本地 BGE 服务（`tools/embedding_service`，默认 bge-m3）或兼容 OpenAI 接口的云端 embedding；未配置时自动只用词面通道 |
-| 证据判定与学习模式 | 部分实现 | 回答前由 LLM 判定候选是否切题，过滤语料外引用；strict / balanced / expansive 三档策略已进编排层，默认 balanced，暂未接 UI |
+| 证据判定与学习模式 | 部分实现 | 回答前由 LLM 判定候选是否切题，过滤语料外引用；strict / balanced / expansive 三档策略已进编排层并接入设置页，默认 balanced |
 | 笔记判重与仲裁 | 已实现 | L1 确定性规则 + 向量兜底 + LLM 三分类仲裁（same / supplement / different）；supplement 照常写入，不丢补充内容 |
 | 笔记建议 | 部分实现 | create / append / merge 三类建议已发事件与日志，暂未渲染到界面 |
 | 可追溯复习回答 | 已实现 | 概念解释、知识比较、前置查询、笔记定位与出题，来源带融合分与摘要，可回看笔记版本 |

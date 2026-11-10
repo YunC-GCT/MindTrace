@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检索与证据 · MindTrace</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="retrieval.html">
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="index.html">MIND<span>TRACE</span></a>
+      <button class="nav-toggle" type="button" aria-label="打开导航">菜单</button>
+      <div class="nav-links">
+        <a href="index.html">概览</a>
+        <a href="flow.html">产品流程</a>
+        <a href="architecture.html">架构</a>
+        <a href="a2a.html">A2A</a>
+        <a href="retrieval.html">检索</a>
+        <a href="quality.html">质量</a>
+        <a href="MindTrace-Portfolio.pdf">PDF</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" style="grid-template-columns: 1fr; padding-bottom: 24px;">
+      <div>
+        <span class="eyebrow">Retrieval &amp; Evidence</span>
+        <h1 style="font-size: clamp(32px, 5vw, 48px);">先找得到，再判断<em>够不够</em></h1>
+        <p class="lead">五路召回解决“换个说法就搜不到”；证据判定解决“搜到了但不该拿来回答”。两件事分开，策略才能显式配置。</p>
+      </div>
+    </section>
+
+    <section class="section" style="border-top: 0; padding-top: 8px;">
+      <img class="diagram" src="assets/retrieval-pipeline.svg" alt="混合检索与证据判定管线">
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>五路召回</h2>
+        <p>没有单一路由能覆盖数学题的所有说法，所以保留互补通道，再用 RRF 融合排名。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>通道</th><th>解决什么</th><th>边界</th></tr></thead>
+          <tbody>
+            <tr><td><strong>整句 FTS</strong></td><td>原句或高度重合的表述</td><td>换说法就失效</td></tr>
+            <tr><td><strong>数学签名</strong></td><td>公式、符号、结构相似</td><td>依赖归一化质量</td></tr>
+            <tr><td><strong>词 OR</strong></td><td>关键词部分命中</td><td>长题干噪声多</td></tr>
+            <tr><td><strong>短词 LIKE</strong></td><td>短查询、生僻词</td><td>只适合兜底</td></tr>
+            <tr><td><strong>稠密向量</strong></td><td>语义等价、改写</td><td>需要本地或云端 embedding</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>证据策略</h2>
+        <p>策略是调用方的输入，不再藏在检索实现里。</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <span class="tag">strict</span>
+          <h3>不确定就不答</h3>
+          <p>判定不可用时 fail-closed，把候选视为无证据；适合对错误零容忍的复习场景。</p>
+        </article>
+        <article class="card">
+          <span class="tag">balanced</span>
+          <h3>默认档</h3>
+          <p>判定不可用时 fail-open，保留候选；语料外负样本命中从 5/5 降到约 1/5（概率性）。</p>
+        </article>
+        <article class="card">
+          <span class="tag">expansive</span>
+          <h3>多给材料</h3>
+          <p>跳过判定，允许在证据不足时继续；适合探索式提问，但引用可信度由用户判断。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>MathNet-Retrieve 评测</h2>
+        <p>公开基准：15,000 条查询 / 117,088 条语料；这里是 easy 档中文子集 334 条查询、固定 2,000 候选池。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>变体</th><th>hit@1</th><th>hit@5</th><th>MRR</th><th>nDCG@10</th></tr></thead>
+          <tbody>
+            <tr><td>词面 BM25</td><td class="num-cell">216</td><td class="num-cell">262</td><td class="num-cell">0.705</td><td class="num-cell">0.734</td></tr>
+            <tr><td><strong>向量 body</strong></td><td class="num-cell"><strong>286</strong></td><td class="num-cell"><strong>314</strong></td><td class="num-cell"><strong>0.895</strong></td><td class="num-cell"><strong>0.914</strong></td></tr>
+            <tr><td>混合 body（RRF）</td><td class="num-cell">242</td><td class="num-cell">296</td><td class="num-cell">0.793</td><td class="num-cell">0.833</td></tr>
+            <tr><td>混合 + 条件重排</td><td class="num-cell">232</td><td class="num-cell">288</td><td class="num-cell">0.766</td><td class="num-cell">0.804</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note" style="margin-top: 18px;">
+        全语料词面基线：BM25 hit@1 22/334（6.6%）、hit@5 187/334。等价改写场景下，词面通道无法承担主召回。
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>结论与限制</h2>
+        <p>评测的价值不只是分数，而是推翻了之前的调参结论。</p>
+      </div>
+      <div class="grid-2">
+        <article class="card">
+          <h3>结论</h3>
+          <p>2,000 候选池上纯向量最好；等权 RRF 会把向量排对的条目挤下去；条件重排在该基准上是负优化（79 次触发、480s，hit@1 再降 10 条）。</p>
+        </article>
+        <article class="card">
+          <h3>限制</h3>
+          <p>候选池只抽 2,000 条且含约 16.7% gold，命中率不能和全语料 BEIR 榜单直接比较；结论的排序有效性高于绝对值。</p>
+        </article>
+      </div>
+      <div class="note" style="margin-top: 18px;">
+        仓库内自建的 100 条夹具只保留为冒烟用途，不再用于对外指标；对外只引用 MathNet-Retrieve 的公开口径。
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <span>MindTrace · 求职作品集</span>
+      <span>2026-11</span>
+      <a href="https://github.com/YunC-GCT/MindTrace">GitHub</a>
+      <a href="MindTrace-Portfolio.pdf">PDF</a>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

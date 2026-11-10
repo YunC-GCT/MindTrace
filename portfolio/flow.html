@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>产品流程 · MindTrace</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="flow.html">
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="index.html">MIND<span>TRACE</span></a>
+      <button class="nav-toggle" type="button" aria-label="打开导航">菜单</button>
+      <div class="nav-links">
+        <a href="index.html">概览</a>
+        <a href="flow.html">产品流程</a>
+        <a href="architecture.html">架构</a>
+        <a href="a2a.html">A2A</a>
+        <a href="retrieval.html">检索</a>
+        <a href="quality.html">质量</a>
+        <a href="MindTrace-Portfolio.pdf">PDF</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" style="grid-template-columns: 1fr; padding-bottom: 24px;">
+      <div>
+        <span class="eyebrow">Product Flow</span>
+        <h1 style="font-size: clamp(32px, 5vw, 48px);">四种入口，同一条<em>确认链路</em></h1>
+        <p class="lead">入口可以很多，但写入只能有一套规则：先出草稿、用户确认、再判重入库。失败不丢输入，统一转待整理。</p>
+      </div>
+    </section>
+
+    <section class="section" style="border-top: 0; padding-top: 8px;">
+      <img class="diagram" src="assets/product-flow.svg" alt="产品流程图">
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>四个入口分别解决什么</h2>
+        <p>不是四个产品，而是同一能力的四种到达方式。</p>
+      </div>
+      <div class="grid-2">
+        <article class="card">
+          <span class="tag">应用内</span>
+          <h3>拍照 / 批量</h3>
+          <p>相册多选最多 20 张，OCR 后按题规划；多题逐题预览，确认一题保存一题。适合整页练习册或错题截图。</p>
+        </article>
+        <article class="card">
+          <span class="tag">应用内</span>
+          <h3>文字输入</h3>
+          <p>直接贴题目、定义或笔记片段。适合从聊天、网页、文档里复制的材料。</p>
+        </article>
+        <article class="card">
+          <span class="tag">系统入口</span>
+          <h3>小艺 A2A</h3>
+          <p>在小艺里说“存笔记：矩阵的秩”，先回标题和要点，再问是否保存。支持确认、取消、详细、简洁、重新生成。</p>
+        </article>
+        <article class="card">
+          <span class="tag">对话</span>
+          <h3>整理成笔记</h3>
+          <p>先问一道题，得到回答后说“整理成笔记”，用最近一轮问答作为资料，不要求用户重新输入。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>一条笔记的完整路径</h2>
+        <p>以 A2A 单题为例；应用内批量只是把“单题”换成“计划里的逐题”。</p>
+      </div>
+      <div class="timeline">
+        <div class="timeline-item">
+          <h3>1. 路由</h3>
+          <p>识别 chat / ingest / OCR / 计划推进；带“存笔记”或整理意图进入 ingest，其余走回答。</p>
+        </div>
+        <div class="timeline-item">
+          <h3>2. 生成草稿</h3>
+          <p>light 路由先跑，目标是 3–6s；正文为空或复述原文时取消该 run，改用 standard。</p>
+        </div>
+        <div class="timeline-item">
+          <h3>3. 落盘</h3>
+          <p>草稿按 conversationKey 保存 24h，跨轮次确认；计划项同时保存 planTaskId / planItemIndex。</p>
+        </div>
+        <div class="timeline-item">
+          <h3>4. 预览</h3>
+          <p>先输出标题、学科/题型和最多 4 节关键内容，最后才问“要我把这些内容整理成笔记保存吗？”</p>
+        </div>
+        <div class="timeline-item">
+          <h3>5. 二次操作</h3>
+          <p>详细一点走 standard；简洁一点、重新生成走 light；新草稿成功后才覆盖旧草稿。</p>
+        </div>
+        <div class="timeline-item">
+          <h3>6. 确认入库</h3>
+          <p>确认后走判重与幂等写入；命中重复时复用已有笔记并说明，不重复创建。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>失败路径</h2>
+        <p>产品体验的差异，往往在模型慢、模型挂、内容为空时体现。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>场景</th><th>处理</th><th>用户看到</th></tr></thead>
+          <tbody>
+            <tr><td>8s 未返回</td><td>记慢请求日志，不打断生成</td><td>无变化，继续等</td></tr>
+            <tr><td>25s 未返回</td><td>取消 token，入待整理队列</td><td>“这次整理较慢，已转待整理……”</td></tr>
+            <tr><td>草稿为空 / 复述原文</td><td>取消 run，改 standard 重试</td><td>稍慢，但拿到可用草稿</td></tr>
+            <tr><td>确认时命中判重</td><td>复用已有笔记，不重复创建</td><td>“已保存（复用）：……”</td></tr>
+            <tr><td>计划某题失败</td><td>保留计划进度，可继续/取消</td><td>“第 N 题这次没整理成……”</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <span>MindTrace · 求职作品集</span>
+      <span>2026-11</span>
+      <a href="https://github.com/YunC-GCT/MindTrace">GitHub</a>
+      <a href="MindTrace-Portfolio.pdf">PDF</a>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

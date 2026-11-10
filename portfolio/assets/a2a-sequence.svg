@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" role="img" aria-label="A2A 草稿确认时序：用户在小艺发消息，扩展能力生成草稿并落盘，用户确认后才入库">
+  <defs>
+    <marker id="sq-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/>
+    </marker>
+    <marker id="sq-return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .t { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+      .h { font-size: 14px; font-weight: 700; fill: #0f172a; }
+      .s { font-size: 11px; fill: #64748b; }
+      .n { font-size: 11px; font-weight: 700; fill: #0f766e; }
+      .life { stroke: #cbd5e1; stroke-width: 1.2; stroke-dasharray: 4 5; }
+      .box { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.4; }
+      .agent { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.5; }
+    </style>
+  </defs>
+
+  <rect width="960" height="480" fill="#f8fafc"/>
+  <text x="40" y="34" class="t n">A2A DRAFT CHECKPOINT</text>
+  <text x="40" y="60" class="t h" font-size="20">“先预览、后入库”的跨轮次状态机</text>
+
+  <!-- lifelines -->
+  <g class="t">
+    <rect x="34" y="82" width="112" height="46" rx="9" class="box"/>
+    <text x="50" y="102" class="h" font-size="12">用户 / 小艺</text>
+    <text x="50" y="118" class="s">SendStreamingMessage</text>
+
+    <rect x="218" y="82" width="130" height="46" rx="9" class="agent"/>
+    <text x="234" y="102" class="h" font-size="12">AgentExtAbility</text>
+    <text x="234" y="118" class="s">onData / sendData</text>
+
+    <rect x="412" y="82" width="142" height="46" rx="9" class="agent"/>
+    <text x="428" y="102" class="h" font-size="12">A2AIngestHandler</text>
+    <text x="428" y="118" class="s">checkpoint / deadline</text>
+
+    <rect x="614" y="82" width="130" height="46" rx="9" class="box"/>
+    <text x="630" y="102" class="h" font-size="12">A2ADraftStore</text>
+    <text x="630" y="118" class="s">24h 落盘</text>
+
+    <rect x="798" y="82" width="130" height="46" rx="9" class="box"/>
+    <text x="814" y="102" class="h" font-size="12">AiService</text>
+    <text x="814" y="118" class="s">light / standard</text>
+  </g>
+
+  <line x1="90" y1="128" x2="90" y2="440" class="life"/>
+  <line x1="283" y1="128" x2="283" y2="440" class="life"/>
+  <line x1="483" y1="128" x2="483" y2="440" class="life"/>
+  <line x1="679" y1="128" x2="679" y2="440" class="life"/>
+  <line x1="863" y1="128" x2="863" y2="440" class="life"/>
+
+  <!-- 1 -->
+  <text x="104" y="158" class="t s">1. 发「存笔记：矩阵的秩」</text>
+  <line x1="90" y1="166" x2="283" y2="166" stroke="#0f766e" stroke-width="1.5" marker-end="url(#sq-arrow)"/>
+
+  <!-- 2 -->
+  <text x="297" y="190" class="t s">2. onData：taskId / contextId</text>
+  <line x1="283" y1="198" x2="483" y2="198" stroke="#0f766e" stroke-width="1.5" marker-end="url(#sq-arrow)"/>
+
+  <!-- 3 -->
+  <text x="497" y="222" class="t s">3. beginDraftCheckpoint</text>
+  <line x1="483" y1="230" x2="863" y2="230" stroke="#0f766e" stroke-width="1.5" marker-end="url(#sq-arrow)"/>
+
+  <!-- 4 return -->
+  <text x="700" y="254" class="t s">4. 返回草稿事件</text>
+  <line x1="863" y1="262" x2="483" y2="262" stroke="#64748b" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#sq-return)"/>
+
+  <!-- 5 save -->
+  <text x="497" y="286" class="t s">5. 保存草稿 / 计划进度</text>
+  <line x1="483" y1="294" x2="679" y2="294" stroke="#0f766e" stroke-width="1.5" marker-end="url(#sq-arrow)"/>
+
+  <!-- 6 preview -->
+  <text x="297" y="318" class="t s">6. 预览回复：标题 / 要点 / 确认提示</text>
+  <line x1="483" y1="326" x2="90" y2="326" stroke="#64748b" stroke-width="1.4" marker-end="url(#sq-return)"/>
+
+  <!-- 7 confirm -->
+  <text x="104" y="350" class="t s">7. 回复「确认」</text>
+  <line x1="90" y1="358" x2="283" y2="358" stroke="#0f766e" stroke-width="1.5" marker-end="url(#sq-arrow)"/>
+  <line x1="283" y1="358" x2="483" y2="358" stroke="#0f766e" stroke-width="1.5" marker-end="url(#sq-arrow)"/>
+
+  <!-- 8 persist -->
+  <text x="497" y="382" class="t s">8. confirmDraft → 判重 → 入库</text>
+  <line x1="483" y1="390" x2="679" y2="390" stroke="#0f766e" stroke-width="1.5" marker-end="url(#sq-arrow)"/>
+  <line x1="679" y1="390" x2="863" y2="390" stroke="#0f766e" stroke-width="1.5" marker-end="url(#sq-arrow)"/>
+
+  <!-- 9 receipt -->
+  <text x="104" y="416" class="t s">9. 回执：「已保存：…」</text>
+  <line x1="483" y1="424" x2="90" y2="424" stroke="#64748b" stroke-width="1.4" marker-end="url(#sq-return)"/>
+
+  <text x="40" y="466" class="t s">失败路径：8s 记慢日志，25s 未返回 → 转待整理并只回一条回执；草稿 24h 过期。</text>
+</svg>

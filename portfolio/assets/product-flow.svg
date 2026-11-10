@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" role="img" aria-label="MindTrace 产品流程：四种入口经过意图路由、草稿生成、用户确认、入库和检索问答">
+  <defs>
+    <marker id="pf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .t { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+      .h { font-size: 15px; font-weight: 700; fill: #0f172a; }
+      .s { font-size: 12px; fill: #64748b; }
+      .n { font-size: 11px; font-weight: 700; fill: #0f766e; letter-spacing: 1px; }
+      .box { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.4; }
+      .accent { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.6; }
+      .ink { fill: #0f172a; }
+    </style>
+  </defs>
+
+  <rect width="960" height="380" fill="#f8fafc"/>
+  <text x="40" y="38" class="t n">PRODUCT FLOW</text>
+  <text x="40" y="66" class="t h" font-size="21">四种入口，同一条“先确认、后入库”的链路</text>
+
+  <!-- inputs -->
+  <g class="t">
+    <rect x="40" y="96" width="176" height="48" rx="10" class="box"/>
+    <text x="58" y="118" class="h" font-size="13">拍照 / 批量</text>
+    <text x="58" y="134" class="s">相册多选、OCR</text>
+
+    <rect x="40" y="156" width="176" height="48" rx="10" class="box"/>
+    <text x="58" y="178" class="h" font-size="13">文字输入</text>
+    <text x="58" y="194" class="s">题目、定义、笔记片段</text>
+
+    <rect x="40" y="216" width="176" height="48" rx="10" class="box"/>
+    <text x="58" y="238" class="h" font-size="13">小艺 A2A</text>
+    <text x="58" y="254" class="s">“存笔记：…” / 计划</text>
+
+    <rect x="40" y="276" width="176" height="48" rx="10" class="box"/>
+    <text x="58" y="298" class="h" font-size="13">对话回忆</text>
+    <text x="58" y="314" class="s">“整理成笔记”</text>
+  </g>
+
+  <path d="M216 120 C 250 120, 250 180, 280 180" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+  <path d="M216 180 L 280 180" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+  <path d="M216 240 C 250 240, 250 180, 280 180" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+  <path d="M216 300 C 250 300, 250 180, 280 180" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+
+  <!-- route -->
+  <g class="t">
+    <rect x="280" y="146" width="128" height="68" rx="12" class="accent"/>
+    <text x="298" y="174" class="h" font-size="14">意图路由</text>
+    <text x="298" y="193" class="s">chat / ingest / OCR</text>
+  </g>
+
+  <path d="M408 180 L 456 180" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+
+  <!-- draft -->
+  <g class="t">
+    <rect x="456" y="132" width="150" height="96" rx="12" class="box"/>
+    <text x="474" y="158" class="h" font-size="14">草稿生成</text>
+    <text x="474" y="177" class="s">light 先行，质量门</text>
+    <text x="474" y="195" class="s">空/复述 → standard</text>
+    <text x="474" y="213" class="s">最近 3 轮对话作资料</text>
+  </g>
+
+  <path d="M606 180 L 654 180" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+
+  <!-- confirm -->
+  <g class="t">
+    <rect x="654" y="132" width="150" height="96" rx="12" class="accent"/>
+    <text x="672" y="158" class="h" font-size="14">用户确认</text>
+    <text x="672" y="177" class="s">确认 / 取消</text>
+    <text x="672" y="195" class="s">详细 / 简洁 / 重生成</text>
+    <text x="672" y="213" class="s">确认前不写库</text>
+  </g>
+
+  <path d="M804 180 L 852 180" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+
+  <!-- persist -->
+  <g class="t">
+    <rect x="852" y="132" width="76" height="96" rx="12" class="box"/>
+    <text x="868" y="166" class="h" font-size="14">入库</text>
+    <text x="868" y="184" class="s">判重</text>
+    <text x="868" y="202" class="s">幂等</text>
+  </g>
+
+  <!-- bottom: retrieve -->
+  <g class="t">
+    <rect x="456" y="272" width="472" height="62" rx="12" class="box"/>
+    <text x="476" y="296" class="h" font-size="14">检索问答：五路召回 → RRF → 证据判定 → 带来源回答</text>
+    <text x="476" y="316" class="s">引用带融合分与摘要，可回看笔记与版本；语料外默认不强行作答</text>
+  </g>
+
+  <path d="M890 248 L 890 268" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+  <path d="M890 268 L 476 268" fill="none" stroke="#0f766e" stroke-width="1.5"/>
+  <path d="M476 268 L 476 272" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#pf-arrow)"/>
+
+  <text x="40" y="360" class="t s">设计要点：草稿是“可退回的中间态”，不是正式笔记；失败统一转待整理，不丢用户输入。</text>
+</svg>
