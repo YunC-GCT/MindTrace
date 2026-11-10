@@ -10,7 +10,7 @@
 <!-- 01 cover -->
 <section class="page cover">
   <div class="cover-top">
-    <span>MindTrace / Portfolio</span>
+    <span>MindTrace / 项目介绍</span>
     <span>2026-11</span>
   </div>
   <h1>MindTrace</h1>
@@ -26,7 +26,7 @@
     <div><strong>3.2s</strong><span>A2A 草稿</span></div>
   </div>
   <div class="cover-bottom">
-    <span>YunCeH · 个人项目</span>
+    <span>YunCeH</span>
     <span>github.com/YunC-GCT/MindTrace</span>
   </div>
 </section>
@@ -59,9 +59,9 @@
       <p>先出草稿，用户确认才入库；复习时基于个人笔记检索，回答带来源、摘要与融合分。</p>
     </div>
     <div class="card">
-      <span class="tag">角色</span>
-      <h3>独立设计与实现</h3>
-      <p>产品流程、五模块架构、A2A 链路、检索与判重、测试与真机验证均由本人完成。</p>
+      <span class="tag">方法</span>
+      <h3>先定边界，再接入口</h3>
+      <p>先确定“什么时候写、写什么、凭什么回答”，再把四条入口接进同一套命令与结果契约；未验证能力单独标注状态。</p>
     </div>
   </div>
 
@@ -75,12 +75,12 @@
   <h3 style="margin-top: 7mm;">范围与边界</h3>
   <div class="grid-3">
     <div class="card">
-      <span class="tag">已交付</span>
+      <span class="tag">已验证</span>
       <h3>四条入口 + 草稿确认</h3>
       <p>应用内拍照/批量/文字、A2A 文本与计划、对话回忆；确认前不写库。</p>
     </div>
     <div class="card">
-      <span class="tag">已交付</span>
+      <span class="tag">已验证</span>
       <h3>检索与判重</h3>
       <p>五路召回、证据判定、三分类判重、幂等写入、schema v23。</p>
     </div>
@@ -254,14 +254,14 @@
     回执去重：入队函数统一负责“入队 + 一条回执”，调用方不再单独回话；单题可重试路径也不再重复入队。
   </div>
 
-  <h3 style="margin-top: 6mm;">改动前后</h3>
+  <h3 style="margin-top: 6mm;">关键取舍</h3>
   <table class="table">
-    <thead><tr><th>维度</th><th>改动前</th><th>改动后</th></tr></thead>
+    <thead><tr><th>设计点</th><th>未采用的做法</th><th>采用的做法</th></tr></thead>
     <tbody>
       <tr><td>写入时机</td><td>收到文本直接入库</td><td>先生成草稿，确认后才入库</td></tr>
       <tr><td>模型挂起</td><td>最长等 90s</td><td>25s 回执并转待整理</td></tr>
       <tr><td>失败回执</td><td>入队与调用方各回一条</td><td>统一只回一条</td></tr>
-      <tr><td>单题重试</td><td>请求文本可能重复入队</td><td>多题才补剩余题，单题只入一次</td></tr>
+      <tr><td>单题重试</td><td>请求文本可能再次入队</td><td>多题只补剩余题，单题只入一次</td></tr>
     </tbody>
   </table>
 
@@ -398,7 +398,7 @@
 <section class="page">
   <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 工程质量</span><span>10 / 12</span></div>
   <h2 class="page-title">每次改动都能回到同一条验收线</h2>
-  <p class="page-lead">本地提交前跑质量门；契约测试守住跨模块边界；真机冒烟验证平台链路。没有 gate 输出的“已完成”不算完成。</p>
+  <p class="page-lead">本地提交前跑质量门；契约测试守住跨模块边界；真机冒烟验证平台链路；完成以 gate 输出为准。</p>
 
   <table class="table">
     <thead><tr><th>检查</th><th>结果</th><th>作用</th></tr></thead>
@@ -506,8 +506,8 @@
   <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 链接</span><span>12 / 12</span></div>
   <p class="big">从“能回答”到<br><em>“能确认、能追溯”</em></p>
   <p class="page-lead">
-    这个项目最想展示的不是功能数量，而是三个判断：写入前先确认，回答前先判断证据，
-    相似内容不要轻易丢掉。剩下的是把这些判断落到跨进程、跨入口的工程约束里。
+    项目的重点不在功能数量，而在三个判断：写入前先确认，回答前先判断证据，
+    相似内容不要轻易丢掉；其余工作是把这三个判断落到跨进程、跨入口的工程约束里。
   </p>
 
   <div class="link-block">
@@ -535,7 +535,7 @@
 
   <h3 style="margin-top: 7mm;">3 分钟演示脚本</h3>
   <table class="table">
-    <thead><tr><th>时间</th><th>演示内容</th><th>要证明什么</th></tr></thead>
+    <thead><tr><th>时间</th><th>演示内容</th><th>对应的设计点</th></tr></thead>
     <tbody>
       <tr><td class="num">0:00–0:30</td><td>一句话定位 + 四条入口</td><td>产品问题与范围</td></tr>
       <tr><td class="num">0:30–1:30</td><td>拍照/批量 → 草稿 → 确认保存</td><td>确认前不写库</td></tr>
