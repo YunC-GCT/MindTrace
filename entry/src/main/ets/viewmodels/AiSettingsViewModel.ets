@@ -11,7 +11,7 @@ import {
 } from "common"
 import { EmbeddingRuntime } from "../services/EmbeddingRuntime"
 import type {
-  CustomVendorConfig, DiscoveryResult, EmbeddingVector, ModelListing, ModelPreference,
+  CustomVendorConfig, DiscoveryResult, EmbeddingVector, EvidenceMode, ModelListing, ModelPreference,
   ProviderConfig, ProviderCatalog, ResolvedModel, VendorModelMeta,
 } from "common"
 import { OcrTool } from "agents"
@@ -67,6 +67,7 @@ export class AiSettingsViewModel {
   embeddingApiKey: string = ""
   embeddingTesting: boolean = false
   embeddingStatusText: string = "未启用"
+  evidenceMode: EvidenceMode = "balanced"
 
   async load(): Promise<boolean> {
     let ok: boolean = true
@@ -145,6 +146,11 @@ export class AiSettingsViewModel {
       this.embeddingEnabled = false
       this.embeddingStatusText = "未启用"
     }
+    try {
+      this.evidenceMode = llm.getEvidenceMode()
+    } catch (_e) {
+      this.evidenceMode = "balanced"
+    }
     return ok
   }
 
@@ -222,6 +228,7 @@ export class AiSettingsViewModel {
       await llm.setEmbeddingModel(this.embeddingModel)
       await llm.setEmbeddingEndpoint(this.embeddingEndpoint)
       await llm.setEmbeddingApiKey(this.embeddingApiKey)
+      await llm.setEvidenceMode(this.evidenceMode)
       EmbeddingRuntime.refresh()
       this.embeddingModel = llm.getEmbeddingModel()
       this.embeddingEnabled = this.embeddingModel.length > 0
@@ -252,6 +259,10 @@ export class AiSettingsViewModel {
 
   setEmbeddingApiKey(value: string): void {
     this.embeddingApiKey = value
+  }
+
+  setEvidenceMode(value: EvidenceMode): void {
+    this.evidenceMode = value
   }
 
   /**

@@ -8,7 +8,7 @@
  * 数据流: AgentExtAbility.onData → A2AController.handle(A2ARequestInput) → A2AReplyPort.send()
  *
  * 边界: 不解析 JSON-RPC、不持有 hostProxy、不拼快照；因此本类可在 Node 契约测试里按源码守卫。
- * 写库模式（ADR-0024 §2.1/§2.7）: A2A 单次整理在 :agent 内联执行；文本批量 90s deadline，
+ * 写库模式（ADR-0024 §2.1/§2.7）: A2A 单次整理在 :agent 内联执行；文本批量 30s deadline，
  *   超时/失败/溢出回退 inbox/agent_job。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -30,6 +30,9 @@ import {
 } from 'common';
 import type { NoteOutcome, ProviderCatalog, ResolvedModel } from 'common';
 
+import { A2ADraftStore } from './A2ADraftStore';
+import { formatA2ADraftReply, parseA2ADraftCommand, parseA2ADraftRefine, splitReplyText } from './A2ADraftModels';
+import type { A2ADraftRefine, A2APendingDraft } from './A2ADraftModels';
 import { CaptureReceipt, CaptureReceiptStore, formatReceipt, matchesReceiptIntent } from './CaptureReceipt';
 import { AgentInboxItem, buildInboxItem } from './AgentInboxModels';
 import { AgentInboxQueue } from './AgentInboxQueue';
@@ -95,9 +98,15 @@ export interface A2ARequestInput {
   parts: AgentPart[];
 }
 
-/** 控制器回话端口：由 AgentExtAbility 实现，负责拼单帧快照并 sendData。 */
+/** 控制器回话端口：由 AgentExtAbility 实现，负责拼帧并 sendData。 */
 export interface A2AReplyPort {
   send(taskId: string, text: string, requestStartedAt: number): void;
+  /** 流式探针：任务开始帧 */
+  streamStart(taskId: string): void;
+  /** 流式探针：artifact 分块帧 */
+  streamChunk(taskId: string, text: string, append: boolean, lastChunk: boolean): void;
+  /** 流式探针：任务结束帧 */
+  streamEnd(taskId: string): void;
 }
 
 /** 扩展进程内的模型配置初始化（只做一次），runQuery 前必须等它 */
@@ -110,6 +119,10 @@ export class A2AController {
   private currentRequestIdValue: string = '';
   /** 当前在跑的请求：新请求重入或 onDestroy 时用它取消 token / 清 deadline */
   private activeSession: A2ARequestSession | null = null;
+  /** 流式探针分块定时器；新请求/销毁时清掉 */
+  private streamProbeTimer: number = 0;
+  /** 普通长回复分块定时器 */
+  private streamTimer: number = 0;
   private readonly ingestHandler: A2AIngestHandler;
   private readonly answerHandler: A2AAnswerHandler;
 
@@ -146,6 +159,89 @@ export class A2AController {
 
   sendIngestAnswer(taskId: string, text: string, requestStartedAt: number): void {
     this.sendAnswer(taskId, text, requestStartedAt);
+  }
+
+  /** 固定分块探针：给定块列表与间隔，验证客户端长度/块数上限。 */
+  private runFixedChunks(taskId: string, chunks: string[], delayMs: number): void {
+    const finalTaskId: string = taskId.length > 0 ? taskId : 'task-fixed-' + Date.now().toString();
+    hilog.info(DOMAIN, TAG, 'A2A_STREAM_PROBE fixed begin taskId=%{public}s chunks=%{public}d',
+      finalTaskId, chunks.length);
+    this.reply.streamStart(finalTaskId);
+    let index: number = 0;
+    const tick = (): void => {
+      if (index >= chunks.length) {
+        this.reply.streamEnd(finalTaskId);
+        this.streamProbeTimer = 0;
+        hilog.info(DOMAIN, TAG, 'A2A_STREAM_PROBE fixed end taskId=%{public}s', finalTaskId);
+        return;
+      }
+      const lastChunk: boolean = index === chunks.length - 1;
+      this.reply.streamChunk(finalTaskId, chunks[index], index > 0, lastChunk);
+      index += 1;
+      this.streamProbeTimer = setTimeout(tick, delayMs);
+    };
+    tick();
+  }
+  /** 长回复分块发送；超过 70 字仍走单帧（客户端流式会丢尾部），短回复才分块。 */
+  sendStreamingAnswer(taskId: string, text: string): void {
+    if (text.length > 70) {
+      this.sendAnswer(taskId, text, 0);
+      return;
+    }
+    const chunks: string[] = splitReplyText(text);
+    if (chunks.length <= 1) {
+      this.sendAnswer(taskId, text, 0);
+      return;
+    }
+    const finalTaskId: string = taskId.length > 0 ? taskId : 'task-' + Date.now().toString();
+    hilog.info(DOMAIN, TAG, 'A2A_REPLY_STREAMED chunks=%{public}d chars=%{public}d',
+      chunks.length, text.length);
+    this.reply.streamStart(finalTaskId);
+    let index: number = 0;
+    const tick = (): void => {
+      if (index >= chunks.length) {
+        this.reply.streamEnd(finalTaskId);
+        this.streamTimer = 0;
+        return;
+      }
+      const lastChunk: boolean = index === chunks.length - 1;
+      this.reply.streamChunk(finalTaskId, chunks[index], index > 0, lastChunk);
+      index += 1;
+      this.streamTimer = setTimeout(tick, 350);
+    };
+    tick();
+  }
+
+  /**
+   * 流式探针：固定 5 段、每段 700ms，验证小艺客户端是否渲染 artifactUpdate 多帧。
+   * 只在文本恰好是「流式探针」时触发；不影响正常意图。
+   */
+  private runStreamProbe(taskId: string): void {
+    const chunks: string[] = [
+      '流式探针开始。',
+      '第一段：端A2A 手写 artifactUpdate。',
+      '第二段：如果你看到三段逐条出现，说明客户端支持多帧。',
+      '第三段：准备结束。',
+      '流式探针结束。',
+    ];
+    const finalTaskId: string = taskId.length > 0 ? taskId : 'task-stream-' + Date.now().toString();
+    hilog.info(DOMAIN, TAG, 'A2A_STREAM_PROBE begin taskId=%{public}s chunks=%{public}d',
+      finalTaskId, chunks.length);
+    this.reply.streamStart(finalTaskId);
+    let index: number = 0;
+    const tick = (): void => {
+      if (index >= chunks.length) {
+        this.reply.streamEnd(finalTaskId);
+        this.streamProbeTimer = 0;
+        hilog.info(DOMAIN, TAG, 'A2A_STREAM_PROBE end taskId=%{public}s', finalTaskId);
+        return;
+      }
+      const lastChunk: boolean = index === chunks.length - 1;
+      this.reply.streamChunk(finalTaskId, chunks[index], index > 0, lastChunk);
+      index += 1;
+      this.streamProbeTimer = setTimeout(tick, 700);
+    };
+    tick();
   }
 
   /** 组合根调用：日志策略、初始化 DB 与 LlmConfig；不安装 OCR（那是 AgentExtAbility 的职责）。 */
@@ -190,6 +286,14 @@ export class A2AController {
    * LlmClient 的 onCancel 监听会 httpRequest.destroy()，不会留下后台僵尸请求。
    */
   cancelActive(): void {
+    if (this.streamProbeTimer !== 0) {
+      clearTimeout(this.streamProbeTimer);
+      this.streamProbeTimer = 0;
+    }
+    if (this.streamTimer !== 0) {
+      clearTimeout(this.streamTimer);
+      this.streamTimer = 0;
+    }
     const session: A2ARequestSession | null = this.activeSession;
     if (session === null) {
       return;
@@ -200,7 +304,7 @@ export class A2AController {
     this.activeSession = null;
   }
 
-  /** 请求入口：取消上一轮 → 解析图片/文本 → 读计划 → 意图路由 → 分派。 */
+  /** 请求入口：取消上一轮 → 解析图片/文本 → 读计划/草稿 → 意图路由 → 分派。 */
   handle(input: A2ARequestInput): void {
     this.cancelActive();
     this.currentRequestIdValue = input.requestId;
@@ -215,51 +319,129 @@ export class A2AController {
 
     A2APlanStore.load(this.context, input.taskId)
       .then((plan: A2APlan | null): void => {
-        const intent: A2AIntent = routeA2AIntent(text, images.length > 0, plan !== null);
-        hilog.info(DOMAIN, TAG, 'INTENT kind=%{public}s reason=%{public}s',
-          intent.kind, intent.reason);
-        if (intent.kind === INTENT_PROBE) {
-          OcrService.probe(this.context).then((r: string): void => {
-            this.sendAnswer(input.taskId, 'OCR 探针：' + r, 0);
-          });
-          return;
-        }
-        if (intent.kind === INTENT_PLAN_CONTINUE && plan !== null) {
-          this.ingestHandler.handlePlanTurn(input.taskId, text, plan);
-          return;
-        }
-        if (intent.kind === INTENT_PLAN_WAITING && plan !== null) {
-          this.sendAnswer(input.taskId, '当前有整理计划（共 ' + plan.items.length.toString() + ' 题，已完成 '
-            + plan.done.length.toString() + ' 题）。回复「继续」/「第 N 题」/「全部」/「取消」。', 0);
-          return;
-        }
-        if (intent.kind === INTENT_OCR) {
-          this.handleOcrCheckpoint(input.taskId, ingest);
-          return;
-        }
-        if (intent.kind === INTENT_IMAGE_QA) {
-          this.handleImageQuestion(input.taskId, ingest, conversationKey);
-          return;
-        }
-        if (intent.kind === INTENT_PICK_CARD || intent.kind === INTENT_EMPTY) {
-          if (intent.kind === INTENT_EMPTY || intent.reason === 'ingest-without-content'
-            || hasIngestIntent(text)) {
-            this.answerWithLastImageMaterial(input.taskId, conversationKey);
-            return;
-          }
-          this.sendAnswer(input.taskId, '直接把题目图片或文字发我即可；说「整理成笔记」我会在小艺里直接整理，不需要打开 App。', 0);
-          return;
-        }
-        if (intent.kind === INTENT_TEXT_INGEST) {
-          this.ingestHandler.handleTextPlanMessage(input.taskId, ingest);
-          return;
-        }
-        this.runQuery(input.taskId, query, conversationKey);
+        this.loadDraftAndRoute(input, text, query, ingest, conversationKey, plan);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'INTENT_ROUTE_FAILED %{public}s', e.message);
-        this.runQuery(input.taskId, query, conversationKey);
+        this.loadDraftAndRoute(input, text, query, ingest, conversationKey, null);
       });
+  }
+
+  /** 计划之外再读待确认草稿；读失败不影响正常路由。 */
+  private loadDraftAndRoute(input: A2ARequestInput, text: string, query: string,
+    ingest: AgentIngestRequest, conversationKey: string, plan: A2APlan | null): void {
+    A2ADraftStore.load(this.context, conversationKey)
+      .then((pending: A2APendingDraft | null): void => {
+        this.routeInput(input, text, query, ingest, conversationKey, plan, pending);
+      })
+      .catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'A2A_DRAFT_LOAD_SKIPPED %{public}s', e.message);
+        this.routeInput(input, text, query, ingest, conversationKey, plan, null);
+      });
+  }
+
+  /** 意图路由：待确认草稿优先，其次计划、OCR、图片问答、文本整理和普通问答。 */
+  private routeInput(input: A2ARequestInput, text: string, query: string,
+    ingest: AgentIngestRequest, conversationKey: string, plan: A2APlan | null,
+    pendingDraft: A2APendingDraft | null): void {
+    if (text.trim() === '流式探针') {
+      this.runStreamProbe(input.taskId);
+      return;
+    }
+    if (text.trim() === '分块探针') {
+      let probeText: string = '分块探针开始。';
+      for (let i = 0; i < 6; i += 1) {
+        probeText += '第' + (i + 1).toString() + '段：这是用于验证长回复分块的内容。';
+      }
+      probeText += '分块探针结束。';
+      this.sendStreamingAnswer(input.taskId, probeText);
+      return;
+    }
+    if (text.trim() === '长流探针') {
+      const longChunks: string[] = [
+        '长流探针开始，这是第一段用于测试客户端的长度上限。',
+        '第二段继续补充一些内容，观察气泡是否会继续增长。',
+        '第三段再补充一些内容，确保总长度超过一百二十个字符。',
+        '第四段继续测试，看看第五段是否还能正常显示出来。',
+        '第五段结束，如果这段也显示说明分块数量不是瓶颈。',
+      ];
+      this.runFixedChunks(input.taskId, longChunks, 700);
+      return;
+    }
+    if (text.trim() === '百字探针') {
+      const hundredChunks: string[] = [
+        '百字探针开始，这是第一段用于测试长度上限的内容。',
+        '第二段继续补充一些内容，观察气泡是否会继续增长。',
+        '第三段再补充一些内容，确保总长度接近一百个字符。',
+        '第四段结束，如果全部显示说明上限约一百字。',
+      ];
+      this.runFixedChunks(input.taskId, hundredChunks, 700);
+      return;
+    }
+    const hasImages: boolean = collectImageParts(input.parts).length > 0;
+    const intent: A2AIntent = routeA2AIntent(text, hasImages, plan !== null);
+    hilog.info(DOMAIN, TAG, 'INTENT kind=%{public}s reason=%{public}s',
+      intent.kind, intent.reason);
+    if (pendingDraft !== null) {
+      const command: string = parseA2ADraftCommand(text);
+      if (command === 'confirm') {
+        this.ingestHandler.confirmPendingDraft(input.taskId, conversationKey, pendingDraft);
+        return;
+      }
+      if (command === 'cancel') {
+        this.ingestHandler.cancelPendingDraft(input.taskId, conversationKey, pendingDraft);
+        return;
+      }
+      const refine: A2ADraftRefine = parseA2ADraftRefine(text);
+      if (refine !== 'none') {
+        this.ingestHandler.refinePendingDraft(input.taskId, conversationKey, pendingDraft, refine);
+        return;
+      }
+      if (intent.kind === INTENT_TEXT_INGEST) {
+        // 新内容覆盖旧草稿：先生成新草稿，确认后只入库最新一份。
+        this.ingestHandler.beginDraftCheckpoint(input.taskId, conversationKey, ingest);
+        return;
+      }
+      this.sendAnswer(input.taskId, formatA2ADraftReply(pendingDraft.event), 0);
+      return;
+    }
+    if (intent.kind === INTENT_PROBE) {
+      OcrService.probe(this.context).then((r: string): void => {
+        this.sendAnswer(input.taskId, 'OCR 探针：' + r, 0);
+      });
+      return;
+    }
+    if (intent.kind === INTENT_PLAN_CONTINUE && plan !== null) {
+      this.ingestHandler.handlePlanTurn(input.taskId, text, plan, conversationKey);
+      return;
+    }
+    if (intent.kind === INTENT_PLAN_WAITING && plan !== null) {
+      this.sendAnswer(input.taskId, '当前有整理计划（共 ' + plan.items.length.toString() + ' 题，已完成 '
+        + plan.done.length.toString() + ' 题）。回复「继续」/「第 N 题」/「全部」/「取消」。', 0);
+      return;
+    }
+    if (intent.kind === INTENT_OCR) {
+      this.handleOcrCheckpoint(input.taskId, ingest, conversationKey);
+      return;
+    }
+    if (intent.kind === INTENT_IMAGE_QA) {
+      this.handleImageQuestion(input.taskId, ingest, conversationKey);
+      return;
+    }
+    if (intent.kind === INTENT_PICK_CARD || intent.kind === INTENT_EMPTY) {
+      if (intent.kind === INTENT_EMPTY || intent.reason === 'ingest-without-content'
+        || hasIngestIntent(text)) {
+        this.answerWithLastMaterial(input.taskId, conversationKey);
+        return;
+      }
+      this.sendAnswer(input.taskId, '直接把题目图片或文字发我即可；说「整理成笔记」我会在小艺里直接整理，不需要打开 App。', 0);
+      return;
+    }
+    if (intent.kind === INTENT_TEXT_INGEST) {
+      this.ingestHandler.handleTextPlanMessage(input.taskId, ingest, conversationKey);
+      return;
+    }
+    this.runQuery(input.taskId, query, conversationKey);
   }
 
   /** 图片问答：OCR 识别图片文字后直接回答用户问题，不入库（整理意图仍走 OCR/计划）。 */
@@ -309,8 +491,8 @@ export class A2AController {
     return texts.join('\n');
   }
 
-  /** 意图=OCR：先用文字识别工具把图转文字并按题规划，回 checkpoint 摘要；用户「继续」才入库。 */
-  private handleOcrCheckpoint(taskId: string, request: AgentIngestRequest): void {
+  /** 意图=OCR：先用文字识别工具把图转文字并按题规划；单题直接出草稿，多题先给计划摘要。 */
+  private handleOcrCheckpoint(taskId: string, request: AgentIngestRequest, conversationKey: string): void {
     hilog.info(DOMAIN, TAG, 'OCR_CHECKPOINT start images=%{public}d chars=%{public}d',
       request.images.length, request.text.length);
     IngestGateway.plan(request)
@@ -323,10 +505,18 @@ export class A2AController {
         hilog.info(DOMAIN, TAG, 'OCR_CHECKPOINT items=%{public}d', items.length);
         A2APlanStore.save(this.context, plan.taskId, plan)
           .then((): void => {
+            if (items.length === 1) {
+              this.ingestHandler.beginPlanDraftCheckpoint(taskId, conversationKey, plan, items[0]);
+              return;
+            }
             this.sendAnswer(taskId, formatA2APlanSummary(plan), 0);
           })
           .catch((e: Error): void => {
             hilog.warn(DOMAIN, TAG, 'PLAN_SAVE_FAILED %{public}s', e.message);
+            if (items.length === 1) {
+              this.ingestHandler.beginPlanDraftCheckpoint(taskId, conversationKey, plan, items[0]);
+              return;
+            }
             this.sendAnswer(taskId, formatA2APlanSummary(plan), 0);
           });
       })
@@ -443,6 +633,34 @@ export class A2AController {
   }
 
   /** 「整理成笔记」但本条没带图：用最近一张图的 OCR 文本直接内联整理（无需打开 App）。 */
+  /**
+   * 用户只说「整理成笔记」时：
+   * 优先用最近一轮对话（用户问题 + 助手回答）作为资料；没有再回退到上次图片材料。
+   */
+  private answerWithLastMaterial(taskId: string, conversationKey: string): void {
+    A2AConversationStore.load(this.context, conversationKey)
+      .then((turns: A2AConversationTurn[]): void => {
+        if (turns.length > 0) {
+          const last: A2AConversationTurn = turns[turns.length - 1];
+          const assistant: string = last.assistant.trim();
+          const user: string = last.user.trim();
+          const material: string = assistant.length > 0
+            ? '用户问题：' + user + '\n助手回答：' + assistant : user;
+          if (material.trim().length > 0) {
+            hilog.info(DOMAIN, TAG, 'CHAT_RECALL ingest chars=%{public}d', material.length);
+            const ingest: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, material, []);
+            this.ingestHandler.handleTextPlanMessage(taskId, ingest, conversationKey);
+            return;
+          }
+        }
+        this.answerWithLastImageMaterial(taskId, conversationKey);
+      })
+      .catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'CHAT_RECALL failed %{public}s', e.message);
+        this.answerWithLastImageMaterial(taskId, conversationKey);
+      });
+  }
+
   private answerWithLastImageMaterial(taskId: string, conversationKey: string): void {
     A2AImageContextStore.load(this.context, conversationKey)
       .then((material: A2AImageMaterial | null): void => {
@@ -454,7 +672,7 @@ export class A2AController {
         }
         hilog.info(DOMAIN, TAG, 'IMAGE_RECALL ingest chars=%{public}d', material.text.length);
         const ingest: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, material.text, []);
-        this.ingestHandler.ingestTextBatchNow(taskId, ingest);
+        this.ingestHandler.handleTextPlanMessage(taskId, ingest, conversationKey);
       })
       .catch((e: Error): void => {
         hilog.warn(DOMAIN, TAG, 'IMAGE_RECALL failed %{public}s', e.message);

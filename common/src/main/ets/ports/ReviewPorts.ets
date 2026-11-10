@@ -76,3 +76,48 @@ export class ReviewPortError extends Error {
     this.retryable = retryable;
   }
 }
+
+// ==================== 写侧（schedule / record，随 ReviewAgent 票） ====================
+
+// 写命令：operationId 必填，作为幂等键；同一 operationId 重放不产生第二次写入。
+export interface ReviewWriteCommand {
+  operationId: string;
+}
+
+// 写操作记录：与业务写入放在同一事务里（review_op 表）。
+export interface ReviewOperationRecord {
+  operationId: string;
+  kind: string;      // 'schedule' | 'record'
+  itemId: string;
+  logId: string;     // schedule 为空串
+  committedAt: number;
+}
+
+// 写回执：duplicate=true 表示同一 operationId 重放。
+export interface ReviewWriteOutcome {
+  item: ReviewItem;
+  log?: ReviewLogEntry;
+  duplicate: boolean;
+}
+
+// 写侧存储缝：契约在 common，RDB 实现（ReviewWriteStoreDao）在 entry。
+// 两个写方法都必须把「业务写入 + review_op 操作记录」放在同一事务里。
+export interface ReviewWriteStore {
+  queryOperation(operationId: string): Promise<ReviewOperationRecord | null>;
+  queryItem(id: string): Promise<ReviewItem | null>;
+  queryLog(id: string): Promise<ReviewLogEntry | null>;
+  upsertItem(item: ReviewItem, command: ReviewWriteCommand): Promise<ReviewItem>;
+  appendLog(item: ReviewItem, entry: ReviewLogEntry, command: ReviewWriteCommand): Promise<ReviewLogEntry>;
+}
+
+// 写侧端口：只负责落库已算好的调度结果，不含 SM-2 计算（那属于 review.plan 工具）。
+export interface ReviewWritePort {
+  schedule(item: ReviewItem, command: ReviewWriteCommand): Promise<ReviewWriteOutcome>;
+  record(item: ReviewItem, entry: ReviewLogEntry, command: ReviewWriteCommand): Promise<ReviewWriteOutcome>;
+}
+
+// 写侧稳定错误码（与其它 Port 一致）。
+export const REVIEW_WRITE_ERROR_OPERATION_REQUIRED: string = 'OPERATION_ID_REQUIRED';
+export const REVIEW_WRITE_ERROR_INVALID_ITEM: string = 'INVALID_REVIEW_ITEM';
+export const REVIEW_WRITE_ERROR_ITEM_NOT_FOUND: string = 'REVIEW_ITEM_NOT_FOUND';
+export const REVIEW_WRITE_ERROR_WRITE_FAILED: string = 'REVIEW_WRITE_FAILED';

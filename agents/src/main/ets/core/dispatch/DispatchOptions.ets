@@ -52,6 +52,8 @@ export interface DispatchMode {
   analysisOnly?: boolean;
   /** 快速路由：跳过独立的分类 LLM，让 structure 在同一次调用里自分类（省一次往返）。 */
   skipLlmClassification?: boolean;
+  /** A2A 快速整理：短 prompt + 小输出上限，优先低延迟。 */
+  compactStructure?: boolean;
 }
 
 /** 领域注入：模型/进度/学科词表等业务侧依赖。 */
@@ -102,6 +104,7 @@ export function groupDispatchOptions(options: DispatchOptions): DispatchGroups {
     includeRawText: options.includeRawText,
     analysisOnly: options.analysisOnly,
     skipLlmClassification: options.skipLlmClassification,
+    compactStructure: options.compactStructure,
   };
   const domain: DispatchDomain = {
     knowledgeModel: options.knowledgeModel,

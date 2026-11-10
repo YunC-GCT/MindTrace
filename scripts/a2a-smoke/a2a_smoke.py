@@ -212,11 +212,49 @@ def find_icon_by_template(hdc, template_path=ICON_TEMPLATE_PATH, threshold=0.7):
         return (max_loc[0] + template.shape[1] // 2, max_loc[1] + template.shape[0] // 2)
 
 
-def wait_foreground(hdc, bundle, seconds):
-    """冷启动/加载可能超过固定 5s：轮询前台 bundle 直到超时。"""
+def is_xiaoyi_foreground(hdc, nodes=None):
+    """小艺是否在前台。
+
+    旧版小艺是独立窗口（bundle=com.huawei.hmos.vassistant）；新版由桌面
+    （com.ohos.sceneboard）承载，包名不会变成小艺，只能看布局特征：
+    出现精确的「小艺」标题或会话输入框。
+    """
+    if foreground_bundle(hdc) == YIXIAO_BUNDLE:
+        return True
+    if foreground_bundle(hdc) != "com.ohos.sceneboard":
+        return False
+    try:
+        items = nodes if nodes is not None else walk(dump_layout(hdc))
+    except Exception:
+        return False
+    texts = [n["text"] for n in items if n["text"]]
+    return "小艺" in texts or any(n["type"] == "TextArea" for n in items)
+
+
+def has_conversation_input(hdc):
+    try:
+        return any(n["type"] == "TextArea" for n in walk(dump_layout(hdc)))
+    except Exception:
+        return False
+
+
+def wait_conversation_input(hdc, seconds):
     deadline = time.time() + seconds
     while time.time() < deadline:
-        if foreground_bundle(hdc) == bundle:
+        if has_conversation_input(hdc):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def wait_foreground(hdc, bundle, seconds):
+    """冷启动/加载可能超过固定 5s：轮询前台直到超时。"""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if bundle == YIXIAO_BUNDLE:
+            if is_xiaoyi_foreground(hdc):
+                return True
+        elif foreground_bundle(hdc) == bundle:
             return True
         time.sleep(0.5)
     return False
@@ -279,40 +317,60 @@ def clickable_containing(nodes, pt):
     return best
 
 
+def screen_size(hdc):
+    """屏幕物理分辨率；拿不到时回落到常见手机尺寸。"""
+    try:
+        _rc, out = hdc.shell("wm size")
+        m = re.search(r"(\d+)\s*x\s*(\d+)", out)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    except Exception:
+        pass
+    return (1080, 2340)
+
+
 def open_drawer(hdc):
     """小艺的侧栏靠左上角菜单按钮打开，滑动手势在多数场景不生效。"""
+    width, height = screen_size(hdc)
     nodes = walk(dump_layout(hdc))
     for n in nodes:
         if not n["clickable"]:
             continue
         b = bounds_of(n["bounds"])
-        if b and b[0] < 200 and b[1] < 260 and b[2] < 400 and (b[2] - b[0]) < 200:
+        # 左上角、窄于屏宽四分之一的按钮才是菜单；用比例而不是像素，
+        # 避免竖屏/横屏或不同分辨率下点错位置。
+        if b and b[0] < width * 0.2 and b[1] < height * 0.12 and (b[2] - b[0]) < width * 0.25:
             tap(hdc, *center(b))
             time.sleep(1.8)
             return True
     # 退化为从左边滑
-    hdc.shell("uitest uiInput swipe 5 1400 800 1400 300")
+    hdc.shell(f"uitest uiInput swipe 2 {height // 2} {int(width * 0.75)} {height // 2} 300")
     time.sleep(1.8)
     return False
 
 
-def open_agent(hdc, name, tries=4):
-    """侧栏没展开时先从左边缘滑出抽屉，再点智能体。"""
+def open_agent(hdc, name, tries=6):
+    """进入智能体会话：点卡片/侧栏条目，等输入框真正出现；找不到时翻页。"""
     for i in range(tries):
-        nodes = walk(dump_layout(hdc))
-        n, b = find_text(nodes, name)
-        if b:
-            tap(hdc, *center(b))
-            time.sleep(2.5)
+        try:
+            nodes = walk(dump_layout(hdc))
+        except Exception:
+            nodes = []
+        if any(n["type"] == "TextArea" for n in nodes):
             return True
-        open_drawer(hdc)
-        nodes = walk(dump_layout(hdc))
-        n, b = find_text(nodes, name)
+        _n, b = find_text(nodes, name)
         if b:
-            tap(hdc, *center(b))
-            time.sleep(2.5)
-            return True
-    return False
+            target = clickable_containing(nodes, center(b)) or b
+            tap(hdc, *center(target))
+            if wait_conversation_input(hdc, 5.0):
+                return True
+        # 旧版是左上角菜单抽屉；新版是智能体卡片网格，直接翻页找。
+        has_grid = any(n["type"] in ("Grid", "GridItem") for n in nodes)
+        if not has_grid:
+            open_drawer(hdc)
+        hdc.shell("uitest uiInput swipe 1500 1400 300 1400 300")
+        time.sleep(1.0)
+    return has_conversation_input(hdc)
 
 
 def send_message(hdc, text):
@@ -323,7 +381,9 @@ def send_message(hdc, text):
     tb = bounds_of(ta["bounds"])
     tap(hdc, *center(tb))
     time.sleep(0.8)
-    hdc.shell("uitest uiInput text " + text)
+    # 必须整体加引号：文本里有空格时，uitest 会把后面的部分当成额外参数丢掉
+    quoted = text.replace("\\", "\\\\").replace('"', '\\"')
+    hdc.shell(f'uitest uiInput text "{quoted}"')
     time.sleep(0.8)
 
     # 输入后重新取布局：发送键在输入框右侧同一行
@@ -395,6 +455,16 @@ def clean_reply_text(text):
     for pattern in REPLY_NOISE_PATTERNS:
         cleaned = pattern.sub("", cleaned)
     return cleaned.strip()
+
+
+SENTENCE_END = ("。", "！", "？", "!", "?", "…")
+
+
+def reply_looks_complete(text, min_chars):
+    """确认/取消/保存回执本来就短，有句末标点时不算截断。"""
+    if len(text) >= min_chars:
+        return True
+    return len(text) >= 6 and text.rstrip().endswith(SENTENCE_END)
 
 
 # 小艺吞公式时会留下零宽占位（U+200B）；其余零宽格式符也一起计数
@@ -515,11 +585,12 @@ def main():
         else:
             fg = foreground_bundle(hdc)
             result["foreground"] = fg
-            if fg != YIXIAO_BUNDLE:
+            if not is_xiaoyi_foreground(hdc):
                 raise RuntimeError(f"--no-launch 需要小艺在前台（当前: {fg or '未知'}）；请先手动打开小艺或进入智能体会话")
         fg = foreground_bundle(hdc)
         result["foreground"] = fg
-        if fg != YIXIAO_BUNDLE:
+        # 手动模式下小艺可能由桌面（com.ohos.sceneboard）承载，不能再要求 bundle 名严格相等。
+        if not args.manual and not is_xiaoyi_foreground(hdc):
             raise RuntimeError(f"小艺没有到前台（当前前台: {fg or '未知'}），多半是锁屏或启动被拦")
         if not (args.no_open_agent or args.manual):
             if not open_agent(hdc, args.agent):
@@ -539,11 +610,13 @@ def main():
         errors = []
         if not reply:
             errors.append("没有拿到回复")
-        if result["reply_chars"] < args.min_reply_chars:
+        reply_complete = bool(reply) and reply_looks_complete(cleaned_reply, args.min_reply_chars)
+        if reply and not reply_complete:
             errors.append(f"回复疑似被截断：{result['reply_chars']} 字")
         if errors:
             result["errors"] = errors
-        result["ok"] = bool(reply) and result["reply_chars"] >= args.min_reply_chars
+        result["reply_complete"] = reply_complete
+        result["ok"] = reply_complete
         result["hilog"] = hilog_tail(hdc, args.tag)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["ok"] else 1

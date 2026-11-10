@@ -219,7 +219,7 @@ test('笔记类型：不同类型不判重，缺省视为 normal', () => {
 
 test('schema v22：kind 列迁移与 DAO 写入默认值', () => {
   const db = read('common/src/main/ets/DatabaseHelper.ets');
-  assert.match(db, /const DB_SCHEMA_VERSION: number = 22/);
+  assert.match(db, /const DB_SCHEMA_VERSION: number = 23/);
   assert.match(db, /SQL_MIGRATE_NOTE_KIND/);
   assert.match(db, /ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal'/);
   const dao = read('entry/src/main/ets/database/NoteDao.ets');
@@ -283,5 +283,5 @@ test('快速路由：文字整理跳过分类 LLM（structure 自分类）', () 
   assert.ok(structurer.includes('skipClassifierHint: boolean = false'));
   assert.ok(structurer.includes('this.buildExternalHint(ocrText, type, subject, chapter)'));
   const pipeline = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
-  assert.ok(pipeline.includes('this.processAndPersistOutcome(payload, undefined, true)'));
+  assert.ok(pipeline.includes('this.processAndPersistOutcome(payload, undefined, true, true)'));
 });

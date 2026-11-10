@@ -43,7 +43,7 @@ test('TaskSnapshot stays a Kit-free pure function', () => {
 });
 
 test('AgentExtAbility delegates snapshot assembly to buildTaskSnapshotWithCard', () => {
-  assert.match(ability, /import \{ buildTaskSnapshotWithCard, unicodeCharCount, utf8ByteLength \} from '\.\/TaskSnapshot'/);
+  assert.match(ability, /import \{[^}]*buildTaskSnapshotWithCard[^}]*\} from '\.\/TaskSnapshot'/);
   assert.match(ability, /buildTaskSnapshotWithCard\(this\.lastRequestId, finalTaskId, text, cardPartJson\)/);
   // 单帧契约只能由 TaskSnapshot 拼，AgentExtAbility 里不得再内联 task 报文
   assert.doesNotMatch(ability, /"result":\{"task"/);

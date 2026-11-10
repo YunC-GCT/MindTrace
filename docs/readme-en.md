@@ -29,10 +29,10 @@ The following reflects code implementation and on-device probe verification stat
 | Note suggestions | Partially implemented | create / append / merge suggestions are emitted as events and logs; not rendered in the UI yet |
 | Traceable review answers | Implemented | Concept explanation, comparison, prerequisite lookup, note locating, and question generation; citations carry fusion scores and summaries, with note-version lookup |
 | 3D Knowledge Galaxy | Implemented | Displays knowledge connections with compatible rendering; currently includes preview samples |
-| HarmonyOS integrations | Partially implemented | Card shows the learning overview; Xiaoyi A2A ingests in place with receipts and an image fallback plan; intent registration and Agent Framework Kit launch depend on release, deferred in testing mode |
+| HarmonyOS integrations | Partially implemented | Card shows the learning overview; Xiaoyi A2A now supports draft preview and confirm-to-save (reply "confirm" to save / "cancel" to discard), receipts, and an image fallback plan; intent registration and Agent Framework Kit launch depend on release, deferred in testing mode |
 | Interactive mathematical visualizations, tap-to-connect group learning | Planned | Full workflows are not yet implemented |
 
-Current evaluation (100-note corpus): tuned set hit@1 13/22, hit@5 17/22 (paraphrase hit@5 9/10); 10 out-of-sample queries hit@1 4/10, hit@5 7/10; about 1 in 5 out-of-corpus negative queries still match after evidence judgement (judgement is probabilistic). Raw records: [`docs/research/agent-framework-layering-review-2026-11-02.md`](./research/agent-framework-layering-review-2026-11-02.md) §37–§49.
+Evaluations now use the public **MathNet-Retrieve** benchmark (CC-BY-4.0, math-aware retrieval, 334 Chinese queries); the repository's 100-note fixture is kept only for smoke tests and is no longer used for reported metrics. The offline evaluation script lives in [`scripts/rag-lab/`](../scripts/rag-lab/); raw records are in [`docs/research/agent-framework-layering-review-2026-11-02.md`](./research/agent-framework-layering-review-2026-11-02.md) §37–§54.
 
 ## 3. Core Usage Flows
 

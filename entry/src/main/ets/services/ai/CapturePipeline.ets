@@ -155,7 +155,8 @@ export class CapturePipeline {
     }
     const payload: TextPayload = { kind: 'text', text: body };
     // 快速路由：文字整理跳过独立分类 LLM（structure 自分类），省一次 ~3.5s 往返。
-    return await this.processAndPersistOutcome(payload, undefined, true);
+    // A2A 文本入口再走快速整理：短 prompt + 小输出上限，优先低延迟。
+    return await this.processAndPersistOutcome(payload, undefined, true, true);
   }
 
   /**
@@ -578,6 +579,7 @@ export class CapturePipeline {
     payload: DispatchPayload,
     onNodeTiming?: (step: string, elapsedMs: number) => void,
     skipLlmClassification: boolean = false,
+    compactStructure: boolean = false,
   ): Promise<NoteOutcome> {
     const operationId: string = 'capture-' + Date.now().toString() + '-' + CaptureTiming.nextSeq().toString();
     const command: NoteCommand = {
@@ -610,6 +612,7 @@ export class CapturePipeline {
       onNodeTiming: timing,
       runEventSink: AiServicePorts.buildRunEventSinkIfReady(),
       skipLlmClassification: skipLlmClassification,
+      compactStructure: compactStructure,
     });
     log.info('CAPTURE_TOTAL kind=' + outcome.kind + ' ms=' + (Date.now() - startedAt).toString());
     if (payload.kind === 'text' && outcome.kind === 'committed' && outcome.noteId !== undefined

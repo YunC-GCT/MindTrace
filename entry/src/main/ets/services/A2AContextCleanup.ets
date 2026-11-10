@@ -10,6 +10,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { A2AConversationStore } from './A2AConversationStore';
 import { A2AImageContextStore } from './A2AImageContextStore';
 import { A2APlanStore } from './A2APlanStore';
+import { A2ADraftStore } from './A2ADraftStore';
 
 const DOMAIN: number = 0xA2A0;
 const TAG: string = 'MindTraceA2A';
@@ -21,6 +22,7 @@ export interface A2AContextPruneSummary {
   chats: number;
   images: number;
   plans: number;
+  drafts: number;
 }
 
 export class A2AContextCleanup {
@@ -28,10 +30,13 @@ export class A2AContextCleanup {
     const chats: number = A2AConversationStore.prune(context, A2A_CONTEXT_MAX_AGE_MS);
     const images: number = A2AImageContextStore.prune(context, A2A_CONTEXT_MAX_AGE_MS);
     const plans: number = A2APlanStore.prune(context, A2A_CONTEXT_MAX_AGE_MS);
-    const summary: A2AContextPruneSummary = { chats: chats, images: images, plans: plans };
-    if (chats + images + plans > 0) {
-      hilog.info(DOMAIN, TAG, 'A2A_CONTEXT_PRUNED chats=%{public}d images=%{public}d plans=%{public}d',
-        chats, images, plans);
+    const drafts: number = A2ADraftStore.prune(context, A2A_CONTEXT_MAX_AGE_MS);
+    const summary: A2AContextPruneSummary = {
+      chats: chats, images: images, plans: plans, drafts: drafts,
+    };
+    if (chats + images + plans + drafts > 0) {
+      hilog.info(DOMAIN, TAG, 'A2A_CONTEXT_PRUNED chats=%{public}d images=%{public}d plans=%{public}d drafts=%{public}d',
+        chats, images, plans, drafts);
     }
     return summary;
   }

@@ -174,7 +174,7 @@ export function formatA2APlanSummary(plan: A2APlan): string {
       + '（' + source + '，约 ' + item.text.length.toString() + ' 字，'
       + (item.needsReview ? '待复核' : '正常') + '）');
   }
-  lines.push('回复「继续」按顺序一题一题整理；「第 2 题」只整理某题；「全部」转待整理；「取消」放弃。');
+  lines.push('回复「继续」按顺序一题一题整理（每题先出草稿，确认后保存）；「第 2 题」只整理某题；「全部」从第一题开始逐题确认；「取消」放弃。');
   return lines.join('\n');
 }
 

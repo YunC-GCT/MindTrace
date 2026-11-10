@@ -54,9 +54,10 @@ export class KnowledgeModel {
     provenance?: CaptureProvenance,
     knownSubjects: string[] = [],
     skipClassifierHint: boolean = false,
+    compact: boolean = false,
   ): Promise<KnowledgeUnit> {
     return await this.captureStructurer.structure(
-      ocrText, type, subject, chapter, source, provenance, knownSubjects, skipClassifierHint);
+      ocrText, type, subject, chapter, source, provenance, knownSubjects, skipClassifierHint, compact);
   }
 
   async structureWithClassification(

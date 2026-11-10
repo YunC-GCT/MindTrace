@@ -9,7 +9,14 @@
  */
 export const TAG: string = 'MindTraceA2A';
 export const DOMAIN: number = 0xA2A0;
-export const INGEST_DEADLINE_MS: number = 90000;
+// 文本整理内联 deadline。正常生成 10–15s；30s 足够覆盖慢请求，
+// 同时避免模型挂起时让用户等 90s。
+export const INGEST_DEADLINE_MS: number = 30000;
+// 草稿生成超时：light 路由正常 3–6s，standard 约 10–15s；25s 覆盖慢请求，
+// 超时转待整理。外层的 A2A_POLICY.deadlineMs 仍是 35s。
+export const A2A_DRAFT_TIMEOUT_MS: number = 25000;
+// 慢请求探针：只记日志，不改变用户可见行为，用于区分「模型慢」与「模型挂起」。
+export const A2A_DRAFT_SLOW_MS: number = 8000;
 
 /** #234：小艺渲染层会吞掉 $...$ / LaTeX，扩展通道只发纯文本数学 */
 export const A2A_REPLY_STYLE: 'plain_text_math' = 'plain_text_math';

@@ -9,6 +9,9 @@ import type { KnowledgeCategory } from '../models/KnowledgeCategory';
 export const KNOWLEDGE_INPUT_LIMIT: number = 12000;
 export const KNOWLEDGE_MAX_TOKENS: number = 12000;
 export const KNOWLEDGE_TIMEOUT_MS: number = 300000;
+// A2A 快速整理：短输出 + 短超时，换取低延迟；完整笔记仍走默认参数。
+export const KNOWLEDGE_COMPACT_MAX_TOKENS: number = 2048;
+export const KNOWLEDGE_COMPACT_TIMEOUT_MS: number = 25000;
 export const KNOWLEDGE_CLASSIFY_HINT_TIMEOUT_MS: number = 10000;
 export const KNOWLEDGE_HINT_CONFIDENCE_MIN: number = 0.55;
 export const KNOWLEDGE_FALLBACK_CATEGORY: KnowledgeCategory = '概念';
@@ -20,13 +23,16 @@ export class PromptBuilder {
     return this.buildPrompt(input);
   }
 
-  buildPrompt(ocrText: string, knownSubjects: string[] = []): string {
+  buildPrompt(ocrText: string, knownSubjects: string[] = [], compact: boolean = false): string {
     const categories: string = NOTE_TYPE_KEYS.join(' / ');
     // 学科是封闭词表不是自由创作：把库里已有的学科名直接列给模型，
     // 它就不会每次都给同一门课起个新名字。
     const subjectRule: string = knownSubjects.length > 0
       ? `学科名称必须从这里选（一字不差）：${knownSubjects.join(' / ')}。只有确实都不是时才新建一个通用学科名（2-6 字），不要用句子描述`
       : '学科名称由你自主判断（如"高等数学"/"线性代数"/"初中数学"），无法判断时返回"其它"';
+    const completenessRule: string = compact
+      ? '- 快速整理模式（小艺）：每个字段最多 30 字，整个 JSON 正文不超过 220 字；不写例题、不写推导、不要 $$ 块，只保留核心定义/结论。'
+      : '- 保留完整信息，不要把原题和关键步骤摘要丢失。';
     return `你是数学学习笔记结构化助手。只返回纯 JSON 文本，不要用 \`\`\`json\`\`\` 代码块包裹。
 语言: 默认全部使用中文。
 字段:
@@ -58,6 +64,6 @@ export class PromptBuilder {
 - 不输出原始 HTML、Markdown 表格、嵌套列表。
 - 每个字段先用 1-2 句纯文字概括核心含义，再另起段落放公式或推导，便于生成简洁列表摘要。
 - 尽量一个字段对应一个页面分区。
-- 保留完整信息，不要把原题和关键步骤摘要丢失。`;
+${completenessRule}`;
   }
 }

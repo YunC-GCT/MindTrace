@@ -11,7 +11,7 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 test('PromptBuilder turns the known subjects into a closed vocabulary', () => {
   const prompt = read('agents/src/main/ets/subagents/PromptBuilder.ets');
-  assert.match(prompt, /buildPrompt\(ocrText: string, knownSubjects: string\[\] = \[\]\): string/);
+  assert.match(prompt, /buildPrompt\(ocrText: string, knownSubjects: string\[\] = \[\], compact: boolean = false\): string/);
   assert.match(prompt, /knownSubjects\.join\(' \/ '\)/);
   assert.match(prompt, /必须从这里选/);
   // 词表为空时不能把「必须从这里选：」这种半句话塞给模型
@@ -35,7 +35,7 @@ test('the vocabulary travels from the dispatcher down to the prompt', () => {
   assert.match(state, /copied\.subjectVocabulary = input\.subjectVocabulary/);
   assert.match(node, /input\.subjectVocabulary \?\? \[\]/);
   assert.match(model, /knownSubjects: string\[\] = \[\]/);
-  assert.match(structurer, /buildPrompt\(ocrText, knownSubjects\)/);
+  assert.match(structurer, /buildPrompt\(ocrText, knownSubjects, compact\)/);
 });
 
 test('the entry side reads the vocabulary through a read-only seam, not the write path', () => {

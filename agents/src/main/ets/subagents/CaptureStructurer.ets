@@ -52,6 +52,7 @@ import type {
   LlmGuardJsonResult,
   LlmGuardValidationResult,
   LlmCaller,
+  LlmGuardJsonOptions,
   NoteDraftDocument,
   CancellationToken,
 } from 'common/src/main/ets/Index';
@@ -60,6 +61,8 @@ import { TypeClassifier } from './TypeClassifier';
 import { GenerationJsonCaller } from './GenerationJsonCaller';
 import {
   KNOWLEDGE_CLASSIFY_HINT_TIMEOUT_MS,
+  KNOWLEDGE_COMPACT_MAX_TOKENS,
+  KNOWLEDGE_COMPACT_TIMEOUT_MS,
   KNOWLEDGE_FALLBACK_CATEGORY,
   KNOWLEDGE_FALLBACK_SUBJECT,
   KNOWLEDGE_HINT_CONFIDENCE_MIN,
@@ -92,6 +95,7 @@ export class CaptureStructurer {
     provenance?: CaptureProvenance,
     knownSubjects: string[] = [],
     skipClassifierHint: boolean = false,
+    compact: boolean = false,
   ): Promise<KnowledgeUnit> {
     this.cancellationToken?.throwIfCancelled();
     const startTime: number = Date.now();
@@ -122,6 +126,7 @@ export class CaptureStructurer {
         chapterHint,
         classificationHint.confidence,
         knownSubjects,
+        compact,
       );
     } catch (aiErr) {
       const errMsg: string = (aiErr as Error).message ?? String(aiErr);
@@ -268,6 +273,7 @@ export class CaptureStructurer {
     chapterHint: string = '',
     confidenceHint: number = 0,
     knownSubjects: string[] = [],
+    compact: boolean = false,
   ): Promise<AiRawResponse> {
     // 可选分类 hint：TypeClassifier 只提供软参考，KnowledgeModel 仍按正文独立结构化。
     const hint: string = (typeHint !== undefined && typeHint.length > 0) || (subjectHint !== undefined && subjectHint.length > 0)
@@ -278,7 +284,7 @@ export class CaptureStructurer {
         '- 置信度: ' + confidenceHint.toString() + '\n' +
         '优先用它减少五类歧义；如果正文证据更强, 以正文为准。'
       : '';
-    const prompt: string = this.promptBuilder.buildPrompt(ocrText, knownSubjects) + hint;
+    const prompt: string = this.promptBuilder.buildPrompt(ocrText, knownSubjects, compact) + hint;
 
     const systemMsg: ChatMessage = {
       role: 'system',
@@ -289,14 +295,20 @@ export class CaptureStructurer {
     const messages: ChatMessage[] = [systemMsg, userMsg];
 
     console.info('[KnowledgeModel] callAi: systemPrompt=' + prompt.length.toString() + ' chars, userText=' + userText.length.toString() + ' chars');
+    const callOptions: LlmGuardJsonOptions = {
+      maxTokens: compact ? KNOWLEDGE_COMPACT_MAX_TOKENS : KNOWLEDGE_MAX_TOKENS,
+      timeoutMs: compact ? KNOWLEDGE_COMPACT_TIMEOUT_MS : KNOWLEDGE_TIMEOUT_MS,
+      label: 'KnowledgeModel structure',
+      cancellationToken: this.cancellationToken,
+    };
+    if (compact) {
+      // 结构化是 JSON 抽取，不需要思考链；关掉 thinking 可显著减少 token 与耗时。
+      callOptions.enableThinking = false;
+    }
     let guarded: LlmGuardJsonResult;
     try {
-      guarded = await new LlmGuard().callJsonWithRetry(messages, {
-        maxTokens: KNOWLEDGE_MAX_TOKENS,
-        timeoutMs: KNOWLEDGE_TIMEOUT_MS,
-        label: 'KnowledgeModel structure',
-        cancellationToken: this.cancellationToken,
-      }, (json: Record<string, Object>): LlmGuardValidationResult => this.validateAiJson(json));
+      guarded = await new LlmGuard().callJsonWithRetry(messages, callOptions,
+        (json: Record<string, Object>): LlmGuardValidationResult => this.validateAiJson(json));
       console.info('[KnowledgeModel] callAi response received, len=' + guarded.raw.length.toString()
         + ', attempts=' + guarded.attempts.toString());
     } catch (llmErr) {

@@ -104,7 +104,7 @@ test('A2A 入库 deadline：超时转待整理队列（P0-2 第一片）', () =>
     read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
     read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
-  assert.match(controller, /INGEST_DEADLINE_MS: number = 90000/);
+  assert.match(controller, /INGEST_DEADLINE_MS: number = 30000/);
   assert.match(controller, /ingestWithDeadline\(text: string\): Promise<NoteOutcome>/);
   assert.match(controller, /INGEST_DEADLINE: ' \+ INGEST_DEADLINE_MS/);
   assert.match(controller, /a2aErrorText\('A2A_INGEST_TIMEOUT'\)/);

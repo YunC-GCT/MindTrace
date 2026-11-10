@@ -29,10 +29,10 @@ MindTrace 将数学截图、公式与零散文本整理为结构化笔记，经�
 | 笔记建议 | 部分实现 | create / append / merge 三类建议已发事件与日志，暂未渲染到界面 |
 | 可追溯复习回答 | 已实现 | 概念解释、知识比较、前置查询、笔记定位与出题，来源带融合分与摘要，可回看笔记版本 |
 | 3D 知识星系 | 已实现 | 展示知识关联，提供兼容渲染；当前包含预览样例 |
-| 鸿蒙系统入口 | 部分实现 | 卡片展示学习概览；小艺端A2A 已就地入库并支持回执、图片降级规划；意图注册与 Agent Framework Kit 拉起依赖上架，测试态暂缓 |
+| 鸿蒙系统入口 | 部分实现 | 卡片展示学习概览；小艺端A2A 已支持草稿预览与确认入库（回复「确认」保存 / 「取消」放弃），并支持回执、图片降级规划；意图注册与 Agent Framework Kit 拉起依赖上架，测试态暂缓 |
 | 数形交互、碰一碰共学 | 规划中 | 尚未形成完整产品链路 |
 
-当前评测口径（100 条笔记语料）：调优集 hit@1 13/22、hit@5 17/22（同义改写 hit@5 9/10）；样本外 10 条抽查 hit@1 4/10、hit@5 7/10；语料外负样本经证据判定后约 1/5 仍有命中（判定是概率性的）。原始记录见 [`docs/research/agent-framework-layering-review-2026-11-02.md`](./docs/research/agent-framework-layering-review-2026-11-02.md) §37–§49。
+评测集已切换为公开基准 **MathNet-Retrieve**（CC-BY-4.0，数学等价检索，中文子集 334 条查询）；仓库内的 100 条自建语料仅保留为冒烟夹具，不再用于对外指标。离线评测脚本见 [`scripts/rag-lab/`](./scripts/rag-lab/)，原始记录见 [`docs/research/agent-framework-layering-review-2026-11-02.md`](./docs/research/agent-framework-layering-review-2026-11-02.md) §37–§54。
 
 ## 三、核心使用流程
 

@@ -2,7 +2,7 @@
  * DatabaseHelper.ets — 数据库初始化与 schema 迁移
  *
  * 路径: common/src/main/ets/DatabaseHelper.ets
- * 职责: 打开 MindTrace.db、建表/迁移到 schema v21、初始化 RDB 单例。
+ * 职责: 打开 MindTrace.db、建表/迁移到 schema v23、初始化 RDB 单例。
  * 依赖: @kit.ArkData (relationalStore)。
  */
 // MindTrace - 数据库初始化工具
@@ -24,7 +24,7 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1,
 };
 
-const DB_SCHEMA_VERSION: number = 22;
+const DB_SCHEMA_VERSION: number = 23;
 
 const SQL_CREATE_KNOWLEDGE: string = `
 CREATE TABLE IF NOT EXISTS knowledge_unit (
@@ -280,6 +280,16 @@ CREATE TABLE IF NOT EXISTS review_log (
   duration_ms INTEGER NOT NULL DEFAULT 0,
   interval_before INTEGER NOT NULL DEFAULT 0,
   interval_after INTEGER NOT NULL DEFAULT 0
+)`;
+
+// v23：复习写侧幂等键。与 review_item / review_log 的业务写入同事务。
+const SQL_CREATE_REVIEW_OP: string = `
+CREATE TABLE IF NOT EXISTS review_op (
+  operation_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  log_id TEXT NOT NULL DEFAULT '',
+  committed_at INTEGER NOT NULL
 )`;
 
 const SQL_INDEX_REVIEW_ITEM_DUE: string =
@@ -540,6 +550,7 @@ export class DatabaseHelper {
       SQL_CREATE_NOTE_FTS,
       SQL_CREATE_REVIEW_ITEM,
       SQL_CREATE_REVIEW_LOG,
+      SQL_CREATE_REVIEW_OP,
       SQL_CREATE_RUN_STORE,
       SQL_CREATE_RUN_EVENT,
       SQL_CREATE_AGENT_JOB,

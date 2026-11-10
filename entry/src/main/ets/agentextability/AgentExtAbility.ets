@@ -34,7 +34,7 @@ import { A2AController, A2ARequestInput, A2AReplyPort } from '../services/A2ACon
 import { a2aErrorText } from '../services/A2AErrorTaxonomy';
 import { AgentPart, mediaTypeOf } from '../services/AgentImageParts';
 import { CoreVisionOcrRecognizer } from '../services/CoreVisionOcrRecognizer';
-import { buildTaskSnapshotWithCard, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
+import { buildTaskSnapshotWithCard, buildTaskStreamStart, buildArtifactUpdate, buildTaskStreamEnd, unicodeCharCount, utf8ByteLength } from './TaskSnapshot';
 
 const TAG: string = 'MindTraceA2A';
 const DOMAIN: number = 0xA2A0;
@@ -64,13 +64,41 @@ interface A2ARequest {
 /** 把扩展的发送方法包成 A2AReplyPort（ArkTS 不允许用对象字面量实现带方法的接口）。 */
 class AbilityReplyPort implements A2AReplyPort {
   private readonly onSend: (taskId: string, text: string, requestStartedAt: number) => void;
+  private readonly onStreamStart: ((taskId: string) => void) | undefined;
+  private readonly onStreamChunk: ((taskId: string, text: string, append: boolean,
+    lastChunk: boolean) => void) | undefined;
+  private readonly onStreamEnd: ((taskId: string) => void) | undefined;
 
-  constructor(onSend: (taskId: string, text: string, requestStartedAt: number) => void) {
+  constructor(onSend: (taskId: string, text: string, requestStartedAt: number) => void,
+    onStreamStart?: (taskId: string) => void,
+    onStreamChunk?: (taskId: string, text: string, append: boolean, lastChunk: boolean) => void,
+    onStreamEnd?: (taskId: string) => void) {
     this.onSend = onSend;
+    this.onStreamStart = onStreamStart;
+    this.onStreamChunk = onStreamChunk;
+    this.onStreamEnd = onStreamEnd;
   }
 
   send(taskId: string, text: string, requestStartedAt: number): void {
     this.onSend(taskId, text, requestStartedAt);
+  }
+
+  streamStart(taskId: string): void {
+    if (this.onStreamStart !== undefined) {
+      this.onStreamStart(taskId);
+    }
+  }
+
+  streamChunk(taskId: string, text: string, append: boolean, lastChunk: boolean): void {
+    if (this.onStreamChunk !== undefined) {
+      this.onStreamChunk(taskId, text, append, lastChunk);
+    }
+  }
+
+  streamEnd(taskId: string): void {
+    if (this.onStreamEnd !== undefined) {
+      this.onStreamEnd(taskId);
+    }
   }
 }
 
@@ -139,9 +167,36 @@ export default class AgentExtAbility extends AgentExtensionAbility {
 
   /** 控制器回话端口：拼快照 + 发一帧（requestStartedAt 只用于日志耗时）。 */
   private buildReplyPort(): A2AReplyPort {
-    return new AbilityReplyPort((taskId: string, text: string, requestStartedAt: number): void => {
-      this.sendSnapshot(taskId, text, requestStartedAt, '');
-    });
+    return new AbilityReplyPort(
+      (taskId: string, text: string, requestStartedAt: number): void => {
+        this.sendSnapshot(taskId, text, requestStartedAt, '');
+      },
+      (taskId: string): void => {
+        this.sendStreamFrame(buildTaskStreamStart(this.lastRequestId, taskId), 'start', taskId);
+      },
+      (taskId: string, text: string, append: boolean, lastChunk: boolean): void => {
+        this.sendStreamFrame(buildArtifactUpdate(this.lastRequestId, taskId, text, append, lastChunk),
+          lastChunk ? 'last' : 'chunk', taskId);
+      },
+      (taskId: string): void => {
+        this.sendStreamFrame(buildTaskStreamEnd(this.lastRequestId, taskId), 'end', taskId);
+      },
+    );
+  }
+
+  /** 流式探针帧：只打帧类型与字节数，不打印正文。 */
+  private sendStreamFrame(payload: string, kind: string, taskId: string): void {
+    if (this.hostProxy === null) {
+      hilog.error(DOMAIN, TAG, 'hostProxy 为空，无法发送流式帧');
+      return;
+    }
+    try {
+      this.hostProxy.sendData(payload);
+      hilog.info(DOMAIN, TAG, 'A2A_STREAM_FRAME kind=%{public}s taskId=%{public}s bytes=%{public}d',
+        kind, taskId, utf8ByteLength(payload));
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '发送流式帧失败: %{public}s', (error as Error).message);
+    }
   }
 
   /** 手写解析：JSON.parse 失败或结果为 null 都返回 null，由 onData 回错误快照 */

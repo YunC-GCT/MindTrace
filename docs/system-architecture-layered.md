@@ -283,6 +283,8 @@ query
 
 **v1 选 A**：把笔记写进 Kit 的知识库，检索走它的接口。自建方案留作 v2，等出现“元数据过滤不够用”的真实需求再换。架构图里 RAG 层画成 `RAG 接口 → Data Augmentation Kit`，自建作为虚线备选。
 
+> **2026-11-07 实现现状（覆盖本节选型）**：v1 最终落地的是 **B 的自建子集**，不是 Data Augmentation Kit：`note_fts`（FTS5 trigram）+ 数学签名 + 分词 OR + 短词 LIKE + 稠密向量（本地 BGE 或 OpenAI 兼容 `/embeddings`），RRF 融合；向量头部模糊时条件查询改写与 `bge-reranker` 重排；回答前由 LLM 判定候选是否切题。设计与实验见 `docs/research/agent-framework-layering-review-2026-11-02.md` §37–§51。
+
 ---
 
 ## 6. L4 数据层
@@ -349,10 +351,10 @@ v1 用 SM-2（间隔 × 难度因子），规则简单、可解释；v2 再考�
 
 | 层 | 已有 | 缺 |
 |---|---|---|
-| L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试；回执短路读 `receipts/last-capture.json`；7 个 action 声明 | A2A 文字/图片**已就地入库**（`AgentIngestService → OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService`，`64008c3`），不再直调 `ReplyService`；对话分支仍走 `ReplyService`；P4 结果回执未做；skill 侧 7 个 action 仍只有声明（测试态无法注册意图） |
-| L2 | `Dispatcher` 已从 1790 行拆到 **216 行**，六条分支模块在 `core/dispatch/`；**ADR-0019 A3/A3b 已落**：`NoteCommand`/`NoteOutcome` 契约 + `NoteOutcomeMapper` + `Dispatcher.dispatchCommand` 新入口（旧 `dispatch()` 保留迁移适配器），`AiService` 的 capture 文本/A2A 入库与确认提交切到命令终态，**取消语义三位置落地（含 `cancelled(committed=true)` 事务信封）**；`CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 102 行 facade；capture/preparedCandidate 的 PersistNode 均走 `NoteWritePort`（A1/A2），`RunContext` 已接 | 仍未做：主图（preflight/route/invoke/verify/HITL/publish）、`EventSink`；`skill/SkillAbility` 自己 `DatabaseHelper.init()`；`NoteEvidenceService` 的 `kg_edge` 仍直连 |
-| L3 | Core Vision Kit OCR（`SERVER_FALLBACK_ENABLED=false`）、文搜图常驻 Worker、模型网关 catalog / resolver / discovery 多提供商 | MCP 只有 `OcrTool`，没有 schema 发现与权限；RAG 只有 `rag_embedding` 建表，没有检索实现 |
-| L4 | RDB 18 张表（v15 `review_item` / `review_log`、v16 `run_store` / `run_event`、v17 `study_plan_op`；另有 `knowledge_unit` / `kg_edge` / `study_plan` / 生成 run） | `similar` 边未生成（`embedding: []`）；`study_plan` 仍是待办，不是复习计划；复习端口/子图未做 |
+| L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试；回执短路读 `receipts/last-capture.json`；7 个 action 声明 | A2A 文字/图片**已就地入库**（`AgentIngestService → OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService`，`64008c3`），不再直调 `ReplyService`；P4 结果回执已做（2026-10-31）；对话分支仍走 `ReplyService`；skill 侧 7 个 action 仍只有声明（测试态无法注册意图） |
+| L2 | `Dispatcher` 已从 1790 行拆到 **216 行**，六条分支模块在 `core/dispatch/`；**ADR-0019 A3/A3b 已落**：`NoteCommand`/`NoteOutcome` 契约 + `NoteOutcomeMapper` + `Dispatcher.dispatchCommand` 新入口（旧 `dispatch()` 保留迁移适配器），`AiService` 的 capture 文本/A2A 入库与确认提交切到命令终态，**取消语义三位置落地（含 `cancelled(committed=true)` 事务信封）**；`CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 102 行 facade；capture/preparedCandidate 的 PersistNode 均走 `NoteWritePort`（A1/A2），`RunContext` 已接；A4 主图与 `RunEventSink` 已落 | 仍未做：ReviewAgent / MathVideoAgent 等派生票；`skill/SkillAbility` 自己 `DatabaseHelper.init()`；`NoteEvidenceService` 的 `kg_edge` 仍直连 |
+| L3 | Core Vision Kit OCR（`SERVER_FALLBACK_ENABLED=false`）、文搜图常驻 Worker、模型网关 catalog / resolver / discovery 多提供商；**RAG 已落地五路混合检索**（整句 FTS / 数学签名 / 词 OR / 短词 LIKE / 稠密向量）+ RRF、条件查询改写与重排、LLM 证据判定 | MCP 只有 `OcrTool`，没有 schema 发现与权限；`KnowledgePort` 未建（`kg_edge` 读取仍直连） |
+| L4 | RDB 20+ 张表（v15 `review_item` / `review_log`、v16 `run_store` / `run_event`、v17 `study_plan_op`、v23 `review_op`；另有 `knowledge_unit` / `kg_edge` / `study_plan` / 生成 run / RAG chunk+embedding） | `similar` 边未生成（星系仍只出同知识点边）；`study_plan` 仍是待办，不是复习计划；`ReviewWritePort` 已落，ReviewAgent 子图未做 |
 | L5 | 分阶段日志（capture 五段耗时）、A2A 日志（requestId / taskId / attempts / 耗时） | 没有跨工作流统一 Trace：`runId` / `parentRunId` 串不起来，node / tool / approval / commit 事件不落盘 |
 
 「小艺真机未通」「观测为零」这两个说法已过期，别再引用。
@@ -555,14 +557,14 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 | 笔记列表与详情 | `knowledge_unit` | 分页；按时间、学科、章节过滤 |
 | 知识星系 | `kg_edge` + `knowledge_unit` | 只读预计算的边，渲染时不计算 |
 | 待办（当前叫「复习计划」） | `study_plan` | 标题、完成状态、优先级、关联笔记、due date；**是待办清单，不是间隔复习计划** |
-| 复习记录 | **已建表（ADR-0022，schema v15）** | `review_item` / `review_log` 已在 `DatabaseHelper` v15 落地；`study_plan` 仍是待办；复习端口/子图待开票 |
+| 复习记录 | **已建表 + 读写端口（ADR-0022，schema v15 / v23）** | `review_item` / `review_log` 已在 `DatabaseHelper` v15 落地；v23 补 `review_op` 幂等键；`ReviewReadPort` / `ReviewWritePort` 已落，`ReviewAgent` 子图待开票 |
 
 ### 16.2 关系边怎么产生
 
 | 边类型 | 产生方式 | 现状 |
 |---|---|---|
 | 同知识点 | 同章节最近 20 条，增量补边（`KnowledgeUnitChapterEdgeEffect`） | **已实现**：`relation_type=same_unit` |
-| 相似 | 向量余弦超过阈值（如 0.82） | **未实现**：`embedding: []`，字段在但恒空；`rag_embedding` 只有建表，没有检索 |
+| 相似 | 向量余弦超过阈值（如 0.82） | **未用于建边**：RAG 向量检索已实现（`rag_chunk` / `rag_embedding` + `NoteVectorIndex`），但星系仍只出同知识点边 |
 | 前后置 | 章节顺序推导，或人工标注 | v2 |
 
 ### 16.3 两条硬规则
@@ -572,8 +574,8 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 
 ### 16.4 v1 的取舍
 
-- 星系只出**一类**边：同知识点。相似边未生成（`embedding: []`），前后置留 v2。
-- `review_item` / `review_log` **已按 ADR-0022 建表（schema v15）**，但 v1 不接 SM-2（端口/子图未做）；`study_plan` 是待办。
+- 星系只出**一类**边：同知识点。相似边未生成（RAG 向量检索已实现，但未接入建边），前后置留 v2。
+- `review_item` / `review_log` **已按 ADR-0022 建表（schema v15）**，v23 补 `review_op` 幂等键；`ReviewReadPort` / `ReviewWritePort` 已落，SM-2 与 `ReviewAgent` 子图待做；`study_plan` 是待办。
 - 写入口不是「只有用户动作」：手工编辑与 AI 写入都走 `KnowledgeUnitWriteService`，AI 写入还会触发 `KnowledgeUnitPostCommitEffects` 的卡片刷新。口径应按 **数据 owner + 谁发起写 + 读投影** 三个维度描述，而不是「App 只读」。
 
 ---

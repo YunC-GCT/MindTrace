@@ -95,6 +95,21 @@ test('学习模式：请求携带证据策略，工作流映射成 policy', () =
   const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
   assert.match(workflow, /evidencePolicyFor\(input\.request\.evidenceMode\)/);
   assert.match(workflow, /safeBuildEvidence\(input\.request\.userContent, policy\)/);
+  // 设置页选择 → LlmConfig 持久化 → 发送时透传到请求
+  const config = read('common/src/main/ets/llm/LlmConfig.ets');
+  assert.match(config, /KEY_EVIDENCE_MODE = 'evidence_mode'/);
+  assert.match(config, /getEvidenceMode\(\): EvidenceMode/);
+  assert.match(config, /setEvidenceMode\(v: EvidenceMode\)/);
+  const settingsVm = read('entry/src/main/ets/viewmodels/AiSettingsViewModel.ets');
+  assert.match(settingsVm, /this\.evidenceMode = llm\.getEvidenceMode\(\)/);
+  assert.match(settingsVm, /setEvidenceMode\(this\.evidenceMode\)/);
+  const section = read('entry/src/main/ets/pages/AiSettings/EvidenceModeSection.ets');
+  assert.match(section, /EvidenceModeSection/);
+  assert.match(section, /'strict'|'balanced'|'expansive'/);
+  const inputVm = read('entry/src/main/ets/viewmodels/AgentInputViewModel.ets');
+  assert.match(inputVm, /LlmConfig\.getInstance\(\)\.getEvidenceMode\(\)/);
+  const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
+  assert.match(runtime, /request\.evidenceMode = evidenceMode/);
 });
 
 test('建议请求：生成与判重两个场景都发，走可选回调与日志', () => {
@@ -108,6 +123,12 @@ test('建议请求：生成与判重两个场景都发，走可选回调与日�
   assert.match(write, /logMergeSuggestion/);
   const adapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');
   assert.match(adapter, /\[NoteSuggestion\] action=/);
+  assert.match(adapter, /this\.callbacks\.onNoteSuggestion\(ref, suggestion\)/);
+  const contracts = read('entry/src/main/ets/services/AgentChatContracts.ets');
+  assert.match(contracts, /onNoteSuggestion\?: \(ref: ConversationRunRef, suggestion: NoteSuggestion\)/);
+  const window = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
+  assert.match(window, /onNoteSuggestion: \(ref: ConversationRunRef, suggestion: NoteSuggestion\)/);
+  assert.match(window, /noteSuggestionText\(suggestion\)/);
 });
 
 test('向量：同文本余弦为 1，维度固定', () => {

@@ -2,7 +2,7 @@
  * A2AIngestHandler.ets — 小艺端A2A 的整理与计划推进
  *
  * 路径: entry/src/main/ets/services/A2AIngestHandler.ets
- * 职责: 文本整理的批处理、90s deadline、多题计划（继续/第 N 题/全部/取消）、
+ * 职责: 文本整理的批处理、30s deadline、多题计划（继续/第 N 题/全部/取消）、
  *       入队兜底与回执记录
  * 依赖: ./IngestGateway、A2APlanStore、A2AConversationStore、common
  *
@@ -19,11 +19,11 @@
  * 数据流: AgentExtAbility.onData → A2AController.handle(A2ARequestInput) → A2AReplyPort.send()
  *
  * 边界: 不解析 JSON-RPC、不持有 hostProxy、不拼快照；因此本类可在 Node 契约测试里按源码守卫。
- * 写库模式（ADR-0024 §2.1/§2.7）: A2A 单次整理在 :agent 内联执行；文本批量 90s deadline，
+ * 写库模式（ADR-0024 §2.1/§2.7）: A2A 单次整理在 :agent 内联执行；文本批量 30s deadline，
  *   超时/失败/溢出回退 inbox/agent_job。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { DOMAIN, INGEST_DEADLINE_MS, TAG } from './A2AConstants';
+import { A2A_DRAFT_SLOW_MS, A2A_DRAFT_TIMEOUT_MS, DOMAIN, INGEST_DEADLINE_MS, TAG } from './A2AConstants';
 import type { common } from '@kit.AbilityKit';
 import {
   CancellationToken,
@@ -33,8 +33,14 @@ import {
   LlmConfig,
   LlmError,
   resolveModel,
+  sourceFingerprint,
 } from 'common';
-import type { NoteOutcome, ProviderCatalog, ResolvedModel } from 'common';
+import type { NoteDraftReadyEvent, NoteOutcome, ProviderCatalog, ResolvedModel, SourceFragment } from 'common';
+
+import { AiService } from './AiService';
+import { A2ADraftStore } from './A2ADraftStore';
+import { formatA2ADraftReply } from './A2ADraftModels';
+import type { A2ADraftRefine, A2APendingDraft } from './A2ADraftModels';
 
 import { CaptureReceipt, CaptureReceiptStore, formatReceipt, matchesReceiptIntent } from './CaptureReceipt';
 import { AgentInboxItem, buildInboxItem } from './AgentInboxModels';
@@ -86,9 +92,16 @@ import type { NoteEvidenceContext } from 'common';
 import { IntentClassifier, ReplyContext, ReplyService } from 'agents/src/main/ets/chat/Index';
 import type { LlmCallPolicy, ReplyStyle } from 'agents/src/main/ets/chat/Index';
 
+const DEFAULT_DRAFT_INSTRUCTION: string = '整理成数学笔记草稿：只整理内容本身，不要复述「存笔记」这类指令。'
+  + '按题型使用标准章节（定理：陈述/条件/结论/证明思路/应用；概念：定义/性质/示例/相关概念；'
+  + '公式：表达式/参数/适用范围/推导/备注；证明题：命题/已知/证明过程/关键思路/结论；'
+  + '计算题：问题/步骤/答案/方法总结/常见错误）。';
+
 export interface IA2AIngestHost {
   ingestContext(): common.Context;
   sendIngestAnswer(taskId: string, text: string, requestStartedAt: number): void;
+  /** 长回复分块发送（artifactUpdate）；短回复仍走单帧。 */
+  sendStreamingAnswer(taskId: string, text: string): void;
 }
 
 export class A2AIngestHandler {
@@ -98,11 +111,11 @@ export class A2AIngestHandler {
     this.host = host;
   }
 
-  handleTextPlanMessage(taskId: string, request: AgentIngestRequest): void {
+  handleTextPlanMessage(taskId: string, request: AgentIngestRequest, conversationKey: string): void {
     A2APlanStore.load(this.host.ingestContext(), taskId)
       .then((existing: A2APlan | null): void => {
         if (existing !== null) {
-          this.handlePlanTurn(taskId, request.text, existing);
+          this.handlePlanTurn(taskId, request.text, existing, conversationKey);
           return;
         }
         const items: A2APlanItem[] = buildA2APlanItems(request.text);
@@ -120,7 +133,8 @@ export class A2AIngestHandler {
             });
           return;
         }
-        this.dispatchTextBatch(taskId, request);
+        // 单题：先生成草稿，等用户「确认」再入库；不再直接写库。
+        this.beginDraftCheckpoint(taskId, conversationKey, request);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'PLAN_LOAD_FAILED %{public}s', e.message);
@@ -128,27 +142,324 @@ export class A2AIngestHandler {
       });
   }
 
-  /** 有未完成计划时：解析「继续 / 第 N 题 / 全部 / 取消」，逐题推进。 */
-  handlePlanTurn(taskId: string, query: string, plan: A2APlan): void {
+  /** 单题草稿：generateNoteDraft(light) → 质量门 → 落盘 → 返回标题/摘要/章节 + 确认提示。 */
+  beginDraftCheckpoint(taskId: string, conversationKey: string, request: AgentIngestRequest,
+    planTaskId?: string, planItemIndex?: number): void {
+    const runId: string = 'a2a-draft-' + Date.now().toString() + '-'
+      + Math.floor(Math.random() * 1000).toString();
+    const token: CancellationToken = new CancellationToken();
+    const sourceText: string = A2AIngestHandler.cleanDraftSource(request.text);
+    hilog.info(DOMAIN, TAG, 'A2A_DRAFT begin key=%{public}s chars=%{public}d',
+      conversationKey, sourceText.length);
+    let historySources: SourceFragment[] = [];
+    A2AConversationStore.load(this.host.ingestContext(), conversationKey)
+      .then((turns: A2AConversationTurn[]): Promise<NoteDraftReadyEvent> => {
+        // 计划项是自包含的题目文本，不混入对话历史，避免被旧笔记带偏。
+        historySources = planItemIndex !== undefined
+          ? [] : A2AIngestHandler.historySources(turns, conversationKey);
+        hilog.info(DOMAIN, TAG, 'A2A_DRAFT history turns=%{public}d fragments=%{public}d',
+          turns.length, historySources.length);
+        return this.draftWithDeadline(runId, sourceText, historySources, token);
+      })
+      .then((event: NoteDraftReadyEvent): void => {
+        if (!A2AIngestHandler.draftUseful(event, sourceText)) {
+          throw new Error('draft-empty');
+        }
+        const draft: A2APendingDraft = {
+          conversationKey: conversationKey,
+          createdAt: Date.now(),
+          event: event,
+          sourceText: sourceText,
+        };
+        if (planItemIndex !== undefined) {
+          // taskId 可能为空（计划文件按 default 落盘），空串也必须保存，否则确认时找不到计划。
+          draft.planTaskId = planTaskId === undefined ? '' : planTaskId;
+          draft.planItemIndex = planItemIndex;
+        }
+        A2ADraftStore.save(this.host.ingestContext(), draft).catch((): void => {});
+        hilog.info(DOMAIN, TAG, 'A2A_DRAFT ready title=%{public}s runId=%{public}s',
+          event.candidate.title, event.runId);
+        this.host.sendIngestAnswer(taskId, formatA2ADraftReply(event), 0);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'A2A_DRAFT failed %{public}s', e.message);
+        const reply: string = e.message.indexOf('A2A_DRAFT_TIMEOUT') >= 0
+          ? a2aErrorText('A2A_INGEST_TIMEOUT') : a2aErrorText('A2A_INGEST_FAILED', e.message);
+        this.enqueueForIngest(taskId, request.text, reply);
+      });
+  }
+
+  /** 计划里的单题：先生成草稿，确认后保存并回写 plan.done。 */
+  beginPlanDraftCheckpoint(taskId: string, conversationKey: string, plan: A2APlan,
+    item: A2APlanItem): void {
+    const request: AgentIngestRequest = buildIngestRequest(INGEST_SOURCE_XIAOYI, item.text, []);
+    this.beginDraftCheckpoint(taskId, conversationKey, request, plan.taskId, item.index);
+  }
+
+  /** 草稿生成 deadline：LLM 挂起时 25s 内回执并转待整理，不无限等。 */
+  private draftWithDeadline(runId: string, sourceText: string, history: SourceFragment[],
+    token: CancellationToken, instruction: string = DEFAULT_DRAFT_INSTRUCTION,
+    preferStandard: boolean = false): Promise<NoteDraftReadyEvent> {
+    return new Promise<NoteDraftReadyEvent>((resolve: (value: NoteDraftReadyEvent) => void,
+      reject: (reason: Error) => void): void => {
+      let settled: boolean = false;
+      const slowTimer: number = setTimeout((): void => {
+        if (!settled) {
+          hilog.warn(DOMAIN, TAG, 'A2A_DRAFT_SLOW ms=%{public}d runId=%{public}s',
+            A2A_DRAFT_SLOW_MS, runId);
+        }
+      }, A2A_DRAFT_SLOW_MS);
+      const timer: number = setTimeout((): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(slowTimer);
+        token.cancel();
+        hilog.warn(DOMAIN, TAG, 'A2A_DRAFT_TIMEOUT ms=%{public}d', A2A_DRAFT_TIMEOUT_MS);
+        reject(new Error('A2A_DRAFT_TIMEOUT: ' + A2A_DRAFT_TIMEOUT_MS.toString() + 'ms'));
+      }, A2A_DRAFT_TIMEOUT_MS);
+      this.createDraftWithFallback(runId, sourceText, history, token, instruction, preferStandard)
+        .then((event: NoteDraftReadyEvent): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(slowTimer);
+          clearTimeout(timer);
+          resolve(event);
+        })
+        .catch((e: Error): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(slowTimer);
+          clearTimeout(timer);
+          reject(e);
+        });
+    });
+  }
+
+  /** 先走 light（快）；草稿内容为空/复述原文时取消并改用 standard 重试。 */
+  private async createDraftWithFallback(runId: string, sourceText: string,
+    history: SourceFragment[], token: CancellationToken,
+    instruction: string = DEFAULT_DRAFT_INSTRUCTION,
+    preferStandard: boolean = false): Promise<NoteDraftReadyEvent> {
+    const service: AiService = new AiService(this.host.ingestContext(), false);
+    if (preferStandard) {
+      // 「详细一点」直接走 standard；失败就保留旧草稿，不降级成更短版本。
+      return await service.generateNoteDraftWithSources(
+        runId + '-std', instruction, sourceText, history, token, undefined, undefined, 'standard');
+    }
+    const light: NoteDraftReadyEvent = await service.generateNoteDraftWithSources(
+      runId, instruction, sourceText, history, token, undefined, undefined, 'light');
+    if (A2AIngestHandler.draftUseful(light, sourceText)) {
+      return light;
+    }
+    hilog.warn(DOMAIN, TAG, 'A2A_DRAFT light-empty retry=standard runId=%{public}s', runId);
+    try {
+      await service.cancelDraft(light.runId);
+    } catch (e) {
+      // 取消失败不阻塞重试；坏 run 只留在生成记录里。
+    }
+    return await service.generateNoteDraftWithSources(
+      runId + '-std', instruction, sourceText, history, token, undefined, undefined, 'standard');
+  }
+
+  /** 至少有一节正文既不是空串、也不是原文复述，才算可用草稿。 */
+  private static draftUseful(event: NoteDraftReadyEvent, sourceText: string): boolean {
+    const draft = event.result.draft;
+    if (draft === undefined) {
+      return false;
+    }
+    const source: string = A2AIngestHandler.normalizeComparable(sourceText);
+    let useful: number = 0;
+    for (let i = 0; i < draft.sections.length; i += 1) {
+      const text: string = A2AIngestHandler.normalizeComparable(draft.sections[i].content);
+      if (text.length < 12) {
+        continue;
+      }
+      if (source.length > 0 && text.indexOf(source) >= 0 && text.length <= source.length + 20) {
+        continue;
+      }
+      useful += 1;
+    }
+    return useful > 0;
+  }
+
+  private static normalizeComparable(text: string): string {
+    return text.replace(/\s+/g, '').replace(/[。，、；：]/g, '');
+  }
+
+  /** 「存笔记：」是入口指令，不是笔记内容；计划项前面的「1. 」也先剥掉。 */
+  private static cleanDraftSource(text: string): string {
+    const cleaned: string = text
+      .replace(/^\s*(\d{1,2}\s*[.、)）]\s*)?/, '')
+      .replace(/^\s*(存笔记|整理笔记|记笔记|整理成笔记)\s*[:：]?\s*/, '')
+      .trim();
+    return cleaned.length > 0 ? cleaned : text.trim();
+  }
+
+  /** 最近 3 轮对话作为生成资料；助手文本是模型生成，只作上下文，不当原始证据。 */
+  private static historySources(turns: A2AConversationTurn[], conversationKey: string): SourceFragment[] {
+    const sources: SourceFragment[] = [];
+    const start: number = turns.length > 3 ? turns.length - 3 : 0;
+    let sequence: number = 0;
+    for (let i = start; i < turns.length; i += 1) {
+      const turn: A2AConversationTurn = turns[i];
+      const text: string = A2AIngestHandler.clipHistory(
+        '用户：' + turn.user + '\n助手：' + turn.assistant, 1200);
+      if (text.trim().length === 0) {
+        continue;
+      }
+      sources.push({
+        id: 'a2a-history-' + conversationKey + '-' + i.toString(),
+        kind: 'conversation',
+        originId: conversationKey,
+        sequence: sequence,
+        fingerprint: sourceFingerprint(text),
+        text: text,
+      });
+      sequence += 1;
+    }
+    return sources;
+  }
+
+  private static clipHistory(text: string, limit: number): string {
+    return text.length > limit ? text.substring(0, limit) : text;
+  }
+
+  /** 用户确认：把落盘草稿走正式 confirmDraft 入库。 */
+  confirmPendingDraft(taskId: string, conversationKey: string, draft: A2APendingDraft): void {
+    hilog.info(DOMAIN, TAG, 'A2A_DRAFT confirm key=%{public}s runId=%{public}s',
+      conversationKey, draft.event.runId);
+    const service: AiService = new AiService(this.host.ingestContext(), false);
+    service.confirmDraft(draft.event, draft.event.candidate)
+      .then((unit: KnowledgeUnit): void => {
+        A2ADraftStore.clear(this.host.ingestContext(), conversationKey).catch((): void => {});
+        this.recordA2aIngestReceipt();
+        const reused: boolean = unit.id !== draft.event.candidate.id;
+        if (draft.planTaskId !== undefined && draft.planItemIndex !== undefined) {
+          this.completePlanDraftItem(taskId, draft.planTaskId, draft.planItemIndex, unit, reused);
+          return;
+        }
+        this.host.sendIngestAnswer(taskId,
+          (reused ? '已保存（检测到相同笔记，已复用）：' : '已保存：')
+            + unit.title + '（' + unit.subject + '）', 0);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, TAG, 'A2A_DRAFT confirm failed %{public}s', e.message);
+        this.host.sendIngestAnswer(taskId, '保存失败：' + e.message + '。可回复「确认」重试，或「取消」放弃。', 0);
+      });
+  }
+
+  /** 用户取消：丢弃草稿；若属于计划，同时结束计划，不写库。 */
+  cancelPendingDraft(taskId: string, conversationKey: string, draft: A2APendingDraft): void {    A2ADraftStore.clear(this.host.ingestContext(), conversationKey).catch((): void => {});
+    if (draft.planTaskId !== undefined) {
+      A2APlanStore.clear(this.host.ingestContext(), draft.planTaskId).catch((): void => {});
+    }
+    hilog.info(DOMAIN, TAG, 'A2A_DRAFT cancel key=%{public}s', conversationKey);
+    this.host.sendIngestAnswer(taskId,
+      draft.planTaskId !== undefined ? '已取消这次整理计划，没有写入新笔记。' : '已取消，这次没有写入笔记。', 0);
+  }
+
+  /** 草稿二次操作：详细一点 / 简洁一点 / 重新生成；失败保留旧草稿。 */
+  refinePendingDraft(taskId: string, conversationKey: string, draft: A2APendingDraft,
+    mode: A2ADraftRefine): void {
+    const sourceText: string = draft.sourceText !== undefined && draft.sourceText.length > 0
+      ? draft.sourceText : draft.event.candidate.content;
+    const runId: string = 'a2a-draft-refine-' + Date.now().toString() + '-'
+      + Math.floor(Math.random() * 1000).toString();
+    const token: CancellationToken = new CancellationToken();
+    let instruction: string = DEFAULT_DRAFT_INSTRUCTION;
+    if (mode === 'more') {
+      instruction = '把这段数学内容整理得更详细：保留标准字段，补充条件、推导步骤和易错点；'
+        + '不要编造源材料之外的事实。';
+    } else if (mode === 'less') {
+      instruction = '把这段数学内容整理得更简洁：每个字段最多一句话，只保留核心定义与结论。';
+    }
+    hilog.info(DOMAIN, TAG, 'A2A_DRAFT refine mode=%{public}s key=%{public}s', mode, conversationKey);
+    this.draftWithDeadline(runId, sourceText, [], token, instruction, mode === 'more')
+      .then((event: NoteDraftReadyEvent): void => {
+        if (!A2AIngestHandler.draftUseful(event, sourceText)) {
+          throw new Error('draft-empty');
+        }
+        const next: A2APendingDraft = {
+          conversationKey: conversationKey,
+          createdAt: Date.now(),
+          event: event,
+          sourceText: sourceText,
+        };
+        if (draft.planTaskId !== undefined) {
+          next.planTaskId = draft.planTaskId;
+          next.planItemIndex = draft.planItemIndex;
+        }
+        A2ADraftStore.save(this.host.ingestContext(), next).catch((): void => {});
+        new AiService(this.host.ingestContext(), false).cancelDraft(draft.event.runId).catch((): void => {});
+        this.host.sendIngestAnswer(taskId, formatA2ADraftReply(event), 0);
+      })
+      .catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'A2A_DRAFT refine failed %{public}s', e.message);
+        this.host.sendIngestAnswer(taskId,
+          '这次调整没成功：' + e.message + '。可以回复「确认」保存原草稿，或「取消」。', 0);
+      });
+  }
+
+  /** 计划草稿确认后：回写 done，提示下一题；全部完成则清掉计划。 */
+  private completePlanDraftItem(taskId: string, planTaskId: string, itemIndex: number,
+    unit: KnowledgeUnit, reused: boolean): void {
+    A2APlanStore.load(this.host.ingestContext(), planTaskId)
+      .then((plan: A2APlan | null): void => {
+        const title: string = unit.title;
+        if (plan === null) {
+          this.host.sendIngestAnswer(taskId, (reused ? '已保存（复用）：' : '已保存：')
+            + title + '（' + unit.subject + '）', 0);
+          return;
+        }
+        if (plan.done.indexOf(itemIndex) < 0) {
+          plan.done.push(itemIndex);
+        }
+        const remaining: number = remainingPlanCount(plan);
+        if (remaining === 0) {
+          A2APlanStore.clear(this.host.ingestContext(), planTaskId).catch((): void => {});
+          this.host.sendIngestAnswer(taskId, (reused ? '已保存（复用）：' : '已保存：')
+            + title + '（' + unit.subject + '）。这次计划全部完成。', 0);
+          return;
+        }
+        A2APlanStore.save(this.host.ingestContext(), planTaskId, plan)
+          .then((): void => {
+            this.host.sendIngestAnswer(taskId, (reused ? '已保存（复用）：' : '已保存：')
+              + title + '（' + unit.subject + '）。进度 ' + plan.done.length.toString()
+              + '/' + plan.items.length.toString() + '，回复「继续」整理下一题，或「取消」结束计划。', 0);
+          })
+          .catch((e: Error): void => {
+            hilog.warn(DOMAIN, TAG, 'PLAN_SAVE_FAILED %{public}s', e.message);
+            this.host.sendIngestAnswer(taskId, (reused ? '已保存（复用）：' : '已保存：')
+              + title + '（' + unit.subject + '）。', 0);
+          });
+      })
+      .catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'PLAN_LOAD_FAILED %{public}s', e.message);
+        this.host.sendIngestAnswer(taskId, (reused ? '已保存（复用）：' : '已保存：')
+          + unit.title + '（' + unit.subject + '）', 0);
+      });
+  }
+
+  /** 有未完成计划时：解析「继续 / 第 N 题 / 全部 / 取消」，先出草稿再确认。 */
+  handlePlanTurn(taskId: string, query: string, plan: A2APlan, conversationKey: string): void {
     const command: A2APlanCommand = parseA2APlanCommand(query);
     if (command.kind === PLAN_CMD_CANCEL) {
       A2APlanStore.clear(this.host.ingestContext(), taskId).catch((): void => {});
+      A2ADraftStore.clear(this.host.ingestContext(), conversationKey).catch((): void => {});
       this.host.sendIngestAnswer(taskId, '已取消这次整理计划，没有写入新笔记。', 0);
       return;
     }
-    if (command.kind === PLAN_CMD_ALL) {
-      const pendingItems: A2APlanItem[] = [];
-      for (let i = 0; i < plan.items.length; i += 1) {
-        if (plan.done.indexOf(plan.items[i].index) < 0) {
-          pendingItems.push(plan.items[i]);
-        }
-      }
-      A2APlanStore.clear(this.host.ingestContext(), taskId).catch((): void => {});
-      this.ingestPendingItemsSequentially(taskId, pendingItems);
-      return;
-    }
     let item: A2APlanItem | undefined = undefined;
-    if (command.kind === PLAN_CMD_INDEX) {
+    if (command.kind === PLAN_CMD_ALL) {
+      // 「全部」也从第一题开始预览；确认一题后再「继续」下一题。
+      item = nextPlanItem(plan);
+    } else if (command.kind === PLAN_CMD_INDEX) {
       for (let i = 0; i < plan.items.length; i += 1) {
         if (i + 1 === command.index) {
           item = plan.items[i];
@@ -173,7 +484,7 @@ export class A2AIngestHandler {
         + plan.done.length.toString() + ' 题）。回复「继续」/「第 N 题」/「全部」/「取消」。', 0);
       return;
     }
-    this.ingestPlanItem(taskId, plan, item);
+    this.beginPlanDraftCheckpoint(taskId, conversationKey, plan, item);
   }
 
   /** 单题入库 deadline：超时抛 INGEST_DEADLINE，由调用方转待整理队列。 */
@@ -215,10 +526,10 @@ export class A2AIngestHandler {
     });
   }
 
-  /** 整理计划中的一道题：按 ADR-0024 §2.7 在扩展进程内联执行；超时/失败回退 inbox。 */
-  private ingestPlanItem(taskId: string, plan: A2APlan, item: A2APlanItem): void {
-    // 用户逐题确认后：直接在小艺里内联整理（无需打开 App）；超时/失败回退 inbox。
-    this.ingestPlanItemNow(taskId, plan, item);
+  /** 整理计划中的一道题：先生成草稿，确认后才入库。 */
+  private ingestPlanItem(taskId: string, plan: A2APlan, item: A2APlanItem,
+    conversationKey: string): void {
+    this.beginPlanDraftCheckpoint(taskId, conversationKey, plan, item);
   }
   private ingestPlanItemNow(taskId: string, plan: A2APlan, item: A2APlanItem): void {
     hilog.info(DOMAIN, TAG, 'PLAN_INGEST item=%{public}d chars=%{public}d',
@@ -300,7 +611,10 @@ export class A2AIngestHandler {
     }
     const code: string = outcome.code !== undefined ? outcome.code : 'INGEST_FAILED';
     if (outcome.retryable === true) {
-      this.enqueueTexts(batch.totalProblems > 1 ? batch.queuedTexts : [request.text]);
+      if (batch.totalProblems > 1) {
+        // queuedTexts 只含第 2..N 题；第 1 题由 enqueueForIngest 入队并回执。
+        this.enqueueTexts(batch.queuedTexts);
+      }
       this.enqueueForIngest(taskId, request.text);
       return;
     }
@@ -436,14 +750,17 @@ export class A2AIngestHandler {
       hilog.warn(DOMAIN, TAG, 'RECEIPT_READ_FAILED %{public}s', e.message);
     });
   }
-  private enqueueForIngest(taskId: string, query: string): void {
+  /** 入队并只回一条回执；调用方不应再单独回话，避免小艺里出现两条。 */
+  private enqueueForIngest(taskId: string, query: string, replyText?: string): void {
     const item: AgentInboxItem = buildInboxItem(query, Date.now());
     AgentInboxQueue.append(this.host.ingestContext(), item)
       .then((pending: number): void => {
         hilog.info(DOMAIN, TAG, 'INBOX_ENQUEUED pending=%{public}d chars=%{public}d',
           pending, item.text.length);
-        this.host.sendIngestAnswer(taskId,
-          '模型这次没通，已记为待整理（第 ' + pending.toString() + ' 条）。打开 MindTrace 会自动补上。', 0);
+        const text: string = replyText === undefined
+          ? '模型这次没通，已记为待整理（第 ' + pending.toString() + ' 条）。打开 MindTrace 会自动补上。'
+          : replyText;
+        this.host.sendIngestAnswer(taskId, text, 0);
       })
       .catch((e: Error): void => {
         hilog.error(DOMAIN, TAG, 'INBOX_ENQUEUE_FAILED %{public}s', e.message);

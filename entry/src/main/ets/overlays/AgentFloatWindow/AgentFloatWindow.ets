@@ -42,6 +42,7 @@ import {
   transitionChatMessageOutcome,
 } from './chat/ChatModels';
 import { NoteEvidenceCitation } from 'common';
+import type { NoteSuggestion } from 'common';
 import {
   NoteReviewAnswer,
   NoteReviewFeedback,
@@ -392,6 +393,12 @@ export struct AgentFloatWindow {
         ));
         this.sync();
         this.sm.flush(this.sessions).catch((): void => {});
+      },
+      onNoteSuggestion: (ref: ConversationRunRef, suggestion: NoteSuggestion): void => {
+        if (ref.sessionId !== this.activeSid) {
+          return;
+        }
+        this.showToast(this.noteSuggestionText(suggestion));
       },
     };
     const noteRoute: IConversationNoteRoutePort = new AgentInputNoteRouteAdapter(inputVm);
@@ -1273,6 +1280,16 @@ export struct AgentFloatWindow {
     } catch (e) {
       console.warn('[AgentFloatWindow] toast failed: ' + (e as Error).message);
     }
+  }
+
+  private noteSuggestionText(suggestion: NoteSuggestion): string {
+    if (suggestion.action === 'merge') {
+      return '检测到重复笔记，已复用已有笔记';
+    }
+    if (suggestion.action === 'append') {
+      return '同主题已有笔记，补充内容已保存';
+    }
+    return '笔记草稿已生成，确认后入库';
   }
 
   // + 弹窗 → 相机: 保持原来的「拍照 → 预览 → 可带问题发送」。

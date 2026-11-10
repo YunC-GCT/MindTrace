@@ -11,6 +11,7 @@
 import { common } from '@kit.AbilityKit';
 import { NoteContextClarification, NoteDraftReadyEvent } from 'common';
 import { NoteReviewAnswer } from 'common';
+import type { NoteSuggestion } from 'common';
 
 import { ConversationRunRef } from 'common';
 import { ChatMessageOrigin, ChatMessageOutcome, ConversationMessageEvent } from 'agents/src/main/ets/conversation/Index';
@@ -44,6 +45,7 @@ export interface AgentChatCallbacks {
     clarification: NoteContextClarification,
   ) => void;
   onOcrBlank?: (ref: ConversationRunRef, imageUri: string) => void;
+  onNoteSuggestion?: (ref: ConversationRunRef, suggestion: NoteSuggestion) => void;
 }
 
 // UI 层（overlays）不得直接 import 'agents'：这里代为转发对话图契约（ui-layer-dependency 规则）。

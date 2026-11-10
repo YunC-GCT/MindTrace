@@ -70,7 +70,7 @@ test('扩展接线：意图路由 + OCR checkpoint（回复继续前不写库）
     read('entry/src/main/ets/services/A2AAnswerHandler.ets'),
     read('entry/src/main/ets/services/A2ASession.ets'),
   ].join('\n');
-  assert.match(controller, /routeA2AIntent\(text, images\.length > 0, plan !== null\)/);
+  assert.match(controller, /routeA2AIntent\(text, hasImages, plan !== null\)/);
   assert.match(controller, /INTENT_OCR/);
   assert.match(controller, /private handleOcrCheckpoint\(/);
   assert.match(controller, /IngestGateway\.plan\(request\)/);

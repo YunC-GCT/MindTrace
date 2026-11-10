@@ -22,6 +22,7 @@
  */
 const CONTEXT_ID: string = 'mindtrace-context';
 const COMPLETED_STATE: string = 'TASK_STATE_COMPLETED';
+const WORKING_STATE: string = 'TASK_STATE_WORKING';
 const TEXT_MEDIA_TYPE: string = 'text/plain';
 
 /**
@@ -41,6 +42,42 @@ export function buildTaskSnapshot(requestId: string, taskId: string, text: strin
     + '","status":{"state":"' + COMPLETED_STATE + '"},"artifacts":[{"artifactId":"'
     + taskId + '-artifact","parts":[{"text":' + JSON.stringify(text)
     + ',"mediaType":"' + TEXT_MEDIA_TYPE + '"}]}]}}}';
+}
+
+/**
+ * 流式探针：任务开始帧（WORKING）。
+ * 与单帧快照共用 taskId / contextId；后续用 artifactUpdate 追加正文。
+ */
+export function buildTaskStreamStart(requestId: string, taskId: string): string {
+  return '{"jsonrpc":"2.0","id":"' + requestId
+    + '","result":{"task":{"id":"' + taskId
+    + '","contextId":"' + CONTEXT_ID
+    + '","status":{"state":"' + WORKING_STATE + '"}}}}';
+}
+
+/**
+ * 流式探针：artifact 分块帧。
+ * append=false 表示第一块；后续 append=true；最后一块 lastChunk=true。
+ */
+export function buildArtifactUpdate(requestId: string, taskId: string, text: string,
+  append: boolean, lastChunk: boolean): string {
+  const artifactId: string = taskId + '-artifact';
+  return '{"jsonrpc":"2.0","id":"' + requestId
+    + '","result":{"artifactUpdate":{"taskId":"' + taskId
+    + '","contextId":"' + CONTEXT_ID
+    + '","artifact":{"artifactId":"' + artifactId
+    + '","parts":[{"text":' + JSON.stringify(text)
+    + ',"mediaType":"' + TEXT_MEDIA_TYPE + '"}]}'
+    + ',"append":' + (append ? 'true' : 'false')
+    + ',"lastChunk":' + (lastChunk ? 'true' : 'false') + '}}}';
+}
+
+/** 流式探针：任务结束帧（COMPLETED + final）。 */
+export function buildTaskStreamEnd(requestId: string, taskId: string): string {
+  return '{"jsonrpc":"2.0","id":"' + requestId
+    + '","result":{"statusUpdate":{"taskId":"' + taskId
+    + '","contextId":"' + CONTEXT_ID
+    + '","status":{"state":"' + COMPLETED_STATE + '"},"final":true}}}';
 }
 
 /**

@@ -65,6 +65,7 @@ export class NoteOutcomeMapper {
     copy.subjectVocabulary = options.subjectVocabulary;
     copy.runEventSink = options.runEventSink;
     copy.skipLlmClassification = options.skipLlmClassification;
+    copy.compactStructure = options.compactStructure;
     return copy;
   }
 

@@ -81,6 +81,7 @@ export class NoteCaptureWorkflow implements NoteWorkflow {
       subjectVocabulary: domain.subjectVocabulary ?? [],
       commitKey: req.commitKey,
       skipClassification: mode.skipLlmClassification === true,
+      compactStructure: mode.compactStructure === true,
     };
     // 预算与取消是运行时属性，只走调用参数，不经 AgentState。
     const finalState: AgentState = await this.buildGraph(writePorts, observability, runControl).run(initial, runContext);

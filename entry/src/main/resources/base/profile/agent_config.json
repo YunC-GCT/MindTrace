@@ -11,7 +11,7 @@
       "version": "1.0.3",
       "documentationUrl": "https://github.com/YunC-GCT/MindTrace/blob/main/README.md",
       "capabilities": {
-        "streaming": false,
+        "streaming": true,
         "pushNotifications": false,
         "stateTransitionHistory": false,
         "extendedAgentCard": false

@@ -26,7 +26,7 @@ test('P0 模型：终态集合 / 优先级 / 恢复判定', () => {
 
 test('P0 schema：v20 新增 agent_job 表/索引且为 additive', () => {
   const db = read('common/src/main/ets/DatabaseHelper.ets');
-  assert.match(db, /const DB_SCHEMA_VERSION: number = 22/);
+  assert.match(db, /const DB_SCHEMA_VERSION: number = 23/);
   assert.match(db, /CREATE TABLE IF NOT EXISTS agent_job \(/);
   for (const column of ['job_id', 'kind', 'priority', 'payload_text', 'source', 'status',
     'attempt', 'fingerprint', 'lease_owner', 'lease_expires_at', 'error', 'created_at', 'updated_at']) {

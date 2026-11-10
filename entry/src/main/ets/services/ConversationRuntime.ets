@@ -9,6 +9,7 @@
  *   Accepted UI request -> run coordinator -> conversation workflow -> scoped callbacks.
  */
 import { CancellationToken, KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
+import type { EvidenceMode } from 'common';
 
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ConversationDraftCoordinator } from './ConversationDraftCoordinator';
@@ -22,7 +23,7 @@ import {
 } from './ConversationRunCoordinator';
 import { buildProductionConversationPorts } from './ConversationPortsProduction';
 import { ConversationWorkflowAdapter } from './ConversationWorkflowAdapter';
-import { ConversationRequest, ImageConversationRequest, ConversationWorkflow, ConversationWorkflowPorts, IConversationNoteRoutePort } from 'agents/src/main/ets/conversation/Index';
+import { ConversationRequest, ImageConversationRequest, TextConversationRequest, ConversationWorkflow, ConversationWorkflowPorts, IConversationNoteRoutePort } from 'agents/src/main/ets/conversation/Index';
 
 type ConversationRunLifecycleOwner = 'runtime' | 'workflow';
 type ConversationRunOperation<T> = (ref: ConversationRunRef) => Promise<T>;
@@ -61,22 +62,30 @@ export class ConversationRuntime {
     );
   }
 
-  async captureReply(sessionId: string, imageUri: string, userText: string): Promise<ConversationRunStartResult> {
+  async captureReply(sessionId: string, imageUri: string, userText: string,
+    evidenceMode?: EvidenceMode): Promise<ConversationRunStartResult> {
     const request: ImageConversationRequest = {
       kind: 'image',
       imageUri: imageUri,
       userContent: userText,
     };
+    if (evidenceMode !== undefined) {
+      request.evidenceMode = evidenceMode;
+    }
     const visibleUserText: string = userText.length > 0 ? userText : '[图片]';
     return await this.executeUserRequest(sessionId, request, visibleUserText, 'image', 'image');
   }
 
-  async realReplyStream(sessionId: string, userContent: string): Promise<ConversationRunStartResult> {
-    const request: ConversationRequest = {
+  async realReplyStream(sessionId: string, userContent: string,
+    evidenceMode?: EvidenceMode): Promise<ConversationRunStartResult> {
+    const request: TextConversationRequest = {
       kind: 'text',
       userContent: userContent,
       responseMode: 'stream',
     };
+    if (evidenceMode !== undefined) {
+      request.evidenceMode = evidenceMode;
+    }
     return await this.executeUserRequest(sessionId, request, userContent, 'chat', 'text');
   }
 

@@ -16,8 +16,8 @@ const aiService = readFileSync(resolve(root, 'entry/src/main/ets/services/AiServ
 
 test('photo send enters captureReply instead of text-only streaming', () => {
   assert.match(inputViewModel, /if \(uri\.length > 0\)/);
-  assert.match(inputViewModel, /this\.service\.captureReply\(sessionId, uri, msg\)/);
-  assert.match(inputViewModel, /else \{\s*this\.service\.realReplyStream\(sessionId, msg\)/);
+  assert.match(inputViewModel, /this\.service\.captureReply\(sessionId, uri, msg, evidenceMode\)/);
+  assert.match(inputViewModel, /else \{\s*this\.service\.realReplyStream\(sessionId, msg, evidenceMode\)/);
 });
 
 test('photo conversation performs analysis only and stores OCR material', () => {

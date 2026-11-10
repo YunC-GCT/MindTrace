@@ -440,8 +440,22 @@ export {
   REVIEW_DUE_MAX_LIMIT,
   REVIEW_READ_ERROR_INVALID_QUERY,
   REVIEW_READ_ERROR_READ_FAILED,
+  REVIEW_WRITE_ERROR_ITEM_NOT_FOUND,
+  REVIEW_WRITE_ERROR_INVALID_ITEM,
+  REVIEW_WRITE_ERROR_OPERATION_REQUIRED,
+  REVIEW_WRITE_ERROR_WRITE_FAILED,
 } from './ports/ReviewPorts';
-export type { ReviewItem, ReviewLogEntry, ReviewReadPort, ReviewReadStore } from './ports/ReviewPorts';
+export type {
+  ReviewItem,
+  ReviewLogEntry,
+  ReviewOperationRecord,
+  ReviewReadPort,
+  ReviewReadStore,
+  ReviewWriteCommand,
+  ReviewWriteOutcome,
+  ReviewWritePort,
+  ReviewWriteStore,
+} from './ports/ReviewPorts';
 export type { ArtifactDescriptor, ArtifactFileIo, ArtifactStorePort } from './ports/ArtifactStorePort';
 export {
   StudyPlanError,

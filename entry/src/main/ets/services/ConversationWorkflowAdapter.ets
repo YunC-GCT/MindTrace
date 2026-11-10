@@ -157,7 +157,7 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
     }
   }
 
-  /** 建议请求：本轮只记日志，不渲染；UI 接入后在这里转发给卡片。 */
+  /** 建议请求：记日志并转发给 UI；未实现回调的宿主行为不变。 */
   onNoteSuggestion?(ref: ConversationRunRef, suggestion: NoteSuggestion): void {
     if (!this.accepts(ref, 'note-suggestion')) {
       return;
@@ -167,6 +167,9 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
       + ' count=' + suggestion.count.toString()
       + ' reason=' + suggestion.reason
       + (suggestion.sourceNoteId === undefined ? '' : ' sourceNoteId=' + suggestion.sourceNoteId));
+    if (this.callbacks.onNoteSuggestion !== undefined) {
+      this.callbacks.onNoteSuggestion(ref, suggestion);
+    }
   }
 
   private noteProgressContent(progress: NoteGenerationProgressEvent): string {

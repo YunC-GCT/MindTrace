@@ -55,11 +55,11 @@ export class StructureNodeFactory {
         } else if (input.skipClassification === true) {
           unit = await service.structure(
             input.captureText, undefined, undefined, '', input.source, provenance,
-            input.subjectVocabulary ?? [], true);
+            input.subjectVocabulary ?? [], true, input.compactStructure === true);
         } else if (input.classification === undefined) {
           unit = await service.structure(
             input.captureText, undefined, undefined, '', input.source, provenance,
-            input.subjectVocabulary ?? []);
+            input.subjectVocabulary ?? [], false, input.compactStructure === true);
         } else {
           unit = await service.structureWithClassification(
             input.captureText,

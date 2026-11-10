@@ -57,6 +57,39 @@ export function readStringArray(value: Object | undefined): string[] {
   return result;
 }
 
+/** 模型偶尔把文本字段返回成 {text/value/content: ...}；统一抽成字符串，避免 [object Object]。 */
+export function readTextValue(value: Object | undefined): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const parts: string[] = [];
+    const values: Object[] = value as Object[];
+    for (const item of values) {
+      const text: string = readTextValue(item);
+      if (text.length > 0) {
+        parts.push(text);
+      }
+    }
+    return parts.join('\n');
+  }
+  const record: Record<string, Object> = value as Record<string, Object>;
+  const keys: string[] = ['text', 'value', 'content', 'markdown', 'body'];
+  for (const key of keys) {
+    const inner: Object | undefined = readRecordValue(record, key);
+    if (inner !== undefined) {
+      return readTextValue(inner);
+    }
+  }
+  return '';
+}
+
 export function budgetedRequestTokens(request: NoteGenerationRequest, fallback: number): number {
   return budgetedTokens(request.tokenBudget, fallback);
 }
@@ -96,21 +129,21 @@ export function parseDraftDocument(parsed: Record<string, Object>): NoteDraftDoc
     const record: Record<string, Object> = rawSection as Record<string, Object>;
     const sourceIds: string[] = readStringArray(readRecordValue(record, 'sourceIds'));
     sections.push({
-      id: String(readRecordValue(record, 'id') ?? ''),
-      label: String(readRecordValue(record, 'label') ?? ''),
-      content: String(readRecordValue(record, 'content') ?? ''),
+      id: readTextValue(readRecordValue(record, 'id')),
+      label: readTextValue(readRecordValue(record, 'label')),
+      content: readTextValue(readRecordValue(record, 'content')),
       sourceIds: sourceIds,
       state: readRecordValue(record, 'state') === 'locked' ? 'locked' : 'generated',
-      baseHash: String(readRecordValue(record, 'baseHash') ?? ''),
+      baseHash: readTextValue(readRecordValue(record, 'baseHash')),
     });
   }
   return {
-    schemaVersion: String(readRecordValue(parsed, 'schemaVersion') ?? ''),
-    title: String(readRecordValue(parsed, 'title') ?? ''),
-    summary: String(readRecordValue(parsed, 'summary') ?? ''),
-    subject: String(readRecordValue(parsed, 'subject') ?? ''),
-    category: String(readRecordValue(parsed, 'category') ?? ''),
-    chapter: String(readRecordValue(parsed, 'chapter') ?? ''),
+    schemaVersion: readTextValue(readRecordValue(parsed, 'schemaVersion')),
+    title: readTextValue(readRecordValue(parsed, 'title')),
+    summary: readTextValue(readRecordValue(parsed, 'summary')),
+    subject: readTextValue(readRecordValue(parsed, 'subject')),
+    category: readTextValue(readRecordValue(parsed, 'category')),
+    chapter: readTextValue(readRecordValue(parsed, 'chapter')),
     difficulty: Number(readRecordValue(parsed, 'difficulty') ?? 0),
     tags: readStringArray(readRecordValue(parsed, 'tags')),
     sections: sections,

@@ -16,6 +16,7 @@ import { getProviderCatalog, isValidModelSpec, modelSpecKey, setModelSpecOverrid
 import type { ModelSpec, ProviderCatalog } from './model-catalog';
 import { resolveModel } from './model-resolver';
 import type { ResolvedModel } from './model-resolver';
+import type { EvidenceMode } from '../ports/EvidencePolicy';
 
 const STORE_NAME = 'llm_config';
 const KEY_SCHEMA_VERSION = 'schema_version';
@@ -58,6 +59,8 @@ const KEY_MODEL_SPECS = 'model_specs';
 const KEY_EMBEDDING_MODEL = 'embedding_model';
 const KEY_EMBEDDING_ENDPOINT = 'embedding_endpoint';
 const KEY_EMBEDDING_API_KEY = 'embedding_api_key';
+// 2026-11-07: 回答证据策略。学习模式在发送时读取，不随单次请求临时改。
+const KEY_EVIDENCE_MODE = 'evidence_mode';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -126,6 +129,7 @@ export class LlmConfig {
   private cachedEmbeddingModel: string = '';
   private cachedEmbeddingEndpoint: string = '';
   private cachedEmbeddingApiKey: string = '';
+  private cachedEvidenceMode: EvidenceMode = 'balanced';
 
   private constructor() {}
 
@@ -175,6 +179,8 @@ export class LlmConfig {
     this.cachedEmbeddingEndpoint = embEndpoint.trim();
     const embKey: string = await s.get(KEY_EMBEDDING_API_KEY, '') as string;
     this.cachedEmbeddingApiKey = embKey.trim();
+    const evidenceMode: string = await s.get(KEY_EVIDENCE_MODE, 'balanced') as string;
+    this.cachedEvidenceMode = LlmConfig.normalizeEvidenceMode(evidenceMode);
     const cvJson: string = await s.get(KEY_CUSTOM_VENDOR, '') as string;
     if (cvJson.length > 0) {
       try {
@@ -471,6 +477,25 @@ export class LlmConfig {
     this.cachedEmbeddingApiKey = v.trim();
     await this.store!.put(KEY_EMBEDDING_API_KEY, this.cachedEmbeddingApiKey);
     await this.store!.flush();
+  }
+
+  /** 回答证据策略：strict 在判定不可用时 fail-closed；expansive 跳过判定。 */
+  public getEvidenceMode(): EvidenceMode {
+    return this.cachedEvidenceMode;
+  }
+
+  public async setEvidenceMode(v: EvidenceMode): Promise<void> {
+    this.requireInited();
+    this.cachedEvidenceMode = LlmConfig.normalizeEvidenceMode(v);
+    await this.store!.put(KEY_EVIDENCE_MODE, this.cachedEvidenceMode);
+    await this.store!.flush();
+  }
+
+  private static normalizeEvidenceMode(value: string): EvidenceMode {
+    if (value === 'strict' || value === 'expansive') {
+      return value;
+    }
+    return 'balanced';
   }
 
   // PR2-T2 ticket #83 L3 (2026-09-08): 读所有 per-vendor api keys(VM.load() 用)

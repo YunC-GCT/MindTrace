@@ -137,7 +137,8 @@ test('A2A 整理：用户整理意图在扩展内联完成（无需打开 App）
   assert.ok(controller.includes('private ingestPlanItemNow('));
   assert.ok(controller.includes('ingestTextBatchNow('));
   assert.ok(controller.includes('ingestPendingItemsSequentially('));
-  assert.ok(controller.includes('this.ingestPlanItemNow(taskId, plan, item)'));
+  assert.ok(controller.includes('beginPlanDraftCheckpoint('));
+  assert.ok(controller.includes('completePlanDraftItem('));
   assert.ok(controller.includes('this.ingestTextBatchNow(taskId, request)'));
   assert.ok(controller.includes('this.enqueueTexts([item.text])'));
   // 图片问答分支
