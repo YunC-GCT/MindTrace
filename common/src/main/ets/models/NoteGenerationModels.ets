@@ -43,6 +43,7 @@ export interface SourceFragment {
   sequence: number;
   fingerprint: string;
   text: string;
+  provenanceIds?: string[];
 }
 
 export interface SourceBundle {
@@ -211,6 +212,25 @@ export interface NoteGenerationSegment {
   sequence: number;
   boundary: 'message' | 'ocr_page' | 'heading' | 'formula_block' | 'problem' | 'derivation' | 'paragraph';
   text: string;
+  provenanceIds?: string[];
+}
+
+export type NoteContextClarificationStatus = 'pending' | 'selected' | 'cancelled';
+
+export interface NoteTopicCandidate {
+  id: string;
+  displayName: string;
+  sourceIds: string[];
+  confidence: number;
+}
+
+export interface NoteContextClarification {
+  runId: string;
+  instruction: string;
+  status: NoteContextClarificationStatus;
+  candidates: NoteTopicCandidate[];
+  selectedTopicId?: string;
+  createdAt: number;
 }
 
 export interface NoteGenerationDeepResult extends NoteGenerationStandardResult {
@@ -250,12 +270,14 @@ export interface NoteGenerationRun {
   instruction: string;
   sourceCount: number;
   tokenBudget: number;
+  contextBudgetTokens?: number;
   bestCheckpointId?: string;
   stopReason?: string;
   issueCount?: number;
   sourceIds?: string[];
   pendingSourceIds?: string[];
   sourceSummary?: string;
+  clarification?: NoteContextClarification;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -279,6 +301,8 @@ export interface NoteGenerationCheckpoint {
   changeScope?: number;
   decision?: NoteGenerationCheckpointDecision;
   createdAt?: number;
+  /** HITL 审批标记（v18）：0/缺省 = 未审批；>0 = 该检查点被用户批准的时间戳。 */
+  approvedAt?: number;
 }
 
 export interface NoteDraftReadyEvent {
@@ -735,9 +759,11 @@ export function mergeIncrementalPatches(
 
 function validateIncrementalConsistency(sections: IncrementalSection[]): string[] {
   const issues: string[] = [];
-  const formulas: Map<string, string> = new Map<string, string>();
   const terms: Map<string, string> = new Map<string, string>();
   for (const section of sections) {
+    // Formula names are local to a section: a general rule and a worked example
+    // may both use f'(x). Text inequality alone cannot prove a cross-section conflict.
+    const formulas: Map<string, string> = new Map<string, string>();
     for (const line of section.content.split('\n')) {
       const equals: number = line.indexOf('=');
       if (equals > 0) {

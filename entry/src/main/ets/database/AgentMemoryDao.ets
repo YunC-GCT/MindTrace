@@ -1,6 +1,7 @@
 import { relationalStore } from '@kit.ArkData';
-import { AgentMemoryRecord, AgentMemoryType } from '../models/AgentMemoryModels';
-import { ProfileScopePolicy, SessionIdPolicy } from '../services/ConversationIdentity';
+import { BusinessError } from '@kit.BasicServicesKit';
+import { AgentMemoryRecord, AgentMemoryType } from 'common';
+import { ProfileScopePolicy, SessionIdPolicy } from 'common';
 
 export class AgentMemoryDao {
   private store: relationalStore.RdbStore;
@@ -142,6 +143,24 @@ export class AgentMemoryDao {
         }
         resolve();
       });
+    });
+  }
+
+  // Deletes only clearing-derived memory. type='profile' is long-lived user
+  // context and must survive a chat history clear.
+  async deleteDerived(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.store.executeSql(
+        "DELETE FROM agent_memory WHERE type IN ('summary', 'pending_note', 'ocr_result')",
+        [],
+        (err: BusinessError) => {
+          if (err) {
+            reject(new Error('AgentMemoryDao.deleteDerived failed: ' + err.message));
+            return;
+          }
+          resolve();
+        },
+      );
     });
   }
 

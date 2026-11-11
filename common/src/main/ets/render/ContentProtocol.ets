@@ -165,7 +165,8 @@ export class ContentProtocol {
         output.push('$$');
         continue;
       }
-      output.push(this.normalizeInlineFormulaBodies(inlineNormalized, issues, fixes));
+      const wrappedInline: string = this.wrapNakedInlineTex(inlineNormalized, issues, fixes);
+      output.push(this.normalizeInlineFormulaBodies(wrappedInline, issues, fixes));
     }
     return output.join('\n');
   }
@@ -574,6 +575,74 @@ export class ContentProtocol {
     return output.length > 0 ? output + line.substring(cursor) : line;
   }
 
+  private static readonly MATH_INLINE_COMMANDS: string[] = [
+    'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta',
+    'vartheta', 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'pi', 'rho', 'sigma', 'tau',
+    'upsilon', 'phi', 'varphi', 'chi', 'psi', 'omega',
+    'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Phi', 'Psi', 'Omega',
+    'in', 'notin', 'ni', 'to', 'le', 'ge', 'ne', 'pm', 'mp', 'times', 'cdot', 'div',
+    'approx', 'equiv', 'sim', 'propto', 'infty', 'partial', 'nabla', 'sum', 'prod',
+    'int', 'oint', 'lim', 'log', 'ln', 'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+    'arcsin', 'arccos', 'arctan', 'max', 'min', 'sup', 'inf', 'forall', 'exists',
+    'subset', 'supset', 'cup', 'cap', 'emptyset', 'mathbb', 'mathrm', 'text',
+    'frac', 'sqrt', 'left', 'right',
+  ];
+
+  private static isMathInlineCommand(command: string): boolean {
+    const name: string = command.substring(1);
+    return ContentProtocol.MATH_INLINE_COMMANDS.indexOf(name) >= 0;
+  }
+
+  /**
+   * 给整行都没有 `$` 的裸 LaTeX 命令补行内定界符（如「存在一点 \\xi \\in (a,b)」）。
+   * 只处理没有美元符的行，且只包裹数学白名单里的命令，避免误伤路径等普通文本。
+   */
+  private wrapNakedInlineTex(line: string, issues: string[], fixes: string[]): string {
+    if (line.indexOf('$') >= 0) {
+      return line;
+    }
+    let output: string = '';
+    let changed: boolean = false;
+    let index: number = 0;
+    while (index < line.length) {
+      const char: string = line.charAt(index);
+      if (char !== '\\') {
+        output += char;
+        index += 1;
+        continue;
+      }
+      let end: number = index + 1;
+      while (end < line.length) {
+        const code: number = line.charCodeAt(end);
+        const isLetter: boolean = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+        if (!isLetter) {
+          break;
+        }
+        end += 1;
+      }
+      if (end === index + 1) {
+        // 不是命令（如换行符 `\\`），原样保留
+        output += char;
+        index += 1;
+        continue;
+      }
+      const command: string = line.substring(index, end);
+      if (!ContentProtocol.isMathInlineCommand(command)) {
+        output += command;
+        index = end;
+        continue;
+      }
+      output += '$' + command + '$';
+      changed = true;
+      index = end;
+    }
+    if (changed) {
+      issues.push('naked_inline_formula');
+      fixes.push('wrap_inline_tex');
+    }
+    return output;
+  }
+
   private normalizeFormulaBody(rawBody: string, issues: string[], fixes: string[]): string {
     let result: string = rawBody.trim();
     if (result.indexOf('$') >= 0) {
@@ -593,7 +662,75 @@ export class ContentProtocol {
       issues.push('loose_differential');
       fixes.push('normalize_differential');
     }
+    result = this.balanceBraces(result, fixes);
+    result = this.balanceLeftRight(result, fixes);
     return result;
+  }
+
+  /**
+   * 补齐不闭合的 `{}`：模型或截断摘录常留下 `\frac{a}{…` 这类半截公式，
+   * 补齐后 KaTeX 可以渲染；比整段降级成纯文本更接近用户预期。
+   */
+  private balanceBraces(body: string, fixes: string[]): string {
+    let depth: number = 0;
+    let minDepth: number = 0;
+    let index: number = 0;
+    while (index < body.length) {
+      const char: string = body.charAt(index);
+      if (char === '{' && !this.isEscapedAt(body, index)) {
+        depth += 1;
+      } else if (char === '}' && !this.isEscapedAt(body, index)) {
+        depth -= 1;
+        if (depth < minDepth) {
+          minDepth = depth;
+        }
+      }
+      index += 1;
+    }
+    if (depth === 0 && minDepth === 0) {
+      return body;
+    }
+    let repaired: string = body;
+    if (minDepth < 0) {
+      // 多余的 `}`：删掉多余的收尾括号（只处理结尾连续的 `}`）。
+      let removed: number = 0;
+      while (removed < -minDepth && repaired.endsWith('}')) {
+        repaired = repaired.substring(0, repaired.length - 1);
+        removed += 1;
+      }
+      depth += removed;
+    }
+    if (depth > 0) {
+      let appended: string = '';
+      for (let i = 0; i < depth; i += 1) {
+        appended += '}';
+      }
+      repaired += appended;
+    }
+    fixes.push('balance_formula_brace');
+    return repaired;
+  }
+
+  /** 补齐 `\left` / `\right` 配对；KaTeX 允许 `\right.` / `\left.` 占位。 */
+  private balanceLeftRight(body: string, fixes: string[]): string {
+    const leftCount: number = this.countLatexCommand(body, '\\left');
+    const rightCount: number = this.countLatexCommand(body, '\\right');
+    if (leftCount === rightCount) {
+      return body;
+    }
+    fixes.push('balance_left_right');
+    if (leftCount > rightCount) {
+      let tail: string = '';
+      for (let i = 0; i < leftCount - rightCount; i += 1) {
+        tail += '\\right.';
+      }
+      return body + tail;
+    }
+    let head: string = '';
+    for (let i = 0; i < rightCount - leftCount; i += 1) {
+      head += '\\left.';
+    }
+    return head + body;
   }
 
   private replaceKnownTypo(

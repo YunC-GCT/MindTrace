@@ -9,11 +9,13 @@
  *   Conversation workflow event -> typed callback contract -> session-owned UI state.
  */
 import { common } from '@kit.AbilityKit';
-import { NoteDraftReadyEvent } from 'common';
-import { NoteReviewAnswer } from '../models/NoteReviewModels';
-import { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
-import { ChatMessageOrigin, ChatMessageOutcome } from '../workflows/conversation/ConversationState';
-import { ConversationRunRef } from './ConversationIdentity';
+import { NoteContextClarification, NoteDraftReadyEvent } from 'common';
+import { NoteReviewAnswer } from 'common';
+import type { NoteSuggestion } from 'common';
+
+import { ConversationRunRef } from 'common';
+import { ChatMessageOrigin, ChatMessageOutcome, ConversationMessageEvent } from 'agents/src/main/ets/conversation/Index';
+import type { ConversationProgressStep, IConversationNoteRoutePort } from 'agents/src/main/ets/conversation/Index';
 
 export interface AgentChatCallbacks {
   addUserMsg: (ref: ConversationRunRef, content: string, origin: ChatMessageOrigin) => number;
@@ -37,5 +39,17 @@ export interface AgentChatCallbacks {
   getConversationText: (ref: ConversationRunRef, excludeLatestUser: boolean) => string;
   onDraftReady: (ref: ConversationRunRef, event: NoteDraftReadyEvent) => void;
   onNoteReviewReady?: (ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer) => void;
+  onNoteContextClarificationReady?: (
+    ref: ConversationRunRef,
+    messageId: number,
+    clarification: NoteContextClarification,
+  ) => void;
   onOcrBlank?: (ref: ConversationRunRef, imageUri: string) => void;
+  onNoteSuggestion?: (ref: ConversationRunRef, suggestion: NoteSuggestion) => void;
 }
+
+// UI 层（overlays）不得直接 import 'agents'：这里代为转发对话图契约（ui-layer-dependency 规则）。
+export type {
+  ChatMessageOrigin, ChatMessageOutcome, ConversationMessageEvent,
+  ConversationProgressStep, IConversationNoteRoutePort,
+} from 'agents/src/main/ets/conversation/Index';

@@ -10,11 +10,12 @@
  *   UI draft command -> ownership lookup -> conversation run executor -> workflow operation.
  */
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
-import { ConversationWorkflow } from '../workflows/conversation/ConversationWorkflow';
+
 import {
   ConversationRunRequestKind,
 } from './ConversationRunCoordinator';
-import { ConversationRunRef } from './ConversationIdentity';
+import { ConversationRunRef } from 'common';
+import { ConversationWorkflow } from 'agents/src/main/ets/conversation/Index';
 
 type DraftEventExecutor = (
   sessionId: string,
@@ -78,6 +79,28 @@ export class ConversationDraftCoordinator {
       sessionId,
       'confirm-draft',
       (ref: ConversationRunRef): Promise<KnowledgeUnit> => this.workflow.confirmDraft(ref, event, candidate),
+    );
+  }
+
+  async requestRegeneration(sessionId: string, noteId: string, instruction: string): Promise<void> {
+    await this.executeVoid(
+      sessionId,
+      'regenerate',
+      (ref: ConversationRunRef): Promise<void> =>
+        this.workflow.requestRegeneration(ref, noteId, [noteId], instruction),
+    );
+  }
+
+  async resumeClarification(
+    sessionId: string,
+    runId: string,
+    topicId: string,
+  ): Promise<NoteDraftReadyEvent> {
+    return await this.executeEvent(
+      sessionId,
+      'resume-clarification',
+      (ref: ConversationRunRef): Promise<NoteDraftReadyEvent> =>
+        this.workflow.resumeNoteContextClarification(ref, runId, topicId),
     );
   }
 

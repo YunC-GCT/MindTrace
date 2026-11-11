@@ -1,0 +1,91 @@
+/**
+ * ConversationTypes.ets — Conversation workflow 回调契约类型
+ *
+ * 路径: entry/src/main/ets/workflows/conversation/ConversationTypes.ets
+ * 职责: 定义 ConversationWorkflowCallbacks 单一接缝 (UI ↔ workflow 全部交互)
+ * 依赖: @kit.AbilityKit (common.UIAbilityContext); ./ConversationState (ConversationProgressStep); common (NoteDraftReadyEvent, StreamEvent)
+ *
+ * 数据流:
+ *   AgentFloatWindow ↔ ConversationWorkflow (callbacks) ↔ ConversationWorkflow.run (StateGraph)
+ *
+ * 设计要点:
+ *   - P0: updateAiMsg 以单一 event sink 承载 StreamEvent 增量与最终正文替换; addAiMsgEmpty + finishAiMsg 形成"创建空消息 → 累积流 → 完成"三阶段
+ *   - onDraftReady 把草稿事件抛回 UI,UI 端走 NoteDraftPanel;draft 状态字段回写到 ConversationState 在 State.ets 定义
+ *
+ * ArkTS 1.1 strict 适配:
+ *   - 全部 callback 用具名函数类型,无 call signature 对象 (避免 arkts-no-call-signatures)
+ *   - StreamEvent 以 type import 引入,避免循环依赖
+ */
+
+import { common } from '@kit.AbilityKit';
+import { ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from './ConversationState';
+import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
+import type { NoteEvidenceCitation, NoteSuggestion, StreamEvent } from 'common';
+import { ConversationRunRef } from 'common';
+import { CancellationToken } from 'common';
+import { NoteReviewAnswer } from 'common';
+export type ConversationRunEventStatus = 'pending' | 'running' | 'success' | 'failed';
+
+export interface ConversationStreamMessageEvent {
+  kind: 'stream';
+  event: StreamEvent;
+}
+
+export interface ConversationReplaceContentEvent {
+  kind: 'replace-content';
+  content: string;
+}
+
+export interface ConversationStatusMessageEvent {
+  kind: 'status';
+  content: string;
+  status: ConversationRunEventStatus;
+  progressKey?: string;
+}
+
+export interface ConversationErrorMessageEvent {
+  kind: 'error';
+  content: string;
+}
+
+/** 结构化来源：命中笔记由界面渲染成来源卡片，不再拼进回答正文。 */
+export interface ConversationSourcesMessageEvent {
+  kind: 'sources';
+  citations: NoteEvidenceCitation[];
+}
+
+export type ConversationMessageEvent = ConversationStreamMessageEvent
+  | ConversationReplaceContentEvent
+  | ConversationStatusMessageEvent
+  | ConversationErrorMessageEvent
+  | ConversationSourcesMessageEvent;
+
+export interface ConversationWorkflowCallbacks {
+  addAiMsg(ref: ConversationRunRef, content: string, origin?: ChatMessageOrigin, outcome?: ChatMessageOutcome): number;
+  addAiMsgEmpty(ref: ConversationRunRef, origin: ChatMessageOrigin): number;
+  updateAiMsg(ref: ConversationRunRef, id: number, event: ConversationMessageEvent): void;
+  finishAiMsg(ref: ConversationRunRef, id: number, outcome?: ChatMessageOutcome): void;
+  getUserMessageId(ref: ConversationRunRef): number;
+  commitHistory(ref: ConversationRunRef): Promise<boolean>;
+  reportDiagnostic(ref: ConversationRunRef, diagnostic: string): void;
+  onStart(ref: ConversationRunRef): void;
+  onProgress(ref: ConversationRunRef, step: ConversationProgressStep): void;
+  onNoteGenerationProgress(ref: ConversationRunRef, event: NoteGenerationProgressEvent): void;
+  completeProgress(ref: ConversationRunRef): void;
+  onError(ref: ConversationRunRef, message: string): void;
+  onFinish(ref: ConversationRunRef): void;
+  isCurrentRun(ref: ConversationRunRef): boolean;
+  getCancellationToken(ref: ConversationRunRef): CancellationToken | undefined;
+  registerCancellationHook(ref: ConversationRunRef, hook: () => void): () => void;
+  getContext(): common.UIAbilityContext;
+  getConversationText(ref: ConversationRunRef, excludeLatestUser: boolean): string;
+  onDraftReady(ref: ConversationRunRef, event: NoteDraftReadyEvent): void;
+  onNoteReviewReady?(ref: ConversationRunRef, messageId: number, review: NoteReviewAnswer): void;
+  onNoteContextClarificationReady?(ref: ConversationRunRef, messageId: number, clarification: NoteContextClarification): void;
+  onOcrBlank?(ref: ConversationRunRef, imageUri: string): void;
+  /**
+   * 笔记生成/合并建议：本轮只记录，不渲染、不落库。
+   * 用可选回调而不是消息事件——事件 reducer 对未知 kind 会落到错误提示。
+   */
+  onNoteSuggestion?(ref: ConversationRunRef, suggestion: NoteSuggestion): void;
+}

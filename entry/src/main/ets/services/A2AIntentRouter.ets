@@ -1,0 +1,136 @@
+/**
+ * A2AIntentRouter.ets — A2A 请求意图路由（纯函数，无 IO）
+ *
+ * 路径: entry/src/main/ets/services/A2AIntentRouter.ets
+ * 职责: 把「小艺请求（文本 + 是否带图 + 是否有未完成计划）」收敛成一个显式意图：
+ *       probe / plan_continue / plan_waiting / ocr / pick_card / text_ingest / chat / empty。
+ *       取代散落在 AgentExtAbility 里的 indexOf 关键词判断（shouldEnqueue / wantsPickCard 保留为兼容封装）。
+ * 依赖: 无（纯函数，便于 Node 契约测试）。
+ *
+ * 设计要点：
+ *   - 有未完成 checkpoint 计划时，任何「继续/第N题/全部/取消」都优先推进计划；
+ *   - 带图片 → ocr（先 OCR，再进 checkpoint，不直接写库）；
+ *   - 明确说「拍题/选图」但没图 → pick_card（引导卡片）；
+ *   - 明确说「存笔记/整理成笔记…」→ text_ingest（文字走 036 切题/计划）；
+ *   - 其余 → chat（正常对话回答，不误触发写作）。
+ */
+import { parseA2APlanCommand } from './A2APlanModels';
+
+export const INTENT_PROBE: string = 'probe';
+export const INTENT_PLAN_CONTINUE: string = 'plan_continue';
+export const INTENT_PLAN_WAITING: string = 'plan_waiting';
+export const INTENT_OCR: string = 'ocr';
+export const INTENT_IMAGE_QA: string = 'image_qa';
+/** 图片消息的二级意图：问答 or 整理（逐条判断，仅看随图文字）。 */
+export const IMAGE_INTENT_QA: string = 'image_qa';
+export const IMAGE_INTENT_INGEST: string = 'image_ingest';
+export const INTENT_PICK_CARD: string = 'pick_card';
+export const INTENT_TEXT_INGEST: string = 'text_ingest';
+export const INTENT_CHAT: string = 'chat';
+export const INTENT_EMPTY: string = 'empty';
+
+export interface A2AIntent {
+  kind: string;
+  /** 便于日志/排障的原因（纯文本，不含用户隐私以外的内容） */
+  reason: string;
+}
+
+/** 显式「存成笔记」指令短语。 */
+const INGEST_PHRASES: string[] = [
+  '存笔记',
+  '记笔记',
+  '整理成笔记',
+  '存为笔记',
+  '存到笔记',
+  '记录到笔记',
+  '笔记入库',
+  '存进笔记',
+  '整理一下这',
+  '整理这道',
+  '整理这几',
+  '把这道题',
+  '把这几道',
+  '帮我整理',
+];
+
+/** 「拍题/选图」指令短语（无图时出卡片）。 */
+const PICK_PHRASES: string[] = [
+  '拍题',
+  '拍图',
+  '拍照',
+  '整理图片',
+  '整理照片',
+  '上传图片',
+  '发图片',
+  '选图',
+];
+
+const MIN_TEXT_INGEST_CHARS: number = 8;
+
+/**
+ * 路由入口。
+ * @param query 用户文本（可能为空）
+ * @param hasImages 请求里是否有图片 part
+ * @param hasPendingPlan 是否存在未完成的整理 checkpoint
+ */
+export function routeA2AIntent(query: string, hasImages: boolean, hasPendingPlan: boolean): A2AIntent {
+  const text: string = query.trim();
+  if (text.indexOf('识别探针') >= 0) {
+    return { kind: INTENT_PROBE, reason: 'probe-keyword' };
+  }
+  if (hasPendingPlan) {
+    const command = parseA2APlanCommand(text);
+    if (command.kind !== 'none') {
+      return { kind: INTENT_PLAN_CONTINUE, reason: 'plan-command:' + command.kind };
+    }
+    return { kind: INTENT_PLAN_WAITING, reason: 'pending-plan' };
+  }
+  if (hasImages) {
+    // 带图：逐条判断随图文字——明确整理意图才入库，否则默认按“回答图片相关内容”处理。
+    const imageIntent: string = classifyImageIntent(text);
+    if (imageIntent === IMAGE_INTENT_INGEST) {
+      return { kind: INTENT_OCR, reason: 'image-ingest-intent' };
+    }
+    return { kind: INTENT_IMAGE_QA, reason: 'image-question' };
+  }
+  if (text.length === 0) {
+    return { kind: INTENT_EMPTY, reason: 'no-content' };
+  }
+  if (matchesAny(text, PICK_PHRASES)) {
+    return { kind: INTENT_PICK_CARD, reason: 'pick-phrase' };
+  }
+  if (text.length >= MIN_TEXT_INGEST_CHARS && hasIngestIntent(text)) {
+    return { kind: INTENT_TEXT_INGEST, reason: 'ingest-phrase' };
+  }
+  if (hasIngestIntent(text)) {
+    // 「整理成笔记」这类短指令但没内容：给选图/发文字引导，绝不静默走闲聊。
+    return { kind: INTENT_PICK_CARD, reason: 'ingest-without-content' };
+  }
+  return { kind: INTENT_CHAT, reason: 'default-chat' };
+}
+
+/** 图片消息的逐条意图判断：只依据用户随图文字，显式整理意图才算整理。 */
+export function classifyImageIntent(text: string): string {
+  return hasIngestIntent(text) ? IMAGE_INTENT_INGEST : IMAGE_INTENT_QA;
+}
+
+/** 整理意图：显式短语，或任何带「整理 / 入库 / 存笔记」的说法（如图片 +「整理雅可比」）。 */
+export function hasIngestIntent(text: string): boolean {
+  if (matchesAny(text, INGEST_PHRASES)) {
+    return true;
+  }
+  if (text.indexOf('整理') >= 0 || text.indexOf('入库') >= 0) {
+    return true;
+  }
+  return text.indexOf('笔记') >= 0
+    && (text.indexOf('存') >= 0 || text.indexOf('记') >= 0 || text.indexOf('写') >= 0);
+}
+
+function matchesAny(text: string, phrases: string[]): boolean {
+  for (let i = 0; i < phrases.length; i += 1) {
+    if (text.indexOf(phrases[i]) >= 0) {
+      return true;
+    }
+  }
+  return false;
+}

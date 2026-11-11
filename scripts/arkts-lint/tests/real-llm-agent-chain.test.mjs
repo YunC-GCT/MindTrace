@@ -11,22 +11,42 @@ function read(path) {
 
 const llmConfig = read('common/src/main/ets/llm/LlmConfig.ets');
 const providers = read('common/src/main/ets/llm/providers.ets');
+const catalog = read('common/src/main/ets/llm/model-catalog.ets');
+const resolver = read('common/src/main/ets/llm/model-resolver.ets');
 const vm = read('entry/src/main/ets/viewmodels/AiSettingsViewModel.ets');
 const vp = read('entry/src/main/ets/pages/AiSettings/VendorPicker.ets');
 const page = read('entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets');
 const structureNode = read('agents/src/main/ets/graph/nodes/StructureNode.ets');
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
 
-test('real LLM: DeepSeek defaults use current official pro model', () => {
-  assert.match(llmConfig, /DEFAULT_MODEL\s*=\s*['"]deepseek-v4-pro['"]/, 'LlmConfig DEFAULT_MODEL must be deepseek-v4-pro');
-  assert.match(providers, /id:\s*['"]deepseek['"][\s\S]*?defaultModel:\s*['"]deepseek-v4-pro['"]/, 'DeepSeek provider defaultModel must be deepseek-v4-pro');
+test('real LLM: DeepSeek default model is read from the catalog, not hard-asserted in LlmConfig', () => {
+  const catalogDefaultMatch = catalog.match(
+    /providerId:\s*['"]deepseek['"][\s\S]*?defaultModelId:\s*['"]([^'"]+)['"]/
+  );
+  assert.ok(catalogDefaultMatch !== null, 'deepseek catalog defaultModelId must exist');
+  const catalogDefault = catalogDefaultMatch[1];
+
+  assert.match(llmConfig, /getProviderCatalog\s*\(\s*this\.cachedVendorId\s*\)/,
+    'LlmConfig.getModel must consult getProviderCatalog(this.cachedVendorId)');
+  assert.match(llmConfig, /catalog\.defaultModelId/,
+    'LlmConfig.getModel must return the catalog defaultModelId');
+
+  // providers.ets 的 defaultModel 字段保留给其它 vendor; DeepSeek 必须与 catalog 默认一致。
+  const providerPattern = new RegExp(
+    `id:\\s*['"]deepseek['"][\\s\\S]*?defaultModel:\\s*['"]${catalogDefault}['"]`
+  );
+  assert.match(providers, providerPattern,
+    'DeepSeek provider defaultModel must match the catalog default ' + catalogDefault);
 });
 
-test('real LLM: normalizer allows official DeepSeek model ids instead of rejecting them', () => {
-  assert.match(llmConfig, /model\s*===\s*['"]deepseek-v4-flash['"]/, 'deepseek-v4-flash must be allowlisted');
-  assert.match(llmConfig, /model\s*===\s*['"]deepseek-v4-pro['"]/, 'deepseek-v4-pro must be allowlisted');
-  assert.match(llmConfig, /model\s*===\s*['"]deepseek-v4-flash-vision-exp['"]/, 'deepseek-v4-flash-vision-exp must be allowlisted');
-  assert.match(llmConfig, /isAllowedDeepSeekModel\(lower\)[\s\S]*?return\s+t/, 'DeepSeek allowlist must return before reserved keyword rejection');
+test('real LLM: resolver accepts the canonical deepseek-flash ID and both legacy aliases', () => {
+  assert.match(catalog, /id:\s*['"]deepseek-flash['"]/, 'catalog must declare canonical deepseek-flash');
+  assert.match(resolver, /['"]deepseek-v4-flash['"]\s*:\s*['"]deepseek-flash['"]/,
+    'deepseek-v4-flash must be an alias of deepseek-flash');
+  assert.match(resolver, /['"]deepseek-v4-flash-vision-exp['"]\s*:\s*['"]deepseek-flash['"]/,
+    'deepseek-v4-flash-vision-exp must be an alias of deepseek-flash');
+  assert.doesNotMatch(llmConfig, /isAllowedDeepSeekModel/,
+    'the old three-string DeepSeek allowlist must be deleted');
 });
 
 test('settings: active model selection is persisted per vendor', () => {

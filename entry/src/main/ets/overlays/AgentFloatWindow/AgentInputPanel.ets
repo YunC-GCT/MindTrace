@@ -43,6 +43,8 @@ export struct AgentInputPanel {
 
   onCamera?: () => void = (): void => {};
   onAlbum?: () => void = (): void => {};
+  onAlbumLongPress?: () => void = (): void => {};
+  onBatch?: () => void = (): void => {};
   onStop?: () => void = (): void => {};
 
   build() {
@@ -79,6 +81,8 @@ export struct AgentInputPanel {
         PlusActionSheet({
           onCamera: this.onCamera,
           onAlbum: this.onAlbum,
+          onAlbumLongPress: this.onAlbumLongPress,
+          onBatch: this.onBatch,
         })
         SendButton({
           busy: this.vm.busy,

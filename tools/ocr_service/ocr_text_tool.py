@@ -8,8 +8,8 @@ from PIL import Image
 
 logger = logging.getLogger("mindtrace.ocr_text_tool")
 
-_TESSERACT_EXE = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-_TESSDATA_DIR = r"D:\Tesseract\tessdata"
+_TESSERACT_EXE = os.environ.get("TESSERACT_EXE", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+_TESSDATA_DIR = os.environ.get("TESSDATA_PREFIX", r"D:\Tesseract\tessdata")
 
 if os.path.exists(_TESSERACT_EXE):
     pytesseract.pytesseract.tesseract_cmd = _TESSERACT_EXE

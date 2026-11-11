@@ -9,22 +9,16 @@
  *   Workflow callback -> current-run guard -> typed UI event sink.
  */
 import { common } from '@kit.AbilityKit';
-import { CancellationToken, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
-import {
-  ConversationMessageEvent,
-  ConversationWorkflowCallbacks,
-} from '../workflows/conversation/ConversationTypes';
-import {
-  ChatMessageOrigin,
-  ChatMessageOutcome,
-  ConversationProgressStep,
-} from '../workflows/conversation/ConversationState';
+import { CancellationToken, NoteContextClarification, NoteDraftReadyEvent, NoteGenerationProgressEvent } from 'common';
+import type { NoteSuggestion } from 'common';
+
 import { ChatStatusMeta } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { NoteReviewAnswer } from '../models/NoteReviewModels';
+import { NoteReviewAnswer } from 'common';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ChatStatusMachine } from './ChatStatusMachine';
 import { ConversationRunCoordinator } from './ConversationRunCoordinator';
-import { ConversationRunRef } from './ConversationIdentity';
+import { ConversationRunRef } from 'common';
+import { ConversationMessageEvent, ConversationWorkflowCallbacks, ChatMessageOrigin, ChatMessageOutcome, ConversationProgressStep } from 'agents/src/main/ets/conversation/Index';
 
 export class ConversationWorkflowAdapter implements ConversationWorkflowCallbacks {
   private readonly callbacks: AgentChatCallbacks;
@@ -146,9 +140,35 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
     }
   }
 
+  onNoteContextClarificationReady?(
+    ref: ConversationRunRef,
+    messageId: number,
+    clarification: NoteContextClarification,
+  ): void {
+    if (this.accepts(ref, 'note-context-clarification-ready')
+      && this.callbacks.onNoteContextClarificationReady !== undefined) {
+      this.callbacks.onNoteContextClarificationReady(ref, messageId, clarification);
+    }
+  }
+
   onOcrBlank?(ref: ConversationRunRef, imageUri: string): void {
     if (this.accepts(ref, 'ocr-blank') && this.callbacks.onOcrBlank !== undefined) {
       this.callbacks.onOcrBlank(ref, imageUri);
+    }
+  }
+
+  /** 建议请求：记日志并转发给 UI；未实现回调的宿主行为不变。 */
+  onNoteSuggestion(ref: ConversationRunRef, suggestion: NoteSuggestion): void {
+    if (!this.accepts(ref, 'note-suggestion')) {
+      return;
+    }
+    console.info('[NoteSuggestion] action=' + suggestion.action
+      + ' noteKind=' + suggestion.noteKind
+      + ' count=' + suggestion.count.toString()
+      + ' reason=' + suggestion.reason
+      + (suggestion.sourceNoteId === undefined ? '' : ' sourceNoteId=' + suggestion.sourceNoteId));
+    if (this.callbacks.onNoteSuggestion !== undefined) {
+      this.callbacks.onNoteSuggestion(ref, suggestion);
     }
   }
 

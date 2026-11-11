@@ -8,15 +8,29 @@ import {
   CaptureNodeResult,
   CaptureStep,
   copyAgentState,
+  isCaptureGraphError,
 } from './AgentState';
-import { StateGraph, StateGraphError, StateGraphNode } from 'common';
+import {
+  StateGraph,
+  StateGraphError,
+  StateGraphNode,
+  isCancellationError,
+  isDeadlineExceededError,
+} from 'common';
+import type { RunContext } from 'common';
 
 type GraphRoute = (state: AgentState) => CaptureStep;
 
+export type NodeTimingSink = (step: CaptureStep, elapsedMs: number) => void;
+
 export class CaptureGraph {
   private readonly graph: StateGraph<AgentState, CaptureStep>;
+  private readonly onNodeTiming?: NodeTimingSink;
+  // 最后一个完成节点返回的 state：图级取消时用它保住刚写入的 commitResult（ADR-0019 (e)）。
+  private lastState: AgentState | undefined = undefined;
 
-  constructor() {
+  constructor(onNodeTiming?: NodeTimingSink) {
+    this.onNodeTiming = onNodeTiming;
     this.graph = new StateGraph<AgentState, CaptureStep>(
       'START',
       'END',
@@ -25,16 +39,37 @@ export class CaptureGraph {
   }
 
   addNode(step: CaptureStep, node: CaptureNode): void {
-    const workflowNode: StateGraphNode<AgentState> = async (input: AgentState): Promise<AgentState> => {
-      const nodeInput: AgentState = this.copyState(input, input.persist, step);
+    const workflowNode: StateGraphNode<AgentState> = async (input: AgentState,
+      context?: RunContext | null): Promise<AgentState> => {
+      const startedAt: number = Date.now();
+      let nodeInput: AgentState = input;
       try {
-        nodeInput.cancellationToken?.throwIfCancelled();
-        const result: CaptureNodeResult = await node(nodeInput);
-        result.state.cancellationToken?.throwIfCancelled();
+        nodeInput = this.copyState(input, input.persist, step);
+        context?.throwIfStopped();
+        const result: CaptureNodeResult = await node(nodeInput, context);
+        // 节点已经给出终态错误（含「写成功后才取消」）时，不再用 token 覆盖错误；
+        // 这样 NoteCaptureWorkflow 能读到 commitResult，区分 cancelled(committed=true/false)（ADR-0019 (e)）。
+        if (result.state.error === undefined) {
+          context?.throwIfStopped();
+        }
+        this.lastState = result.state;
         return result.state;
       } catch (e) {
+        if (isCancellationError(e as Object)
+          || isDeadlineExceededError(e as Object)
+          || isCaptureGraphError(e as Object)
+          || e instanceof StateGraphError) {
+          // 原样越过 CaptureGraph 边界，不改写 kind / step / retriable。
+          // arkts-limited-throw 只允许 `throw new ...`，这里用 Promise.reject
+          // 保留同一个错误实例（async 包装器的语义仍是 rethrow）。
+          return Promise.reject(e);
+        }
         const message: string = e instanceof Error ? e.message : String(e);
         return this.withError(nodeInput, 'NODE_ERROR', message, step, false);
+      } finally {
+        if (this.onNodeTiming !== undefined) {
+          this.onNodeTiming(step, Date.now() - startedAt);
+        }
       }
     };
     this.graph.addNode(step, workflowNode);
@@ -48,14 +83,34 @@ export class CaptureGraph {
     this.graph.addConditionalEdge(from, router);
   }
 
-  async run(initialState: AgentState): Promise<AgentState> {
+  async run(initialState: AgentState, context: RunContext | null = null): Promise<AgentState> {
     let state: AgentState = this.copyState(initialState, initialState.persist, 'START');
     try {
-      state = await this.graph.run(state);
+      state = await this.graph.run(state, 128, context);
     } catch (e) {
+      if (isCancellationError(e as Object)) {
+        const message: string = (e as Error).message;
+        // 写成功后取消时，lastState 里带着 commitResult；用它作基底，命令 seam 才能报
+        // cancelled(committed=true)。没有 commitResult 时沿用旧基底，保持 #239 golden 外观。
+        const last: AgentState | undefined = this.lastState;
+        const base: AgentState = last !== undefined && last.commitResult !== undefined ? last : state;
+        return this.withError(base, 'CANCELLED', message, base.currentStep, false);
+      }
+      if (isDeadlineExceededError(e as Object)) {
+        const message: string = (e as Error).message;
+        return this.withError(state, 'DEADLINE_EXCEEDED', message, state.currentStep, false);
+      }
+      if (isCaptureGraphError(e as Object)) {
+        // 原样搬进 state.error：kind / message / step / retriable / cause 都不改写。
+        return this.copyStateWithError(state, e as CaptureGraphError);
+      }
+      if (e instanceof StateGraphError) {
+        const graphError: StateGraphError = e as StateGraphError;
+        return this.withError(state, graphError.kind, graphError.message,
+          this.captureStep(graphError.step), false);
+      }
       const message: string = e instanceof Error ? e.message : String(e);
-      const step: CaptureStep = e instanceof StateGraphError ? this.captureStep(e.step) : state.currentStep;
-      return this.withError(state, 'INVALID_GRAPH', message, step, false);
+      return this.withError(state, 'INVALID_GRAPH', message, state.currentStep, false);
     }
     const finalStep: CaptureStep = state.error === undefined && state.currentStep === 'persist' ? 'persist' : 'END';
     return this.copyState(state, state.persist, finalStep);
@@ -86,9 +141,13 @@ export class CaptureGraph {
     retriable: boolean,
     cause?: string,
   ): AgentState {
-    const error: CaptureGraphError = cause === undefined
-      ? { kind, message, step, retriable }
-      : { kind, message, step, retriable, cause };
+    const error: CaptureGraphError = {
+      kind: kind,
+      message: message,
+      step: step,
+      retriable: retriable,
+      cause: cause,
+    };
     return this.copyStateWithError(state, error);
   }
 

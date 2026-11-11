@@ -1,22 +1,12 @@
 # MindTrace 文档导航
 
-本目录保留参赛提交所需的简洁说明和基础规范。历史调研、测试记录、缺陷修复过程、handoff、ADR、spec 和来源索引类材料已从主分支提交包中移除，相关过程证据保存在团队工作归档中。
+main 保留核心实现、公开项目介绍、运行说明与基础规范。调研、执行记录、handoff、旧审计和历史计划留在 develop。
 
-## 保留文档
+- [项目介绍](../portfolio/README.md)
+- [English README](./readme-en.md)
+- [基础规范](./style/index.md)
+- [项目术语](../CONTEXT.md)
+- [协作约定](../AGENTS.md)
+- [设计与过程材料（冻结来源）](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/index.md)
 
-| 文档 | 用途 |
-|---|---|
-| [English README](./readme-en.md) | 英文项目说明 |
-| [ArkTS 1.1 style](./style/arkts-1.1.md) | ArkTS 编码约束 |
-| [Naming conventions](./style/naming-conventions.md) | 文件与目录命名规则 |
-
-## 主要入口
-
-- 中文项目说明：[README.md](../README.md)
-- 项目术语：[CONTEXT.md](../CONTEXT.md)
-- 协作约定：[AGENTS.md](../AGENTS.md)
-- OCR 服务说明：[tools/ocr_service/README.md](../tools/ocr_service/README.md)
-
-## 参赛提交原则
-
-主分支面向评委和使用者，只保留能帮助理解、运行和检查作品的材料。过程型文档不再作为提交包的一部分维护。
+测试必需的规范快照和回归样本保存在 scripts/arkts-lint/tests/fixtures/core-contracts，测试断言保持执行。

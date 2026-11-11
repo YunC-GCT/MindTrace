@@ -74,6 +74,34 @@ export class KnowledgeRelationDao {
     return relation;
   }
 
+  // 自动补边专用: 同一 (from, to, relation_type) 已存在时保持原边不变。
+  // 不能复用 saveRelation 的 upsert 语义，否则重复写入会覆盖人工审核结果或累加版本号。
+  async insertRelationIfAbsent(relation: KnowledgeRelation): Promise<boolean> {
+    const existing: KnowledgeRelation | null = await this.queryByUnique(
+      relation.fromUnitId,
+      relation.toUnitId,
+      relation.relationType,
+    );
+    if (existing !== null) {
+      return false;
+    }
+    try {
+      await this.insertRelation(relation);
+      return true;
+    } catch (e) {
+      // 并发下唯一索引可能先被另一个 writer 占用；再查一次，存在即视为幂等成功。
+      const raced: KnowledgeRelation | null = await this.queryByUnique(
+        relation.fromUnitId,
+        relation.toUnitId,
+        relation.relationType,
+      );
+      if (raced !== null) {
+        return false;
+      }
+      throw new Error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async queryAcceptedEdges(): Promise<KnowledgeRelation[]> {
     const predicates = new relationalStore.RdbPredicates('kg_edge');
     predicates.equalTo('status', 'accepted');
@@ -497,6 +525,12 @@ export class KnowledgeRelationDao {
     if (value === 'derived') {
       return 'derived';
     }
+    if (value === 'same_unit') {
+      return 'same_unit';
+    }
+    if (value === 'similar') {
+      return 'similar';
+    }
     return 'related';
   }
 
@@ -506,6 +540,9 @@ export class KnowledgeRelationDao {
     }
     if (value === 'legacy') {
       return 'legacy';
+    }
+    if (value === 'auto') {
+      return 'auto';
     }
     return 'manual';
   }

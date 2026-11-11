@@ -14,6 +14,7 @@
  */
 
 import fileIo from '@ohos.file.fs';
+import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { afterAll, describe, expect, it } from '@ohos/hypium';
 import {
   AtomicWriteStage,
@@ -35,9 +36,9 @@ const SAMPLE_SNAPSHOT: SnapshotTaskInput = {
   sessionsJson: '[{"id":"s1","name":"数学","messages":[{"id":1,"role":"ai","content":"答案","ts":1,"streaming":false}]}]',
 };
 
-const TEST_FILES_DIR: string = 'build/chat-persistence-capability-test';
-const TEST_HISTORY_DIR: string = TEST_FILES_DIR + '/chat-history';
-const TEST_CAPABILITY_FILE: string = TEST_HISTORY_DIR + '/ticket-122-capability.json';
+let testFilesDir: string = '';
+let testHistoryDir: string = '';
+let testCapabilityFile: string = '';
 
 class InMemoryChatFilesDirSeamStore implements ChatFilesDirSeamStore {
   private current: ChatFilesDirSeam | null = null;
@@ -52,26 +53,31 @@ class InMemoryChatFilesDirSeamStore implements ChatFilesDirSeamStore {
 }
 
 function cleanupTestFiles(): void {
+  if (testFilesDir.length === 0) { return; }
   try {
-    fileIo.unlinkSync(TEST_CAPABILITY_FILE);
+    fileIo.unlinkSync(testCapabilityFile);
   } catch (error) {
   }
   try {
-    fileIo.rmdirSync(TEST_HISTORY_DIR);
+    fileIo.rmdirSync(testHistoryDir);
   } catch (error) {
   }
   try {
-    fileIo.rmdirSync(TEST_FILES_DIR);
+    fileIo.rmdirSync(testFilesDir);
   } catch (error) {
   }
 }
 
-function publishResolvedFilesDirForTest(): void {
+async function publishResolvedFilesDirForTest(): Promise<void> {
+  const ability = await abilityDelegatorRegistry.getAbilityDelegator().getCurrentTopAbility();
+  testFilesDir = ability.context.filesDir + '/chat-persistence-capability-test';
+  testHistoryDir = testFilesDir + '/chat-history';
+  testCapabilityFile = testHistoryDir + '/ticket-122-capability.json';
   cleanupTestFiles();
   resetChatFilesDirSeamForTest();
   const store: InMemoryChatFilesDirSeamStore = new InMemoryChatFilesDirSeamStore();
   setChatFilesDirSeamStoreForTest(store);
-  store.write(ChatFilesDirSeam.fromFilesDir(TEST_FILES_DIR));
+  store.write(ChatFilesDirSeam.fromFilesDir(testFilesDir));
 }
 
 function assertContentSafeDiagnostic(diagnostic: string): void {
@@ -176,8 +182,13 @@ export default function chatPersistenceCapabilityTest(): void {
   });
 
   describe('ChatPersistenceCapability.test_only_atomic_file', () => {
+    afterAll((): void => {
+      cleanupTestFiles();
+      resetChatFilesDirSeamForTest();
+    });
+
     it('should commit a snapshot with AtomicFile or record an AtomicFile blocker', 0, async () => {
-      publishResolvedFilesDirForTest();
+      await publishResolvedFilesDirForTest();
       const result: PersistenceCapabilityResult = await ChatPersistenceCapability.writeAtomicSnapshot(SAMPLE_SNAPSHOT);
       if (result.success) {
         expect(result.stage).assertEqual('VERIFY');
@@ -190,7 +201,7 @@ export default function chatPersistenceCapabilityTest(): void {
     });
 
     it('should call failWrite and preserve the formal file when the write stage fails', 0, async () => {
-      publishResolvedFilesDirForTest();
+      await publishResolvedFilesDirForTest();
       const result: PersistenceCapabilityResult = await ChatPersistenceCapability.writeAtomicSnapshotWithInjectedWriteFailure(
         SAMPLE_SNAPSHOT,
       );

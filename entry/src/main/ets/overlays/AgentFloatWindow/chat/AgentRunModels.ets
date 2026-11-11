@@ -292,3 +292,58 @@ function closeRunningParts(parts: AgentRunPart[]): void {
     }
   }
 }
+
+/**
+ * 工具结果摘要：把 JSON 结果折成一行人话，供 AgentToolStep 展示。
+ * 解析失败时退回纯文本截断，不抛异常。
+ */
+export function summarizeToolResult(result: string): string {
+  const normalized: string = result.split('\n').join(' ').trim()
+  if (normalized.length === 0) {
+    return ''
+  }
+  if (normalized.charAt(0) === '[') {
+    try {
+      const rows: Object = JSON.parse(normalized) as Object
+      if (Array.isArray(rows)) {
+        return '返回 ' + (rows as Object[]).length.toString() + ' 条'
+      }
+    } catch (e) {
+      // 非法 JSON：走文本摘要
+    }
+  }
+  if (normalized.charAt(0) === '{') {
+    try {
+      const record: Record<string, Object> = JSON.parse(normalized) as Record<string, Object>
+      const parts: string[] = []
+      const keys: string[] = Object.keys(record)
+      for (let i = 0; i < keys.length; i += 1) {
+        const value: Object = record[keys[i]]
+        if (Array.isArray(value)) {
+          const label: string = keys[i] === 'hits' ? '命中 ' : keys[i] + ' '
+          parts.push(label + (value as Object[]).length.toString() + ' 条')
+        }
+      }
+      if (record['message'] !== undefined) {
+        parts.push(record['message'].toString())
+      }
+      const truncatedValue: Object | undefined = record['truncated']
+      if (truncatedValue !== undefined && truncatedValue.toString() === 'true') {
+        parts.push('已截断')
+      }
+      if (parts.length > 0) {
+        return clipToolSummary(parts.join(' · '))
+      }
+    } catch (e) {
+      // 非法 JSON：走文本摘要
+    }
+  }
+  return clipToolSummary(normalized)
+}
+
+function clipToolSummary(value: string): string {
+  if (value.length <= 88) {
+    return value
+  }
+  return value.substring(0, 88) + '…'
+}

@@ -12,10 +12,14 @@ import {
   LearnerLevel,
   LearnerProfile,
   ChatMessageWriteRequest,
-} from '../models/AgentMemoryModels';
-import { WritePathValidator } from './WritePathValidator';
-import { SessionIdPolicy } from './ConversationIdentity';
-import type { ChatProjectionWriter } from '../models/ConversationSnapshotModels';
+  NoteGenerationContextResult,
+} from 'common';
+
+import { SessionIdPolicy } from 'common';
+import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
+import { getChatHistoryClearControl } from './ChatHistoryClearControl';
+import type { ChatProjectionWriter } from 'common';
+import { WritePathValidator, NoteGenerationContextBuilder, NoteContextValidityReviewer } from 'agents/src/main/ets/note/Index';
 
 const RECENT_REPLY_LIMIT: number = 28;
 const RECENT_NOTE_LIMIT: number = 100;
@@ -37,6 +41,12 @@ export class AgentMemoryService implements ChatProjectionWriter {
   }
 
   async saveMessage(request: ChatMessageWriteRequest): Promise<void> {
+    const clearControl: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+    if (clearControl !== undefined && clearControl.getState().clearState === 'pending') {
+      // 清空进行中：拒绝迟到写入，避免把旧会话重新投影回 chat_message
+      console.warn('[AgentMemoryService] code=CHAT_HISTORY_WRITE_REJECTED reason=clear-in-progress');
+      throw new Error('CHAT_HISTORY_CLEAR_IN_PROGRESS');
+    }
     SessionIdPolicy.requireValid(request.sessionId);
     const text: string = request.content.trim();
     if (text.length === 0) {
@@ -117,13 +127,40 @@ export class AgentMemoryService implements ChatProjectionWriter {
   }
 
   async getContextForNoteGeneration(sessionId: string): Promise<string> {
+    const context: NoteGenerationContextResult = await this.getStructuredContextForNoteGeneration(
+      sessionId,
+      '',
+      '',
+      '',
+      '',
+    );
+    return context.contextText;
+  }
+
+  async getStructuredContextForNoteGeneration(
+    sessionId: string,
+    instruction: string,
+    inlineMaterial: string,
+    currentConversationText: string,
+    currentRunId: string,
+  ): Promise<NoteGenerationContextResult> {
     const store: relationalStore.RdbStore = await this.getStore();
     const memoryDao: AgentMemoryDao = new AgentMemoryDao(store);
     const messageDao: ChatMessageDao = new ChatMessageDao(store);
     const summary: AgentMemoryRecord | null = await memoryDao.queryLatestSummary(sessionId);
     const pendingNotes: AgentMemoryRecord[] = await memoryDao.queryPendingNotes(sessionId);
     const messages: ChatMessageRecord[] = await messageDao.queryRecent(sessionId, RECENT_NOTE_LIMIT);
-    return AgentMemoryService.buildContextText(summary, pendingNotes, messages, NOTE_CONTEXT_LIMIT);
+    const deterministic: NoteGenerationContextResult = NoteGenerationContextBuilder.build({
+      summary: summary === null ? undefined : summary,
+      pendingNotes: pendingNotes,
+      recentMessages: messages,
+      instruction: instruction,
+      inlineMaterial: inlineMaterial,
+      currentConversationText: currentConversationText,
+      currentRunId: currentRunId.length > 0 ? currentRunId : sessionId,
+      contextWindowTokens: AgentMemoryService.safeContextWindowTokens(),
+    });
+    return await NoteContextValidityReviewer.review(deterministic, instruction);
   }
 
   async getPendingNoteMaterials(sessionId: string): Promise<AgentMemoryRecord[]> {
@@ -582,6 +619,14 @@ export class AgentMemoryService implements ChatProjectionWriter {
 
   private static newId(prefix: string): string {
     return prefix + '_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000000).toString();
+  }
+
+  private static safeContextWindowTokens(): number {
+    try {
+      return LlmConfig.getInstance().getContextWindowTokens();
+    } catch (e) {
+      return 65536;
+    }
   }
 
   private static errorMessage(e: Object): string {

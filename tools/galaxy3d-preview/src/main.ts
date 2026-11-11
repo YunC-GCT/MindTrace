@@ -2,17 +2,18 @@ import './styles.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GalaxyBridge } from './bridge';
-import { createDomStarfield } from './background-starfield';
+import { BackgroundStarfield } from './background-starfield';
+import { createStarMaterial, createGlowMaterial, createKnowledgeMaterial } from './particle-material';
 import { GalaxyRelationOverlay, incidentRelations } from './relation-overlay';
 import type { ProjectedNode } from './relation-overlay';
 import { projectViewportNode } from './viewport-projection';
 import { createGalaxyLayout } from './force-layout';
 import type { GalaxyEdgeDTO, GalaxyNodeDTO, GalaxySnapshotDTO, HostMessage, LayoutPoint } from './types';
 
-const MAX_DPR = 1;
-const DEGRADED_DPR = 0.5;
-const HIGH_PARTICLE_BUDGET = 8000;
-const LOW_PARTICLE_BUDGET = 600;
+const MAX_DPR = 1.5;
+const DEGRADED_DPR = 1;
+const HIGH_PARTICLE_BUDGET = 4000;
+const LOW_PARTICLE_BUDGET = 300;
 const LOW_FPS_THRESHOLD = 30;
 const TAP_SLOP_PX = 8;
 const ENTRY_DURATION_MS = 800;
@@ -30,7 +31,6 @@ interface NodeView {
 }
 
 const app = requireElement<HTMLDivElement>('app');
-const starLayer = requireElement<HTMLDivElement>('star-layer');
 const nodeLayer = requireElement<HTMLDivElement>('node-layer');
 const labelLayer = requireElement<HTMLDivElement>('label-layer');
 const fpsPill = requireElement<HTMLSpanElement>('fps-pill');
@@ -38,6 +38,8 @@ const resetButton = requireElement<HTMLButtonElement>('reset-camera');
 const bridge = new GalaxyBridge();
 const relations = new GalaxyRelationOverlay(document.body);
 const clock = new THREE.Clock();
+const backgroundStars = new BackgroundStarfield(HIGH_PARTICLE_BUDGET);
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const defaultCameraPosition = new THREE.Vector3(0, -8, 78);
@@ -58,7 +60,6 @@ let activeParticleBudget = HIGH_PARTICLE_BUDGET;
 let activeDprCap = MAX_DPR;
 let pausedByHost = false;
 let degraded = false;
-let dustMotionEnabled = true;
 let entryStartedAt = performance.now();
 let entryAnimating = true;
 let pointerDown: { id: number; x: number; y: number } | null = null;
@@ -69,8 +70,6 @@ let lastPerfSampleMs = 0;
 let degradedProjectionFrame = 0;
 
 bridge.onMessage(handleHostMessage);
-createDomStarfield(starLayer);
-syncBackgroundMotion();
 
 if (!canUseWebGL()) {
   bridge.post('scene_failure', { reason: 'webgl_unavailable' });
@@ -91,11 +90,13 @@ function initScene(): void {
   camera.position.copy(entryCameraPosition);
   camera.lookAt(cameraTarget);
 
-  renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setClearColor(0x0a0c10, 1);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, activeDprCap));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
   app.appendChild(renderer.domElement);
 
   controls = new OrbitControls(camera, renderer.domElement);
@@ -112,28 +113,28 @@ function initScene(): void {
   controls.touches.ONE = THREE.TOUCH.ROTATE;
   controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
 
-  scene.add(new THREE.AmbientLight(0xf5f7ff, 0.72));
-  const keyLight = new THREE.DirectionalLight(0xfff0c8, 1.18);
-  keyLight.position.set(18, -25, 40);
-  scene.add(keyLight);
+  scene.add(new THREE.HemisphereLight(0xcbdcff, 0x202635, 0.45));
+  // Camera-relative side lighting keeps the sphere's highlight and dark side
+  // readable while the user orbits, without changing knowledge positions.
+  const keyLight = new THREE.DirectionalLight(0xfff4df, 2.4);
+  keyLight.position.set(-60, 45, -20);
+  const rimLight = new THREE.DirectionalLight(0xc2ebff, 0.6);
+  rimLight.position.set(40, 10, -120);
+  const lightTarget = new THREE.Object3D();
+  lightTarget.position.set(0, 0, -70);
+  camera.add(lightTarget, keyLight, rimLight);
+  keyLight.target = lightTarget;
+  rimLight.target = lightTarget;
+  scene.add(camera);
 
-  particleGeometry = createParticleGeometry(HIGH_PARTICLE_BUDGET);
-  const particleMaterial = new THREE.PointsMaterial({
-    size: 0.75,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    sizeAttenuation: true,
-    fog: false,
-  });
+  particleGeometry = createParticleGeometry();
+  const particleMaterial = createStarMaterial();
   particlePoints = new THREE.Points(particleGeometry, particleMaterial);
   particlePoints.frustumCulled = false;
   scene.add(particlePoints);
 
   window.addEventListener('resize', handleResize);
-  document.addEventListener('visibilitychange', syncBackgroundMotion);
+  document.addEventListener('visibilitychange', () => { clock.start(); });
   resetButton.addEventListener('click', resetCamera);
   renderer.domElement.addEventListener('pointerdown', handlePointerDown);
   renderer.domElement.addEventListener('pointerup', handlePointerUp);
@@ -158,15 +159,10 @@ function initGraph(snapshot: GalaxySnapshotDTO): void {
     group.position.copy(position);
     const color = safeColor(dto.color);
     const coreScale = nodeCoreScale(dto);
-    const glow = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.18,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide,
-    }));
-    glow.scale.setScalar(coreScale * 2.35);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), createGlowMaterial(color));
+    glow.scale.setScalar(coreScale * 1.18);
     group.add(glow);
-    const core = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({
-      color, transparent: false, depthWrite: true,
-    }));
+    const core = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 32), createKnowledgeMaterial(color));
     core.scale.setScalar(coreScale);
     group.add(core);
     scene.add(group);
@@ -196,15 +192,19 @@ function animate(): void {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
   if (pausedByHost || document.hidden || !renderer || !scene || !camera || !controls) return;
+  updateBackground(delta);
   updateEntryCamera();
   controls.update();
   if (degraded) {
     degradedProjectionFrame = (degradedProjectionFrame + 1) % 2;
-    if (degradedProjectionFrame === 0) updateLabels();
+    if (degradedProjectionFrame === 0) {
+      updateNodeAnimation(delta * 2);
+      updateLabels();
+      renderer.render(scene, camera);
+    }
   } else {
     updateNodeAnimation(delta);
     updateLabels();
-    if (dustMotionEnabled && particlePoints) particlePoints.rotation.z += delta * 0.014;
     renderer.render(scene, camera);
   }
   updatePerformance(delta);
@@ -226,16 +226,20 @@ function updateNodeAnimation(delta: number): void {
   for (const view of nodeViews.values()) {
     const selected = view.dto.id === selectedId;
     const base = nodeCoreScale(view.dto);
-    const nextScale = THREE.MathUtils.lerp(view.core.scale.x, selected ? base * 1.42 : base, delta * 10);
-    view.core.scale.setScalar(nextScale);
-    view.glow.scale.setScalar(nextScale * 2.35);
-    const material = view.glow.material as THREE.MeshBasicMaterial;
-    material.opacity = THREE.MathUtils.lerp(material.opacity, selected ? 0.42 : 0.18, delta * 10);
+    view.core.scale.setScalar(base);
+    view.glow.scale.setScalar(base * 1.3);
+    const surface = view.core.material as THREE.MeshPhysicalMaterial;
+    surface.emissive.copy(surface.color);
+    surface.emissiveIntensity = THREE.MathUtils.lerp(surface.emissiveIntensity, selected ? 0.12 : 0, delta * 8);
+    const material = view.glow.material as THREE.ShaderMaterial;
+    material.uniforms.strength.value = THREE.MathUtils.lerp(material.uniforms.strength.value, selected ? 0.14 : 0, delta * 8);
   }
 }
 
 function updateLabels(): void {
   if (!camera || !renderer) return;
+  // SVG and labels must use the same camera transform as this frame's WebGL draw.
+  camera.updateMatrixWorld();
   const width = renderer.domElement.clientWidth;
   const height = renderer.domElement.clientHeight;
   const projectedNodes = new Map<string, ProjectedNode>();
@@ -246,15 +250,18 @@ function updateLabels(): void {
     const left = (projected.x * 0.5 + 0.5) * width;
     const top = (-projected.y * 0.5 + 0.5) * height;
     const perspectiveScale = THREE.MathUtils.clamp(74 / Math.max(1, distance), 0.72, 1.55);
-    const selectedScale = view.dto.id === selectedId ? 1.42 : 1;
+    // Use the rendered sphere's perspective size, not the retired 18px DOM orb.
+    const projectedRadius = view.core.scale.x * height * camera.projectionMatrix.elements[5]
+      / (2 * Math.max(0.1, -cameraSpace.z));
     const endpoint = projectViewportNode(left, top, -cameraSpace.z, distance,
-      width, height, 9 * perspectiveScale * selectedScale + 5);
+      width, height, projectedRadius + 2);
     projectedNodes.set(view.dto.id, endpoint);
     const dimmed = view.orb.dataset.dimmed === 'true';
-    view.orb.style.opacity = String(endpoint.alpha * (dimmed ? 0.35 : 0.9) * (1 - endpoint.edgeGlow));
+    // Both quality levels draw actual lit meshes, never DOM replacement discs.
+    view.orb.style.opacity = '0';
     view.orb.style.left = `${left}px`;
     view.orb.style.top = `${top}px`;
-    view.orb.style.transform = `translate(-50%, -50%) scale(${perspectiveScale * selectedScale})`;
+    view.orb.style.transform = `translate(-50%, -50%) scale(${perspectiveScale})`;
     view.orb.style.zIndex = String(Math.round((1 - projected.z) * 100));
     view.label.style.opacity = String(endpoint.labelAlpha * (dimmed ? 0.5 : 1));
     view.label.style.left = `${left}px`;
@@ -279,7 +286,7 @@ function updateSelectionVisuals(): void {
     connected.add(edge.toId);
   }
   for (const view of nodeViews.values()) {
-    const material = view.core.material as THREE.MeshBasicMaterial;
+    const material = view.core.material as THREE.MeshStandardMaterial;
     material.opacity = 1;
     view.orb.dataset.selected = String(selectedId === view.dto.id);
     const dimmed = selectedId !== null && view.dto.id !== selectedId && !connected.has(view.dto.id);
@@ -306,6 +313,7 @@ function handlePointerUp(event: PointerEvent): void {
   if (Math.hypot(dx, dy) > TAP_SLOP_PX) return;
   pointer.x = event.clientX / renderer.domElement.clientWidth * 2 - 1;
   pointer.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+  camera.updateMatrixWorld();
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(pickMeshes, false);
   if (hits.length === 0) {
@@ -337,7 +345,6 @@ function resetCamera(): void {
 function handleContextLost(event: Event): void {
   event.preventDefault();
   pausedByHost = true;
-  syncBackgroundMotion();
   bridge.post('scene_failure', { reason: 'webgl_context_lost' });
 }
 
@@ -349,7 +356,6 @@ function handleHostMessage(message: HostMessage): void {
     setSelection(message.payload.selectedId ?? null, false);
   } else if (message.type === 'set_paused') {
     pausedByHost = message.payload.paused === true;
-    syncBackgroundMotion();
     if (!pausedByHost) clock.start();
   } else if (message.type === 'reset_camera') {
     resetCamera();
@@ -386,32 +392,22 @@ function clearNodeViews(): void {
   pickMeshes = [];
 }
 
-function createParticleGeometry(count: number): THREE.BufferGeometry {
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const palette = [new THREE.Color(0x5be3b0), new THREE.Color(0xf6c56d), new THREE.Color(0x9dd8ff)];
-  for (let index = 0; index < count; index += 1) {
-    const radius = 50 + seededNoise(index * 1.7) * 170;
-    const theta = seededNoise(index + 8.2) * Math.PI * 2;
-    const phi = Math.acos(seededNoise(index + 12.3) * 2 - 1);
-    const offset = index * 3;
-    positions[offset] = Math.sin(phi) * Math.cos(theta) * radius;
-    positions[offset + 1] = Math.sin(phi) * Math.sin(theta) * radius;
-    positions[offset + 2] = Math.cos(phi) * radius;
-    const color = palette[index % palette.length];
-    colors[offset] = color.r; colors[offset + 1] = color.g; colors[offset + 2] = color.b;
-  }
+function createParticleGeometry(): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('position', new THREE.BufferAttribute(backgroundStars.positions, 3)
+    .setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('starOpacity', new THREE.BufferAttribute(backgroundStars.opacities, 1)
+    .setUsage(THREE.DynamicDrawUsage));
   geometry.setDrawRange(0, activeParticleBudget);
   return geometry;
 }
 
-function syncBackgroundMotion(): void {
-  // Host pause and document visibility are independent; foregrounding must not
-  // restart a scene that is still covered by an ArkUI detail overlay.
-  starLayer.dataset.paused = String(pausedByHost || document.hidden);
+function updateBackground(delta: number): void {
+  if (!particleGeometry) return;
+  // Accessibility suppresses drift, not the independent slow fade lifecycle.
+  backgroundStars.advance(delta, false, reducedMotion.matches ? 0 : 1);
+  particleGeometry.getAttribute('position').needsUpdate = true;
+  particleGeometry.getAttribute('starOpacity').needsUpdate = true;
 }
 
 function updatePerformance(delta: number): void {
@@ -433,7 +429,7 @@ function updatePerformance(delta: number): void {
 
 function degradeQuality(): void {
   degraded = true;
-  dustMotionEnabled = false;
+  // Reduce particle/pixel budgets, not the dimensionality of knowledge nodes.
   activeParticleBudget = LOW_PARTICLE_BUDGET;
   particleGeometry?.setDrawRange(0, activeParticleBudget);
   activeDprCap = DEGRADED_DPR;
@@ -446,11 +442,6 @@ function safeColor(value: string): THREE.Color {
   } catch {
     return new THREE.Color(0x5be3b0);
   }
-}
-
-function seededNoise(value: number): number {
-  const raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
-  return raw - Math.floor(raw);
 }
 
 function canUseWebGL(): boolean {

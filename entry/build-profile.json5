@@ -8,7 +8,9 @@
     },
     "sourceOption": {
       "workers": [
-        "./src/main/ets/workers/ChatPersistenceWorker.ets"
+        "./src/main/ets/workers/ChatPersistenceWorker.ets",
+        "./src/main/ets/workers/ImageSearchProbeWorker.ets",
+        "./src/main/ets/workers/ImageSearchWorker.ets"
       ]
     }
   },

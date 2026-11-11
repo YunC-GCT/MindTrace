@@ -31,8 +31,8 @@
  */
 
 import { AgentChatService } from '../services/AgentChatService';
-import { NoteDraftReadyEvent } from 'common';
-import type { NoteGenerationRoute } from 'common';
+import { LlmConfig, NoteDraftReadyEvent } from 'common';
+import type { EvidenceMode, NoteGenerationRoute } from 'common';
 
 export interface SessionUiState {
   composerText: string;
@@ -253,10 +253,11 @@ export class AgentInputViewModel {
     this.inputText = '';
     this.imagePreview = '';
     this.saveProjectedState();
+    const evidenceMode: EvidenceMode = LlmConfig.getInstance().getEvidenceMode();
     if (uri.length > 0) {
-      this.service.captureReply(sessionId, uri, msg);
+      this.service.captureReply(sessionId, uri, msg, evidenceMode);
     } else {
-      this.service.realReplyStream(sessionId, msg);
+      this.service.realReplyStream(sessionId, msg, evidenceMode);
     }
   }
 

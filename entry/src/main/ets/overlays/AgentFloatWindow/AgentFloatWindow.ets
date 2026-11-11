@@ -12,15 +12,20 @@ import {
   F_MD, W_SEMIBOLD,
   OVERLAY_MASK, SCREEN_H,
   DUR_FAST, DUR_BASE,
+  DatabaseHelper,
+  LlmErrorBodyFormatter,
 } from 'common';
 import { common } from '@kit.AbilityKit';
+import { relationalStore } from '@kit.ArkData';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import window from '@ohos.window';
 import { AgentChatService, AgentChatCallbacks } from '../../services/AgentChatService';
 import { getChatFilesDirSeam } from '../../services/ChatFilesDirSeam';
-import { ModelSelector } from '../../services/ModelSelector';
+import { ModelSelector } from '../../services/ModelCatalog';
 import { SessionCreator } from '../../services/SessionCreator';
 import { CameraKitLauncher } from '../../services/CameraKitLauncher';
 import { AlbumPickerLauncher } from '../../services/AlbumPickerLauncher';
+import { CaptureReceipt, CaptureReceiptStore } from '../../services/CaptureReceipt';
 import { ChatHeader } from './chat/ChatHeader';
 import { ChatSessionManager } from './chat/ChatSession';
 import {
@@ -28,32 +33,43 @@ import {
   ChatMessageOutcome,
   ChatMsg,
   ChatSession,
+  applyNoteContextClarificationToChatMsg,
   applyNoteReviewToChatMsg,
+  resetChatMsgNoteTopicSelection,
+  selectChatMsgNoteTopic,
   setChatMsgNoteReviewFeedback,
   setChatMsgNoteReviewFeedbackValue,
   transitionChatMessageOutcome,
 } from './chat/ChatModels';
-import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
+import { NoteEvidenceCitation } from 'common';
+import type { NoteSuggestion } from 'common';
 import {
   NoteReviewAnswer,
   NoteReviewFeedback,
   NoteReviewSourceResult,
   copyNoteEvidenceCitation,
-} from '../../models/NoteReviewModels';
+} from 'common';
 import { NoteReviewSourceService } from '../../services/NoteReviewSourceService';
+import { NoteEditService } from '../../services/NoteEditService';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
 import { AgentInputPanel } from './AgentInputPanel';
 import { agentSheetBottomInset } from './AgentFloatWindowLayout';
 import { NoteReviewSourceOverlay } from './NoteReviewSourceOverlay';
+import { CaptureSetConfirmOverlay } from './CaptureSetConfirmOverlay';
 import { AgentInputViewModel } from '../../viewmodels/AgentInputViewModel';
 import { SessionsPanelController } from '../../services/SessionsPanelController';
-import { NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
+import { NoteContextClarification, NoteDraftReadyEvent, NoteGenerationRoute, NoteGenerationRun } from 'common';
 import { NoteDetailOverlay } from '../NoteDetailOverlay/NoteDetailOverlay';
 import { KnowledgeUnit } from 'common';
-import { ConversationRunRef, chatMessageIdPolicy } from '../../services/ConversationIdentity';
-import { ConversationMessageEvent } from '../../workflows/conversation/ConversationTypes';
+import { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult } from 'common';
+import {
+  ConversationRunRef,
+  chatMessageIdPolicy,
+  conversationRunIdPolicy,
+} from 'common';
+import { ConversationMessageEvent } from '../../services/AgentChatContracts';
 import { AiService } from '../../services/AiService';
 import { DraftRecoveryService } from '../../services/DraftRecoveryService';
 import {
@@ -68,9 +84,16 @@ import {
   ConversationSessionReduceResult,
   ConversationSessionReducer,
 } from '../../services/ConversationSessionReducer';
-import { ConversationSessionSnapshot } from '../../models/ConversationSnapshotModels';
-import { IConversationNoteRoutePort } from '../../workflows/conversation/ConversationWorkflowPorts';
+import { ConversationSessionSnapshot } from 'common';
+import { IConversationNoteRoutePort } from '../../services/AgentChatContracts';
 import { ChatHistorySaveResult } from '../../services/ChatHistoryPersistence';
+import { ChatHistoryClearControl, getChatHistoryClearControl } from '../../services/ChatHistoryClearControl';
+import {
+  ChatHistoryClearCoordinator,
+  ChatHistoryClearDeps,
+  ChatHistoryClearResult,
+} from '../../services/ChatHistoryClearCoordinator';
+import { CardSnapshotService } from '../../services/CardSnapshotService';
 
 const FLOAT_SHEET_OPEN_OFFSET: number = 22;
 const FLOAT_SHEET_CLOSE_OFFSET: number = 18;
@@ -113,7 +136,25 @@ export struct AgentFloatWindow {
   @State sourceOverlayLoading: boolean = false;
   @State sourceOverlayCitation: NoteEvidenceCitation | null = null;
   @State sourceOverlayResult: NoteReviewSourceResult | null = null;
+  // 036 阶段 4：入库前确认页（一图多题/多图多题逐题勾选）
+  @State captureConfirmVisible: boolean = false;
+  @State captureConfirmProblems: CaptureSetProblem[] = [];
+  @State captureConfirmImageCount: number = 0;
+  @State captureConfirmFailedCount: number = 0;
+  private pendingCapturePreview: CaptureSetPreview | null = null;
+  private pendingCaptureMessageId: number = 0;
+  private pendingCaptureRunId: string = '';
+  private pendingCaptureContent: string = '';
+  private pendingCaptureService: AiService | null = null;
+  private pendingCaptureOnItem: ((item: CaptureSetItemResult) => void) | null = null;
   private generatedDraftSessionId: string = '';
+  /** 重复笔记的二次操作：确认回调里先暂存候选，等浮层关闭后再问用户。 */
+  private duplicateEvent: NoteDraftReadyEvent | null = null;
+  private duplicateCandidate: KnowledgeUnit | null = null;
+  private duplicateSessionId: string = '';
+  private duplicateNoteId: string = '';
+  private duplicateTitle: string = '';
+  private lastConfirmCandidate: KnowledgeUnit | null = null;
   private motionSeq: number = 0;
   private sourceRequestSeq: number = 0;
   private dragStartH: number = 48;
@@ -123,6 +164,7 @@ export struct AgentFloatWindow {
   private service: AgentChatService | null = null;
   private sourceResolver: NoteReviewSourceService = new NoteReviewSourceService();
   private deletionCoordinator: SessionDeletionCoordinator | null = null;
+  private clearCoordinator: ChatHistoryClearCoordinator | null = null;
   private draftRecovery: DraftRecoveryService | null = null;
   private feedbackRequestCounter: number = 0;
   private feedbackRequestTokenByMessage: Map<number, number> = new Map<number, number>();
@@ -347,6 +389,29 @@ export struct AgentFloatWindow {
         this.sync();
         this.sm.flush(this.sessions).catch((): void => {});
       },
+      onNoteContextClarificationReady: (
+        ref: ConversationRunRef,
+        messageId: number,
+        clarification: NoteContextClarification,
+      ): void => {
+        this.updateSessionMessages(ref, 'update-ai-message', (messages: ChatMsg[]): ChatMsg[] => messages.map(
+          (message: ChatMsg): ChatMsg => message.id === messageId
+            ? applyNoteContextClarificationToChatMsg(message, clarification)
+            : message,
+        ));
+        this.sync();
+        this.sm.flush(this.sessions).catch((): void => {});
+      },
+      onNoteSuggestion: (ref: ConversationRunRef, suggestion: NoteSuggestion): void => {
+        if (ref.sessionId !== this.activeSid) {
+          return;
+        }
+        if (suggestion.action === 'merge') {
+          this.scheduleDuplicateDialog(suggestion);
+          return;
+        }
+        this.showToast(this.noteSuggestionText(suggestion));
+      },
     };
     const noteRoute: IConversationNoteRoutePort = new AgentInputNoteRouteAdapter(inputVm);
     const service: AgentChatService = new AgentChatService(cbs, noteRoute);
@@ -362,6 +427,11 @@ export struct AgentFloatWindow {
         await service.cancelSessionRun(sessionId);
       },
     );
+    const clearControl: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+    const clearStore: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (clearControl !== undefined && clearStore !== null) {
+      this.clearCoordinator = this.buildClearCoordinator(clearStore, clearControl);
+    }
     // Development reset: s1 was the old bootstrap conversation and must not
     // be promoted to a real history item after the lazy-session migration.
     const loadedSessions: ChatSession[] = ss.filter((session: ChatSession): boolean => session.id !== 's1');
@@ -395,6 +465,7 @@ export struct AgentFloatWindow {
     loadedSessions: ChatSession[],
   ): Promise<void> {
     let detached: NoteDraftReadyEvent | null = null;
+    let restoredClarificationCard: boolean = false;
     try {
       const recoverable: NoteGenerationRun[] = await service.listRecoverableDrafts();
       for (const draft of recoverable) {
@@ -411,6 +482,13 @@ export struct AgentFloatWindow {
           (candidate: ChatSession): boolean => candidate.id === draft.originSessionId,
         );
         if (session === undefined) { continue; }
+        if (draft.status === 'needs-input' && draft.clarification !== undefined
+          && draft.clarification.status === 'pending') {
+          if (this.restoreClarificationCard(session, draft)) {
+            restoredClarificationCard = true;
+          }
+          continue;
+        }
         try {
           const event: NoteDraftReadyEvent | null = await service.checkAndRestoreDrafts(session.id);
           if (event !== null) {
@@ -431,6 +509,47 @@ export struct AgentFloatWindow {
       this.generatedDraft = detached;
       this.generatedDraftSessionId = '';
     }
+    if (restoredClarificationCard) {
+      this.sessions = loadedSessions.slice(0);
+      const active: ChatSession | undefined = loadedSessions.find(
+        (session: ChatSession): boolean => session.id === this.activeSid,
+      );
+      if (active !== undefined) { this.messages = active.messages; }
+      await this.sm.flush(this.sessions);
+    }
+  }
+
+  private restoreClarificationCard(session: ChatSession, draft: NoteGenerationRun): boolean {
+    const clarification: NoteContextClarification | undefined = draft.clarification;
+    if (clarification === undefined || clarification.status !== 'pending') {
+      return false;
+    }
+    for (let index: number = 0; index < session.messages.length; index += 1) {
+      const message: ChatMsg = session.messages[index];
+      if (message.noteContextClarification?.runId === draft.id) {
+        session.messages[index] = applyNoteContextClarificationToChatMsg(message, clarification);
+        return true;
+      }
+    }
+    const id: number = chatMessageIdPolicy.create();
+    const created: ChatMsg = {
+      id: id,
+      role: 'ai',
+      content: '检测到多个数学主题，请选择本次要整理的一个主题。',
+      ts: clarification.createdAt,
+      streaming: false,
+      origin: 'chat',
+      outcome: 'completed',
+      runId: draft.parentConversationRunId ?? draft.id,
+      sequence: id,
+      messageKey: draft.id + ':clarification:' + id.toString(),
+    };
+    const restored: ChatMsg = applyNoteContextClarificationToChatMsg(created, clarification);
+    if (restored.noteContextClarification === undefined) {
+      return false;
+    }
+    session.messages.push(restored);
+    return true;
   }
 
   private sync(): void {
@@ -537,6 +656,70 @@ export struct AgentFloatWindow {
         this.showToast('反馈保存失败，请稍后重试');
       });
   };
+
+  private onNoteTopicSelect = (messageId: number, runId: string, topicId: string): void => {
+    const sessionId: string = this.findSessionIdForMessage(messageId);
+    if (sessionId.length === 0 || !this.canSelectNoteTopic(messageId, runId, topicId)) {
+      return;
+    }
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      selectChatMsgNoteTopic(message, topicId)
+    );
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+    const service: AgentChatService | null = this.service;
+    if (service === null) {
+      this.rollbackNoteTopicSelection(messageId, runId, topicId);
+      return;
+    }
+    service.resumeNoteContextClarification(sessionId, runId, topicId)
+      .catch(async (error: Error): Promise<void> => {
+        // Reconcile optimistic UI with the durable choice; generation failure
+        // must not revoke a topic that the user already confirmed.
+        try {
+          const runs: NoteGenerationRun[] = await service.listRecoverableDrafts();
+          for (const run of runs) {
+            if (run.id === runId && run.clarification !== undefined) {
+              const clarification: NoteContextClarification = run.clarification;
+              this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+                applyNoteContextClarificationToChatMsg(message, clarification)
+              );
+              this.sync();
+              this.sm.flush(this.sessions).catch((): void => {});
+              break;
+            }
+          }
+        } catch (_recoveryError) {
+          // Keep the local choice until storage is available again.
+        }
+        const detail: string = LlmErrorBodyFormatter.redactSensitiveText(error.message ?? '未知错误');
+        this.showToast('笔记未生成：' + detail.substring(0, 120));
+      });
+  };
+
+  private rollbackNoteTopicSelection(messageId: number, runId: string, topicId: string): void {
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg =>
+      resetChatMsgNoteTopicSelection(message, runId, topicId)
+    );
+    this.sync();
+    this.sm.flush(this.sessions).catch((): void => {});
+  }
+
+  private canSelectNoteTopic(messageId: number, runId: string, topicId: string): boolean {
+    for (const session of this.sessions) {
+      for (const message of session.messages) {
+        const clarification: NoteContextClarification | undefined = message.noteContextClarification;
+        if (message.id === messageId && clarification !== undefined
+          && clarification.runId === runId && (clarification.status === 'pending'
+            || (clarification.status === 'selected' && clarification.selectedTopicId === topicId))) {
+          for (const candidate of clarification.candidates) {
+            if (candidate.id === topicId) { return true; }
+          }
+        }
+      }
+    }
+    return false;
+  }
 
   private nextFeedbackRequestToken(messageId: number): number {
     this.feedbackRequestCounter += 1;
@@ -738,6 +921,67 @@ export struct AgentFloatWindow {
     }
   }
 
+  private onRequestClearAll(): void {
+    SessionsPanelController.requestClearAll(
+      this.getUIContext().getPromptAction(),
+      (): void => { this.clearAllHistory().catch((): void => {}); },
+      (): void => { this.showToast('无法打开清空确认，请稍后重试'); }
+    );
+  }
+
+  private buildClearCoordinator(
+    store: relationalStore.RdbStore,
+    control: ChatHistoryClearControl
+  ): ChatHistoryClearCoordinator {
+    const clearDeps: ChatHistoryClearDeps = {
+      store: store,
+      quiesce: async (): Promise<void> => {
+        // 与 aboutToDisappear 一致：先取消全部 in-flight run，再留出收敛窗口。
+        this.service?.cancelAllRuns();
+        await new Promise<void>((resolve: () => void) => {
+          setTimeout(resolve, 50);
+        });
+      },
+      flushSnapshot: async (sessions: ChatSession[]): Promise<ChatHistorySaveResult> => this.sm.flush(sessions),
+      refreshCards: async (): Promise<void> => {
+        await CardSnapshotService.refresh(getContext(this) as common.UIAbilityContext);
+      },
+    };
+    return new ChatHistoryClearCoordinator(clearDeps, control);
+  }
+
+  private async clearAllHistory(): Promise<void> {
+    // 按需构造：浮窗加载时 DatabaseHelper.init 可能还没跑完 ensureSchema，此处再取一次。
+    if (this.clearCoordinator === null) {
+      const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+      const control: ChatHistoryClearControl | undefined = getChatHistoryClearControl();
+      if (store === null || control === undefined) {
+        hilog.error(0xA2A0, 'ChatHistoryClear', 'code=CHAT_HISTORY_CLEAR_UNAVAILABLE store=%{public}s control=%{public}s',
+          String(store === null), String(control === undefined));
+        this.showToast('数据库未就绪，请稍后重试');
+        return;
+      }
+      this.clearCoordinator = this.buildClearCoordinator(store, control);
+    }
+    const result: ChatHistoryClearResult = await this.clearCoordinator.clearAll();
+    if (!result.success) {
+      console.warn('[ChatHistoryClear] stage=' + result.stage + '; ' + result.diagnostic);
+      this.showToast('清空失败，历史未完成清理，请稍后重试');
+      return;
+    }
+    for (const session of this.sessions) {
+      this.inputVm.removeSession(session.id);
+    }
+    this.sessions = [];
+    this.messages = [];
+    this.activeSid = '';
+    this.activeSessionTitle = '新对话';
+    this.generatedDraft = null;
+    this.generatedDraftSessionId = '';
+    this.panelVisible = false;
+    this.showToast('对话历史已清空');
+  }
+
   // ===== 交互逻辑 (输入面板已迁出至 AgentInputViewModel; 模型显示已迁出至 ModelSelector; 会话创建已迁出至 SessionCreator; 相机/相册已迁出至 CameraKitLauncher / AlbumPickerLauncher) =====
 
   private stopStreaming = (): void => {
@@ -745,6 +989,298 @@ export struct AgentFloatWindow {
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
   };
+
+  // + 弹窗 → 相册: 1..20 张一次选完。点一下就是这个交互，长按同行为，
+  // 不再有单独的批量入口（spec 036）。只有选图本身失败才 toast。
+  private onAlbumAction = (): void => {
+    AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext, 20)
+      .then((uris: string[]): void => {
+        this.runCaptureSet(uris).catch((error: Error): void => {
+          console.warn('[CaptureSet] code=RUN_CAPTURE_SET_FAILED; ' + error.message);
+        });
+      })
+      .catch((e: Error): void => {
+        this.showToast('相册启动失败: ' + e.message);
+      });
+  };
+
+  // 一次整理：相册多选与拍照单张都走同一条 set 链路。
+  // 先在当前会话插入一条 ai 记录消息，onItem 每回调一项就原地补一行；
+  // 结束后把收尾句追加到 content 末尾，streaming=false + outcome，然后落盘。
+  private async runCaptureSet(uris: string[]): Promise<void> {
+    if (uris.length === 0) {
+      return;
+    }
+    const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    const sessionId: string = this.ensureActiveSession();
+    const messageId: number = chatMessageIdPolicy.create();
+    // ChatHistoryPersistence 对非 legacy 的 ai 消息要求 runId；整理任务没有 ConversationRunRef，
+    // 这里单独生成一个只用于该记录消息持久化的 runId。
+    const runId: string = conversationRunIdPolicy.create();
+    let content: string = '正在整理 ' + uris.length.toString() + ' 张图片…';
+    const created: ChatMsg = {
+      id: messageId,
+      role: 'ai',
+      content: content,
+      ts: Date.now(),
+      streaming: true,
+      reasoning: '',
+      origin: 'image',
+      runId: runId,
+    };
+    if (!this.appendImageRecordMessage(created)) {
+      console.warn('[CaptureSet] code=RECORD_SESSION_MISSING; sessionId=' + sessionId);
+      return;
+    }
+    const onItem = (item: CaptureSetItemResult): void => {
+      content = content + '\n' + this.formatCaptureSetItem(item);
+      this.updateMessageById(messageId, (message: ChatMsg): ChatMsg => {
+        const next: ChatMsg = {
+          id: message.id,
+          role: message.role,
+          content: content,
+          ts: message.ts,
+          streaming: true,
+          reasoning: message.reasoning ?? '',
+          origin: 'image',
+          runId: runId,
+        };
+        return next;
+      });
+    };
+    const service: AiService = new AiService(ctx);
+    try {
+      // 036 阶段 4：先只做 OCR+切题+跨图合并（零落库），让用户确认边界后再入库。
+      const preview: CaptureSetPreview = await service.previewCaptureSet(uris);
+      if (preview.problems.length === 0) {
+        const failDetail: string = preview.failedItems.length > 0
+          ? '没有识别到可整理的题目（' + preview.failedItems.length.toString() + ' 张图未识别）'
+          : '没有识别到可整理的题目';
+        this.finishCaptureRecord(messageId, content + '\n' + failDetail, 'failed', runId);
+        this.sm.flush(this.sessions).catch((error: Error): void => {
+          console.warn('[CaptureSet] conversation flush failed: ' + error.message);
+        });
+        return;
+      }
+      content = '正在整理 ' + uris.length.toString() + ' 张图片（识别出 '
+        + preview.problems.length.toString() + ' 道题，等待确认）…';
+      this.updateMessageById(messageId, (message: ChatMsg): ChatMsg => {
+        const next: ChatMsg = {
+          id: message.id,
+          role: message.role,
+          content: content,
+          ts: message.ts,
+          streaming: true,
+          reasoning: message.reasoning ?? '',
+          origin: 'image',
+          runId: runId,
+        };
+        return next;
+      });
+      this.pendingCapturePreview = preview;
+      this.pendingCaptureMessageId = messageId;
+      this.pendingCaptureRunId = runId;
+      this.pendingCaptureContent = content;
+      this.pendingCaptureService = service;
+      this.pendingCaptureOnItem = onItem;
+      this.captureConfirmProblems = preview.problems;
+      this.captureConfirmImageCount = preview.imageCount;
+      this.captureConfirmFailedCount = preview.failedItems.length;
+      this.captureConfirmVisible = true;
+      console.info('[CaptureSet] preview problems=' + preview.problems.length.toString()
+        + ' failedImages=' + preview.failedItems.length.toString());
+    } catch (error) {
+      const detail: string = error instanceof Error ? error.message : String(error);
+      console.warn('[CaptureSet] code=CAPTURE_SET_PREVIEW_FAILED; ' + detail);
+      this.finishCaptureRecord(messageId, content + '\n识别失败：' + detail, 'failed', runId);
+      this.sm.flush(this.sessions).catch((error2: Error): void => {
+        console.warn('[CaptureSet] conversation flush failed: ' + error2.message);
+      });
+    }
+  }
+
+  // 036 阶段 4：确认页回调 —— 逐题勾选后提交（未入库的题不会产生笔记）。
+  private onCaptureConfirm = (selected: number[]): void => {
+    this.captureConfirmVisible = false;
+    this.commitPendingCapture(selected).catch((error: Error): void => {
+      console.warn('[CaptureSet] code=COMMIT_PENDING_FAILED; ' + error.message);
+    });
+  };
+
+  private onCaptureCancel = (): void => {
+    this.captureConfirmVisible = false;
+    const messageId: number = this.pendingCaptureMessageId;
+    const runId: string = this.pendingCaptureRunId;
+    const content: string = this.pendingCaptureContent;
+    this.resetCaptureConfirmState();
+    this.finishCaptureRecord(messageId, content + '\n已取消整理，未写入任何笔记。', 'cancelled', runId);
+    this.sm.flush(this.sessions).catch((error: Error): void => {
+      console.warn('[CaptureSet] conversation flush failed: ' + error.message);
+    });
+  };
+
+  private async commitPendingCapture(selected: number[]): Promise<void> {
+    const preview: CaptureSetPreview | null = this.pendingCapturePreview;
+    const messageId: number = this.pendingCaptureMessageId;
+    const runId: string = this.pendingCaptureRunId;
+    const content: string = this.pendingCaptureContent;
+    const service: AiService | null = this.pendingCaptureService;
+    const onItem: ((item: CaptureSetItemResult) => void) | null = this.pendingCaptureOnItem;
+    this.resetCaptureConfirmState();
+    if (preview === null || service === null) {
+      return;
+    }
+    const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    try {
+      const result: CaptureSetResult = await service.commitCaptureSet(
+        preview, selected, undefined, onItem === null ? undefined : onItem);
+      const receipt: CaptureReceipt = {
+        done: result.done,
+        // 取消不算失败，但回执只有 done/failed 两个格子，这里并入 failed 以便用户看到"没成"
+        failed: result.failed + result.cancelled,
+        total: result.total,
+        at: Date.now(),
+        source: 'album',
+      };
+      try {
+        await CaptureReceiptStore.save(ctx, receipt);
+      } catch (error) {
+        console.warn('[CaptureSet] receipt save failed: ' + (error as Error).message);
+      }
+      const outcome: ChatMessageOutcome = result.cancelled > 0
+        ? 'cancelled'
+        : (result.failed > 0 ? 'failed' : 'completed');
+      this.finishCaptureRecord(
+        messageId,
+        content + '\n' + this.captureSetSummary(result),
+        outcome,
+        runId,
+      );
+      console.info('[CaptureSet] total=' + result.total.toString() + ' done=' + result.done.toString()
+        + ' failed=' + result.failed.toString() + ' cancelled=' + result.cancelled.toString());
+    } catch (error) {
+      const detail: string = error instanceof Error ? error.message : String(error);
+      console.warn('[CaptureSet] code=CAPTURE_SET_COMMIT_FAILED; ' + detail);
+      this.finishCaptureRecord(messageId, content + '\n整理失败：' + detail, 'failed', runId);
+    }
+    this.sm.flush(this.sessions).catch((error: Error): void => {
+      console.warn('[CaptureSet] conversation flush failed: ' + error.message);
+    });
+  }
+
+  private resetCaptureConfirmState(): void {
+    this.pendingCapturePreview = null;
+    this.pendingCaptureMessageId = 0;
+    this.pendingCaptureRunId = '';
+    this.pendingCaptureContent = '';
+    this.pendingCaptureService = null;
+    this.pendingCaptureOnItem = null;
+    this.captureConfirmProblems = [];
+    this.captureConfirmImageCount = 0;
+    this.captureConfirmFailedCount = 0;
+  }
+
+  // 追加记录消息：只改 activeSid 对应的 session，再按 updateMessageById 的写法回写 sessions/messages。
+  private appendImageRecordMessage(msg: ChatMsg): boolean {
+    let appended: boolean = false;
+    const next: ChatSession[] = [];
+    for (const session of this.sessions) {
+      if (session.id === this.activeSid) {
+        const messages: ChatMsg[] = [];
+        for (const message of session.messages) {
+          messages.push(message);
+        }
+        messages.push(msg);
+        next.push({ id: session.id, name: session.name, messages: messages });
+        appended = true;
+      } else {
+        next.push({ id: session.id, name: session.name, messages: session.messages });
+      }
+    }
+    if (!appended) {
+      return false;
+    }
+    this.sessions = next;
+    const active: ChatSession | undefined = next.find(
+      (session: ChatSession): boolean => session.id === this.activeSid,
+    );
+    if (active !== undefined) {
+      this.messages = active.messages;
+    }
+    return true;
+  }
+
+  // 记录行：序号取 item.index + 1，不取回调到达顺序。
+  private formatCaptureSetItem(item: CaptureSetItemResult): string {
+    const position: number = item.index + 1;
+    let line: string = this.captureSetOrdinal(position) + ' ';
+    const category: string = item.category ?? '';
+    if (category.length > 0) {
+      line += category;
+    } else {
+      line += '第 ' + position.toString() + ' 张';
+    }
+    const title: string = item.title ?? '';
+    if (title.length > 0) {
+      line += ' · ' + title;
+    }
+    if (item.duplicate === true) {
+      return line + ' · 已存在（未重复写入）';
+    }
+    if (item.cancelled) {
+      return line + ' ⊘ 已取消';
+    }
+    if (!item.success) {
+      const reason: string = item.errorMessage !== undefined && item.errorMessage.length > 0
+        ? item.errorMessage
+        : '未知原因';
+      return line + ' ✗ ' + reason;
+    }
+    return line + ' ✓';
+  }
+
+  private captureSetOrdinal(position: number): string {
+    const circled: string[] = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    if (position >= 1 && position <= circled.length) {
+      return circled[position - 1];
+    }
+    return '(' + position.toString() + ')';
+  }
+
+  private captureSetSummary(result: CaptureSetResult): string {
+    const images: number = result.imageCount !== undefined ? result.imageCount : 0;
+    if (result.cancelled > 0) {
+      return '整理已取消：已整理 ' + result.done.toString() + '/' + result.total.toString() + ' 题';
+    }
+    if (result.failed > 0) {
+      return '整理完成：' + images.toString() + ' 张图 → ' + result.done.toString()
+        + ' 条笔记，' + result.failed.toString() + ' 道失败';
+    }
+    return '整理完成：' + images.toString() + ' 张图 → ' + result.done.toString() + ' 条笔记';
+  }
+
+
+  private finishCaptureRecord(
+    messageId: number,
+    content: string,
+    outcome: ChatMessageOutcome,
+    runId: string,
+  ): void {
+    this.updateMessageById(messageId, (message: ChatMsg): ChatMsg => {
+      const next: ChatMsg = {
+        id: message.id,
+        role: message.role,
+        content: content,
+        ts: message.ts,
+        streaming: false,
+        reasoning: message.reasoning ?? '',
+        origin: 'image',
+        runId: runId,
+        outcome: outcome,
+      };
+      return next;
+    });
+  }
 
   // Toast 反馈 (替代 deprecated promptAction.showToast, 用 UIContext.getPromptAction)
   private showToast(message: string): void {
@@ -758,7 +1294,18 @@ export struct AgentFloatWindow {
     }
   }
 
-  // + 弹窗 → 相机: 拉起 HarmonyOS 系统相机选择器, 拍完写入 VM + Toast
+  private noteSuggestionText(suggestion: NoteSuggestion): string {
+    if (suggestion.action === 'merge') {
+      return '检测到重复笔记，已复用已有笔记';
+    }
+    if (suggestion.action === 'append') {
+      return '同主题已有笔记，补充内容已保存';
+    }
+    return '笔记草稿已生成，确认后入库';
+  }
+
+  // + 弹窗 → 相机: 保持原来的「拍照 → 预览 → 可带问题发送」。
+  // 相册入口才改成多选即整理（spec 036）；相机如果也吞掉预览，用户就再也没法对着照片问一句。
   private onCameraAction = (): void => {
     this.sync();
     this.sm.flush(this.sessions).catch((): void => {});
@@ -776,37 +1323,142 @@ export struct AgentFloatWindow {
       });
   };
 
-  // + 弹窗 → 相册: 拉起 HarmonyOS 系统相册选择器, 选完写入 VM + Toast
-  private onAlbumAction = (): void => {
-    this.sync();
-    this.sm.flush(this.sessions).catch((): void => {});
-    const originSessionId: string = this.ensureActiveSession();
-    AlbumPickerLauncher.pick(getContext(this) as common.UIAbilityContext)
-      .then((uris: string[]): void => {
-        if (uris.length > 0) {
-          if (!this.inputVm.setImagePreviewForSession(originSessionId, uris[0])) {
-            console.warn('[SessionUiState] code=LATE_PICKER_TARGET_DELETED; sessionId=' + originSessionId);
-            return;
-          }
-          this.showToast('已选图片');
-        } else {
-          this.showToast('未选择图片');
-        }
-      })
-      .catch((e: Error): void => {
-        this.showToast('相册启动失败: ' + e.message);
-      });
-  };
-
   private confirmDraft = async (candidate: KnowledgeUnit): Promise<KnowledgeUnit> => {
     if (this.generatedDraft === null || this.service === null) {
       throw new Error('草稿服务不可用');
     }
+    this.lastConfirmCandidate = candidate;
     if (this.generatedDraftSessionId.length === 0) {
       if (this.draftRecovery === null) { throw new Error('DETACHED_DRAFT_RECOVERY_UNAVAILABLE'); }
-      return await this.draftRecovery.confirm(this.generatedDraft, candidate);
+      const committed: KnowledgeUnit = await this.draftRecovery.confirm(this.generatedDraft, candidate);
+      // Detached 草稿没有会话回调，直接按落库结果补一次重复提示。
+      this.scheduleDuplicateFromCommit(committed);
+      return committed;
     }
     return await this.service.confirmDraft(this.generatedDraftSessionId, this.generatedDraft, candidate);
+  }
+
+  private scheduleDuplicateFromCommit(committed: KnowledgeUnit): void {
+    const candidate: KnowledgeUnit | null = this.lastConfirmCandidate;
+    if (candidate === null || committed.id === candidate.id) {
+      return;
+    }
+    this.scheduleDuplicateDialog({
+      action: 'merge',
+      noteKind: 'normal',
+      count: 1,
+      reason: 'duplicate-on-confirm',
+      sourceNoteId: committed.id,
+      sourceTitle: committed.title,
+    });
+  }
+
+  /** 重复确认后不在保存瞬间打断用户：浮层关闭后再问更新/另存。 */
+  private scheduleDuplicateDialog(suggestion: NoteSuggestion): void {
+    this.duplicateEvent = this.generatedDraft;
+    this.duplicateCandidate = this.lastConfirmCandidate;
+    this.duplicateSessionId = this.generatedDraftSessionId;
+    this.duplicateNoteId = suggestion.sourceNoteId !== undefined ? suggestion.sourceNoteId : '';
+    this.duplicateTitle = suggestion.sourceTitle !== undefined ? suggestion.sourceTitle : '';
+    console.info('[DuplicateAction] schedule note=' + this.duplicateNoteId
+      + ' session=' + this.duplicateSessionId + ' hasDraft=' + (this.duplicateEvent !== null ? '1' : '0')
+      + ' hasCandidate=' + (this.duplicateCandidate !== null ? '1' : '0'));
+    if (this.duplicateEvent === null || this.duplicateCandidate === null || this.duplicateNoteId.length === 0) {
+      this.clearDuplicateState();
+      return;
+    }
+    setTimeout((): void => {
+      this.showDuplicateDialog();
+    }, 400);
+  }
+
+  private showDuplicateDialog(): void {
+    console.info('[DuplicateAction] show note=' + this.duplicateNoteId
+      + ' session=' + this.duplicateSessionId + ' active=' + this.activeSid);
+    if (this.duplicateEvent === null || this.duplicateCandidate === null || this.duplicateNoteId.length === 0
+      || (this.duplicateSessionId.length > 0 && this.duplicateSessionId !== this.activeSid)) {
+      this.clearDuplicateState();
+      return;
+    }
+    const title: string = this.duplicateTitle.length > 0 ? this.duplicateTitle : '已有笔记';
+    const canUpdate: boolean = this.duplicateSessionId.length > 0;
+    this.getUIContext().getPromptAction().showDialog({
+      title: '已有相同笔记',
+      message: '《' + title + '》已经在知识库里。要用这次整理的内容更新它，还是另存为新笔记？',
+      buttons: canUpdate ? [
+        { text: '更新已有笔记', color: '#3478F6' },
+        { text: '另存为新笔记', color: '#3478F6' },
+        { text: '保留现状', color: '#666666' },
+      ] : [
+        { text: '另存为新笔记', color: '#3478F6' },
+        { text: '保留现状', color: '#666666' },
+      ],
+    }).then((result): void => {
+      if (canUpdate) {
+        if (result.index === 0) {
+          this.updateDuplicateNote();
+        } else if (result.index === 1) {
+          this.saveDuplicateAsNew();
+        } else {
+          this.clearDuplicateState();
+        }
+        return;
+      }
+      if (result.index === 0) {
+        this.saveDuplicateAsNew();
+      } else {
+        this.clearDuplicateState();
+      }
+    }).catch((): void => {
+      this.clearDuplicateState();
+    });
+  }
+
+  private updateDuplicateNote(): void {
+    const event: NoteDraftReadyEvent | null = this.duplicateEvent;
+    const candidate: KnowledgeUnit | null = this.duplicateCandidate;
+    const sessionId: string = this.duplicateSessionId;
+    const noteId: string = this.duplicateNoteId;
+    this.clearDuplicateState();
+    if (event === null || candidate === null || sessionId.length === 0 || noteId.length === 0
+      || this.service === null) {
+      return;
+    }
+    const content: string = candidate.content.length > 6000
+      ? candidate.content.substring(0, 6000) : candidate.content;
+    const instruction: string = '把下面这次整理的内容合并进已有笔记；保留原有结构，补充新增内容，不要编造：\n' + content;
+    this.service.requestRegeneration(sessionId, noteId, instruction).catch((e: Error): void => {
+      this.showToast('更新失败：' + e.message);
+    });
+  }
+
+  private saveDuplicateAsNew(): void {
+    const event: NoteDraftReadyEvent | null = this.duplicateEvent;
+    const candidate: KnowledgeUnit | null = this.duplicateCandidate;
+    const sessionId: string = this.duplicateSessionId;
+    this.clearDuplicateState();
+    if (candidate === null) {
+      return;
+    }
+    NoteEditService.saveAsNew(getContext(this) as common.UIAbilityContext, candidate)
+      .then((): void => {
+        this.showToast('已另存为新笔记');
+        if (event !== null && sessionId.length > 0 && this.service !== null) {
+          this.service.cancelDraft(sessionId, event.runId).catch((): void => {});
+        }
+      })
+      .catch((e: Error): void => {
+        this.showToast('另存失败：' + e.message);
+      });
+  }
+
+  private clearDuplicateState(): void {
+    this.duplicateEvent = null;
+    this.duplicateCandidate = null;
+    this.duplicateSessionId = '';
+    this.duplicateNoteId = '';
+    this.duplicateTitle = '';
+    this.lastConfirmCandidate = null;
   }
 
   private openAnimated(): void {
@@ -910,6 +1562,7 @@ export struct AgentFloatWindow {
               activeSid: this.activeSid,
               onSelect: (sid: string): void => { this.onSelectSession(sid); },
               onRequestDelete: (sid: string): void => { this.onRequestSessionDelete(sid); },
+              onRequestClearAll: (): void => { this.onRequestClearAll(); },
             })
               .position({ x: S_3 + S_4, y: PANEL_MASK_TOP + S_2 })
               .markAnchor({ x: 0, y: 0 })
@@ -922,6 +1575,7 @@ export struct AgentFloatWindow {
             scroller: this.scroller,
             onSourceTap: this.openNoteReviewSource,
             onFeedback: this.onNoteReviewFeedback,
+            onTopicSelect: this.onNoteTopicSelect,
           });
           Row().width('100%').height(0.5).backgroundColor(BORDER);
 
@@ -968,6 +1622,15 @@ export struct AgentFloatWindow {
             this.generatedDraft = null;
             this.generatedDraftSessionId = '';
           },
+        })
+      }
+      if (this.captureConfirmVisible) {
+        CaptureSetConfirmOverlay({
+          imageCount: this.captureConfirmImageCount,
+          failedCount: this.captureConfirmFailedCount,
+          problems: this.captureConfirmProblems,
+          onConfirm: this.onCaptureConfirm,
+          onCancel: this.onCaptureCancel,
         })
       }
       if (this.sourceOverlayVisible) {

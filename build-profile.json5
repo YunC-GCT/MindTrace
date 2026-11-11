@@ -1,11 +1,25 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\YunCeH\\.ohos\\config\\default_MindTrace_IZ3vZouoVPne093-AtqhORVMzi5jDKnDj3sdZLocy2o=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B19CC05799630928170C20BD984282A271427A513336F041795620E1E67F8FE636281959BC64862",
+          "profile": "C:\\Users\\YunCeH\\.ohos\\config\\default_MindTrace_IZ3vZouoVPne093-AtqhORVMzi5jDKnDj3sdZLocy2o=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\YunCeH\\.ohos\\config\\default_MindTrace_IZ3vZouoVPne093-AtqhORVMzi5jDKnDj3sdZLocy2o=.p12",
+          "storePassword": "0000001B64C9FC1351763F1FA3C4976B54337396A30D8ABEAA2E230E1BBC6C829B422426A68EE4AE139C18"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
         "signingConfig": "default",
-        "targetSdkVersion": "6.1.1(24)",
+        "targetSdkVersion": "26.0.0",
         "compatibleSdkVersion": "6.1.1(24)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
@@ -18,10 +32,62 @@
     ],
     "buildModeSet": [
       {
-        "name": "debug",
+        "name": "debug"
       },
       {
         "name": "release"
+      }
+    ],
+    "capabilities": [
+      {
+        "bundleName": "com.example.mathmind",
+        "config": [
+          {
+            "capability": "webAccessServiceForAIQA",
+            "name": "webAccessServiceForAIQA"
+          },
+          {
+            "capability": "com.huawei.service.push.base_service",
+            "name": "Push Kit"
+          },
+          {
+            "capability": "com.huawei.service.device_security.device_verify",
+            "name": "Device status detection"
+          },
+          {
+            "capability": "com.huawei.service.mapkit",
+            "name": "Map Kit"
+          },
+          {
+            "capability": "com.huawei.service.device_security.safety_detect",
+            "name": "Safety Detect"
+          }
+        ]
+      },
+      {
+        "bundleName": "com.example.mindtrace",
+        "config": [
+          {
+            "name": "webAccessServiceForAIQA",
+            "capability": "webAccessServiceForAIQA"
+          },
+          {
+            "name": "Push Kit",
+            "capability": "com.huawei.service.push.base_service"
+          },
+          {
+            "name": "Device status detection",
+            "capability": "com.huawei.service.device_security.device_verify"
+          },
+          {
+            "name": "Map Kit",
+            "capability": "com.huawei.service.mapkit"
+          },
+          {
+            "name": "Safety Detect",
+            "capability": "com.huawei.service.device_security.safety_detect"
+          }
+        ]
       }
     ]
   },

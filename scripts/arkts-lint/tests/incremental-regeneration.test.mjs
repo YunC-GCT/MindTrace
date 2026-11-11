@@ -7,27 +7,34 @@ const root = path.resolve(import.meta.dirname, '..', '..', '..')
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
 
 test('Issue 104 keeps incremental regeneration behind the four agreed seams', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
-  const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets')
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
+  // 2026-11-02：增量逻辑已迁入 NoteRegenerateWorkflow，Dispatcher 只留路由委托。
+  const incrementalWorkflow = read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets')
+  const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets')
   const facade = read('entry/src/main/ets/services/AgentChatService.ets')
   const repository = read('entry/src/main/ets/database/NoteGenerationRepository.ets')
   const writer = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets')
-  const model = read('agents/src/main/ets/agents/KnowledgeModel.ets')
+  const model = read('agents/src/main/ets/subagents/KnowledgeModel.ets')
   const models = read('common/src/main/ets/models/NoteGenerationModels.ets')
 
-  assert.match(dispatcher, /dispatchIncrementalGeneration/)
-  assert.match(dispatcher, /NOTE_ID_REQUIRED/)
-  assert.match(dispatcher, /VERSION_CONFLICT/)
-  assert.match(dispatcher, /mergeIncrementalPatches/)
+  assert.match(incrementalWorkflow, /private async runIncremental\(/)
+  assert.match(incrementalWorkflow, /NOTE_ID_REQUIRED/)
+  assert.match(incrementalWorkflow, /VERSION_CONFLICT/)
+  assert.match(incrementalWorkflow, /mergeIncrementalPatches/)
+  assert.match(incrementalWorkflow, /await repository\.getRegenerationBase\(request\.targetNoteId\)/)
+  assert.doesNotMatch(incrementalWorkflow, /const getBase = repository\.getRegenerationBase/)
   assert.match(workflow, /regenerateNote/)
   assert.match(workflow, /请先选择要修改的明确笔记/)
-  assert.doesNotMatch(facade, /requestRegeneration/)
+  // 2026-11-10：接「更新已有笔记」入口，facade 允许把请求转给 runtime。
+  assert.match(facade, /requestRegeneration/)
+  assert.match(facade, /this\.runtime\.requestRegeneration/)
   assert.match(workflow, /requestRegeneration/)
   assert.match(repository, /getRegenerationBase/)
   assert.match(repository, /queryLatestGeneratedRevision/)
   assert.match(writer, /updateWithCommitKey/)
   assert.match(model, /repairIncrementalSections/)
-  assert.match(model, /never return a full document/)
+  assert.match(model, /this\.incrementalPatchComposer\.compose\(request, plan, sections, sources\)/)
+  assert.match(read('agents/src/main/ets/subagents/IncrementalPatchComposer.ets'), /never return a full document/)
   assert.match(models, /IncrementalManifest/)
   assert.match(models, /LOCKED_SECTION_CHANGED/)
 })
@@ -40,10 +47,10 @@ test('Issue 104 does not add a second persistence owner', () => {
 })
 
 test('incremental regeneration uses the same coarse progress contract', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
-  const incremental = dispatcher.slice(
-    dispatcher.indexOf('private async dispatchIncrementalGeneration'),
-    dispatcher.indexOf('private incrementalResult'),
+  const incrementalWorkflow = read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets')
+  const incremental = incrementalWorkflow.slice(
+    incrementalWorkflow.indexOf('private async runIncremental'),
+    incrementalWorkflow.indexOf('private static incrementalResult'),
   )
 
   assert.match(incremental, /activity: 'collect_sources'/)

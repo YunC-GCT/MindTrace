@@ -1,0 +1,49 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// 学科词表接线守卫：分类 agent 必须先复用库里已有的学科，只有确实没见过才新建。
+// 任何一个环节断了，词表就静默失效（模型重新发明学科名），所以逐段盯住。
+
+const root = resolve(import.meta.dirname, '../../..');
+const read = (path) => readFileSync(resolve(root, path), 'utf8');
+
+test('PromptBuilder turns the known subjects into a closed vocabulary', () => {
+  const prompt = read('agents/src/main/ets/subagents/PromptBuilder.ets');
+  assert.match(prompt, /buildPrompt\(ocrText: string, knownSubjects: string\[\] = \[\], compact: boolean = false\): string/);
+  assert.match(prompt, /knownSubjects\.join\(' \/ '\)/);
+  assert.match(prompt, /必须从这里选/);
+  // 词表为空时不能把「必须从这里选：」这种半句话塞给模型
+  assert.match(prompt, /knownSubjects\.length > 0/);
+});
+
+test('the vocabulary travels from the dispatcher down to the prompt', () => {
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
+  // 2026-10-31：DispatchOptions 抽到独立模块、capture 分支抽到 CaptureBranch，字段断言按拆分后的归属分别检查。
+  const dispatchOptions = read('agents/src/main/ets/core/dispatch/DispatchOptions.ets');
+  const captureBranch = read('agents/src/main/ets/workflows/NoteCaptureWorkflow.ets');
+  const optionsSource = dispatcher + '\n' + dispatchOptions;
+  const state = read('agents/src/main/ets/graph/AgentState.ets');
+  const node = read('agents/src/main/ets/graph/nodes/StructureNode.ets');
+  const model = read('agents/src/main/ets/subagents/KnowledgeModel.ets');
+  const structurer = read('agents/src/main/ets/subagents/CaptureStructurer.ets');
+
+  assert.match(optionsSource, /subjectVocabulary\?: string\[\];/);
+  assert.match(captureBranch, /subjectVocabulary: domain\.subjectVocabulary \?\? \[\]/);
+  assert.match(state, /subjectVocabulary\?: string\[\];/);
+  assert.match(state, /copied\.subjectVocabulary = input\.subjectVocabulary/);
+  assert.match(node, /input\.subjectVocabulary \?\? \[\]/);
+  assert.match(model, /knownSubjects: string\[\] = \[\]/);
+  assert.match(structurer, /buildPrompt\(ocrText, knownSubjects, compact\)/);
+});
+
+test('the entry side reads the vocabulary through a read-only seam, not the write path', () => {
+  const ai = read('entry/src/main/ets/services/AiService.ets');
+  const vocabulary = read('entry/src/main/ets/services/SubjectVocabularyService.ets');
+
+  assert.match(read('entry/src/main/ets/services/ai/CapturePipeline.ets'), /SubjectVocabularyService\.list\(\)/);
+  assert.doesNotMatch(ai, /new NoteDao\(|from ['"]\.\.\/database\/NoteDao['"]/);
+  assert.match(vocabulary, /queryAllMetadata\(\)/);
+  assert.match(vocabulary, /subjects\.indexOf\(subject\) < 0/);
+});

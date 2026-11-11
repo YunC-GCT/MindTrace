@@ -43,7 +43,7 @@ export struct SubjectGrid {
                 })
               }
             },
-            (group: SubjectGroup): string => group.subject
+            (group: SubjectGroup): string => group.subject + "_" + group.count.toString()
           )
         }
         .width("100%")

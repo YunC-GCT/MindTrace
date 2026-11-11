@@ -9,11 +9,12 @@
  *   UI command -> AgentChatService -> ConversationRuntime.
  */
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
-import { ConversationRunRef } from './ConversationIdentity';
+import type { EvidenceMode } from 'common';
+import { ConversationRunRef } from 'common';
 import { ConversationRunStartResult } from './ConversationRunCoordinator';
 import { AgentChatCallbacks } from './AgentChatContracts';
 import { ConversationRuntime } from './ConversationRuntime';
-import { IConversationNoteRoutePort } from '../workflows/conversation/ConversationWorkflowPorts';
+import { IConversationNoteRoutePort } from 'agents/src/main/ets/conversation/Index';
 
 export { AgentChatCallbacks } from './AgentChatContracts';
 
@@ -24,12 +25,14 @@ export class AgentChatService {
     this.runtime = new ConversationRuntime(callbacks, noteRoute);
   }
 
-  async captureReply(sessionId: string, imageUri: string, userText: string): Promise<ConversationRunStartResult> {
-    return await this.runtime.captureReply(sessionId, imageUri, userText);
+  async captureReply(sessionId: string, imageUri: string, userText: string,
+    evidenceMode?: EvidenceMode): Promise<ConversationRunStartResult> {
+    return await this.runtime.captureReply(sessionId, imageUri, userText, evidenceMode);
   }
 
-  async realReplyStream(sessionId: string, userContent: string): Promise<ConversationRunStartResult> {
-    return await this.runtime.realReplyStream(sessionId, userContent);
+  async realReplyStream(sessionId: string, userContent: string,
+    evidenceMode?: EvidenceMode): Promise<ConversationRunStartResult> {
+    return await this.runtime.realReplyStream(sessionId, userContent, evidenceMode);
   }
 
   isCurrentRun(ref: ConversationRunRef): boolean {
@@ -48,8 +51,20 @@ export class AgentChatService {
     return await this.runtime.confirmDraft(sessionId, event, candidate);
   }
 
+  async resumeNoteContextClarification(
+    sessionId: string,
+    runId: string,
+    topicId: string,
+  ): Promise<NoteDraftReadyEvent> {
+    return await this.runtime.resumeNoteContextClarification(sessionId, runId, topicId);
+  }
+
   async cancelDraft(sessionId: string, runId: string): Promise<void> {
     await this.runtime.cancelDraft(sessionId, runId);
+  }
+
+  async requestRegeneration(sessionId: string, noteId: string, instruction: string): Promise<void> {
+    await this.runtime.requestRegeneration(sessionId, noteId, instruction);
   }
 
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {

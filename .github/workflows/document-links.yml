@@ -32,6 +32,9 @@ jobs:
       - name: Run link-check unit tests
         run: node --test scripts/link-check/tests/*.test.mjs
 
+      - name: Run doc-trace unit tests
+        run: node --test scripts/doc-trace/tests/*.test.mjs
+
   lint:
     name: Check (markdown links)
     runs-on: ubuntu-latest
@@ -47,3 +50,6 @@ jobs:
 
       - name: Run link-check (must exit 0)
         run: node scripts/link-check/index.mjs
+
+      - name: Run doc-trace (must exit 0)
+        run: node scripts/doc-trace/index.mjs

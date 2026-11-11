@@ -1,0 +1,58 @@
+{
+  "case": "capture-success",
+  "clause": "ADR-0019 (a) capture / (b) committed",
+  "input": {
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "source": "app"
+  },
+  "options": {
+    "dao": true,
+    "includeRawText": true
+  },
+  "requests": [
+    {
+      "enableThinking": null,
+      "maxTokens": 8000
+    },
+    {
+      "enableThinking": null,
+      "maxTokens": 12000
+    }
+  ],
+  "result": {
+    "classification": {
+      "chapter": "连续性",
+      "confidence": 0.95,
+      "ocrText": "函数在一点连续。",
+      "ocrTextQuality": "refined",
+      "subject": "数学分析",
+      "type": "概念"
+    },
+    "data": {
+      "category": "概念",
+      "chapter": "连续性",
+      "difficulty": 1,
+      "id": "<id>",
+      "source": "manual",
+      "subject": "数学分析",
+      "title": "连续函数",
+      "version": 1
+    },
+    "errorCode": null,
+    "errorMessage": null,
+    "generation": null,
+    "route": "D1",
+    "success": true
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 1,
+    "versions": [
+      1
+    ]
+  },
+  "throws": null
+}

@@ -3,7 +3,7 @@
  *
  * Path: common/src/main/ets/llm/CancellationToken.ets
  * Responsibility: Own one-shot cancellation state and cleanup listeners shared by workflows and transports.
- * Dependencies: none.
+ * Dependencies: ../workflow/RunErrors (CancellationError; that file imports nothing).
  *
  * Data flow:
  *   ConversationRunCoordinator -> CancellationToken -> workflow/HTTP cleanup listeners.
@@ -11,6 +11,8 @@
  * ArkTS 1.1 strict adaptation:
  *   - Listener and state types are explicit; cancellation is idempotent.
  */
+import { CancellationError } from '../workflow/RunErrors';
+
 export type CancellationListener = () => void;
 
 export class CancellationToken {
@@ -40,7 +42,7 @@ export class CancellationToken {
 
   throwIfCancelled(): void {
     if (this.cancelled) {
-      throw new Error('CONVERSATION_CANCELLED');
+      throw new CancellationError('CONVERSATION_CANCELLED');
     }
   }
 

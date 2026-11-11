@@ -12,7 +12,7 @@ import {
   SessionDeletionResult,
 } from '../main/ets/services/SessionDeletionCoordinator';
 import { ChatHistorySaveResult } from '../main/ets/services/ChatHistoryPersistence';
-import { ConversationSessionSnapshot } from '../main/ets/models/ConversationSnapshotModels';
+import { ConversationSessionSnapshot } from 'common';
 
 class RecordingDeletionOperations implements SessionDeletionOperations {
   tombstones: string[] = [];

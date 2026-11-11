@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 //  pages/Home/HomePage.ets — 首页 (5 Tab 之一)
 //  ----------------------------------------------------------------------------
 //  组件层: Page (D3 spec 012)
@@ -48,15 +48,15 @@ export struct HomePage {
   }
 
   private reloadHome(): void {
-    const version: number = AppStorage.get<number>('notesVersion') ?? 0
+    const version: number = this.notesVersion
     if (this.loadedNotesVersion === version || this.loadingNotesVersion === version) {
       return
     }
     this.loadingNotesVersion = version
-    this.vm.init(getContext(this)).then((ok: boolean): void => {
-      if (ok) {
+    this.vm.init(getContext(this), version).then((ok: boolean): void => {
+      if (ok && this.notesVersion === version) {
         this.loadedNotesVersion = version
-      } else {
+      } else if (!ok && this.notesVersion === version) {
         try { promptAction.showToast({ message: "Failed to load notes", duration: 1500 }) } catch (_e) {}
       }
     }).finally((): void => {

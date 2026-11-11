@@ -12,7 +12,6 @@ import customSpanPlaceholderSeamTest from './CustomSpanPlaceholderSeam.test';
 import dispatcherNoteGenerationTest from './DispatcherNoteGeneration.test';
 import rendererSchedulerTest from './RendererScheduler.test';
 import renderTickTest from './RenderTick.test';
-import streamingReplyDocumentTest from './StreamingReplyDocument.test';
 import conversationIdentityTest from './ConversationIdentity.test';
 import sessionUiStateTest from './SessionUiState.test';
 import chatContextProjectionTest from './ChatContextProjection.test';
@@ -26,6 +25,8 @@ import mathRenderFailureStateTest from './MathRenderFailureState.test';
 import detailRenderSessionTest from './DetailRenderSession.test';
 import noteDetailBackPressCoordinatorTest from './NoteDetailBackPressCoordinator.test';
 import chatAutoFollowStateTest from './ChatAutoFollowState.test';
+import noteMarkdownExportTest from './NoteMarkdownExport.test';
+import captureReceiptTest from './CaptureReceipt.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -42,7 +43,6 @@ export default function testsuite() {
   dispatcherNoteGenerationTest();
   rendererSchedulerTest();
   renderTickTest();
-  streamingReplyDocumentTest();
   conversationIdentityTest();
   sessionUiStateTest();
   chatContextProjectionTest();
@@ -56,4 +56,6 @@ export default function testsuite() {
   detailRenderSessionTest();
   noteDetailBackPressCoordinatorTest();
   chatAutoFollowStateTest();
+  noteMarkdownExportTest();
+  captureReceiptTest();
 }

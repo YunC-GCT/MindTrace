@@ -13,7 +13,9 @@ function readRepoFile(path) {
 
 test('database schema creates kg_edge as an empty relation table', () => {
   const source = readRepoFile('common/src/main/ets/DatabaseHelper.ets');
-  assert.match(source, /const DB_SCHEMA_VERSION: number = 12;/);
+  const version = source.match(/const DB_SCHEMA_VERSION: number = (\d+);/);
+  assert.ok(version, 'DB_SCHEMA_VERSION 应存在');
+  assert.ok(Number(version[1]) >= 13, 'kg_edge 引入于 schema 13，版本只增不减（当前 ' + version[1] + '）');
   assert.match(source, /CREATE TABLE IF NOT EXISTS kg_edge/);
   assert.match(source, /from_unit_id TEXT NOT NULL/);
   assert.match(source, /to_unit_id TEXT NOT NULL/);
@@ -49,14 +51,14 @@ test('knowledge relation model and DAO expose graph-specific relation queries', 
 
 test('relation persistence and evidence expansion share KnowledgeRelationDao', () => {
   const daoSource = readRepoFile('entry/src/main/ets/database/KnowledgeRelationDao.ets');
-  const evidenceSource = readRepoFile('entry/src/main/ets/services/NoteEvidenceService.ets');
+  const evidenceSource = readRepoFile('entry/src/main/ets/services/RdbNoteGraph.ets');
   assert.match(daoSource, /async saveRelation\(relation: KnowledgeRelation\): Promise<KnowledgeRelation>/);
   assert.match(daoSource, /async acceptRelation\(id: string\): Promise<boolean>/);
   assert.match(daoSource, /async rejectRelation\(id: string\): Promise<boolean>/);
   assert.match(daoSource, /status: relation\.status/);
   assert.match(daoSource, /async expandAcceptedNeighborhood\(/);
   assert.match(evidenceSource, /new KnowledgeRelationDao\(store\)/);
-  assert.match(evidenceSource, /dao\.expandAcceptedNeighborhood\(seeds, limits\)/);
+  assert.match(evidenceSource, /dao\.expandAcceptedNeighborhood\(seedIds, limits\)/);
 });
 
 test('knowledge galaxy uses graph metadata and accepted kg_edge relations', () => {

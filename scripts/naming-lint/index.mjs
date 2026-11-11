@@ -154,19 +154,23 @@ function checkEntry({ relPath, name, isDir }, violations) {
 
   // 6. ADR / Spec / Research — special prefix/suffix rules
   // All three use the normalized forward-slash path (see HTML check above for why).
-  if (relPathFwd.startsWith('docs/adr/') && ext === '.md' && name !== 'index.md') {
+  // Only files DIRECTLY inside the doc-type directory get the prefix/suffix rule:
+  // subdirectories (e.g. docs/specs/execution/<bundle>/) are execution bundles with
+  // their own file vocabulary (spec.md / plan.md / tasks.md), not numbered specs.
+  const relDir = relPathFwd.slice(0, relPathFwd.lastIndexOf('/'));
+  if (relDir === 'docs/adr' && ext === '.md' && name !== 'index.md') {
     if (!ADR_RE.test(name)) {
       violations.push({ relPath, name, rule: 'adr-prefix', msg: 'ADR must match NNNN-{slug}.md' });
     }
     return;
   }
-  if (relPathFwd.startsWith('docs/specs/') && ext === '.md' && name !== 'index.md') {
+  if (relDir === 'docs/specs' && ext === '.md' && name !== 'index.md') {
     if (!SPEC_RE.test(name)) {
       violations.push({ relPath, name, rule: 'spec-prefix', msg: 'Spec must match NNN-{slug}.md' });
     }
     return;
   }
-  if (relPathFwd.startsWith('docs/research/') && ext === '.md' && name !== 'index.md') {
+  if (relDir === 'docs/research' && ext === '.md' && name !== 'index.md') {
     if (!RESEARCH_DATE_RE.test(name)) {
       violations.push({ relPath, name, rule: 'research-date', msg: 'Research file must end with -YYYY-MM-DD.md' });
     }

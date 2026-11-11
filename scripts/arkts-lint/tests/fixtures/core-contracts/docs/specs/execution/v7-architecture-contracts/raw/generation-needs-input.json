@@ -1,0 +1,49 @@
+{
+  "case": "generation-needs-input",
+  "clause": "ADR-0019 (a) generation / (b) needsInput / (c) MISSING_SOURCE",
+  "input": {
+    "generation": {
+      "instruction": "保留定义",
+      "mode": "create",
+      "route": "light",
+      "runId": "<id>",
+      "sources": {
+        "fragments": []
+      }
+    },
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "source": "text"
+  },
+  "options": {},
+  "requests": [],
+  "result": {
+    "classification": null,
+    "data": null,
+    "errorCode": null,
+    "errorMessage": "请提供一段对话或一份 OCR 材料",
+    "generation": {
+      "bestCheckpointId": null,
+      "issueCodes": [
+        "MISSING_SOURCE"
+      ],
+      "questions": [
+        "请提供一段对话或一份 OCR 材料"
+      ],
+      "route": "light",
+      "runId": "<id>",
+      "status": "needs-input",
+      "stopReason": "missing_facts"
+    },
+    "route": "D1",
+    "success": false
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": null
+}

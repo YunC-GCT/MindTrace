@@ -1,0 +1,89 @@
+/**
+ * KnowledgeUnitWriteModels.ets — KnowledgeUnit 写入契约
+ *
+ * 路径: common/src/main/ets/models/KnowledgeUnitWriteModels.ets
+ * 职责: 定义事务仓储、revision、写入结果和写后副作用边界
+ * 依赖: ./CommonTypes (KnowledgeUnit), ./NoteGenerationModels (NoteGenerationCommitResult)
+ *
+ * 数据流:
+ *   写入调用方 → KnowledgeUnitWriteService → repository / post-commit effects
+ */
+import { KnowledgeUnit } from './CommonTypes';
+import { NoteGenerationCommitResult } from './NoteGenerationModels';
+import { NoteSimilarityCandidate } from './NoteSimilarityModels';
+
+export enum KnowledgeUnitWriteErrorCode {
+  VERSION_CONFLICT = 'VERSION_CONFLICT',
+}
+
+export interface KnowledgeUnitRevision {
+  noteId: string;
+  version: number;
+  unit: KnowledgeUnit;
+  generationMetadata: string;
+  revisedAt: number;
+}
+
+export interface KnowledgeUnitPersistenceResult {
+  rowId: number;
+  unit: KnowledgeUnit;
+  duplicate?: boolean;
+}
+
+export interface KnowledgeUnitWriteResult {
+  committed: boolean;
+  rowId: number;
+  unit: KnowledgeUnit;
+  warnings: string[];
+  errorCode?: KnowledgeUnitWriteErrorCode;
+  errorMessage?: string;
+  duplicate?: boolean;
+}
+
+export interface KnowledgeUnitWriteRepository {
+  createWithRevision(unit: KnowledgeUnit, generationMetadata: string): Promise<KnowledgeUnitPersistenceResult>;
+  updateWithRevision(
+    unit: KnowledgeUnit,
+    expectedVersion: number,
+    generationMetadata: string,
+  ): Promise<KnowledgeUnitPersistenceResult>;
+  createWithRevisionAndCommitKey?(
+    unit: KnowledgeUnit,
+    generationMetadata: string,
+    commit: NoteGenerationCommitResult,
+  ): Promise<KnowledgeUnitPersistenceResult>;
+  updateWithRevisionAndCommitKey?(
+    unit: KnowledgeUnit,
+    expectedVersion: number,
+    generationMetadata: string,
+    commit: NoteGenerationCommitResult,
+  ): Promise<KnowledgeUnitPersistenceResult>;
+  /** 查重复笔记（同一道题重复整理时跳过写入）；返回已有笔记或 null。 */
+  findDuplicate?(unit: KnowledgeUnit): Promise<KnowledgeUnit | null>;
+  /** 查重候选（供灰区相似度打分与语义仲裁）；实现可缺省。 */
+  findSimilarCandidates?(unit: KnowledgeUnit): Promise<NoteSimilarityCandidate[]>;
+  /** 读取当前单元（幂等复用/回执需要 title/subject）；实现可缺省。 */
+  queryById?(id: string): Promise<KnowledgeUnit | null>;
+}
+
+export interface NoteGenerationBaseProvider {
+  queryCurrentUnit(noteId: string): Promise<KnowledgeUnit | null>;
+  queryLatestRevision(noteId: string): Promise<KnowledgeUnitRevision | null>;
+  queryLatestGeneratedRevision?(noteId: string): Promise<KnowledgeUnitRevision | null>;
+}
+
+export interface KnowledgeUnitPostCommitEffect {
+  name: string;
+  // true 表示只在新笔记首次提交后执行；update 路径会跳过。
+  createOnly?: boolean;
+  run(unit: KnowledgeUnit): Promise<void>;
+}
+
+export class KnowledgeUnitWriteError extends Error {
+  code: KnowledgeUnitWriteErrorCode;
+
+  constructor(code: KnowledgeUnitWriteErrorCode, message: string) {
+    super(message);
+    this.code = code;
+  }
+}

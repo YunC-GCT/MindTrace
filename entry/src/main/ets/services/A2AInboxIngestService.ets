@@ -1,0 +1,116 @@
+/**
+ * A2AInboxIngestService.ets — 把「小艺排进来的待整理原文」用正规写路径入库。
+ *
+ * 路径: entry/src/main/ets/services/A2AInboxIngestService.ets
+ * 职责: 应用回到前台时领取队列，逐条经 IngestGateway（background）→ AgentIngestService 入库，
+ *       单条失败只记日志，不打断同批其它条目。
+ * 依赖: AgentInboxQueue、IngestGateway
+ *
+ * 为什么放在应用进程：队列里的兜底原文由 UI 进程消费；A2A 单次整理在扩展内联完成（ADR-0024 §2.7），
+ *   只有超时/失败/溢出项才会落到这里。
+ * 触发时机只有用户回到应用（EntryAbility.onForeground），不跟冷启动抢首帧。
+ */
+
+import { common } from '@kit.AbilityKit';
+import { DatabaseHelper } from 'common';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { AgentInboxItem } from './AgentInboxModels';
+import { AgentInboxQueue } from './AgentInboxQueue';
+import { IngestGateway, INGEST_MODE_BACKGROUND } from './IngestGateway';
+import { INGEST_SOURCE_XIAOYI } from './AgentIngestRequest';
+import type { IngestBatchResult } from './AgentIngestRequest';
+
+const DOMAIN: number = 0xA2A0;
+const TAG: string = 'A2AInbox';
+
+/** 一次消费的结果，只用于日志与后续可能的界面提示。 */
+export interface IngestSummary {
+  claimed: number;
+  done: number;
+  failed: number;
+}
+
+export class A2AInboxIngestService {
+  private static running: boolean = false;
+  /** 前台轮询句柄：-1 表示没在轮询。 */
+  private static timer: number = -1;
+
+  /**
+   * 应用在前台时每 5s 看一眼队列。
+   * 为什么需要：用户可能正在应用里，小艺在另一侧把原文排进队列，此时不会再触发 onForeground，
+   * 只靠生命周期钩子会漏掉。
+   */
+  static startWatch(context: common.UIAbilityContext,
+    onConsumed?: (summary: IngestSummary) => void): void {
+    if (A2AInboxIngestService.timer !== -1) {
+      return;
+    }
+    A2AInboxIngestService.timer = setInterval((): void => {
+      A2AInboxIngestService.consume(context)
+        .then((summary: IngestSummary): void => {
+          if (onConsumed !== undefined && summary.claimed > 0) {
+            onConsumed(summary);
+          }
+        })
+        .catch((e: Error): void => {
+          hilog.error(DOMAIN, TAG, 'watch consume failed: %{public}s', e.message);
+        });
+    }, 5000);
+  }
+
+  /** 退到后台就停，别在后台空转。 */
+  static stopWatch(): void {
+    if (A2AInboxIngestService.timer === -1) {
+      return;
+    }
+    clearInterval(A2AInboxIngestService.timer);
+    A2AInboxIngestService.timer = -1;
+  }
+
+  /** 队列为空时立即返回；有活儿时同一时刻只跑一批（前台反复切换不叠加）。 */
+  static async consume(context: common.UIAbilityContext): Promise<IngestSummary> {
+    const empty: IngestSummary = { claimed: 0, done: 0, failed: 0 };
+    if (A2AInboxIngestService.running) {
+      return empty;
+    }
+    // 库还没就绪（冷启动早期）就先不动队列：留着下次前台再消费，别把待整理原文吞掉。
+    if (DatabaseHelper.getStore() === null) {
+      hilog.info(DOMAIN, TAG, 'store not ready, keep queue untouched');
+      return empty;
+    }
+    A2AInboxIngestService.running = true;
+    let items: AgentInboxItem[] = [];
+    try {
+      items = await AgentInboxQueue.claim(context);
+      if (items.length === 0) {
+        return empty;
+      }
+      hilog.info(DOMAIN, TAG, 'consume start, claimed=%{public}d', items.length);
+      let done: number = 0;
+      let failed: number = 0;
+      for (let i = 0; i < items.length; i++) {
+        try {
+          const result: IngestBatchResult = await IngestGateway.ingestText(
+            context, items[i].text, INGEST_SOURCE_XIAOYI, INGEST_MODE_BACKGROUND);
+          if (result.outcomes.length === 0 || result.outcomes[0].kind !== 'committed') {
+            throw new Error(result.outcomes.length > 0 && result.outcomes[0].code !== undefined
+              ? result.outcomes[0].code : 'INGEST_FAILED');
+          }
+          done += 1;
+        } catch (error) {
+          failed += 1;
+          const message: string = error instanceof Error ? error.message : String(error);
+          hilog.error(DOMAIN, TAG, 'ingest failed, id=%{public}s reason=%{public}s', items[i].id, message);
+        }
+      }
+      hilog.info(DOMAIN, TAG, 'consume done, done=%{public}d failed=%{public}d', done, failed);
+      const summary: IngestSummary = { claimed: items.length, done: done, failed: failed };
+      return summary;
+    } finally {
+      if (items.length > 0) {
+        await AgentInboxQueue.complete(context);
+      }
+      A2AInboxIngestService.running = false;
+    }
+  }
+}

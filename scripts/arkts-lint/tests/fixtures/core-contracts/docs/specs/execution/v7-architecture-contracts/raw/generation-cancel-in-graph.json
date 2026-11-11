@@ -1,0 +1,63 @@
+{
+  "case": "generation-cancel-in-graph",
+  "clause": "ADR-0019 (e) in-graph cancel / (b) failed / (c) CANCELLED (light)",
+  "input": {
+    "generation": {
+      "instruction": "保留定义",
+      "mode": "create",
+      "route": "light",
+      "runId": "<id>",
+      "sources": {
+        "fragments": [
+          {
+            "fingerprint": "fp-1",
+            "id": "<id>",
+            "kind": "conversation",
+            "originId": "origin-1",
+            "sequence": 0,
+            "text": "函数在一点连续。"
+          }
+        ]
+      }
+    },
+    "payload": {
+      "kind": "text",
+      "text": "函数在一点连续。"
+    },
+    "source": "text"
+  },
+  "options": {
+    "cancellation": "in-graph"
+  },
+  "requests": [
+    {
+      "enableThinking": false,
+      "maxTokens": 1200
+    }
+  ],
+  "result": {
+    "classification": null,
+    "data": null,
+    "errorCode": null,
+    "errorMessage": "CONVERSATION_CANCELLED",
+    "generation": {
+      "bestCheckpointId": null,
+      "issueCodes": [
+        "CANCELLED"
+      ],
+      "questions": [],
+      "route": "light",
+      "runId": "<id>",
+      "status": "failed",
+      "stopReason": "workflow_error"
+    },
+    "route": "D1",
+    "success": false
+  },
+  "storage": {
+    "commitKeys": [],
+    "noteCount": 0,
+    "versions": []
+  },
+  "throws": null
+}

@@ -34,7 +34,6 @@ export class GalaxyRelationOverlay {
   private hint = document.createElement('div');
   private lines: { edge: GalaxyEdgeDTO; element: SVGLineElement;
     gradient: SVGLinearGradientElement; stops: SVGStopElement[] }[] = [];
-  private glows = new Map<string, SVGCircleElement>();
 
   constructor(container: HTMLElement) {
     this.root.id = 'relation-layer';
@@ -49,7 +48,6 @@ export class GalaxyRelationOverlay {
   select(edges: GalaxyEdgeDTO[], selectedId: string | null): void {
     this.group.replaceChildren();
     this.defs.replaceChildren();
-    this.glows.clear();
     this.lines = incidentRelations(edges, selectedId).map((edge, index) => {
       const element = document.createElementNS(SVG_NS, 'line');
       element.setAttribute('class', `galaxy-relation galaxy-relation--${edge.type}`);
@@ -67,15 +65,6 @@ export class GalaxyRelationOverlay {
       this.defs.appendChild(gradient);
       element.setAttribute('stroke', `url(#${gradient.id})`);
       this.group.appendChild(element);
-      for (const id of [edge.fromId, edge.toId]) {
-        if (this.glows.has(id)) continue;
-        const glow = document.createElementNS(SVG_NS, 'circle');
-        glow.setAttribute('class', 'relation-edge-glow');
-        glow.setAttribute('fill', color);
-        glow.setAttribute('r', '3');
-        this.group.appendChild(glow);
-        this.glows.set(id, glow);
-      }
       return { edge, element, gradient, stops };
     });
     this.hint.textContent = selectedId
@@ -99,14 +88,8 @@ export class GalaxyRelationOverlay {
       });
       const sourceAlpha = source?.alpha ?? 1;
       const targetAlpha = target?.alpha ?? 1;
-      const alphas = [sourceAlpha * 0.7, Math.max(sourceAlpha, targetAlpha) * 0.55, targetAlpha * 0.7];
+      const alphas = [sourceAlpha * 0.4, Math.max(sourceAlpha, targetAlpha) * 0.3, targetAlpha * 0.4];
       stops.forEach((stop, index) => stop.setAttribute('stop-opacity', String(alphas[index])));
-    }
-    for (const [id, glow] of this.glows) {
-      const node = nodes.get(id);
-      glow.setAttribute('cx', String(node?.x ?? 0));
-      glow.setAttribute('cy', String(node?.y ?? 0));
-      glow.style.opacity = String(node?.visible ? (node.edgeGlow ?? 0) * 0.3 : 0);
     }
   }
 }

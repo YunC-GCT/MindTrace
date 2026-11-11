@@ -16,6 +16,7 @@ import { common } from '@kit.AbilityKit';
 import { CardSnapshot, DatabaseHelper, KnowledgeUnit, ReviewStatus } from 'common';
 import { NoteDao } from '../database/NoteDao';
 import { getFormCardFacade } from '../kit/FormCardFacadeImpl';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 export class CardSnapshotService {
   static async refresh(context: common.UIAbilityContext): Promise<void> {
@@ -48,6 +49,9 @@ export class CardSnapshotService {
       masteredRatio: units.length > 0 ? masteredCount / units.length : 0,
       updatedAt: now,
     };
+    hilog.info(0xC4D0, 'CardSnapshot', '%{public}s',
+      'units=' + units.length.toString() + ' due=' + dueCount.toString()
+        + ' new=' + newCount.toString() + ' mastered=' + masteredCount.toString());
     await facade.pushSnapshot(snapshot);
   }
 }

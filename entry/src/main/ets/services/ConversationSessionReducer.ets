@@ -2,6 +2,8 @@
  * ConversationSessionReducer.ets - Pure session-targeted conversation updates.
  *
  * Path: entry/src/main/ets/services/ConversationSessionReducer.ets
+ * 路径: entry/src/main/ets/services/ConversationSessionReducer.ets
+ * 职责: 把一次 run 事件（流式增量 / 正文替换 / 状态 / 错误 / 来源）应用到目标会话消息。
  * Responsibility: Apply a current run event to exactly one existing session.
  * Dependencies: ConversationIdentity; ChatModels.
  *
@@ -12,16 +14,17 @@
  *   - Reducer inputs and results use named interfaces and explicit collection types.
  */
 
-import { ChatMessageIdPolicy, ConversationRunRef, requireConversationRunRef } from './ConversationIdentity';
+import { ChatMessageIdPolicy, ConversationRunRef, requireConversationRunRef } from 'common';
 import {
   appendChatMsgError,
   appendChatMsgStatus,
+  applyChatMsgSources,
   applyStreamEventToChatMsg,
   ChatMsg,
   ChatSession,
   replaceChatMsgContent,
 } from '../overlays/AgentFloatWindow/chat/ChatModels';
-import { ConversationMessageEvent } from '../workflows/conversation/ConversationTypes';
+import { ConversationMessageEvent } from 'agents/src/main/ets/conversation/Index';
 
 export type ConversationSessionEvent =
   | 'add-user-message'
@@ -46,6 +49,9 @@ export class ConversationSessionReducer {
     }
     if (event.kind === 'status') {
       return appendChatMsgStatus(message, event.content, event.status, event.progressKey);
+    }
+    if (event.kind === 'sources') {
+      return applyChatMsgSources(message, event.citations);
     }
     return appendChatMsgError(message, event.content);
   }

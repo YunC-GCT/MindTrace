@@ -24,12 +24,15 @@ import {
   W_MEDIUM,
   W_SEMIBOLD,
 } from 'common'
-import { NoteEvidenceCitation } from '../../../models/NoteEvidenceModels'
-import { NoteReviewAnswer, NoteReviewFeedback } from '../../../models/NoteReviewModels'
+import { NoteEvidenceCitation } from 'common'
+import { NoteReviewAnswer, NoteReviewFeedback } from 'common'
+import type { NoteContextClarification } from 'common'
 import { AgentRunPart } from './AgentRunModels'
 import { AgentRunPanel } from './AgentRunPanel'
 import { ChatMessageOutcome } from './ChatModels'
+import { ChatSourcePanel } from './ChatSourcePanel'
 import { NoteReviewSourceCard } from './NoteReviewSourceCard'
+import { NoteTopicClarificationCard } from './NoteTopicClarificationCard'
 
 @Component
 export struct AiMessageBubble {
@@ -37,8 +40,12 @@ export struct AiMessageBubble {
   @Prop streaming: boolean = false
   @Prop outcome: ChatMessageOutcome = 'completed'
   @Prop noteReview: NoteReviewAnswer | null = null
+  @Prop noteContextClarification: NoteContextClarification | null = null
+  @Prop citations: NoteEvidenceCitation[] = []
   onSourceTap: (citation: NoteEvidenceCitation) => void = (_citation: NoteEvidenceCitation): void => {}
   onFeedback: (feedback: NoteReviewFeedback) => void = (_feedback: NoteReviewFeedback): void => {}
+  onTopicSelect: (runId: string, topicId: string) => void =
+    (_runId: string, _topicId: string): void => {}
 
   build() {
     Row() {
@@ -69,6 +76,20 @@ export struct AiMessageBubble {
 
         if (this.noteReview !== null) {
           this.NoteReviewBlock(this.noteReview)
+        }
+
+        if (this.noteContextClarification !== null) {
+          NoteTopicClarificationCard({
+            clarification: this.noteContextClarification,
+            onSelect: this.onTopicSelect,
+          })
+        }
+
+        if (this.citations.length > 0) {
+          ChatSourcePanel({
+            citations: this.citations,
+            onSourceTap: this.onSourceTap,
+          })
         }
       }
       .alignItems(HorizontalAlign.Start)

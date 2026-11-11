@@ -39,12 +39,62 @@ function relation(overrides = {}) {
   };
 }
 
+// ConversationWorkflow 现在要求显式端口（组合根在 entry）；这些用例只跑分类节点，
+// 用一个最小桩即可。
+function stubConversationPorts() {
+  return {
+    intent: {
+      classify: async () => 'chat',
+      classifyWithCancellation: async () => 'chat',
+      classifyLocalIntent: () => undefined,
+      inlineNoteMaterial: () => '',
+    },
+    reply: {
+      isConfigured: async () => true,
+      complete: async () => '',
+      completeRouted: async () => ({ text: '', degraded: false }),
+      stream: async () => ({ content: '', interrupted: false, usedFallback: false }),
+      normalize: (value) => value,
+    },
+    capture: {},
+    noteRoute: { select: () => undefined },
+    draftService: {
+      restoreDraft: async () => ({}),
+      confirmDraft: async (_event, candidate) => candidate,
+      cancelDraft: async () => {},
+      retryDraft: async () => ({}),
+      listRecoverableDrafts: async () => [],
+      regenerateNoteDraft: async () => ({}),
+    },
+    memoryService: {
+      saveMessage: async () => {},
+      saveOcrResult: async () => '',
+      getStructuredContextForNoteGeneration: async () => ({}),
+      updateLearnerProfileIfNeeded: async () => {},
+      summarizeSessionIfNeeded: async () => {},
+      getPendingNoteMaterials: async () => [],
+      getContextForReply: async () => '',
+      getContextForNoteGeneration: async () => '',
+      getLearnerProfileContext: async () => '',
+    },
+    evidence: {
+      build: async () => ({ query: '', topK: 0, citations: [], relations: [], contextText: '', degraded: false, reason: '' }),
+      formatRetrievalStatus: () => '',
+      formatSources: () => '',
+      sanitizeAnswer: (_ctx, answer) => answer,
+      createStreamFilter: () => ({ push: (delta) => delta, flush: () => '' }),
+      createStrictStreamFilter: () => ({ push: (delta) => delta, flush: () => '' }),
+      hasVerifiedCitation: () => false,
+    },
+  };
+}
+
 function loadReviewService() {
   return loadNoteReviewEtsModule(
-    'entry/src/main/ets/services/NoteReviewService.ets',
+    'agents/src/main/ets/review/NoteReviewService.ets',
     {
       mocks: {
-        'entry/src/main/ets/services/NoteEvidenceService.ets': {
+        'agents/src/main/ets/evidence/NoteEvidenceService.ets': {
           NoteEvidenceService: class NoteEvidenceService {},
           NoteEvidenceStreamFilter: class NoteEvidenceStreamFilter {},
         },
@@ -55,7 +105,7 @@ function loadReviewService() {
 
 function loadConversationWorkflow(overrides = {}) {
   return loadNoteReviewEtsModule(
-    'entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets',
+    'agents/src/main/ets/conversation/ConversationWorkflow.ets',
     {
       mocks: {
         common: {
@@ -73,6 +123,13 @@ function loadConversationWorkflow(overrides = {}) {
             },
           },
           StateGraph: overrides.StateGraph ?? class StateGraph {},
+          // ConversationWorkflowPorts.production 会 new 一个本地模型 provider；
+          // 单测里不需要端侧模型，只要 isReady/init/askStream 有形状即可。
+          LocalChatProvider: class LocalChatProvider {
+            isReady() { return false; }
+            async init() { return false; }
+            async askStream() { return ''; }
+          },
           LlmError: class LlmError extends Error {},
           LlmErrorBodyFormatter: {
             redactSensitiveText(value) {
@@ -93,10 +150,10 @@ function loadConversationWorkflow(overrides = {}) {
             async summarizeSessionIfNeeded() {}
           },
         },
-        'entry/src/main/ets/services/IntentClassifier.ets': {
+        'agents/src/main/ets/chat/IntentClassifier.ets': {
           IntentClassifier: overrides.IntentClassifier ?? class IntentClassifier {},
         },
-        'entry/src/main/ets/services/ReplyService.ets': {
+        'agents/src/main/ets/chat/ReplyService.ets': {
           ReplyService: class ReplyService {
             constructor(_classifier) {}
             normalize(value) {
@@ -104,11 +161,11 @@ function loadConversationWorkflow(overrides = {}) {
             }
           },
         },
-        'entry/src/main/ets/services/NoteEvidenceService.ets': {
+        'agents/src/main/ets/evidence/NoteEvidenceService.ets': {
           NoteEvidenceService: class NoteEvidenceService {},
           NoteEvidenceStreamFilter: class NoteEvidenceStreamFilter {},
         },
-        'entry/src/main/ets/services/NoteReviewService.ets': {
+        'agents/src/main/ets/review/NoteReviewService.ets': {
           NoteReviewService: class NoteReviewService {},
         },
       },
@@ -459,7 +516,7 @@ test('ConversationWorkflow terminal note review finishes the real message and sk
       return {};
     },
   };
-  const workflow = new ConversationWorkflow(callbacks);
+  const workflow = new ConversationWorkflow(callbacks, stubConversationPorts());
   let completeCalls = 0;
   workflow.replyService = {
     normalize(value) {
@@ -485,7 +542,7 @@ test('ConversationWorkflow terminal note review finishes the real message and sk
     quizCount: 3,
   };
 
-  await workflow.handleNoteReviewComplete({ sessionId: 's1', runId: 'r1' }, '', '', plan);
+  await workflow.reviewNodes.handleComplete({ sessionId: 's1', runId: 'r1' }, '', '', plan);
 
   assert.equal(completeCalls, 0);
   assert.deepEqual(events.slice(0, 4), [
@@ -523,7 +580,7 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
       return {};
     },
   };
-  const workflow = new ConversationWorkflow(callbacks);
+  const workflow = new ConversationWorkflow(callbacks, stubConversationPorts());
   workflow.replyService = {
     async isConfigured() { return true; },
     normalize(value) {
@@ -591,7 +648,7 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
     quizCount: 3,
   };
 
-  await workflow.handleNoteReviewStream({ sessionId: 's1', runId: 'r1' }, '', '', plan);
+  await workflow.reviewNodes.handleStream({ sessionId: 's1', runId: 'r1' }, '', '', plan);
 
   const reviewIndex = events.findIndex((event) => event.startsWith('review:88:'));
   const finishIndex = events.findIndex((event) => event === 'finish:88');
@@ -601,7 +658,7 @@ test('ConversationWorkflow stream note review emits onNoteReviewReady before fin
 });
 
 
-test('ConversationWorkflow classify_intent node keeps explicit review on chat without remote classifier', async () => {
+test('ConversationWorkflow classify_intent keeps explicit review/note-query on chat (unified app intent)', async () => {
   const { ConversationWorkflow } = loadConversationWorkflow({
     StateGraph: class StateGraph {
       constructor() { this.nodes = {}; }
@@ -609,54 +666,24 @@ test('ConversationWorkflow classify_intent node keeps explicit review on chat wi
       addConditionalEdge() {}
       addEdge() {}
     },
-    IntentClassifier: class IntentClassifier {
-      constructor() { this.remoteCalls = 0; }
-      classifyLocalIntent() { return undefined; }
-      async classify() {
-        this.remoteCalls += 1;
-        return 'note_generation';
-      }
-    },
   });
   const workflow = new ConversationWorkflow({
     onProgress() {},
     isCurrentRun() { return true; },
     getContext() { return {}; },
-  });
-  let reviewCalls = 0;
-  workflow.reviewService = {
-    classifyIntent(text) {
-      reviewCalls += 1;
-      return text.includes('笔记') && text.includes('解释') ? 'explain' : undefined;
-    },
-  };
-
+  }, stubConversationPorts());
   const graph = workflow.buildGraph();
   const next = await graph.nodes.classify_intent({
     request: { kind: 'text', userContent: '根据我的笔记解释极限', responseMode: 'complete' },
     runRef: { sessionId: 's1', runId: 'r1' },
     currentStep: 'START',
   });
-
   assert.equal(next.intent, 'chat');
-  assert.equal(reviewCalls, 1);
-  assert.equal(workflow.intentClassifier.classifier.remoteCalls, 0);
+  assert.equal(next.appIntent, 'note_query');
+  assert.equal(next.appIntentClarify, false);
 });
 
-test('ConversationWorkflow classify_intent node keeps local note generation before review and remote fallback', async () => {
-  const { IntentClassifier } = loadNoteReviewEtsModule('entry/src/main/ets/services/IntentClassifier.ets', {
-    mocks: {
-      common: {
-        JSON_ONLY_RULES: '',
-        LATEX_GENERATION_RULES: '',
-        LlmConfig: { getInstance() { return { async isConfigured() { return false; } }; } },
-        LlmGuard: class LlmGuard {
-          extractJsonObject(value) { return value; }
-        },
-      },
-    },
-  });
-  const realLocalClassifier = new IntentClassifier({ extractJsonObject(value) { return value; } });
+test('ConversationWorkflow classify_intent routes explicit note-generation via unified rules', async () => {
   const { ConversationWorkflow } = loadConversationWorkflow({
     StateGraph: class StateGraph {
       constructor() { this.nodes = {}; }
@@ -664,41 +691,20 @@ test('ConversationWorkflow classify_intent node keeps local note generation befo
       addConditionalEdge() {}
       addEdge() {}
     },
-    IntentClassifier: class IntentClassifierProbe {
-      constructor() { this.remoteCalls = 0; }
-      classifyLocalIntent(text) { return realLocalClassifier.classifyLocalIntent(text); }
-      async classify() {
-        this.remoteCalls += 1;
-        return 'note_generation';
-      }
-    },
   });
   const workflow = new ConversationWorkflow({
     onProgress() {},
     isCurrentRun() { return true; },
     getContext() { return {}; },
-  });
-  let reviewCalls = 0;
-  workflow.reviewService = {
-    classifyIntent() {
-      reviewCalls += 1;
-      return 'explain';
-    },
-  };
+  }, stubConversationPorts());
   const graph = workflow.buildGraph();
-
-  for (const userContent of [
-    '把极限整理为笔记并解释一下',
-    '创建笔记：极限定义',
-    'noteId=note-limit 增量补充极限例子',
-  ]) {
+  for (const userContent of ['存笔记：极限定义', '把极限整理成笔记并解释一下', '创建笔记：极限定义']) {
     const next = await graph.nodes.classify_intent({
       request: { kind: 'text', userContent, responseMode: 'complete' },
       runRef: { sessionId: 's1', runId: 'r1' },
       currentStep: 'START',
     });
     assert.equal(next.intent, 'note_generation');
+    assert.equal(next.appIntent, 'note_generate');
   }
-  assert.equal(reviewCalls, 0);
-  assert.equal(workflow.intentClassifier.classifier.remoteCalls, 0);
 });

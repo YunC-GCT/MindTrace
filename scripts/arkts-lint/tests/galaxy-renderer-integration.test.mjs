@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
@@ -23,7 +23,10 @@ test('host preserves refresh, detail, save, delete, and ordered fallback behavio
   assert.match(host, /this\.snapshot = projectGalaxyGraph\(this\.vm\.systems\)/);
   assert.match(host, /GalaxyComponent3DAdapter\(/);
   assert.match(host, /GalaxyWebAdapter\(/);
-  assert.match(host, /ReviewGraphView\(\{ onGoAI: this\.onGoAI \}\)/);
+  assert.doesNotMatch(host, /ReviewGraphView/);
+  assert.equal(existsSync(resolve(root, 'entry/src/main/ets/pages/Review/ReviewGraphView.ets')), false);
+  assert.match(host, /三维星系暂时不可用/);
+  assert.match(host, /\.onClick\(this\.retryRenderer\)/);
   assert.match(host, /NoteDetailOverlay\(\{/);
   assert.match(host, /onDelete: this\.deleteNote/);
   assert.match(host, /onSaved: this\.handleSaved/);
@@ -60,7 +63,23 @@ test('Web and native adapters report readiness, failure, and business selection'
   assert.match(nativeAdapter, /Scene\.load\(\$rawfile\('galaxy3d\/native\/galaxy-scene\.glb'\)\)/);
   assert.match(nativeAdapter, /this\.callbacks\.onFailure\('native_scene_load_failed:/);
   assert.match(nativeAdapter, /this\.camera\.raycast\(/);
-  assert.match(nativeAdapter, /this\.nodePathToId\.get\(hits\[0\]\.node\.path\)/);
+  assert.match(nativeAdapter, /this\.nodePathToId\.get\(current\.name\)/);
+  assert.match(nativeAdapter, /for \(const hit of hits\)/);
+  assert.match(nativeAdapter, /current = current\.parent/);
+});
+
+test('native renderer imports from a separate template scene and refreshes projected labels after rendering', () => {
+  assert.match(nativeAdapter, /this\.findNode\(this\.templateScene, NODE_TEMPLATE_PATH\)/);
+  assert.match(nativeAdapter, /projectGalaxyPoint\(/);
+  assert.match(nativeAdapter, /this\.camera\.msaa = true/);
+  assert.match(nativeAdapter, /EnvironmentBackgroundType\.BACKGROUND_NONE/);
+  assert.match(nativeAdapter, /this\.stopLabelRefresh\(\)/);
+  assert.match(nativeAdapter, /@Observed\s+class NativeLabelView/);
+  assert.match(nativeAdapter, /@ObjectLink label: NativeLabelView/);
+  assert.match(nativeAdapter, /label\.x = point\.x/);
+  assert.match(nativeAdapter, /previous \?\? new NativeLabelView/);
+  assert.match(nativeAdapter, /label\.visible = point !== null/);
+  assert.match(nativeAdapter, /galaxyRaycastPosition\(event\.fingerList\[0\]\.localX/);
 });
 
 test('Web preview keeps stars and knowledge nodes visible without CanvasTexture support', () => {
@@ -72,7 +91,8 @@ test('Web preview keeps stars and knowledge nodes visible without CanvasTexture 
   assert.match(webPreview, /const core = new THREE\.Mesh\(new THREE\.SphereGeometry/);
   assert.match(webPreview, /const glow = new THREE\.Mesh\(new THREE\.SphereGeometry/);
   assert.doesNotMatch(webPreview, /new THREE\.Sprite\(/);
-  assert.match(webPreview, /createDomStarfield\(starLayer\)/);
+  assert.match(webPreview, /new BackgroundStarfield\(HIGH_PARTICLE_BUDGET\)/);
+  assert.doesNotMatch(webPreview, /createDomStarfield/);
   assert.match(webPreview, /orb\.className = 'node-orb'/);
   assert.match(webPreview, /view\.orb\.style\.transform = `translate\(-50%, -50%\) scale/);
   assert.match(webPreview, /if \(degraded\) \{[\s\S]*?degradedProjectionFrame[\s\S]*?\} else \{/);

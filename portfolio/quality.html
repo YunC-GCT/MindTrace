@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>质量与边界 · MindTrace</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="quality.html">
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="index.html">MIND<span>TRACE</span></a>
+      <button class="nav-toggle" type="button" aria-label="打开导航">菜单</button>
+      <div class="nav-links">
+        <a href="index.html">概览</a>
+        <a href="flow.html">产品流程</a>
+        <a href="architecture.html">架构</a>
+        <a href="a2a.html">A2A</a>
+        <a href="retrieval.html">检索</a>
+        <a href="quality.html">质量</a>
+        <a href="MindTrace-Portfolio.pdf">PDF</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" style="grid-template-columns: 1fr; padding-bottom: 24px;">
+      <div>
+        <span class="eyebrow">Quality &amp; Boundaries</span>
+        <h1 style="font-size: clamp(32px, 5vw, 48px);">相似不等于重复，<em>写入必须幂等</em></h1>
+        <p class="lead">判重、幂等写入和测试门禁解决的是同一个问题：跨入口、跨进程改同一份数据时，结果要可预测。</p>
+      </div>
+    </section>
+
+    <section class="section" style="border-top: 0; padding-top: 8px;">
+      <img class="diagram" src="assets/dedupe-tree.svg" alt="判重三分类决策树">
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>三种裁决</h2>
+        <p>补充内容不应该因为“像”被丢掉；这是判重设计里最重要的产品判断。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>裁决</th><th>含义</th><th>动作</th><th>用户可见</th></tr></thead>
+          <tbody>
+            <tr><td><strong>same</strong></td><td>同一内容</td><td>不重复写，复用已有笔记</td><td>“已保存（复用）：……”</td></tr>
+            <tr><td><strong>supplement</strong></td><td>相关但新增了信息</td><td>照常写入，并发 append 建议</td><td>新笔记 + 合并建议</td></tr>
+            <tr><td><strong>different</strong></td><td>只是相似，不是同一主题</td><td>新建笔记</td><td>正常保存</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>为什么不能砍掉 LLM 仲裁</h2>
+        <p>18 条标定样本给出的结论是否定的：高分段不足以区分 same 和 supplement。</p>
+      </div>
+      <div class="grid-3">
+        <div class="card"><h3>18</h3><p>去重后的标定样本</p></div>
+        <div class="card"><h3>0.781–0.960</h3><p>向量分范围</p></div>
+        <div class="card"><h3>0</h3><p>different 负样本，无法估计误合并率</p></div>
+      </div>
+      <div class="note" style="margin-top: 18px;">
+        same 最高 0.960，supplement 最高 0.953，在高分段完全重叠，而两者的正确动作相反（拦下 vs 写入）。所以当前必须保留 LLM 仲裁，不能按向量分设免仲裁窗口。
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>幂等写入</h2>
+        <p>确认、重试、跨进程补偿都可能重复调用同一次写入。</p>
+      </div>
+      <div class="grid-2">
+        <article class="card">
+          <span class="tag">契约</span>
+          <h3>ReviewWritePort</h3>
+          <p>用 operationId 标识一次写入；重复调用返回同一结果，不重复创建笔记。端口定义在 common，适配器在 entry。</p>
+        </article>
+        <article class="card">
+          <span class="tag">数据</span>
+          <h3>schema v23 · review_op</h3>
+          <p>数据库记录操作结果，支持跨进程重放；迁移测试覆盖 22→23 的升级路径。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>质量门禁</h2>
+        <p>这些检查在本地提交前跑，不依赖 CI 才发现问题。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>检查</th><th>结果</th><th>作用</th></tr></thead>
+          <tbody>
+            <tr><td>arkts-lint</td><td><span class="badge ok">PASS</span></td><td>ArkTS 严格模式规则</td></tr>
+            <tr><td>naming-lint</td><td><span class="badge ok">PASS</span></td><td>文件、目录、符号命名</td></tr>
+            <tr><td>link-check</td><td><span class="badge ok">PASS</span></td><td>文档链接可达</td></tr>
+            <tr><td>doc-trace</td><td><span class="badge ok">PASS</span></td><td>文档索引与编号唯一</td></tr>
+            <tr><td>process-boundary</td><td><span class="badge ok">PASS</span></td><td>6 个入口 / 429 个文件可达，受限能力不越界</td></tr>
+            <tr><td>hypium-check</td><td><span class="badge ok">PASS</span></td><td>22 个测试源与生成物一致</td></tr>
+            <tr><td>unit-tests</td><td><span class="badge ok">1,361 通过</span></td><td>契约测试 + 单元测试</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>验证边界</h2>
+        <p>“已实现”不等于“已验证”；下面把差距单独列出来。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>能力</th><th>状态</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>应用内拍照 / 批量 / 文字</td><td><span class="badge ok">已验证</span></td><td>真机批量、OCR、草稿确认与入库</td></tr>
+            <tr><td>A2A 草稿确认 / 二次操作</td><td><span class="badge ok">已验证</span></td><td>3XTYD24C16203663 真机 + 冒烟脚本</td></tr>
+            <tr><td>混合检索 / 证据判定</td><td><span class="badge ok">已验证</span></td><td>MathNet 离线评测 + 真机探针</td></tr>
+            <tr><td>判重三分类 / 幂等写入</td><td><span class="badge ok">已验证</span></td><td>契约测试 + schema v23 迁移</td></tr>
+            <tr><td>A2A 图片输入</td><td><span class="badge blocked">平台阻塞</span></td><td>小艺客户端不下发 image parts；应用内批量不受影响</td></tr>
+            <tr><td>A2A 长文本流式</td><td><span class="badge partial">部分</span></td><td>短回复可增量渲染；长文本会被客户端截断</td></tr>
+            <tr><td>端侧模型</td><td><span class="badge partial">部分</span></td><td>受设备形态限制，未做全量验证</td></tr>
+            <tr><td>上架 / 意图注册</td><td><span class="badge blocked">暂缓</span></td><td>项目处于测试态，依赖平台审核与上架</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <span>MindTrace · 项目介绍</span>
+      <span>2026-11</span>
+      <a href="https://github.com/YunC-GCT/MindTrace">GitHub</a>
+      <a href="MindTrace-Portfolio.pdf">PDF</a>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

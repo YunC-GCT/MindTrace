@@ -84,8 +84,9 @@ test('wiring: VendorPicker API Key TextInput.onChange only updates local draft',
   assert.match(vp, /onChange\(\(v:\s*string\):\s*void\s*=>\s*\{\s*this\.apiKeyInput\s*=\s*v/, 'API Key onChange must update local draft');
 });
 
-test('wiring: VendorPicker model list ForEach reads from localModels draft', () => {
-  assert.match(vp, /ForEach\s*\(\s*this\.localModels/s, 'Model list ForEach must iterate localModels draft');
+test('wiring: VendorPicker model list ForEach reads from modelListings(catalog/vendor_models)', () => {
+  // 2026-10-25 Phase 1.5: chip 来源从 localModels draft 改为 catalog / vendor_models 投影
+  assert.match(vp, /ForEach\s*\(\s*this\.modelListings/s, 'Model list ForEach must iterate modelListings (catalog/vendor_models)');
 });
 
 test('wiring: VendorPicker model × button updates localModels draft', () => {

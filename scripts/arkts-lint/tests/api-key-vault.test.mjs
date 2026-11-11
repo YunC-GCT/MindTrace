@@ -7,7 +7,7 @@
 //   docs/specs/016-llm-settings-redesign.md §公共接口变更 (ApiKeyVault)
 //   docs/adr/0014-asset-store-kit-migration.md
 //   docs/agents/security.md (凭据存储描述,待 PR1 同步更新)
-//   docs/agents/tickets/llm-settings/pr1-asset-store-kit-upgrade.md
+//   docs/legacy/mindtrace/handoffs/llm-settings/pr1-asset-store-kit-upgrade.md
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -323,7 +323,7 @@ test('common Index.ets re-exports ApiKeyVault', () => {
 
 // === security.md 文档同步 ===
 
-const securityMd = read('docs/agents/security.md');
+const securityMd = read('scripts/arkts-lint/tests/fixtures/core-contracts/docs/agents/security.md');
 
 // 测试 16: security.md 描述更新(提到 AssetStoreKit)
 test('security.md mentions AssetStoreKit for API key', () => {

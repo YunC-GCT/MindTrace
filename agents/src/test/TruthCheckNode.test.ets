@@ -19,7 +19,7 @@
 
 import { describe, it, expect } from '@ohos/hypium';
 import { TruthCheckNodeFactory } from '../main/ets/graph/nodes/TruthCheckNode';
-import { TruthCheckService } from '../main/ets/agents/TruthCheckService';
+import { TruthCheckService } from '../main/ets/subagents/TruthCheckService';
 import { AgentState } from '../main/ets/graph/AgentState';
 import { MvpTruthCheckResult, MvpTruthCheckItem } from '../main/ets/models/TruthCheckResult';
 import { KnowledgeUnit, DifficultyLevel, ReviewStatus } from 'common';

@@ -9,7 +9,7 @@ const classify = readFileSync(resolve(root, 'agents/src/main/ets/graph/nodes/Cla
 const structure = readFileSync(resolve(root, 'agents/src/main/ets/graph/nodes/StructureNode.ets'), 'utf8');
 const truthCheck = readFileSync(resolve(root, 'agents/src/main/ets/graph/nodes/TruthCheckNode.ets'), 'utf8');
 const persist = readFileSync(resolve(root, 'agents/src/main/ets/graph/nodes/PersistNode.ets'), 'utf8');
-const knowledgeModel = readFileSync(resolve(root, 'agents/src/main/ets/agents/KnowledgeModel.ets'), 'utf8');
+const knowledgeModel = readFileSync(resolve(root, 'agents/src/main/ets/subagents/KnowledgeModel.ets'), 'utf8');
 
 test('CaptureGraph nodes are exposed via factory pattern', () => {
   assert.match(ocr, /class OcrNodeFactory/);

@@ -162,14 +162,60 @@ export function hasDetailMeta(model: DetailRenderModel): boolean {
     || originalSectionText(model).length > 0
 }
 
+function fenceOpeningDelimiter(line: string): string {
+  const trimmed: string = line.trim()
+  if (trimmed === '$$' || trimmed === '\\[') {
+    return trimmed
+  }
+  const cleaned: string = cleanListPrefix(trimmed)
+  if (cleaned === '$$' || cleaned === '\\[') {
+    return cleaned
+  }
+  return ''
+}
+
+function fenceClosingDelimiter(opener: string): string {
+  return opener === '$$' ? '$$' : '\\]'
+}
+
+function isFenceClosingLine(line: string, delimiter: string): boolean {
+  return cleanListPrefix(line.trim()) === delimiter
+}
+
+function readableFenceLine(line: string, delimiter: string): string {
+  return line.trim() === delimiter ? line : delimiter
+}
+
 export function splitReadableLines(content: string): string[] {
   const result: string[] = []
   const lines: string[] = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
-  for (const line of lines) {
-    const cleaned: string = cleanListPrefix(line.trim())
+  let index: number = 0
+  while (index < lines.length) {
+    const rawLine: string = lines[index]
+    const opener: string = fenceOpeningDelimiter(rawLine)
+    if (opener.length > 0) {
+      const closer: string = fenceClosingDelimiter(opener)
+      const block: string[] = []
+      block.push(readableFenceLine(rawLine, opener))
+      index += 1
+      while (index < lines.length) {
+        const bodyLine: string = lines[index]
+        if (isFenceClosingLine(bodyLine, closer)) {
+          block.push(readableFenceLine(bodyLine, closer))
+          index += 1
+          break
+        }
+        block.push(bodyLine)
+        index += 1
+      }
+      result.push(block.join('\n'))
+      continue
+    }
+    const cleaned: string = cleanListPrefix(rawLine.trim())
     if (cleaned.length > 0) {
       result.push(cleaned)
     }
+    index += 1
   }
   if (result.length === 0 && content.trim().length > 0) {
     result.push(content.trim())

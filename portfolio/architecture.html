@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>架构 · MindTrace</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="architecture.html">
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="index.html">MIND<span>TRACE</span></a>
+      <button class="nav-toggle" type="button" aria-label="打开导航">菜单</button>
+      <div class="nav-links">
+        <a href="index.html">概览</a>
+        <a href="flow.html">产品流程</a>
+        <a href="architecture.html">架构</a>
+        <a href="a2a.html">A2A</a>
+        <a href="retrieval.html">检索</a>
+        <a href="quality.html">质量</a>
+        <a href="MindTrace-Portfolio.pdf">PDF</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" style="grid-template-columns: 1fr; padding-bottom: 24px;">
+      <div>
+        <span class="eyebrow">Architecture</span>
+        <h1 style="font-size: clamp(32px, 5vw, 48px);">五个模块，<em>三条硬边界</em></h1>
+        <p class="lead">模块数量不是重点；重点是页面不直接碰图执行器，agents 不反向依赖 entry，数据契约留在 common。</p>
+      </div>
+    </section>
+
+    <section class="section" style="border-top: 0; padding-top: 8px;">
+      <img class="diagram" src="assets/architecture.svg" alt="五模块架构图">
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>模块职责</h2>
+        <p>三个 HAP 负责入口与系统能力，两个 HSP 负责编排、契约与数据。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>模块</th><th>类型</th><th>职责</th><th>不做什么</th></tr></thead>
+          <tbody>
+            <tr><td><strong>entry</strong></td><td>HAP</td><td>页面、浮窗、设置、A2A 扩展能力、ConversationRuntime</td><td>不直接 import CaptureGraph / CommandExecutor / NoteDao</td></tr>
+            <tr><td><strong>skill</strong></td><td>HAP</td><td>小艺意图与技能入口</td><td>测试态暂缓，依赖上架</td></tr>
+            <tr><td><strong>cardservice</strong></td><td>HAP</td><td>服务卡片与学习概览快照</td><td>不承载业务编排</td></tr>
+            <tr><td><strong>agents</strong></td><td>HSP</td><td>Dispatcher、CaptureGraph、子代理、对话工作流、草稿提交</td><td>不 import entry，不持有页面状态</td></tr>
+            <tr><td><strong>common</strong></td><td>HSP</td><td>端口、模型、数据库、LLM 配置、检索与证据契约</td><td>不依赖 UI</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>三条硬边界</h2>
+        <p>这些边界由静态检查守住，不靠口头约定。</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <span class="tag">边界 01</span>
+          <h3>agents 不依赖 entry</h3>
+          <p>工作流可以被 A2A、应用内、后台任务复用；如果 agents 反向 import entry，三个入口就会重新耦合。</p>
+        </article>
+        <article class="card">
+          <span class="tag">边界 02</span>
+          <h3>页面不碰执行器</h3>
+          <p>pages / overlays 只能通过服务层调用，不能直接 import CaptureGraph、CommandExecutor 或 NoteDao。</p>
+        </article>
+        <article class="card">
+          <span class="tag">边界 03</span>
+          <h3>不新增第 6 个模块</h3>
+          <p>新能力优先放进 common 的端口或 agents 的子代理；只有系统入口确实不同才新增 HAP。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>本地与云端</h2>
+        <p>笔记不出设备是产品差异点，但“生成”和“向量”需要外部服务，边界必须说清楚。</p>
+      </div>
+      <div class="grid-2">
+        <article class="card">
+          <span class="tag">留在设备</span>
+          <h3>笔记、草稿、计划、判重、检索</h3>
+          <p>RDB / FTS5 / 向量索引、草稿文件、计划文件、inbox、回执都在应用沙箱；判重与证据判定优先在端侧完成。</p>
+        </article>
+        <article class="card">
+          <span class="tag">会出网</span>
+          <h3>用户配置的 LLM 与向量服务</h3>
+          <p>生成笔记、回答、查询改写会调用用户配置的模型；embedding 可走本机 BGE 服务或兼容 OpenAI 接口的端点。</p>
+        </article>
+      </div>
+      <div class="note" style="margin-top: 18px;">
+        小艺 A2A 只把用户主动发送的消息和生成所需的最小上下文带进扩展；本地笔记不会因为 A2A 而整体上传。
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>工程规模</h2>
+        <p>规模只作为背景，不作为能力证明。</p>
+      </div>
+      <div class="grid-3">
+        <div class="card"><h3>576</h3><p>ArkTS 文件</p></div>
+        <div class="card"><h3>约 2.2 万行</h3><p>ArkTS 代码</p></div>
+        <div class="card"><h3>24 + 35</h3><p>ADR + spec 文档</p></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <span>MindTrace · 项目介绍</span>
+      <span>2026-11</span>
+      <a href="https://github.com/YunC-GCT/MindTrace">GitHub</a>
+      <a href="MindTrace-Portfolio.pdf">PDF</a>
+    </div>
+  </footer>
+  <script src="assets/site.js"></script>
+</body>
+</html>

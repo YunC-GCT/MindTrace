@@ -1,6 +1,6 @@
 # MindTrace 协作说明
 
-MindTrace 是面向数学学习的 HarmonyOS 原生智能笔记与可追溯复习应用。仓库采用 1 个 HAP 与 4 个 HSP：
+MindTrace 是面向数学学习的 HarmonyOS 原生智能笔记与可追溯复习应用。仓库采用 3 个 HAP 与 2 个 HSP：
 
 - `entry`：主应用、页面、业务服务与数据访问。
 - `common`：公共模型、StateGraph、LLM 调用、工具与协议。
@@ -10,7 +10,7 @@ MindTrace 是面向数学学习的 HarmonyOS 原生智能笔记与可追溯复�
 
 ## 参赛提交边界
 
-`main` 分支作为参赛提交包使用，应保持简洁。README、基础使用说明、项目术语、代码规范和必要工具说明可以保留；调研、测试过程、缺陷修复记录、handoff、来源索引、旧审计和历史计划不进入主分支提交包。
+`main` 分支作为核心项目提交包使用，应保持简洁。README、基础使用说明、项目术语、代码规范和必要工具说明可以保留；调研、测试过程、缺陷修复记录、handoff、来源索引、旧审计和历史计划不进入主分支提交包。
 
 ## 开发约定
 
@@ -31,6 +31,14 @@ npm --prefix scripts/arkts-lint test
 ```
 
 HarmonyOS 构建与运行使用 DevEco Studio，OCR 服务说明见 `tools/ocr_service/README.md`。
+
+## 交付约束
+
+- 核心功能从 develop 冻结到 release/*，通过 PR 提交 main，由用户 review 和合并。
+- 未经用户明确说 push，绝不推送。
+- 改动后运行 node scripts/agent-gate/index.mjs --all，交付附 RESULT。
+- 测试态，未上架；A2A 改动须有真机冒烟证据才能声明可用。
+- 历史过程材料与设计依据见 [冻结的 develop](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/index.md)。
 
 ## 演示重点
 

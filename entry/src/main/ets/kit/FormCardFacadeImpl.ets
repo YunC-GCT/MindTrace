@@ -14,7 +14,12 @@
  */
 import { common } from '@kit.AbilityKit';
 import { formBindingData, formInfo, formProvider } from '@kit.FormKit';
+import { BusinessError } from '@kit.BasicServicesKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { CardSnapshot, CardSnapshotBinding, CardSnapshotStore, FormCardFacade } from 'common';
+
+const DOMAIN: number = 0xC4D1;
+const TAG: string = 'FormCard';
 
 export class FormCardFacadeImpl implements FormCardFacade {
   private readonly context: common.UIAbilityContext;
@@ -24,15 +29,30 @@ export class FormCardFacadeImpl implements FormCardFacade {
   }
 
   async pushSnapshot(snapshot: CardSnapshot): Promise<void> {
+    // 快照先落 preferences：卡片 onAddForm 读的就是这份，没加卡片时也不能丢
     CardSnapshotStore.save(this.context, snapshot);
     const binding: formBindingData.FormBindingData =
       formBindingData.createFormBindingData(new CardSnapshotBinding(snapshot));
-    const forms: formInfo.RunningFormInfo[] = await formProvider.getPublishedRunningFormInfos();
+    let forms: formInfo.RunningFormInfo[] = [];
+    try {
+      forms = await formProvider.getPublishedRunningFormInfos();
+    } catch (error) {
+      // 桌面没加卡片时系统会抛「Failed to obtain the configuration information」，
+      // 这是正常状态，不是故障：快照已落盘，等卡片加上后 onAddForm 自会读到。
+      const e: BusinessError = error as BusinessError;
+      hilog.warn(DOMAIN, TAG, '%{public}s', 'no running forms: ' + e.message);
+      return;
+    }
+    let pushed: number = 0;
     for (const form of forms) {
       if (form.moduleName === 'cardservice' && form.formName === 'TodayReviewCard') {
         await formProvider.updateForm(form.formId, binding);
+        pushed += 1;
       }
     }
+    hilog.info(DOMAIN, TAG, '%{public}s',
+      'forms=' + forms.length.toString() + ' pushed=' + pushed.toString()
+        + ' due=' + snapshot.todayReviewCount.toString() + ' new=' + snapshot.newUnitCount.toString());
   }
 }
 

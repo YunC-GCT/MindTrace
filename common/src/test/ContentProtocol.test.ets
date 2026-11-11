@@ -38,8 +38,8 @@ export default function contentProtocolTest(): void {
       expect(result.fallbackRequired).assertFalse();
       expect(result.normalizedText).assertContain('$$\na=b\n$$');
       expect(result.normalizedText).assertContain('$$\nc=d\n$$');
-      expect(result.normalizedText.indexOf('a=b')).assertTrue();
-      expect(result.normalizedText.indexOf('c=d')).assertTrue();
+      expect(result.normalizedText.indexOf('a=b') >= 0).assertTrue();
+      expect(result.normalizedText.indexOf('c=d') > result.normalizedText.indexOf('a=b')).assertTrue();
     });
 
     it('keeps_complex_display_formula_fixture_renderable', 0, () => {

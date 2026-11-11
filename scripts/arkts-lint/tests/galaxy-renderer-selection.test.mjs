@@ -16,11 +16,11 @@ async function loadSelection() {
   return import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 }
 
-test('renderer selection prefers native then falls back through web to 2D', async () => {
+test('temporary renderer policy uses web even on native-capable devices and never falls back to 2D', async () => {
   const { chooseInitialGalaxyRenderer, nextGalaxyRendererMode } = await loadSelection();
-  assert.equal(chooseInitialGalaxyRenderer(true), 'native');
+  assert.equal(chooseInitialGalaxyRenderer(true), 'web');
   assert.equal(nextGalaxyRendererMode('native', 'native_failure'), 'web');
-  assert.equal(nextGalaxyRendererMode('web', 'web_failure'), 'fallback');
+  assert.equal(nextGalaxyRendererMode('web', 'web_failure'), 'unavailable');
 });
 
 test('renderer selection starts with web when native capability is absent', async () => {
@@ -33,5 +33,7 @@ test('renderer selection starts with web when native capability is absent', asyn
 test('stale renderer events cannot replace the active renderer', async () => {
   const { nextGalaxyRendererMode } = await loadSelection();
   assert.equal(nextGalaxyRendererMode('web', 'native_failure'), 'web');
-  assert.equal(nextGalaxyRendererMode('fallback', 'web_ready'), 'fallback');
+  assert.equal(nextGalaxyRendererMode('unavailable', 'web_ready'), 'unavailable');
+  assert.equal(nextGalaxyRendererMode('unavailable', 'native_ready'), 'unavailable');
+  assert.equal(nextGalaxyRendererMode('native', 'web_failure'), 'native');
 });

@@ -1,14 +1,17 @@
 /**
  * llm-config-throw.test.mjs — TDD test for ticket #9
  *
- * Asserts that common/src/main/ets/llm/LlmConfig.ets has throw paths
- * in `normalizeEndpoint` and `normalizeModel` for reserved keywords.
+ * Asserts that common/src/main/ets/llm/LlmConfig.ets keeps the reserved-keyword
+ * throw path in `normalizeEndpoint`.
  *
  * Per ticket #9 / spec 009:
  *   - normalizeEndpoint('siliconflow...') must throw LlmError, not silently
  *     return DEFAULT_ENDPOINT
- *   - legacy fallback keywords such as 'v3' / non-allowlisted 'flash' / 'r1'
- *     must throw LlmError, not silently return DEFAULT_MODEL
+ *
+ * Phase 1 (2026-10-25) update:
+ *   - normalizeModel no longer throws on 'v3' / 'flash' / 'r1' substrings.
+ *     It delegates to model-resolver: catalog IDs are valid, aliases normalize,
+ *     unknown IDs are preserved with MODEL_ID_UNRESOLVED.
  *
  * Note: This is a static AST-level check. The real behavioral test is
  * a Hypium test in entry/src/ohosTest/ets/test/LlmConfig.test.ets.
@@ -28,6 +31,30 @@ const TARGET_FILE = join(REPO_ROOT, 'common/src/main/ets/llm/LlmConfig.ets');
 
 function readLlmConfigSource() {
   return readFileSync(TARGET_FILE, 'utf8').replace(/\r\n/g, '\n');
+}
+
+function findMethodBody(src, signaturePattern) {
+  const signature = src.match(signaturePattern);
+  if (signature === null || signature.index === undefined) {
+    return null;
+  }
+  const openIndex = src.indexOf('{', signature.index);
+  if (openIndex < 0) {
+    return null;
+  }
+  let depth = 0;
+  for (let index = openIndex; index < src.length; index++) {
+    const ch = src[index];
+    if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return src.slice(openIndex + 1, index);
+      }
+    }
+  }
+  return null;
 }
 
 function findBranchBodyContainingNth(src, marker, n = 1) {
@@ -125,7 +152,9 @@ test('LlmConfig: file exists and is parseable', () => {
 
 test('LlmConfig: normalizeEndpoint throws on reserved keyword (siliconflow)', () => {
   const src = readLlmConfigSource();
-  const body = findBranchBodyContaining(src, 'siliconflow');
+  const methodBody = findMethodBody(src, /private\s+normalizeEndpointForVendor\s*\(/);
+  assert.ok(methodBody !== null, 'normalizeEndpointForVendor body not found');
+  const body = findBranchBodyContaining(methodBody, 'siliconflow');
   assert.ok(body !== null, 'siliconflow branch not found in normalizeEndpoint');
   assert.match(body, /throw/, 'siliconflow branch must throw');
   assert.match(body, /LlmError/, 'throw must use LlmError type');
@@ -136,18 +165,20 @@ test('LlmConfig: normalizeEndpoint throws on reserved keyword (siliconflow)', ()
   );
 });
 
-test('LlmConfig: normalizeModel throws on each reserved keyword', () => {
+test('LlmConfig: normalizeModel delegates to the model resolver (no keyword throw)', () => {
   const src = readLlmConfigSource();
-  // 'v3' is unique to normalizeModel's OR chain
-  const body = findBranchBodyContaining(src, "'v3'");
-  assert.ok(body !== null, 'reserved-keyword OR-branch not found in normalizeModel');
-  assert.match(body, /throw/, 'reserved-keyword branch must throw');
-  assert.match(body, /LlmError/, 'throw must use LlmError type');
-  assert.doesNotMatch(
-    body,
-    /return\s+DEFAULT_/,
-    'reserved-keyword branch must NOT silently return DEFAULT value'
-  );
+  const body = findMethodBody(src, /private\s+normalizeModelForVendor\s*\(/);
+  assert.ok(body !== null, 'normalizeModelForVendor body not found');
+  assert.match(body, /resolveModel\s*\(\s*vendorId\s*,\s*v\s*\)/,
+    'normalizeModelForVendor must delegate to resolveModel(vendorId, v)');
+  assert.match(body, /return\s+resolved\.canonicalId/,
+    'normalizeModelForVendor must return the resolved canonical ID');
+  assert.doesNotMatch(body, /NORMALIZE_KEYWORD_REJECTED/,
+    'normalizeModel must no longer throw on model keywords');
+  assert.doesNotMatch(body, /isAllowedDeepSeekModel/,
+    'normalizeModel must no longer use the three-string allowlist');
+  assert.doesNotMatch(body, /indexOf\(['"]flash['"]\)/,
+    'normalizeModel must no longer reject the flash substring');
 });
 
 test('LlmConfig: empty input still returns DEFAULT (positive test)', () => {

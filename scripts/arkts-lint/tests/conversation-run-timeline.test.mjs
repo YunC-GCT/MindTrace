@@ -9,9 +9,14 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const facade = read('entry/src/main/ets/services/AgentChatService.ets');
 const contracts = read('entry/src/main/ets/services/AgentChatContracts.ets');
 const adapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');
-const ports = read('entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets');
-const types = read('entry/src/main/ets/workflows/conversation/ConversationTypes.ets');
-const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const ports = read('agents/src/main/ets/conversation/ConversationWorkflowPorts.ets');
+const types = read('agents/src/main/ets/conversation/ConversationTypes.ets');
+const workflow = [
+  read('agents/src/main/ets/conversation/ConversationWorkflow.ets'),
+  read('agents/src/main/ets/conversation/ConversationReplyHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationNoteHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationReviewHandler.ets'),
+].join('\n');
 const reducer = read('entry/src/main/ets/services/ConversationSessionReducer.ets');
 const models = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets');
 const runModels = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/AgentRunModels.ets');
@@ -25,7 +30,7 @@ test('workflow status and errors use the typed ordered run event sink', () => {
   assert.match(adapter, /this\.callbacks\.updateRunEvent\(ref, event\)/);
   assert.match(workflow, /this\.reportRunError\(runRef, error\)/);
   assert.match(workflow, /this\.cbs\.onError\(ref, ConversationWorkflow\.userFacingWorkflowError\(error\)\)/);
-  const handledFailureReports = workflow.match(/this\.finishRunFailure\([^;]+\);/g) ?? [];
+  const handledFailureReports = workflow.match(/finishRunFailure\([^;]+\);/g) ?? [];
   assert.ok(handledFailureReports.length >= 4);
   assert.doesNotMatch(adapter, /setStatusMeta/);
 });
@@ -53,7 +58,8 @@ test('note progress updates one stable card per phase', () => {
 test('conversation forwards real note progress without legacy note status steps', () => {
   assert.match(ports, /NoteGenerationProgressSink/);
   assert.match(ports, /progressSink\?: NoteGenerationProgressSink/);
-  assert.match(aiService, /progressSink: progressSink/);
+  const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
+  assert.match(pipeline, /progressSink: progressSink/);
   assert.match(types, /onNoteGenerationProgress\(ref: ConversationRunRef, event: NoteGenerationProgressEvent\): void/);
   assert.match(workflow, /this\.cbs\.onNoteGenerationProgress\(ref, event\)/);
   assert.match(adapter, /progressKey: 'note-generation:' \+ progress\.phase/);
@@ -61,7 +67,7 @@ test('conversation forwards real note progress without legacy note status steps'
 });
 
 test('ordinary chat request types cannot carry note-generation route state', () => {
-  const state = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+  const state = read('agents/src/main/ets/conversation/ConversationState.ets');
   assert.doesNotMatch(state, /route\?: NoteGenerationRoute/);
   assert.doesNotMatch(facade, /realReplyStream\([^)]*NoteGenerationRoute/);
   assert.doesNotMatch(contracts, /getNoteGenerationRoute/);

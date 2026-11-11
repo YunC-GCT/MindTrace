@@ -1,26 +1,26 @@
 /**
- * NoteItemMapper.ets ¡ª KnowledgeUnit ¡ú NoteItem ÊÓÍ¼²ã×ª»»
+ * NoteItemMapper.ets â€” KnowledgeUnit â†’ NoteItem è§†å›¾å±‚è½¬æ¢
  *
- * Â·¾¶: entry/src/main/ets/utils/NoteItemMapper.ets
- * Ö°Ôğ: °Ñ common Ä£¿éµÄ KnowledgeUnit (³Ö¾Ã»¯ÒµÎñÄ£ĞÍ) ×ª»»³É
- *       UI ÓÃµÄ NoteItem ÊÓÍ¼Ä£ĞÍ£¬¹© NotesPage / NotesList äÖÈ¾¡£
- * ÒÀÀµ: common (KnowledgeUnit / NoteItem / ReviewStatus ÀàĞÍ)
+ * è·¯å¾„: entry/src/main/ets/utils/NoteItemMapper.ets
+ * èŒè´£: æŠŠ common æ¨¡å—çš„ KnowledgeUnit (æŒä¹…åŒ–ä¸šåŠ¡æ¨¡å‹) è½¬æ¢æˆ
+ *       UI ç”¨çš„ NoteItem è§†å›¾æ¨¡å‹ï¼Œä¾› NotesPage / NotesList æ¸²æŸ“ã€‚
+ * ä¾èµ–: common (KnowledgeUnit / NoteItem / ReviewStatus ç±»å‹)
  *
- * Êı¾İÁ÷:
- *   KnowledgeUnit (DB/AI ²ú³ö)
- *     ¡ú unitToNoteItem(unit)
- *       ¡ú stableNumericId(unit.id)         // ×Ö·û´® ID ¡ú 32 Î»ÕûÊı (UI ÁĞ±í key ÓÃ)
- *       ¡ú confidence(unit.reviewStatus)     // ReviewStatus ¡ú 0-1 ÕÆÎÕ¶È
- *       ¡ú dateText(unit.createdAt)         // Ê±¼ä´Á ¡ú yyyy-MM-dd
- *     ¡ú NoteItem (UI Ö±½ÓäÖÈ¾)
+ * æ•°æ®æµ:
+ *   KnowledgeUnit (DB/AI äº§å‡º)
+ *     â†’ unitToNoteItem(unit)
+ *       â†’ stableNumericId(unit.id)         // å­—ç¬¦ä¸² ID â†’ 32 ä½æ•´æ•° (UI åˆ—è¡¨ key ç”¨)
+ *       â†’ confidence(unit.reviewStatus)     // ReviewStatus â†’ 0-1 æŒæ¡åº¦
+ *       â†’ dateText(unit.createdAt)         // æ—¶é—´æˆ³ â†’ yyyy-MM-dd
+ *     â†’ NoteItem (UI ç›´æ¥æ¸²æŸ“)
  *
- * ReviewStatus ¡ú ÕÆÎÕ¶ÈÓ³Éä:
- *   GRADUATED 0.95 | REVIEW 0.86 | LEARNING 0.72 | LAPSED 0.45 | Ä¬ÈÏ 0.64
+ * ReviewStatus â†’ æŒæ¡åº¦æ˜ å°„:
+ *   GRADUATED 0.95 | REVIEW 0.86 | LEARNING 0.72 | LAPSED 0.45 | é»˜è®¤ 0.64
  *
- * ArkTS 1.1 strict ÊÊÅä:
- *   - stableNumericId ÓÃ for...of Ìæ´ú while + ÊÖ¶¯ idx µİÔö
- *   - JSON.parse Ç¿×ª as string[] ºóÖğÏî typeof ¼ì²é¶µµ×
- *   - ÎŞ any / unknown£¬´íÎóÍ³Ò» (e as Error).message
+ * ArkTS 1.1 strict é€‚é…:
+ *   - stableNumericId ç”¨ for...of æ›¿ä»£ while + æ‰‹åŠ¨ idx é€’å¢
+ *   - JSON.parse å¼ºè½¬ as string[] åé€é¡¹ typeof æ£€æŸ¥å…œåº•
+ *   - æ—  any / unknownï¼Œé”™è¯¯ç»Ÿä¸€ (e as Error).message
  */
 import {
   ContentExcerptBuilder,
@@ -75,7 +75,7 @@ function firstReturnedFeature(tags: string[]): string {
       return normalizeNoteType(t)
     }
   }
-  return "±Ê¼Ç"
+  return "ç¬”è®°"
 }
 
 function stableNumericId(id: string): number {

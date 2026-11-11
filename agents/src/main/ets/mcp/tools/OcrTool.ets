@@ -1,7 +1,18 @@
-import { textRecognition } from '@kit.CoreVisionKit';
-import { image } from '@kit.ImageKit';
+// ============================================================================
+//  mcp/tools/OcrTool.ets — OCR MCP 工具 (本地文本 OCR + 服务端兜底)
+//  ----------------------------------------------------------------------------
+//  路径: agents/src/main/ets/mcp/tools/OcrTool.ets
+//  职责: 对外保留 OcrTool 的 MCP 语义与 formula/上传逻辑; 本地文本识别改走
+//        common 的 OcrRecognizer 端口 (Kit 实现由 entry 的 CoreVisionOcrRecognizer 注入)。
+//  依赖: @kit.NetworkKit (http), common (OcrConfig / OcrRecognizerRegistry / 端口类型)
+//  数据流: TypeClassifier.recognize → recognize(uri) → recognizeImage
+//          → OcrRecognizerRegistry.require().recognize (本地文本)
+//          → requestCombinedWithRetry (服务端文本兜底 + 公式)
+// ============================================================================
+
 import { http } from '@kit.NetworkKit';
-import { OcrConfig } from 'common';
+import { OcrConfig, OcrRecognizerRegistry } from 'common';
+import type { OcrRecognizer, OcrTextResult } from 'common';
 
 export interface OcrRecognitionResult {
   success: boolean;
@@ -49,6 +60,11 @@ interface OcrUploadFile {
  * - The local OCR service is used as fallback text OCR and formula OCR.
  * - A partial result still succeeds when either text or formula recognition works.
  */
+// v1 决定：OCR 全量走 Core Vision Kit，自研 OCR 服务不接线。
+// 下面的 HTTP 兜底代码保留为 MCP 接口的一部分（v2 再接），运行时由这个开关关闭：
+// 关掉后 recognizeImage 只调 Kit，Kit 出不来就直接失败，不再等本地服务。
+const SERVER_FALLBACK_ENABLED: boolean = false;
+
 export class OcrTool {
   private formulaEndpoint: string;
 
@@ -109,6 +125,8 @@ export class OcrTool {
   }
 
   async recognizeImage(imageUri: string): Promise<OcrRecognitionResult> {
+    // 端口未安装属于接线错误: 直接抛明确错误, 不降级到服务端, 也不静默返回空结果。
+    const recognizer: OcrRecognizer = OcrRecognizerRegistry.require();
     const filePath: string = this.normalizeFilePath(imageUri);
     const mode: string = OcrConfig.getInstance().getMode();
     let textLines: string[] = [];
@@ -118,12 +136,13 @@ export class OcrTool {
     let usedServerFallback: boolean = false;
 
     try {
-      textLines = await this.recognizeLocalText(filePath);
+      textLines = await this.recognizeLocalText(recognizer, filePath);
     } catch (e) {
       textError = this.errorText(e as OcrError);
     }
 
-    if (textError.length > 0 || mode !== 'text') {
+    // v1: 自研 OCR/公式服务不接（SERVER_FALLBACK_ENABLED=false），只认 Kit 结果
+    if (SERVER_FALLBACK_ENABLED && (textError.length > 0 || mode !== 'text')) {
       try {
         const response: CombinedOcrResponse = await this.requestCombinedWithRetry(filePath, mode);
         if (response.success) {
@@ -173,57 +192,14 @@ export class OcrTool {
     };
   }
 
-  private async recognizeLocalText(filePath: string): Promise<string[]> {
-    if (!canIUse('SystemCapability.AI.OCR.TextRecognition')) {
-      throw new Error('CoreVisionKit text OCR is not supported on this device');
+  private async recognizeLocalText(recognizer: OcrRecognizer, filePath: string): Promise<string[]> {
+    // Kit 实现已抽到 entry 的 CoreVisionOcrRecognizer; 本方法只依赖 common 端口契约。
+    const result: OcrTextResult = await recognizer.recognize(filePath);
+    if (result.text.length === 0) {
+      return [];
     }
-
-    const source: image.ImageSource = image.createImageSource(filePath);
-    let pixelMap: image.PixelMap | undefined = undefined;
-    let serviceInitialized: boolean = false;
-
-    try {
-      pixelMap = await source.createPixelMap({
-        editable: false,
-        desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
-      });
-
-      serviceInitialized = await textRecognition.init();
-      if (!serviceInitialized) {
-        throw new Error('CoreVisionKit initialization failed');
-      }
-
-      const result: textRecognition.TextRecognitionResult =
-        await textRecognition.recognizeText({ pixelMap: pixelMap });
-      return this.extractTextLines(result);
-    } finally {
-      if (serviceInitialized) {
-        await textRecognition.release();
-      }
-      if (pixelMap !== undefined) {
-        await pixelMap.release();
-      }
-      await source.release();
-    }
-  }
-
-  private extractTextLines(result: textRecognition.TextRecognitionResult): string[] {
-    const lines: string[] = [];
-    for (let blockIndex = 0; blockIndex < result.blocks.length; blockIndex++) {
-      const block: textRecognition.TextBlock = result.blocks[blockIndex];
-      for (let lineIndex = 0; lineIndex < block.lines.length; lineIndex++) {
-        const value: string = block.lines[lineIndex].value.trim();
-        if (value.length > 0) {
-          lines.push(value);
-        }
-      }
-    }
-
-    const fullText: string = result.value.trim();
-    if (lines.length === 0 && fullText.length > 0) {
-      lines.push(fullText);
-    }
-    return lines;
+    // 适配器按行 join 成 text; 这里还原 textLines, 保持 OcrRecognitionResult 结构不变。
+    return result.text.split('\n');
   }
 
   private resolveFormulaEndpoint(): string {

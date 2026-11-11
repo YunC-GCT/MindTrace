@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" role="img" aria-label="MindTrace 混合检索管线：五路召回、RRF 融合、条件重排与查询改写、证据判定、带来源回答">
+  <defs>
+    <marker id="rp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .t { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+      .h { font-size: 14px; font-weight: 700; fill: #0f172a; }
+      .s { font-size: 11px; fill: #64748b; }
+      .n { font-size: 11px; font-weight: 700; fill: #0f766e; letter-spacing: 1px; }
+      .box { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.4; }
+      .accent { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.6; }
+      .blue { fill: #eff6ff; stroke: #3b82f6; stroke-width: 1.4; }
+    </style>
+  </defs>
+
+  <rect width="960" height="400" fill="#f8fafc"/>
+  <text x="40" y="36" class="t n">RETRIEVAL PIPELINE</text>
+  <text x="40" y="62" class="t h" font-size="20">五路召回先融合，再判断“这些材料够不够回答”</text>
+
+  <!-- channels -->
+  <g class="t">
+    <rect x="40" y="88" width="214" height="42" rx="9" class="box"/>
+    <text x="56" y="106" class="h" font-size="12">整句 FTS</text>
+    <text x="56" y="121" class="s">trigram，整句命中优先</text>
+
+    <rect x="40" y="140" width="214" height="42" rx="9" class="box"/>
+    <text x="56" y="158" class="h" font-size="12">数学签名</text>
+    <text x="56" y="173" class="s">公式/符号归一后匹配</text>
+
+    <rect x="40" y="192" width="214" height="42" rx="9" class="box"/>
+    <text x="56" y="210" class="h" font-size="12">词 OR</text>
+    <text x="56" y="225" class="s">中文分词后的关键词</text>
+
+    <rect x="40" y="244" width="214" height="42" rx="9" class="box"/>
+    <text x="56" y="262" class="h" font-size="12">短词 LIKE</text>
+    <text x="56" y="277" class="s">短查询/生僻词的兜底</text>
+
+    <rect x="40" y="296" width="214" height="42" rx="9" class="box"/>
+    <text x="56" y="314" class="h" font-size="12">稠密向量</text>
+    <text x="56" y="329" class="s">bge-m3，本地服务优先</text>
+  </g>
+
+  <!-- converge -->
+  <path d="M254 109 C 280 109, 280 200, 304 200" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+  <path d="M254 161 C 280 161, 280 200, 304 200" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+  <path d="M254 213 L 304 213" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+  <path d="M254 265 C 280 265, 280 226, 304 226" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+  <path d="M254 317 C 280 317, 280 232, 304 232" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+
+  <!-- rrf -->
+  <g class="t">
+    <rect x="304" y="168" width="124" height="96" rx="11" class="accent"/>
+    <text x="320" y="194" class="h">RRF 融合</text>
+    <text x="320" y="213" class="s">多路排名融合</text>
+    <text x="320" y="231" class="s">保留融合分</text>
+    <text x="320" y="249" class="s">作为引用分</text>
+  </g>
+
+  <path d="M428 216 L 468 216" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+
+  <!-- optional -->
+  <g class="t">
+    <rect x="468" y="112" width="150" height="76" rx="11" class="blue"/>
+    <text x="484" y="136" class="h" font-size="13">条件重排</text>
+    <text x="484" y="155" class="s">向量头部差 &lt; 0.05</text>
+    <text x="484" y="173" class="s">标题 + 摘要</text>
+
+    <rect x="468" y="222" width="150" height="76" rx="11" class="blue"/>
+    <text x="484" y="246" class="h" font-size="13">查询改写</text>
+    <text x="484" y="265" class="s">头部差 &lt; 0.03</text>
+    <text x="484" y="283" class="s">再检索一次</text>
+  </g>
+
+  <path d="M618 150 C 640 150, 640 196, 660 196" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+  <path d="M618 260 C 640 260, 640 226, 660 226" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+  <path d="M543 188 L 543 222" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+
+  <!-- evidence -->
+  <g class="t">
+    <rect x="660" y="160" width="126" height="104" rx="11" class="accent"/>
+    <text x="676" y="186" class="h">证据判定</text>
+    <text x="676" y="205" class="s">strict / balanced</text>
+    <text x="676" y="223" class="s">/ expansive</text>
+    <text x="676" y="241" class="s">语料外不强答</text>
+  </g>
+
+  <path d="M786 212 L 820 212" fill="none" stroke="#0f766e" stroke-width="1.4" marker-end="url(#rp-arrow)"/>
+
+  <!-- answer -->
+  <g class="t">
+    <rect x="820" y="174" width="104" height="76" rx="11" class="box"/>
+    <text x="834" y="198" class="h" font-size="13">带来源回答</text>
+    <text x="834" y="217" class="s">引用 + 摘要</text>
+    <text x="834" y="235" class="s">可回看版本</text>
+  </g>
+
+  <text x="40" y="378" class="t s">MathNet-Retrieve 结论：2,000 候选池上纯向量最好；等权 RRF 会把向量排对的条目挤下去；条件重排在该基准上为负优化。</text>
+</svg>

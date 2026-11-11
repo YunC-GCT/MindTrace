@@ -1,6 +1,6 @@
 // scripts/arkts-lint/tests/arkweb-warmup-gate.test.mjs
 //
-// Issue #119 / spec/restore-arkweb-warmup:
+// Issue #119 / docs/specs/execution/restore-arkweb-warmup:
 //   Regression gate for the ArkWeb startup warmup, fixed SINGLE mode,
 //   public baseline precondition state, and protected no-migration scope.
 
@@ -103,7 +103,10 @@ test('EntryAbility keeps startup work after a recoverable warmup result', () => 
 
 test('Issue 119 preserves the existing chat rendering and persistence paths', () => {
   const chatSession = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatSession.ets');
-  const chatHistoryPersistence = read('entry/src/main/ets/services/ChatHistoryPersistence.ets');
+  const chatHistoryPersistence = [
+    read('entry/src/main/ets/services/ChatHistoryPersistence.ets'),
+    read('entry/src/main/ets/services/ChatHistoryWire.ets'),
+  ].join('\n');
   const markdownRenderer = read('entry/src/main/ets/shared/molecules/MarkdownRenderer.ets');
   const formulaRenderer = read('entry/src/main/ets/shared/molecules/FormulaSplitRenderer.ets');
   assert.doesNotMatch(service + entryAbility, /StreamingReplyDocument/);
@@ -115,7 +118,10 @@ test('Issue 119 preserves the existing chat rendering and persistence paths', ()
 
 test('Issue 141 chat history persistence diagnostics and stream boundaries stay wired', () => {
   const chatSession = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatSession.ets');
-  const chatHistoryPersistence = read('entry/src/main/ets/services/ChatHistoryPersistence.ets');
+  const chatHistoryPersistence = [
+    read('entry/src/main/ets/services/ChatHistoryPersistence.ets'),
+    read('entry/src/main/ets/services/ChatHistoryWire.ets'),
+  ].join('\n');
   const chatPersistenceWorker = read('entry/src/main/ets/workers/ChatPersistenceWorker.ets');
   const agentFloatWindow = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
   assert.match(chatHistoryPersistence, /schemaVersion=/);

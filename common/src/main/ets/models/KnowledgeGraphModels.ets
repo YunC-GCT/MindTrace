@@ -2,8 +2,8 @@
 //  models/KnowledgeGraphModels.ets — knowledge graph and RAG storage contracts
 // ============================================================================
 
-export type KnowledgeRelationType = 'prerequisite' | 'related' | 'derived';
-export type KnowledgeRelationSource = 'manual' | 'llm' | 'legacy';
+export type KnowledgeRelationType = 'prerequisite' | 'related' | 'derived' | 'same_unit' | 'similar';
+export type KnowledgeRelationSource = 'manual' | 'llm' | 'legacy' | 'auto';
 export type KnowledgeRelationStatus = 'pending' | 'accepted' | 'rejected';
 
 export interface KnowledgeRelation {

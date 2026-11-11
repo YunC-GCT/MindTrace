@@ -17,15 +17,16 @@ const read = (p) => {
 };
 
 const models = read('common/src/main/ets/models/NoteGenerationModels.ets');
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const noteGenRepo = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
 const relationDao = read('entry/src/main/ets/database/KnowledgeRelationDao.ets');
 
 // Evidence models live in the entry HAP (they reference entry-owned note and
 // graph records); keep this path aligned with the production module boundary.
-const evidenceModels = read('entry/src/main/ets/models/NoteEvidenceModels.ets');
-const evidenceService = read('entry/src/main/ets/services/NoteEvidenceService.ets');
+const evidenceModels = read('common/src/main/ets/models/NoteEvidenceModels.ets');
+const evidenceService = read('agents/src/main/ets/evidence/NoteEvidenceService.ets');
+const evidenceGraph = read('entry/src/main/ets/services/RdbNoteGraph.ets');
 
 // === Legacy citation traceability tests (must still pass) ===
 
@@ -52,14 +53,16 @@ test('IncrementalManifestSection preserves per-section sourceIds', () => {
   assert.match(models, /interface IncrementalManifestSection[\s\S]*?sourceIds: string\[\]/);
 });
 
-test('AiService copies draft section sourceIds into generated sections', () => {
-  assert.match(aiService, /sourceIds/);
-  assert.match(aiService, /draft\.sections/);
+test('DraftPipeline copies draft section sourceIds into generated sections', () => {
+  const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
+  assert.match(pipeline, /sourceIds/);
+  assert.match(pipeline, /draft\.sections/);
 });
 
-test('AiService builds IncrementalManifest with fragment IDs from the request', () => {
-  assert.match(aiService, /request\.sources\.fragments\.map/);
-  assert.match(aiService, /sourceIds:/);
+test('DraftPipeline builds IncrementalManifest with fragment IDs from the request', () => {
+  const pipeline = read('entry/src/main/ets/services/ai/DraftPipeline.ets');
+  assert.match(pipeline, /request\.sources\.fragments\.map/);
+  assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /sourceIds:/);
 });
 
 test('NoteGenerationRepository getRegenerationBase reconstructs SourceFragments from manifest', () => {
@@ -69,9 +72,11 @@ test('NoteGenerationRepository getRegenerationBase reconstructs SourceFragments 
 });
 
 test('checkpoint saves outline, evidence, and verification JSON for full artifact recovery', () => {
-  assert.match(dispatcher, /outlineJson: JSON\.stringify\(.*outline\)/);
-  assert.match(dispatcher, /evidenceJson: JSON\.stringify\(.*evidence\)/);
-  assert.match(dispatcher, /verificationJson: JSON\.stringify\(.*verification\)/);
+  // 2026-11-02：检查点组装已迁入 NoteGenerationWorkflow。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
+  assert.match(branch, /outlineJson: JSON\.stringify\(.*outline\)/);
+  assert.match(branch, /evidenceJson: JSON\.stringify\(.*evidence\)/);
+  assert.match(branch, /verificationJson: JSON\.stringify\(.*verification\)/);
 });
 
 test('validateStandardArtifacts checks outline-evidence-draft source mapping consistency', () => {
@@ -157,6 +162,6 @@ test('KnowledgeRelationDao queryAcceptedEdges provides accepted-edge data for ci
 
 // AC-CITE-04: NoteEvidenceService uses the DAO directly for accepted graph expansion
 test('NoteEvidenceService uses KnowledgeRelationDao for accepted graph evidence (AC-CITE-04)', () => {
-  assert.match(evidenceService, /new KnowledgeRelationDao\(store\)/);
-  assert.match(evidenceService, /dao\.expandAcceptedNeighborhood\(seeds, limits\)/);
+  assert.match(evidenceGraph, /new KnowledgeRelationDao\(store\)/);
+  assert.match(evidenceGraph, /dao\.expandAcceptedNeighborhood\(seedIds, limits\)/);
 });

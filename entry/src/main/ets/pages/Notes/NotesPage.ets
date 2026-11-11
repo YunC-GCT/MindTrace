@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 //  pages/Notes/NotesPage.ets — 笔记页 (5 Tab 之一)
 //  ----------------------------------------------------------------------------
 //  组件层: Page (D3 spec 012)
@@ -42,15 +42,15 @@ export struct NotesPage {
   }
 
   private reloadNotes = (): void => {
-    const version: number = AppStorage.get<number>("notesVersion") ?? 0
+    const version: number = this.notesVersion
     if (this.loadedNotesVersion === version || this.loadingNotesVersion === version) {
       return
     }
     this.loadingNotesVersion = version
-    this.vm.loadNotes(getContext(this)).then((ok: boolean): void => {
-      if (ok) {
+    this.vm.loadNotes(getContext(this), version).then((ok: boolean): void => {
+      if (ok && this.notesVersion === version) {
         this.loadedNotesVersion = version
-      } else {
+      } else if (!ok && this.notesVersion === version) {
         try { promptAction.showToast({ message: "笔记加载失败", duration: 1500 }) } catch (_e) {}
       }
     }).finally((): void => {

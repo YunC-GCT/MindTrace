@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from '@ohos/hypium';
-import { TruthCheckService } from '../main/ets/agents/TruthCheckService';
+import { TruthCheckService } from '../main/ets/subagents/TruthCheckService';
 import { MvpTruthCheckResult } from '../main/ets/models/TruthCheckResult';
 
 function createService(): TruthCheckService {

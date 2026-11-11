@@ -12,8 +12,8 @@
 import { ChatMsg, chatMessageRunParts } from './ChatModels'
 import { UserMessageBubble } from './UserMessageBubble'
 import { AiMessageBubble } from './AiMessageBubble'
-import { NoteEvidenceCitation } from '../../../models/NoteEvidenceModels'
-import { NoteReviewFeedback } from '../../../models/NoteReviewModels'
+import { NoteEvidenceCitation } from 'common'
+import { NoteReviewFeedback } from 'common'
 
 @Component
 export struct ChatBubble {
@@ -21,6 +21,8 @@ export struct ChatBubble {
   onSourceTap: (citation: NoteEvidenceCitation) => void = (_citation: NoteEvidenceCitation): void => {}
   onFeedback: (messageId: number, feedback: NoteReviewFeedback) => void =
     (_messageId: number, _feedback: NoteReviewFeedback): void => {}
+  onTopicSelect: (messageId: number, runId: string, topicId: string) => void =
+    (_messageId: number, _runId: string, _topicId: string): void => {}
 
   build() {
     if (this.msg.role === 'user') {
@@ -31,8 +33,14 @@ export struct ChatBubble {
         streaming: this.msg.streaming,
         outcome: this.msg.outcome ?? 'completed',
         noteReview: this.msg.noteReview === undefined ? null : this.msg.noteReview,
+        noteContextClarification: this.msg.noteContextClarification === undefined
+          ? null : this.msg.noteContextClarification,
+        citations: this.msg.citations === undefined ? [] : this.msg.citations,
         onSourceTap: this.onSourceTap,
         onFeedback: (feedback: NoteReviewFeedback): void => { this.onFeedback(this.msg.id, feedback) },
+        onTopicSelect: (runId: string, topicId: string): void => {
+          this.onTopicSelect(this.msg.id, runId, topicId)
+        },
       })
     }
   }

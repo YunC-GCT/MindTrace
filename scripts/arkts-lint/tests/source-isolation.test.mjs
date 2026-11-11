@@ -10,11 +10,16 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 
 const models = read('common/src/main/ets/models/NoteGenerationModels.ets');
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const repoImpl = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
-const convWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
-const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
+const convWorkflow = [
+  read('agents/src/main/ets/conversation/ConversationWorkflow.ets'),
+  read('agents/src/main/ets/conversation/ConversationReplyHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationNoteHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationReviewHandler.ets'),
+].join('\n');
+const memoryProjection = read('agents/src/main/ets/conversation/ConversationMemoryProjection.ets');
 const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 
 // === Legacy source isolation tests ===
@@ -35,7 +40,9 @@ test('NoteGenerationRun carries sourceIds and pendingSourceIds arrays', () => {
 });
 
 test('Dispatcher builds sourceIds from bundle fragments in generation run', () => {
-  assert.match(dispatcher, /sourceIds: bundle\.fragments\.map\(\(fragment\): string => fragment\.id\)/);
+  // 2026-11-02：生成逻辑已迁入 NoteGenerationWorkflow。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
+  assert.match(branch, /sourceIds: bundle\.fragments\.map\(\(fragment\): string => fragment\.id\)/);
 });
 
 test('buildSourceId creates stable composite IDs from kind, originId, sequence', () => {
@@ -44,23 +51,30 @@ test('buildSourceId creates stable composite IDs from kind, originId, sequence',
 });
 
 test('normalizeBundle re-sequences fragments and fills missing IDs', () => {
-  assert.match(dispatcher, /private normalizeBundle/);
-  assert.match(dispatcher, /fragment\.id\.length > 0 \? fragment\.id : buildSourceId/);
+  // 2026-11-02：normalizeBundle 已迁入 NoteGenerationWorkflow（静态方法）。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
+  assert.match(branch, /static normalizeBundle/);
+  assert.match(branch, /fragment\.id\.length > 0 \? fragment\.id : buildSourceId/);
 });
 
 test('standard and deep generation receive the normalized source bundle', () => {
-  const calls = dispatcher.match(
+  // 2026-11-02：withTokenBudget 仍在 GenerationEvaluator（静态方法），调用点在 NoteGenerationWorkflow。
+  const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
+  const calls = branch.match(
     /withTokenBudget\(\s*request,\s*budget\.maxTokens,\s*bundle,\s*requirement,\s*\)/g,
   ) ?? [];
   assert.equal(calls.length, 2);
-  assert.match(dispatcher, /private withTokenBudget\([\s\S]*?bundle: SourceBundle[\s\S]*?sources: bundle/);
-  assert.match(dispatcher, /private withTokenBudget\([\s\S]*?requirement: NoteGenerationRequirement[\s\S]*?requirement: requirement/);
-  assert.doesNotMatch(dispatcher, /private withTokenBudget\([\s\S]*?sources: request\.sources/);
+  assert.match(evaluator, /static withTokenBudget\([\s\S]*?bundle: SourceBundle[\s\S]*?sources: bundle/);
+  assert.match(evaluator, /static withTokenBudget\([\s\S]*?requirement: NoteGenerationRequirement[\s\S]*?requirement: requirement/);
+  assert.doesNotMatch(evaluator, /static withTokenBudget\([\s\S]*?sources: request\.sources/);
 });
 
 test('incremental generation concatenates base and new sources', () => {
-  assert.match(dispatcher, /base\.sources\.fragments\.concat\(request\.sources\.fragments\)/);
-  assert.match(dispatcher, /base\.manifest\.sourceIds\.concat\(plan\.newSourceIds\)/);
+  // 2026-11-02：增量逻辑已迁入 NoteRegenerateWorkflow。
+  const incrementalWorkflow = read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets');
+  assert.match(incrementalWorkflow, /base\.sources\.fragments\.concat\(request\.sources\.fragments\)/);
+  assert.match(incrementalWorkflow, /base\.manifest\.sourceIds\.concat\(plan\.newSourceIds\)/);
 });
 
 test('NoteGenerationRepository persists each SourceFragment in a separate table', () => {
@@ -74,9 +88,10 @@ test('NoteGenerationRepository restore reconstructs fragments ordered by sequenc
 });
 
 test('referencedPendingSourceIds tracks which pending sources appear in draft sections', () => {
-  assert.match(dispatcher, /private referencedPendingSourceIds/);
-  assert.match(dispatcher, /draft\.sections/);
-  assert.match(dispatcher, /pendingSourceIds/);
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
+  assert.match(branch, /static referencedPendingSourceIds/);
+  assert.match(branch, /draft\.sections/);
+  assert.match(branch, /pendingSourceIds/);
 });
 
 test('validateSourceBundle checks fragment IDs and text for structural validity', () => {
@@ -133,7 +148,7 @@ test('ConversationWorkflow handleImageReply handles empty OCR text without crash
 });
 
 test('AiService.analyzeImage uses persist:false — no database write on image recognition only (AC-SRC-04)', () => {
-  assert.match(aiService, /analyzeImage[\s\S]*?persist: false/);
+  assert.match(read('entry/src/main/ets/services/ai/CapturePipeline.ets'), /analyzeImage[\s\S]*?kind: 'analysisOnly'/);
 });
 
 // SourceFragment kind must support 'ocr' for image-originated sources

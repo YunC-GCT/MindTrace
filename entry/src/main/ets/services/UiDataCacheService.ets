@@ -16,7 +16,10 @@
  */
 
 import { relationalStore } from '@kit.ArkData'
-import { DatabaseHelper, KnowledgeUnit, NoteItem, StudyPlanItem, subjectColor } from "common"
+import {
+  DatabaseHelper, KnowledgeUnit, NoteItem, StudyPlanItem,
+} from 'common';
+import { subjectColor } from '../utils/NoteTaxonomy';
 import { NoteDao } from "../database/NoteDao"
 import { StudyPlanDao } from "../database/StudyPlanDao"
 import { unitsToNoteItems } from "../utils/NoteItemMapper"
@@ -201,6 +204,14 @@ export class UiDataCacheService {
   static invalidateNote(id: string): void {
     UiDataCacheService.removeDetailById(id)
     UiDataCacheService.invalidateNotesSnapshots()
+  }
+
+  static notifyNoteChanged(id: string): number {
+    UiDataCacheService.invalidateNote(id)
+    const nextVersion: number = UiDataCacheService.currentNotesVersion() + 1
+    AppStorage.setOrCreate("notesVersion", nextVersion)
+    uiCacheLog("[UiDataCache] notes changed id=" + id + " version=" + nextVersion.toString())
+    return nextVersion
   }
 
   static getStudyPlanSnapshot(): StudyPlanSnapshot | null {

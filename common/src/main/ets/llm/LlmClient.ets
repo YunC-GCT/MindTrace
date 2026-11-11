@@ -1,5 +1,7 @@
 // MindTrace - LLM HTTP 客户端(OpenAI 兼容协议)
 // 位置: common/src/main/ets/llm/LlmClient.ets
+// 路径: common/src/main/ets/llm/LlmClient.ets
+// 职责: JSON/SSE 两条 transport; 请求 body 由准确型号的 ModelSpec 推导 (ModelRequestBuilder)
 // 责任: Z (Mavis)
 // 创建: 2026-07-14 — 主 Agent 业务 LLM 调用基础设施
 //
@@ -23,34 +25,60 @@
 // 设计:
 //   - 端点 / model / temperature / max_tokens / timeout 全部从 LlmConfig 单例读
 //   - 单次调用可用 request 字段覆盖默认
-//   - 错误统一抛 LlmError(kind: NO_API_KEY / NETWORK_ERROR / API_ERROR / PARSE_ERROR / EMPTY_RESPONSE / TIMEOUT / STREAM_FAILED)
+//   - 思考 / 强度 / sampling / 输出 token 字段名由 ModelSpec 决定, 无 vendor 特判
+//   - 错误统一抛 LlmError(kind: NO_API_KEY / NETWORK_ERROR / API_ERROR / PARSE_ERROR / EMPTY_RESPONSE / TIMEOUT / STREAM_FAILED / MODEL_SPEC_INCOMPLETE)
 //
 // ArkTS 1.1 严格语法:
 //   - 无 any / unknown
 //   - 显式类型
 //   - 不抛 Record<string, T>
 
+import type { LlmCaller } from './LlmGuard';
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { LlmConfig } from './LlmConfig';
+import type { ModelPreference } from './LlmConfig';
+import { ModelCapability, resolveCapabilities } from './ModelCapabilities';
+import { resolveModel } from './model-resolver';
+import type { ResolvedModel } from './model-resolver';
+import { applyFieldWrites, planModelRequest, putField } from './ModelRequestBuilder';
+import type { ModelRequestPlan, ModelRequestSelection } from './ModelRequestBuilder';
 import { LlmErrorBodyFormatter } from './LlmErrorBodyFormatter';
-import { LlmResponseParser, TRUNCATION_MARKER } from './LlmResponseParser';
+import { LlmResponseParser } from './LlmResponseParser';
+import { parseStreamEventsFromSseData as parseSseChunkEvents } from './LlmStreamParser';
 import { Logger } from '../utils/logger';
+import { CancellationError } from '../workflow/RunErrors';
 import {
-  LlmRequestBody,
   LlmResponse,
-  LlmStreamChunk,
-  LlmStreamChoice,
-  LlmStreamDelta,
   LlmStreamCallback,
   StreamEvent,
-  LlmThinkingConfig,
   LlmCallRequest,
   LlmCallResult,
   LlmError,
+  LlmToolCall,
 } from './LlmTypes';
 
-export class LlmClient {
+// composeRequest 的结果: body 已是 JSON.stringify 就绪的 wire 形状。
+//   thinkingEnabled — 本次请求最终是否处于思考模式 (供首字节看门狗分档)
+//   effort          — 实际写入的推理强度; 空串表示本次没有该字段
+interface ComposedRequest {
+  body: Record<string, Object>;
+  model: string;
+  vendorId: string;
+  capability: ModelCapability;
+  thinkingEnabled: boolean;
+  effort: string;
+}
+
+// 流式 tool_calls 的拼接中间态：同一 index 的 arguments 分片累加。
+interface StreamToolCallAccumulator {
+  id: string;
+  name: string;
+  argumentsJson: string;
+}
+
+export class LlmClient implements LlmCaller {
   private config: LlmConfig;
 
   constructor() {
@@ -64,9 +92,7 @@ export class LlmClient {
       if (request.onDelta === undefined) {
         throw new LlmError('call: stream=true requires onDelta callback', 'STREAM_FAILED');
       }
-      await this.callStreamInternal(request, request.onDelta);
-      const streamedResult: LlmCallResult = { streamed: true };
-      return streamedResult;
+      return await this.callStreamInternal(request, request.onDelta);
     }
     return await this.callJsonInternal(request);
   }
@@ -79,59 +105,25 @@ export class LlmClient {
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }
+    // await 期间可能已到 A2A deadline：不要再创建一条注定要销毁的 HTTP 请求。
+    request.cancellationToken?.throwIfCancelled();
 
-    // 2. 构造请求体(request 字段优先, 默认从 LlmConfig)
-    const model: string = this.pickStr(request.model, this.config.getModel());
-    const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
-    const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
+    // 2. 构造请求体 — JSON / SSE 共用同一份 ModelSpec 推导 (ModelRequestBuilder)。
+    const composed: ComposedRequest = this.composeRequest(request, false);
+    const body: Record<string, Object> = composed.body;
+    const model: string = composed.model;
+    const vendorId: string = composed.vendorId;
+    const capability: ModelCapability = composed.capability;
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
-    // 非流式调用默认关闭 thinking (2026-09-19): 非流式路径不回传 reasoning_content,
-    // thinking 只会烧 max_tokens 预算 (deepseek reasoning_effort=high 实测 512/800/6000
-    // 预算全被思维链耗尽, finish_reason=length 截断)。需要思考的流式聊天走 requestInStream;
-    // 显式传 enableThinking 的调用方不受此默认影响。
-    const enableThinking: boolean = request.enableThinking !== undefined
-      ? request.enableThinking
-      : false;
-    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
-    const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
-
-    const body: LlmRequestBody = {
-      model: model,
-      messages: request.messages,
-      max_tokens: maxTokens,
-      stream: false,
-    };
-    if (!isDeepSeek || !enableThinking) {
-      body.temperature = temperature;
-    }
-    // response_format is the single transport seam for provider-declared
-    // json_schema support; unsupported providers receive json_object instead.
-    if (request.responseFormat !== undefined) {
-      body.response_format = request.responseFormat;
-    }
-    if (request.tools !== undefined) {
-      body.tools = request.tools;
-    }
-    if (request.tool_choice !== undefined) {
-      body.tool_choice = request.tool_choice;
-    }
-    if (isDeepSeek) {
-      const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
-      body.thinking = thinkingCfg;
-      if (enableThinking) {
-        body.reasoning_effort = 'high';
-      }
-    }
-    if (isQwen) {
-      body.enable_thinking = enableThinking;
-    }
 
     // 3. 发 HTTP POST
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
-    console.info('[LlmClient] request vendor=' + this.config.getVendorId() + ' model=' + model + ' stream=false');
+    const effortText: string = composed.effort.length > 0 ? composed.effort : 'none';
+    console.info('[LlmClient] request vendor=' + vendorId + ' model=' + model + ' thinking=' + capability.thinking + ' effort=' + effortText + ' stream=false');
     const httpRequest = http.createHttp();
     let response: http.HttpResponse;
     const removeCancellation: (() => void) | undefined = request.cancellationToken?.onCancel((): void => {
+      // A2A deadline: 同一个 token 取消时真正中止底层 HTTP，而不是只让外层 Promise.race 超时。
       httpRequest.destroy();
     });
     try {
@@ -196,11 +188,99 @@ export class LlmClient {
     return v;
   }
 
+  // JSON / SSE 共用的请求构造: ModelSpec → FieldWrite[] → body。
+  // 这里不出现任何 vendorId === 'xxx' 分支; 厂商差异只存在于 ModelSpec。
+  private composeRequest(request: LlmCallRequest, stream: boolean): ComposedRequest {
+    const vendorId: string = this.config.getVendorId();
+    const requestedModel: string = this.pickStr(request.model, this.config.getModel());
+    const resolved: ResolvedModel = resolveModel(vendorId, requestedModel);
+    const model: string = resolved.canonicalId.length > 0 ? resolved.canonicalId : requestedModel;
+    const capability: ModelCapability = resolveCapabilities(resolved.listing, resolved.spec);
+
+    // 运行偏好按 "providerId/modelId" 存; 单次调用显式参数优先。
+    const preference: ModelPreference = this.config.getModelPreference(vendorId, model);
+    const thinkingChoice: boolean | undefined = request.enableThinking !== undefined
+      ? request.enableThinking : preference.thinking;
+    const effortChoice: string | undefined = request.reasoningEffort !== undefined
+      ? request.reasoningEffort : preference.effort;
+
+    const selection: ModelRequestSelection = {
+      maxTokens: this.pickNum(request.maxTokens, this.config.getMaxTokens()),
+      maxOutputTokens: this.resolveMaxOutputTokens(resolved),
+    };
+    selection.temperature = request.temperature !== undefined
+      ? request.temperature : this.config.getTemperature();
+    if (request.topP !== undefined) {
+      selection.topP = request.topP;
+    }
+    if (thinkingChoice !== undefined) {
+      selection.thinking = thinkingChoice;
+    }
+    if (effortChoice !== undefined) {
+      selection.effort = effortChoice;
+    }
+
+    const plan: ModelRequestPlan | null = planModelRequest(resolved.spec, selection);
+    if (plan === null) {
+      // 规格不完整: 宁可拒绝, 也不静默取 levels[0] 发出去。
+      throw new LlmError(
+        'Model spec incomplete for ' + vendorId + '/' + model
+          + ': required effort has no valid level',
+        'MODEL_SPEC_INCOMPLETE');
+    }
+
+    const body: Record<string, Object> = {};
+    putField(body, ['model'], model);
+    putField(body, ['messages'], request.messages);
+    putField(body, ['stream'], stream);
+    applyFieldWrites(body, plan.writes);
+    // response_format / tools 是独立于 spec 的可选透传字段。
+    if (request.responseFormat !== undefined) {
+      putField(body, ['response_format'], request.responseFormat);
+    }
+    if (request.tools !== undefined) {
+      putField(body, ['tools'], request.tools);
+    }
+    if (request.tool_choice !== undefined) {
+      putField(body, ['tool_choice'], request.tool_choice);
+    }
+
+    const composed: ComposedRequest = {
+      body: body,
+      model: model,
+      vendorId: vendorId,
+      capability: capability,
+      thinkingEnabled: plan.thinkingEnabled,
+      effort: plan.effort,
+    };
+    return composed;
+  }
+
+  // 输出上限优先取 spec (逐型号真源); 无规格时回落到 discovery listing。
+  // 两者都缺失/非正数 → 0, 由 builder 判定不夹取。
+  private resolveMaxOutputTokens(resolved: ResolvedModel): number {
+    if (resolved.spec !== null && resolved.spec.maxOutputTokens > 0) {
+      return resolved.spec.maxOutputTokens;
+    }
+    if (resolved.listing !== null && resolved.listing.maxOutputTokens > 0) {
+      return resolved.listing.maxOutputTokens;
+    }
+    return 0;
+  }
+
   private streamCallbackCode(data: number | undefined): string {
     if (data === undefined || data === null) {
       return 'undefined';
     }
     return data.toString();
+  }
+
+  // catch 到的值不一定是 Error(可能是 null/string), 统一转成可打印文本, 自身绝不抛
+  private static describeError(e: Object): string {
+    if (e instanceof Error) {
+      return e.message;
+    }
+    return String(e);
   }
 
   private resolveEndpointUrl(baseUrl: string): string {
@@ -230,65 +310,35 @@ export class LlmClient {
   private async callStreamInternal(
     request: LlmCallRequest,
     onEvent: LlmStreamCallback,
-  ): Promise<void> {
+  ): Promise<LlmCallResult> {
     // 1. 校验 API key — PR2-T2 L3 (2026-09-08): per-vendor key
     const apiKey: string | null = await this.config.getApiKey(this.config.getVendorId());
     if (apiKey === null) {
       throw new LlmError('API key not configured. Set it in Settings first.', 'NO_API_KEY');
     }
+    // 同 JSON 路径：取消后不再发起流式请求。
+    request.cancellationToken?.throwIfCancelled();
 
-    // 2. 构造请求体
-    const model: string = this.pickStr(request.model, this.config.getModel());
-    const temperature: number = this.pickNum(request.temperature, this.config.getTemperature());
-    const maxTokens: number = this.pickNum(request.maxTokens, this.config.getMaxTokens());
+    // 2. 构造请求体 — 与 JSON 路径共用 composeRequest, 采样/思考规则不会漂移。
+    const composed: ComposedRequest = this.composeRequest(request, true);
+    const body: Record<string, Object> = composed.body;
+    const model: string = composed.model;
+    const vendorId: string = composed.vendorId;
+    const capability: ModelCapability = composed.capability;
     const timeoutMs: number = this.pickNum(request.timeoutMs, this.config.getTimeoutMs());
-    const enableThinking: boolean = request.enableThinking !== undefined
-      ? request.enableThinking
-      : this.config.getEnableThinking();
-    const isDeepSeek: boolean = model.toLowerCase().indexOf('deepseek') >= 0;
-    const isQwen: boolean = model.toLowerCase().indexOf('qwen') >= 0;
 
-    // 构造 body (Record 避免 redacted 匹配问题)
-    const bodyObj: Record<string, Object> = {
-    };
-
-    // 手动设置字段以避免 redacted 字段匹配
-    bodyObj['model'] = model;
-    bodyObj['messages'] = request.messages as Object;
-    bodyObj['stream'] = true;
-    bodyObj['max_tokens'] = maxTokens;
-
-    // DeepSeek 思考模式不支持 temperature,仅在非思考模式下设置
-    if (!isDeepSeek || !enableThinking) {
-      bodyObj['temperature'] = temperature;
-    }
-
-    if (isDeepSeek) {
-      const thinkingCfg: LlmThinkingConfig = { type: enableThinking ? 'enabled' : 'disabled' };
-      bodyObj['thinking'] = thinkingCfg as Object;
-      if (enableThinking) {
-        bodyObj['reasoning_effort'] = 'high';
-      }
-    }
-
-    if (isQwen) {
-      bodyObj['enable_thinking'] = enableThinking;
-    }
-
-    if (request.responseFormat !== undefined) {
-      bodyObj['response_format'] = request.responseFormat as Object;
-    }
-
-    const bodyJson: string = JSON.stringify(bodyObj);
+    const bodyJson: string = JSON.stringify(body);
 
     // 3. 创建 HttpRequest 并发起流式请求
     const endpointUrl: string = this.resolveEndpointUrl(this.config.getEndpoint());
     const llmLog: Logger = new Logger('LlmClient');
-    llmLog.info('request vendor=' + this.config.getVendorId() + ' model=' + model
-      + ' thinking=' + enableThinking.toString() + ' qwen=' + isQwen.toString() + ' stream=true');
+    const effortText: string = composed.effort.length > 0 ? composed.effort : 'none';
+    llmLog.info('request vendor=' + vendorId + ' model=' + model
+      + ' thinking=' + capability.thinking + ' effort=' + effortText + ' stream=true');
     const httpRequest = http.createHttp();
 
-    return new Promise<void>((resolve: (value: void) => void, reject: (reason: Error) => void): void => {
+    return new Promise<LlmCallResult>((resolve: (value: LlmCallResult) => void,
+      reject: (reason: Error) => void): void => {
       let sseLineBuffer: string = '';
       let streamEnded: boolean = false;
       let dataReceived: boolean = false;
@@ -298,6 +348,8 @@ export class LlmClient {
       let thinkingChars: number = 0;
       let textEvents: number = 0;
       let textChars: number = 0;
+      let streamedText: string = '';
+      const toolAcc: Map<number, StreamToolCallAccumulator> = new Map<number, StreamToolCallAccumulator>();
       const trackedEventSink: LlmStreamCallback = (event: StreamEvent): void => {
         request.cancellationToken?.throwIfCancelled();
         if (event.type === 'thinking') {
@@ -306,6 +358,21 @@ export class LlmClient {
         } else if (event.type === 'text') {
           textEvents += 1;
           textChars += event.delta.length;
+          streamedText += event.delta;
+        } else if (event.type === 'tool_call') {
+          const index: number = event.index !== undefined ? event.index : 0;
+          let acc: StreamToolCallAccumulator | undefined = toolAcc.get(index);
+          if (acc === undefined) {
+            acc = { id: '', name: '', argumentsJson: '' };
+            toolAcc.set(index, acc);
+          }
+          if (event.toolCallId !== undefined && event.toolCallId.length > 0) {
+            acc.id = event.toolCallId;
+          }
+          if (event.toolName !== undefined && event.toolName.length > 0) {
+            acc.name = event.toolName;
+          }
+          acc.argumentsJson += event.argumentsJson !== undefined ? event.argumentsJson : event.delta;
         }
         onEvent(event);
       };
@@ -326,18 +393,24 @@ export class LlmClient {
         }
       }, timeoutMs);
 
-      // 首字节超时: 30 秒内无数据则降级(2026-09-07 PR1j: deepseek-v4-pro 思考模式
-      // thinking_content 阶段可能 10-20 秒才发出第一个 chunk,8 秒不够)
+      // 首字节看门狗按能力分档 (issue #226):
+      //   toggle 本次关闭 / unsupported / unverified → 12s (首字节本就该快);
+      //   toggle 本次开启 / always_on                → 60s (思维链先于首个可见 token 生成)。
+      // 2026-10-29: 非思考档从 30s 收到 12s —— 真机弱网下 SSE 首字节偶尔整段丢失,
+      //   30s 会让用户以为"对话没反应"; 12s 未到就放弃 SSE、由 ReplyService 立刻切非流式。
+      const thinkingActive: boolean = capability.thinking === 'always_on'
+        || (capability.thinking === 'toggle' && composed.thinkingEnabled);
+      const firstByteWatchdogMs: number = thinkingActive ? 60000 : 12000;
       firstByteTimer = setTimeout((): void => {
         if (!streamEnded && !dataReceived) {
           streamEnded = true;
           clearTimeout(timer);
           removeCancellation?.();
           httpRequest.destroy();
-          console.warn('[LlmClient] no data received within 30s, triggering fallback');
+          console.warn('[LlmClient] no first byte within ' + firstByteWatchdogMs.toString() + 'ms');
           reject(new LlmError('LLM stream no data', 'STREAM_FAILED') as Error);
         }
-      }, 30000);
+      }, firstByteWatchdogMs);
 
       removeCancellation = request.cancellationToken?.onCancel((): void => {
         if (streamEnded) {
@@ -347,32 +420,52 @@ export class LlmClient {
         clearTimeout(timer);
         clearTimeout(firstByteTimer);
         httpRequest.destroy();
-        reject(new Error('CONVERSATION_CANCELLED'));
+        reject(new CancellationError('CONVERSATION_CANCELLED') as Error);
       });
 
       // 订阅流式数据事件
+      // 真机: dataReceive 回调里任何未捕获异常都会被服务端翻译成
+      // "Failed to write the received data to the disk or application code=undefined",
+      // 整条流当场报废。所以这里必须吞掉全部异常, 只打日志。
       httpRequest.on('dataReceive', (chunk: ArrayBuffer): void => {
-        if (streamEnded) { return; }
-        dataReceived = true;
-        clearTimeout(firstByteTimer);
         try {
+          if (streamEnded) { return; }
+          dataReceived = true;
+          clearTimeout(firstByteTimer);
+          const chunkBytes: number = chunk.byteLength;
           const text: string = LlmClient.arrayBufferToString(chunk);
           chunkCount += 1;
-          receivedBytes += text.length;
+          receivedBytes += chunkBytes;
+          if (chunkCount === 1) {
+            const rawPreview: string = text.substring(0, 120);
+            const redactedPreview: string = LlmErrorBodyFormatter
+              .redactSensitiveText(rawPreview)
+              .replace(/\r?\n/g, '\\n');
+            llmLog.info('first data bytes=' + chunkBytes.toString()
+              + ' chars=' + text.length.toString()
+              + ' preview=' + redactedPreview);
+          }
           sseLineBuffer += text;
           sseLineBuffer = this.processSseBuffer(sseLineBuffer, trackedEventSink);
         } catch (e) {
-          if (request.cancellationToken?.isCancelled() === true) {
-            if (!streamEnded) {
-              streamEnded = true;
-              clearTimeout(timer);
-              clearTimeout(firstByteTimer);
-              httpRequest.destroy();
-              reject(new Error('CONVERSATION_CANCELLED'));
+          console.warn('[LlmClient] dataReceive error: ' + LlmClient.describeError(e));
+          try {
+            if (request.cancellationToken?.isCancelled() === true) {
+              if (!streamEnded) {
+                streamEnded = true;
+                clearTimeout(timer);
+                clearTimeout(firstByteTimer);
+                removeCancellation?.();
+                httpRequest.destroy();
+                reject(new CancellationError('CONVERSATION_CANCELLED') as Error);
+              }
+              return;
             }
-            return;
+          } catch (cancelError) {
+            // 取消状态读取/清理本身失败也不能向上抛, 否则同样毁掉整条流
+            console.warn('[LlmClient] dataReceive cancel cleanup error: '
+              + LlmClient.describeError(cancelError));
           }
-          console.warn('[LlmClient] dataReceive error: ' + ((e as Error).message ?? String(e)));
         }
       });
 
@@ -391,16 +484,26 @@ export class LlmClient {
           this.processSseBufferFinal(sseLineBuffer, trackedEventSink);
         }
 
+        const streamedResult: LlmCallResult = {
+          streamed: true,
+          text: streamedText,
+        };
+        const toolCalls: LlmToolCall[] = LlmClient.collectStreamedToolCalls(toolAcc);
+        if (toolCalls.length > 0) {
+          streamedResult.toolCalls = toolCalls;
+        }
+
         llmLog.info('stream completed chunks=' + chunkCount.toString()
           + ' bytes=' + receivedBytes.toString()
           + ' thinkingEvents=' + thinkingEvents.toString()
           + ' thinkingChars=' + thinkingChars.toString()
           + ' textEvents=' + textEvents.toString()
           + ' textChars=' + textChars.toString()
+          + ' toolCalls=' + toolCalls.length.toString()
           + ' remaining=' + sseLineBuffer.length.toString());
 
         httpRequest.destroy();
-        resolve();
+        resolve(streamedResult);
       });
 
       // 发起流式请求
@@ -408,15 +511,20 @@ export class LlmClient {
         method: http.RequestMethod.POST,
         header: {
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
           'Authorization': 'Bearer ' + apiKey,
         },
         extraData: bodyJson,
         connectTimeout: timeoutMs,
         readTimeout: timeoutMs,
       }, (err: Error, data: number | undefined): void => {
-        llmLog.info('requestInStream cb err=' + (err ? err.message : 'null') + ' code=' + this.streamCallbackCode(data));
+        const errCode: number | undefined = err ? (err as BusinessError).code : undefined;
+        llmLog.info('requestInStream cb err=' + (err ? err.message : 'null')
+          + ' errCode=' + this.streamCallbackCode(errCode)
+          + ' code=' + this.streamCallbackCode(data));
         if (err) {
-          console.error('[LlmClient] stream err: ' + err.message);
+          console.error('[LlmClient] stream err: ' + err.message
+            + ' errCode=' + this.streamCallbackCode(errCode));
           if (!streamEnded) {
             streamEnded = true;
             clearTimeout(timer);
@@ -540,33 +648,33 @@ export class LlmClient {
 
   /**
    * Seam A: 单条 SSE data JSON payload -> 结构化 StreamEvent 数组。
-   * 有效 JSON 中 choices 为空或 delta 为 null 时返回空数组;非法/不完整 JSON 保持抛出供 buffer 重试。
+   * 解析逻辑在 LlmStreamParser（纯函数，可单测）；非法/不完整 JSON 仍抛出供 buffer 重试。
    */
   public static parseStreamEventsFromSseData(dataStr: string): StreamEvent[] {
-    const chunk: LlmStreamChunk = JSON.parse(dataStr) as LlmStreamChunk;
-    if (chunk.choices.length === 0) {
-      return [];
-    }
-    const events: StreamEvent[] = [];
-    const choice: LlmStreamChoice = chunk.choices[0];
-    const delta: LlmStreamDelta | null = choice.delta;
-    if (delta !== undefined && delta !== null) {
-      const reasoning: string = delta.reasoning_content ?? '';
-      if (reasoning.length > 0) {
-        const thinkingEvent: StreamEvent = { type: 'thinking', delta: reasoning };
-        events.push(thinkingEvent);
+    return parseSseChunkEvents(dataStr);
+  }
+
+  /** 把流式累积的 tool_calls 还原成按 index 排序的完整调用列表。 */
+  private static collectStreamedToolCalls(acc: Map<number, StreamToolCallAccumulator>): LlmToolCall[] {
+    const indexes: number[] = [];
+    acc.forEach((_value: StreamToolCallAccumulator, key: number): void => {
+      indexes.push(key);
+    });
+    indexes.sort((left: number, right: number): number => left - right);
+    const calls: LlmToolCall[] = [];
+    for (let i = 0; i < indexes.length; i += 1) {
+      const item: StreamToolCallAccumulator | undefined = acc.get(indexes[i]);
+      if (item === undefined || item.name.length === 0) {
+        continue;
       }
-      const content: string = delta.content ?? '';
-      if (content.length > 0) {
-        const textEvent: StreamEvent = { type: 'text', delta: content };
-        events.push(textEvent);
-      }
+      const call: LlmToolCall = {
+        id: item.id.length > 0 ? item.id : 'call_' + indexes[i].toString(),
+        type: 'function',
+        function: { name: item.name, arguments: item.argumentsJson },
+      };
+      calls.push(call);
     }
-    if (choice.finish_reason === 'length') {
-      const truncationEvent: StreamEvent = { type: 'text', delta: '\n\n' + TRUNCATION_MARKER };
-      events.push(truncationEvent);
-    }
-    return events;
+    return calls;
   }
 
   /**

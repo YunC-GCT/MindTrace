@@ -8,7 +8,9 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..', '..')
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8')
 
 test('Issue 98 exposes typed light generation through Dispatcher.dispatch', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
+  // 2026-11-02：light 生成路径已迁入 NoteGenerationWorkflow。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets')
   const models = read('common/src/main/ets/models/NoteGenerationModels.ets')
 
   assert.match(models, /interface NoteGenerationRequest/)
@@ -16,13 +18,18 @@ test('Issue 98 exposes typed light generation through Dispatcher.dispatch', () =
   assert.match(models, /interface NoteDraftDocument/)
   assert.match(models, /interface NoteGenerationCheckpoint/)
   assert.match(models, /interface NoteGenerationResult/)
-  assert.match(dispatcher, /NoteGenerationRequest/)
-  assert.match(dispatcher, /persist:\s*false/)
+  assert.match(read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets'), /NoteGenerationRequest/)
+  assert.match(branch, /persist:\s*false/)
   assert.doesNotMatch(dispatcher, /NoteGenerationRepositoryImpl/)
 })
 
 test('note generation exposes coarse progress through the Dispatcher seam', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets')
+  const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets')
+  // 2026-11-02：DispatchOptions 抽到独立模块、生成逻辑迁入 NoteGenerationWorkflow，断言按归属分开。
+  const dispatchOptions = read('agents/src/main/ets/core/dispatch/DispatchOptions.ets')
+  const generationBranch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets')
+  const incrementalWorkflow = read('agents/src/main/ets/workflows/NoteRegenerateWorkflow.ets')
+  const optionsSource = dispatcher + '\n' + dispatchOptions
   const models = read('common/src/main/ets/models/NoteGenerationModels.ets')
   const commonIndex = read('common/src/main/ets/Index.ets')
 
@@ -31,9 +38,9 @@ test('note generation exposes coarse progress through the Dispatcher seam', () =
   assert.match(models, /type NoteGenerationProgressSink = \(event: NoteGenerationProgressEvent\) => void/)
   assert.match(commonIndex, /NoteGenerationProgressEvent/)
   assert.match(commonIndex, /NoteGenerationProgressSink/)
-  assert.match(dispatcher, /progressSink\?: NoteGenerationProgressSink/)
-  assert.match(dispatcher, /activity: 'collect_sources'/)
-  assert.match(dispatcher, /activity: 'write_draft'/)
+  assert.match(optionsSource, /progressSink\?: NoteGenerationProgressSink/)
+  assert.match(incrementalWorkflow, /activity: 'collect_sources'/)
+  assert.match(generationBranch, /activity: 'write_draft'/)
 })
 
 test('Issue 98 repository persists recoverable artifacts without a second note DAO', () => {
@@ -52,13 +59,16 @@ test('Issue 98 repository persists recoverable artifacts without a second note D
 })
 
 test('Issue 98 keeps provider adaptation in the single LlmClient transport', () => {
-  const knowledgeModel = read('agents/src/main/ets/agents/KnowledgeModel.ets')
-  const jsonCaller = read('agents/src/main/ets/agents/GenerationJsonCaller.ets')
+  const knowledgeModel = read('agents/src/main/ets/subagents/KnowledgeModel.ets')
+  const draftComposer = read('agents/src/main/ets/subagents/DraftComposer.ets')
+  const jsonCaller = read('agents/src/main/ets/subagents/GenerationJsonCaller.ets')
   const llmClient = read('common/src/main/ets/llm/LlmClient.ets')
   const providers = read('common/src/main/ets/llm/providers.ets')
 
+  // KnowledgeModel 已收成轻量编排（spec 015），真调用在 DraftComposer
   assert.match(knowledgeModel, /structureLightDraft/)
-  assert.match(knowledgeModel, /this\.jsonCaller\.callJson\(/)
+  assert.match(knowledgeModel, /this\.draftComposer\.structureLightDraft/)
+  assert.match(draftComposer, /this\.jsonCaller\.callJson\(/)
   assert.match(jsonCaller, /this\.client\.call\(request\)/)
   assert.match(llmClient, /responseFormat/)
   assert.match(providers, /strictStructuredOutput/)

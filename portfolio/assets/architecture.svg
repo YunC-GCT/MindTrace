@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" role="img" aria-label="MindTrace 五模块架构：entry、skill、cardservice 三个 HAP，agents 与 common 两个 HSP，以及本地数据与外部模型边界">
+  <defs>
+    <marker id="ar-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/>
+    </marker>
+    <marker id="ar-dash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/>
+    </marker>
+    <style>
+      .t { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+      .h { font-size: 15px; font-weight: 700; fill: #0f172a; }
+      .s { font-size: 12px; fill: #64748b; }
+      .n { font-size: 11px; font-weight: 700; fill: #0f766e; letter-spacing: 1px; }
+      .box { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.4; }
+      .agents { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.6; }
+      .common { fill: #eff6ff; stroke: #3b82f6; stroke-width: 1.4; }
+      .ext { fill: #fffbeb; stroke: #b45309; stroke-width: 1.4; stroke-dasharray: 6 4; }
+    </style>
+  </defs>
+
+  <rect width="960" height="520" fill="#f8fafc"/>
+  <text x="40" y="38" class="t n">ARCHITECTURE</text>
+  <text x="40" y="66" class="t h" font-size="21">五个模块，三条硬边界</text>
+
+  <!-- HAP layer -->
+  <text x="40" y="100" class="t s" font-weight="700">HAP 层</text>
+  <g class="t">
+    <rect x="40" y="112" width="250" height="92" rx="12" class="box"/>
+    <text x="58" y="138" class="h">entry</text>
+    <text x="58" y="157" class="s">页面、浮窗、设置、A2A 扩展能力</text>
+    <text x="58" y="175" class="s">ConversationRuntime / CapturePipeline</text>
+
+    <rect x="304" y="112" width="180" height="92" rx="12" class="box"/>
+    <text x="322" y="138" class="h">skill</text>
+    <text x="322" y="157" class="s">小艺意图 / 技能入口</text>
+    <text x="322" y="175" class="s">测试态暂缓</text>
+
+    <rect x="498" y="112" width="180" height="92" rx="12" class="box"/>
+    <text x="516" y="138" class="h">cardservice</text>
+    <text x="516" y="157" class="s">服务卡片与快照</text>
+    <text x="516" y="175" class="s">学习概览</text>
+  </g>
+
+  <!-- agents -->
+  <text x="40" y="242" class="t s" font-weight="700">HSP 层</text>
+  <g class="t">
+    <rect x="40" y="254" width="638" height="104" rx="12" class="agents"/>
+    <text x="58" y="280" class="h">agents：工作流与子代理</text>
+    <text x="58" y="301" class="s">Dispatcher → CaptureGraph（OCR → Structure → Persist）→ NoteOutcome</text>
+    <text x="58" y="320" class="s">ConversationWorkflow · DraftCommitService · ReviewAgent（规划中）</text>
+    <text x="58" y="339" class="s">PromptBuilder · CaptureStructurer · KnowledgeModel</text>
+  </g>
+
+  <!-- common -->
+  <g class="t">
+    <rect x="40" y="378" width="638" height="104" rx="12" class="common"/>
+    <text x="58" y="404" class="h">common：契约、数据与模型网关</text>
+    <text x="58" y="425" class="s">ports / models / NoteCommand / NoteOutcome / ReviewWritePort</text>
+    <text x="58" y="444" class="s">DatabaseHelper（schema v23）· LlmConfig · 混合检索 · 端口适配</text>
+    <text x="58" y="463" class="s">不依赖 UI，不持有页面状态</text>
+  </g>
+
+  <!-- data -->
+  <g class="t">
+    <rect x="706" y="254" width="214" height="104" rx="12" class="box"/>
+    <text x="724" y="280" class="h">本地数据</text>
+    <text x="724" y="301" class="s">RDB / FTS5 / 向量</text>
+    <text x="724" y="320" class="s">草稿、计划、inbox、receipt</text>
+    <text x="724" y="339" class="s">笔记与版本留在设备</text>
+
+    <rect x="706" y="378" width="214" height="104" rx="12" class="ext"/>
+    <text x="724" y="404" class="h">外部服务</text>
+    <text x="724" y="425" class="s">用户配置的 LLM</text>
+    <text x="724" y="444" class="s">本机 embedding 服务</text>
+    <text x="724" y="463" class="s">仅生成/向量请求出网</text>
+  </g>
+
+  <!-- arrows -->
+  <path d="M165 204 L 165 254" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#ar-arrow)"/>
+  <path d="M394 204 L 394 254" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#ar-arrow)"/>
+  <path d="M588 204 L 588 254" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#ar-arrow)"/>
+  <path d="M359 358 L 359 378" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#ar-arrow)"/>
+  <path d="M678 306 L 706 306" fill="none" stroke="#0f766e" stroke-width="1.5" marker-end="url(#ar-arrow)"/>
+  <path d="M813 378 L 813 358" fill="none" stroke="#b45309" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ar-dash)"/>
+
+  <text x="40" y="510" class="t s">硬边界：agents 不 import entry；pages/overlays 不直接 import CaptureGraph / CommandExecutor / NoteDao；不新增第 6 个模块。</text>
+</svg>

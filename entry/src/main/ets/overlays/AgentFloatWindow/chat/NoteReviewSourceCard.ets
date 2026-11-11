@@ -20,7 +20,7 @@ import {
   W_MEDIUM,
   W_SEMIBOLD,
 } from 'common'
-import { NoteEvidenceCitation } from '../../../models/NoteEvidenceModels'
+import { NoteEvidenceCitation } from 'common'
 import { AppIcon } from '../../../shared/atoms/AppIcon'
 
 @Component

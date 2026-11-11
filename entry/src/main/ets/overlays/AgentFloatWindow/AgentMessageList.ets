@@ -7,8 +7,8 @@
  */
 
 import { S_2, S_4 } from 'common';
-import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
-import { NoteReviewFeedback } from '../../models/NoteReviewModels';
+import { NoteEvidenceCitation } from 'common';
+import { NoteReviewFeedback } from 'common';
 import { ChatBubble } from './chat/ChatBubble';
 import { ChatAutoFollowState } from './chat/ChatAutoFollowState';
 import { EmptyStateHint } from './chat/EmptyStateHint';
@@ -61,6 +61,8 @@ export struct AgentMessageList {
   onSourceTap: (citation: NoteEvidenceCitation) => void = (_citation: NoteEvidenceCitation): void => {};
   onFeedback: (messageId: number, feedback: NoteReviewFeedback) => void =
     (_messageId: number, _feedback: NoteReviewFeedback): void => {};
+  onTopicSelect: (messageId: number, runId: string, topicId: string) => void =
+    (_messageId: number, _runId: string, _topicId: string): void => {};
   scroller: Scroller = new Scroller();
   private dataSource: ChatMessageDataSource = new ChatMessageDataSource();
   private autoFollowState: ChatAutoFollowState = new ChatAutoFollowState();
@@ -99,6 +101,7 @@ export struct AgentMessageList {
               msg: msg,
               onSourceTap: this.onSourceTap,
               onFeedback: this.onFeedback,
+              onTopicSelect: this.onTopicSelect,
             });
           }
           .width('100%')

@@ -6,15 +6,15 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (file) => readFileSync(resolve(root, file), 'utf8');
 
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
-const knowledgeModel = read('agents/src/main/ets/agents/KnowledgeModel.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
+const knowledgeModel = read('agents/src/main/ets/subagents/KnowledgeModel.ets');
 const truthCheckNode = read('agents/src/main/ets/graph/nodes/TruthCheckNode.ets');
 const persistNode = read('agents/src/main/ets/graph/nodes/PersistNode.ets');
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
 const repository = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
 const memoryDao = read('entry/src/main/ets/database/AgentMemoryDao.ets');
 const memoryService = read('entry/src/main/ets/services/AgentMemoryService.ets');
-const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const agentTool = read('common/src/main/ets/tools/ToolCatalog.ets');
 const generationTests = read('entry/src/test/DispatcherNoteGeneration.test.ets');
@@ -26,10 +26,12 @@ const withoutComments = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('Issue 105 removes the old summarize-then-persist route and duplicate source gate', () => {
+  // 2026-11-02：source gate 断言随迁移指向 NoteGenerationWorkflow。
+  const generationBranch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
   assert.doesNotMatch(workflow, /summarizeNoteMaterial|material_summary/);
   assert.doesNotMatch(aiService, /summarizeNoteMaterial|material_summary/);
   assert.doesNotMatch(dispatcher, /inputSourceIssues/);
-  assert.equal((dispatcher.match(/validateSourceBundle\(/g) || []).length, 1);
+  assert.equal((generationBranch.match(/validateSourceBundle\(/g) || []).length, 1);
 });
 
 test('Issue 105 consumes only explicitly referenced pending source ids', () => {

@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 //  database/StudyPlanDao.ets — 学习计划数据访问层
 //  ----------------------------------------------------------------------------
 //  职责: study_plan 表 CRUD，模式对齐 NoteDao
@@ -7,8 +7,9 @@
 
 import { relationalStore } from "@kit.ArkData"
 import { StudyPlanItem } from "common"
+import type { StudyPlanReadStore } from "common"
 
-export class StudyPlanDao {
+export class StudyPlanDao implements StudyPlanReadStore {
   private store: relationalStore.RdbStore
 
   constructor(store: relationalStore.RdbStore) {
