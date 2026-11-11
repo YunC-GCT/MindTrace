@@ -119,8 +119,14 @@ export class NotePreparedWorkflow implements NoteWorkflow {
     }
     let committedCandidate: KnowledgeUnit = prepared.candidate;
     if (finalState.commitResult !== undefined) {
+      const duplicateCommit: boolean = finalState.commitResult.duplicate === true;
       committedCandidate = copyRegeneratedUnit(prepared.candidate, prepared.candidate.content);
       committedCandidate.version = finalState.commitResult.version;
+      // 判重命中时端口返回的是已有笔记 id；不能再用候选 id 覆盖，否则上层
+      // 无法判断「已复用」，A2A / UI 的重复提示都会失效。
+      if (duplicateCommit) {
+        committedCandidate.id = finalState.commitResult.noteId;
+      }
       const contentChanged: boolean = prepared.incrementalDiff?.some(
         (item: IncrementalDiffItem): boolean => item.kind === 'changed' || item.kind === 'added',
       ) === true;

@@ -131,9 +131,9 @@ export class ConversationNoteHandler {
         count: 1,
         reason: 'draft-ready',
       };
-      const notifySuggestion = this.host.nodeCallbacks().onNoteSuggestion;
-      if (notifySuggestion !== undefined) {
-        notifySuggestion(ref, suggestion);
+      const callbacks = this.host.nodeCallbacks();
+      if (callbacks.onNoteSuggestion !== undefined) {
+        callbacks.onNoteSuggestion(ref, suggestion);
       }
       this.host.nodeCallbacks().completeProgress(ref);
       return event;

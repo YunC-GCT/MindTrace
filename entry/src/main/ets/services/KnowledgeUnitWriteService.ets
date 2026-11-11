@@ -51,18 +51,21 @@ export class KnowledgeUnitWriteService {
     this.judge = judge;
   }
 
-  async create(unit: KnowledgeUnit, generationMetadata: string = ''): Promise<KnowledgeUnitWriteResult> {
+  async create(unit: KnowledgeUnit, generationMetadata: string = '',
+    allowDuplicate: boolean = false): Promise<KnowledgeUnitWriteResult> {
     WritePathValidator.validateKnowledgeUnit(unit);
-    const duplicate: KnowledgeUnit | null = await this.findDuplicate(unit);
-    if (duplicate !== null) {
-      KnowledgeUnitWriteService.logMergeSuggestion(unit, duplicate);
-      return {
-        committed: true,
-        rowId: 0,
-        unit: duplicate,
-        warnings: ['DUPLICATE_SKIPPED'],
-        duplicate: true,
-      };
+    if (!allowDuplicate) {
+      const duplicate: KnowledgeUnit | null = await this.findDuplicate(unit);
+      if (duplicate !== null) {
+        KnowledgeUnitWriteService.logMergeSuggestion(unit, duplicate);
+        return {
+          committed: true,
+          rowId: 0,
+          unit: duplicate,
+          warnings: ['DUPLICATE_SKIPPED'],
+          duplicate: true,
+        };
+      }
     }
     const persisted: KnowledgeUnitPersistenceResult =
       await this.repository.createWithRevision(unit, generationMetadata);

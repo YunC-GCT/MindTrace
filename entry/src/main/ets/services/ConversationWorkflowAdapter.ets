@@ -158,7 +158,7 @@ export class ConversationWorkflowAdapter implements ConversationWorkflowCallback
   }
 
   /** 建议请求：记日志并转发给 UI；未实现回调的宿主行为不变。 */
-  onNoteSuggestion?(ref: ConversationRunRef, suggestion: NoteSuggestion): void {
+  onNoteSuggestion(ref: ConversationRunRef, suggestion: NoteSuggestion): void {
     if (!this.accepts(ref, 'note-suggestion')) {
       return;
     }

@@ -1,44 +1,52 @@
 # MathMind OCR Service
 
 This directory is the companion OCR service shipped with the Math_Mind project.
-It is not executed inside the HarmonyOS HAP. Run it on a Windows PC, then let the
-App call the PC over the local network.
+It runs in Docker on the PC; the HarmonyOS App calls it over the local network.
+
+## Docker（推荐）
+
+前置：已启动 Docker Desktop（Linux 容器）。
+
+```bash
+docker compose build ocr
+```
+
+启动。复用本机已有 PaddleX 公式模型缓存：
+
+```bash
+# Git Bash
+MT_PADDLEX_CACHE=C:/Users/<you>/.paddlex docker compose up -d ocr
+```
+
+```powershell
+# PowerShell
+$env:MT_PADDLEX_CACHE="C:/Users/<you>/.paddlex"
+docker compose up -d ocr
+```
+
+不设置 `MT_PADDLEX_CACHE` 时，compose 会挂载仓库内 `.cache/paddlex`，首次识别仍会下载公式模型。
+
+检查：
+
+```bash
+curl http://127.0.0.1:8000/api/v1/formula/health
+docker compose logs -f ocr
+```
+
+镜像内置 `tesseract-ocr` + `tesseract-ocr-chi-sim`，Tesseract 不再依赖 Windows 的 `C:\Program Files\Tesseract-OCR`。
+
+## 原生启动（已弃用）
+
+`start-ocr-server.bat` / `tools\ocr_service\start.bat` 仅保留作应急；日常入口统一走 Docker。原生虚拟环境不再使用。
 
 ## Requirements
 
-- Windows 10/11
-- Python 3.10 or later
-- Optional for text OCR: Tesseract installed at `C:\Program Files\Tesseract-OCR\`
+- Windows 10/11（Docker Desktop）
+- 或 Python 3.10+（仅原生应急启动）
 
 The first run may download OCR/model dependencies and can take several minutes.
 
-## Start
-
-From the project root:
-
-```bat
-start-ocr-server.bat
-```
-
-Or from this directory:
-
-```bat
-start.bat
-```
-
-When the script starts successfully, copy the value printed under:
-
-```text
-Enter this in the app OCR setting:
-```
-
-In the App OCR setting, entering only the IP is enough, for example:
-
-```text
-192.168.1.50
-```
-
-The App normalizes it to:
+App OCR setting: enter the PC LAN IPv4 only, for example `192.168.1.50`; the App normalizes it to:
 
 ```text
 http://192.168.1.50:8000/api/v1/ocr/recognize

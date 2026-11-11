@@ -1,0 +1,65 @@
+name: mindtrace
+
+services:
+  embedding:
+    build:
+      context: ./tools/embedding_service
+      dockerfile: Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    image: mindtrace-embedding:local
+    container_name: mindtrace-embedding
+    ports:
+      # 小艺/手机通过 PC 局域网 IP 或 hdc rport 访问；绑定所有网卡。
+      - "8001:8001"
+    environment:
+      MT_EMBED_MODEL: ${MT_EMBED_MODEL:-BAAI/bge-m3}
+      MT_RERANK_MODEL: ${MT_RERANK_MODEL:-BAAI/bge-reranker-base}
+      MT_ENABLE_RERANK: ${MT_ENABLE_RERANK:-1}
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+      HF_HOME: /models/hf
+      SENTENCE_TRANSFORMERS_HOME: /models/hf
+      # 已有模型缓存时设为 1，避免容器启动再去 Hub 校验/下载；首次下载设为 0。
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+      PYTHONIOENCODING: utf-8
+    volumes:
+      # 默认用仓库内 .cache/huggingface（已被 .gitignore 忽略）；
+      # 复用本机已有模型时设置 MT_HF_CACHE=C:/Users/<you>/.cache/huggingface
+      - "${MT_HF_CACHE:-./.cache/huggingface}:/models/hf"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 900s
+    stop_grace_period: 30s
+
+  ocr:
+    build:
+      context: ./tools/ocr_service
+      dockerfile: Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    image: mindtrace-ocr:local
+    container_name: mindtrace-ocr
+    ports:
+      - "8000:8000"
+    environment:
+      TESSERACT_EXE: /usr/bin/tesseract
+      TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
+      HOME: /root
+      PYTHONIOENCODING: utf-8
+    volumes:
+      # PaddleX 公式模型缓存；已有缓存时设置 MT_PADDLEX_CACHE=C:/Users/<you>/.paddlex
+      - "${MT_PADDLEX_CACHE:-./.cache/paddlex}:/root/.paddlex"
+    restart: unless-stopped
+    shm_size: "512m"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/formula/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    stop_grace_period: 30s

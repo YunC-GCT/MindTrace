@@ -82,6 +82,15 @@ export class ConversationDraftCoordinator {
     );
   }
 
+  async requestRegeneration(sessionId: string, noteId: string, instruction: string): Promise<void> {
+    await this.executeVoid(
+      sessionId,
+      'regenerate',
+      (ref: ConversationRunRef): Promise<void> =>
+        this.workflow.requestRegeneration(ref, noteId, [noteId], instruction),
+    );
+  }
+
   async resumeClarification(
     sessionId: string,
     runId: string,

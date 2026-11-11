@@ -23,7 +23,6 @@ import { textProcessing } from '@kit.NaturalLanguageKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DatabaseHelper, ImageSearchIndexRegistry, LlmConfig, cosineSimilarity } from 'common';
-import { DifficultyLevel, ReviewStatus } from 'common';
 import type { EmbeddingVector } from 'common';
 import type { CaptureSetItemResult, CaptureSetPreview, CaptureSetProblem, CaptureSetResult, ImageSearchHit, KnowledgeUnit, NoteOutcome } from 'common';
 import { AiService } from '../services/AiService';
@@ -44,13 +43,6 @@ import { RunStoreDao } from '../database/RunStoreDao';
 import { A2AInboxIngestService, IngestSummary } from '../services/A2AInboxIngestService';
 import { AgentInboxQueue } from '../services/AgentInboxQueue';
 import { A2AImageContextStore } from '../services/A2AImageContextStore';
-import { KnowledgeUnitWriteServiceFactory } from '../services/KnowledgeUnitWriteServiceFactory';
-import { TEST_CORPUS } from './TestCorpusSeed';
-import type { TestCorpusNote } from './TestCorpusSeed';
-import { RAG_SPOT_CASES } from './RagSpotCases';
-import type { RagSpotCase } from './RagSpotCases';
-import { BULK_CORPUS, OOD_QUERIES } from './TestCorpusBulk';
-import type { BulkNote, OodQuery } from './TestCorpusBulk';
 import { buildInboxItem } from '../services/AgentInboxModels';
 import { WRITE_JOB_RUN_PREFIX } from '../services/WriteJobEvents';
 import { WriteJobFlags, WriteJobScheduler, WriteJobStats } from '../services/WriteJobScheduler';
@@ -73,7 +65,6 @@ import { A2APlanStore } from '../services/A2APlanStore';
 
 import { createNoteEvidenceService } from '../services/EvidenceComposition';
 import { NoteEvidenceContext } from 'common';
-import { RAG_EVAL_CASES, RagEvalCase } from './RagEvalCases';
 import { AppIntentDecision, classifyAppIntentLocal } from 'agents/src/main/ets/chat/Index';
 import { LegacyDedupeEntry, LegacyDuplicateGroup, LegacySubjectInput, groupExactDuplicates, groupNearDuplicates, isDuplicateOf, normalizeForDedupe, normalizeLegacySubject } from 'agents/src/main/ets/note/Index';
 import { extractMathSignature } from 'common';
@@ -720,104 +711,7 @@ export class DebugCaptureRunner {
     }
   }
 
-  private static async countWithBind(store: relationalStore.RdbStore, sql: string,
-    args: Array<string | number>): Promise<number> {
-    const rs: relationalStore.ResultSet = await store.querySql(sql, args);
-    try {
-      if (rs.goToFirstRow()) {
-        return rs.getLong(rs.getColumnIndex('c'));
-      }
-      return 0;
-    } finally {
-      rs.close();
-    }
-  }
-
   /** 044 R5：召回评测。逐条跑固定查询集，输出 hit@1 / hit@5 / miss / 负样本假阳性。 */
-  static async runRagEval(ctx: common.UIAbilityContext): Promise<void> {
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
-      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragEval=0 err=store-null');
-      return;
-    }
-    const startedAt: number = Date.now();
-    const service: NoteEvidenceService = createNoteEvidenceService();
-    let total: number = 0;
-    let hit1: number = 0;
-    let hit5: number = 0;
-    let miss: number = 0;
-    let negatives: number = 0;
-    let falsePositives: number = 0;
-    let skipped: number = 0;
-    let paraTotal: number = 0;
-    let paraHit1: number = 0;
-    let paraHit5: number = 0;
-    try {
-      for (let i = 0; i < RAG_EVAL_CASES.length; i += 1) {
-        const item: RagEvalCase = RAG_EVAL_CASES[i];
-        if (item.expectTitle.length > 0) {
-          const exists: number = await DebugCaptureRunner.countWithBind(store,
-            'SELECT COUNT(*) AS c FROM knowledge_unit WHERE title = ?', [item.expectTitle]);
-          if (exists === 0) {
-            skipped += 1;
-            hilog.info(DOMAIN, TAG, '%{public}s', 'stage=rag-eval-case q=' + item.query + ' skip=no-note');
-            continue;
-          }
-        }
-        total += 1;
-        const context: NoteEvidenceContext = await service.build(item.query, { topK: 5, graphMode: 'none' });
-        let rank: number = -1;
-        for (let k = 0; k < context.citations.length; k += 1) {
-          if (item.expectTitle.length > 0 && context.citations[k].title.indexOf(item.expectTitle) >= 0) {
-            rank = k;
-            break;
-          }
-        }
-        if (item.expectTitle.length === 0) {
-          negatives += 1;
-          if (context.citations.length > 0) {
-            falsePositives += 1;
-          }
-          hilog.info(DOMAIN, TAG, '%{public}s',
-            'stage=rag-eval-case q=' + item.query + ' negative=1 citations=' + context.citations.length.toString());
-          continue;
-        }
-        if (item.kind === 'paraphrase') {
-          paraTotal += 1;
-          if (rank === 0) {
-            paraHit1 += 1;
-          }
-          if (rank >= 0) {
-            paraHit5 += 1;
-          }
-        }
-        if (rank === 0) {
-          hit1 += 1;
-        }
-        if (rank >= 0) {
-          hit5 += 1;
-        } else {
-          miss += 1;
-        }
-        hilog.info(DOMAIN, TAG, '%{public}s',
-          'stage=rag-eval-case q=' + item.query + ' rank=' + rank.toString()
-            + ' citations=' + context.citations.length.toString()
-            + ' vec=' + await DebugCaptureRunner.vectorTopScore(store, item.query));
-      }
-      hilog.info(DOMAIN, TAG, '%{public}s',
-        'stage=done ragEval=1 total=' + total.toString()
-          + ' hit1=' + hit1.toString() + ' hit5=' + hit5.toString() + ' miss=' + miss.toString()
-          + ' negatives=' + negatives.toString() + ' falsePositives=' + falsePositives.toString()
-          + ' paraTotal=' + paraTotal.toString() + ' paraHit1=' + paraHit1.toString()
-          + ' paraHit5=' + paraHit5.toString()
-          + ' skipped=' + skipped.toString()
-          + ' ms=' + (Date.now() - startedAt).toString());
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, '%{public}s',
-        'stage=done ragEval=0 err=' + (error as Error).message);
-    }
-  }
-
   /** App 意图规则自检（纯本地，不调模型）：逐条输出意图决策。 */
 
   static async runCaptureSetS3(ctx: common.UIAbilityContext): Promise<void> {
@@ -970,132 +864,123 @@ export class DebugCaptureRunner {
   }
 
   /**
+   * 只清理测试语料（seed-math-* / bulk-* / source=file_import），保留产品生成的真实笔记。
+   * 走 NoteDao.deleteById 清 FTS/关系边，再补删 RAG 分块、向量、历史版本与复习行。
+   */
+  static async runClearSeedCorpus(ctx: common.UIAbilityContext, apply: boolean): Promise<void> {
+    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
+    if (store === null) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done clearSeed=0 err=store-null');
+      return;
+    }
+    const startedAt: number = Date.now();
+    const ids: string[] = [];
+    let resultSet: relationalStore.ResultSet | undefined = undefined;
+    try {
+      resultSet = await store.querySql(
+        "SELECT id FROM knowledge_unit WHERE source = 'file_import' OR id LIKE 'seed-%' OR id LIKE 'bulk-%'", []);
+      while (resultSet.goToNextRow()) {
+        ids.push(resultSet.getString(resultSet.getColumnIndex('id')));
+      }
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done clearSeed=0 err=' + (error as Error).message);
+      return;
+    } finally {
+      if (resultSet !== undefined) {
+        resultSet.close();
+      }
+    }
+    const total: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
+    const auditSources: string = await DebugCaptureRunner.noteSourceBreakdown(store);
+    hilog.info(DOMAIN, TAG, '%{public}s',
+      'stage=clear-seed notes=' + ids.length.toString() + ' total=' + total.toString()
+        + ' apply=' + (apply ? '1' : '0'));
+    DebugCaptureRunner.writeSeedCleanupReport(ctx,
+      '{"status":"audit","seedIds":' + ids.length.toString() + ',"total":' + total.toString()
+        + ',"sources":"' + auditSources + '","apply":' + (apply ? '1' : '0') + '}');
+    if (!apply) {
+      hilog.info(DOMAIN, TAG, '%{public}s',
+        'stage=done clearSeed=1 dryRun=1 ms=' + (Date.now() - startedAt).toString());
+      return;
+    }
+    const dao: NoteDao = new NoteDao(store);
+    let removed: number = 0;
+    let failed: number = 0;
+    for (let i = 0; i < ids.length; i += 1) {
+      const id: string = ids[i];
+      try {
+        await dao.deleteById(id);
+        await DebugCaptureRunner.removeSeedDerivedRows(store, id);
+        removed += 1;
+      } catch (error) {
+        failed += 1;
+        hilog.warn(DOMAIN, TAG, '%{public}s',
+          'stage=clear-seed fail id=' + id + ' err=' + (error as Error).message);
+      }
+    }
+    NoteVectorIndex.invalidate();
+    const remaining: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
+    const remainingSources: string = await DebugCaptureRunner.noteSourceBreakdown(store);
+    hilog.info(DOMAIN, TAG, '%{public}s',
+      'stage=done clearSeed=1 removed=' + removed.toString() + ' failed=' + failed.toString()
+        + ' remaining=' + remaining.toString() + ' ms=' + (Date.now() - startedAt).toString());
+    DebugCaptureRunner.writeSeedCleanupReport(ctx,
+      '{"status":"done","removed":' + removed.toString() + ',"failed":' + failed.toString()
+        + ',"remaining":' + remaining.toString() + ',"sources":"' + remainingSources + '"}');
+  }
+
+  private static async noteSourceBreakdown(store: relationalStore.RdbStore): Promise<string> {
+    const parts: string[] = [];
+    let resultSet: relationalStore.ResultSet | undefined = undefined;
+    try {
+      resultSet = await store.querySql(
+        "SELECT source, COUNT(*) AS c FROM knowledge_unit GROUP BY source ORDER BY c DESC", []);
+      while (resultSet.goToNextRow()) {
+        const source: string = resultSet.getString(resultSet.getColumnIndex('source'));
+        const count: number = resultSet.getLong(resultSet.getColumnIndex('c'));
+        parts.push((source.length > 0 ? source : 'unknown') + '=' + count.toString());
+      }
+    } catch (error) {
+      return 'err';
+    } finally {
+      if (resultSet !== undefined) {
+        resultSet.close();
+      }
+    }
+    return parts.join(',');
+  }
+
+  private static writeSeedCleanupReport(ctx: common.UIAbilityContext, json: string): void {
+    try {
+      const file: fileIo.File = fileIo.openSync(ctx.filesDir + '/a2a/seed-cleanup.json',
+        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      try {
+        fileIo.writeSync(file.fd, json);
+      } finally {
+        fileIo.closeSync(file);
+      }
+    } catch (error) {
+      // 报告只是调试旁路，写失败不影响清理。
+    }
+  }
+
+  private static async removeSeedDerivedRows(store: relationalStore.RdbStore, id: string): Promise<void> {
+    await store.executeSql(
+      'DELETE FROM rag_embedding WHERE chunk_id IN (SELECT id FROM rag_chunk WHERE unit_id = ?)', [id]);
+    await store.executeSql('DELETE FROM rag_chunk WHERE unit_id = ?', [id]);
+    await store.executeSql('DELETE FROM note_revision WHERE note_id = ?', [id]);
+    await store.executeSql(
+      'DELETE FROM review_op WHERE item_id IN (SELECT id FROM review_item WHERE unit_id = ?)', [id]);
+    await store.executeSql('DELETE FROM review_log WHERE unit_id = ?', [id]);
+    await store.executeSql('DELETE FROM review_item WHERE unit_id = ?', [id]);
+  }
+
+  /**
    * 导入固定测试语料（25 条大学数学笔记）。走真实写入链路，因此同样会触发
    * 判重、分块与向量生成——测试集就是正常写入的笔记，不是绕过链路塞进去的。
    */
-  static async runSeedTestCorpus(ctx: common.UIAbilityContext): Promise<void> {
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
-      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done seedCorpus=0 err=store-null');
-      return;
-    }
-    const startedAt: number = Date.now();
-    try {
-      const service = await KnowledgeUnitWriteServiceFactory.create(ctx, true);
-      let created: number = 0;
-      let duplicate: number = 0;
-      let failed: number = 0;
-      const base: number = Date.now();
-      for (let i = 0; i < TEST_CORPUS.length; i += 1) {
-        const spec: TestCorpusNote = TEST_CORPUS[i];
-        const unit: KnowledgeUnit = {
-          id: spec.id,
-          title: spec.title,
-          content: spec.content,
-          summary: spec.summary,
-          tags: spec.tags,
-          subject: spec.subject,
-          category: spec.category,
-          chapter: spec.chapter,
-          difficulty: DifficultyLevel.MEDIUM,
-          source: 'file_import',
-          createdAt: base + i,
-          updatedAt: base + i,
-          reviewStatus: ReviewStatus.NEW,
-          nextReviewAt: 0,
-          intervalDays: 0,
-          easeFactor: 2.5,
-          repetitions: 0,
-          prerequisites: [],
-          related: [],
-          embedding: [],
-          userId: '',
-          version: 1,
-        };
-        try {
-          const result = await service.create(unit);
-          if (result.duplicate === true) {
-            duplicate += 1;
-            hilog.warn(DOMAIN, TAG, '%{public}s', 'stage=seed-corpus duplicate id=' + spec.id);
-          } else {
-            created += 1;
-          }
-        } catch (error) {
-          failed += 1;
-          hilog.warn(DOMAIN, TAG, '%{public}s',
-            'stage=seed-corpus fail id=' + spec.id + ' err=' + (error as Error).message);
-        }
-      }
-      const total: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
-      hilog.info(DOMAIN, TAG, '%{public}s',
-        'stage=seed-corpus created=' + created.toString() + ' duplicate=' + duplicate.toString()
-          + ' failed=' + failed.toString() + ' total=' + total.toString()
-          + ' ms=' + (Date.now() - startedAt).toString());
-      hilog.info(DOMAIN, TAG, '%{public}s',
-        'stage=done seedCorpus=' + (failed === 0 && duplicate === 0 ? '1' : '0'));
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, '%{public}s',
-        'stage=done seedCorpus=0 err=' + (error as Error).message);
-    }
-  }
-
   /** 评测辅助：不设阈值统计该查询的分数分布，用于判断漏召回是分数不够还是模型混淆。 */
-  private static async vectorTopScore(store: relationalStore.RdbStore, query: string): Promise<string> {
-    try {
-      return await NoteVectorIndex.scoreStats(store, query);
-    } catch (error) {
-      return 'err';
-    }
-  }
-
   /** 泛化抽查：样本外问法的命中率，检验效果不是只对调过的评测集成立。 */
-  static async runRagSpotCheck(ctx: common.UIAbilityContext): Promise<void> {
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
-      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSpot=0 err=store-null');
-      return;
-    }
-    const startedAt: number = Date.now();
-    const service: NoteEvidenceService = createNoteEvidenceService();
-    let hit1: number = 0;
-    let hit5: number = 0;
-    let miss: number = 0;
-    try {
-      for (let i = 0; i < RAG_SPOT_CASES.length; i += 1) {
-        const item: RagSpotCase = RAG_SPOT_CASES[i];
-        const context: NoteEvidenceContext = await service.build(item.query, { topK: 5, graphMode: 'none' });
-        let rank: number = -1;
-        let first: string = '';
-        for (let k = 0; k < context.citations.length; k += 1) {
-          if (k === 0) {
-            first = context.citations[0].title;
-          }
-          if (context.citations[k].title.indexOf(item.expectTitle) >= 0) {
-            rank = k;
-            break;
-          }
-        }
-        if (rank === 0) {
-          hit1 += 1;
-        }
-        if (rank >= 0) {
-          hit5 += 1;
-        } else {
-          miss += 1;
-        }
-        hilog.info(DOMAIN, TAG, '%{public}s',
-          'stage=rag-spot-case q=' + item.query + ' rank=' + rank.toString()
-            + ' expect=' + item.expectTitle + ' first=' + first);
-      }
-      hilog.info(DOMAIN, TAG, '%{public}s',
-        'stage=done ragSpot=1 total=' + RAG_SPOT_CASES.length.toString()
-          + ' hit1=' + hit1.toString() + ' hit5=' + hit5.toString() + ' miss=' + miss.toString()
-          + ' ms=' + (Date.now() - startedAt).toString());
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragSpot=0 err=' + (error as Error).message);
-    }
-  }
-
   /**
    * 强制重建全部向量。改了「用哪段文本做向量」之后必须跑一次：
    * 模型名没变，补建逻辑不会认为旧向量过期。
@@ -1129,96 +1014,7 @@ export class DebugCaptureRunner {
   }
 
   /** 规模测试：把语料从 25 条扩到 100 条，验证阈值与重排触发线在更大语料下是否还稳。 */
-  static async runSeedBulkCorpus(ctx: common.UIAbilityContext): Promise<void> {
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
-      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done seedBulk=0 err=store-null');
-      return;
-    }
-    const startedAt: number = Date.now();
-    try {
-      const service = await KnowledgeUnitWriteServiceFactory.create(ctx, true);
-      let created: number = 0;
-      let duplicate: number = 0;
-      let failed: number = 0;
-      const base: number = Date.now();
-      for (let i = 0; i < BULK_CORPUS.length; i += 1) {
-        const spec: BulkNote = BULK_CORPUS[i];
-        const unit: KnowledgeUnit = {
-          id: 'bulk-' + (i < 10 ? '0' : '') + i.toString(),
-          title: spec.title,
-          content: spec.content,
-          summary: spec.summary,
-          tags: [],
-          subject: spec.subject,
-          category: '概念',
-          chapter: spec.subject,
-          difficulty: DifficultyLevel.MEDIUM,
-          source: 'file_import',
-          createdAt: base + i,
-          updatedAt: base + i,
-          reviewStatus: ReviewStatus.NEW,
-          nextReviewAt: 0,
-          intervalDays: 0,
-          easeFactor: 2.5,
-          repetitions: 0,
-          prerequisites: [],
-          related: [],
-          embedding: [],
-          userId: '',
-          version: 1,
-        };
-        try {
-          const result = await service.create(unit);
-          if (result.duplicate === true) {
-            duplicate += 1;
-          } else {
-            created += 1;
-          }
-        } catch (error) {
-          failed += 1;
-        }
-      }
-      const total: number = await DebugProbeSupport.countRows(store, 'knowledge_unit');
-      hilog.info(DOMAIN, TAG, '%{public}s',
-        'stage=seed-bulk created=' + created.toString() + ' duplicate=' + duplicate.toString()
-          + ' failed=' + failed.toString() + ' total=' + total.toString()
-          + ' ms=' + (Date.now() - startedAt).toString());
-      hilog.info(DOMAIN, TAG, '%{public}s', 'stage=done seedBulk=' + (failed === 0 ? '1' : '0'));
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done seedBulk=0 err=' + (error as Error).message);
-    }
-  }
-
   /** 语料外提问：这些主题笔记里根本没有，看检索会不会仍然硬凑出命中。 */
-  static async runOodCheck(ctx: common.UIAbilityContext): Promise<void> {
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
-      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragOod=0 err=store-null');
-      return;
-    }
-    try {
-      const service: NoteEvidenceService = createNoteEvidenceService();
-      let withHits: number = 0;
-      for (let i = 0; i < OOD_QUERIES.length; i += 1) {
-        const item: OodQuery = OOD_QUERIES[i];
-        const context: NoteEvidenceContext = await service.build(item.query, { topK: 5, graphMode: 'none' });
-        const first: string = context.citations.length > 0 ? context.citations[0].title : '-';
-        if (context.citations.length > 0) {
-          withHits += 1;
-        }
-        hilog.info(DOMAIN, TAG, '%{public}s',
-          'stage=rag-ood-case q=' + item.query + ' citations=' + context.citations.length.toString()
-            + ' first=' + first);
-      }
-      hilog.info(DOMAIN, TAG, '%{public}s',
-        'stage=done ragOod=1 total=' + OOD_QUERIES.length.toString()
-          + ' withHits=' + withHits.toString());
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, '%{public}s', 'stage=done ragOod=0 err=' + (error as Error).message);
-    }
-  }
-
   /** RAG 检索自检：对既有笔记跑 FTS（≥3字）/ LIKE（2字）两种查询。 */
 
   static async runRagSearch(ctx: common.UIAbilityContext): Promise<void> {
