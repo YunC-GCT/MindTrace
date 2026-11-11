@@ -708,4 +708,3 @@ test('ConversationWorkflow classify_intent routes explicit note-generation via u
     assert.equal(next.appIntent, 'note_generate');
   }
 });
-

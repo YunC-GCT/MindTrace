@@ -188,7 +188,7 @@ export function formatA2APlanProgress(plan: A2APlan, item: A2APlanItem, title: s
   lines.push('进度 ' + doneCount.toString() + '/' + plan.items.length.toString()
     + (remaining > 0
       ? '，还剩 ' + remaining.toString() + ' 题。回复「继续」整理下一题，或「第 N 题」/「全部」/「取消」。'
-      : '，全部整理完成 ✅')); 
+      : '，全部整理完成 ✅'));
   return lines.join('\n');
 }
 

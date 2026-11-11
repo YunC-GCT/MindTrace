@@ -298,4 +298,3 @@ export class NoteVectorIndex {
     return values;
   }
 }
-

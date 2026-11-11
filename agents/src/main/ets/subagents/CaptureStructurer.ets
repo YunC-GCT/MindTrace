@@ -691,4 +691,3 @@ export class CaptureStructurer {
     return undefined;
   }
 }
-

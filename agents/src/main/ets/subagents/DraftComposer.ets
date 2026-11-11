@@ -520,4 +520,3 @@ export class DraftComposer {
     return lines.join('\n');
   }
 }
-
