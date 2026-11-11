@@ -251,6 +251,17 @@ function main() {
     checks.push({ name: 'arkts-lint', status: 'SKIP', detail: 'no .ets changes', errors: [], warnings: [] });
   }
 
+  const hypiumGeneratedDir = join(REPO_ROOT, 'entry/src/ohosTest/ets/generated-knowledge-tests');
+  if (all && !existsSync(hypiumGeneratedDir)) {
+    // 生成物被 gitignore；CI clean checkout 必须先落盘，否则 hypium-check 只能报
+    // 一堆 missing。只在目录整体缺失时生成，已有文件仍由 --check 抓 stale/orphan。
+    const prepared = runNode('scripts/prepare-knowledge-hypium.mjs', []);
+    if (prepared.status !== 0) {
+      console.error(prepared.output);
+      process.exit(1);
+    }
+  }
+
   for (const [name, script, extraArgs] of [
     ['naming-lint', 'scripts/naming-lint/index.mjs'],
     ['link-check', 'scripts/link-check/index.mjs'],
