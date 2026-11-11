@@ -1,7 +1,7 @@
 # ArkTS / ArkUI — AI Coding Checklist
 
 > **用途**: agent 在写任何 `.ets` 之前的 60 秒预检清单。目标是减少“写完才被编译器打回”的往返，不是替代完整规则。
-> **权威源**: [`arkts-1.1.md`](./arkts-1.1.md)（40+ 官方规则 + ArkUI 项目约束 + 验证命令）· [`file-header-template.md`](../agents/file-header-template.md) · `scripts/arkts-lint/`
+> **权威源**: [`arkts-1.1.md`](./arkts-1.1.md)（40+ 官方规则 + ArkUI 项目约束 + 验证命令）· [`file-header-template.md`](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/agents/file-header-template.md) · `scripts/arkts-lint/`
 > **适用**: MindTrace 的 5 个 module（`entry` / `common` / `agents` / `skill` / `cardservice`）；SDK 基线以 `build-profile.json5` 为准（当前 6.1.1 / API 24）。
 
 ---
@@ -10,7 +10,7 @@
 
 1. 读 [`CONTEXT.md`](../../CONTEXT.md) 的相关词条（尤其 `Dispatcher` / `KnowledgeUnit` / `StreamEvent` / `Reply Body`）。
 2. 读本页；需要细节再查 [`arkts-1.1.md`](./arkts-1.1.md) 对应小节；需要机器可读的规则清单用 [`arkts-rules.json`](./arkts-rules.json)。
-3. 新文件先套 [`file-header-template.md`](../agents/file-header-template.md) 的文件头。
+3. 新文件先套 [`file-header-template.md`](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/agents/file-header-template.md) 的文件头。
 4. 改完跑 `node scripts/agent-gate/index.mjs`；它会串起 lint / naming / link / doc-trace / process-boundary，并跑全量单测。
 5. 交付时贴 gate 的 `RESULT: PASS`（或失败项）；没有 gate 输出的“完成”不算完成。
 

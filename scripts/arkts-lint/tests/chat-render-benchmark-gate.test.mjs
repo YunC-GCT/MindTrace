@@ -24,8 +24,8 @@ const statsPath = 'entry/src/main/ets/services/ChatRenderBenchmarkStats.ets';
 const harnessPath = 'entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatRenderBenchmarkHarness.ets';
 const mainPagesPath = 'entry/src/main/resources/base/profile/main_pages.json';
 const entryAbilityPath = 'entry/src/main/ets/entryability/EntryAbility.ets';
-const adrPath = 'docs/adr/0017-renderer-scheduler-budget-baseline.md';
-const spec021Path = 'docs/specs/021-chat-streaming-incremental-rendering.md';
+const adrPath = 'scripts/arkts-lint/tests/fixtures/core-contracts/docs/adr/0017-renderer-scheduler-budget-baseline.md';
+const spec021Path = 'scripts/arkts-lint/tests/fixtures/core-contracts/docs/specs/021-chat-streaming-incremental-rendering.md';
 
 const mathTextRenderer = read(mathTextRendererPath);
 const fixtures = read(fixturesPath);
@@ -137,7 +137,7 @@ test('ADR-0017 and spec 021 §6 carry budget identifiers, derivation rule, and c
 test('corrected raw JSONL evidence is committed and has 20 rows per fixture', () => {
   const fixtureIds = ['A', 'B', 'C', 'C_P'];
   for (const fixtureId of fixtureIds) {
-    const rawPath = resolve(root, 'docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/raw', fixtureId + '.jsonl');
+    const rawPath = resolve(root, 'scripts/arkts-lint/tests/fixtures/core-contracts/docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/raw', fixtureId + '.jsonl');
     const lines = readFileSync(rawPath, 'utf8').trim().split('\n').filter(Boolean);
     assert.equal(lines.length, 20, fixtureId + ' raw row count');
     const first = JSON.parse(lines[0]);
@@ -154,6 +154,6 @@ test('corrected raw JSONL evidence is committed and has 20 rows per fixture', ()
 });
 
 test('ADR-0017 is indexed in docs/adr/index.md', () => {
-  const index = read('docs/adr/index.md');
+  const index = read('scripts/arkts-lint/tests/fixtures/core-contracts/docs/adr/index.md');
   assert.match(index, /\[0017\]\(\.\/0017-renderer-scheduler-budget-baseline\.md\)/);
 });

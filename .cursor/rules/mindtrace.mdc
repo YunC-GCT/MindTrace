@@ -8,8 +8,8 @@ alwaysApply: true
 
 必读顺序：
 
-1. `AGENTS.md` — 红线、编码契约、指针表
-2. `docs/agents/phase-tracker.md` — 当前阶段与验收口径（P0–P6 + DoD）
+1. `AGENTS.md` — 协作约定与交付约束
+2. [当前阶段与验收](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/agents/phase-tracker.md) — 当前阶段与验收口径（P0–P6 + DoD）
 3. `CONTEXT.md` — 项目词表
 
 三条硬约束：

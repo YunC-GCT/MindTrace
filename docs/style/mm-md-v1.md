@@ -2,7 +2,7 @@
 
 > **Status**: active. 本文件是笔记正文的唯一协议定义；实现以 `common/src/main/ets/render/ContentProtocol.ets` 为准。
 > **Source**: 2026-07-22 渲染协议设计（原文已随旧计划清理，规范部分保留在本文件）。
-> **Related**: [ADR-0016](../adr/0016-reply-contract-by-transport.md)（Reply Body 契约）、[spec 021](../specs/021-chat-streaming-incremental-rendering.md)（流式渲染）、`CONTEXT.md`（Reply Body / StreamEvent）。
+> **Related**: [ADR-0016](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/adr/0016-reply-contract-by-transport.md)（Reply Body 契约）、[spec 021](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/specs/021-chat-streaming-incremental-rendering.md)（流式渲染）、`CONTEXT.md`（Reply Body / StreamEvent）。
 
 ## 1. 总原则
 
@@ -189,7 +189,7 @@ $$
 | LaTeX 风险修补 | `common/src/main/ets/render/LatexRiskNormalizer.ets` |
 | Markdown 分块 | `entry/src/main/ets/shared/molecules/MarkdownRenderer.ets` |
 | 公式渲染 | `entry/src/main/ets/shared/atoms/MathTextRenderer.ets` |
-| 流式增量渲染 | [spec 021](../specs/021-chat-streaming-incremental-rendering.md) |
+| 流式增量渲染 | [spec 021](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/specs/021-chat-streaming-incremental-rendering.md) |
 | 截断与流式事件 | `StreamEvent`（`CONTEXT.md`）、`LlmClient` |
 
 Hypium 测试在 `entry/src/ohosTest/ets/generated-knowledge-tests/common/ContentProtocol.test.ets` 与 `LatexRiskNormalizer.test.ets`；协议相关的静态断言在 `scripts/arkts-lint/tests/`。协议变更必须同时更新本文件、`ContentProtocol` 与测试。

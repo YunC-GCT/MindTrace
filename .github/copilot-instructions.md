@@ -2,8 +2,8 @@
 
 规则不在本文件维护，全部以 [`AGENTS.md`](../AGENTS.md) 为准。
 
-- 红线与编码契约：`AGENTS.md` §必守红线 / §AI 编码执行契约
-- 当前阶段与验收：`docs/agents/phase-tracker.md`
+- 红线与编码契约：`AGENTS.md` §交付约束
+- 当前阶段与验收：[当前阶段与验收](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/agents/phase-tracker.md)
 - 命名规范：`docs/style/naming-conventions.md`
 - 交付前：`node scripts/agent-gate/index.mjs`，必须 `RESULT: PASS`
 

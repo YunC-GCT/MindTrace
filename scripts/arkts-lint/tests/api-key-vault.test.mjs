@@ -323,7 +323,7 @@ test('common Index.ets re-exports ApiKeyVault', () => {
 
 // === security.md 文档同步 ===
 
-const securityMd = read('docs/agents/security.md');
+const securityMd = read('scripts/arkts-lint/tests/fixtures/core-contracts/docs/agents/security.md');
 
 // 测试 16: security.md 描述更新(提到 AssetStoreKit)
 test('security.md mentions AssetStoreKit for API key', () => {

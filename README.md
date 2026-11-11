@@ -34,7 +34,7 @@ MindTrace 将数学截图、公式与零散文本整理为结构化笔记，经�
 | 鸿蒙系统入口 | 部分实现 | 卡片展示学习概览；小艺端A2A 已支持草稿预览与确认入库（回复「确认」保存 / 「取消」放弃），并支持回执、图片降级规划；意图注册与 Agent Framework Kit 拉起依赖上架，测试态暂缓 |
 | 数形交互、碰一碰共学 | 规划中 | 尚未形成完整产品链路 |
 
-评测使用公开基准 **MathNet-Retrieve**（CC-BY-4.0，数学等价检索，中文子集 334 条查询）。离线评测脚本见 [`scripts/rag-lab/`](./scripts/rag-lab/)，原始记录见 [`docs/research/agent-framework-layering-review-2026-11-02.md`](./docs/research/agent-framework-layering-review-2026-11-02.md) §37–§54。
+评测使用公开基准 **MathNet-Retrieve**（CC-BY-4.0，数学等价检索，中文子集 334 条查询）。离线评测脚本见 [`scripts/rag-lab/`](./scripts/rag-lab/)，原始记录见 [`docs/research/agent-framework-layering-review-2026-11-02.md`](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/research/agent-framework-layering-review-2026-11-02.md) §37–§54。
 
 ## 三、核心使用流程
 
@@ -139,7 +139,7 @@ MindTrace/
 │   ├── ocr_service/        # 独立 OCR 服务
 │   └── embedding_service/  # 本地 BGE 语义检索服务
 ├── scripts/                # 测试与工程检查脚本
-├── docs/                   # 架构、规格、方案与历史归档
+├── docs/                   # 公开说明与基础规范
 ├── build-profile.json5     # SDK、模块与签名配置
 ├── oh-package.json5        # 工程依赖
 ├── CONTEXT.md              # 项目术语
@@ -149,7 +149,7 @@ MindTrace/
 ## 七、后续补充
 
 - 产品截图与演示：待补充。
-- 测试与验证：检索评测与真机探针记录见 `docs/research/`；系统性回归报告待补充。
-- 已知问题与后续路线：见 `docs/agents/phase-tracker.md` 与上文“当前评测口径”。
+- 测试与验证：检索评测与真机探针记录见 [develop 研究记录](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/research/)；系统性回归报告待补充。
+- 已知问题与后续路线：见 [阶段进度](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/agents/phase-tracker.md) 与上文“当前评测口径”。
 - 文档导航：见 `docs/index.md`。
 - 许可证与致谢：待补充。

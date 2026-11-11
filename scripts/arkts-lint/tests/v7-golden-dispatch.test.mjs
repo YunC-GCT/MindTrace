@@ -19,7 +19,7 @@ import { dispatchLegacy } from './legacy-dispatch-helper.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..', '..');
-const RAW_DIR = join(REPO_ROOT, 'docs', 'specs', 'execution', 'v7-architecture-contracts', 'raw');
+const RAW_DIR = join(REPO_ROOT, 'scripts/arkts-lint/tests/fixtures/core-contracts/docs', 'specs', 'execution', 'v7-architecture-contracts', 'raw');
 const TEST_FILE = 'scripts/arkts-lint/tests/v7-golden-dispatch.test.mjs';
 const RECORD = process.env.V7_GOLDEN === 'record';
 

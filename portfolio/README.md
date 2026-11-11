@@ -51,6 +51,6 @@ python -c "import re; d=open('portfolio/MindTrace-Portfolio.pdf','rb').read(); p
 ## 相关工程文档
 
 - [`README.md`](../README.md) — 技术版项目介绍
-- [`docs/system-architecture-layered.md`](../docs/system-architecture-layered.md) — 分层架构
-- [`docs/research/agent-framework-layering-review-2026-11-02.md`](../docs/research/agent-framework-layering-review-2026-11-02.md) — 研究日志与评测原始记录
-- [`docs/agents/phase-tracker.md`](../docs/agents/phase-tracker.md) — 阶段进度与验收
+- [`docs/system-architecture-layered.md`](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/system-architecture-layered.md) — 分层架构
+- [`docs/research/agent-framework-layering-review-2026-11-02.md`](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/research/agent-framework-layering-review-2026-11-02.md) — 研究日志与评测原始记录
+- [`docs/agents/phase-tracker.md`](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/agents/phase-tracker.md) — 阶段进度与验收

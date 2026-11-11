@@ -9,7 +9,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 const db = read('common/src/main/ets/DatabaseHelper.ets');
-const adr = read('docs/adr/0022-review-and-video-scope.md');
+const adr = read('scripts/arkts-lint/tests/fixtures/core-contracts/docs/adr/0022-review-and-video-scope.md');
 
 const reviewItemBlock = db.match(/const SQL_CREATE_REVIEW_ITEM[\s\S]*?\)`;/);
 const reviewLogBlock = db.match(/const SQL_CREATE_REVIEW_LOG[\s\S]*?\)`;/);
@@ -59,10 +59,10 @@ test('study_plan keeps the todo semantics: no review fields were added to it', (
 });
 
 test('ADR-0022 records both #242 decisions and is registered in the ADR index', () => {
-  assert.ok(existsSync(resolve(root, 'docs/adr/0022-review-and-video-scope.md')));
+  assert.ok(existsSync(resolve(root, 'scripts/arkts-lint/tests/fixtures/core-contracts/docs/adr/0022-review-and-video-scope.md')));
   assert.match(adr, /只产脚本/);
   assert.match(adr, /review_item/);
   assert.match(adr, /review_log/);
-  const index = read('docs/adr/index.md');
+  const index = read('scripts/arkts-lint/tests/fixtures/core-contracts/docs/adr/index.md');
   assert.match(index, /0022-review-and-video-scope\.md/);
 });

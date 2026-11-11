@@ -32,7 +32,7 @@ The following reflects code implementation and on-device probe verification stat
 | HarmonyOS integrations | Partially implemented | Card shows the learning overview; Xiaoyi A2A now supports draft preview and confirm-to-save (reply "confirm" to save / "cancel" to discard), receipts, and an image fallback plan; intent registration and Agent Framework Kit launch depend on release, deferred in testing mode |
 | Interactive mathematical visualizations, tap-to-connect group learning | Planned | Full workflows are not yet implemented |
 
-Evaluations now use the public **MathNet-Retrieve** benchmark (CC-BY-4.0, math-aware retrieval, 334 Chinese queries); the repository's 100-note fixture is kept only for smoke tests and is no longer used for reported metrics. The offline evaluation script lives in [`scripts/rag-lab/`](../scripts/rag-lab/); raw records are in [`docs/research/agent-framework-layering-review-2026-11-02.md`](./research/agent-framework-layering-review-2026-11-02.md) §37–§54.
+Evaluations now use the public **MathNet-Retrieve** benchmark (CC-BY-4.0, math-aware retrieval, 334 Chinese queries); the repository's 100-note fixture is kept only for smoke tests and is no longer used for reported metrics. The offline evaluation script lives in [`scripts/rag-lab/`](../scripts/rag-lab/); raw records are in [`docs/research/agent-framework-layering-review-2026-11-02.md`](https://github.com/YunC-GCT/MindTrace/blob/b97812869d41cbcbfb4e5edbf7d49998356d5f69/docs/research/agent-framework-layering-review-2026-11-02.md) §37–§54.
 
 ## 3. Core Usage Flows
 
