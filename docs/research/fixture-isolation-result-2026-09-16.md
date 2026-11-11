@@ -145,7 +145,7 @@ export interface KnowledgeUnitExt {
   // ❌ 没有 prerequisites / related / embedding
 }
 
-// agents/src/main/ets/agents/KnowledgeModel.ets:1222-1224 (toKnowledgeUnit)
+// agents/src/main/ets/subagents/KnowledgeModel.ets:1222-1224 (toKnowledgeUnit)
 return {
   // ... 其他字段从 ext 填充 ...
   prerequisites: [],   // ← 硬编码,因为 ext 没这字段
@@ -193,7 +193,7 @@ return {
 
 | # | 位置 | 问题 | 状态 |
 |---|---|---|---|
-| **E1** | `agents/src/main/ets/agents/KnowledgeModel.ets:1222-1223` | 写入端硬编码 `prerequisites: []` / `related: []`(**星系关系线空的真正 root cause**) | 待修(需临时越界) |
+| **E1** | `agents/src/main/ets/subagents/KnowledgeModel.ets:1222-1223` | 写入端硬编码 `prerequisites: []` / `related: []`(**星系关系线空的真正 root cause**) | 待修(需临时越界) |
 | E2 | `common/src/main/ets/DatabaseHelper.ets:404-406` | 字段硬编码(content/embedding 等也有类似问题) | 待修 |
 
 ###来自第一份 research 报告的 C 类(已修):
@@ -232,7 +232,7 @@ return {
    - **Prompt 层**:PromptBuilder 让 LLM 输出 prerequisites/related/embedding(可能需要 few-shot 示例)
    - **解析层**:`AiRawResponse` 加 3 个字段定义(`agents/src/main/ets/models/KnowledgeUnitExt.ets:32-41`)
    - **中间层**:`KnowledgeUnitExt` 加 3 个字段定义(`agents/src/main/ets/models/KnowledgeUnitExt.ets:47-95`)
-   - **构造层**:`KnowledgeModel.toKnowledgeUnit()` 从 ext 读取填充(`agents/src/main/ets/agents/KnowledgeModel.ets:1222-1224`)
+   - **构造层**:`KnowledgeModel.toKnowledgeUnit()` 从 ext 读取填充(`agents/src/main/ets/subagents/KnowledgeModel.ets:1222-1224`)
    - **回归测试**:fixture 数据 + 验证星系关系线画出
    - 需要临时解除"隔离入库链"边界(本来就在范围内,但之前误以为是单点 bug)
 

@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>MindTrace · 项目介绍</title>
+  <link rel="stylesheet" href="assets/print.css">
+</head>
+<body>
+
+<!-- 01 cover -->
+<section class="page cover">
+  <div class="cover-top">
+    <span>MindTrace / 项目介绍</span>
+    <span>2026-11</span>
+  </div>
+  <h1>MindTrace</h1>
+  <p class="cover-sub">数学学习笔记与可追溯复习助手</p>
+  <p class="cover-desc">
+    鸿蒙原生 · 本地优先 · A2A 草稿确认 · 五路混合检索。
+    把拍照、文字和小艺消息整理成可确认、可追溯、可复习的结构化笔记。
+  </p>
+  <div class="cover-stats">
+    <div><strong>5</strong><span>模块</span></div>
+    <div><strong>576</strong><span>ArkTS 文件</span></div>
+    <div><strong>1,361</strong><span>单元测试</span></div>
+    <div><strong>3.2s</strong><span>A2A 草稿</span></div>
+  </div>
+  <div class="cover-bottom">
+    <span>YunCeH</span>
+    <span>github.com/YunC-GCT/MindTrace</span>
+  </div>
+</section>
+
+<!-- 02 overview -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 项目概览</span><span>02 / 12</span></div>
+  <h2 class="page-title">把数学材料，整理成可追溯的笔记</h2>
+  <p class="page-lead">
+    数学材料天然分散：截图、题目、公式、零散文字。通用 AI 能回答但不可追溯；笔记应用能保存但整理成本高。
+    MindTrace 把“输入—整理—确认—复习—溯源”串成一条链路。
+  </p>
+
+  <div class="stat-strip">
+    <div class="stat"><strong>1,361</strong><span>单测通过</span></div>
+    <div class="stat"><strong>3.2s</strong><span>A2A 草稿生成</span></div>
+    <div class="stat"><strong>220ms</strong><span>确认入库</span></div>
+    <div class="stat"><strong>25s</strong><span>模型挂起兜底</span></div>
+  </div>
+
+  <div class="grid-3">
+    <div class="card accent">
+      <span class="tag">问题</span>
+      <h3>材料散、整理贵、回答虚</h3>
+      <p>截图和题目散落在相册与聊天里；通用回答看似流畅，但无法回到“我的笔记”和具体版本。</p>
+    </div>
+    <div class="card">
+      <span class="tag">方案</span>
+      <h3>草稿确认 + 本地检索</h3>
+      <p>先出草稿，用户确认才入库；复习时基于个人笔记检索，回答带来源、摘要与融合分。</p>
+    </div>
+    <div class="card">
+      <span class="tag">方法</span>
+      <h3>先定边界，再接入口</h3>
+      <p>先确定“什么时候写、写什么、凭什么回答”，再把四条入口接进同一套命令与结果契约；未验证能力单独标注状态。</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 7mm;">三个产品判断</h3>
+  <ul class="list">
+    <li><strong>草稿是中间态。</strong>确认前不创建正式笔记；取消、重新生成都不写库。</li>
+    <li><strong>相似不等于重复。</strong>补充内容照常写入并给合并建议，不因为“像”就丢掉。</li>
+    <li><strong>够不够回答，是显式策略。</strong>strict / balanced / expansive 三档由调用方选择，不藏在检索实现里。</li>
+  </ul>
+
+  <h3 style="margin-top: 7mm;">范围与边界</h3>
+  <div class="grid-3">
+    <div class="card">
+      <span class="tag">已验证</span>
+      <h3>四条入口 + 草稿确认</h3>
+      <p>应用内拍照/批量/文字、A2A 文本与计划、对话回忆；确认前不写库。</p>
+    </div>
+    <div class="card">
+      <span class="tag">已验证</span>
+      <h3>检索与判重</h3>
+      <p>五路召回、证据判定、三分类判重、幂等写入、schema v23。</p>
+    </div>
+    <div class="card">
+      <span class="tag">不在本轮</span>
+      <h3>上架与端侧模型</h3>
+      <p>测试态不推进应用市场；端侧模型受设备形态限制，未做全量验证。</p>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top: 5mm;">
+    项目处于测试态，未上架应用市场。本介绍只陈述有真机或自动化测试记录的能力；
+    未验证与平台阻塞项在第 11 页单独列出。
+  </div>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>02</span></div>
+</section>
+
+<!-- 03 flow -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 产品流程</span><span>03 / 12</span></div>
+  <h2 class="page-title">四种入口，同一条确认链路</h2>
+  <p class="page-lead">入口可以很多，写入只能有一套规则：先出草稿、用户确认、再判重入库。失败不丢输入，统一转待整理。</p>
+  <img class="diagram" src="assets/product-flow.svg" alt="产品流程">
+
+  <div class="grid-2">
+    <div class="card">
+      <span class="tag">应用内</span>
+      <h3>拍照 / 批量 / 文字</h3>
+      <p>相册多选最多 20 张，OCR 后按题规划；单题直接草稿，多题逐题预览、逐题确认。文字入口适合从聊天或文档粘贴。</p>
+    </div>
+    <div class="card">
+      <span class="tag">系统入口</span>
+      <h3>小艺 A2A / 对话回忆</h3>
+      <p>小艺里说“存笔记：矩阵的秩”，先回标题和要点，再问是否保存；先问一道题再说“整理成笔记”，用上一轮问答作资料。</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 6mm;">一条笔记的路径</h3>
+  <table class="table">
+    <thead><tr><th>阶段</th><th>做什么</th><th>关键约束</th></tr></thead>
+    <tbody>
+      <tr><td>路由</td><td>识别 chat / ingest / OCR / 计划推进</td><td>短命令才当确认，避免误判提问</td></tr>
+      <tr><td>生成</td><td>light 先行，质量门不过改 standard</td><td>3–6s 目标；空/复述原文不算可用草稿</td></tr>
+      <tr><td>落盘</td><td>按 conversationKey 保存 24h</td><td>跨轮次确认；计划项保存进度</td></tr>
+      <tr><td>预览</td><td>标题、学科/题型、最多 4 节要点</td><td>最后才问是否整理保存</td></tr>
+      <tr><td>二次操作</td><td>详细 / 简洁 / 重新生成</td><td>新稿成功后才覆盖旧稿</td></tr>
+      <tr><td>入库</td><td>判重、幂等写入、回执</td><td>确认前不创建正式笔记</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>03</span></div>
+</section>
+
+<!-- 04 architecture -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 架构</span><span>04 / 12</span></div>
+  <h2 class="page-title">五个模块，三条硬边界</h2>
+  <p class="page-lead">模块数量不是重点；重点是页面不直接碰图执行器，agents 不反向依赖 entry，数据契约留在 common。</p>
+  <img class="diagram" src="assets/architecture.svg" alt="五模块架构">
+
+  <div class="grid-3">
+    <div class="card">
+      <span class="tag">边界 01</span>
+      <h3>agents 不依赖 entry</h3>
+      <p>工作流可被 A2A、应用内、后台任务复用；反向 import 会让三个入口重新耦合。</p>
+    </div>
+    <div class="card">
+      <span class="tag">边界 02</span>
+      <h3>页面不碰执行器</h3>
+      <p>pages / overlays 不能直接 import CaptureGraph、CommandExecutor 或 NoteDao。</p>
+    </div>
+    <div class="card">
+      <span class="tag">边界 03</span>
+      <h3>不新增第 6 个模块</h3>
+      <p>新能力优先放进 common 的端口或 agents 的子代理。</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 6mm;">本地与云端</h3>
+  <div class="two-col">
+    <div class="card">
+      <h3>留在设备</h3>
+      <p>笔记、草稿、计划、判重、检索索引、inbox 与回执都在应用沙箱；本地 BGE 服务优先。</p>
+    </div>
+    <div class="card">
+      <h3>会出网</h3>
+      <p>用户配置的 LLM（生成、回答、查询改写）与可选云端 embedding；只发送生成所需的最小上下文。</p>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top: 5mm;">
+    小艺 A2A 只把用户主动发送的消息和生成所需的最小上下文带进扩展；本地笔记不会因为 A2A 而整体上传。
+  </div>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>04</span></div>
+</section>
+
+<!-- 05 a2a sequence -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / A2A 草稿确认</span><span>05 / 12</span></div>
+  <h2 class="page-title">在小艺里，先看内容再保存</h2>
+  <p class="page-lead">A2A 单任务只允许一次最终回复。所以草稿必须落盘、跨轮次确认，失败要能转待整理，而不是让用户重发。</p>
+  <img class="diagram" src="assets/a2a-sequence.svg" alt="A2A 草稿确认时序">
+
+  <div class="grid-3">
+    <div class="card">
+      <h3>确认</h3>
+      <p>确认 / 保存 / 好的 → confirmDraft；命中判重时复用已有笔记。</p>
+    </div>
+    <div class="card">
+      <h3>取消</h3>
+      <p>取消 / 不要了 / 算了 → 丢弃草稿；计划项同时取消计划。</p>
+    </div>
+    <div class="card">
+      <h3>二次操作</h3>
+      <p>详细走 standard；简洁、重新生成走 light；失败保留旧稿。</p>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top: 5mm;">
+    命令只认短句：不超过 10 个字符，避免把“保存到哪里”这类问题误判为确认。
+  </div>
+
+  <h3 style="margin-top: 6mm;">草稿里存什么</h3>
+  <table class="table">
+    <thead><tr><th>字段</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">conversationKey</td><td>跨轮次找回草稿；小艺会话上下文</td></tr>
+      <tr><td class="mono">event</td><td>标题、学科、题型、章节与正文</td></tr>
+      <tr><td class="mono">sourceText</td><td>“详细 / 简洁 / 重新生成”的原始资料</td></tr>
+      <tr><td class="mono">planTaskId / planItemIndex</td><td>计划项确认后回写进度</td></tr>
+      <tr><td class="mono">createdAt</td><td>24h 过期与清理</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>05</span></div>
+</section>
+
+<!-- 06 a2a metrics -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / A2A 失败路径</span><span>06 / 12</span></div>
+  <h2 class="page-title">模型慢、模型挂、内容为空时怎么办</h2>
+  <p class="page-lead">产品体验的差异往往在失败路径。这里的取舍是：宁可转待整理，也不让用户无限等，更不允许一次请求回两条互相矛盾的回执。</p>
+
+  <table class="table">
+    <thead><tr><th>动作</th><th>路由</th><th>真机耗时</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td>生成草稿</td><td>light</td><td class="num"><strong>3.2s</strong></td><td>标题 + 4 段要点 + 确认提示</td></tr>
+      <tr><td>详细一点</td><td>standard</td><td class="num"><strong>11.4s</strong></td><td>636 字，补充推导与易错点</td></tr>
+      <tr><td>简洁一点</td><td>light</td><td class="num"><strong>1.3s</strong></td><td>107 字，核心定义与结论</td></tr>
+      <tr><td>重新生成</td><td>light</td><td class="num"><strong>2.5s</strong></td><td>247 字，保留标准字段</td></tr>
+      <tr><td>确认入库</td><td>判重 + 写入</td><td class="num"><strong>220ms</strong></td><td>“已保存：矩阵的秩与初等变换（线性代数）。”</td></tr>
+      <tr><td>超时兜底</td><td>入队</td><td class="num"><strong>25s</strong></td><td>只回一条，转待整理</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 7mm;">失败路径</h3>
+  <table class="table">
+    <thead><tr><th>场景</th><th>处理</th><th>用户看到</th></tr></thead>
+    <tbody>
+      <tr><td>8s 未返回</td><td>记慢请求日志，不打断生成</td><td>无变化，继续等</td></tr>
+      <tr><td>25s 未返回</td><td>取消 token，入待整理队列</td><td>“这次整理较慢，已转待整理……”</td></tr>
+      <tr><td>草稿为空 / 复述原文</td><td>取消 run，改 standard 重试</td><td>稍慢，但拿到可用草稿</td></tr>
+      <tr><td>确认时命中判重</td><td>复用已有笔记，不重复创建</td><td>“已保存（复用）：……”</td></tr>
+      <tr><td>计划某题失败</td><td>保留计划进度，可继续/取消</td><td>“第 N 题这次没整理成……”</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note" style="margin-top: 6mm;">
+    回执去重：入队函数统一负责“入队 + 一条回执”，调用方不再单独回话；单题可重试路径也不再重复入队。
+  </div>
+
+  <h3 style="margin-top: 6mm;">关键取舍</h3>
+  <table class="table">
+    <thead><tr><th>设计点</th><th>未采用的做法</th><th>采用的做法</th></tr></thead>
+    <tbody>
+      <tr><td>写入时机</td><td>收到文本直接入库</td><td>先生成草稿，确认后才入库</td></tr>
+      <tr><td>模型挂起</td><td>最长等 90s</td><td>25s 回执并转待整理</td></tr>
+      <tr><td>失败回执</td><td>入队与调用方各回一条</td><td>统一只回一条</td></tr>
+      <tr><td>单题重试</td><td>请求文本可能再次入队</td><td>多题只补剩余题，单题只入一次</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>06</span></div>
+</section>
+
+<!-- 07 retrieval -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 混合检索</span><span>07 / 12</span></div>
+  <h2 class="page-title">先找得到，再判断够不够</h2>
+  <p class="page-lead">五路召回解决“换个说法就搜不到”；证据判定解决“搜到了但不该拿来回答”。两件事分开，策略才能显式配置。</p>
+  <img class="diagram" src="assets/retrieval-pipeline.svg" alt="混合检索管线">
+
+  <table class="table">
+    <thead><tr><th>通道</th><th>解决什么</th><th>边界</th></tr></thead>
+    <tbody>
+      <tr><td><strong>整句 FTS</strong></td><td>原句或高度重合的表述</td><td>换说法就失效</td></tr>
+      <tr><td><strong>数学签名</strong></td><td>公式、符号、结构相似</td><td>依赖归一化质量</td></tr>
+      <tr><td><strong>词 OR</strong></td><td>关键词部分命中</td><td>长题干噪声多</td></tr>
+      <tr><td><strong>短词 LIKE</strong></td><td>短查询、生僻词</td><td>只适合兜底</td></tr>
+      <tr><td><strong>稠密向量</strong></td><td>语义等价、改写</td><td>需要本地或云端 embedding</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 6mm;">证据策略是调用方输入</h3>
+  <div class="grid-3">
+    <div class="card"><span class="tag">strict</span><p>判定不可用时 fail-closed，视为无证据。</p></div>
+    <div class="card"><span class="tag">balanced</span><p>默认档；判定不可用时 fail-open，保留候选。</p></div>
+    <div class="card"><span class="tag">expansive</span><p>跳过判定，允许证据不足时继续。</p></div>
+  </div>
+
+  <h3 style="margin-top: 6mm;">条件触发与代价</h3>
+  <table class="table">
+    <thead><tr><th>阶段</th><th>触发条件</th><th>代价 / 取舍</th></tr></thead>
+    <tbody>
+      <tr><td><strong>RRF 融合</strong></td><td>每一路返回候选后</td><td>保留融合分作为引用分；等权会放大词面噪声</td></tr>
+      <tr><td><strong>条件重排</strong></td><td>向量头部差 &lt; 0.05</td><td>MathNet 上 79 次触发、480s，hit@1 再降 10 条</td></tr>
+      <tr><td><strong>查询改写</strong></td><td>向量头部差 &lt; 0.03</td><td>多一次 LLM 调用，只在头部很接近时启用</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>07</span></div>
+</section>
+
+<!-- 08 mathnet -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 检索评测</span><span>08 / 12</span></div>
+  <h2 class="page-title">在公开基准上验证检索方案</h2>
+  <p class="page-lead">
+    MathNet-Retrieve：15,000 条查询 / 117,088 条语料。这里使用 easy 档中文子集 334 条查询、固定 2,000 候选池，
+    对比词面、向量、混合与重排四条路线。
+  </p>
+
+  <table class="table">
+    <thead><tr><th>变体</th><th>hit@1</th><th>hit@5</th><th>MRR</th><th>nDCG@10</th></tr></thead>
+    <tbody>
+      <tr><td>词面 BM25</td><td class="num">216</td><td class="num">262</td><td class="num">0.705</td><td class="num">0.734</td></tr>
+      <tr><td><strong>向量 body</strong></td><td class="num"><strong>286</strong></td><td class="num"><strong>314</strong></td><td class="num"><strong>0.895</strong></td><td class="num"><strong>0.914</strong></td></tr>
+      <tr><td>混合 body（RRF）</td><td class="num">242</td><td class="num">296</td><td class="num">0.793</td><td class="num">0.833</td></tr>
+      <tr><td>混合 + 条件重排</td><td class="num">232</td><td class="num">288</td><td class="num">0.766</td><td class="num">0.804</td></tr>
+    </tbody>
+  </table>
+
+  <div class="grid-2" style="margin-top: 6mm;">
+    <div class="card">
+      <span class="tag">结论</span>
+      <h3>向量应作主召回</h3>
+      <p>2,000 候选池上纯向量最好；等权 RRF 会稀释向量排名。条件重排在该基准上是负优化（79 次触发、480s，hit@1 再降 10 条）。</p>
+    </div>
+    <div class="card">
+      <span class="tag">限制</span>
+      <h3>排序有效性高于绝对值</h3>
+      <p>候选池只抽 2,000 条且含约 16.7% gold，命中率不能和全语料 BEIR 榜单直接比较。</p>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top: 6mm;">
+    全语料词面基线：BM25 hit@1 22/334（6.6%）、hit@5 187/334。等价改写场景下，词面通道无法承担主召回。
+  </div>
+
+  <h3 style="margin-top: 6mm;">评测方法</h3>
+  <div class="grid-3">
+    <div class="card">
+      <span class="tag">数据</span>
+      <h3>公开基准</h3>
+      <p>MathNet-Retrieve（CC-BY-4.0）；easy 档中文子集 334 条查询，按 CJK 过滤。</p>
+    </div>
+    <div class="card">
+      <span class="tag">候选池</span>
+      <h3>2,000 条固定抽样</h3>
+      <p>包含全部 334 条 gold；随机命中基线约 16.7%，用于比较排序而非绝对值。</p>
+    </div>
+    <div class="card">
+      <span class="tag">脚本</span>
+      <h3>可复现</h3>
+      <p>fetch-mathnet.mjs + eval.mjs；数据缓存 git 忽略，结果写入研究日志。</p>
+    </div>
+  </div>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>08</span></div>
+</section>
+
+<!-- 09 dedupe -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 判重与幂等</span><span>09 / 12</span></div>
+  <h2 class="page-title">相似不等于重复，写入必须幂等</h2>
+  <p class="page-lead">判重、幂等写入和测试门禁解决同一个问题：跨入口、跨进程改同一份数据时，结果要可预测。</p>
+  <img class="diagram" src="assets/dedupe-tree.svg" alt="判重决策树">
+
+  <table class="table">
+    <thead><tr><th>裁决</th><th>含义</th><th>动作</th><th>用户可见</th></tr></thead>
+    <tbody>
+      <tr><td><strong>same</strong></td><td>同一内容</td><td>不重复写，复用已有笔记</td><td>“已保存（复用）：……”</td></tr>
+      <tr><td><strong>supplement</strong></td><td>相关但新增了信息</td><td>照常写入，并发 append 建议</td><td>新笔记 + 合并建议</td></tr>
+      <tr><td><strong>different</strong></td><td>只是相似，不是同一主题</td><td>新建笔记</td><td>正常保存</td></tr>
+    </tbody>
+  </table>
+
+  <div class="grid-3" style="margin-top: 5mm;">
+    <div class="stat"><strong>18</strong><span>去重后的标定样本</span></div>
+    <div class="stat"><strong>0.781–0.960</strong><span>向量分范围</span></div>
+    <div class="stat"><strong>0</strong><span>different 负样本</span></div>
+  </div>
+
+  <div class="note" style="margin-top: 5mm;">
+    same 最高 0.960，supplement 最高 0.953，在高分段完全重叠，而两者的正确动作相反（拦下 vs 写入）。
+    所以当前必须保留 LLM 仲裁，不能按向量分设免仲裁窗口。
+  </div>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>09</span></div>
+</section>
+
+<!-- 10 engineering -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 工程质量</span><span>10 / 12</span></div>
+  <h2 class="page-title">每次改动都能回到同一条验收线</h2>
+  <p class="page-lead">本地提交前跑质量门；契约测试守住跨模块边界；真机冒烟验证平台链路；完成以 gate 输出为准。</p>
+
+  <table class="table">
+    <thead><tr><th>检查</th><th>结果</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td>arkts-lint</td><td><span class="badge ok">PASS</span></td><td>ArkTS 严格模式规则</td></tr>
+      <tr><td>naming-lint</td><td><span class="badge ok">PASS</span></td><td>文件、目录、符号命名</td></tr>
+      <tr><td>link-check</td><td><span class="badge ok">PASS</span></td><td>文档链接可达</td></tr>
+      <tr><td>doc-trace</td><td><span class="badge ok">PASS</span></td><td>文档索引与编号唯一</td></tr>
+      <tr><td>process-boundary</td><td><span class="badge ok">PASS</span></td><td>6 个入口 / 429 个文件可达，受限能力不越界</td></tr>
+      <tr><td>hypium-check</td><td><span class="badge ok">PASS</span></td><td>22 个测试源与生成物一致</td></tr>
+      <tr><td>unit-tests</td><td><span class="badge ok">1,361 通过</span></td><td>契约测试 + 单元测试</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 6mm;">代码阅读顺序</h3>
+  <div class="code">1. A2AIngestHandler.ets     草稿 checkpoint / 超时 / 单回执
+2. A2ADraftModels.ets       命令解析 / 预览文案
+3. RagNoteEvidenceSearch.ets 混合召回与证据接线
+4. ReviewWritePortAdapter.ets + ReviewWriteStoreDao.ets
+                             operationId 幂等 / schema v23
+5. a2a-draft-checkpoint.test.mjs
+                             契约测试与源码守卫</div>
+
+  <div class="grid-4" style="margin-top: 5mm;">
+    <div class="stat"><strong>5</strong><span>HAP / HSP 模块</span></div>
+    <div class="stat"><strong>576</strong><span>ArkTS 文件</span></div>
+    <div class="stat"><strong>24 + 35</strong><span>ADR + spec</span></div>
+    <div class="stat"><strong>1,323</strong><span>次提交（4 个月）</span></div>
+  </div>
+
+  <h3 style="margin-top: 6mm;">真机验证样例</h3>
+  <div class="grid-3">
+    <div class="card">
+      <span class="tag">批量</span>
+      <h3>OCR → 计划 → 入库</h3>
+      <p>多题逐题预览，确认一题保存一题；计划进度可继续、可取消。</p>
+    </div>
+    <div class="card">
+      <span class="tag">A2A</span>
+      <h3>草稿确认 + 二次操作</h3>
+      <p>3.2s 预览；详细 11.4s、简洁 1.3s、重新生成 2.5s；确认 220ms 入库。</p>
+    </div>
+    <div class="card">
+      <span class="tag">失败</span>
+      <h3>模型挂起兜底</h3>
+      <p>8s 慢日志，25s 转待整理；真机只出现一条回执，pending 计数递增。</p>
+    </div>
+  </div>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>10</span></div>
+</section>
+
+<!-- 11 limits -->
+<section class="page">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 指标与边界</span><span>11 / 12</span></div>
+  <h2 class="page-title">哪些已验证，哪些还没</h2>
+  <p class="page-lead">“已实现”不等于“已验证”。下面把能力状态单独列出，避免把测试态项目说成已上线产品。</p>
+
+  <table class="table">
+    <thead><tr><th>能力</th><th>状态</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>应用内拍照 / 批量 / 文字</td><td><span class="badge ok">已验证</span></td><td>真机批量、OCR、草稿确认与入库</td></tr>
+      <tr><td>A2A 草稿确认 / 二次操作</td><td><span class="badge ok">已验证</span></td><td>3XTYD24C16203663 真机 + 冒烟脚本</td></tr>
+      <tr><td>混合检索 / 证据判定</td><td><span class="badge ok">已验证</span></td><td>MathNet 离线评测 + 真机探针</td></tr>
+      <tr><td>判重三分类 / 幂等写入</td><td><span class="badge ok">已验证</span></td><td>契约测试 + schema v23 迁移</td></tr>
+      <tr><td>A2A 图片输入</td><td><span class="badge blocked">平台阻塞</span></td><td>小艺客户端不下发 image parts；应用内批量不受影响</td></tr>
+      <tr><td>A2A 长文本流式</td><td><span class="badge partial">部分</span></td><td>短回复可增量渲染；长文本会被客户端截断</td></tr>
+      <tr><td>端侧模型</td><td><span class="badge partial">部分</span></td><td>受设备形态限制，未做全量验证</td></tr>
+      <tr><td>上架 / 意图注册</td><td><span class="badge blocked">暂缓</span></td><td>测试态，依赖平台审核与上架</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 6mm;">如果继续做</h3>
+  <ul class="list">
+    <li><strong>RRF 权重：</strong>按 MathNet 结论改成向量为主、词面降权，并用向量索引做全语料召回。</li>
+    <li><strong>评测负样本：</strong>补“相关但不同 / 完全无关”，再评估判重免仲裁窗口。</li>
+    <li><strong>A2A 长文本：</strong>等云端流式或客户端修复；当前长回答坚持单帧快照。</li>
+    <li><strong>上架材料：</strong>隐私政策、AI 标识、权限清单、应用市场截图与介绍文案。</li>
+  </ul>
+
+  <h3 style="margin-top: 6mm;">三个主要取舍</h3>
+  <div class="grid-3">
+    <div class="card">
+      <span class="tag">时延</span>
+      <h3>25s 封顶，而不是继续等</h3>
+      <p>正常草稿 3.2s；25s 足够覆盖慢请求。继续等只会让用户重发，反而制造重复请求。</p>
+    </div>
+    <div class="card">
+      <span class="tag">判重</span>
+      <h3>保留 LLM 仲裁</h3>
+      <p>18 条样本无法区分高分段 same / supplement，也没有 different 负样本；砍掉仲裁会误合并。</p>
+    </div>
+    <div class="card">
+      <span class="tag">流式</span>
+      <h3>长文本坚持单帧</h3>
+      <p>小艺客户端会截断长 artifactUpdate；短回复才分块，长回答用完整的 result.task 快照。</p>
+    </div>
+  </div>
+
+  <div class="page-foot"><span>MindTrace · 项目介绍</span><span>11</span></div>
+</section>
+
+<!-- 12 closing -->
+<section class="page closing">
+  <div class="page-head"><strong>MINDTRACE</strong><span>项目介绍 / 链接</span><span>12 / 12</span></div>
+  <p class="big">从“能回答”到<br><em>“能确认、能追溯”</em></p>
+  <p class="page-lead">
+    项目的重点不在功能数量，而在三个判断：写入前先确认，回答前先判断证据，
+    相似内容不要轻易丢掉；其余工作是把这三个判断落到跨进程、跨入口的工程约束里。
+  </p>
+
+  <div class="link-block">
+    <div class="card accent">
+      <span class="tag">PDF</span>
+      <h3>12 页项目介绍</h3>
+      <p>本文件，可直接阅读或分享。</p>
+    </div>
+    <div class="card">
+      <span class="tag">GitHub</span>
+      <h3>github.com/YunC-GCT/MindTrace</h3>
+      <p>源码、ADR、spec、研究日志与评测脚本；公开用于项目介绍与技术交流。</p>
+    </div>
+    <div class="card">
+      <span class="tag">HTML</span>
+      <h3>portfolio/</h3>
+      <p>六页设计说明：首页、流程、架构、A2A、检索、质量。</p>
+    </div>
+    <div class="card">
+      <span class="tag">演示</span>
+      <h3>3 分钟真机流程</h3>
+      <p>拍照/批量 → 草稿确认 → 小艺 A2A → 检索问答 → 超时兜底。</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 7mm;">3 分钟演示脚本</h3>
+  <table class="table">
+    <thead><tr><th>时间</th><th>演示内容</th><th>对应的设计点</th></tr></thead>
+    <tbody>
+      <tr><td class="num">0:00–0:30</td><td>一句话定位 + 四条入口</td><td>产品问题与范围</td></tr>
+      <tr><td class="num">0:30–1:30</td><td>拍照/批量 → 草稿 → 确认保存</td><td>确认前不写库</td></tr>
+      <tr><td class="num">1:30–2:15</td><td>小艺 A2A → 详细一点 → 确认</td><td>跨轮次草稿与二次操作</td></tr>
+      <tr><td class="num">2:15–2:45</td><td>基于笔记提问 → 来源</td><td>检索与可追溯</td></tr>
+      <tr><td class="num">2:45–3:00</td><td>模型慢 → 25s 回执</td><td>失败兜底</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note" style="margin-top: 5mm;">
+    说明：项目处于测试态，未上架；本介绍只引用有记录的真机或自动化测试结果，
+    检索指标只引用公开基准 MathNet-Retrieve。
+  </div>
+
+  <div class="page-foot"><span>MindTrace · 2026-11</span><span>12</span></div>
+</section>
+
+</body>
+</html>

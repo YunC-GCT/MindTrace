@@ -16,6 +16,7 @@ import { getProviderCatalog, isValidModelSpec, modelSpecKey, setModelSpecOverrid
 import type { ModelSpec, ProviderCatalog } from './model-catalog';
 import { resolveModel } from './model-resolver';
 import type { ResolvedModel } from './model-resolver';
+import type { EvidenceMode } from '../ports/EvidencePolicy';
 
 const STORE_NAME = 'llm_config';
 const KEY_SCHEMA_VERSION = 'schema_version';
@@ -52,6 +53,14 @@ const KEY_MODEL_CONTEXT_WINDOWS = 'model_context_windows';
 const KEY_MODEL_PREFS = 'model_prefs';
 const KEY_ACTIVE_MODEL = 'active_model';
 const KEY_MODEL_SPECS = 'model_specs';
+// 2026-11-05: 检索向量化用的 embedding 模型名。空串 = 未启用（检索只走 FTS/签名）。
+// 2026-11-06: 端点与密钥可单独配置——聊天厂商（如 DeepSeek）通常没有 /embeddings，
+//             留空时回落到当前厂商，填了就用独立的 OpenAI 兼容端点。
+const KEY_EMBEDDING_MODEL = 'embedding_model';
+const KEY_EMBEDDING_ENDPOINT = 'embedding_endpoint';
+const KEY_EMBEDDING_API_KEY = 'embedding_api_key';
+// 2026-11-07: 回答证据策略。学习模式在发送时读取，不随单次请求临时改。
+const KEY_EVIDENCE_MODE = 'evidence_mode';
 
 // 默认值 — 用户未配置时使用
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com';
@@ -117,6 +126,10 @@ export class LlmConfig {
   private cachedModelSpecs: Record<string, ModelSpec> = {};
   // 迁移保护: 旧 model_context_windows JSON 解析失败时, 不覆盖 raw key。
   private cachedModelContextWindowsParsed: boolean = true;
+  private cachedEmbeddingModel: string = '';
+  private cachedEmbeddingEndpoint: string = '';
+  private cachedEmbeddingApiKey: string = '';
+  private cachedEvidenceMode: EvidenceMode = 'balanced';
 
   private constructor() {}
 
@@ -160,6 +173,14 @@ export class LlmConfig {
     // PR2-T1: vendorId + customVendor(JSON 字符串)
     const vid: string = await s.get(KEY_VENDOR_ID, '') as string;
     this.cachedVendorId = vid.length > 0 ? vid : DEFAULT_VENDOR_ID;
+    const embModel: string = await s.get(KEY_EMBEDDING_MODEL, '') as string;
+    this.cachedEmbeddingModel = embModel.trim();
+    const embEndpoint: string = await s.get(KEY_EMBEDDING_ENDPOINT, '') as string;
+    this.cachedEmbeddingEndpoint = embEndpoint.trim();
+    const embKey: string = await s.get(KEY_EMBEDDING_API_KEY, '') as string;
+    this.cachedEmbeddingApiKey = embKey.trim();
+    const evidenceMode: string = await s.get(KEY_EVIDENCE_MODE, 'balanced') as string;
+    this.cachedEvidenceMode = LlmConfig.normalizeEvidenceMode(evidenceMode);
     const cvJson: string = await s.get(KEY_CUSTOM_VENDOR, '') as string;
     if (cvJson.length > 0) {
       try {
@@ -407,6 +428,74 @@ export class LlmConfig {
   public async isConfigured(): Promise<boolean> {
     const k = await this.getApiKey(this.cachedVendorId);
     return k !== null && k.length > 0;
+  }
+
+  // ===== Embedding 模型（2026-11-05 检索向量化） =====
+  // 空串 = 未启用。启用后笔记正文会发往当前服务厂商的 /embeddings。
+  public getEmbeddingModel(): string {
+    return this.cachedEmbeddingModel;
+  }
+
+  public isEmbeddingEnabled(): boolean {
+    return this.cachedEmbeddingModel.length > 0;
+  }
+
+  public async setEmbeddingModel(v: string): Promise<void> {
+    this.requireInited();
+    this.cachedEmbeddingModel = v.trim();
+    await this.store!.put(KEY_EMBEDDING_MODEL, this.cachedEmbeddingModel);
+    await this.store!.flush();
+  }
+
+  /**
+   * 独立的 embedding 端点。不回落到聊天厂商——多数聊天厂商（DeepSeek、Kimi）
+   * 根本没有 /embeddings，回落只会把配置错误藏成运行期 404。
+   * 空串表示未配置。
+   */
+  public getEmbeddingEndpoint(): string {
+    return this.cachedEmbeddingEndpoint;
+  }
+
+  public getEmbeddingEndpointInput(): string {
+    return this.cachedEmbeddingEndpoint;
+  }
+
+  public async setEmbeddingEndpoint(v: string): Promise<void> {
+    this.requireInited();
+    this.cachedEmbeddingEndpoint = v.trim();
+    await this.store!.put(KEY_EMBEDDING_ENDPOINT, this.cachedEmbeddingEndpoint);
+    await this.store!.flush();
+  }
+
+  /** 独立的 embedding 密钥。不回落聊天密钥：两者通常不是同一个厂商的账号。 */
+  public getEmbeddingApiKey(): string {
+    return this.cachedEmbeddingApiKey;
+  }
+
+  public async setEmbeddingApiKey(v: string): Promise<void> {
+    this.requireInited();
+    this.cachedEmbeddingApiKey = v.trim();
+    await this.store!.put(KEY_EMBEDDING_API_KEY, this.cachedEmbeddingApiKey);
+    await this.store!.flush();
+  }
+
+  /** 回答证据策略：strict 在判定不可用时 fail-closed；expansive 跳过判定。 */
+  public getEvidenceMode(): EvidenceMode {
+    return this.cachedEvidenceMode;
+  }
+
+  public async setEvidenceMode(v: EvidenceMode): Promise<void> {
+    this.requireInited();
+    this.cachedEvidenceMode = LlmConfig.normalizeEvidenceMode(v);
+    await this.store!.put(KEY_EVIDENCE_MODE, this.cachedEvidenceMode);
+    await this.store!.flush();
+  }
+
+  private static normalizeEvidenceMode(value: string): EvidenceMode {
+    if (value === 'strict' || value === 'expansive') {
+      return value;
+    }
+    return 'balanced';
   }
 
   // PR2-T2 ticket #83 L3 (2026-09-08): 读所有 per-vendor api keys(VM.load() 用)

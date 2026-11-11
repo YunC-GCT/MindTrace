@@ -2,12 +2,18 @@
 // 2026-09-05 · D2 Ticket #4
 import { AgentState, CaptureGraphError, CaptureNode, CaptureNodeResult, copyAgentState } from '../AgentState';
 import { ClassificationResult, RunContext } from 'common';
-import { TypeClassifier } from '../../agents/TypeClassifier';
+import { TypeClassifier } from '../../subagents/TypeClassifier';
 
 export class ClassifyNodeFactory {
   static create(classifier: TypeClassifier): CaptureNode {
     return async (input: AgentState, context?: RunContext | null): Promise<CaptureNodeResult> => {
       context?.throwIfStopped();
+      if (input.skipClassification === true) {
+        // 快速路由：不单独调分类 LLM，交给 structure 在同一次调用里自分类。
+        const skipped: AgentState = copyAgentState(input);
+        skipped.classification = undefined;
+        return { state: skipped };
+      }
       const classification: ClassificationResult = await classifier.classifyText(input.captureText);
       context?.throwIfStopped();
       const next: AgentState = copyAgentState(input);

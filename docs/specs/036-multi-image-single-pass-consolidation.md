@@ -175,7 +175,7 @@ awaiting_confirm → discarded（用户不勾）
 | 1 | payload 支持 `kind:'images'`（N 张）+ Stage A 串行，不切题（等价今天的批量，但一个 run） | 无 |
 | 2 | Segmenter（切题）+ S2 验收 | 阶段 1 |
 | 3 | Merger（跨页合并 / 去重）+ S3/S5 验收 | 阶段 2 |
-| 4 | 确认页 + 进度订阅（S2–S5 UI） | 阶段 2（可与 3 并行） |
+| 4 ✅ | 确认页（`CaptureSetConfirmOverlay`）+ `runCaptureSet` 改为 preview → 确认 → commit；needsReview 默认不勾选 | 阶段 2/3 完成 |
 | 5 | 幂等 + 逐条回执 + 计费预估 | 阶段 3、4 |
 
 阶段 1 就能把「一个 set 一个 run」立住，是后面全部工作的地基；阶段 4 是用户直接感知的那层。
@@ -225,3 +225,131 @@ awaiting_confirm → discarded（用户不勾）
 | D2 | Stage A 并行度 | 1 / 2 / N | **2**（端侧 OCR 内存敏感） |
 | D3 | 灰区合并 | 保留两条待复核 / 自动合并 | **保留两条**（让用户删，别让用户拆） |
 | D4 | 确认页默认勾选 | 全选 / 全不选 / 按置信度 | **按置信度**：无 flag 默认勾，有 flag 默认不勾 |
+
+## 14. 阶段 2/3 接线记录（2026-10-31）
+
+| 项 | 内容 |
+|---|---|
+| 已就绪 | `problemSegmenter.segmentProblems`（220 行）/ `problemMerger.mergeProblems`（219 行）+ 契约测试（`v7-problem-segmenter` / `v7-problem-merger`） |
+| 新增编排件 | `agents/graph/captureSetPlanner.planCaptureSet(SetImageText[]) → SetPlan`：逐图切题 → 扁平化 `SourceSegment` → 跨图合并 → `PlannedProblem[]`（含 `sourceImageIndexes` / `needsReview` / `fingerprint`）；`emptyImageIndexes` / `degradedImageIndexes` 单独回执 |
+| 修正 | segmenter 单主锚点页面此前返回 `anchor:''`，跨图合并会把单题页当成「无题号续页」吞进上一题（S4 多图多题会串题）；现保留锚点，`v7-problem-segmenter` 期望同步更新 |
+| 已接线（2026-10-31） | `CapturePipeline.captureSet`：逐图 OCR（`OcrService.recognizeUri`）→ `planCaptureSet` → 逐题 capture 命令（`payload.text = problem.text`，不再二次 OCR）→ `CaptureSetResult` 按题回执（`kind:"problem"` + `sourceImageIndexes/anchors/needsReview`）；图片 OCR 失败/空图单独回执 |
+| 未做 | RAG（`rag_chunk`/`rag_embedding` 仅建表，无运行时服务）——独立轨道，见任务清单 |
+
+### 阶段 2/3 真机验证（2026-10-31，commit `1735791` + 抬头修复）
+
+设备 `3XTYD24C16203663`，`node scripts/device-runner.mjs e2e captureSet --cold`（bundle 内 `debug/math-1.png` / `math-2.png`，真实 OCR）：
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| 图片数 → 题数 | 2 张 → 7 条（含 1 条页首抬头被当题） | **2 张 → 6 题**（`preambleSkipped=2`） |
+| 页首抬头 | 「数学练习（一）」独立成笔记；「数学练习（二）」被跨页合并粘进第 3 题 | 两页抬头均跳过，题目正文干净 |
+| 题号 | 部分段 anchor 为空 | anchors = `["1."]…["6."]` 全保留，`sources=[0]×3 + [1]×3` |
+| 入库 | 7/7 但含脏笔记 | **6/6 committed，0 failed**，耗时 154.6s（逐题 LLM 分类+结构化） |
+
+S2（单图多题）/ S4（多图多题）在真机按 036 §11 口径通过；S3（跨页同题）真机验证（2026-11-01，`e2e=captureSetS3`，bundle 新增 `debug/cross-1.png`（题干预览，无终止符）+ `debug/cross-2.png`（解答页，无题号））：
+
+```
+stage=s3 plan problems=1 sources=[0,1] merged=1 preambleSkipped=1
+stage=s3 commit done=1 failed=0 ms=71007
+stage=done s3=1
+```
+
+即两页被正确合并为 **1 道题**（来源图 [0,1]），确认页只会出现 1 条。
+
+S5（重拍/重复选图去重）真机验证（2026-10-31，`e2e=captureSet5`：`[math-1, math-2, math-1]`）：
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| 3 张图（含重复页） | 9 条笔记（重复页又生成 3 条） | **6 题**，重复页第 1/2/3 题的 `sources=[0,2]` 归并到原题 |
+| 入库 | 9/9（含 3 条重复） | **6/6 committed**，无重复笔记，74.9s |
+
+根因：`mergeProblems` 只与「上一条」比较，重复选图（非相邻）未做全局去重；已加「归一化文本相同」或「同题号+相似度≥0.85」的全局重拍去重，并补 2 条契约测试。
+
+### 阶段 4 预览数据就绪（2026-10-31）
+
+- `CapturePipeline` 拆成 **`previewCaptureSet`（OCR+切题+合并，零落库）/ `commitCaptureSet`（逐题勾选落库）/ `captureSet`（兼容 = 预览+全选）**；`CaptureSetPreview` 携带 `setId / localPaths / problems / failedItems`，确认页可直接消费。
+- `AiService` 门面同步暴露 `previewCaptureSet` / `commitCaptureSet`；`commitCaptureSet(preview, selectedIndexes)` 支持逐题勾选（空 = 全选）。
+- 真机自检：`e2e=captureSetPreview` 2 图 → 6 题（preambleSkipped=2），**3.2s、零 LLM/零写入**；`e2e=captureSet5` 回归 6/6 committed（sources=[0,2] 去重保持）。
+- 待做：确认页 UI（overlay 逐题勾选 + needsReview 默认不勾）+ 幂等 commitKey（setId+problemFingerprint）。
+
+### 阶段 4 确认页落地（2026-10-31）
+
+- 新组件 `overlays/AgentFloatWindow/CaptureSetConfirmOverlay.ets`：列出识别出的「题」（题号/来源图/文本预览/待复核标记），逐题勾选；`needsReview` 默认不勾；底部「确认整理（N 题）/取消」。
+- `AgentFloatWindow.runCaptureSet` 改为：`previewCaptureSet`（零落库）→ 弹确认页 → `commitCaptureSet(preview, selectedIndexes)`；取消则整批不写入；结果仍写 `CaptureReceipt` 并在会话里逐题回执。
+- 服务端能力（preview/commit 拆分）已在 `74f6566` 落地并真机验证（预览 3.2s / 6 题 / 零写入）。
+- 验证：build 49 tasks SUCCESSFUL；agent-gate --all PASS（pass=1107）；确认页 UI 交互待真机手动点选验证（相册多选 → 确认页 → 勾选 → 确认整理）。
+
+### 阶段 5 幂等落地（2026-10-31）
+
+- `CaptureSetProblem` 增加 `fingerprint`；`commitCaptureSet` 为每题生成 `commitKey = capture-set:<setId>:<fingerprint>`。
+- 提交前查 `note_generation_commit`（`getCommitResult`）：已存在则**跳过写入**，回执标 `duplicate=true` 并复用原 `noteId`；提交成功后落 commit 记录。
+- 链路透传：`NoteCommand.commitKey` → `BranchRequest.commitKey` → `AgentState.commitKey` → `PersistNode` 端口 `commitKey`（优先于 `capture:<noteId>` 合成键）。
+- 真机 `e2e=captureSetIdem`（同一预览提交两次）：
+  - firstDone=6，secondDone=6，`duplicates=6`，`idsEqual=1`（两次 noteId 完全一致），第二次 3.4s 且无新增写入。
+- 已知问题：**装新包后首次冷启动立刻提交**曾出现 commit 卡死（draft confirm 也复现过），重跑正常；疑似首启迁移/初始化与写事务竞争，后续可加「RAG/DB ready 标记 + e2e 等待」缓解。
+
+## 15. 验收矩阵总览（2026-11-01）
+
+| 场景 | 真机证据 | 结果 |
+|---|---|---|
+| S1 单图单题 | `e2e-capture` / 历史 capture | ✅ |
+| S2 单图多题 | `e2e=captureSet`：2 图 → 6 题（sources=[0]×3） | ✅ |
+| S3 跨页同题 | `e2e=captureSetS3`：2 页 → 1 题（sources=[0,1]） | ✅ |
+| S4 多图多题 | `e2e=captureSet`：2 图 → 6 题（sources=[0]×3+[1]×3） | ✅ |
+| S5 重拍去重 | `e2e=captureSet5`：3 图（含重复页）→ 6 题，重复页 sources=[0,2] | ✅ |
+| 确认页 UI | `hdc uitest` 真机自动点选全路径：确认页出现（3 题默认勾选）→ 确认整理 → 笔记 114→117（+3）+ 逐题回执；取消 → 笔记保持 117 + 回执「已取消整理，未写入任何笔记」 | ✅ |
+| 幂等 | `e2e=captureSetIdem`：两次提交 idsEqual=1 / duplicates=6 | ✅ |
+
+### 阶段 4 UI 真机验收（2026-11-01，`hdc uitest` 自动点选）
+
+流程：AI 助手 Tab →「+」→ 相册 → 系统选择器选 2 张 → 完成 → 确认页 → 勾选 → 确认整理。
+
+| 步骤 | 观测 | 结果 |
+|---|---|---|
+| 确认页出现 | 标题「确认识别边界」，副标题「2 张图识别出 3 道题；取消勾选不需要入库的题」，右上 `3/3`，3 题默认勾选（needsReview 题默认不勾） | ✅ |
+| 确认整理 | 点「确认整理（3 题）」→ 首页笔记 **114 → 117（+3）**，会话逐题回执 + 「整理完成」 | ✅ |
+| 取消 | 点「取消」→ 笔记保持 **117** 不变，会话显示「已取消」+「已取消整理，未写入任何笔记。」 | ✅ |
+| 回执文案修正 | 「3 张图 → 3 条笔记」修正为按 `imageCount` 显示（2 张图），并加单测守卫 | ✅ |
+| 确认页布局修正 | 卡片改为内容自适应（滚动区限高 520），不再被拉伸满屏 | ✅ |
+
+截图证据（gitignored，本地 `.device-logs/`）：`ui-shot5/6/8/9.jpeg`（确认页 / 入库回执 / 布局修复后确认页 / 取消回执）。
+
+### 阶段 6：首装冷启动卡死兜底 + 确认页全选 UX（2026-11-01）
+
+**问题复现**：同包重装后立刻 `e2e=draft --cold`，首次 confirm 偶发卡死 >290s（`stage=confirm start` 后无输出）；重跑正常。加入分步 trace（`[ConfirmTrace]`）后未见卡点，3 轮「重装→首次 draft」均通过（confirm 1.4–1.6s）。
+
+**兜底实现（防御式）**：
+
+| 位置 | 超时 | 行为 |
+|---|---|---|
+| `DraftCommitService.confirmDraft` | 120s | 抛 `CONFIRM_TIMEOUT`，提示重试（commitKey 幂等，不会重复入库） |
+| `CapturePipeline.commitCaptureSet` | `90s + 45s/题` | 超时返回空 batch（已落库结果保留），重试按 commitKey 幂等 |
+| `KnowledgeUnitWriteService` 索引同步 | 5s | 超时仅告警，不改变事务结果 |
+| `KnowledgeUnitWriteService` post-commit effects | 5s | 同上 |
+| `device-runner` e2e `--cold` | 预热 6s→12s | 降低首启初始化与自检竞争 |
+
+**确认页全选 UX**（`hdc uitest` 真机验证）：
+
+| 状态 | 观测 |
+|---|---|
+| 初始 | `3/3 取消全选`，`确认整理（3 题）` |
+| 点「取消全选」 | `0/3 全选`，`确认整理（0 题）`（禁用） |
+| 再点「全选」 | 恢复 `3/3` |
+| 待复核提示 | 存在 needsReview 题时副标题追加「N 道待复核默认不勾选」 |
+
+截图（gitignored，本地）：`ui-shot10/11/12/15/16.jpeg`。
+
+### 阶段 6 补充：卡死根因（2026-11-01，真机日志坐实）
+
+再次复现时 hilog 出现：
+
+```
+C01713/resource_schedule_service/SUSPEND_MANAGER: add freeze unit: 20020230_com.example.mindtrace ...
+```
+
+即 **系统资源调度把应用冻结**（e2e 通过 `aa start` 在无用户交互情况下反复触发，命中系统冻结策略），JS 定时器/Promise 全部停摆，表现为「`stage=idem start` 后无任何日志」。重新 `aa start`（解冻）后同一进程立即完成（`idem firstDone=6 / duplicates=6 / idsEqual=1 / 99s`）。
+
+结论：
+- 该现象是**测试调度环境**触发，真实用户在前台交互时不会被冻结；产品侧看门狗（120s/90+45n/5s）仍保留，防止极端情况下无限等待。
+- 设备验证时若日志停在 `start` 不动，先重新触发一次（解冻）再判断；`device-runner` 已保持 30 分钟不休眠，但仍会被系统冻结策略影响。

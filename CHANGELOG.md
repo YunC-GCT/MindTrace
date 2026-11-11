@@ -8,7 +8,17 @@
 
 | 版本 | 发布日期 | 主要内容 |
 |---|---|---|
-| **v1.0** | 2026-09-05 | 比赛复赛 W4 增量;5 module (entry HAP + 4 HSP);CODEOWNERS 3-owner 路由;Git Flow 轻量版;Self-approve 兜底策略;arkts-lint v0.3 AST 引擎 (34 规则 / 63 tests);2026-09-01 架构审计落地 |
+| **v1.0** | 2026-09-05 | 比赛复赛 W4 增量;5 module (3 HAP: `entry` / `skill` / `cardservice` + 2 HSP: `common` / `agents`);CODEOWNERS 3-owner 路由;Git Flow 轻量版;Self-approve 兜底策略;arkts-lint v0.3 AST 引擎 (34 规则 / 63 tests);2026-09-01 架构审计落地 |
+| **v1.1-dev** | 未发版 | 检索与证据策略、三分类判重、A2A 草稿确认、ReviewWritePort/schema v23、项目介绍材料 |
+
+## 2026-11 未发版变更
+
+- **检索**：五路混合召回（整句 FTS / 数学签名 / 词 OR / 短词 LIKE / 稠密向量）+ RRF；条件重排与查询改写按头部差触发；评测集切换为公开基准 MathNet-Retrieve。
+- **证据判定**：`EvidencePolicy` strict / balanced / expansive 三档接入编排层与设置页，默认 balanced。
+- **判重**：L1 规则 + 向量兜底 + LLM 三分类仲裁（same / supplement / different），补充内容不丢弃。
+- **写入一致性**：`ReviewWritePort` + `ReviewWriteStoreDao`，schema v23 `review_op`，operationId 幂等。
+- **A2A**：文本/计划/图片逐题草稿确认，支持确认、取消、详细、简洁、重新生成；草稿 24h 过期；25s 超时兜底、单回执、失败转待整理。
+- **项目介绍**：`portfolio/` 下增加 12 页 PDF、六页 HTML 设计说明与生成说明。
 
 ## 升级触发
 

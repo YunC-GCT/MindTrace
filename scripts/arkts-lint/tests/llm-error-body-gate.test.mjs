@@ -8,7 +8,7 @@ const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
 const llmClientPath = join(repoRoot, 'common', 'src', 'main', 'ets', 'llm', 'LlmClient.ets');
 const providersPath = join(repoRoot, 'common', 'src', 'main', 'ets', 'llm', 'providers.ets');
 // spec 015 之后 response_format 的能力分支收口在 GenerationDraftSupport
-const draftSupportPath = join(repoRoot, 'agents', 'src', 'main', 'ets', 'agents', 'GenerationDraftSupport.ets');
+const draftSupportPath = join(repoRoot, 'agents', 'src', 'main', 'ets', 'subagents', 'GenerationDraftSupport.ets');
 
 function readLlmClient() {
   return readFileSync(llmClientPath, 'utf8');

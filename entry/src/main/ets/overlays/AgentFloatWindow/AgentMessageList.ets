@@ -7,8 +7,8 @@
  */
 
 import { S_2, S_4 } from 'common';
-import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels';
-import { NoteReviewFeedback } from '../../models/NoteReviewModels';
+import { NoteEvidenceCitation } from 'common';
+import { NoteReviewFeedback } from 'common';
 import { ChatBubble } from './chat/ChatBubble';
 import { ChatAutoFollowState } from './chat/ChatAutoFollowState';
 import { EmptyStateHint } from './chat/EmptyStateHint';

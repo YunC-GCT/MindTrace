@@ -40,7 +40,7 @@ import {
   KnowledgeUnitWriteError,
   KnowledgeUnitWriteErrorCode,
   KnowledgeUnitWriteRepository,
-} from '../main/ets/models/KnowledgeUnitWriteModels';
+} from 'common';
 
 const makeUnit = (content: string, version: number = 2): KnowledgeUnit => {
   return {

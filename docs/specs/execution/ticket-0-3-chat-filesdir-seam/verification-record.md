@@ -17,7 +17,7 @@
   ```text
   M CONTEXT.md
   M docs/adr/0015-structured-stream-events.md
-  M docs/legacy/mindtrace/handoffs/qwen-deepseek-reasoning-handoff-2026-09-12.md
+  M docs/legacy/mindtrace/qwen-deepseek-reasoning-handoff-2026-09-12.md
   M docs/research/index.md
   M docs/specs/019-reasoning-process-display-p0.md
   M docs/specs/index.md
@@ -290,7 +290,7 @@ docs/specs/execution/ticket-0-3-chat-filesdir-seam/tasks.md               (check
 docs/specs/execution/ticket-0-3-chat-filesdir-seam/verification-record.md (new)
 ```
 
-`git status --porcelain` after implementation shows exactly the four modified scoped files plus the two new scoped files and `docs/specs/execution/ticket-0-3-chat-filesdir-seam/`; the pre-existing unrelated #019/spec021 dirty and untracked files listed in Phase 1 remain untouched (including `docs/legacy/mindtrace/handoffs/qwen-deepseek-reasoning-handoff-2026-09-12.md`, whose modification belongs to the parallel session's work). Nothing was staged or committed. No AtomicFile/TaskPool code and no Preferences-path change is present in the scoped diff (see "Production boundary checks").
+`git status --porcelain` after implementation shows exactly the four modified scoped files plus the two new scoped files and `docs/specs/execution/ticket-0-3-chat-filesdir-seam/`; the pre-existing unrelated #019/spec021 dirty and untracked files listed in Phase 1 remain untouched (including `docs/legacy/mindtrace/qwen-deepseek-reasoning-handoff-2026-09-12.md`, whose modification belongs to the parallel session's work). Nothing was staged or committed. No AtomicFile/TaskPool code and no Preferences-path change is present in the scoped diff (see "Production boundary checks").
 
 ## Final gate resolution
 

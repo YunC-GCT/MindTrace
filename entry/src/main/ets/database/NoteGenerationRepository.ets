@@ -24,8 +24,8 @@ import {
   IncrementalManifest,
   parseIncrementalSections,
 } from 'common';
-import { NoteGenerationBaseProvider } from '../models/KnowledgeUnitWriteModels';
-import { ConversationRunIdPolicy, SessionIdPolicy } from '../services/ConversationIdentity';
+import { NoteGenerationBaseProvider } from 'common';
+import { ConversationRunIdPolicy, SessionIdPolicy } from 'common';
 
 export class NoteGenerationRepository implements NoteGenerationRepositoryContract {
   private store: relationalStore.RdbStore;
@@ -116,6 +116,7 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       'change_scope': checkpoint.changeScope ?? 0,
       'decision': checkpoint.decision ?? 'rejected',
       'created_at': checkpoint.createdAt ?? Date.now(),
+      'approved_at': checkpoint.approvedAt ?? 0,
     };
     const exists: boolean = await this.hasRow('note_generation_checkpoint', 'id', checkpoint.id);
     if (exists) {
@@ -124,6 +125,50 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       return;
     }
     await this.insertRow('note_generation_checkpoint', bucket);
+  }
+
+  /**
+   * v18：标记检查点已审批（HITL 确认点）。
+   * 先读行校验 hash（语义清晰），再按 id+run_id 更新（避免复合谓词在部分版本上不命中）。
+   */
+  async markCheckpointApproved(runId: string, checkpointId: string, candidateHash: string, approvedAt: number): Promise<void> {
+    const checkpoint: NoteGenerationCheckpoint | null = await this.getCheckpoint(runId, checkpointId);
+    if (checkpoint === null) {
+      throw new Error('markCheckpointApproved: checkpoint not found ' + checkpointId);
+    }
+    if (checkpoint.candidateHash !== candidateHash) {
+      throw new Error('markCheckpointApproved: candidate hash changed for checkpoint ' + checkpointId);
+    }
+    if (checkpoint.approvedAt !== undefined && checkpoint.approvedAt > 0) {
+      return;
+    }
+    const predicates = new relationalStore.RdbPredicates('note_generation_checkpoint');
+    predicates.equalTo('id', checkpointId).and().equalTo('run_id', runId);
+    const bucket: relationalStore.ValuesBucket = { 'approved_at': approvedAt };
+    const updatedRows: number = await this.store.update(bucket, predicates);
+    if (updatedRows <= 0) {
+      throw new Error('markCheckpointApproved matched no checkpoint row: ' + checkpointId);
+    }
+  }
+
+  /** v18：按 (runId, checkpointId) 读检查点（审批校验用）。 */
+  async getCheckpoint(runId: string, checkpointId: string): Promise<NoteGenerationCheckpoint | null> {
+    const predicates = new relationalStore.RdbPredicates('note_generation_checkpoint');
+    predicates.equalTo('id', checkpointId).and().equalTo('run_id', runId);
+    const columns: string[] = [
+      'id', 'run_id', 'iteration', 'stage', 'parent_id', 'candidate_hash', 'document_json',
+      'accepted', 'issue_codes', 'outline_json', 'evidence_json', 'verification_json',
+      'issue_fingerprint', 'coverage_json', 'token_cost', 'change_scope', 'decision', 'created_at', 'approved_at',
+    ];
+    const resultSet: relationalStore.ResultSet = await this.store.query(predicates, columns);
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      return NoteGenerationRepository.rowToCheckpoint(resultSet);
+    } finally {
+      resultSet.close();
+    }
   }
 
   private async hasRow(table: string, column: string, value: string): Promise<boolean> {
@@ -652,6 +697,7 @@ export class NoteGenerationRepository implements NoteGenerationRepositoryContrac
       changeScope: NoteGenerationRepository.readOptionalNumber(rs, 'change_scope'),
       decision: NoteGenerationRepository.readOptionalString(rs, 'decision') as 'best' | 'rejected' | 'initial' | undefined,
       createdAt: rs.getLong(rs.getColumnIndex('created_at')),
+      approvedAt: NoteGenerationRepository.readOptionalNumber(rs, 'approved_at'),
     };
   }
 

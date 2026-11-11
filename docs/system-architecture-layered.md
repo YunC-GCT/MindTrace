@@ -1,9 +1,15 @@
 # MindTrace 分层架构设计（v5 · 经评审修正；§17 为 v7 目标态，已按 10-27 外评审修订）
 
+<!-- HISTORICAL-BANNER -->
+> **阅读提示（2026-11-04）**：§1–§17 是 v5 / v7 的**设计态**，部分口径已被实现取代；
+> **当前代码落点见文末 [§18 当前实现](#18-当前实现2026-11-04)**，两者冲突时以 §18 为准。
+
+
 > 五层：L1 入口 → L2 Agent 编排 → L3 能力（MCP / RAG / 模型网关）→ L4 数据 → L5 基础设施。
 > v5 依据 Codex 高推理评审修正三处硬伤：StateGraph 并无 checkpoint/interrupt、文搜图与工程 API 版本冲突、白名单不可信。
 > §17 的 v7 目标态经 2026-10-27 第二轮外评审修订（§14.1），总体判定「有条件可落地」。
 > v1 范围仍是：**全面 Kit 化、复习移出、MCP 只留接口、卡片只读**。
+> **2026-10-30 口径**：项目处于**测试态，不推进上架**（P6 暂缓、P5 合规缓做），详见 §15 注。
 
 ---
 
@@ -151,7 +157,7 @@ Agent **不许直接碰 RDB**，否则复习、搜索、导出每加一个场景
 | 端口 | 方法 | 给谁用 |
 |---|---|---|
 | NoteReadPort | `list(filter)` / `get(id)` / `search(query)` | 复习、对话、导出 |
-| ReviewPort | `due(now)` / `mastery(noteId)` / `record(...)` | 复习 |
+| ReviewPort | `listDue(now)` / `getByUnit(unitId)` / `history(unitId)`（读已落地）；写侧 `schedule/record` 随 ReviewAgent 票 | 复习 |
 | KnowledgePort | `units(topic)` / `related(id)` | 知识星系、RAG |
 
 写操作走 `NoteWritePort` / `ReviewWritePort`，必须经确认门禁。
@@ -218,7 +224,7 @@ ModelRouter                      入口：一次回答只能选一条路
 | **Vision Kit** | DocumentScanner | 拍纸质题自动裁边 | 是 UI 组件 | 可选 |
 | Vision Kit | AI 识图 | 图像理解 | — | 不用 |
 | **Data Augmentation Kit** | 知识库 / 知识检索 / RAG（`ChatLLM` 需应用自己实现，不含模型） | 端侧 RAG 框架 | 无内置生成模型，见 4.2 | ⚠️ |
-| **ArkData RelationalStore** | RDB | 笔记、复习计划 | 已有 13 张表 | ✅ |
+| **ArkData RelationalStore** | RDB | 笔记、待办、复习、run 事件 | 已有 18 张表（v15 `review_item` / `review_log`，v16 `run_store` / `run_event`，v17 `study_plan_op`） | ✅ |
 | **Form Kit** | 卡片 | 结果回显 | 已有 | ✅ |
 | **Intents Kit** | 意图声明与调用 | 小艺入口 | 需审核 | ✅ |
 | **Agent Framework Kit** | 拉起智能体 / A2A | 入口 | 仅手机平板 | 可选 |
@@ -277,6 +283,8 @@ query
 
 **v1 选 A**：把笔记写进 Kit 的知识库，检索走它的接口。自建方案留作 v2，等出现“元数据过滤不够用”的真实需求再换。架构图里 RAG 层画成 `RAG 接口 → Data Augmentation Kit`，自建作为虚线备选。
 
+> **2026-11-07 实现现状（覆盖本节选型）**：v1 最终落地的是 **B 的自建子集**，不是 Data Augmentation Kit：`note_fts`（FTS5 trigram）+ 数学签名 + 分词 OR + 短词 LIKE + 稠密向量（本地 BGE 或 OpenAI 兼容 `/embeddings`），RRF 融合；向量头部模糊时条件查询改写与 `bge-reranker` 重排；回答前由 LLM 判定候选是否切题。设计与实验见 `docs/research/agent-framework-layering-review-2026-11-02.md` §37–§51。
+
 ---
 
 ## 6. L4 数据层
@@ -285,12 +293,13 @@ query
 |---|---|---|
 | RDB · `knowledge_unit` | **笔记主体**：标题、正文、标签、学科、章节、SM-2 复习字段 | Agent 写，App 读 |
 | RDB · `kg_edge` | 关系边：同知识点 / 相似 / 前后置 | Agent 写，App 读 |
-| RDB · `study_plan` | 复习计划条目（到期、完成状态） | App 写，Agent 读 |
+| RDB · `study_plan` | 待办条目（完成状态、优先级、due date；v17 加 `version` 做 CAS） | App 写，Agent 读 |
+| RDB · `study_plan_op` | 待办写的幂等操作记录（v17） | App 写 |
 | RDB · `note_generation_run` / `_checkpoint` | 批次与断点 | Agent 写 |
 | RAG · `rag_chunk` / `rag_embedding` | 笔记文本与向量 | Agent 写，检索读 |
 | 文件 | 原图、附件 | 应用沙箱，App 只读 |
 
-**没有 `note` 表**：笔记就是 `knowledge_unit`。也没有 `note_link` 与 `review_item`——关系边是 `kg_edge`，复习字段内嵌在 `knowledge_unit` 里（`next_review_at`、`interval_days`、`ease_factor`、`repetitions`）。
+**没有 `note` 表**：笔记就是 `knowledge_unit`。也没有 `note_link`——关系边是 `kg_edge`。**复习已按 ADR-0022 独立建表**（schema v15：`review_item` / `review_log`），`knowledge_unit` 里那组复习字段保留为 v1 历史列，不再承载新的复习调度。
 
 **读写分离**：Agent 是唯一写入方，App 只读；用户动作（改笔记、标记已复习）是 App 唯一的写入口。
 
@@ -324,11 +333,11 @@ query
 
 | 表/字段 | 说明 |
 |---|---|
-| `review_item` | note_id、下次到期、间隔、难度、连续正确次数 |
-| `review_log` | 每次作答：时间、对错、耗时、评分 |
+| `review_item` | unit_id、下次到期、间隔、难度（ease）、连续正确次数、lapses、状态 |
+| `review_log` | 每次作答：时间、对错、耗时、评分（again/hard/good/easy）、间隔前后值 |
 | `mastery` | 按知识点聚合的掌握度（0–1） |
 
-RDB 不用大改，**加两张表 + 一个聚合字段**即可。关键是读接口先定好，不然复习接进来会到处写 SQL。
+RDB 不用大改，**加两张表 + 一个聚合字段**即可（ADR-0022 已拍板走新建表，不动 `study_plan`；schema v15 迁移票待开）。关键是读接口先定好，不然复习接进来会到处写 SQL。
 
 ### 8.3 调度算法
 
@@ -342,10 +351,10 @@ v1 用 SM-2（间隔 × 难度因子），规则简单、可解释；v2 再考�
 
 | 层 | 已有 | 缺 |
 |---|---|---|
-| L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试、回执短路；7 个 action 声明 | A2A **不经过 Dispatcher**（直调 `ReplyService`），「小艺触发整理」是新增接线；skill 侧 7 个 action 仍只有声明 |
-| L2 | `Dispatcher` 四分支 + `CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 已是 102 行 facade | 没有端口层：`skill/SkillAbility` 自己 `DatabaseHelper.init()` 并建只读 ToolRegistry，`entry` 的 `NoteEvidenceService` 直连 RDB 与 `kg_edge`；没有 RunContext / EventSink；没有统一 Trace |
-| L3 | Core Vision Kit OCR（`SERVER_FALLBACK_ENABLED=false`）、文搜图常驻 Worker、模型网关 catalog / resolver / discovery 多提供商 | MCP 只有 `OcrTool`，没有 schema 发现与权限；RAG 只有 `rag_embedding` 建表，没有检索实现 |
-| L4 | RDB 13 张表（`knowledge_unit` / `kg_edge` / `study_plan` / 生成 run） | `review_item` / `review_log` 未建表；`similar` 边未生成（`embedding: []`）；`study_plan` 是待办，不是复习计划 |
+| L1 | 小艺 A2A 真机已通（P0 有回复与验收日志）；`AgentExtAbility` 35s 单一 deadline、0 重试；回执短路读 `receipts/last-capture.json`；7 个 action 声明 | A2A 文字/图片**已就地入库**（`AgentIngestService → OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService`，`64008c3`），不再直调 `ReplyService`；P4 结果回执已做（2026-10-31）；对话分支仍走 `ReplyService`；skill 侧 7 个 action 仍只有声明（测试态无法注册意图） |
+| L2 | `Dispatcher` 已从 1790 行拆到 **216 行**，六条分支模块在 `core/dispatch/`；**ADR-0019 A3/A3b 已落**：`NoteCommand`/`NoteOutcome` 契约 + `NoteOutcomeMapper` + `Dispatcher.dispatchCommand` 新入口（旧 `dispatch()` 保留迁移适配器），`AiService` 的 capture 文本/A2A 入库与确认提交切到命令终态，**取消语义三位置落地（含 `cancelled(committed=true)` 事务信封）**；`CaptureGraph` 五节点 + `ToolLoop`；`KnowledgeModel` 102 行 facade；capture/preparedCandidate 的 PersistNode 均走 `NoteWritePort`（A1/A2），`RunContext` 已接；A4 主图与 `RunEventSink` 已落 | 仍未做：ReviewAgent / MathVideoAgent 等派生票；`skill/SkillAbility` 自己 `DatabaseHelper.init()`；`NoteEvidenceService` 的 `kg_edge` 仍直连 |
+| L3 | Core Vision Kit OCR（`SERVER_FALLBACK_ENABLED=false`）、文搜图常驻 Worker、模型网关 catalog / resolver / discovery 多提供商；**RAG 已落地五路混合检索**（整句 FTS / 数学签名 / 词 OR / 短词 LIKE / 稠密向量）+ RRF、条件查询改写与重排、LLM 证据判定 | MCP 只有 `OcrTool`，没有 schema 发现与权限；`KnowledgePort` 未建（`kg_edge` 读取仍直连） |
+| L4 | RDB 20+ 张表（v15 `review_item` / `review_log`、v16 `run_store` / `run_event`、v17 `study_plan_op`、v23 `review_op`；另有 `knowledge_unit` / `kg_edge` / `study_plan` / 生成 run / RAG chunk+embedding） | `similar` 边未生成（星系仍只出同知识点边）；`study_plan` 仍是待办，不是复习计划；`ReviewWritePort` 已落，ReviewAgent 子图未做 |
 | L5 | 分阶段日志（capture 五段耗时）、A2A 日志（requestId / taskId / attempts / 耗时） | 没有跨工作流统一 Trace：`runId` / `parentRunId` 串不起来，node / tool / approval / commit 事件不落盘 |
 
 「小艺真机未通」「观测为零」这两个说法已过期，别再引用。
@@ -437,7 +446,7 @@ RDB 变更（`knowledge_unit` 表加三列，迁移版本 13 → 14）：
 ### 12.3 为什么这两条值得占两周的时间
 
 - 确认交互：把“系统级入口”从口号变成可演示的交互，且依赖 LangGraph 的 `interrupt()`，别人用普通流水线做不出来
-- 可溯源：这是 AI 笔记和 AI 玩具的分界线。面试被问“AI 生成的笔记可信吗”，答案不是“我们提示词写得好”，而是“每条都能点回原图”
+- 可溯源：这是 AI 笔记和 AI 玩具的分界线。被问“AI 生成的笔记可信吗”时，答案不是“提示词写得好”，而是“每条都能点回原图”
 
 ---
 
@@ -514,6 +523,10 @@ RDB 变更（`knowledge_unit` 表加三列，迁移版本 13 → 14）：
 
 小艺开放平台**不在运行时链路里**，它是注册、审核与分发面。代码写完不等于能用，最后必须走完这套：
 
+> **2026-10-30 注**：项目当前**测试态、不上架**。本节保留为「将来要上架时的清单」，不参与当前排期；
+> 测试态下只有「意图注册（Intents Kit）」与「Agent Framework Kit 拉起智能体」两项不可验证，
+> A2A 白名单链路与应用内链路不受影响。P5 / P6 的权威状态见 [`docs/agents/phase-tracker.md`](./agents/phase-tracker.md)。
+
 | 步骤 | 做什么 | 卡点 |
 |---|---|---|
 | 1 | AGC 上架应用（Release 签名，包名与工程一致） | 意图注册要求关联已上架应用 |
@@ -544,14 +557,14 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 | 笔记列表与详情 | `knowledge_unit` | 分页；按时间、学科、章节过滤 |
 | 知识星系 | `kg_edge` + `knowledge_unit` | 只读预计算的边，渲染时不计算 |
 | 待办（当前叫「复习计划」） | `study_plan` | 标题、完成状态、优先级、关联笔记、due date；**是待办清单，不是间隔复习计划** |
-| 复习记录 | 未建表 | `review_item` / `review_log` 都不存在，v2 接 SM-2 时再建 |
+| 复习记录 | **已建表 + 读写端口（ADR-0022，schema v15 / v23）** | `review_item` / `review_log` 已在 `DatabaseHelper` v15 落地；v23 补 `review_op` 幂等键；`ReviewReadPort` / `ReviewWritePort` 已落，`ReviewAgent` 子图待开票 |
 
 ### 16.2 关系边怎么产生
 
 | 边类型 | 产生方式 | 现状 |
 |---|---|---|
 | 同知识点 | 同章节最近 20 条，增量补边（`KnowledgeUnitChapterEdgeEffect`） | **已实现**：`relation_type=same_unit` |
-| 相似 | 向量余弦超过阈值（如 0.82） | **未实现**：`embedding: []`，字段在但恒空；`rag_embedding` 只有建表，没有检索 |
+| 相似 | 向量余弦超过阈值（如 0.82） | **未用于建边**：RAG 向量检索已实现（`rag_chunk` / `rag_embedding` + `NoteVectorIndex`），但星系仍只出同知识点边 |
 | 前后置 | 章节顺序推导，或人工标注 | v2 |
 
 ### 16.3 两条硬规则
@@ -561,8 +574,8 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 
 ### 16.4 v1 的取舍
 
-- 星系只出**一类**边：同知识点。相似边未生成（`embedding: []`），前后置留 v2。
-- `review_item` / `review_log` **未建表**，v1 不接 SM-2；`study_plan` 是待办。
+- 星系只出**一类**边：同知识点。相似边未生成（RAG 向量检索已实现，但未接入建边），前后置留 v2。
+- `review_item` / `review_log` **已按 ADR-0022 建表（schema v15）**，v23 补 `review_op` 幂等键；`ReviewReadPort` / `ReviewWritePort` 已落，SM-2 与 `ReviewAgent` 子图待做；`study_plan` 是待办。
 - 写入口不是「只有用户动作」：手工编辑与 AI 写入都走 `KnowledgeUnitWriteService`，AI 写入还会触发 `KnowledgeUnitPostCommitEffects` 的卡片刷新。口径应按 **数据 owner + 谁发起写 + 读投影** 三个维度描述，而不是「App 只读」。
 
 ---
@@ -589,9 +602,12 @@ L1 入口层旁边挂一个「小艺开放平台 · 注册/审核」的角标即
 - **skill**：Want 解析、Intent Router、参数校验、调 `Dispatcher`、呈现结果、深链回 APP 确认；不写业务规则。
 - **cardservice**：只读 `CardSnapshotStore`，不调 Agent、不查库。
 
-**数据归属（10-27 评审补充）**：RDB schema 与平台实现（RDB / Preferences / 文件）归 `entry`；端口接口与 DTO 归 `common`；「App Store」不是独立模块，而是笔记 / 计划 / 视频三个领域的持久层——写入只经端口，且必须带审批结果与 `commitKey`。`agents` 与 `skill` 都不直接触碰 RDB。
+**数据归属（10-27 评审补充；10-30 按 ADR-0021 修订）**：RDB schema 与平台实现（RDB / Preferences / 文件）归 `entry`；端口接口与 DTO 归 `common`；**只读端口实现也归 `common`（`ports/impl/`，因为 `skill`/`cardservice` 无法依赖 `entry`，且 `common` 已持有 ArkData），写实现（事务 / `commitKey` / 审批）留在 `entry`**；「App Store」不是独立模块，而是笔记 / 计划 / 视频三个领域的持久层——写入只经端口，且必须带审批结果与 `commitKey`。`agents` 只依赖端口契约，**永不 import `ports/impl`**，也不直接触碰 RDB。
 
 ### 17.2 Dispatcher 主图与子图
+
+> **2026-11-01 spec 039 S1 已落地**：`Dispatcher` 已拆为 `CommandExecutor`（run/preflight/verify/publish）+ `CommandRouter`（取消/审批前置 + kind→workflow），六阶段 `DispatchGraph` 删除；capture/generation/regenerate/prepared 四条 workflow 骨架在 `agents/workflows/`（capture 收口在 S2）。下面为历史设计原文。
+
 
 ```text
 preflight → route → invoke → verify → HITL → publish
@@ -614,8 +630,11 @@ preflight → route → invoke → verify → HITL → publish
 
 ### 17.3 内核差距（按优先级）
 
-1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；现状 `CaptureGraph` 已是 `StateGraph` 实例，但由 `Dispatcher` 直接 `new` 并喂节点，还不是「子图作为节点」；
-2. **RunContext**：runId / parentRunId / cancel / budget（当前只有 `CancellationToken`）；
+> **2026-11-01 更新（spec 039 S1–S3 完成）**：差距 1 已收口——`Dispatcher`→`CommandExecutor`+`CommandRouter`，`DispatchGraph`/`CaptureBranch`/`NoteAgent` 删除，capture 图装配收进 `NoteCaptureWorkflow`；事件树补 `node.ended`/`commit.committed`/`approval.rejected`（runId 贯通）。
+
+
+1. **Subgraph 调用**：子图作为节点接入，而不是函数硬调；`CaptureGraph` 现已由 `NoteAgent` 装配并直调（#241 切片 1，薄包装），但还不是「子图作为节点」；
+2. **RunContext**：**已落地**（#243）——`runId` / `parentRunId` / `deadline` / `budget` / `token` 经 `DispatchOptions.runContext` 传入，父子图共享同一预算；
 3. **EventSink**：node / tool / token / approval 事件（当前只有 `progressSink` 与 #235 加的按节点耗时回调 `NodeTimingSink`）；
 4. **State / Reducer**：typed channel 取代手写 `copyAgentState`；
 5. **Checkpoint**：保持业务级（草稿 / 确认），要做 runtime checkpoint 需单独 ADR。
@@ -633,7 +652,7 @@ APP 输入 / 小艺 Want
 
 上图画的是目标态。现状有两处必须写清楚，否则会误判工作量：
 
-- **小艺这条不在这张图里**：`AgentExtAbility` 收到 A2A 请求后直调 `ReplyService`，回执命中则直接读 `receipts/last-capture.json` 返回，两条路径都**不经过 `Dispatcher`**。要让「小艺触发整理」走主图，是新增接线，得先定 request/result 映射。
+- **小艺这条已经进图了（2026-10-30 更新）**：`AgentExtAbility` 收到 A2A 请求后由 `AgentIngestService` 走 `OcrService → AiService.ingestText → Dispatcher → KnowledgeUnitWriteService` 就地入库（`64008c3`）；回执命中仍是短路读 `receipts/last-capture.json`，纯对话仍走 `ReplyService`。**「A2A 不经过 Dispatcher」的旧结论作废**；剩余缺口是把 P4 结果回执（「本次整理 N 条」）接上。
 - **确认在图外**：预览 → 用户确认 → 提交是三次独立调用，不是 `interrupt()`；这正是 §3.0 说的「业务级 checkpoint + 图外确认」。
 
 分支：Review 走 `plan → ask → grade → StudyPlan → App Store`；Video 走 `outline → script → render → mp4 → App Store`。注意 `study_plan` 当前是待办不是复习计划，ReviewAgent 的领域模型要先定（见 §16.1）。
@@ -656,11 +675,11 @@ APP 输入 / 小艺 Want
 | 契约 | 归属 | 现状 | 至少要定义 | 依据 |
 |---|---|---|---|---|
 | `Dispatcher.dispatch` | agents | 四分支已存在，返回扁平结果 | `NoteCommand`（capture / generation / regenerate / preparedCandidate / analysisOnly）+ discriminated `NoteOutcome`（needsInput / readyPreview / committed / failed(code, retryable) / cancelled） | ADR-0019（[0019](./adr/0019-note-command-and-outcome.md)） |
-| `NoteReadPort` / `NoteWritePort` | 接口 common，实现 entry | 直连 DAO，无端口 | `commitKey`、`expectedVersion`、`approvedCheckpointHash`（防 Agent 绕过 HITL）、幂等重放、`committed/cancelled` 判定 | 契约由 #238 落地；语义受 ADR-0019 约束 |
-| `StudyPlanReadPort` / `StudyPlanWritePort` | 同上 | `StudyPlanDao` 裸 CRUD | **先定领域**：待办 vs 间隔复习；再定评分 / 掌握度 / 复习记录 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `NoteReadPort` / `NoteWritePort` | 读实现 common（`ports/impl`）/ 写实现 entry（ADR-0021） | 直连 DAO，无端口 | `commitKey`、`expectedVersion`、`approvedCheckpointHash`（防 Agent 绕过 HITL）、幂等重放、`committed/cancelled` 判定 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `StudyPlanReadPort` / `StudyPlanWritePort` | common（契约）/ entry（实现） | **已落地**：读 `StudyPlanPortAdapter`；写 `StudyPlanWritePortAdapter`（operationId 幂等 + CAS）+ v17 `study_plan.version` / `study_plan_op` | **领域已定（ADR-0022）**：只做待办，不做评分/掌握度/复习记录 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 | `ArtifactStorePort` | 同上 | 无 | `artifactId`、媒体类型、URI、校验和、保留与删除、部分失败的清理 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 | `CardSnapshotStore` | common | Preferences 静态读写，无 schema version | projection schema version、`updatedAt`、原子替换、刷新失败可重试 | 契约由 #238 落地；语义受 ADR-0019 约束 |
-| `RunStore` | common | 无（只有 `NoteGenerationRepository` 的 run 行） | `runId` / `parentRunId` / `eventId`、单调 `sequence`、status + version、checkpoint、恢复与取消合同 | 契约由 #238 落地；语义受 ADR-0019 约束 |
+| `RunStore` | common（契约）/ entry（实现） | **已落地**：v16 `run_store` + `run_event`；`RunStoreAdapter`（committed 保护 / 序号透传）+ `RunStoreDao`（事务内 `MAX(sequence)+1`） | `runId` / `parentRunId` / `eventId`、单调 `sequence`、status + version、checkpoint、恢复与取消合同 | 契约由 #238 落地；语义受 ADR-0019 约束 |
 
 Token 事件只记数量与耗时，**不落正文**（沿用日志脱敏约束）。
 
@@ -691,6 +710,81 @@ Token 事件只记数量与耗时，**不落正文**（沿用日志脱敏约束�
 | 是否新增 `AgentFacade` | 只在能隐藏多用例 / 版本时新增，不做 `Dispatcher` 的空转发壳 | 建议暂不新增 |
 | Subgraph 实现方式 | 共享 RunContext 的子图节点组合，**不要伪装成 Tool**（重试与输出语义不同） | 建议采纳 |
 | Checkpoint 层级 | 保持业务级；runtime checkpoint 单开 ADR 并先定序列化兼容 | 采纳 |
-| 笔记 / 计划的数据归属 | RDB 与平台实现归 entry，接口在 common，写操作经审批 + 幂等 Port | 建议采纳，需与「App Store 归谁」一并写进 §17.1 |
-| Video 是否端侧只产脚本 | 暂缓 mp4 renderer，先定「只产脚本」与产物隐私 / 存储 / 取消 | 待产品拍板 |
-| ReviewAgent 是否负责出题评分 | 不要直接展开 `study_plan`，先定待办 vs 间隔复习 | 待产品拍板 |
+| 笔记 / 计划的数据归属 | RDB 与平台实现归 entry，接口在 common，写操作经审批 + 幂等 Port | 建议采纳，需与「App Store 归谁」一并写进 §17.1；只读实现归属已由 ADR-0021 定为 common |
+| Video 是否端侧只产脚本 | 暂缓 mp4 renderer，先定「只产脚本」与产物隐私 / 存储 / 取消 | **已拍板：只产脚本，不做 mp4**（ADR-0022） |
+| ReviewAgent 是否负责出题评分 | 不要直接展开 `study_plan`，先定待办 vs 间隔复习 | **已拍板：新建 `review_item` / `review_log`，`study_plan` 保持待办**（ADR-0022） |
+
+---
+
+## 18. 当前实现（2026-11-04）
+
+> §1–§17 记录的是 v5 / v7 的**设计态**。本节记录**代码实际落点**；两者冲突时以本节为准。
+
+### 18.1 模块职责
+
+| 模块 | 文件数（`.ets`） | 职责 | 边界 |
+|---|---|---|---|
+| `common`（HSP） | 83 | 契约、图内核、跨模块共享的纯规则 | 准入最严，见 §18.3 |
+| `agents`（HSP） | 71 | 编排与业务规则 | 只依赖 `common`，不 import `entry` |
+| `entry`（HAP） | `services/` 103 | 组合根、设备适配、尚未端口化的实现 | 依赖 `agents` + `common` |
+| `skill` / `cardservice`（HAP） | — | 小艺 skill、桌面卡片 | 只依赖 `common` |
+
+依赖方向固定：`entry / skill / cardservice → agents → common`。
+
+### 18.2 目录落点
+
+**common —— 契约与内核**
+
+| 目录 | 文件 | 内容 |
+|---|---|---|
+| `ports/` | 18 | `NoteReadPort` / `NoteWritePort` / `NoteSearchPort` / `NoteEvidencePort` / `NoteEvidenceDataPorts` / `NoteReviewPort` / `ReviewPorts` / `RunStore` / `ArtifactStorePort` / `StudyPlanPorts` / `DebugFaultPort`，以及实现目录 `impl/`（不进 barrel） |
+| `models/` | 14 | 命令与终态、生成、证据、复习、记忆、会话快照、图谱、星系、笔记类型词表 |
+| `llm/` | 16 | `LlmClient` / `LlmGuard` / `LlmConfig` / 供应商目录 / 模型解析 / 本地模型（懒加载 Kit） |
+| `workflow/` | 8 | `StateGraph` / `RunContext` / `RunBudget` / `RunErrors` / tool-calling |
+| `utils/` | 8 | `ConversationIdentity` / `NoteRetrievalQuery` / `LatexRiskNormalizer` / `logger` / `uuid` 等 |
+| `tools/` | 4 | `ToolCatalog` / `ToolRegistry` / `ToolLoop` / `NoteQueryTools`（实现不进 barrel） |
+| `kit/` `render/` `ocr/` `security/` `capability/` `data/` `constants/` | 13 | 能力门面契约、MM-MD 协议、OCR 契约、`ApiKeyVault`、能力探测、Mock 数据、设计令牌 |
+
+**agents —— 编排与业务规则**
+
+| 目录 | 文件 | 内容 |
+|---|---|---|
+| `conversation/` | 14 | 对话图：`ConversationWorkflow`（872 行）+ `Review/Note/Reply` 三个节点处理器 + `NodeHost` 宿主接口 + 端口、契约、格式化、运行注册表 |
+| `agents/` | 13 | 子 agent 与生成能力：`KnowledgeModel` / `TypeClassifier` / `PromptBuilder` / `TruthCheckService` / 草稿合成器 |
+| `graph/` | 10 | `CaptureGraph` + 五个节点 + 问题切分/合并 |
+| `core/` | 8 | `CommandExecutor` / `CommandRouter` / `dispatch/` |
+| `workflows/` | 5 | 四条笔记 workflow（capture / generation / regenerate / prepared）+ `WorkflowContext` |
+| `chat/` | 8 | 意图分类与回复：`IntentClassifier` / `ReplyService` / `ModelRouter` / `ModelSelector` / `AppIntentRouter` / `AppIntentRules` / `ReplyStyleRules` / `StreamErrorText` |
+| `note/` | 5 | `NoteGenerationContextBuilder` / `NoteContextValidityReviewer` / `WritePathValidator` / `LegacyNoteNormalizer` / `NoteDedupe` |
+| `evidence/` `review/` `mcp/` `models/` | 7 | 证据服务、复习计划、OCR 工具、编排内部模型 |
+
+**entry/services —— 组合根与适配**
+
+按角色分四类：组合根（`ConversationPortsProduction` / `EvidenceComposition` / `NoteReviewEvidenceProviders`）、设备与数据实现（`CoreVisionOcrRecognizer` / `RagNoteEvidenceSearch` / `RdbNoteGraph` / `RagRetrievalService` / `WriteJobScheduler`）、产品服务（笔记、复习、检索、导出）、UI 门面（`ModelCatalog` / `AgentChatContracts`）。
+
+### 18.3 三条硬规则
+
+1. **common 准入**：只放「≥2 个模块或 ≥2 个进程真实使用，且不含业务阈值 / 用户文案 / 配色渲染」的东西。单模块使用的业务规则回它所属的模块。
+2. **barrel 只导出契约**：`common/Index.ets` 不导出数据访问实现（`ports/impl/*`、`tools/NoteQueryTools`）；`agents/Index.ets` 只留编排入口与捕获契约，`chat` / `conversation` / `note` / `evidence` / `review` 各自维护子 barrel（`agents/src/main/ets/<dir>/Index.ets`）。消费方按子 barrel 或深路径引用，避免一次 `import 'agents'` 拉入整张图。
+3. **数据访问端口化**：任何要上移到 `agents` 的逻辑，数据面必须先在 `common/ports` 定义契约，实现留 `entry`（先例：检索 / 图谱双端口、证据 provider、草稿与记忆服务端口）。
+
+Kit 的准入另按 [spec 033](./specs/033-process-boundaries.md) 的进程可达性矩阵判定，与模块名无关。
+
+**可观测性**：两条编排线共用同一个 `RunEventSink` 契约。笔记写入发 `dispatch.*`，对话发 `conversation.start / step / terminal`，都落 `run_store` / `run_event`；sink 失败只记日志，不影响业务结果。
+
+### 18.4 本轮迁移记录（2026-11-03 → 11-04）
+
+| 批次 | 内容 |
+|---|---|
+| 模型下沉 | 六个领域 DTO、星系模型、笔记类型词表 → `common/models` |
+| 纯规则上移 | `NoteRetrievalQuery` / `ConversationIdentity` 等 → `common/utils`；`ReplyStyleRules` / `StreamErrorText` / `NoteDedupe` 定稿落 `agents` |
+| 对话链路 | 图、四个处理器目录从 `entry/workflows` 整体迁入 `agents/conversation`，`entry/workflows` 目录删除 |
+| 证据 / 复习 / 生成 | `NoteEvidenceService` / `NoteReviewService` / `NoteGenerationContextBuilder` 上移，数据面经端口注入 |
+| 边界收口 | `ports/impl` 与 `NoteQueryTools` 退出 barrel；`NoteTaxonomy` 拆成词表（common）与取色（entry） |
+
+### 18.5 验证
+
+```bash
+node scripts/agent-gate/index.mjs        # RESULT: PASS（1242 单测）
+node scripts/build-hsp-hap.mjs           # 4 个产物，BUILD SUCCESSFUL
+```

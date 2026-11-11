@@ -19,6 +19,20 @@ D4 adopts HarmonyOS Kits for reminders, background tasks, and form cards ([kits 
 - When integration starts, implementations land at the composition root (entry) and get injected — no contract changes expected.
 - Follow-up (2026-09-10): Reminder, transient background task and Form card adapters are implemented and injected. Card data uses one GSKV snapshot store across app/card processes; the fixed Form mock was removed.
 
+## 2026-10 补充：Kit 归属三档与受限 Kit 红线
+
+本 ADR 只回答了「pipeline 怎么拿到 Kit」，没回答「**哪个 Kit 可以出现在哪个模块里**」。后续踩过两次坑，补两条规则（细节见 [spec 033](../specs/033-process-boundaries.md) 的 R5 与 `AGENTS.md` 红线 11）：
+
+| 档 | 判据 | 例子 |
+|---|---|---|
+| 只进主进程 | 依赖 UI / 主线程渲染 | 3D 星系渲染相关 Kit |
+| 可进共享模块（`common`） | 多进程都要 eval，且 eval 本身无网络栈副作用 | `@kit.CoreVisionKit`（端侧 OCR，扩展进程里已实测 `PROBE available=true init=true`） |
+| 受限 | 在扩展进程 eval 会破坏网络栈 | `@kit.DataAugmentationKit`（`localChatModel`），**只允许在 `entry` 的 UI 进程加载** |
+
+**红线：受限 Kit 不得经 `common` 的 barrel 导出。** 只要 barrel 里有它，`AgentExtAbility` 哪怕只 import 一个 `LlmConfig`，也会把整个 Kit 带进扩展进程，表现为 `proxy SendRequest failed 201`、A2A 的 LLM 调用永不返回。判据不是「这个 Kit 归谁」，而是「**它会被哪些进程 eval**」。
+
+这条补充没有推翻本 ADR 的「seam 不是 import 禁令」，但把「直接 import 合法」收窄成「模板模块与主进程可以，共享模块要按上表分级」。
+
 ## Reversibility
 
 **Low**. Interfaces without implementations can be moved or deleted freely; the only cost is the injection wiring, which is additive.

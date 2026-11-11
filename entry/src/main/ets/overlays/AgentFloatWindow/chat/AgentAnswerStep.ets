@@ -9,7 +9,8 @@
  *   AgentRunPart(answer) -> AgentAnswerStep -> Text/Markdown/Formula
  */
 
-import { ContentProtocol, F_SM, R_MD, S_2, S_3, TEXT } from 'common'
+import { ContentProtocol, F_SM, R_MD, S_2, S_3, TEXT, normalizeEscapedNewlines, stripCitationMarkers,
+  stripEchoedEvidence } from 'common'
 import { FormulaSplitRenderer } from '../../../shared/molecules/FormulaSplitRenderer'
 import { MarkdownRenderer } from '../../../shared/molecules/MarkdownRenderer'
 
@@ -21,23 +22,23 @@ export struct AgentAnswerStep {
 
   build() {
     Column() {
-      if (this.content.trim().length > 0) {
+      if (this.displayText().trim().length > 0) {
         if (this.streaming) {
-          Text(this.content)
+          Text(this.displayText())
             .fontSize(F_SM)
             .fontColor(TEXT)
             .lineHeight(20)
             .width('100%')
             .textAlign(TextAlign.Start)
-        } else if (this.containsFormulaSyntax(this.content)) {
+        } else if (this.containsFormulaSyntax(this.displayText())) {
           FormulaSplitRenderer({
-            text: this.content,
+            text: this.displayText(),
             profile: 'chat',
           })
           .width('100%')
         } else {
           MarkdownRenderer({
-            text: this.content,
+            text: this.displayText(),
             progressive: false,
             profile: 'chat',
           })
@@ -51,6 +52,11 @@ export struct AgentAnswerStep {
     .backgroundColor('rgba(255,255,255,0.045)')
     .border({ width: 0.5, color: 'rgba(255,255,255,0.08)' })
     .constraintSize({ maxWidth: '94%' })
+  }
+
+  private displayText = (): string => {
+    // 展示层兜底：内部引用标记、模型复述的证据块、JSON 转义换行都不该直接给用户看。
+    return stripEchoedEvidence(stripCitationMarkers(normalizeEscapedNewlines(this.content)))
   }
 
   private containsFormulaSyntax = (text: string): boolean => {

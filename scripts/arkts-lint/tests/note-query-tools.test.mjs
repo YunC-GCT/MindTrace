@@ -57,9 +57,10 @@ test('review_due_query aggregates by review_status via GROUP BY', () => {
   assert.match(tools, /querySql/);
 });
 
-test('common Index exports the P1 tool factory and classes', () => {
-  assert.match(commonIndex, /createReadOnlyNoteTools/);
-  assert.match(commonIndex, /NoteQueryTool/);
-  assert.match(commonIndex, /NoteGetTool/);
-  assert.match(commonIndex, /ReviewDueQueryTool/);
+test('工具实现不再经 common barrel 暴露，只由 ToolCatalog 装配', () => {
+  // 实现类依赖 relationalStore / DatabaseHelper，留在 common 内部；
+  // 消费方只能拿 ToolCatalog.createReadOnlyRegistry()。
+  assert.doesNotMatch(commonIndex, /createReadOnlyNoteTools/);
+  assert.doesNotMatch(commonIndex, /NoteQueryTool/);
+  assert.match(commonIndex, /ToolCatalog/);
 });

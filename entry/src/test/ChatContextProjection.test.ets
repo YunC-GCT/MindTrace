@@ -10,8 +10,8 @@ import {
   ChatContextProjectionService,
   ChatProjectionResult,
 } from '../main/ets/services/ChatContextProjectionService';
-import { ChatMessageWriteRequest } from '../main/ets/models/AgentMemoryModels';
-import { ChatProjectionWriter, ConversationSessionSnapshot } from '../main/ets/models/ConversationSnapshotModels';
+import { ChatMessageWriteRequest } from 'common';
+import { ChatProjectionWriter, ConversationSessionSnapshot } from 'common';
 
 class RecordingProjectionWriter implements ChatProjectionWriter {
   readonly rows: Map<string, string> = new Map<string, string>();

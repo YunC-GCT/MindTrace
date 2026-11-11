@@ -32,12 +32,12 @@
 
 图片请求先进入 `classify_image_intent`。没有附带文字或文字为 `[图片]` 时，意图默认为 `chat`；只有意图为 `note_generation` 时才进入 `image_note_reply`，其余进入 `image_reply`：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:259-269`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:394-407`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:259-269`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:394-407`
 
 默认的 `image_reply` 路径调用 `analyzeImage`，保存 OCR 素材，再直接调用 `formatAnalyzeReply` 形成一条 AI 消息：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:479-497`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:479-497`
 
 ### 3. `analyzeImage` 只运行 Capture 与 Classify
 
@@ -63,14 +63,14 @@
 
 对于图片，`TypeClassifier` 调用 `OcrTool.recognize(imageUri)` 获取文字，并合并可选的用户补充文本：
 
-- `agents/src/main/ets/agents/TypeClassifier.ets:92-100`
-- `agents/src/main/ets/agents/TypeClassifier.ets:147-160`
-- `agents/src/main/ets/agents/TypeClassifier.ets:165-172`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:92-100`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:147-160`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:165-172`
 
 随后执行的 `preprocessText` 是纯确定性字符串规则：统一换行、删除 NUL 与替换字符、折叠空白、删除固定噪声行、移除空行并按字符上限截断：
 
-- `agents/src/main/ets/agents/TypeClassifier.ets:174-199`
-- `agents/src/main/ets/agents/TypeClassifier.ets:201-213`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:174-199`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:201-213`
 
 这里没有 `LlmClient` 或 `LlmGuard` 调用，因此它不是 LLM 预处理。
 
@@ -88,11 +88,11 @@
 
 分类 prompt 明确要求模型只返回 JSON，并仅识别 `category`、`subject`、`chapter`、`confidence`：
 
-- `agents/src/main/ets/agents/TypeClassifier.ets:223-242`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:223-242`
 
 分类成功或规则兜底时，结果对象的 `ocrText` 都直接赋值为传入的 `text`。模型输出只用于分类字段，不会覆盖 OCR 正文：
 
-- `agents/src/main/ets/agents/TypeClassifier.ets:113-143`
+- `agents/src/main/ets/subagents/TypeClassifier.ets:113-143`
 
 这意味着默认链路中确实发生了一次 LLM 调用，但它是**分类调用**，不是 OCR 正文预处理调用。若分类 LLM 失败，代码会退回本地规则分类；识别正文仍保留。
 
@@ -100,7 +100,7 @@
 
 `formatAnalyzeReply` 从 `result.ocrText` 取正文，最多裁到 1600 个字符，然后拼接类型、学科、章节、置信度与“识别内容”。它没有再发起 LLM 调用：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:950-960`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:950-960`
 
 所以用户看到的“识别内容”是经过本地规则清洗后的 Capture 文本，而不是经过 LLM 修订的内容。
 
@@ -108,8 +108,8 @@
 
 默认图片识别路径没有 OCR 正文确认步骤。识别成功后，workflow 会先通过 `safeSaveOcrResult` 保存为会话的待处理素材，再显示识别结果：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:479-497`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:1129-1136`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:479-497`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:1129-1136`
 - `entry/src/main/ets/services/AgentMemoryService.ets:83-107`
 
 这里保存的是会话记忆中的 OCR 素材，不是最终 `KnowledgeUnit`。
@@ -123,13 +123,13 @@
 
 证据：
 
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:505-547`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:549-597`
-- `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:598-612`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:505-547`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:549-597`
+- `agents/src/main/ets/conversation/ConversationWorkflow.ets:598-612`
 
 用户确认草稿后，`ConversationDraftWorkflow` 才调用确认 gateway；`AiService.confirmDraft` 再通过 `Dispatcher.dispatch(..., { persist: true })` 写入最终 `KnowledgeUnit`：
 
-- `entry/src/main/ets/workflows/conversation/ConversationDraftWorkflow.ets:106-122`
+- `agents/src/main/ets/conversation/ConversationDraftWorkflow.ets:106-122`
 - `entry/src/main/ets/services/AiService.ets:404-428`
 
 ## 术语与设计依据

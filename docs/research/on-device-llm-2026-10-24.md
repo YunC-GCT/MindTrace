@@ -7,6 +7,7 @@
 > 原因是检索只按 `LLM` / `generateText` 等字面量匹配，而该模块名为 *localChatModel*、文档措辞是 "on-device Q&A model"。
 > **保留原文作为检索方法的反面教材**；实现以 localChatModel 为准，见 spec 032 §4.2 修订。
 
+> **合并（2026-10-30）**：同日另一篇短版 `harmonyos-ondevice-llm-2026-10-24.md`（72 行，结论速查）的独有取证——Kit 全目录、syscap 实测、CANN LLM Engine、上架智能体原文——已并入本文 §7.5，短版删除。
 > 调研日期：2026-10-24 · 目标工程：`D:/HMgent/MindTrace`（Stage 模型 / targetSdk 26）
 > 取证环境：DevEco Studio 26 自带 SDK `C:/Program Files/Huawei/DevEco Studio/sdk/default`，`sdk-pkg.json` → `apiVersion: "26"`、`version: "26.0.0.105"`、`releaseType: Release`〔S1〕
 > 来源优先级：本机 SDK `.d.ts`（最权威） > OpenHarmony 文档仓库（`gh api` 读 master） > developer.huawei.com 官方文档 > MindSpore 官方文档。**未使用任何第三方博客作为结论依据**（§7 单列了社区流传但查无实据的说法）。
@@ -314,6 +315,20 @@ MindSpore 侧唯一相关的一句话在《MindSpore 大语言模型推理》〔
 
 ---
 
+## 7.5 端侧模型可达性补证：Kit 目录 / syscap / CANN（合并自同日短版）
+
+**Kit 全目录**：`kit-version.json` 共 **112 个 Kit**，名字匹配 `llm|pangu|chat|ai` → **0 命中**。官方「AI」分组只有 10 个：Agent Framework Kit（拉起智能体 + A2A，Phone/Tablet）、CANN Kit（NPU 异构计算，含 CANN LLM Engine）、Core Speech Kit、Core Vision Kit（OCR/人脸/分割）、Intents Kit、MindSpore Lite Kit、Natural Language Kit、Neural Network Runtime Kit、Speech Kit、Vision Kit。`Data Augmentation Kit` 归「应用框架」。
+
+**`@hms.ai.largeLanguageModel` 查无此物**：`hms/ets/api`、`hms/ets/kits`、`openharmony/ets/api` 搜 `largeLanguageModel` → **0 命中文名**；`@hms.ai.*` 的 23 个模块只有 OCR / 人脸 / 语音 / NLU / 视觉 / InsightIntent / A2A / AgentFramework / appController。候选页 `js-apis-hms-ai-largeLanguageModel` 标题即 **404**。传闻的 3B/7B 模块在 API 26 不存在，别按它设计。
+
+**CANN LLM Engine ＝ BYOM，不是模型服务**：`hms/native/sysroot/usr/include/CANNKit/llm_engine.h:9-10` `Provides APIs for LLM model inference` / `@since 6.1.1(24)`；入口 `HMS_LLMEngineContext_CreateFromContextJson(const char* jsonFile)`（`:47`）**必须传自己的 JSON 配置**。官方流程「量化 → ONNX → 转 CANN → 集成」，示例支持 Qwen2.5-1.5B/7B、DeepSeek-R1-Distill-Qwen-1.5B、GLM-1.5B、Qwen3-8B → **官方不发模型**。Kit 在 phone 有 5.0.0(12)，但 `SystemCapability.AI.CANN.LLMEngine` 只给 2in1。**HiAI Foundation** 是 NPU 算子加速（syscap 覆盖 phone/tablet/2in1/tv/car），同样不是模型服务。官方**未提供**预置 LLM 文件或下载渠道；唯一模型渠道是 PC 端 Matrix 模型库 <https://matrix.openharmony.cn/#/model/main>。
+
+**`localChatModel` 的 syscap 实测**：`syscap-version.json:2953` 仅 `2in1`；`2in1-hmos.json:49` 有，`phone-hmos.json`（131 行）与 `tablet-hmos.json` **0 命中**——本次真机 MRO-W00 正是 tablet。`init()` 注释原文是 `Initializes the on-device Q&A model and starts the model management app`——**拉起的是「模型管理应用」，不是内置模型**；官方两条约束：「当前端侧模型问答仅支持 PC/2in1」「仅对企业开发者提供申请能力」，默认模型 Qwen25-7B-Instruct，需在「设置 > 系统 > 本地 AI 模型管理」下载。
+
+**官方给第三方的生成式路径只有一条：上架智能体。**《Agent Framework Kit 简介》原文：「应用在小艺开放平台上线智能体后……通过 Agent Framework Kit 的 UI 控件能力主动拉起智能体。」约束 Phone/Tablet、仅中国境内。也就是说 **能力留在小艺侧，应用只做入口与 A2A 编排**。
+
+**对本项目的两条硬结论**：① 手机/平板端放弃 `localChatModel`（不支持 + 需企业申请 + 仅境内 PC）；② 端侧只剩「自带小模型 + MindSpore Lite」，7B 不现实——`OnDeviceLlm` 若声称走系统端侧模型属错误承诺，应改名或改走云端/智能体。
+
 ## 8. 来源清单
 
 | 编号 | 来源 | 读取方式 / 位置 |
@@ -342,5 +357,9 @@ MindSpore 侧唯一相关的一句话在《MindSpore 大语言模型推理》〔
 | S22 | 《训练后量化》权重量化/全量化/动态量化 | https://www.mindspore.cn/lite/docs/zh-CN/stable/advanced/quantization.html |
 | S23 | 《MindSpore 大语言模型推理》（端侧/边缘侧改用 Lite 离线推理） | https://www.mindspore.cn/tutorials/zh-CN/r2.7.0rc1/model_infer/ms_infer/llm_inference_overview.html |
 | S24 | 《retrieval（智慧化数据平台）API》页（页头 `Phone / PC/2in1 / Tablet 6.0.0(20)+`） | https://developer.huawei.com/consumer/cn/doc/harmonyos-references/dataaugmentation-retrieval-api |
+
+| S25 | CANN Kit LLM 能力简介（BYOM 模型清单） | https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/cannkit-llm-summary |
+| S26 | 《端侧问答模型》开发指南（PC/2in1 + 企业申请 + 模型下载） | https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/dataaugmentation-localchatmodel |
+| S27 | 《Agent Framework Kit 简介》（上架智能体 + 拉起控件） | https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/hmaf-introduction |
 
 > 版本提示：S20–S23 属 MindSpore Lite 2.9/2.10 文档，**不等于** HarmonyOS 设备内置 Runtime 的版本；转换工具与运行时版本配套关系见 S21「转换成的 ms 模型，支持转换工具配套及更高版本的 Runtime 推理框架执行推理」。

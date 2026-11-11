@@ -11,7 +11,13 @@ function loadInputViewModel() {
       Observed(target) { return target; },
     },
     mocks: {
-      common: {},
+      common: {
+        LlmConfig: {
+          getInstance() {
+            return { getEvidenceMode() { return 'balanced'; } };
+          },
+        },
+      },
       'entry/src/main/ets/services/AgentChatService.ets': {
         AgentChatService: class AgentChatService {},
       },
@@ -53,7 +59,7 @@ test('AgentInputViewModel clears accepted text sends and forwards session id', (
 
   vm.send();
 
-  assert.deepEqual(serviceCalls, [['text', 'session-1', '解释极限']]);
+  assert.deepEqual(serviceCalls, [['text', 'session-1', '解释极限', 'balanced']]);
   assert.equal(vm.inputText, '');
   assert.equal(vm.imagePreview, '');
 });
@@ -72,7 +78,7 @@ test('AgentInputViewModel clears accepted image sends and forwards session id, u
 
   vm.send();
 
-  assert.deepEqual(serviceCalls, [['image', 'session-1', 'file://limit.png', '图片里的极限题']]);
+  assert.deepEqual(serviceCalls, [['image', 'session-1', 'file://limit.png', '图片里的极限题', 'balanced']]);
   assert.equal(vm.inputText, '');
   assert.equal(vm.imagePreview, '');
 });

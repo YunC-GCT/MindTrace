@@ -1,9 +1,10 @@
-// ============================================================================
+
+import type { GalaxyGraphSnapshot } from './GalaxyGraphProjection';// ============================================================================
 //  pages/Review/GalaxyWebAdapter.ets - ArkWeb/Three.js galaxy renderer
 // ============================================================================
 
 import { webview } from '@kit.ArkWeb'
-import type { GalaxyGraphSnapshot } from './GalaxyGraphProjection'
+
 import {
   GalaxyNoopCallbacks,
   GalaxyPerformanceSample,

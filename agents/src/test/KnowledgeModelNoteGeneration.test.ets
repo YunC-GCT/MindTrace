@@ -12,7 +12,7 @@
  *   - LlmCaller 使用显式测试类注入,不使用结构类型对象字面量
  */
 import { describe, it, expect } from '@ohos/hypium';
-import { KnowledgeModel } from '../main/ets/agents/KnowledgeModel';
+import { KnowledgeModel } from '../main/ets/subagents/KnowledgeModel';
 import type {
   LlmCallRequest,
   LlmCallResult,

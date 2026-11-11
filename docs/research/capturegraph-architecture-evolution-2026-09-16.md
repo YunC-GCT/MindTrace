@@ -149,7 +149,7 @@ MindTrace 后端 agent workflow 是一套*正在持续完善的 agent 工作流�
 
 ### 4.2 CaptureGraph 节点行
 
-文件: [`agents/src/main/ets/graph/CaptureGraph.ets:1-99`](../../agents/src/main/ets/graph/CaptureGraph.ets) · 拓扑见[`Dispatcher.ets:1497-1531`](../../agents/src/main/ets/core/Dispatcher.ets) `buildGraph` 装配
+文件: [`agents/src/main/ets/graph/CaptureGraph.ets:1-99`](../../agents/src/main/ets/graph/CaptureGraph.ets) · 拓扑见[`Dispatcher.ets:1497-1531`](../../agents/src/main/ets/core/CommandExecutor.ets) `buildGraph` 装配
 
 | 节点 | file:line | 输入 | 输出 | 出边 | 条件谓词 | LLM 调用 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -201,7 +201,7 @@ type CaptureNode = (state: AgentState) => Promise<{ state: AgentState }>;      /
 
 ### 4.4 Dispatcher 契约 —`dispatch(req, options)`
 
-文件: [`agents/src/main/ets/core/Dispatcher.ets:68-188`](../../agents/src/main/ets/core/Dispatcher.ets)
+文件: [`agents/src/main/ets/core/Dispatcher.ets:68-188`](../../agents/src/main/ets/core/CommandExecutor.ets)
 
 **唯一公共方法**: `async dispatch(req: DispatchRequest, options: DispatchOptions = {}): Promise<DispatchResult>` (`:98-100`)。
 | `req.*` 字段 | 分支 | file:line | 持久化行为 |
@@ -215,12 +215,12 @@ type CaptureNode = (state: AgentState) => Promise<{ state: AgentState }>;      /
 
 ### 4.5 KnowledgeModel (spec 015 拆分)
 
-文件: [`agents/src/main/ets/agents/KnowledgeModel.ets`](../../agents/src/main/ets/agents/KnowledgeModel.ets) (≈54 LOC, 拆分前 878)
+文件: [`agents/src/main/ets/subagents/KnowledgeModel.ets`](../../agents/src/main/ets/subagents/KnowledgeModel.ets) (≈54 LOC, 拆分前 878)
 
 | 关注点(拆分前) | 新归属 | file:line |
 | --- | --- | --- |
-| prompt 构造+ `KNOWLEDGE_*` 常量 | `PromptBuilder` | [`PromptBuilder.ets:9-58`](../../agents/src/main/ets/agents/PromptBuilder.ets) |
-| 4 项校验+ `patchIntegralDx` | `TruthCheckService` | [`TruthCheckService.ets:30-283`](../../agents/src/main/ets/agents/TruthCheckService.ets) |
+| prompt 构造+ `KNOWLEDGE_*` 常量 | `PromptBuilder` | [`PromptBuilder.ets:9-58`](../../agents/src/main/ets/subagents/PromptBuilder.ets) |
+| 4 项校验+ `patchIntegralDx` | `TruthCheckService` | [`TruthCheckService.ets:30-283`](../../agents/src/main/ets/subagents/TruthCheckService.ets) |
 | 编排 (`structure*` / `repair*` / `draftToKnowledgeUnit`) | **`KnowledgeModel`** (保留者) | `:114-511, 1100-1117` |
 
 **spec 018 ownership 更新**: `TruthCheckService` 生产调用权收敛到 TruthCheckNode; `KnowledgeModel` 不再调 TruthCheck。验证 `TruthCheckService` 由`TruthCheckNode.ets:5,13` import。
@@ -229,7 +229,7 @@ LLM 用 `this.llm` (`:102-106`), 类型 `LlmCaller` (re-export of `LlmClient.cal
 
 ### 4.6 TruthCheck 节点短路力学
 
-文件: [`agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7-38`](../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets) · 4 项校验([`TruthCheckService.ets:42-113`](../../agents/src/main/ets/agents/TruthCheckService.ets)):
+文件: [`agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7-38`](../../agents/src/main/ets/graph/nodes/TruthCheckNode.ets) · 4 项校验([`TruthCheckService.ets:42-113`](../../agents/src/main/ets/subagents/TruthCheckService.ets)):
 1. **bracePair** (`:115-154`) —`{`/`}` 深度, 自动闭合
 2. **divisionByZero** (`:156-165`) — 子串 `/0`
 3. **equationCheck** (`:166-188`) — 矛盾恒等式+ `≠` + 平凡等式
@@ -298,7 +298,7 @@ LLM 用 `this.llm` (`:102-106`), 类型 `LlmCaller` (re-export of `LlmClient.cal
 
 ### 5.1 入口与三模式
 
-笔记生成由`ConversationWorkflow` 主导, 通过 `IntentClassifier` ([`entry/src/main/ets/services/IntentClassifier.ets:14`](../../entry/src/main/ets/services/IntentClassifier.ets) 类型 `'note_generation' | 'chat'`) 分流到 AiService:
+笔记生成由`ConversationWorkflow` 主导, 通过 `IntentClassifier` ([`agents/src/main/ets/chat/IntentClassifier.ets:14`](../../agents/src/main/ets/chat/IntentClassifier.ets) 类型 `'note_generation' | 'chat'`) 分流到 AiService:
 
 | 入口 | IntentClassifier 决策 | AiService 方法 | Dispatcher 分支 | 用途 |
 | --- | --- | --- | --- | --- |
@@ -341,7 +341,7 @@ AiService.generateNoteDraftWithSources
 
 ```
 
-**route 选择** ([`Dispatcher.ets:339`](../../agents/src/main/ets/core/Dispatcher.ets)): `selectGenerationRoute(bundle, instruction)` 按源材料量+ 指令复杂度决定。
+**route 选择** ([`Dispatcher.ets:339`](../../agents/src/main/ets/core/CommandExecutor.ets)): `selectGenerationRoute(bundle, instruction)` 按源材料量+ 指令复杂度决定。
 
 #### 5.2.1 standard route — Plan-and-Execute + Reflexion
 
@@ -524,7 +524,7 @@ if (event.pendingSourceIds !== undefined && event.pendingSourceIds.length > 0) {
 
 ### 6.3 ConversationWorkflow state
 
-[`ConversationState.ets:49-60`](../../entry/src/main/ets/workflows/conversation/ConversationState.ets): 字段 `request / sessionId / currentStep / intent? / memoryContext? / learnerProfileContext? / draftRunId? / draftCheckpointId? / draftCandidateHash? / draftStatus?`。无 spec 018 §4 禁项 (UIAbilityContext / ArkUI / callback / DAO / LlmClient / ToolRegistry)。`ConversationWorkflow` 类持 `ConversationWorkflowCallbacks` (构造注入 `:32`), **不在 state**。
+[`ConversationState.ets:49-60`](../../agents/src/main/ets/conversation/ConversationState.ets): 字段 `request / sessionId / currentStep / intent? / memoryContext? / learnerProfileContext? / draftRunId? / draftCheckpointId? / draftCandidateHash? / draftStatus?`。无 spec 018 §4 禁项 (UIAbilityContext / ArkUI / callback / DAO / LlmClient / ToolRegistry)。`ConversationWorkflow` 类持 `ConversationWorkflowCallbacks` (构造注入 `:32`), **不在 state**。
 流式 delta: `ConversationWorkflowCallbacks` 提供 `appendAiMsg(id, event)` + `addAiMsgEmpty()`。`handleStreamReply` (`ConversationWorkflow.ets:317-371`) 对`StreamEvent` 直接调。
 
 ### 6.4 ToolCallingWorkflow State 字段
@@ -904,7 +904,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.2 TypeClassifier — Single-shot LLM + Pure function fallback
 
 **Pattern**: Single-shot LLM call (主路径 + Pure function fallback (rule-based))
-**位置**: [`TypeClassifier.ets:1-363`](../../agents/src/main/ets/agents/TypeClassifier.ets)
+**位置**: [`TypeClassifier.ets:1-363`](../../agents/src/main/ets/subagents/TypeClassifier.ets)
 
 - 公开 3 入口 (`classify / recognizeText / classifyText`), 内部统一走`callClassifier` (`:212-231`) 单次 LLM 调用
 - LLM 失败显式 catch (`:123-133`) 落到 `ruleFallback` (`:292-299`) — 5 类题 + 6 学科的关键词匹配 (`CATEGORY_RULES / SUBJECT_RULES :41-56`), 不调 LLM
@@ -916,7 +916,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.3 KnowledgeModel — Plan-and-Execute + Reflexion
 
 **Pattern**: Plan-and-Execute (`structureStandardDraft` outline→ evidence→ draft) + Reflexion (外层 Dispatcher 调`repairStandardDraft` / `repairDeepDraft` / `repairIncrementalSections`)
-**位置**: [`KnowledgeModel.ets:1-1252`](../../agents/src/main/ets/agents/KnowledgeModel.ets) (split 后~554 LOC)
+**位置**: [`KnowledgeModel.ets:1-1252`](../../agents/src/main/ets/subagents/KnowledgeModel.ets) (split 后~554 LOC)
 
 - `structureStandardDraft` (`:235-258`) 三阶段 ①`callStandardArtifacts` outline+evidence+draft (`:691-720`); ①`normalizeStandardResult` 归一化(`:785-844`); ①`callIndependentVerifier` 独立验证 (`:722-783`) →①`applyVerification` (`:846-869`) — 典型 **Plan-and-Execute** (Planner 生成 3 份产物+ Executor 验证)
 - `repairStandardDraft` (`:260-287`) **Reflexion**: verification 失败 →`callEvidenceRepair` 修复 → 再 verify →`mergeVerifiedEvidence` (`:871-941`) 保留 `supported` 证据冻结, 只替换 contradicted。形成验证-修复-再验证循环, 但循环在 Dispatcher 编排层(`Dispatcher.dispatchStandardGeneration`, `Dispatcher.ets:585-751`), 修到 `best.hardIssueCount === 0` (`:666-669`)
@@ -929,7 +929,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.4 TruthCheckService — Pure function
 
 **Pattern**: Pure function (4 项数学校验 纯文本 → 文本+`truthFlag`)
-**位置**: [`TruthCheckService.ets:1-283`](../../agents/src/main/ets/agents/TruthCheckService.ets)
+**位置**: [`TruthCheckService.ets:1-283`](../../agents/src/main/ets/subagents/TruthCheckService.ets)
 
 - 公开面`check(input) →MvpTruthCheckResult` (`:32-34`); 4 检查 `checkBracePairing` (`:115-154`) + `checkDivisionByZero` (`:156-165`) + `checkEquation` (`:166-188`) + `checkLatexInternal` (`:189-231`)
 - **CaptureGraph `truth_check` 节点的唯一实现** (`TruthCheckNode.ets:13`), **spec 015 后所有权已从 KnowledgeModel 移到 Capture pipeline**
@@ -940,7 +940,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.5 PromptBuilder — Pure function（Builder 不算 GoF 模式）
 
 **Pattern**: Pure function (类只封装常量 + 单方法 命名上像 Builder 但行为是函数)
-**位置**: [`PromptBuilder.ets:1-58`](../../agents/src/main/ets/agents/PromptBuilder.ets)
+**位置**: [`PromptBuilder.ets:1-58`](../../agents/src/main/ets/subagents/PromptBuilder.ets)
 
 - 公开 `build(input)` (`:19-21`) + `buildPrompt(ocrText)` (`:23-57`), 后者返回*模板字符串* (类别枚举 + 字段规范 + 渲染要求)
 - 持有 7 个常量(`KNOWLEDGE_INPUT_LIMIT` 见 `:9-15`), 全部 `export const`, KnowledgeModel `KnowledgeModel.ets:88-96` import 作为 budget - 与 GoF Builder 模式差异: **非**分步构造复杂对象(无 setter 链 / 无 Director), 而是一次性返回字符串
@@ -991,7 +991,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.9 ConversationWorkflow — Multi-turn chat with state + Router
 
 **Pattern**: Multi-turn chat with state (记忆 + 流式 + 意图路由) + Router / Classifier (kind/intent/responseMode 三层)
-**位置**: [`ConversationWorkflow.ets:1-664`](../../entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets)
+**位置**: [`ConversationWorkflow.ets:1-664`](../../agents/src/main/ets/conversation/ConversationWorkflow.ets)
 
 - `ConversationState` (`ConversationState.ets:49-60`) 含`sessionId / memoryContext / learnerProfileContext / draftRunId / draftStatus` 等多轮状态字段 **无** UIAbilityContext/ArkUI/callback/DAO/LlmClient/ToolRegistry (符合 spec 018 §4)
 - 9 节点 + 6 条件边(`ConversationWorkflow.ets:124-232`):
@@ -1019,7 +1019,7 @@ private async handleWant(want: Want): Promise<void> {
 ### 8.11 ReplyService — Adapter（Stream + JSON fallback）
 
 **Pattern**: Adapter pattern (封装 LLM 调用的 transport 选择: SSE 优先 + JSON 回退)
-**位置**: [`ReplyService.ets:1-227`](../../entry/src/main/ets/services/ReplyService.ets)
+**位置**: [`ReplyService.ets:1-227`](../../agents/src/main/ets/chat/ReplyService.ets)
 
 - 公开 2 入口: `complete(context)` (`:49-51` 调`guardedComplete` JSON) + `stream(context, sink)` (`:68-146` 走 SSE + JSON fallback)
 - `stream` 内部 retry 1 次(`:81-113` while loop, `streamAttempts < 2`), 首字节超时或 NETWORK_ERROR 才重试 仍失败 → `fallback()` (`:153-164`) 调`guardedComplete`
@@ -1269,7 +1269,7 @@ private async handleWant(want: Want): Promise<void> {
 | `common/src/main/ets/llm/{LlmClient,LlmGuard,LlmTypes,LlmResponseParser}.ets` | 60-522 / 5-66 / 13-225 / 26-55 |
 | `agents/src/main/ets/graph/{CaptureGraph,AgentState,nodes/*.ets}.ets` | 1-99 / 1-98 / 17-84 |
 | `agents/src/main/ets/core/Dispatcher.ets` | 68-1531 (关键段已逐节标) |
-| `agents/src/main/ets/agents/{KnowledgeModel,TruthCheckService,PromptBuilder,TypeClassifier}.ets` | 关键段已逐节标 |
+| `agents/src/main/ets/subagents/{KnowledgeModel,TruthCheckService,PromptBuilder,TypeClassifier}.ets` | 关键段已逐节标 |
 | `agents/src/main/ets/mcp/tools/OcrTool.ets` | 1-427 |
 | `agents/src/main/ets/models/NoteDaoInterface.ets` | 全文 (略) |
 | `entry/src/main/ets/services/{AiService,AgentChatService,ReplyService}.ets` | 关键段已逐节标 |

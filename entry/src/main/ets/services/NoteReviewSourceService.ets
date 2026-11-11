@@ -8,12 +8,12 @@
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper, KnowledgeUnit } from 'common';
 import { NoteDao } from '../database/NoteDao';
-import { KnowledgeUnitRevision } from '../models/KnowledgeUnitWriteModels';
-import { NoteEvidenceCitation } from '../models/NoteEvidenceModels';
+import { KnowledgeUnitRevision } from 'common';
+import { NoteEvidenceCitation } from 'common';
 import {
   NoteReviewSourceResolver,
   NoteReviewSourceResult,
-} from '../models/NoteReviewModels';
+} from 'common';
 
 export interface NoteReviewSourceReader {
   queryCurrentUnit(noteId: string): Promise<KnowledgeUnit | null>;

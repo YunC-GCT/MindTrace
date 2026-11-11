@@ -1,7 +1,8 @@
 // ============================================================================
 //  database/NoteDao.ets — 知识单元数据访问层
 //  ----------------------------------------------------------------------------
-//  职责: RDB CRUD、KnowledgeUnit/revision 事务写入与 ValuesBucket 互转。
+//  路径: entry/src/main/ets/database/NoteDao.ets
+//  职责: RDB CRUD、KnowledgeUnit/revision 事务写入与 ValuesBucket 互转；索引随事务一起提交。
 //  接口:
 //    createWithRevision(unit, metadata): Promise<KnowledgeUnitPersistenceResult>
 //    updateWithRevision(unit, expectedVersion, metadata): Promise<KnowledgeUnitPersistenceResult>
@@ -12,7 +13,10 @@
 //  ============================================================================
 
 import { relationalStore } from '@kit.ArkData';
-import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult } from 'common';
+import { KnowledgeUnit, DifficultyLevel, ReviewStatus, NoteGenerationCommitResult, extractMathSignature } from 'common';
+import type { NoteSimilarityCandidate } from 'common';
+import { NoteFtsIndex } from './NoteFtsIndex';
+
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitRevision,
@@ -20,7 +24,8 @@ import {
   KnowledgeUnitWriteErrorCode,
   KnowledgeUnitWriteRepository,
   NoteGenerationBaseProvider,
-} from '../models/KnowledgeUnitWriteModels';
+} from 'common';
+import { DedupeCandidate, findDuplicate } from 'agents/src/main/ets/note/Index';
 
 interface NoteCommitLookup {
   noteId: string;
@@ -48,6 +53,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
     try {
       const rowId: number = await transaction.insert('knowledge_unit', NoteDao.toBucket(unit));
       await transaction.insert('note_revision', NoteDao.toRevisionBucket(unit, generationMetadata));
+      await NoteFtsIndex.applyToTransaction(transaction, unit);
       await transaction.commit();
       const result: KnowledgeUnitPersistenceResult = { rowId: rowId, unit: unit };
       return result;
@@ -81,6 +87,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       }
       const rowId: number = await transaction.insert('knowledge_unit', NoteDao.toBucket(unit));
       await transaction.insert('note_revision', NoteDao.toRevisionBucket(unit, generationMetadata));
+      await NoteFtsIndex.applyToTransaction(transaction, unit);
       const commitBucket: relationalStore.ValuesBucket = {
         'commit_key': commit.commitKey,
         'run_id': commit.runId,
@@ -133,6 +140,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
         );
       }
       await transaction.insert('note_revision', NoteDao.toRevisionBucket(updated, generationMetadata));
+      await NoteFtsIndex.applyToTransaction(transaction, updated);
       await transaction.commit();
       const result: KnowledgeUnitPersistenceResult = { rowId: 0, unit: updated };
       return result;
@@ -178,6 +186,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
         throw new KnowledgeUnitWriteError(KnowledgeUnitWriteErrorCode.VERSION_CONFLICT, 'KnowledgeUnit version conflict for id=' + unit.id);
       }
       await transaction.insert('note_revision', NoteDao.toRevisionBucket(updated, generationMetadata));
+      await NoteFtsIndex.applyToTransaction(transaction, updated);
       const commitBucket: relationalStore.ValuesBucket = {
         'commit_key': commit.commitKey,
         'run_id': commit.runId,
@@ -270,27 +279,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       edgeToPredicates.equalTo('to_unit_id', id);
       await transaction.delete(edgeToPredicates);
 
-      const chunkPredicates = new relationalStore.RdbPredicates('rag_chunk');
-      chunkPredicates.equalTo('unit_id', id);
-      const chunkResultSet: relationalStore.ResultSet = await transaction.query(chunkPredicates, ['id']);
-      const chunkIds: string[] = [];
-      try {
-        if (chunkResultSet.goToFirstRow()) {
-          do {
-            const chunkId: string = chunkResultSet.getString(chunkResultSet.getColumnIndex('id'));
-            chunkIds.push(chunkId);
-          } while (chunkResultSet.goToNextRow());
-        }
-      } finally {
-        chunkResultSet.close();
-      }
-
-      for (const chunkId of chunkIds) {
-        const embeddingPredicates = new relationalStore.RdbPredicates('rag_embedding');
-        embeddingPredicates.equalTo('chunk_id', chunkId);
-        await transaction.delete(embeddingPredicates);
-      }
-      await transaction.delete(chunkPredicates);
+      await NoteFtsIndex.removeFromTransaction(transaction, id);
 
       const predicates = new relationalStore.RdbPredicates('knowledge_unit');
       predicates.equalTo('id', id);
@@ -306,6 +295,50 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
   }
 
   // 按 id 查询
+  /** 重复笔记检测：最近 120 条里按标题/正文相似度找同一道题（写入口调用）。 */
+  async findDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
+    try {
+      const candidates: DedupeCandidate[] = await this.queryRecentDedupeCandidates(500);
+      const matched: DedupeCandidate | null = findDuplicate(unit.title, unit.content, candidates,
+        unit.kind === undefined ? 'normal' : unit.kind);
+      if (matched === null) {
+        return null;
+      }
+      return await this.queryById(matched.id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** 灰度查重候选：把最近的笔记映射成相似度打分/仲裁需要的形状。 */
+  async findSimilarCandidates(unit: KnowledgeUnit): Promise<NoteSimilarityCandidate[]> {
+    const candidates: DedupeCandidate[] = await this.queryRecentDedupeCandidates(500);
+    const result: NoteSimilarityCandidate[] = [];
+    for (let i = 0; i < candidates.length; i += 1) {
+      result.push({ id: candidates[i].id, title: candidates[i].title, content: candidates[i].content });
+    }
+    return result;
+  }
+
+  private async queryRecentDedupeCandidates(limit: number): Promise<DedupeCandidate[]> {
+    const result: DedupeCandidate[] = [];
+    const rs: relationalStore.ResultSet = await this.store.querySql(
+      'SELECT id, title, content, kind FROM knowledge_unit ORDER BY created_at DESC LIMIT ' + limit.toString(), []);
+    try {
+      while (rs.goToNextRow()) {
+        result.push({
+          id: rs.getString(rs.getColumnIndex('id')),
+          title: rs.getString(rs.getColumnIndex('title')),
+          content: rs.getString(rs.getColumnIndex('content')),
+          kind: NoteDao.readString(rs, 'kind', 'normal'),
+        });
+      }
+    } finally {
+      rs.close();
+    }
+    return result;
+  }
+
   async queryById(id: string): Promise<KnowledgeUnit | null> {
     const predicates = new relationalStore.RdbPredicates('knowledge_unit');
     predicates.equalTo('id', id);
@@ -481,6 +514,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       related: NoteDao.parseArray(NoteDao.readString(rs, 'related', '[]')),
       embedding: NoteDao.parseNumberArray(NoteDao.readString(rs, 'embedding', '[]')),
       userId: NoteDao.readString(rs, 'user_id', ''),
+      kind: NoteDao.readString(rs, 'kind', 'normal'),
       version: NoteDao.readLong(rs, 'version', 1),
     };
   }
@@ -511,6 +545,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       related: [],
       embedding: [],
       userId: NoteDao.readString(rs, 'user_id', ''),
+      kind: NoteDao.readString(rs, 'kind', 'normal'),
       version: NoteDao.readLong(rs, 'version', 1),
     };
   }
@@ -540,6 +575,8 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       'prerequisites': NoteDao.stringifyArray(unit.prerequisites),
       'related': NoteDao.stringifyArray(unit.related),
       'embedding': NoteDao.stringifyNumberArray(unit.embedding),
+      'signature': extractMathSignature(unit.title),
+      'kind': unit.kind === undefined || unit.kind.length === 0 ? 'normal' : unit.kind,
       'user_id': unit.userId,
       'version': unit.version,
     };
@@ -600,6 +637,7 @@ export class NoteDao implements KnowledgeUnitWriteRepository, NoteGenerationBase
       related: NoteDao.parseArray(NoteDao.readString(rs, 'related', '[]')),
       embedding: NoteDao.parseNumberArray(NoteDao.readString(rs, 'embedding', '[]')),
       userId: NoteDao.readString(rs, 'user_id', ''),
+      kind: NoteDao.readString(rs, 'kind', 'normal'),
       version: NoteDao.readLong(rs, 'version', 1),
     };
     const revision: KnowledgeUnitRevision = {

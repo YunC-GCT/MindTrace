@@ -94,7 +94,8 @@ test('parenthesized sub-numbers alone do not create a main boundary', () => {
   assert.equal(result.segments.length, 1, 'only one main anchor exists, so nothing is cut');
   assert.equal(result.degraded, false);
   assert.equal(result.segments[0].index, 0);
-  assert.equal(result.segments[0].anchor, '');
+  // 036 接线修正：单主锚点页面保留题号，避免跨图合并把单题页当成「无题号续页」。
+  assert.equal(result.segments[0].anchor, '1.');
   assert.equal(result.segments[0].rawText, text);
   assert.equal(result.segments[0].needsReview, false);
 });

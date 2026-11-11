@@ -1,0 +1,109 @@
+/**
+ * ConversationState.ets — Conversation workflow State 类型定义
+ *
+ * 路径: agents/src/main/ets/conversation/ConversationState.ets
+ * 职责: 定义 ConversationStep 状态机节点 / ConversationProgressStep 进度上报 / ConversationRequest 三种请求 / ConversationState 状态结构
+ * 依赖: agents/src/main/ets/chat/IntentClassifier (TextIntent)
+ *
+ * 数据流:
+ *   ConversationWorkflow.buildGraph → ConversationState (初始 / 中间 / 结束) → 节点函数 copyState → 下游节点
+ *
+ * 设计要点:
+ *   - P0 (spec 018 / 019): 单后端 + 一处 State 类型; draft 状态六字段仅 regenerate_reply / note_reply 节点写入
+ *   - ConversationStep 与 ConversationProgressStep 双层命名: 前者驱动图,后者驱动 UI 进度提示
+ *
+ * ArkTS 1.1 strict 适配:
+ *   - discriminated union 用 type aliases 表达 (无 interface 继承)
+ *   - 所有可选字段显式 `?:` 标注,避免 uninitialized 推断
+ */
+
+import { TextIntent } from '../chat/IntentClassifier';
+import { NoteEvidenceContext } from 'common';
+import type { EvidenceMode, NoteReviewPlan } from 'common';
+import { ClassificationResult } from 'common';
+import { ConversationRunRef } from 'common';
+
+export type ChatMessageOrigin = 'chat' | 'image' | 'note-regeneration' | 'system' | 'legacy';
+export type ChatMessageOutcome = 'completed' | 'interrupted' | 'cancelled' | 'failed';
+
+export type ConversationStep =
+  | 'START'
+  | 'classify_intent'
+  | 'classify_image_intent'
+  | 'clarify_reply'
+  | 'load_reply_context'
+  | 'save_reply_input'
+  | 'image_reply'
+  | 'image_note_reply'
+  | 'complete_reply'
+  | 'stream_reply'
+  | 'tool_reply'
+  | 'note_reply'
+  | 'regenerate_reply'
+  | 'END';
+
+export type ConversationProgressStep =
+  | 'intent_check'
+  | 'reply_context_load'
+  | 'reply_model_call'
+  | 'image_message_save'
+  | 'image_recognize'
+  | 'image_material_save'
+  | 'image_ocr_blank'
+  | 'image_note_ocr'
+  | 'image_note_draft'
+  | 'note_intent_check'
+  | 'note_context_load'
+  | 'note_source_prepare'
+  | 'note_structure_save'
+  | 'note_finalize'
+  | 'completed';
+
+export interface ImageConversationRequest {
+  kind: 'image';
+  imageUri: string;
+  userContent: string;
+  /** 证据采用策略；缺省 balanced。与笔记生成路线（light/standard/deep）是两个正交的轴。 */
+  evidenceMode?: EvidenceMode;
+}
+
+export interface TextConversationRequest {
+  kind: 'text';
+  userContent: string;
+  responseMode: 'complete' | 'stream';
+  /** 证据采用策略；缺省 balanced。 */
+  evidenceMode?: EvidenceMode;
+}
+
+export interface RegenerateConversationRequest {
+  kind: 'regenerate';
+  noteId: string;
+  userContent: string;
+}
+
+export type ConversationRequest = ImageConversationRequest | TextConversationRequest | RegenerateConversationRequest;
+
+export interface ConversationState {
+  request: ConversationRequest;
+  runRef: ConversationRunRef;
+  currentStep: ConversationStep;
+  intent?: TextIntent;
+  // 统一意图（AppIntentRules）：note_generate / review / note_query / image_* / clarify…
+  appIntent?: string;
+  appIntentConfidence?: number;
+  appIntentSource?: string;
+  appIntentClarify?: boolean;
+  memoryContext?: string;
+  learnerProfileContext?: string;
+  // DEV-006: load_reply_context 构造的可追溯检索/图谱证据, 供 complete/stream 引用
+  evidence?: NoteEvidenceContext;
+  noteReviewPlan?: NoteReviewPlan;
+  draftRunId?: string;
+  draftCheckpointId?: string;
+  draftCandidateHash?: string;
+  draftStatus?: 'ready-preview' | 'user-edit' | 'confirmed' | 'cancelled' | 'material-failed';
+  ocrResult?: ClassificationResult;
+  ocrSourceId?: string;
+  isOcrBlank?: boolean;
+  materialPersistFailed?: boolean;
+}

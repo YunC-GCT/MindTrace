@@ -329,7 +329,7 @@ MindTrace **当前仅用了 7 个 kit/模块**(`@kit.ArkData` / `@kit.ArkTS` / `
 |---|---|---|
 | [`docs/specs/005-llm-client-consolidation.md`](../specs/) | §2 AIEngine | `LlmClient` 三路径合一时,新增 facade 预留 `AIEngine` 路径 |
 | [`docs/adr/` ADR-0001 模块依赖](../adr/) | §4/§5/§9 | `entry` module 加新权限 / 新 service 不破现有依赖图 |
-| [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` §4.7 #10](../legacy/mindtrace/architecture/audit-full-2026-09-01.md) | §5 FormKit | `mcp/ → tools/` 重命名 不影响 FormKit,但 FormAbility 应放在 `cardservice/services/` 而非 `formability/` |
+| [`docs/legacy/mindtrace/audit-full-2026-09-01.md` §4.7 #10](../legacy/mindtrace/audit-full-2026-09-01.md) | §5 FormKit | `mcp/ → tools/` 重命名 不影响 FormKit,但 FormAbility 应放在 `cardservice/services/` 而非 `formability/` |
 
 ---
 

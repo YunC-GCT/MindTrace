@@ -6,7 +6,7 @@
 //  ============================================================================
 import { KnowledgeUnit } from 'common'
 import { common } from '@kit.AbilityKit'
-import { KnowledgeUnitWriteResult } from '../models/KnowledgeUnitWriteModels'
+import { KnowledgeUnitWriteResult } from 'common'
 import { KnowledgeUnitWriteService } from './KnowledgeUnitWriteService'
 import { KnowledgeUnitWriteServiceFactory } from './KnowledgeUnitWriteServiceFactory'
 

@@ -10,43 +10,58 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 
-const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
+const dispatcher = read('agents/src/main/ets/core/CommandExecutor.ets');
 const captureChain = read('common/src/main/ets/models/CaptureChain.ets');
 const aiService = read('entry/src/main/ets/services/AiService.ets');
 const ocrNode = read('agents/src/main/ets/graph/nodes/OcrNode.ets');
-const convWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
-const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
-const convState = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+const convWorkflow = [
+  read('agents/src/main/ets/conversation/ConversationWorkflow.ets'),
+  read('agents/src/main/ets/conversation/ConversationReplyHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationNoteHandler.ets'),
+  read('agents/src/main/ets/conversation/ConversationReviewHandler.ets'),
+].join('\n');
+const memoryProjection = read('agents/src/main/ets/conversation/ConversationMemoryProjection.ets');
+const convState = read('agents/src/main/ets/conversation/ConversationState.ets');
 const memService = read('entry/src/main/ets/services/AgentMemoryService.ets');
 
 // === Legacy tests preserved ===
 
 test('image payload maps to camera_capture source in the capture flow', () => {
-  assert.match(dispatcher, /payload\.kind === 'image'/);
-  assert.match(dispatcher, /return 'camera_capture'/);
+  // 2026-10-31：capture 分支拆到 CaptureBranch，source 映射抽到 UnitSupport.sourceFromPayload。
+  const unitSupport = read('agents/src/main/ets/core/dispatch/UnitSupport.ets');
+  assert.match(unitSupport, /payload\.kind === 'image'/);
+  assert.match(unitSupport, /return 'camera_capture'/);
+  assert.match(read('agents/src/main/ets/workflows/NoteCaptureWorkflow.ets'), /this\.buildGraph\(writePorts, observability, runControl\)\.run\(initial, runContext\)/);
 });
 
 test('generation pipeline always synthesizes a text payload from the source bundle', () => {
-  const genPayloadBlock = dispatcher.match(
-    /const generationPayload: DispatchRequest = \{[\s\S]*?payload: \{ kind: 'text', text: this\.bundleText\(bundle\) \}/,
+  // 2026-11-02：dispatchGeneration 已迁入 NoteGenerationWorkflow。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
+  const genPayloadBlock = branch.match(
+    /const generationPayload: BranchRequest = \{[\s\S]*?payload: \{ kind: 'text', text: (?:this|GenerationEvaluator)\.bundleText\(bundle\) \}/,
   );
   assert.ok(genPayloadBlock !== null, 'dispatchGeneration must replace image payload with synthesized text');
 });
 
 test('light route generation state uses synthesized text and persist=false', () => {
-  const lightStateBlock = dispatcher.match(
-    /const initial: AgentState = \{[\s\S]*?captureText: this\.bundleText\(bundle\)[\s\S]*?source: 'note_generation'[\s\S]*?persist: false/,
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
+  const lightStateBlock = branch.match(
+    /const initial: AgentState = \{[\s\S]*?captureText: (?:this|GenerationEvaluator)\.bundleText\(bundle\)[\s\S]*?source: 'note_generation'[\s\S]*?persist: false/,
   );
   assert.ok(lightStateBlock !== null, 'light route must set persist=false');
 });
 
 test('AiService.generateNoteDraftWithSources dispatches with persist=false', () => {
-  assert.match(aiService, /generateNoteDraftWithSources[\s\S]*?persist: false/);
+  assert.match(read('entry/src/main/ets/services/ai/DraftPipeline.ets'), /kind: 'generation'/);
 });
 
-test('AiService.confirmDraft dispatches with persist=true and a DAO', () => {
-  assert.match(aiService, /confirmDraft[\s\S]*?persist: true/);
-  assert.match(aiService, /confirmDraft[\s\S]*?dao:/);
+test('AiService.confirmDraft dispatches through the command seam with a DAO', () => {
+  // 2026-10-31 (A3)：确认提交走 dispatchCommand；persist 由 mapper 按命令形状决定（preparedCandidate → true）。
+  const mapper = read('agents/src/main/ets/core/dispatch/NoteOutcomeMapper.ets');
+  const commit = read('entry/src/main/ets/services/ai/DraftCommitService.ets');
+  assert.match(commit, /async confirmDraft[\s\S]*?dispatchCommand\(command/);
+  assert.match(commit, /dao:/);
+  assert.match(mapper, /copy\.persist = command\.kind === 'capture' \|\| command\.kind === 'preparedCandidate'/);
 });
 
 test('CaptureChain defines ImagePayload with imageUri and optional userText', () => {
@@ -57,14 +72,20 @@ test('CaptureChain defines ImagePayload with imageUri and optional userText', ()
 
 test('OcrNode reads input.payload for image kind but does not run in the generation graph', () => {
   assert.match(ocrNode, /input\.payload/);
-  assert.match(dispatcher, /buildGenerationGraph/);
-  const genBlock = dispatcher.match(/private.*buildGenerationGraph[\s\S]*?return graph/);
+  // 2026-10-31：buildGenerationGraph 抽到 GenerationBranch（静态方法）。
+  const branch = read('agents/src/main/ets/workflows/NoteGenerationWorkflow.ets');
+  assert.match(branch, /buildGenerationGraph/);
+  const genBlock = branch.match(/static .*buildGenerationGraph[\s\S]*?return graph/);
   assert.ok(genBlock !== null, 'buildGenerationGraph must exist and return');
   assert.doesNotMatch(genBlock[0], /OcrNode/);
 });
 
 test('image source does not leak into generation candidate evaluation truth check', () => {
-  const evalBlock = dispatcher.match(/buildPreparedGraph[\s\S]*?captureText: this\.bundleText\(bundle\)/);
+  // 2026-11-02：PreparedBranch 迁入 NotePreparedWorkflow；evaluator 自建 truth_check 图。
+  const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
+  const evalBlock = evaluator.match(
+    /truthGraph[\s\S]*?captureText: (?:this|GenerationEvaluator)\.bundleText\(bundle\)/,
+  );
   assert.ok(evalBlock !== null, 'evaluateStandardCandidate must use bundleText, not image URI');
 });
 
@@ -104,7 +125,7 @@ test('ConversationWorkflow must add image_note_reply node for image-to-note gene
 });
 
 test('ConversationWorkflow image_reply must call handleImageReply with imageUri and userContent', () => {
-  assert.match(convWorkflow, /handleImageReply/);
+  assert.match(convWorkflow, /async handleImage\(/);
   assert.match(convWorkflow, /input\.request\.imageUri/);
 });
 
@@ -140,8 +161,9 @@ test('ConversationWorkflow handleImageReply handles empty OCR text gracefully (A
 });
 
 test('AiService.analyzeImage dispatches with persist:false and analysisOnly:true (no write)', () => {
-  assert.match(aiService, /analyzeImage[\s\S]*?persist: false/);
-  assert.match(aiService, /analyzeImage[\s\S]*?analysisOnly: true/);
+  const capture = read('entry/src/main/ets/services/ai/CapturePipeline.ets');
+  assert.match(capture, /analyzeImage[\s\S]*?kind: 'analysisOnly'/);
+  assert.match(capture, /analyzeImage[\s\S]*?dispatchCommand\(command/);
 });
 
 // ConversationStep must include image_reply

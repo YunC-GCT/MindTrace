@@ -227,8 +227,22 @@ export function segmentProblems(ocrText: string): SegmentResult {
     return empty;
   }
   const anchors: AnchorHit[] = collectAnchors(ocrText);
-  if (anchors.length < 2) {
+  if (anchors.length === 0) {
     return singleSegment(ocrText, false);
+  }
+  if (anchors.length === 1) {
+    // 单题页面：保留题号，避免被跨图合并当成「无题号续页」吞进上一题。
+    const single: ProblemSegment = {
+      index: 0,
+      anchor: anchors[0].anchor,
+      rawText: ocrText,
+      needsReview: false,
+    };
+    const singleResult: SegmentResult = {
+      segments: [single],
+      degraded: false,
+    };
+    return singleResult;
   }
   const segments: ProblemSegment[] = buildAnchoredSegments(ocrText, anchors);
   if (!isReconstructable(ocrText, segments)

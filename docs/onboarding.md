@@ -17,7 +17,7 @@ This guide helps you orient quickly. After this, you'll know:
 
 MindTrace is a **HarmonyOS math learning assistant** for the **鸿蒙高校创新赛 semifinal (复赛)**. It has:
 
-- 5 modules (1 HAP + 4 HSP): `entry`, `common`, `agents`, `skill`, `cardservice`
+- 5 modules (3 HAP + 2 HSP): HAP `entry` / `skill` / `cardservice`, HSP `common` / `agents`
 - AI pipeline: photo → OCR → classify → structure → persist
 - Custom ArkTS lint engine (34 rules; test count grows — read the summary line)
 - Architecture: 4 layers + 5 modules (see `AGENTS.md`)
@@ -52,13 +52,13 @@ If all four pass, you're set up correctly.
 - [`docs/specs/`](./specs/) — implementation specs (TDD plans)
 - [`docs/style/arkts-ai-coding.md`](./style/arkts-ai-coding.md) — 60-second AI coding checklist (read before writing `.ets`)
 - [`docs/style/arkts-1.1.md`](./style/arkts-1.1.md) — 40+ ArkTS rules
-- [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./legacy/mindtrace/architecture/audit-full-2026-09-01.md) — 21 audit findings
+- [`docs/legacy/mindtrace/audit-full-2026-09-01.md`](./legacy/mindtrace/audit-full-2026-09-01.md) — 21 audit findings
 
 ### 2. Read the code (10 min)
 
 - `agents/src/main/ets/core/Dispatcher.ets` — main agent orchestrator (single entry `dispatch`, runs the CaptureGraph)
 - `common/src/main/ets/llm/LlmClient.ets` — LLM call layer
-- `agents/src/main/ets/agents/KnowledgeModel.ets` — knowledge structuring agent (PromptBuilder collaborator); TruthCheckService is owned by the Capture workflow's TruthCheckNode (spec 018)
+- `agents/src/main/ets/subagents/KnowledgeModel.ets` — knowledge structuring agent (PromptBuilder collaborator); TruthCheckService is owned by the Capture workflow's TruthCheckNode (spec 018)
 - `scripts/arkts-lint/index.mjs` — the custom AST lint engine
 
 ### 3. Run the tests (5 min)
@@ -146,7 +146,7 @@ Pattern: each new tool gets a workflow file. Mirror the `naming-lint.yml` struct
 ## What's NOT in this onboarding
 
 - **DevEco Studio setup** — see AGENTS.md "Setup commands (DevEco Studio)" section
-- **Production deployment** — not yet decided; see audit `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` for context
+- **Production deployment** — not yet decided; see audit `docs/legacy/mindtrace/audit-full-2026-09-01.md` for context
 - **User-facing app testing** — see `docs/agents/smoke-test.md` (8-step manual matrix)
 - **Competition details** — see AGENTS.md "比赛定位 & 演示流程" section
 

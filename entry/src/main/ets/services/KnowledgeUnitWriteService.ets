@@ -9,6 +9,12 @@
  *   manual / AI adapter → create / update → repository commit → post-commit effects
  */
 import { KnowledgeUnit, NoteGenerationCommitResult } from 'common';
+import { cosineSimilarity, DatabaseHelper } from 'common';
+import type { EmbeddingVector, NoteSimilarityCandidate, NoteSimilarityJudgePort, NoteSimilarityVerdict } from 'common';
+import { AsyncMutex } from './AsyncMutex';
+import { EmbeddingRuntime } from './EmbeddingRuntime';
+import { NoteVectorIndex } from './NoteVectorIndex';
+import type { VectorHit } from './NoteVectorIndex';
 import {
   KnowledgeUnitPersistenceResult,
   KnowledgeUnitPostCommitEffect,
@@ -16,23 +22,51 @@ import {
   KnowledgeUnitWriteErrorCode,
   KnowledgeUnitWriteRepository,
   KnowledgeUnitWriteResult,
-} from '../models/KnowledgeUnitWriteModels';
-import { WritePathValidator } from './WritePathValidator';
+} from 'common';
+import { WritePathValidator } from 'agents/src/main/ets/note/Index';
+import {
+  SIMILARITY_GRAY_MIN,
+  SIMILARITY_HARD_DUPLICATE,
+  similarityScore,
+} from 'agents/src/main/ets/note/Index';
+
+// 首装冷启动偶发卡死兜底：副作用最多等 5s，超时降级为告警，不阻塞主写链路。
+const POST_COMMIT_EFFECT_TIMEOUT_MS: number = 5000;
+// 向量的「疑似重复」召回线。2026-11-06 实测：真实同题（不同措辞）余弦 0.78–0.89，
+// 但同一道题两次生成的措辞差异会让分数在边界上抖动，0.78 会漏召回，取 0.75。
+// 向量只负责召回候选，是否同一条、是补充还是无关，仍由模型仲裁。
+const VECTOR_DUPLICATE_MIN: number = 0.75;
 
 export class KnowledgeUnitWriteService {
+  /** 全局写区：索引同步 + post-commit effects 串行（S0 并发实验：并发 post-commit 会卡死）。 */
+  private static readonly writeSection: AsyncMutex = new AsyncMutex();
   private repository: KnowledgeUnitWriteRepository;
   private effects: KnowledgeUnitPostCommitEffect[];
+  private readonly judge: NoteSimilarityJudgePort | undefined;
 
-  constructor(repository: KnowledgeUnitWriteRepository, effects: KnowledgeUnitPostCommitEffect[]) {
+  constructor(repository: KnowledgeUnitWriteRepository, effects: KnowledgeUnitPostCommitEffect[],
+    judge?: NoteSimilarityJudgePort) {
     this.repository = repository;
     this.effects = effects;
+    this.judge = judge;
   }
 
   async create(unit: KnowledgeUnit, generationMetadata: string = ''): Promise<KnowledgeUnitWriteResult> {
     WritePathValidator.validateKnowledgeUnit(unit);
+    const duplicate: KnowledgeUnit | null = await this.findDuplicate(unit);
+    if (duplicate !== null) {
+      KnowledgeUnitWriteService.logMergeSuggestion(unit, duplicate);
+      return {
+        committed: true,
+        rowId: 0,
+        unit: duplicate,
+        warnings: ['DUPLICATE_SKIPPED'],
+        duplicate: true,
+      };
+    }
     const persisted: KnowledgeUnitPersistenceResult =
       await this.repository.createWithRevision(unit, generationMetadata);
-    const warnings: string[] = await this.runPostCommit(persisted.unit, true);
+    const warnings: string[] = await this.finalizeWrite(persisted.unit, true);
     const result: KnowledgeUnitWriteResult = {
       committed: true,
       rowId: persisted.rowId,
@@ -40,6 +74,14 @@ export class KnowledgeUnitWriteService {
       warnings: warnings,
     };
     return result;
+  }
+
+  /** 读取当前单元（幂等复用/回执需要 title/subject）；仓库未实现时返回 null。 */
+  async queryById(id: string): Promise<KnowledgeUnit | null> {
+    if (this.repository.queryById === undefined) {
+      return null;
+    }
+    return await this.repository.queryById(id);
   }
 
   async update(
@@ -51,7 +93,7 @@ export class KnowledgeUnitWriteService {
     try {
       const persisted: KnowledgeUnitPersistenceResult =
         await this.repository.updateWithRevision(unit, expectedVersion, generationMetadata);
-      const warnings: string[] = await this.runPostCommit(persisted.unit, false);
+      const warnings: string[] = await this.finalizeWrite(persisted.unit, false);
       const result: KnowledgeUnitWriteResult = {
         committed: true,
         rowId: persisted.rowId,
@@ -90,12 +132,26 @@ export class KnowledgeUnitWriteService {
     if (this.repository.createWithRevisionAndCommitKey === undefined) {
       return await this.create(unit, generationMetadata);
     }
+    const duplicate: KnowledgeUnit | null = await this.findDuplicate(unit);
+    if (duplicate !== null) {
+      KnowledgeUnitWriteService.logMergeSuggestion(unit, duplicate);
+      return {
+        committed: true,
+        rowId: 0,
+        unit: duplicate,
+        warnings: ['DUPLICATE_SKIPPED'],
+        duplicate: true,
+      };
+    }
+    console.info('[ConfirmTrace] service=createWithCommitKey-begin');
     const persisted: KnowledgeUnitPersistenceResult = await this.repository.createWithRevisionAndCommitKey(
       unit,
       generationMetadata,
       commit,
     );
-    const warnings: string[] = await this.runPostCommit(persisted.unit, persisted.duplicate !== true);
+    console.info('[ConfirmTrace] service=createWithCommitKey-ok');
+    const warnings: string[] = await this.finalizeWrite(
+      persisted.unit, persisted.duplicate !== true);
     return {
       committed: true,
       rowId: persisted.rowId,
@@ -116,13 +172,15 @@ export class KnowledgeUnitWriteService {
       return await this.update(unit, expectedVersion, generationMetadata);
     }
     try {
+      console.info('[ConfirmTrace] service=updateWithCommitKey-begin');
       const persisted: KnowledgeUnitPersistenceResult = await this.repository.updateWithRevisionAndCommitKey(
         unit,
         expectedVersion,
         generationMetadata,
         commit,
       );
-      const warnings: string[] = await this.runPostCommit(persisted.unit, false);
+      console.info('[ConfirmTrace] service=updateWithCommitKey-ok');
+      const warnings: string[] = await this.finalizeWrite(persisted.unit, false);
       return {
         committed: true,
         rowId: persisted.rowId,
@@ -151,14 +209,197 @@ export class KnowledgeUnitWriteService {
     }
   }
 
+  /**
+   * 写前查重：先走确定性规则；拿不准的灰区（0.4–0.9）交给模型仲裁。
+   * L1 对跨措辞的同题无能为力（标题差异大），此时用内容向量召回最近邻，
+   * 命中高位相似再交给同一个模型裁决——避免「换个说法」的同一道题重复写入。
+   */
+  private async findDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
+    let hard: KnowledgeUnit | null = null;
+    if (this.repository.findDuplicate !== undefined) {
+      try {
+        hard = await this.repository.findDuplicate(unit);
+      } catch (e) {
+        hard = null;
+      }
+    }
+    if (hard !== null) {
+      return hard;
+    }
+    if (this.judge === undefined || this.repository.findSimilarCandidates === undefined) {
+      return null;
+    }
+    let candidates: NoteSimilarityCandidate[] = [];
+    try {
+      candidates = await this.repository.findSimilarCandidates(unit);
+    } catch (e) {
+      return null;
+    }
+    let best: NoteSimilarityCandidate | null = null;
+    let bestScore: number = 0;
+    for (let i = 0; i < candidates.length; i += 1) {
+      const score: number = similarityScore(unit.title, unit.content,
+        candidates[i].title, candidates[i].content);
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidates[i];
+      }
+    }
+    if (best === null || bestScore < SIMILARITY_GRAY_MIN) {
+      // L1 抓不住跨措辞的同题（标题差异大、正文也够不到硬线），交给向量兜底。
+      return await this.findVectorDuplicate(unit);
+    }
+    if (bestScore >= SIMILARITY_HARD_DUPLICATE) {
+      return await this.loadCandidate(best.id);
+    }
+    const verdict: NoteSimilarityVerdict = await this.judgeVerdict(unit.title, unit.content, best.title, best.content);
+    // 2026-11-06 只观测不决策：记下灰区的 L1 分数、向量相似度与模型裁决，
+    // 攒够样本后再定「用向量替代模型仲裁」的阈值。向量误合并不可逆，不能拍脑袋。
+    const vectorSim: number = await KnowledgeUnitWriteService.vectorSimilarity(unit, best);
+    console.info('[DedupeTrace] gray l1=' + bestScore.toFixed(3)
+      + ' vec=' + (vectorSim < 0 ? 'na' : vectorSim.toFixed(3))
+      + ' verdict=' + verdict.kind);
+    if (verdict.kind === 'supplement') {
+      KnowledgeUnitWriteService.logAppendSuggestion(unit, best.id);
+      return null;
+    }
+    return verdict.kind === 'same' ? await this.loadCandidate(best.id) : null;
+  }
+
+  /** 仲裁：模型自己判断「同题且无新内容 / 同题但有补充 / 不同主题」。 */
+  private async judgeVerdict(leftTitle: string, leftContent: string,
+    rightTitle: string, rightContent: string): Promise<NoteSimilarityVerdict> {
+    if (this.judge === undefined) {
+      return { kind: 'different', reason: 'no-judge' };
+    }
+    try {
+      return await this.judge.judge(leftTitle, leftContent, rightTitle, rightContent);
+    } catch (e) {
+      return { kind: 'different', reason: 'judge-failed' };
+    }
+  }
+
+  /**
+   * 向量召回兜底：L1 没找到时，用内容向量找最近邻，命中高位相似再交给模型仲裁。
+   * 向量只负责「值得看一眼」，判定同一条仍由 judge 决定；没有 judge 就不合并。
+   */
+  private async findVectorDuplicate(unit: KnowledgeUnit): Promise<KnowledgeUnit | null> {
+    if (this.judge === undefined || !EmbeddingRuntime.isDense()) {
+      return null;
+    }
+    const store = DatabaseHelper.getStore();
+    if (store === null) {
+      return null;
+    }
+    let hits: VectorHit[] = [];
+    try {
+      hits = await NoteVectorIndex.search(store, unit.title + '\n' + unit.content, 3, VECTOR_DUPLICATE_MIN);
+    } catch (e) {
+      return null;
+    }
+    if (hits.length === 0) {
+      return null;
+    }
+    const candidate: KnowledgeUnit | null = await this.loadCandidate(hits[0].unitId);
+    if (candidate === null || candidate.id === unit.id) {
+      return null;
+    }
+    const verdict: NoteSimilarityVerdict =
+      await this.judgeVerdict(unit.title, unit.content, candidate.title, candidate.content);
+    console.info('[DedupeTrace] vector vec=' + hits[0].score.toFixed(3)
+      + ' verdict=' + verdict.kind + ' candidate=' + candidate.id);
+    if (verdict.kind === 'supplement') {
+      KnowledgeUnitWriteService.logAppendSuggestion(unit, candidate.id);
+      return null;
+    }
+    return verdict.kind === 'same' ? candidate : null;
+  }
+
+  /**
+   * 建议请求：判重命中时新内容不会落库，提示「可以合并到已有笔记」。
+   * 本轮只记日志；UI 接入后再把这条建议经会话事件发给用户。
+   */
+  private static logMergeSuggestion(unit: KnowledgeUnit, existing: KnowledgeUnit): void {
+    const kind: string = unit.kind === undefined || unit.kind.length === 0 ? 'normal' : unit.kind;
+    console.info('[NoteSuggestion] action=merge noteKind=' + kind + ' count=1 sourceNoteId='
+      + existing.id + ' reason=duplicate-on-write');
+  }
+
+  /**
+   * 建议请求：模型判定「同主题但有补充」时，新笔记照常写入（不丢内容），
+   * 同时建议用户把它合并进已有笔记。本轮只记日志。
+   */
+  private static logAppendSuggestion(unit: KnowledgeUnit, sourceNoteId: string): void {
+    const kind: string = unit.kind === undefined || unit.kind.length === 0 ? 'normal' : unit.kind;
+    console.info('[NoteSuggestion] action=append noteKind=' + kind + ' count=1 sourceNoteId='
+      + sourceNoteId + ' reason=supplement-detected');
+  }
+
+  /** 文档间向量相似度；非稠密模型/服务不可用时返回 -1（只用于观测）。 */
+  private static async vectorSimilarity(unit: KnowledgeUnit,
+    candidate: NoteSimilarityCandidate): Promise<number> {
+    if (!EmbeddingRuntime.isDense()) {
+      return -1;
+    }
+    try {
+      const vectors: EmbeddingVector[] = await EmbeddingRuntime.active().embed([
+        unit.title + '\n' + unit.content,
+        candidate.title + '\n' + candidate.content,
+      ]);
+      if (vectors.length < 2) {
+        return -1;
+      }
+      return cosineSimilarity(vectors[0].values, vectors[1].values);
+    } catch (e) {
+      return -1;
+    }
+  }
+
+  private async loadCandidate(id: string): Promise<KnowledgeUnit | null> {
+    if (this.repository.queryById === undefined) {
+      return null;
+    }
+    try {
+      return await this.repository.queryById(id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** 写区串行段：post-commit effects（并发时会卡死，必须互斥）。索引已在写库事务内同步。 */
+  private async finalizeWrite(unit: KnowledgeUnit, isCreate: boolean): Promise<string[]> {
+    return await KnowledgeUnitWriteService.writeSection.runExclusive(async (): Promise<string[]> => {
+      return await this.runPostCommit(unit, isCreate);
+    });
+  }
+
+  /** Promise.race 超时兜底：只用于「可降级」的 UI 副作用，不改变事务结果。 */
+  private static async withTimeout(task: Promise<void>, timeoutMs: number, label: string): Promise<void> {
+    let timer: number = 0;
+    const timeout: Promise<void> = new Promise<void>((resolve: () => void): void => {
+      timer = setTimeout((): void => {
+        console.warn('[KnowledgeUnitWriteService] timeout after ' + timeoutMs.toString() + 'ms: ' + label);
+        resolve();
+      }, timeoutMs);
+    });
+    try {
+      await Promise.race([task, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async runPostCommit(unit: KnowledgeUnit, isCreate: boolean): Promise<string[]> {
     const warnings: string[] = [];
     for (const effect of this.effects) {
       if (effect.createOnly === true && !isCreate) {
         continue;
       }
+      const effectStartedAt: number = Date.now();
       try {
-        await effect.run(unit);
+        await KnowledgeUnitWriteService.withTimeout(
+          effect.run(unit), POST_COMMIT_EFFECT_TIMEOUT_MS, 'post-commit effect ' + effect.name);
+        console.info('[EffectTrace] name=' + effect.name + ' ok ms=' + (Date.now() - effectStartedAt).toString());
       } catch (e) {
         const message: string = e instanceof Error ? e.message : String(e);
         warnings.push(effect.name + ': ' + message);

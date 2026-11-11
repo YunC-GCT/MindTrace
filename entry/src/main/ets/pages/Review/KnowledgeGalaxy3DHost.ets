@@ -1,4 +1,6 @@
-// ============================================================================
+
+import { projectGalaxyGraph } from './GalaxyGraphProjection';
+import type { GalaxyGraphSnapshot } from './GalaxyGraphProjection';// ============================================================================
 //  pages/Review/KnowledgeGalaxy3DHost.ets - Review galaxy renderer host
 //  ----------------------------------------------------------------------------
 //  Owns renderer selection, ViewModel refresh, business-ID selection and detail.
@@ -15,13 +17,11 @@ import {
 } from 'common'
 import { promptAction } from '@kit.ArkUI'
 import { NoteDetailOverlay } from '../../overlays/NoteDetailOverlay/NoteDetailOverlay'
-import {
-  KnowledgeGalaxyViewModel,
-  PlanetNode,
-} from '../../viewmodels/KnowledgeGalaxyViewModel'
+import { KnowledgeGalaxyViewModel } from '../../viewmodels/KnowledgeGalaxyViewModel'
+import { PlanetNode } from 'common'
 import { unitToNoteItem } from '../../utils/NoteItemMapper'
 import { GalaxyComponent3DAdapter } from './GalaxyComponent3DAdapter'
-import { GalaxyGraphSnapshot, projectGalaxyGraph } from './GalaxyGraphProjection'
+
 import type { GalaxyRendererEvent, GalaxyRendererMode } from './GalaxyRendererSelection'
 import { chooseInitialGalaxyRenderer, nextGalaxyRendererMode } from './GalaxyRendererSelection'
 import {

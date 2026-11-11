@@ -1,8 +1,8 @@
 // MindTrace - StructureNode
 // 2026-09-05 · D2 Ticket #5
 import { AgentState, CaptureNode, CaptureGraphError, CaptureNodeResult, copyAgentState } from '../AgentState';
-import { KnowledgeModel } from '../../agents/KnowledgeModel';
-import { GenerationJsonError } from '../../agents/GenerationJsonCaller';
+import { KnowledgeModel } from '../../subagents/KnowledgeModel';
+import { GenerationJsonError } from '../../subagents/GenerationJsonCaller';
 import {
   CaptureProvenance,
   DispatchPayload,
@@ -52,10 +52,14 @@ export class StructureNodeFactory {
             draft = await service.structureLightDraft(input.generationRequest);
           }
           unit = service.draftToKnowledgeUnit(draft, input.source, provenance);
+        } else if (input.skipClassification === true) {
+          unit = await service.structure(
+            input.captureText, undefined, undefined, '', input.source, provenance,
+            input.subjectVocabulary ?? [], true, input.compactStructure === true);
         } else if (input.classification === undefined) {
           unit = await service.structure(
             input.captureText, undefined, undefined, '', input.source, provenance,
-            input.subjectVocabulary ?? []);
+            input.subjectVocabulary ?? [], false, input.compactStructure === true);
         } else {
           unit = await service.structureWithClassification(
             input.captureText,

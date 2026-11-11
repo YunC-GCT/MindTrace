@@ -43,16 +43,21 @@ docs/
 | **Write the design spec for a ticket** | `docs/specs/` — create `NNN-{slug}.md` from [`docs/template/spec-template.md`](./template/spec-template.md) |
 | **Read an implementation design plan** | [`plans/`](./plans/index.md) — implementation designs pending formal spec |
 | **Record how a ticket was executed / verified** | `docs/specs/execution/{slug}/` — see [`execution/index.md`](./specs/execution/index.md) |
+| **看写入队列持久化（S3）** | [`specs/040-writejob-persistence-cross-process.md`](./specs/040-writejob-persistence-cross-process.md) — agent_job v20 + 单执行者 + 租约 + 跨进程 handoff |
+| **看写入调度器方案** | [`specs/038-write-job-scheduler.md`](./specs/038-write-job-scheduler.md) — WriteJob 双通道队列/并发/观测（S0 实验 + S1 MVP） |
+| **看 RAG 架构决策** | [`adr/0023-rag-local-fts-retrieval.md`](./adr/0023-rag-local-fts-retrieval.md) — 为什么选本机 FTS5 + 证据注入，Kit retrieveRdb 如何暂缓 |
+| **看 RAG 检索方案（DataAugmentationKit 复用）** | [`specs/037-rag-retrieval-data-augmentation.md`](./specs/037-rag-retrieval-data-augmentation.md) — retrieval(FTS/BM25) + 现有 LLM，含真机探针结论 |
 | **看 v1 端A2A 的设计** | [`specs/031-xiaoyi-batch-capture-entry.md`](./specs/031-xiaoyi-batch-capture-entry.md) — 小艺唤起批量整理（浮窗 / 多选 / 落库） |
+| **看项目介绍** | [`portfolio/README.md`](../portfolio/README.md) — 12 页 PDF、六页 HTML 设计说明、架构与评测摘要 |
 | **知道当前做到哪一阶段 / 怎么验收** | [`agents/phase-tracker.md`](./agents/phase-tracker.md) — P0–P6 状态、DoD、证据命令 |
 | **Investigate a question (e.g. "should we use X?")** | `docs/research/` — `{topic-slug}-{YYYY-MM-DD}.md` from [`docs/template/research-template.md`](./template/research-template.md) |
 | **Describe how the current system is wired** | `docs/architecture/` — `{scope}-{YYYY-MM-DD}.md` |
 | **Set a coding rule** | `docs/style/naming-conventions.md` (the canonical spec) |
 | **Find an ArkTS rule** | [`docs/style/arkts-1.1.md`](./style/arkts-1.1.md) |
-| **Understand the current architecture** | `docs/adr/` (current decisions) — for historical audits see [`docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md`](./legacy/mindtrace/architecture/audit-full-2026-09-01.md) |
+| **Understand the current architecture** | `docs/adr/` (current decisions) — for historical audits see [`docs/legacy/mindtrace/audit-full-2026-09-01.md`](./legacy/mindtrace/audit-full-2026-09-01.md) |
 | **Find an API contract** | `common/src/main/ets/models/` + `CONTEXT.md`（当前类型与术语契约） |
 | **Look up a workflow (issue tracking, triage)** | `docs/agents/` — see [`agents/index.md`](./agents/index.md) |
-| **Find an old session's decision trail** | `docs/legacy/mindtrace/handoffs/` (frozen; not current guidance) |
+| **Find an old session's decision trail** | `docs/legacy/mindtrace/` (frozen; not current guidance) |
 | **Understand the v1 layered architecture** | [`system-architecture-layered.md`](./system-architecture-layered.md) — 五层设计、能力选型、验收清单、小艺开放平台落地路径（唯一权威架构文档，含 §14 评审修正与 v7 目标态） |
 | **Read the v7 target-state review** | [`architecture/review-v7-2026-10-27.md`](./architecture/review-v7-2026-10-27.md) — 外评审：有条件可落地、端口与迁移顺序的硬依赖、五条风险 |
 | **Pick up the v7 contract work** | [`specs/execution/v7-architecture-contracts/plan.md`](./specs/execution/v7-architecture-contracts/plan.md) — 交接文档：票单 #237–#242、顺序、硬约束、环境命令 |
@@ -81,7 +86,7 @@ docs/
 1. Read top of `AGENTS.md` (project positioning + demo path)
 2. Skim the "项目亮点" table in `AGENTS.md` (5 highlights)
 3. Walk the demo path (5 minutes)
-4. Inspect `docs/legacy/mindtrace/architecture/audit-full-2026-09-01.md` for the full audit
+4. Inspect `docs/legacy/mindtrace/audit-full-2026-09-01.md` for the full audit
 5. Inspect `docs/adr/` and `docs/specs/` for design decisions
 6. **New here?** Start with [`docs/onboarding.md`](./onboarding.md) for a 5/30-min reading path
 

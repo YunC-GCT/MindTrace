@@ -1,7 +1,7 @@
 # v7 契约层与 NoteAgent 迁移 · 执行计划（交接文档）
 
-**Status:** ready-to-execute（2026-10-27，尚未开始写代码）
-**基线：** `bugfix/galaxy-web-temporary` @ `dcc7892`；`develop` 停在 `028975e`，落后 3 个提交（都是文档），开工前先把 `develop` 快进到 `dcc7892`。
+**Status:** in-progress（2026-10-30 更新：#237 完成 · #239 完成 · #240 经 #243 解除 · #238 约 60% · #241 未开工）
+**基线：** 以 `develop` 为准（v7 契约已合入：PR #244 + #243 复核；`RunContext` / `NoteWritePort` / golden 快照都在 `develop` 上）。
 **范围：** `docs/system-architecture-layered.md` §17.6 的第 1–6 步，只做契约层 + capture 一条迁移；ReviewAgent / Video 由 #242 拍板后再开票。
 
 ## 0. 给接手会话
@@ -40,7 +40,7 @@
 - `common` 不反依赖 `agents` / `entry`；依赖方向 `entry / skill / cardservice → agents → common`。注意 `scripts/process-boundary/check.mjs` **只查进程可达的 Kit，不查模块依赖方向**，方向靠 review 守。
 - 端侧模型是**可插拔能力位**，v1 默认云端；回退必须标「已降级：原因」，不能静默换模型，兜底文案不许冒充回答。
 - 思考模式按能力分三类（`toggle` / `always_on` / `unsupported`），未知模型不猜。
-- A2A 单一 35s deadline、0 重试、回执短路；**A2A 目前不经过 `Dispatcher`**，纳入主图是独立议题，不要顺手接。
+- A2A 单一 35s deadline、0 重试、回执短路；**A2A 已经经过 `Dispatcher`**（`654201f`：所有入口收敛到同一个 ingest 端口，`AgentIngestService → AiService.ingestText → Dispatcher`），所以改 capture 分支会同时影响小艺链路，回归必须带 `python scripts/a2a-smoke/a2a_smoke.py --text "整理数学题"`。
 - 只做 local commit；用户明确说 push 才 push。提交信息带 `Refs: #NNN`。
 - 结论要有一手来源，查不到就说查不到，不要编。
 

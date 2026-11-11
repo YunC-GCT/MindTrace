@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from '@ohos/hypium';
-import { PromptBuilder } from '../main/ets/agents/PromptBuilder';
+import { PromptBuilder } from '../main/ets/subagents/PromptBuilder';
 
 function createBuilder(): PromptBuilder {
   return new PromptBuilder();

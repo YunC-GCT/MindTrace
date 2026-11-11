@@ -17,13 +17,9 @@
  */
 
 import {
-  BG_CARD, BORDER, GLASS_8, TEXT, TEXT_2, TEXT_3,
-  S_1, S_2, S_3, S_4,
-  R_LG,
-  F_XS, F_MD,
-  W_BOLD, W_SEMIBOLD,
-  borderToneColor,
-} from "common"
+  BG_CARD, BORDER, GLASS_8, TEXT, TEXT_2, TEXT_3, S_1, S_2, S_3, S_4, R_LG, F_XS, F_MD, W_BOLD, W_SEMIBOLD,
+} from 'common';
+import { borderToneColor } from '../../utils/NoteTaxonomy';
 import { SubjectGroup } from "../../viewmodels/NotesViewModel"
 
 function topSubjectGroups(groups: SubjectGroup[]): SubjectGroup[] {

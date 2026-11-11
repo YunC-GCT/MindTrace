@@ -70,6 +70,12 @@ export interface AgentState {
   /** 采集链路可复用的学科词表（来自库里已有学科）；structure 用它做「复用 vs 新建」裁决 */
   subjectVocabulary?: string[];
   preparedCandidate?: PreparedCandidate;
+  // 快速路由：跳过独立分类 LLM（structure 自分类）
+  skipClassification?: boolean;
+  // A2A 快速整理：短 prompt + 小输出上限，优先低延迟
+  compactStructure?: boolean;
+  // 036 幂等：命令层 commitKey（capture-set:<setId>:<fingerprint>）透传到 PersistNode
+  commitKey?: string;
   commitResult?: NoteCommitResult;
 }
 
@@ -116,6 +122,15 @@ export function copyAgentState(input: AgentState): AgentState {
   }
   if (input.preparedCandidate !== undefined) {
     copied.preparedCandidate = input.preparedCandidate;
+  }
+  if (input.skipClassification !== undefined) {
+    copied.skipClassification = input.skipClassification;
+  }
+  if (input.compactStructure !== undefined) {
+    copied.compactStructure = input.compactStructure;
+  }
+  if (input.commitKey !== undefined) {
+    copied.commitKey = input.commitKey;
   }
   if (input.commitResult !== undefined) {
     copied.commitResult = input.commitResult;

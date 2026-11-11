@@ -1,0 +1,5 @@
+# MindTrace Embedding Service 依赖
+# torch 需先按 CPU 版本安装，见 start.bat
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sentence-transformers>=2.7

@@ -6,13 +6,16 @@ function read(path) {
   return readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
 }
 
-const history = read('entry/src/main/ets/services/ChatHistoryPersistence.ets');
+const history = [
+  read('entry/src/main/ets/services/ChatHistoryPersistence.ets'),
+  read('entry/src/main/ets/services/ChatHistoryWire.ets'),
+].join('\n');
 const schema = read('common/src/main/ets/DatabaseHelper.ets');
 const chatDao = read('entry/src/main/ets/database/ChatMessageDao.ets');
 const generation = read('entry/src/main/ets/database/NoteGenerationRepository.ets');
 const deletion = read('entry/src/main/ets/services/SessionDeletionCoordinator.ets');
-const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
-const memoryProjection = read('entry/src/main/ets/workflows/conversation/ConversationMemoryProjection.ets');
+const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
+const memoryProjection = read('agents/src/main/ets/conversation/ConversationMemoryProjection.ets');
 const floatWindow = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
 const mapper = read('entry/src/main/ets/services/ConversationSnapshotMapper.ets');
 const titleService = read('entry/src/main/ets/services/ConversationTitleService.ets');
@@ -44,10 +47,11 @@ test('conversation note runs persist origin and deletion includes cancelled unco
 });
 
 test('completed note-generation runs retain conversation ownership metadata', () => {
-  const dispatcher = read('agents/src/main/ets/core/Dispatcher.ets');
-  const start = dispatcher.indexOf('private completedRun(');
+  // 2026-10-31：completedRun 随评估/终态逻辑抽到 GenerationEvaluator。
+  const evaluator = read('agents/src/main/ets/core/dispatch/GenerationEvaluator.ets');
+  const start = evaluator.indexOf('static completedRun(');
   assert.notEqual(start, -1);
-  const completedRun = dispatcher.slice(start, start + 900);
+  const completedRun = evaluator.slice(start, start + 900);
   assert.match(completedRun, /originSessionId: run\.originSessionId,/);
   assert.match(completedRun, /parentConversationRunId: run\.parentConversationRunId,/);
 });
@@ -60,7 +64,7 @@ test('legacy detached runs cannot inherit the visible conversation owner', () =>
   const recovery = read('entry/src/main/ets/services/DraftRecoveryService.ets');
   assert.match(recovery, /DraftRecoveryService\.requireDetached\(persisted\)/);
   assert.match(recovery, /SESSION_DRAFT_REQUIRES_CONVERSATION_ENTRY/);
-  const draftWorkflow = read('entry/src/main/ets/workflows/conversation/ConversationDraftWorkflow.ets');
+  const draftWorkflow = read('agents/src/main/ets/conversation/ConversationDraftWorkflow.ets');
   const restoreBody = draftWorkflow.match(/async restore[\s\S]*?\n  async cancel/);
   assert.ok(restoreBody !== null);
   assert.doesNotMatch(restoreBody[0], /addMessage/);

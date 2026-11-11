@@ -1,21 +1,23 @@
 /**
  * @file AiSettingsViewModel.ets — AI 设置页视图模型
  *
- * 职责：管理 API Key、端点、模型、OCR 配置的读写与连接测试。
- * 依赖：LlmConfig、OcrConfig、LlmClient、OcrTool
+ * 路径: entry/src/main/ets/viewmodels/AiSettingsViewModel.ets
+ * 职责：管理 API Key、端点、模型、OCR 与语义检索配置的读写与连接测试。
+ * 依赖：LlmConfig、OcrConfig、LlmClient、OcrTool、EmbeddingRuntime
  */
 import {
   LlmClient, LlmConfig, OcrConfig, PROVIDERS,
-  discoverModels, getProviderCatalog, resolveModel,
+  cosineSimilarity, discoverModels, getProviderCatalog, resolveModel,
 } from "common"
+import { EmbeddingRuntime } from "../services/EmbeddingRuntime"
 import type {
-  CustomVendorConfig, DiscoveryResult, ModelListing, ModelPreference,
+  CustomVendorConfig, DiscoveryResult, EmbeddingVector, EvidenceMode, ModelListing, ModelPreference,
   ProviderConfig, ProviderCatalog, ResolvedModel, VendorModelMeta,
 } from "common"
 import { OcrTool } from "agents"
 import type { OcrRecognitionResult } from "agents"
-import { ModelSelector } from "../services/ModelSelector"
-import type { ModelAvailability } from "../services/ModelSelector"
+import { ModelSelector } from "../services/ModelCatalog"
+import type { ModelAvailability } from "../services/ModelCatalog"
 
 // PR2-T2 P3: 用户添加的自定义 vendor 列表
 // PR2-T2 ticket #83 L1 (2026-09-08): 不用 extends CustomVendorConfig,直接声明全部字段
@@ -59,6 +61,13 @@ export class AiSettingsViewModel {
   ocrMode: string = DEFAULT_OCR_MODE
   ocrTesting: boolean = false
   ocrStatusText: string = "未测试"
+  embeddingEnabled: boolean = false
+  embeddingModel: string = ""
+  embeddingEndpoint: string = ""
+  embeddingApiKey: string = ""
+  embeddingTesting: boolean = false
+  embeddingStatusText: string = "未启用"
+  evidenceMode: EvidenceMode = "balanced"
 
   async load(): Promise<boolean> {
     let ok: boolean = true
@@ -118,6 +127,29 @@ export class AiSettingsViewModel {
       this.ocrEnabled = true
       this.ocrMode = DEFAULT_OCR_MODE
       this.ocrStatusText = "未测试"
+    }
+    try {
+      const embModel: string = llm.getEmbeddingModel()
+      this.embeddingModel = embModel
+      this.embeddingEndpoint = llm.getEmbeddingEndpointInput()
+      this.embeddingApiKey = llm.getEmbeddingApiKey()
+      this.embeddingEnabled = embModel.length > 0
+      this.embeddingStatusText = embModel.length > 0 ? ("已启用：" + embModel) : "未启用"
+      if (embModel.length > 0) {
+        // 本地服务是手动启动的：进页面就探一次，让用户看到在线/离线，而不是靠猜。
+        EmbeddingRuntime.probe().then((text: string): void => {
+          this.embeddingStatusText = text
+        })
+      }
+    } catch (_e) {
+      ok = false
+      this.embeddingEnabled = false
+      this.embeddingStatusText = "未启用"
+    }
+    try {
+      this.evidenceMode = llm.getEvidenceMode()
+    } catch (_e) {
+      this.evidenceMode = "balanced"
     }
     return ok
   }
@@ -192,9 +224,82 @@ export class AiSettingsViewModel {
         llm.getTimeoutMs()
       )
       this.statusText = "已保存"
+      // 只看模型名：填了就是要用。开关只在关闭时清空输入框，不参与保存判定。
+      await llm.setEmbeddingModel(this.embeddingModel)
+      await llm.setEmbeddingEndpoint(this.embeddingEndpoint)
+      await llm.setEmbeddingApiKey(this.embeddingApiKey)
+      await llm.setEvidenceMode(this.evidenceMode)
+      EmbeddingRuntime.refresh()
+      this.embeddingModel = llm.getEmbeddingModel()
+      this.embeddingEnabled = this.embeddingModel.length > 0
+      this.embeddingStatusText = this.embeddingEnabled
+        ? ("已启用：" + this.embeddingModel)
+        : "未启用"
       return true
     } catch (_e) {
       return false
+    }
+  }
+
+  setEmbeddingEnabled(value: boolean): void {
+    this.embeddingEnabled = value
+    if (!value) {
+      this.embeddingModel = ""
+    }
+    this.embeddingStatusText = value ? "待测试" : "未启用"
+  }
+
+  setEmbeddingModel(value: string): void {
+    this.embeddingModel = value
+  }
+
+  setEmbeddingEndpoint(value: string): void {
+    this.embeddingEndpoint = value
+  }
+
+  setEmbeddingApiKey(value: string): void {
+    this.embeddingApiKey = value
+  }
+
+  setEvidenceMode(value: EvidenceMode): void {
+    this.evidenceMode = value
+  }
+
+  /**
+   * 自检：真的调一次 /embeddings，并比较「同义句」与「无关句」的余弦。
+   * 只看维度不能说明问题——分不开语义的模型接上也白搭。
+   */
+  async testEmbedding(): Promise<boolean> {
+    this.embeddingTesting = true
+    try {
+      const llm: LlmConfig = LlmConfig.getInstance()
+      await llm.setEmbeddingModel(this.embeddingModel)
+      await llm.setEmbeddingEndpoint(this.embeddingEndpoint)
+      await llm.setEmbeddingApiKey(this.embeddingApiKey)
+      EmbeddingRuntime.refresh()
+      if (!EmbeddingRuntime.isDense()) {
+        this.embeddingStatusText = "未填写模型名"
+        return false
+      }
+      const vectors: EmbeddingVector[] = await EmbeddingRuntime.active().embed([
+        "导数定义",
+        "函数在一点的瞬时变化率",
+        "矩阵的秩与初等变换",
+      ])
+      if (vectors.length < 3) {
+        this.embeddingStatusText = "返回向量数量不足"
+        return false
+      }
+      const related: number = cosineSimilarity(vectors[0].values, vectors[1].values)
+      const unrelated: number = cosineSimilarity(vectors[0].values, vectors[2].values)
+      this.embeddingStatusText = "维度 " + vectors[0].dimension.toString()
+        + "，相关 " + related.toFixed(2) + "，无关 " + unrelated.toFixed(2)
+      return true
+    } catch (e) {
+      this.embeddingStatusText = "失败：" + (e as Error).message
+      return false
+    } finally {
+      this.embeddingTesting = false
     }
   }
 

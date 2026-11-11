@@ -29,4 +29,6 @@ export interface NoteDaoInterface {
   insertWithCommitKey?(unit: KnowledgeUnit, commit: NoteGenerationCommitResult): Promise<NoteCommitResult>;
   update?(unit: KnowledgeUnit, expectedVersion: number): Promise<NoteCommitResult>;
   updateWithCommitKey?(unit: KnowledgeUnit, expectedVersion: number, commit: NoteGenerationCommitResult): Promise<NoteCommitResult>;
+  /** 读取已有笔记（重复输入命中时复用原笔记并回执标题）。 */
+  queryById?(id: string): Promise<KnowledgeUnit | null>;
 }

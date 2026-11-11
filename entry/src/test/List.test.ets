@@ -12,7 +12,6 @@ import customSpanPlaceholderSeamTest from './CustomSpanPlaceholderSeam.test';
 import dispatcherNoteGenerationTest from './DispatcherNoteGeneration.test';
 import rendererSchedulerTest from './RendererScheduler.test';
 import renderTickTest from './RenderTick.test';
-import streamingReplyDocumentTest from './StreamingReplyDocument.test';
 import conversationIdentityTest from './ConversationIdentity.test';
 import sessionUiStateTest from './SessionUiState.test';
 import chatContextProjectionTest from './ChatContextProjection.test';
@@ -44,7 +43,6 @@ export default function testsuite() {
   dispatcherNoteGenerationTest();
   rendererSchedulerTest();
   renderTickTest();
-  streamingReplyDocumentTest();
   conversationIdentityTest();
   sessionUiStateTest();
   chatContextProjectionTest();

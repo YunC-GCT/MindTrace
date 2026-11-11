@@ -52,16 +52,24 @@ test('common 的 OCR 端口契约零 @kit 依赖，并只经 barrel 导出值 Re
   assert.match(barrel, /export type \{ OcrRecognizer, OcrTextResult \} from '\.\/capability\/ocr\/OcrRecognizer';/);
 });
 
-test('entry 适配层保留两个 Kit，且文件头声明 Process: main only', () => {
+test('entry 适配层保留两个 Kit，文件头声明 main 与 :agent 各自安装', () => {
   const adapterPath = 'entry/src/main/ets/services/CoreVisionOcrRecognizer.ets';
   const adapter = read(adapterPath);
   const header = adapter.split('\n').slice(0, 20).join('\n');
 
   assert.match(adapter, /import \{ textRecognition \} from '@kit\.CoreVisionKit';/);
   assert.match(adapter, /import \{ image \} from '@kit\.ImageKit';/);
-  assert.match(header, /Process: main only/);
-  assert.match(header, /不得进 common barrel/);
+  // 真机实测 :agent 里也能 eval CoreVisionKit，所以实现由两个进程各自的组合根安装；
+  // 仍然不许进 common barrel，否则会随 AgentExtAbility 的 import 图进扩展进程。
+  assert.match(header, /Process: main 与 :agent 都会安装它/);
+  assert.match(header, /不得进 common 的 barrel/);
   assert.match(adapter, /class CoreVisionOcrRecognizer implements OcrRecognizer/);
+});
+
+test('AgentExtAbility.onCreate 是 :agent 进程的 OCR 组合根', () => {
+  const ability = read('entry/src/main/ets/agentextability/AgentExtAbility.ets');
+  assert.match(ability, /OcrRecognizerRegistry\.install\(/);
+  assert.match(ability, /new CoreVisionOcrRecognizer\(\)/);
 });
 
 test('EntryAbility.onCreate 是 OCR 端口的组合根', () => {

@@ -48,8 +48,8 @@ import type {
   CustomVendorConfig, DiscoveryResult, ModelCapability, ModelListing, ModelPreference,
   ProviderCatalog, ProviderConfig, ResolvedModel,
 } from 'common';
-import { ModelSelector } from '../../services/ModelSelector';
-import type { ModelAvailability } from '../../services/ModelSelector';
+import { ModelSelector } from '../../services/ModelCatalog';
+import type { ModelAvailability } from '../../services/ModelCatalog';
 import {
   MINT, MINT_BORDER, BG_CARD, BG_DARK, TEXT, TEXT_2, TEXT_3, TEXT_4, BORDER,
   F_XS, F_SM, F_MD, W_NORMAL, W_MEDIUM, W_SEMIBOLD,

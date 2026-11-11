@@ -10,6 +10,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8').replace(/\r\n/g, '\n');
 
 const noteDao = read('entry/src/main/ets/database/NoteDao.ets');
+const noteFtsIndex = read('entry/src/main/ets/database/NoteFtsIndex.ets');
 const notesVm = read('entry/src/main/ets/viewmodels/NotesViewModel.ets');
 const galaxyVm = read('entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets');
 const noteQueryTools = read('common/src/main/ets/tools/NoteQueryTools.ets');
@@ -58,35 +59,15 @@ test('NoteDao.deleteById or unified delete flow must include kg_edge cleanup (tr
 
 // AC-DELETE-02: delete transaction must also clean rag_chunk and rag_embedding
 test('delete flow must clean rag_chunk rows associated with the deleted note', () => {
-  const hasRagChunk = noteDao.match(/rag_chunk/);
-  if (hasRagChunk !== null) {
-    assert.ok(true, 'deleteById includes rag_chunk cleanup');
-  } else {
-    const servicePath = read('entry/src/main/ets/services/AiService.ets');
-    const anyRagChunk = servicePath.match(/rag_chunk/) ||
-      notesVm.match(/rag_chunk/) ||
-      homeVm.match(/rag_chunk/);
-    assert.ok(
-      anyRagChunk !== null,
-      'delete flow must clean rag_chunk — implementation not yet merged (AC-DELETE-02)',
-    );
-  }
+  assert.match(noteDao, /NoteFtsIndex\.removeFromTransaction\(transaction, id\)/,
+    'deleteById 在事务内调用索引清理');
+  const hasRagChunk = noteFtsIndex.match(/DELETE FROM rag_chunk WHERE unit_id = \?/);
+  assert.ok(hasRagChunk !== null, 'delete flow must clean rag_chunk — implementation not yet merged (AC-DELETE-02)');
 });
 
 test('delete flow must clean rag_embedding rows associated with the deleted note', () => {
-  const hasRagEmbedding = noteDao.match(/rag_embedding/);
-  if (hasRagEmbedding !== null) {
-    assert.ok(true, 'deleteById includes rag_embedding cleanup');
-  } else {
-    const servicePath = read('entry/src/main/ets/services/AiService.ets');
-    const anyRagEmbedding = servicePath.match(/rag_embedding/) ||
-      notesVm.match(/rag_embedding/) ||
-      homeVm.match(/rag_embedding/);
-    assert.ok(
-      anyRagEmbedding !== null,
-      'delete flow must clean rag_embedding — implementation not yet merged (AC-DELETE-02)',
-    );
-  }
+  const hasRagEmbedding = noteFtsIndex.match(/DELETE FROM rag_embedding WHERE chunk_id IN/);
+  assert.ok(hasRagEmbedding !== null, 'delete flow must clean rag_embedding — implementation not yet merged (AC-DELETE-02)');
 });
 
 // AC-DELETE-03: KnowledgeRelationDao queries must not return edges for deleted units (live filter)

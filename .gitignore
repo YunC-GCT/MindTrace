@@ -79,3 +79,10 @@ docs/architecture/*.html
 # archify 生成的架构图（本地产物）
 .archify/
 .e2e-run.log
+.device-logs/
+
+# ===== Python 虚拟环境（本地依赖，不入库） =====
+tools/embedding_service/.venv/
+
+# ===== 个人求职素材（不外发，不入库） =====
+MindTrace-resume-source-*.md

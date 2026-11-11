@@ -13,7 +13,7 @@ const classifierPath = path.join(
   'src',
   'main',
   'ets',
-  'agents',
+  'subagents',
   'TypeClassifier.ets',
 );
 

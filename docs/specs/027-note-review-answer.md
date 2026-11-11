@@ -1,6 +1,6 @@
 # 笔记可追溯复习回答规格（2026-09-26）
 
-> **Status**: spec merged (2026-09-26); implementation present in `entry/src/main/ets/services/NoteReviewService.ets`; acceptance evidence not recorded in this file
+> **Status**: spec merged (2026-09-26); implementation present in `agents/src/main/ets/review/NoteReviewService.ets`; acceptance evidence not recorded in this file
 > **Related**: [ADR-0018](../adr/0018-note-evidence-provenance.md) · [spec 027 index row](./index.md)
 
 本文件只定义需求、接口与验收，进度统一维护工作归档中的《MindTrace-图片笔记与检索闭环-唯一主计划-2026-09-19.md》，不得在本文件另设进度表。基线为 5aa0b94。
@@ -13,7 +13,7 @@
 
 ## 冻结接口与文件所有权
 
-新增模型 entry/src/main/ets/models/NoteReviewModels.ets，由后端 Agent 唯一负责，UI/测试只消费：
+新增模型 common/src/main/ets/models/NoteReviewModels.ets，由后端 Agent 唯一负责，UI/测试只消费：
 - NoteReviewIntent = 'explain' | 'compare' | 'prerequisite' | 'locate' | 'quiz'。
 - NoteReviewStatus = 'grounded' | 'insufficient' | 'unavailable'。
 - NoteReviewFeedback = 'helpful' | 'unhelpful' | 'citation-incorrect'。

@@ -1,22 +1,20 @@
 /**
- * AgentUiCard.ets — 小艺批量整理半屏卡片
+ * AgentUiCard.ets — 小艺半屏「选图整理」卡片（App 相册兜底路径）
  *
  * 路径: entry/src/main/ets/pages/AgentUiCard.ets
- * 职责: 作为 AgentUIExtAbility 的半屏内容，向用户说明「整理数学题」的下一步，
- *       并把「开始选图」意图通过 Want 参数交回 EntryAbility（batch_capture）。
- * 依赖: @kit.AbilityKit (common / UIExtensionContentSession / Want)、
- *       @kit.BasicServicesKit (BusinessError)、@kit.PerformanceAnalysisKit (hilog)、
- *       common (UI tokens)
+ * 职责: 作为 AgentUIExtAbility 的半屏内容。系统限制：UIExtension 半屏卡片内无法渲染
+ *       PhotoViewPicker / PhotoPickerComponent（实测空白），因此卡片按钮改为拉起 EntryAbility
+ *       的系统照片选择器（pick_from_card），由 App 完成 OCR/整理/入库；图片仍不出应用沙箱。
+ * 依赖: @kit.AbilityKit、@kit.BasicServicesKit、@kit.PerformanceAnalysisKit、common UI tokens。
  *
  * 数据流:
  *   AgentUIExtAbility.onSessionCreate -> LocalStorage('session') -> AgentUiCard
- *     -> 「开始选图」-> startAbility(EntryAbility, { mtAction: 'batch_capture', mtSource: 'agent_ui' })
- *     -> closeSelf() -> session.terminateSelf()
- *     -> 「取消」-> closeSelf() -> session.terminateSelf()
+ *     -> 点「从相册选图并整理」 -> startAbility(EntryAbility, mtAction=pick_from_card)
+ *     -> App 内系统照片选择器 -> OCR/整理/写本地笔记库
  *
- * 尺寸:
- *   - 页面根容器只做 100% 宽度与自适应高度，不铺深色全屏底；
- *   - 卡片本身 maxWidth 520，平板/折叠屏上居中收窄。
+ * 约束:
+ *   - 卡片自身不渲染相册（UIExtension 嵌套/内嵌 picker 实测空白）；
+ *   - 图片不上传云端，最终写入设备本地笔记库。
  */
 import { common, UIExtensionContentSession, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -25,7 +23,7 @@ import {
   BG_CARD,
   BG_DARK,
   BORDER,
-  F_BASE,
+  DANGER,
   F_LG,
   F_MD,
   F_SM,
@@ -45,35 +43,36 @@ import {
 const TAG: string = 'MindTraceAgentUI';
 const DOMAIN: number = 0xA2A1;
 const SESSION_KEY: string = 'session';
+const QUERY_KEY: string = 'cardQuery';
+const MT_BUNDLE: string = 'com.example.mindtrace';
+const ENTRY_ABILITY: string = 'EntryAbility';
+const ACTION_PICK: string = 'pick_from_card';
 
-/** 卡片文案集中存放，避免 build() 内散落字符串。 */
 interface AgentUiCardCopy {
   title: string;
   description: string;
-  primaryAction: string;
-  secondaryAction: string;
+  albumAction: string;
+  doneAction: string;
+  errorText: string;
 }
 
-/** 回传 EntryAbility 的批量整理参数（spec 031 §4.1）。 */
-interface BatchCaptureParameters {
-  mtAction: string;
-  mtSource: string;
-}
-
-const BATCH_CAPTURE: BatchCaptureParameters = {
-  mtAction: 'batch_capture',
-  mtSource: 'agent_ui',
+const CARD_COPY: AgentUiCardCopy = {
+  title: 'MindTrace 整理',
+  description: '小艺不会把图片直接传给智能体。点下面按钮打开系统相册选一张题目图片，'
+    + 'MindTrace 会就地 OCR 并整理入库（图片不出应用沙箱）。',
+  albumAction: '从相册选图并整理',
+  doneAction: '完成',
+  errorText: '打开相册失败，请在 MindTrace App 里点「+」选图。',
 };
 
-/**
- * 组装拉起 EntryAbility 的 Want。
- * 本轮（T1a）只验证卡片能否渲染，参数透传留到 T1b：
- * ArkTS 的 arkts-no-untyped-obj-literals 不接受 Record<string, Object> 字面量。
- */
-function buildBatchCaptureWant(): Want {
+function buildPickWant(): Want {
+  const parameters: Record<string, Object> = {};
+  parameters['mtAction'] = ACTION_PICK;
+  parameters['mtSource'] = 'agent_ui';
   const want: Want = {
-    bundleName: 'com.example.mindtrace',
-    abilityName: 'EntryAbility',
+    bundleName: MT_BUNDLE,
+    abilityName: ENTRY_ABILITY,
+    parameters: parameters,
   };
   return want;
 }
@@ -81,67 +80,64 @@ function buildBatchCaptureWant(): Want {
 @Entry
 @Component
 struct AgentUiCard {
-  private copy: AgentUiCardCopy = {
-    title: '整理数学题',
-    description: '从相册选择题目图片，自动生成笔记',
-    primaryAction: '开始选图',
-    secondaryAction: '取消',
-  };
-
   private session: UIExtensionContentSession | undefined = undefined;
+  @State errorText: string = '';
+  @State busy: boolean = false;
 
   aboutToAppear(): void {
     const storage: LocalStorage | undefined = this.getUIContext().getSharedLocalStorage();
     if (storage !== undefined) {
       this.session = storage.get<UIExtensionContentSession>(SESSION_KEY);
+      const query: string = storage.get<string>(QUERY_KEY) ?? '';
+      hilog.info(DOMAIN, TAG, 'AgentUiCard aboutToAppear: query=%{public}s',
+        query.substring(0, 40));
     }
     hilog.info(DOMAIN, TAG, 'AgentUiCard aboutToAppear: session=%{public}s',
       this.session === undefined ? 'missing' : 'ready');
   }
 
-  /** 关闭半屏卡片；session 由 AgentUIExtAbility 通过 LocalStorage 注入。 */
-  private closeSelf = (): void => {
-    const session: UIExtensionContentSession | undefined = this.session;
-    if (session === undefined) {
-      hilog.warn(DOMAIN, TAG, 'closeSelf: session 不存在，无法关闭卡片');
+  private openPickerInApp = (): void => {
+    if (this.busy) {
       return;
     }
-    session.terminateSelf()
+    this.busy = true;
+    this.errorText = '';
+    const ctx: common.UIExtensionContext = getContext(this) as common.UIExtensionContext;
+    ctx.startAbility(buildPickWant())
       .then((): void => {
-        hilog.info(DOMAIN, TAG, 'closeSelf: 卡片已关闭');
+        hilog.info(DOMAIN, TAG, 'AGENT_UI startAbility(pick_from_card) ok');
+        ctx.terminateSelf().catch((err: BusinessError): void => {
+          hilog.warn(DOMAIN, TAG, 'terminateSelf failed code=%{public}d message=%{public}s',
+            err.code, err.message);
+        });
       })
       .catch((err: BusinessError): void => {
-        hilog.error(DOMAIN, TAG, 'closeSelf 失败 code=%{public}d message=%{public}s',
+        hilog.error(DOMAIN, TAG, 'AGENT_UI startAbility failed code=%{public}d message=%{public}s',
           err.code, err.message);
+        this.errorText = CARD_COPY.errorText;
+        this.busy = false;
       });
   };
 
-  /** 先拉起 EntryAbility 处理 batch_capture，成功后再关闭卡片。 */
-  private startBatchCapture = (): void => {
+  private closeCard = (): void => {
     const ctx: common.UIExtensionContext = getContext(this) as common.UIExtensionContext;
-    ctx.startAbility(buildBatchCaptureWant())
-      .then((): void => {
-        hilog.info(DOMAIN, TAG, 'startAbility(EntryAbility) 成功: mtAction=%{public}s',
-          BATCH_CAPTURE.mtAction);
-        this.closeSelf();
-      })
-      .catch((err: BusinessError): void => {
-        hilog.error(DOMAIN, TAG, 'startAbility(EntryAbility) 失败 code=%{public}d message=%{public}s',
-          err.code, err.message);
-      });
+    ctx.terminateSelf().catch((err: BusinessError): void => {
+      hilog.warn(DOMAIN, TAG, 'terminateSelf failed code=%{public}d message=%{public}s',
+        err.code, err.message);
+    });
   };
 
   build() {
     Column() {
       Column() {
-        Text(this.copy.title)
+        Text(CARD_COPY.title)
           .fontSize(F_LG)
           .fontWeight(W_SEMIBOLD)
           .fontColor(TEXT)
           .width('100%')
           .textAlign(TextAlign.Start)
 
-        Text(this.copy.description)
+        Text(CARD_COPY.description)
           .fontSize(F_SM)
           .fontColor(TEXT_2)
           .width('100%')
@@ -149,7 +145,16 @@ struct AgentUiCard {
           .lineHeight(LH_COMFORT)
           .textAlign(TextAlign.Start)
 
-        Button(this.copy.primaryAction)
+        if (this.errorText.length > 0) {
+          Text(this.errorText)
+            .fontSize(F_SM)
+            .fontColor(DANGER)
+            .width('100%')
+            .margin({ top: S_3 })
+            .textAlign(TextAlign.Start)
+        }
+
+        Button(CARD_COPY.albumAction)
           .width('100%')
           .height(44)
           .margin({ top: S_5 })
@@ -158,21 +163,22 @@ struct AgentUiCard {
           .fontSize(F_MD)
           .fontWeight(W_SEMIBOLD)
           .borderRadius(R_MD)
+          .enabled(!this.busy)
           .onClick((): void => {
-            this.startBatchCapture();
+            this.openPickerInApp();
           })
 
-        Button(this.copy.secondaryAction)
+        Button(CARD_COPY.doneAction)
           .width('100%')
           .height(44)
           .margin({ top: S_3 })
           .backgroundColor(Color.Transparent)
           .fontColor(TEXT_2)
-          .fontSize(F_BASE)
+          .fontSize(F_MD)
           .borderRadius(R_MD)
           .border({ width: 1, color: BORDER })
           .onClick((): void => {
-            this.closeSelf();
+            this.closeCard();
           })
       }
       .width('100%')

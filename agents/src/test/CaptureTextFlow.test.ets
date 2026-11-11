@@ -7,7 +7,7 @@
 // AgentState 无 payload 字段而从未进图 (handoff-2026-09-06 §2 真机未验的根因)。
 //
 // 修复后契约 (本文件锁定):
-//   1. Dispatcher 在运行 CaptureGraph 前把 req.payload 种入 AgentState.payload
+//   1. CommandExecutor 在运行 CaptureGraph 前把 req.payload 种入 AgentState.payload
 //   2. OcrNode 读 input.payload 触达 recognizeText — text 全文过 capture 不丢失
 //   3. payload 缺失 = 编程错误 → CaptureGraphError(CAPTURE_NO_PAYLOAD), 不兜底
 //
@@ -17,7 +17,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import { CaptureGraph } from '../main/ets/graph/CaptureGraph';
 import { AgentState, CaptureNodeResult } from '../main/ets/graph/AgentState';
 import { OcrNodeFactory } from '../main/ets/graph/nodes/OcrNode';
-import { TypeClassifier } from '../main/ets/agents/TypeClassifier';
+import { TypeClassifier } from '../main/ets/subagents/TypeClassifier';
 
 export default function captureTextFlowTest(): void {
   describe('CaptureGraph.text_flow', () => {

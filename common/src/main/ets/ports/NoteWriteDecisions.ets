@@ -14,7 +14,7 @@
  *   2. existing=null 且 expectedVersion>0 → conflict / NOTE_NOT_FOUND / 不可重试
  *   3. existing 的 commitKey 与命令相同 → duplicate（不是错误，code 为空串）
  *   4. expectedVersion 有值且与 existing.version 不等 → conflict / VERSION_CONFLICT / 可重试
- *   5. approvedCheckpointHash 有值且与 existing 的不同 → reject / APPROVAL_HASH_MISMATCH / 可重试
+ *   5. approvedCheckpointHash 有值时由写实现按检查点审批校验（v18，APPROVAL_HASH_MISMATCH），本纯判定不拒绝
  *      （existing=null 时没有可比较的哈希，同样视为不一致，不能静默 insert）
  *   6. existing=null → insert；否则 → update
  *
@@ -55,8 +55,6 @@ function decision(kind: WriteDecisionKind, code: string, message: string, retrya
 
 export function decideWrite(existing: NoteSnapshot | null, command: NoteWriteCommand): WriteDecision {
   const expectedVersion: number | undefined = command.expectedVersion;
-  const approvalHash: string | undefined = command.approvedCheckpointHash;
-  const approvalRequired: boolean = approvalHash !== undefined && approvalHash.length > 0;
 
   // 1. commitKey 必填。空串 / 纯空白都视为缺失，宁可拒绝也不静默双写。
   if (typeof command.commitKey !== 'string' || command.commitKey.trim().length === 0) {
@@ -82,14 +80,8 @@ export function decideWrite(existing: NoteSnapshot | null, command: NoteWriteCom
       'version conflict: expected ' + expectedVersion.toString() + ', actual ' + existing.version.toString(), false);
   }
 
-  // 5. 审批哈希有值即必须一致；不一致说明候选已过期。
-  //    existing=null 时没有可比较的 approvedCheckpointHash，同样视为不一致：
-  //    传了审批哈希却找不到现有 note，不能静默 insert，否则会绕过 HITL 校验。
-  //    重放同一请求只会再次不匹配，故 retryable=false：正确动作是丢弃陈旧候选、重新预览。
-  if (approvalRequired && (existing === null || existing.approvedCheckpointHash !== approvalHash)) {
-    return decision('reject', 'APPROVAL_HASH_MISMATCH',
-      'approved checkpoint hash does not match the current note', false);
-  }
+  // 5. Approval hash (v18): validated by the write store against
+  //    note_generation_checkpoint.approved_at, not by this pure decision.
 
   // 6. 兜底：无现有行插入，有现有行更新。
   if (existing === null) {

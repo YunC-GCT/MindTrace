@@ -41,6 +41,9 @@ The Dispatcher pipeline (Capture → Classify → Structure → TruthCheck → P
 
 ## Reversibility
 
+> 2026-11-01（spec 039 S1）：`Dispatcher` 已拆为 `CommandExecutor` + `CommandRouter`，六阶段 `DispatchGraph` 删除；`buildGraph` 的调用点对应改为各 `Note*Workflow`。本 ADR 的「runtime 可替换」结论不变。
+
+
 **Medium**. The runtime is ~100 LOC with no external deps; replacing it (or upgrading to a real framework, if one ever targets ArkTS) is a mechanical swap behind `Dispatcher.buildGraph`. The node contracts (`CaptureNode`) survive such a swap.
 
 ## Related

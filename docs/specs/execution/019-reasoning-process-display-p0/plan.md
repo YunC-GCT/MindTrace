@@ -15,7 +15,7 @@
 **State Management**: 增量改造现有项目，保留当前 ArkUI State Management V1；不引入 V2 迁移
 **Storage**: `common/src/main/ets/llm/LlmConfig.ets` 使用 preferences；ChatMsg 现有 JSON 会话持久化保持字段兼容，不新增持久化字段
 **Testing**: Hypium tests under `common/src/test` and `entry/src/test`；ArkTS strict check via `arkts_check`；project lint via `node scripts/arkts-lint/index.mjs --quiet`；full lint tests via `npm --prefix scripts/arkts-lint test`；build via HarmonyOS project build
-**Target Platform**: HarmonyOS mobile app，MindTrace `entry` HAP + `common`/`agents`/`skill`/`cardservice` HSP topology
+**Target Platform**: HarmonyOS mobile app，MindTrace 3 HAP (`entry` / `skill` / `cardservice`) + 2 HSP (`common` / `agents`) topology
 **Project Type**: Existing HarmonyOS/ArkTS multi-module mobile app
 **Performance Goals**: 流式 token 到达后保持逐增量分发，不引入额外网络轮询或 UI 阻塞；SSE 解析保持线性处理
 **Constraints**: 不保留新旧双轨；不新增 UI 思考开关；不把思考文本复制到最终回答；不混入当前工作区既有无关调研/开关删除改动；最终 code-review 在工具链支持时使用 `GLM-5.3` + reasoning `max`
@@ -87,15 +87,15 @@ entry/src/test/
   - **Rationale**: 这是 ADR-0015 same-PR 硬条款；保留伪装会继续把思考文本复制进最终回答，先删不改消费端会复现 UI 空白。
   - **Alternatives considered**: 保留兼容 fallback 到后续票再删；被 ADR-0015 明确拒绝。
 
-- **Decision**: `entry/src/main/ets/services/ReplyService.ets` 的流式结果只把 `text` 事件计入最终回答正文；`thinking` 事件只向上游 sink 传递，不进入最终 answer content。
+- **Decision**: `agents/src/main/ets/chat/ReplyService.ets` 的流式结果只把 `text` 事件计入最终回答正文；`thinking` 事件只向上游 sink 传递，不进入最终 answer content。
   - **Rationale**: Chat memory 与最终回答区应保存/展示真实回答，而不是思考链。该边界确保即使 UI 累积 reasoning，也不会污染 assistant content 的持久化。
   - **Alternatives considered**: 把所有事件 delta 都并入 `StreamReplyResult.content`；会重新引入思考文本污染最终回答的问题。
 
-- **Decision**: `entry/src/main/ets/services/AgentChatService.ets`、`entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets` 与 `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` 采用结构化事件通道分发：`thinking` 累积到 ChatMsg.reasoning，`text` 累积到 ChatMsg.content，保留未实现事件类型 default 兜底。
+- **Decision**: `entry/src/main/ets/services/AgentChatService.ets`、`agents/src/main/ets/conversation/ConversationWorkflow.ets` 与 `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` 采用结构化事件通道分发：`thinking` 累积到 ChatMsg.reasoning，`text` 累积到 ChatMsg.content，保留未实现事件类型 default 兜底。
   - **Rationale**: ChatMsg 已有 `reasoning` 与 `content` 字段，P0 零新增字段即可满足功能；默认兜底保证 P1 之前保留事件不会破坏 P0 消费端。
   - **Alternatives considered**: 新增 ChatMsg 字段或分离 UI-only 状态；会引入旧会话兼容风险，不符合 #111 范围。
 
-- **Decision**: `enableThinking` 默认值改为 true，并移除 `entry/src/main/ets/services/ReplyService.ets` 中三处显式 false 覆盖。
+- **Decision**: `enableThinking` 默认值改为 true，并移除 `agents/src/main/ets/chat/ReplyService.ets` 中三处显式 false 覆盖。
   - **Rationale**: issue #111 明确要求稳定开启思考供给；LlmClient 已有 request 未定义时回退 config 的链路。`common/src/main/ets/llm/LlmConfig.ets` 的 load/reset/default 三处需要一致，否则“恢复默认”或“无旧配置”仍会关闭 thinking。
   - **Alternatives considered**: 新增 UI 开关或只改流式路径；UI 开关被 spec 019 排除，只改流式路径会留下配置不一致。
 
@@ -169,8 +169,8 @@ entry/src/test/
 
 | Contract | Location | Required Change |
 |----------|----------|-----------------|
-| ReplyEventSink | `entry/src/main/ets/services/ReplyService.ets` | 接收结构化 stream event；只把 text 事件计入最终回答内容 |
-| Conversation callbacks | `entry/src/main/ets/workflows/conversation/ConversationTypes.ets` | append 回调接受结构化 event 或等价语义对象，不再使用旧 `kind` union |
+| ReplyEventSink | `agents/src/main/ets/chat/ReplyService.ets` | 接收结构化 stream event；只把 text 事件计入最终回答内容 |
+| Conversation callbacks | `agents/src/main/ets/conversation/ConversationTypes.ets` | append 回调接受结构化 event 或等价语义对象，不再使用旧 `kind` union |
 | AgentChat callbacks | `entry/src/main/ets/services/AgentChatService.ets` | adapter 透传结构化事件，不过滤 thinking |
 | FloatWindow append | `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets` | thinking -> reasoning；text -> content；tool_* default 兜底 |
 

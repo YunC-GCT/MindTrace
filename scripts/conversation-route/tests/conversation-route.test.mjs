@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
-const portsPath = 'entry/src/main/ets/workflows/conversation/ConversationWorkflowPorts.ets';
+const portsPath = 'agents/src/main/ets/conversation/ConversationWorkflowPorts.ets';
 
 test('IConversationReplyPort exposes completeRouted returning RoutedReply', () => {
   const source = read(portsPath);

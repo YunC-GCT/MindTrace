@@ -26,6 +26,8 @@ export type NodeTimingSink = (step: CaptureStep, elapsedMs: number) => void;
 export class CaptureGraph {
   private readonly graph: StateGraph<AgentState, CaptureStep>;
   private readonly onNodeTiming?: NodeTimingSink;
+  // 最后一个完成节点返回的 state：图级取消时用它保住刚写入的 commitResult（ADR-0019 (e)）。
+  private lastState: AgentState | undefined = undefined;
 
   constructor(onNodeTiming?: NodeTimingSink) {
     this.onNodeTiming = onNodeTiming;
@@ -45,7 +47,12 @@ export class CaptureGraph {
         nodeInput = this.copyState(input, input.persist, step);
         context?.throwIfStopped();
         const result: CaptureNodeResult = await node(nodeInput, context);
-        context?.throwIfStopped();
+        // 节点已经给出终态错误（含「写成功后才取消」）时，不再用 token 覆盖错误；
+        // 这样 NoteCaptureWorkflow 能读到 commitResult，区分 cancelled(committed=true/false)（ADR-0019 (e)）。
+        if (result.state.error === undefined) {
+          context?.throwIfStopped();
+        }
+        this.lastState = result.state;
         return result.state;
       } catch (e) {
         if (isCancellationError(e as Object)
@@ -83,7 +90,11 @@ export class CaptureGraph {
     } catch (e) {
       if (isCancellationError(e as Object)) {
         const message: string = (e as Error).message;
-        return this.withError(state, 'CANCELLED', message, state.currentStep, false);
+        // 写成功后取消时，lastState 里带着 commitResult；用它作基底，命令 seam 才能报
+        // cancelled(committed=true)。没有 commitResult 时沿用旧基底，保持 #239 golden 外观。
+        const last: AgentState | undefined = this.lastState;
+        const base: AgentState = last !== undefined && last.commitResult !== undefined ? last : state;
+        return this.withError(base, 'CANCELLED', message, base.currentStep, false);
       }
       if (isDeadlineExceededError(e as Object)) {
         const message: string = (e as Error).message;

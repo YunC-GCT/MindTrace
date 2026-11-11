@@ -1,5 +1,7 @@
 // MindTrace - LLM 共享类型定义
 // 位置: common/src/main/ets/llm/LlmTypes.ets
+// 路径: common/src/main/ets/llm/LlmTypes.ets
+// 职责: 定义 LLM 调用入参/出参、SSE 流式事件（含 tool_calls 增量）与工具调用 wire 类型。
 // 责任: Z (Mavis)
 // 创建: 2026-07-14 — 主 Agent 业务 LLM 调用基础设施
 // 用途: LlmConfig + LlmClient 共享的类型,以及后续所有 agent 调 LLM 时的入参/出参
@@ -111,10 +113,24 @@ export interface LlmConfigInitResult {
 // ==================== LlmStreamChunk (SSE 流式响应增量)====================
 // DeepSeek / OpenAI 兼容的 SSE chunk 格式
 // 流式响应中每个 chunk 的 delta 字段是增量文本,而非完整消息
+export interface LlmStreamToolCallFunction {
+  name?: string;
+  arguments?: string;
+}
+
+// SSE 里 tool_calls 按 index 分片到达：id/name 只在首片出现，arguments 逐片拼接。
+export interface LlmStreamToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: LlmStreamToolCallFunction;
+}
+
 export interface LlmStreamDelta {
   role?: 'assistant';
   content?: string | null;            // 正式回答的增量文本
   reasoning_content?: string | null;  // 思考模式的思维链增量文本
+  tool_calls?: LlmStreamToolCallDelta[]; // 工具调用增量（流式工具循环）
 }
 
 export interface LlmStreamChoice {
@@ -151,6 +167,8 @@ export interface StreamToolCallEvent {
   toolCallId?: string;
   toolName?: string;
   argumentsJson?: string;
+  /** 同一轮多个 tool_calls 的分片序号。 */
+  index?: number;
 }
 
 export interface StreamToolResultEvent {

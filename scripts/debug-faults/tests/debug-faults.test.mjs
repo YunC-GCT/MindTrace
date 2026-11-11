@@ -11,7 +11,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8').replace(/\r\n/g, '\n');
 
 const faults = read('entry/src/main/ets/services/DebugFaults.ets');
-const reply = read('entry/src/main/ets/services/ReplyService.ets');
+const reply = read('agents/src/main/ets/chat/ReplyService.ets');
 const page = read('entry/src/main/ets/pages/AiSettings/AiSettingsPage.ets');
 
 test('DebugFaults: 三种取值 + set/load/current + preferences 持久化', () => {

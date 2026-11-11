@@ -22,8 +22,9 @@ node scripts/arkts-lint/index.mjs --quiet
 node scripts/arkts-lint/index.mjs --root=scripts/arkts-lint/fixtures/pass --quiet   # 0 violations
 node scripts/arkts-lint/index.mjs --root=scripts/arkts-lint/fixtures/fail --quiet   # 6 violations
 
-# 写 baseline
-node scripts/arkts-lint/index.mjs '--baseline=docs/lint-baseline-20260901-ast.json' --quiet
+# 写 baseline（可选；--baseline 是「写」不是「比对」，路径相对当前 cwd 且目录必须已存在）
+# 历史基线已归档在 docs/legacy/mindtrace/architecture/lint-baseline-ast-2026-09-01.json，冻结勿覆盖
+node scripts/arkts-lint/index.mjs '--baseline=docs/lint-baseline-<date>-ast.json' --quiet
 
 # 跑单元测试
 cd scripts/arkts-lint && npm test

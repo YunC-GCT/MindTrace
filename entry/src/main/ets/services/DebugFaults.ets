@@ -20,8 +20,7 @@
  */
 import { preferences } from '@kit.ArkData';
 import { Logger } from 'common';
-
-export type DebugFault = 'none' | 'empty' | 'interrupted';
+import type { DebugFault, DebugFaultSource } from 'common';
 
 const STORE_NAME: string = 'mindtrace_debug';
 const KEY_FAULT: string = 'stream_fault';
@@ -129,5 +128,16 @@ export class DebugFaults {
       return 'interrupted';
     }
     return NONE;
+  }
+}
+
+/** 把 preferences 实现接给 agents.ReplyService（组合根注入，agent 进程不注入）。 */
+export class DebugFaultSourceAdapter implements DebugFaultSource {
+  load(): Promise<DebugFault> {
+    return DebugFaults.load();
+  }
+
+  current(): DebugFault {
+    return DebugFaults.current();
   }
 }

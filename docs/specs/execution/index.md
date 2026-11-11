@@ -6,7 +6,7 @@
 
 | 文件 | 作用 |
 |---|---|
-| `spec.md` | 冻结范围与验收条件（写实现前） |
+| `spec.md` | 冻结范围与验收条件（写实现前）。**头部的 `Status: Draft` 是 Spec-Kit 模板样板，不作为结论**；结论看 `verification-*` |
 | `plan.md` | 实施计划与文件级落点 |
 | `tasks.md` | 勾选式任务与逐项证据 |
 | `verification-record.md` / `verification-report.md` | 实际执行的验证结果（结论以它为准，不以 `spec.md` 的 Draft 字样为准） |
@@ -15,22 +15,19 @@
 
 ## Bundles
 
-| Bundle | 对应设计规格 / issue | 内容 | 状态（bundle 头部记录） |
-|---|---|---|---|
-| [`019-reasoning-process-display-p0/`](./019-reasoning-process-display-p0/) | [spec 019](../019-reasoning-process-display-p0.md) · #111 | spec / plan / tasks / verification-report / delivery-checklist / review-report | Draft（执行记录已归档） |
-| [`021-review-remediation/`](./021-review-remediation/) | [spec 021](../021-chat-streaming-incremental-rendering.md) · #140 / #141 | spec / plan / tasks | Draft |
-| [`097-knowledge-unit-write-service/`](./097-knowledge-unit-write-service/) | Issue #97 · [CONTEXT KnowledgeUnitWriteService](../../../CONTEXT.md) | spec / plan / tasks | 无 Status 行 |
-| [`098-light-note-generation/`](./098-light-note-generation/) | Issue #98 | spec / plan / tasks | 无 Status 行 |
-| [`entry-arkts-compile-fix/`](./entry-arkts-compile-fix/) | Entry ArkTS 编译修复 | verification-record | 仅验证记录 |
-| [`restore-arkweb-warmup/`](./restore-arkweb-warmup/) | #119 · [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | spec / plan / tasks | Draft |
-| [`ticket-0-2-stable-chat-key-refresh/`](./ticket-0-2-stable-chat-key-refresh/) | #120 | spec / plan / tasks / verification-record | `INCOMPLETE`（未放行） |
-| [`ticket-0-3-chat-filesdir-seam/`](./ticket-0-3-chat-filesdir-seam/) | chat filesDir seam | spec / plan / tasks / verification-record | `PASS` |
-| [`ticket-0-5-customspan-placeholder-seam/`](./ticket-0-5-customspan-placeholder-seam/) | CustomSpan placeholder seam | spec / plan / tasks / verification-record | Draft |
-| [`ticket-0-6-chat-render-fixtures-budgets/`](./ticket-0-6-chat-render-fixtures-budgets/) | #124 · [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | spec / plan / tasks / verification-record / `raw/*.jsonl` | Draft（ticket-0 证据完整） |
-| [`note-generation-stability/`](./note-generation-stability/) | 2026-09-21 笔记生成稳定性计划 | plan | 仅计划 |
-| [`v7-architecture-contracts/`](./v7-architecture-contracts/) | #237–#242 · [§17 目标态](../../system-architecture-layered.md) · [外评审](../../architecture/review-v7-2026-10-27.md) | plan（含交接说明）/ tasks | `ready-to-execute`（未开始写代码） |
+| Bundle | 设计规格 | GitHub | 内容 | 状态（以包内 verification 为准） |
+|---|---|---|---|---|
+| [`019-reasoning-process-display-p0/`](./019-reasoning-process-display-p0/) | [spec 019](../019-reasoning-process-display-p0.md) | `#111` **closed** 2026-09-13 | spec / plan / tasks / verification-report / delivery-checklist / review-report | **`PASS`**（`Final status: PASS`；`spec.md` 的 Draft 是模板样板） |
+| [`021-review-remediation/`](./021-review-remediation/) | [spec 021](../021-chat-streaming-incremental-rendering.md) | `#140` / `#141` **open** | spec / plan / tasks | Draft，**无 verification**（未收官） |
+| [`restore-arkweb-warmup/`](./restore-arkweb-warmup/) | [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | `#119` **closed** 2026-09-17 | spec / plan / tasks | Draft，**无 verification**（票已闭、包未收尾） |
+| [`ticket-0-2-stable-chat-key-refresh/`](./ticket-0-2-stable-chat-key-refresh/) | spec 021 §验证 | `#120` **closed** 2026-09-17 | spec / plan / tasks / verification-record | **`PASS`**（2026-09-14 复核覆盖了 spec 头部的 `INCOMPLETE`；只放行「下游设计可考虑」，生产聊天路径未改） |
+| [`ticket-0-3-chat-filesdir-seam/`](./ticket-0-3-chat-filesdir-seam/) | spec 021 §验证 | `#121` **closed** 2026-09-17 | spec / plan / tasks / verification-record | **`PASS`** |
+| [`ticket-0-5-customspan-placeholder-seam/`](./ticket-0-5-customspan-placeholder-seam/) | spec 021 §验证 | `#123` **closed** 2026-09-15 | spec / plan / tasks / verification-record | **`PASS`** |
+| [`ticket-0-6-chat-render-fixtures-budgets/`](./ticket-0-6-chat-render-fixtures-budgets/) | [ADR-0017](../../adr/0017-renderer-scheduler-budget-baseline.md) | `#124` **closed** 2026-09-17 | spec / plan / tasks / verification-record / `raw/*.jsonl` | **`PASS`**（4×20 raw 证据） |
+| [`v7-architecture-contracts/`](./v7-architecture-contracts/) | [#237–#242](https://github.com/YunC-GCT/MindTrace/issues/237) · [§17 目标态](../../system-architecture-layered.md) | `#237`–`#242` 全部 **open** | plan（含交接说明）/ tasks | `in-progress`（2026-10-30：#237/#239 完成 · #238 约 60% · #241 切片 1 完成，待真机） |
+| [`archive-2026-09.md`](./archive-2026-09.md) | #97 / #98 / 编译修复 / 生成稳定性 | `#97` `#98` **closed** 2026-10-18（批量） | 合并记录（4 个残包） | — |
 
-`feature.json` 是 Spec-Kit 工具的元数据，不是 bundle。
+`feature.json` 是 Spec-Kit 工具的元数据，不是 bundle。`archive-2026-09.md` 是 4 个残包的合并记录，不是在执行包。
 
 ## 新增 bundle 的规则
 
@@ -39,6 +36,7 @@
 3. 设计变更写回 `docs/specs/NNN-*.md` 或 ADR，不在 bundle 里改设计。
 4. `raw/` 只放可复现的原始数据；测试或文档引用它的路径时，移动目录必须同 commit 修正引用。
 5. 完成且不再维护的 bundle 保留在原位（它是可追溯证据），不要删；只有内容被新 bundle 完全取代时才加 `## Superseded` 说明。
+6. **只有 verification-record 的不算 bundle**（没有 spec/plan/tasks 的施工记录），并入 `archive-YYYY-MM.md`；`spec.md` 头部 `Status: Draft` 是 Spec-Kit 样板，不作为结论。
 
 ## 与旧位置的关系
 

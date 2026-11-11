@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
 const llmClient = read('common/src/main/ets/llm/LlmClient.ets');
-const replyService = read('entry/src/main/ets/services/ReplyService.ets');
+const replyService = read('agents/src/main/ets/chat/ReplyService.ets');
 
 test('LlmClient.callStreamInternal firstByteTimer tiers by thinking capability', () => {
   // issue #226: 关闭思考 / unsupported → 30s；开启思考 / always_on → 60s。

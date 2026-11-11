@@ -13,14 +13,13 @@ import {
   LearnerProfile,
   ChatMessageWriteRequest,
   NoteGenerationContextResult,
-} from '../models/AgentMemoryModels';
-import { WritePathValidator } from './WritePathValidator';
-import { SessionIdPolicy } from './ConversationIdentity';
+} from 'common';
+
+import { SessionIdPolicy } from 'common';
 import type { ChatHistoryClearControl } from './ChatHistoryClearControl';
 import { getChatHistoryClearControl } from './ChatHistoryClearControl';
-import type { ChatProjectionWriter } from '../models/ConversationSnapshotModels';
-import { NoteGenerationContextBuilder } from './NoteGenerationContextBuilder';
-import { NoteContextValidityReviewer } from './NoteContextValidityReviewer';
+import type { ChatProjectionWriter } from 'common';
+import { WritePathValidator, NoteGenerationContextBuilder, NoteContextValidityReviewer } from 'agents/src/main/ets/note/Index';
 
 const RECENT_REPLY_LIMIT: number = 28;
 const RECENT_NOTE_LIMIT: number = 100;

@@ -7,18 +7,20 @@ import ts from 'typescript';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..');
-const intentPath = path.join(repoRoot, 'entry', 'src', 'main', 'ets', 'services', 'IntentClassifier.ets');
+const intentPath = path.join(repoRoot, 'agents', 'src', 'main', 'ets', 'chat', 'IntentClassifier.ets');
 const workflowPath = path.join(
   repoRoot,
-  'entry',
+  'agents',
   'src',
   'main',
   'ets',
-  'workflows',
   'conversation',
   'ConversationWorkflow.ets',
 );
-const workflow = fs.readFileSync(workflowPath, 'utf8');
+const workflow = [
+  fs.readFileSync(workflowPath, 'utf8'),
+  fs.readFileSync(path.join(repoRoot, 'agents', 'src', 'main', 'ets', 'conversation', 'ConversationReplyHandler.ets'), 'utf8'),
+].join('\n');
 
 async function loadIntentClassifier() {
   const source = fs.readFileSync(intentPath, 'utf8');
@@ -63,11 +65,11 @@ test('image recognition prompt answers the pictured question and asks only for c
 });
 
 test('image reply reuses StreamEvent thinking and text delivery before persistence', () => {
-  const block = workflow.match(/private async handleImageReply[\s\S]*?private async handleImageNoteReply/);
+  const block = workflow.match(/async handleImage\([\s\S]*?async handleImageNote\(/);
   assert.ok(block !== null, 'handleImageReply block must exist');
   assert.match(workflow, /replyKind:\s*'image_recognition'/);
   assert.match(block[0], /addAiMsgEmpty/);
-  assert.match(block[0], /this\.replyService\.stream\(/);
+  assert.match(block[0], /this\.host\.replyPort\(\)\.stream\(/);
   assert.match(block[0], /createImageRecognitionReplyContext\(result, userText\)/);
   assert.match(block[0], /event:\s*event/);
   assert.match(block[0], /finishAiMsg/);

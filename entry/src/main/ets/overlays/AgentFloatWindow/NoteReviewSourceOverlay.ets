@@ -25,8 +25,8 @@ import {
   W_MEDIUM,
   W_SEMIBOLD,
 } from 'common'
-import { NoteEvidenceCitation } from '../../models/NoteEvidenceModels'
-import { NoteReviewSourceResult } from '../../models/NoteReviewModels'
+import { NoteEvidenceCitation } from 'common'
+import { NoteReviewSourceResult } from 'common'
 import { MarkdownRenderer } from '../../shared/molecules/MarkdownRenderer'
 import { AppIcon } from '../../shared/atoms/AppIcon'
 

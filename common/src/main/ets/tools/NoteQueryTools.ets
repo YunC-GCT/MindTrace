@@ -15,6 +15,12 @@
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper } from '../DatabaseHelper';
 import { ReviewStatus } from '../models/CommonTypes';
+import { NOTE_SEARCH_DEFAULT_TOP_K, NOTE_SEARCH_MAX_TOP_K } from '../ports/NoteSearchPort';
+import type { NoteSearchHit, NoteSearchPort, NoteSearchQuery } from '../ports/NoteSearchPort';
+import { RdbNoteSearchAdapter } from '../ports/impl/RdbNoteSearchAdapter';
+import type { NoteDetail, NoteReadPort } from '../ports/NoteReadPort';
+import { NoteReadPortAdapter } from '../ports/impl/NoteReadPortAdapter';
+import { RdbNoteReadStore } from '../ports/impl/RdbNoteReadStore';
 import { AgentTool, ToolResult } from './ToolRegistry';
 
 const TABLE: string = 'knowledge_unit';
@@ -26,31 +32,6 @@ const LEGAL_REVIEW_STATUSES: string[] = [
   ReviewStatus.GRADUATED,
   ReviewStatus.LAPSED,
 ];
-
-// note_query_rag: 默认/上限 TopK 与确定性打分权重 (标题 > 标签 > 摘要 > 正文)
-const RAG_DEFAULT_TOP_K: number = 5;
-const RAG_MAX_TOP_K: number = 10;
-const RAG_TITLE_WEIGHT: number = 4;
-const RAG_TAG_WEIGHT: number = 3;
-const RAG_SUMMARY_WEIGHT: number = 2;
-const RAG_EXCERPT_LEAD: number = 60;
-const RAG_EXCERPT_LENGTH: number = 160;
-
-// 内部打分候选行; 仅用于本文件排序, 不对外导出
-interface RagScoredHit {
-  noteId: string;
-  title: string;
-  version: number;
-  subject: string;
-  chapter: string;
-  tags: string;
-  summary: string;
-  content: string;
-  updatedAt: number;
-  score: number;
-  matchedFields: string[];
-  excerpt: string;
-}
 
 function readStr(rs: relationalStore.ResultSet, col: string): string {
   return rs.getString(rs.getColumnIndex(col));
@@ -106,118 +87,8 @@ function readStringFilter(value: Object | undefined): string {
   return String(value).trim();
 }
 
-// 非重叠子串计数; 大小写由调用方先归一化
-function countOccurrences(haystack: string, needle: string): number {
-  if (needle.length === 0) {
-    return 0;
-  }
-  let count: number = 0;
-  let index: number = haystack.indexOf(needle);
-  while (index >= 0) {
-    count += 1;
-    index = haystack.indexOf(needle, index + needle.length);
-  }
-  return count;
-}
-
-// 正文摘录: 命中位置前后取窗口; 无正文时退回摘要; 两端截断显式加省略号
-function buildRagExcerpt(content: string, summary: string, needle: string): string {
-  const trimmedContent: string = content.trim();
-  const source: string = trimmedContent.length > 0 ? content : summary;
-  if (source.length === 0) {
-    return '';
-  }
-  const hit: number = needle.length === 0 ? -1 : source.toLowerCase().indexOf(needle);
-  let start: number = 0;
-  if (hit > RAG_EXCERPT_LEAD) {
-    start = hit - RAG_EXCERPT_LEAD;
-  }
-  let end: number = start + RAG_EXCERPT_LENGTH;
-  if (end > source.length) {
-    end = source.length;
-  }
-  let excerpt: string = source.substring(start, end).replace(/\s+/g, ' ').trim();
-  if (start > 0) {
-    excerpt = '…' + excerpt;
-  }
-  if (end < source.length) {
-    excerpt = excerpt + '…';
-  }
-  return excerpt;
-}
-
-// 稳定排序: 分数降序 -> 更新时间降序 -> noteId 升序
-function compareRagHits(a: RagScoredHit, b: RagScoredHit): number {
-  if (a.score !== b.score) {
-    return b.score - a.score;
-  }
-  if (a.updatedAt !== b.updatedAt) {
-    return b.updatedAt - a.updatedAt;
-  }
-  if (a.noteId < b.noteId) {
-    return -1;
-  }
-  if (a.noteId > b.noteId) {
-    return 1;
-  }
-  return 0;
-}
-
-function rankRagHits(rows: RagScoredHit[], needle: string, topK: number): RagScoredHit[] {
-  const scored: RagScoredHit[] = [];
-  for (const row of rows) {
-    const titleHits: number = countOccurrences(row.title.toLowerCase(), needle);
-    const tagHits: number = countOccurrences(row.tags.toLowerCase(), needle);
-    const summaryHits: number = countOccurrences(row.summary.toLowerCase(), needle);
-    const contentHits: number = countOccurrences(row.content.toLowerCase(), needle);
-    const score: number = titleHits * RAG_TITLE_WEIGHT
-      + tagHits * RAG_TAG_WEIGHT
-      + summaryHits * RAG_SUMMARY_WEIGHT
-      + contentHits;
-    if (score <= 0) {
-      continue;
-    }
-    row.score = score;
-    const matched: string[] = [];
-    if (titleHits > 0) {
-      matched.push('title');
-    }
-    if (tagHits > 0) {
-      matched.push('tags');
-    }
-    if (summaryHits > 0) {
-      matched.push('summary');
-    }
-    if (contentHits > 0) {
-      matched.push('content');
-    }
-    row.matchedFields = matched;
-    row.excerpt = buildRagExcerpt(row.content, row.summary, needle);
-    scored.push(row);
-  }
-  scored.sort((a: RagScoredHit, b: RagScoredHit): number => compareRagHits(a, b));
-  const ranked: RagScoredHit[] = [];
-  for (let index = 0; index < scored.length && index < topK; index += 1) {
-    ranked.push(scored[index]);
-  }
-  return ranked;
-}
-
-function ragHitRecord(hit: RagScoredHit): Record<string, Object> {
-  const row: Record<string, Object> = {};
-  row['noteId'] = hit.noteId;
-  row['title'] = hit.title;
-  row['version'] = hit.version;
-  row['subject'] = hit.subject;
-  row['chapter'] = hit.chapter;
-  row['tags'] = hit.tags;
-  row['summary'] = hit.summary;
-  row['score'] = hit.score;
-  row['matchedFields'] = hit.matchedFields;
-  row['excerpt'] = hit.excerpt;
-  row['updatedAt'] = hit.updatedAt;
-  return row;
-}
+// 打分 / 排序 / 摘录已下沉到 common/ports/impl/NoteSearchRanking（NoteSearchPort 实现的一部分，
+// 由 RdbNoteSearchAdapter 调用），本文件不再保留第二套检索算法。
 
 // 按条件检索笔记元数据 (subject / review_status / keyword, keyword 匹配 title 或 content, 上限 20 条)
 export class NoteQueryTool implements AgentTool {
@@ -304,8 +175,9 @@ export class NoteQueryRagTool implements AgentTool {
   public name: string = 'note_query_rag';
   public description: string = 'Deterministic keyword retrieval over saved math notes. Matches query against title, tags, summary and content; optional subject/chapter/tag/updated_after/updated_before filters. Returns TopK (default 5, max 10) hits with noteId, version and content excerpt in a stable order.';
   public parameters: Record<string, Object>;
+  private readonly searchPort?: NoteSearchPort;
 
-  constructor() {
+  constructor(searchPort?: NoteSearchPort) {
     const props: Record<string, Object> = {};
     props['query'] = stringProp('required keyword or phrase to retrieve');
     props['topK'] = numberProp('optional result count, default 5, maximum 10');
@@ -318,6 +190,7 @@ export class NoteQueryRagTool implements AgentTool {
     const required: string[] = ['query'];
     schema['required'] = required;
     this.parameters = schema;
+    this.searchPort = searchPort;
   }
 
   async execute(args: Record<string, Object>): Promise<ToolResult> {
@@ -326,7 +199,7 @@ export class NoteQueryRagTool implements AgentTool {
       const noQuery: ToolResult = { ok: false, content: 'note_query_rag requires a non-empty query' };
       return noQuery;
     }
-    let topK: number = RAG_DEFAULT_TOP_K;
+    let topK: number = NOTE_SEARCH_DEFAULT_TOP_K;
     const topKArg: Object | undefined = args['topK'];
     if (topKArg !== undefined && topKArg !== null && String(topKArg).trim().length > 0) {
       const parsed: number = readNumberArg(topKArg);
@@ -335,82 +208,52 @@ export class NoteQueryRagTool implements AgentTool {
         return badTopK;
       }
       topK = Math.floor(parsed);
-      if (topK > RAG_MAX_TOP_K) {
-        topK = RAG_MAX_TOP_K;
+      if (topK > NOTE_SEARCH_MAX_TOP_K) {
+        topK = NOTE_SEARCH_MAX_TOP_K;
       }
     }
-    const updatedAfter: number | undefined = readOptionalNumber(args['updated_after']);
-    const updatedBefore: number | undefined = readOptionalNumber(args['updated_before']);
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
+    // 检索走 NoteSearchPort（ADR-0021）：SQL 召回与打分在 common/ports/impl，
+    // 本文件不再保留第二套算法；端口未就绪时与旧行为一致返回 store not ready。
+    const port: NoteSearchPort | null = this.searchPort !== undefined
+      ? this.searchPort
+      : RdbNoteSearchAdapter.fromDatabase();
+    if (port === null) {
       const notReady: ToolResult = { ok: false, content: 'store not ready' };
       return notReady;
     }
-    const needle: string = query.toLowerCase();
-    const where: string[] = [];
-    const bindArgs: string[] = [];
-    where.push('(instr(lower(title), ?) > 0 OR instr(lower(tags), ?) > 0 OR instr(lower(summary), ?) > 0 OR instr(lower(content), ?) > 0)');
-    bindArgs.push(needle, needle, needle, needle);
+    const searchQuery: NoteSearchQuery = { query: query, topK: topK };
     const subject: string = readStringFilter(args['subject']);
     if (subject.length > 0) {
-      where.push('subject = ?');
-      bindArgs.push(subject);
+      searchQuery.subject = subject;
     }
     const chapter: string = readStringFilter(args['chapter']);
     if (chapter.length > 0) {
-      where.push('chapter = ?');
-      bindArgs.push(chapter);
+      searchQuery.chapter = chapter;
     }
     const tag: string = readStringFilter(args['tag']);
     if (tag.length > 0) {
-      where.push('instr(lower(tags), ?) > 0');
-      bindArgs.push(tag.toLowerCase());
+      searchQuery.tag = tag;
     }
+    const updatedAfter: number | undefined = readOptionalNumber(args['updated_after']);
     if (updatedAfter !== undefined) {
-      where.push('updated_at >= ?');
-      bindArgs.push(updatedAfter.toString());
+      searchQuery.updatedAfter = updatedAfter;
     }
+    const updatedBefore: number | undefined = readOptionalNumber(args['updated_before']);
     if (updatedBefore !== undefined) {
-      where.push('updated_at <= ?');
-      bindArgs.push(updatedBefore.toString());
+      searchQuery.updatedBefore = updatedBefore;
     }
-    const columns: string = 'id, title, tags, summary, content, subject, chapter, updated_at, version';
-    const sql: string = 'SELECT ' + columns + ' FROM ' + TABLE + ' WHERE ' + where.join(' AND ')
-      + ' ORDER BY updated_at DESC, id ASC';
     try {
-      const rs: relationalStore.ResultSet = await store.querySql(sql, bindArgs);
-      const candidates: RagScoredHit[] = [];
-      if (rs.goToFirstRow()) {
-        do {
-          const row: RagScoredHit = {
-            noteId: readStr(rs, 'id'),
-            title: readStr(rs, 'title'),
-            version: readLong(rs, 'version'),
-            subject: readStr(rs, 'subject'),
-            chapter: readStr(rs, 'chapter'),
-            tags: readStr(rs, 'tags'),
-            summary: readStr(rs, 'summary'),
-            content: readStr(rs, 'content'),
-            updatedAt: readLong(rs, 'updated_at'),
-            score: 0,
-            matchedFields: [],
-            excerpt: '',
-          };
-          candidates.push(row);
-        } while (rs.goToNextRow());
-      }
-      rs.close();
-      const ranked: RagScoredHit[] = rankRagHits(candidates, needle, topK);
-      const hits: Record<string, Object>[] = [];
-      for (const hit of ranked) {
-        hits.push(ragHitRecord(hit));
+      const hits: NoteSearchHit[] = await port.search(searchQuery);
+      const records: Record<string, Object>[] = [];
+      for (const hit of hits) {
+        records.push(NoteQueryRagTool.toRecord(hit));
       }
       const payload: Record<string, Object> = {};
       payload['query'] = query;
       payload['topK'] = topK;
-      payload['count'] = hits.length;
-      payload['hits'] = hits;
-      if (hits.length === 0) {
+      payload['count'] = records.length;
+      payload['hits'] = records;
+      if (records.length === 0) {
         payload['message'] = 'no matches';
       }
       const ok: ToolResult = { ok: true, content: JSON.stringify(payload) };
@@ -420,21 +263,40 @@ export class NoteQueryRagTool implements AgentTool {
       return failed;
     }
   }
+
+  // 保持旧 payload 形状：tags 仍是 JSON 字符串，字段名与顺序不变。
+  private static toRecord(hit: NoteSearchHit): Record<string, Object> {
+    const row: Record<string, Object> = {};
+    row['noteId'] = hit.noteId;
+    row['title'] = hit.title;
+    row['version'] = hit.version;
+    row['subject'] = hit.subject;
+    row['chapter'] = hit.chapter;
+    row['tags'] = JSON.stringify(hit.tags);
+    row['summary'] = hit.summary;
+    row['score'] = hit.score;
+    row['matchedFields'] = hit.matchedFields;
+    row['excerpt'] = hit.excerpt;
+    row['updatedAt'] = hit.updatedAt;
+    return row;
+  }
 }
 
-// 按 id 取单条笔记 (含全文 content)
+// 按 id 取单条笔记 (含全文 content) — 读取走 NoteReadPort（ADR-0021）
 export class NoteGetTool implements AgentTool {
   public name: string = 'note_get';
   public description: string = 'Fetch one saved math note by id, including full Markdown content. Returns a JSON object, or a "not found" message.';
   public parameters: Record<string, Object>;
+  private readonly readPort?: NoteReadPort;
 
-  constructor() {
+  constructor(readPort?: NoteReadPort) {
     const props: Record<string, Object> = {};
     props['id'] = stringProp('KnowledgeUnit id (required)');
     const schema: Record<string, Object> = objectSchema(props);
     const required: string[] = ['id'];
     schema['required'] = required;
     this.parameters = schema;
+    this.readPort = readPort;
   }
 
   async execute(args: Record<string, Object>): Promise<ToolResult> {
@@ -443,49 +305,54 @@ export class NoteGetTool implements AgentTool {
       const noId: ToolResult = { ok: false, content: 'note_get requires id' };
       return noId;
     }
-    const store: relationalStore.RdbStore | null = DatabaseHelper.getStore();
-    if (store === null) {
+    const id: string = String(idArg);
+    let port: NoteReadPort | null = this.readPort === undefined ? null : this.readPort;
+    if (port === null) {
+      const readStore: RdbNoteReadStore | null = RdbNoteReadStore.fromDatabase();
+      if (readStore !== null) {
+        port = new NoteReadPortAdapter(readStore);
+      }
+    }
+    if (port === null) {
       const notReady: ToolResult = { ok: false, content: 'store not ready' };
       return notReady;
     }
-    const id: string = String(idArg);
-    const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(TABLE);
-    predicates.equalTo('id', id);
-    const columns: string[] = ['id', 'title', 'content', 'summary', 'tags', 'subject', 'category', 'chapter', 'difficulty', 'source', 'created_at', 'updated_at', 'review_status', 'next_review_at', 'interval_days', 'user_id', 'version'];
-    return new Promise<ToolResult>((resolve: (r: ToolResult) => void, reject: (e: Error) => void): void => {
-      store.query(predicates, columns, (err, rs) => {
-        if (err) {
-          reject(new Error('note_get failed: ' + err.message));
-          return;
-        }
-        const ok: ToolResult = { ok: true, content: '' };
-        if (rs.goToFirstRow()) {
-          const row: Record<string, Object> = {};
-          row['id'] = readStr(rs, 'id');
-          row['title'] = readStr(rs, 'title');
-          row['content'] = readStr(rs, 'content');
-          row['summary'] = readStr(rs, 'summary');
-          row['tags'] = readStr(rs, 'tags');
-          row['subject'] = readStr(rs, 'subject');
-          row['category'] = readStr(rs, 'category');
-          row['chapter'] = readStr(rs, 'chapter');
-          row['difficulty'] = readStr(rs, 'difficulty');
-          row['source'] = readStr(rs, 'source');
-          row['created_at'] = readLong(rs, 'created_at');
-          row['updated_at'] = readLong(rs, 'updated_at');
-          row['review_status'] = readStr(rs, 'review_status');
-          row['next_review_at'] = readLong(rs, 'next_review_at');
-          row['interval_days'] = readLong(rs, 'interval_days');
-          row['user_id'] = readStr(rs, 'user_id');
-          row['version'] = readLong(rs, 'version');
-          ok.content = JSON.stringify(row);
-        } else {
-          ok.content = 'not found: no note with id ' + id;
-        }
-        rs.close();
-        resolve(ok);
-      });
-    });
+    try {
+      const detail: NoteDetail | null = await port.get(id);
+      const ok: ToolResult = { ok: true, content: '' };
+      if (detail === null) {
+        ok.content = 'not found: no note with id ' + id;
+        return ok;
+      }
+      ok.content = JSON.stringify(NoteGetTool.toRecord(detail));
+      return ok;
+    } catch (e) {
+      const failed: ToolResult = { ok: false, content: 'note_get failed: ' + ((e as Error).message ?? String(e)) };
+      return failed;
+    }
+  }
+
+  // 保持旧 payload 形状：tags 为 JSON 字符串，difficulty 为字符串形式，字段名/顺序不变。
+  private static toRecord(detail: NoteDetail): Record<string, Object> {
+    const row: Record<string, Object> = {};
+    row['id'] = detail.id;
+    row['title'] = detail.title;
+    row['content'] = detail.content;
+    row['summary'] = detail.summary;
+    row['tags'] = JSON.stringify(detail.tags);
+    row['subject'] = detail.subject;
+    row['category'] = detail.category;
+    row['chapter'] = detail.chapter;
+    row['difficulty'] = String(detail.difficulty);
+    row['source'] = detail.source;
+    row['created_at'] = detail.createdAt;
+    row['updated_at'] = detail.updatedAt;
+    row['review_status'] = detail.reviewStatus;
+    row['next_review_at'] = detail.nextReviewAt;
+    row['interval_days'] = detail.intervalDays;
+    row['user_id'] = detail.userId;
+    row['version'] = detail.version;
+    return row;
   }
 }
 

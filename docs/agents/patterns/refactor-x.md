@@ -43,7 +43,7 @@ Before changing code, find what tests cover the area. Run them.
 
 ```bash
 # Recent commits to the area
-git log --oneline -- agents/src/main/ets/agents/KnowledgeModel.ets | head -10
+git log --oneline -- agents/src/main/ets/subagents/KnowledgeModel.ets | head -10
 
 # Tests in the same dir
 ls agents/src/test/      # ArkTS / Hypium

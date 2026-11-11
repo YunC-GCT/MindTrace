@@ -1,7 +1,7 @@
 import { relationalStore } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { ChatMessageRecord, ChatRole } from '../models/AgentMemoryModels';
-import { SessionIdPolicy } from '../services/ConversationIdentity';
+import { ChatMessageRecord, ChatRole } from 'common';
+import { SessionIdPolicy } from 'common';
 
 export class ChatMessageDao {
   private store: relationalStore.RdbStore;

@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
-const validator = read('entry/src/main/ets/services/WritePathValidator.ets');
+const validator = read('agents/src/main/ets/note/WritePathValidator.ets');
 const noteAdapter = read('entry/src/main/ets/adapters/NoteDaoAdapter.ets');
 const noteWriteService = read('entry/src/main/ets/services/KnowledgeUnitWriteService.ets');
 const memoryService = read('entry/src/main/ets/services/AgentMemoryService.ets');

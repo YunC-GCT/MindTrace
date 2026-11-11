@@ -15,6 +15,9 @@ const workflow = read('common/src/main/ets/workflow/tool-calling/ToolCallingWork
 const state = read('common/src/main/ets/workflow/tool-calling/ToolCallingState.ets');
 const callModelNode = read('common/src/main/ets/workflow/tool-calling/nodes/CallModelNode.ets');
 const executeToolsNode = read('common/src/main/ets/workflow/tool-calling/nodes/ExecuteToolsNode.ets');
+const executionGuard = read('common/src/main/ets/workflow/tool-calling/ToolExecutionGuard.ets');
+const resultBudget = read('common/src/main/ets/workflow/tool-calling/ToolResultBudget.ets');
+const replyHandler = read('agents/src/main/ets/conversation/ConversationReplyHandler.ets');
 
 // spec 014 §2: ToolRegistry — AgentTool/ToolResult/注册校验/容错执行。
 test('ToolRegistry declares AgentTool + ToolResult + registry API', () => {
@@ -66,6 +69,24 @@ test('ToolLoop appends assistant(tool_calls) + role=tool messages; throws TOOL_L
   assert.match(executeToolsNode, /role: 'tool'/);
   assert.match(executeToolsNode, /tool_call_id: /);
   assert.match(workflow, /'TOOL_LOOP_MAX_STEPS'/);
+});
+
+test('tool execution is guarded: per-tool timeout, error isolation, result truncation', () => {
+  assert.match(executionGuard, /TOOL_EXEC_TIMEOUT_MS: number = 8000/);
+  assert.match(executionGuard, /Promise\.race\(\[registry\.execute/);
+  assert.match(executionGuard, /tool timeout after /);
+  assert.match(executionGuard, /tool error: /);
+  assert.match(resultBudget, /fitToolResult/);
+  assert.match(resultBudget, /…\[truncated\]/);
+  assert.match(resultBudget, /record\['truncated'\] = true/);
+  assert.match(executeToolsNode, /ToolExecutionGuard\.execute/);
+  assert.match(executeToolsNode, /fitToolResult/);
+  assert.match(executeToolsNode, /tool name='/);
+});
+
+test('tool loop failure falls back to the plain reply path', () => {
+  assert.match(replyHandler, /fallback to plain reply/);
+  assert.match(replyHandler, /this\.host\.replyPort\(\)\.complete\(replyContext/);
 });
 
 test('common Index exports the tool surface and wire types', () => {

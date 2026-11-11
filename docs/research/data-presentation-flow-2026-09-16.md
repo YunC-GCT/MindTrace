@@ -40,7 +40,7 @@ flowchart TD
     HomePage["HomePage<br/>entry/src/main/ets/pages/Home/HomePage.ets:25"]
     RevView["ReviewGraphView (KnowledgeGalaxy 渲染)<br/>entry/src/main/ets/pages/Review/ReviewGraphView.ets:125"]
     Float["AgentFloatWindow<br/>entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets:41"]
-    Workflow["ConversationWorkflow<br/>entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:54"]
+    Workflow["ConversationWorkflow<br/>agents/src/main/ets/conversation/ConversationWorkflow.ets:54"]
     ChatSvc["AgentChatService<br/>entry/src/main/ets/services/AgentChatService.ets:61"]
     MemSvc["AgentMemoryService<br/>entry/src/main/ets/services/AgentMemoryService.ets:29"]
   end
@@ -49,8 +49,8 @@ flowchart TD
     Dispatcher["Dispatcher.dispatch<br/>agents/src/main/ets/core/Dispatcher.ets:98"]
     CapGraph["CaptureGraph<br/>agents/src/main/ets/graph/CaptureGraph.ets:16"]
     TruthN["TruthCheckNode<br/>agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7"]
-    TruthSvc["TruthCheckService<br/>agents/src/main/ets/agents/TruthCheckService.ets:30"]
-    StructN["StructureNode(KnowledgeModel)<br/>agents/src/main/ets/agents/KnowledgeModel.ets:114"]
+    TruthSvc["TruthCheckService<br/>agents/src/main/ets/subagents/TruthCheckService.ets:30"]
+    StructN["StructureNode(KnowledgeModel)<br/>agents/src/main/ets/subagents/KnowledgeModel.ets:114"]
     PersistN["PersistNode<br/>agents/src/main/ets/graph/nodes/PersistNode.ets:7"]
   end
 
@@ -103,7 +103,7 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 - **拍照浮层**: `CameraOverlay` 在用户按确认后通过 `Index.onCameraConfirm`(`entry/src/main/ets/pages/Index.ets:35`)将 `uri` 推入 `pendingImageUri`,`AgentFloatWindow` 自动以 `image` request 启动,见 `entry/src/main/ets/pages/Index.ets:35-42`。
 - **AgentFloatWindow.send**: `entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets:186-196` — 有 `imagePreview` 时调 `this.service?.captureReply(uri, msg)`,否则调 `realReplyStream(msg)`。
 - **AgentChatService.captureReply**: `entry/src/main/ets/services/AgentChatService.ets:66-73` 构造 `ImageConversationRequest{kind:'image', imageUri, userContent}` 走 `workflow.run(request)`。
-- **ConversationWorkflow**: `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:147` 的 `buildGraph()` 看到 `kind==='image'` 时走 `image_reply` 节点(`ConversationWorkflow.ets:157-162`),该节点调 `handleImageReply`(`ConversationWorkflow.ets:288-303`),后者调 **`new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText)`**(`ConversationWorkflow.ets:293`)。
+- **ConversationWorkflow**: `agents/src/main/ets/conversation/ConversationWorkflow.ets:147` 的 `buildGraph()` 看到 `kind==='image'` 时走 `image_reply` 节点(`ConversationWorkflow.ets:157-162`),该节点调 `handleImageReply`(`ConversationWorkflow.ets:288-303`),后者调 **`new AiService(this.cbs.getContext()).analyzeImage(imageUri, userText)`**(`ConversationWorkflow.ets:293`)。
 - **`AiService.analyzeImage`**: `entry/src/main/ets/services/AiService.ets:82-108` — 用 `Dispatcher.dispatch(req, { persist:false, includeRawText:true, analysisOnly:true })`,**只做识别不持久化**,分类结果通过 `result.classification` 返回。用户说"生成笔记"才会再次触发持久化。
 
 ### 1.2 真实入库路径(`processAndPersist`)
@@ -121,13 +121,13 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 - **节点工厂**:
   - `OcrNodeFactory`(`agents/src/main/ets/graph/nodes/OcrNode.ets`)— `capture` 节点
   - `ClassifyNodeFactory`(`agents/src/main/ets/graph/nodes/ClassifyNode.ets`)— `classify` 节点
-  - `StructureNodeFactory`(`agents/src/main/ets/agents/KnowledgeModel.ets`)— `structure` 节点,委派 `KnowledgeModel.structure()`(行 114)
+  - `StructureNodeFactory`(`agents/src/main/ets/subagents/KnowledgeModel.ets`)— `structure` 节点,委派 `KnowledgeModel.structure()`(行 114)
   - `TruthCheckNodeFactory`(`agents/src/main/ets/graph/nodes/TruthCheckNode.ets:7-38`)— `truth_check` 节点
   - `PersistNodeFactory`(`agents/src/main/ets/graph/nodes/PersistNode.ets:7-85`)— `persist` 节点
 
 ### 1.4 KnowledgeModel.structure(主入库构造)
 
-- 文件: `agents/src/main/ets/agents/KnowledgeModel.ets:114-170`
+- 文件: `agents/src/main/ets/subagents/KnowledgeModel.ets:114-170`
 - 签名: `async structure(ocrText, type?, subject?, chapter='', source='camera_capture'): Promise<KnowledgeUnit>`
 - 流程:
   1. `resolveClassificationHint` 调 `TypeClassifier` 拿 5 类 hint(`KnowledgeModel.ets:122-138`)。
@@ -141,7 +141,7 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 - **失败短路**: `if (!result.truthFlag)` 时设 `next.error = { kind:'TRUTH_CHECK_ERROR', message, step:'truth_check', retriable:false }`(`TruthCheckNode.ets:27-34`)。
 - **graph.run** 接住这个 error: `CaptureGraph.run`(`agents/src/main/ets/graph/CaptureGraph.ets:49-60`)在异常/错误时把 `state.error` 保留返回;`CaptureGraph` 构造里 `isErrorFn = (s) => s.error !== undefined`(`CaptureGraph.ets:23`),StateGraph 内核短路后续节点(`common/src/main/ets/workflow/StateGraph.ets`)。
 - **结果**: TruthCheck 失败 → `state.error.kind === 'TRUTH_CHECK_ERROR'` → `Dispatcher.dispatchRequest`(`Dispatcher.ets:124-140`)返回 `{ success:false, route:'D1', errorMessage }`,**不写库**。
-- TruthCheck 4 项(括号配对 / 除零 / 等式矛盾 / LaTeX 语法)由 `TruthCheckService.check` 实现,见 `agents/src/main/ets/agents/TruthCheckService.ets:32-113`。**仅 sync,无 LLM 调用**。
+- TruthCheck 4 项(括号配对 / 除零 / 等式矛盾 / LaTeX 语法)由 `TruthCheckService.check` 实现,见 `agents/src/main/ets/subagents/TruthCheckService.ets:32-113`。**仅 sync,无 LLM 调用**。
 
 ### 1.6 PersistNode → NoteDaoAdapter → KnowledgeUnitWriteService
 
@@ -159,7 +159,7 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
   - **KG 关联**: `prerequisites` / `related` / `embedding`
   - **用户元数据**: `userId` / `version`(乐观锁)
 - 数据库列定义(`common/src/main/ets/DatabaseHelper.ets:16-40`):22 列,`embedding` / `tags` / `prerequisites` / `related` 全部 `TEXT DEFAULT '[]'`(JSON 字符串)。
-- 类型边界: `category` 枚举在 `NoteTaxonomy` (`common/src/main/ets/data/NoteTaxonomy.ets`) 中规定为 `概念/定理/公式/证明题/计算题`(AGENTS.md 标记的5 类),但写入端 `KnowledgeModel.toKnowledgeUnit` 仅作 `category: ext.type` 透传,**未做枚举校验**。
+- 类型边界: `category` 枚举在 `NoteTaxonomy` (`entry/src/main/ets/utils/NoteTaxonomy.ets`) 中规定为 `概念/定理/公式/证明题/计算题`(AGENTS.md 标记的5 类),但写入端 `KnowledgeModel.toKnowledgeUnit` 仅作 `category: ext.type` 透传,**未做枚举校验**。
 
 ---
 
@@ -304,8 +304,8 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 - **LazyForEach**: `entry/src/main/ets/overlays/AgentFloatWindow/AgentMessageList.ets:86-98` 用 `LazyForEach(this.dataSource, (msg, index) => ListItem{ ChatBubble(...) }, (msg) => chatItemKey(msg))` — `chatItemKey` 在 `ChatModels.ets` 中定义,key 函数返回 `id.toString()`(稳定)。
 - **`@State` vs `@Prop`**: `AgentMessageList.messages` 是 `@Prop @Watch('onMessagesChanged')`(`AgentMessageList.ets:56`),父组件用 `this.messages.map(... applyStreamEventToChatMsg ...)` 触发重渲染(`AgentFloatWindow.ets:115`)。
 - **`@Observed`**: `ChatSession`(`AgentFloatWindow/chat/ChatModels.ets` 中应有)— 嵌套对象的字段更新需要 `@Observed`。
-- **关于 `ConversationWorkflow`**(`entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:54`):
-  - 状态: `ConversationState`(`entry/src/main/ets/workflows/conversation/ConversationState.ets`)— `request` / `sessionId` / `currentStep` / `intent` / `memoryContext` / `learnerProfileContext` / `draftRunId/draftCheckpointId/draftCandidateHash/draftStatus`。
+- **关于 `ConversationWorkflow`**(`agents/src/main/ets/conversation/ConversationWorkflow.ets:54`):
+  - 状态: `ConversationState`(`agents/src/main/ets/conversation/ConversationState.ets`)— `request` / `sessionId` / `currentStep` / `intent` / `memoryContext` / `learnerProfileContext` / `draftRunId/draftCheckpointId/draftCandidateHash/draftStatus`。
   - graph 节点: `classify_intent` / `image_reply` / `load_reply_context` / `save_reply_input` / `stream_reply` / `complete_reply` / `note_reply` / `regenerate_reply`(`ConversationWorkflow.ets:150-227`)
   - **copyState 显式字段复制**(`ConversationWorkflow.ets:258-286`),无解构 — 这是 spec 015 的 ArkTS 1.1 strict 约束。
   - 错误处理: 大部分失败走 `addAiMessage(sessionId, '⚠️ ...')` + `throw`,用户能看到一条消息(`ConversationWorkflow.ets:300-303, 411-415, 464-466` 等)。
@@ -325,8 +325,8 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 | 3 | **`KnowledgeGalaxyViewModel` 三个方法都是"load 失败 → 返回空/返回 false"** | `load` 失败返回 `false`(`KnowledgeGalaxyViewModel.ets:232`)— `ReviewGraphView.reloadGalaxy` 收到 false 弹 toast 但**继续渲染空状态**(无星系)。用户感觉"打开了 Tab 但没东西"。 | `entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets:225`;`entry/src/main/ets/pages/Review/ReviewGraphView.ets:155-175` |
 | 4 | **`@State` 初始空 vs `aboutToAppear` 异步拉的竞态** | `ReviewGraphView.onNotesVersionChange` 触发 `reloadGalaxy(true)` 后,**`stopRotation()`** 在 `reloadGalaxy` 内的 `.then` 才调(`ReviewGraphView.ets:158-162`)。用户在动画期间切 Tab / 改 notesVersion,`this.timerId !== -1` 但 `this.selectedNote` 已变,定时器写入状态可能与新一轮 reload 冲突。 | `entry/src/main/ets/pages/Review/ReviewGraphView.ets:151-175, 214-228` |
 | 5 | **`DatabaseHelper.init` 首次并发不安全** | `if (DatabaseHelper.store !== null) return store;` 短路只对**已成功**的 store 有效,**首次并发**(比如 HomePage.onPageShow 和 KnowledgeGalaxyViewModel.load 同时触发 init)会**两次调 `getRdbStore` 回调**,各自跑 `ensureSchema`(`DatabaseHelper.ets:248-265`)。HarmonyOS RDB 文档未明确禁止,但 `ensureSchema` 中的 `ALTER TABLE` 与 `PRAGMA table_info` **不是事务**,并发会撞车。 | `common/src/main/ets/DatabaseHelper.ets:247-265`;多个并发调用点见 §4.3 |
-| 6 | **`AgentMemoryService.safe*` 系列静默失败** | `ConversationWorkflow` 中 `safeSaveUserMessage` / `safeSaveAssistantMessage` / `safeSaveOcrResult` 全是 `console.warn`(`ConversationWorkflow.ets:547-617`)。如果保存失败,**聊天记录会丢,用户无感知**。对话上下文由这个 store 拼,如果丢消息会让 LLM 丢失 history。 | `entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:547-617`;底层 `entry/src/main/ets/services/AgentMemoryService.ets:234-252` |
-| 7 | **`category` 枚举不校验** | `KnowledgeUnit.category` 应是 5 类枚举(`common/src/main/ets/data/NoteTaxonomy.ets`),但 `WritePathValidator` 只校验 `id/title/content/subject/category` 非空,**不查枚举**。AI 返回未知 category 时会落库,后续 `typeColor(note.type)` / `subjectColor(note.subject)` 拿不到颜色,UI 显示空色或默认色。 | `entry/src/main/ets/services/WritePathValidator.ets:19-25`;`common/src/main/ets/models/CommonTypes.ets:64`(`category: string` 而非枚举) |
+| 6 | **`AgentMemoryService.safe*` 系列静默失败** | `ConversationWorkflow` 中 `safeSaveUserMessage` / `safeSaveAssistantMessage` / `safeSaveOcrResult` 全是 `console.warn`(`ConversationWorkflow.ets:547-617`)。如果保存失败,**聊天记录会丢,用户无感知**。对话上下文由这个 store 拼,如果丢消息会让 LLM 丢失 history。 | `agents/src/main/ets/conversation/ConversationWorkflow.ets:547-617`;底层 `entry/src/main/ets/services/AgentMemoryService.ets:234-252` |
+| 7 | **`category` 枚举不校验** | `KnowledgeUnit.category` 应是 5 类枚举(`entry/src/main/ets/utils/NoteTaxonomy.ets`),但 `WritePathValidator` 只校验 `id/title/content/subject/category` 非空,**不查枚举**。AI 返回未知 category 时会落库,后续 `typeColor(note.type)` / `subjectColor(note.subject)` 拿不到颜色,UI 显示空色或默认色。 | `agents/src/main/ets/note/WritePathValidator.ets:19-25`;`common/src/main/ets/models/CommonTypes.ets:64`(`category: string` 而非枚举) |
 
 ### 中优先(资源/状态一致性)
 
@@ -334,7 +334,7 @@ AGENTS.md 标注的关键 seam 是 `ConversationWorkflow → AiService.captureTe
 |---|---|---|---|
 | 8 | **`UiDataCacheService.notesLoadingPromise` 与 `KnowledgeGalaxyViewModel` 不共享** | `HomeViewModel.loadNotes` 走 `UiDataCacheService.loadNotesSnapshot`(`HomeViewModel.ets:28`),后者有 in-flight join(`UiDataCacheService.ets:273-286`);但 `KnowledgeGalaxyViewModel.load` 不走,**两条路并行触发 `NoteDao.queryAllMetadata` 和 `NoteDao.queryAll`**,**返回列不同**(metadata 缺 `content` / `embedding` / `prerequisites` / `related` — 见 `NoteDao.ets:29-33, 311-330` vs `288-308`)。后续 `buildSystems` 用 `unit.chapter` / `unit.related` 都会拿到空数组,星系关系线/章节分组失效。 | `entry/src/main/ets/services/UiDataCacheService.ets:288-292`;`entry/src/main/ets/database/NoteDao.ets:288-308, 311-330`;`entry/src/main/ets/viewmodels/KnowledgeGalaxyViewModel.ets:217, 235-243` |
 | 9 | **`@State orbitOffset` 定时器 + `animateTo` 竞态** | `startRotation` 用 `setInterval` 每 800ms 写 `orbitOffset`(数值类 `@State`),但同时 `enterSubject` / `leaveSubject` / `zoomIn` 都用 `animateTo` 包裹(`ReviewGraphView.ets:189-198, 200-212, 308-330`)。在 ArkUI 中,**动画期间对同一 `@State` 的赋值会被动画驱动覆盖或争抢**,可能导致动画"抽搐"。 | `entry/src/main/ets/pages/Review/ReviewGraphView.ets:189-228, 308-330` |
-| 10 | **`AiService.context` 为 undefined 时 throw 但 UI 捕获无路径** | `AiService` 在 `this.context === undefined` 时直接 `throw`(`AiService.ets:65-67, 84-86, 113-114, 471-474`)。`ConversationWorkflow` 通过 `new AiService(this.cbs.getContext())` 构造,`getContext` 走回调,如果 callback 还没就绪就 throw,`ConversationWorkflow.handleImageReply` 的 catch 会显示"图片识别失败: ..."(`ConversationWorkflow.ets:300-303`),**不致命但莫名**。 | `entry/src/main/ets/services/AiService.ets:65-67`;`entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets:288-303` |
+| 10 | **`AiService.context` 为 undefined 时 throw 但 UI 捕获无路径** | `AiService` 在 `this.context === undefined` 时直接 `throw`(`AiService.ets:65-67, 84-86, 113-114, 471-474`)。`ConversationWorkflow` 通过 `new AiService(this.cbs.getContext())` 构造,`getContext` 走回调,如果 callback 还没就绪就 throw,`ConversationWorkflow.handleImageReply` 的 catch 会显示"图片识别失败: ..."(`ConversationWorkflow.ets:300-303`),**不致命但莫名**。 | `entry/src/main/ets/services/AiService.ets:65-67`;`agents/src/main/ets/conversation/ConversationWorkflow.ets:288-303` |
 
 ### 附:本调研未确认但有疑点的项
 

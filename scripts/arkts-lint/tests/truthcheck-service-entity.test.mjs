@@ -7,26 +7,31 @@ import ts from 'typescript';
 const root = resolve(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 
-const tcs = read('agents/src/main/ets/agents/TruthCheckService.ets');
-const km = read('agents/src/main/ets/agents/KnowledgeModel.ets');
-const captureStructurer = read('agents/src/main/ets/agents/CaptureStructurer.ets');
-const draftVerifier = read('agents/src/main/ets/agents/NoteDraftVerifier.ets');
+const tcs = read('agents/src/main/ets/subagents/TruthCheckService.ets');
+const km = read('agents/src/main/ets/subagents/KnowledgeModel.ets');
+const captureStructurer = read('agents/src/main/ets/subagents/CaptureStructurer.ets');
+const draftVerifier = read('agents/src/main/ets/subagents/NoteDraftVerifier.ets');
 const tcsTestPath = resolve(root, 'agents/src/test/TruthCheckService.test.ets');
 
 // Execute production service, node, graph and dispatcher, not a mirror of their rules.
+// 2026-10-31：Dispatcher 拆分出 dispatch/ 分支模块，运行时束要一起拼接（文件内 import 会被剥离）。
 const runtimeSources = [
   'common/src/main/ets/workflow/StateGraph.ets',
   'agents/src/main/ets/graph/AgentState.ets',
-  'agents/src/main/ets/agents/TruthCheckService.ets',
+  'agents/src/main/ets/subagents/TruthCheckService.ets',
   'agents/src/main/ets/graph/nodes/TruthCheckNode.ets',
   'agents/src/main/ets/graph/CaptureGraph.ets',
   'common/src/main/ets/models/CaptureChain.ets',
-  'agents/src/main/ets/core/Dispatcher.ets',
+  'agents/src/main/ets/core/dispatch/DispatchOptions.ets',
+  'agents/src/main/ets/core/dispatch/UnitSupport.ets',
+  'agents/src/main/ets/workflows/NotePreparedWorkflow.ets',
+  'agents/src/main/ets/core/dispatch/GenerationEvaluator.ets',
+  'agents/src/main/ets/core/CommandExecutor.ets',
 ].map((path) => read(path).replace(/^import[\s\S]*?;\r?\n/gm, '')).join('\n');
 const compiled = ts.transpileModule('class Logger {}\n' + runtimeSources, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
-const { TruthCheckService, TruthCheckNodeFactory, Dispatcher } = await import(
+const { TruthCheckService, TruthCheckNodeFactory, Dispatcher, GenerationEvaluator } = await import(
   'data:text/javascript;base64,' + Buffer.from(compiled).toString('base64')
 );
 
@@ -66,9 +71,8 @@ test('candidate check preserves source state but does not validate raw source as
 });
 
 test('dispatcher retains the actual local failure detail through the real prepared graph', async () => {
-  const dispatcher = new Dispatcher();
   const result = { draft: { sections: [] }, evidence: [], verification: { issues: [], decisions: [] } };
-  const evaluation = await dispatcher.evaluateStandardCandidate(result,
+  const evaluation = await GenerationEvaluator.evaluateStandardCandidate(result,
     { fragments: [{ id: 's1', text: 'original' }] }, { mustInclude: [] },
     { draftToKnowledgeUnit: () => ({ content: String.raw`\frac{1}{2` }) });
   assert.equal(evaluation.hardIssueCount, 1);
@@ -76,29 +80,27 @@ test('dispatcher retains the actual local failure detail through the real prepar
 });
 
 test('diagnostics retain long reasons, section locations and all distinct issues', () => {
-  const dispatcher = new Dispatcher();
   const issues = Array.from({ length: 5 }, (_, index) => ({ code: 'MATH_ERROR', stage: 'verifier',
     severity: 'hard', sectionId: 'section-' + index, message: '原因'.repeat(60) + '关键结论', repairable: false }));
-  const summary = dispatcher.issueSummary(issues);
+  const summary = GenerationEvaluator.issueSummary(issues);
   assert.match(summary, /section-4/);
   assert.equal(summary.match(/关键结论/g).length, 5);
 });
 
 test('soft verifier advice does not mislabel a hard local gate failure', () => {
-  const dispatcher = new Dispatcher();
   const issues = [
     { stage: 'verifier', code: 'OPTIONAL_EXPLANATION', severity: 'soft', message: '可补充解释' },
     { stage: 'truth_check', code: 'TRUTH_CHECK_ERROR', severity: 'hard', message: 'missing closing brace' },
   ];
-  assert.equal(dispatcher.readOnlyVerificationStopReason(issues), 'artifact_validation_failed');
+  assert.equal(GenerationEvaluator.readOnlyVerificationStopReason(issues), 'artifact_validation_failed');
   issues[0].severity = 'hard';
-  assert.equal(dispatcher.readOnlyVerificationStopReason(issues), 'content_verification_failed');
+  assert.equal(GenerationEvaluator.readOnlyVerificationStopReason(issues), 'content_verification_failed');
   issues[0].code = 'VERIFIER_UNAVAILABLE';
-  assert.equal(dispatcher.readOnlyVerificationStopReason(issues), 'verifier_unavailable');
+  assert.equal(GenerationEvaluator.readOnlyVerificationStopReason(issues), 'verifier_unavailable');
 });
 
 test('generation and verification prompts separate derived math from source quotations and metadata', () => {
-  assert.match(read('agents/src/main/ets/agents/GenerationDraftSupport.ets'), /Distinguish source givens, derived conclusions, and unconfirmed conditions/);
+  assert.match(read('agents/src/main/ets/subagents/GenerationDraftSupport.ets'), /Distinguish source givens, derived conclusions, and unconfirmed conditions/);
   assert.match(draftVerifier, /Do not reject a valid derivation merely because its conclusion is not verbatim/);
   assert.match(draftVerifier, /confidence metadata alone is not grounds for a hard issue/);
   assert.match(draftVerifier, /Give each issue a Chinese message/);
@@ -126,7 +128,7 @@ test('the 4 internal result interfaces moved with the logic', () => {
 test('CaptureStructurer structures via PromptBuilder while CaptureGraph owns TruthCheck', () => {
   assert.match(km, /export class KnowledgeModel {/);
   assert.doesNotMatch(km, /truthCheckService\.check\(ocrText\)/, 'structure() must not duplicate TruthCheckNode');
-  assert.match(captureStructurer, /this\.promptBuilder\.buildPrompt\(ocrText(,\s*knownSubjects)?\)/, 'callAi must call PromptBuilder directly');
+  assert.match(captureStructurer, /this\.promptBuilder\.buildPrompt\(ocrText(,\s*knownSubjects)?(,\s*compact)?\)/, 'callAi must call PromptBuilder directly');
   assert.doesNotMatch(km, /checkBracePairing\(/, 'truth checks must live in TruthCheckService');
   assert.doesNotMatch(captureStructurer, /你是数学学习笔记结构化助手/, 'prompt body must live in PromptBuilder');
 });

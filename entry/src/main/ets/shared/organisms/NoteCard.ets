@@ -7,12 +7,9 @@
 //  ============================================================================
 
 import {
-  S_1, S_3, BORDER, GLASS_8, TEXT, TEXT_3, TEXT_4,
-  R_MD, F_XS, F_MD,
-  W_SEMIBOLD, W_BOLD,
-  NOTE_ICON_SIZE, NoteItem, recentDate, typeChar, typeColor, typeGlassColor,
-  borderToneColor, glassHighlightColor, glassShadowColor,
-} from "common"
+  S_1, S_3, BORDER, GLASS_8, TEXT, TEXT_3, TEXT_4, R_MD, F_XS, F_MD, W_SEMIBOLD, W_BOLD, NOTE_ICON_SIZE, NoteItem, recentDate,
+} from 'common';
+import { typeChar, typeColor, typeGlassColor, borderToneColor, glassHighlightColor, glassShadowColor } from '../../utils/NoteTaxonomy';
 import { MathPreviewText } from "../atoms/MathPreviewText"
 
 @Component

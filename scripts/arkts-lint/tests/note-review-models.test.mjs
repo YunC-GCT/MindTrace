@@ -50,7 +50,7 @@ function assertJsonEqual(actual, expected) {
 
 test('NoteReviewModels copies answer citations and feedback without shared mutable state', async () => {
   const { copyNoteReviewAnswer } = loadNoteReviewEtsModule(
-    'entry/src/main/ets/models/NoteReviewModels.ets',
+    'common/src/main/ets/models/NoteReviewModels.ets',
   );
   const original = review({ feedback: 'citation-incorrect' });
 

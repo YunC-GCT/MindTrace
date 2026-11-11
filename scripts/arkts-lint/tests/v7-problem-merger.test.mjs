@@ -120,3 +120,25 @@ test('similarity is 1 for identical non-empty text and for two empty strings', (
   assert.equal(similarity('函数 在一点连续', '函数在一点连续'), 1);
   assert.equal(similarity('函数', '连续'), 0);
 });
+
+
+test('non-adjacent duplicate page is deduplicated against an earlier problem', () => {
+  const pageA = '1. 已知函数 f(x)=x^2';
+  const pageB = '2. 求 f(2) 的值。';
+  const merged = mergeProblems([
+    { imageIndex: 0, segmentIndex: 0, anchor: '1.', text: pageA, needsReview: false },
+    { imageIndex: 1, segmentIndex: 0, anchor: '2.', text: pageB, needsReview: false },
+    { imageIndex: 2, segmentIndex: 0, anchor: '1.', text: pageA, needsReview: false },
+  ]);
+  assert.equal(merged.length, 2, '重复选中同一页不得生成第三条笔记');
+  assert.equal(merged[0].sources.length, 2, '重复页的 source 归并到原题');
+  assert.deepEqual(Array.from(merged[0].sources.map((s) => s.imageIndex)), [0, 2]);
+});
+
+test('different problems with similar text are not globally merged', () => {
+  const merged = mergeProblems([
+    { imageIndex: 0, segmentIndex: 0, anchor: '1.', text: '1. 求 f(1) 的值。', needsReview: false },
+    { imageIndex: 1, segmentIndex: 0, anchor: '2.', text: '2. 求 f(2) 的值。', needsReview: false },
+  ]);
+  assert.equal(merged.length, 2, '题号不同即便文字相近也是两道题');
+});

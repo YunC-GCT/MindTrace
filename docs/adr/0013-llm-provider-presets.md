@@ -59,3 +59,7 @@ AI 设置页(2026-09-06 用户反馈)三大痛点之一:**UI 不尽人意,缺少
 ## 最后更新
 
 2026-09-06
+## 代码路径迁移注记（2026-11-03）
+
+- 正文提到的 `entry/src/main/ets/pages/AiSettings/EndpointPicker.ets` 现由 `pages/AiSettings/VendorPicker.ets` 承担（预置厂商列表 + 自定义 OpenAI 兼容端点）。
+- 计划新建的 `CustomVendorForm.ets` 未按该文件名落地；自定义厂商表单并入 `VendorPicker.ets` 与 `AiSettingsPage.ets`。

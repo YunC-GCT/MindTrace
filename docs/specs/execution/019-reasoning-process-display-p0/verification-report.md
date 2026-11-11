@@ -69,7 +69,7 @@ Reason: `tasks.md` records `<!-- verification_scope: build-only -->`.
 
 ## Runtime Truncation Follow-up
 
-After the first follow-up, user reproduced `⚠️ AI 回复异常: LLM response truncated by max_tokens`. The conversation reply paths in `entry/src/main/ets/services/ReplyService.ets` still used `maxTokens: 4096`; this was raised to `CHAT_REPLY_MAX_TOKENS = 12000` for `complete`, `stream`, and fallback calls.
+After the first follow-up, user reproduced `⚠️ AI 回复异常: LLM response truncated by max_tokens`. The conversation reply paths in `agents/src/main/ets/chat/ReplyService.ets` still used `maxTokens: 4096`; this was raised to `CHAT_REPLY_MAX_TOKENS = 12000` for `complete`, `stream`, and fallback calls.
 
 Latest validation after this runtime fix:
 

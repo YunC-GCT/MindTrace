@@ -4,15 +4,18 @@
 //       不落盘耗时、时间戳或随机 id；记录模式写 raw/<case>.json，默认模式读文件做字段级 diff。
 // Why: ADR-0019 把 capture / generation / regenerate / preparedCandidate / analysisOnly 五型命令
 //      与 needsInput / readyPreview / committed / failed / cancelled 五终态固定为契约。#241 迁移
-//      NoteAgent 时必须逐字段保持这里的现状，因此快照如实锁定旧外观——capture 入口取消抛错、
-//      capture 图内取消仍抛错、hash 不匹配无 errorCode、commitKey 重放不再写第二条笔记——
-//      而不是把目标态提前写成现状。
+//      NoteAgent 时必须逐字段保持这里的现状。A4 4c Step4 删除旧 dispatch() 后，快照改由
+//      legacy-dispatch-helper（BranchRequest → NoteCommand → NoteOutcome → LegacyDispatchAdapter）
+//      录制：取消仍按旧语义抛错（helper 把 cancelled 终态转换回 Error），失败错误码则按新命令 seam
+//      记录（方案 A 重基线）——capture 失败带 STRUCTURE_ERROR、prepared hash 不匹配仍无码、
+//      commitKey 重放不再写第二条笔记。
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRuntime, generationRequest, draft, memoryStorage } from './knowledge-dispatch-runtime.mjs';
+import { dispatchLegacy } from './legacy-dispatch-helper.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..', '..');
@@ -222,7 +225,7 @@ function summarizeRequests(requests) {
 
 async function dispatch(runtime, request, options) {
   try {
-    return { result: await runtime.dispatcher.dispatch(request, options) };
+    return { result: await dispatchLegacy(runtime, request, options) };
   } catch (error) {
     return { error };
   }
@@ -383,7 +386,9 @@ const CASES = [
     },
     assert(obs) {
       assert.equal(obs.result.success, false);
-      assert.equal(obs.result.errorCode, undefined);
+      // 方案 A 重基线：旧 dispatch() 出口经 adapter 时吞掉了空错误码，命令 seam 则把节点
+      // error.kind 作为稳定错误码透传（STRUCTURE_ERROR），legacy helper 如实还原。
+      assert.equal(obs.result.errorCode, 'STRUCTURE_ERROR');
       assert.equal(obs.result.data, undefined);
       assert.equal(obs.storage.writes.length, 0);
     },
@@ -443,9 +448,8 @@ const CASES = [
       return { runtime, storage, ...outcome };
     },
     assert(obs) {
-      // The node observes the cancel (CaptureGraph rewrites it to NODE_ERROR),
-      // but Dispatcher re-checks the token after graph.run and throws again.
-      // For capture the NODE_ERROR kind is therefore not visible at the seam.
+      // 命令 seam 把图内取消表达为 cancelled 终态；legacy helper 再按旧 dispatch() 语义抛
+      // Error('CONVERSATION_CANCELLED')，因此 cancelled 终态不会出现在 golden 的 result 记录里。
       assert.match(obs.error.message, /CONVERSATION_CANCELLED/);
       assert.equal(obs.runtime.requests.length, 1);
       assert.equal(obs.storage.writes.length, 0);
@@ -629,7 +633,7 @@ const CASES = [
       const runtime = createRuntime(() => draft());
       const storage = memoryStorage();
       const options = { generationRepository: storage.repository, dao: storage.dao };
-      const preview = await runtime.dispatcher.dispatch(generationRequest('light'), options);
+      const preview = await dispatchLegacy(runtime, generationRequest('light'), options);
       const checkpoint = storage.checkpoints[0];
       const request = {
         ...generationRequest('light'),
@@ -642,8 +646,8 @@ const CASES = [
           commitKey: 'golden-commit',
         },
       };
-      const first = await runtime.dispatcher.dispatch(request, options);
-      const replay = await runtime.dispatcher.dispatch(request, options);
+      const first = await dispatchLegacy(runtime, request, options);
+      const replay = await dispatchLegacy(runtime, request, options);
       return { runtime, storage, result: first, replay };
     },
     assert(obs) {

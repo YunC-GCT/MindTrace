@@ -123,7 +123,7 @@ bgCol: string = '#fff'
 
 | 约束 | 说明 |
 |---|---|
-| **5 module** | `entry`（HAP）+ `common` / `agents` / `skill` / `cardservice`（HSP）；不要新建第 6 个模块 |
+| **5 module** | HAP `entry` / `skill` / `cardservice` + HSP `common` / `agents`；不要新建第 6 个模块 |
 | **跨 module import 用完整路径** | `from 'common/src/main/ets/Index'`，不能 `from 'common/Index'` |
 | **HSP 的 `oh-package.json5` 必须有 `main`** | 缺了会报 `Cannot find module` |
 | **HSP `module.json5` 禁 `pages` / `abilities` / `mainElement` / `extensionAbilities` / `skills`** | 这些是 HAP 字段 |

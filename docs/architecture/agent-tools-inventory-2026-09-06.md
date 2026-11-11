@@ -35,7 +35,7 @@
 - 类声明: `agents/src/main/ets/mcp/tools/OcrTool.ets:52`; 模块导出: `agents/src/main/ets/Index.ets:29`
 - 方法面: `recognizeBytes` (:60)、`recognizeBytesWithEndpoint` (:64)、`recognize` (:98)、`recognizeImage` (:111); 私有约 15 个 (端点解析 / multipart / UTF-8 / MIME)
 - 能力形状: 混合 OCR — 端侧 CoreVisionKit `textRecognition` (:177-207) + 本地 HTTP 服务回退与公式识别 (默认端点 `http://127.0.0.1:8000/api/v1/formula/recognize`, :57; 实际端点经 [OcrConfig](../../common/src/main/ets/ocr/OcrConfig.ets) 单例)
-- 调用方复核: **不止 TypeClassifier** — `agents/src/main/ets/agents/TypeClassifier.ets:140,146` (image/file payload 分支) + `entry/src/main/ets/viewmodels/AiSettingsViewModel.ets:172` (设置页 OCR 连通性测试, 走 `recognizeBytesWithEndpoint` + 内置测试图)
+- 调用方复核: **不止 TypeClassifier** — `agents/src/main/ets/subagents/TypeClassifier.ets:140,146` (image/file payload 分支) + `entry/src/main/ets/viewmodels/AiSettingsViewModel.ets:172` (设置页 OCR 连通性测试, 走 `recognizeBytesWithEndpoint` + 内置测试图)
 - 管线位置: OcrNode (`agents/src/main/ets/graph/nodes/OcrNode.ets`) → TypeClassifier.recognizeText → OcrTool; CaptureGraph 的 `capture` 步
 - "MCP" 语义: 按 ADR-0010, `mcp/` 是**工具定位与封装语义**分类, 不代表运行着 MCP server; 该文件与 python 服务均无 JSON-RPC/MCP 协议实现 (grep `mcp|jsonrpc|FastMCP` 零命中) — 与 ADR-0010 "是否/何时以 MCP 协议对外暴露由维护队员决定" 的开放注记一致
 
@@ -92,9 +92,9 @@
 
 | 类 | 路径 | 判读 | 理由 |
 |---|---|---|---|
-| TypeClassifier | `agents/src/main/ets/agents/TypeClassifier.ets` | 不是工具, 是**工具消费方** (sub-agent) | 内部 new OcrTool + LlmGuard; 它自己被 pipeline 硬编码调用, LLM 无从选择它 |
-| KnowledgeModel | `agents/src/main/ets/agents/KnowledgeModel.ets` | 同上 (sub-agent) | 结构化 sub-agent, LlmGuard 消费方 |
-| PromptBuilder / StructureService / TruthCheckService | `agents/src/main/ets/agents/` | 不是工具 — KnowledgeModel 之上的 façade (D2 Ticket #3) | pipeline 内部组件, 头注释自述 "façade" |
+| TypeClassifier | `agents/src/main/ets/subagents/TypeClassifier.ets` | 不是工具, 是**工具消费方** (sub-agent) | 内部 new OcrTool + LlmGuard; 它自己被 pipeline 硬编码调用, LLM 无从选择它 |
+| KnowledgeModel | `agents/src/main/ets/subagents/KnowledgeModel.ets` | 同上 (sub-agent) | 结构化 sub-agent, LlmGuard 消费方 |
+| PromptBuilder / StructureService / TruthCheckService | `agents/src/main/ets/subagents/` | 不是工具 — KnowledgeModel 之上的 façade (D2 Ticket #3) | pipeline 内部组件, 头注释自述 "façade" |
 | Dispatcher / CaptureGraph | `agents/src/main/ets/core/` `graph/` | 不是工具 — 编排层 | Dispatch 是 Order 的入口契约 (CONTEXT.md), 非可选项 |
 | NoteDaoAdapter | `entry/src/main/ets/adapters/NoteDaoAdapter.ets:6` | 不是工具 — 接缝适配器 | implements agents 的 NoteDaoInterface (仅 `insert`, 见 agents/models/NoteDaoInterface.ets), 2-adapter 真实 seam (prod + test) |
 | AiService | `entry/src/main/ets/services/AiService.ets` | 不是工具 — **AI 能力的 UI 入口** | capture / analyzeImage / captureText 三入口; UI→pipeline 的桥 |

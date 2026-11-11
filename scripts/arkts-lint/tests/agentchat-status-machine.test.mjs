@@ -9,9 +9,12 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const machine = read('entry/src/main/ets/services/ChatStatusMachine.ets');
 const chatService = read('entry/src/main/ets/services/AgentChatService.ets');
 const workflowAdapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');
-const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+const workflow = [
+  read('agents/src/main/ets/conversation/ConversationWorkflow.ets'),
+  read('agents/src/main/ets/conversation/ConversationReplyHandler.ets'),
+].join('\n');
 const chatModels = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatModels.ets');
-const conversationState = read('entry/src/main/ets/workflows/conversation/ConversationState.ets');
+const conversationState = read('agents/src/main/ets/conversation/ConversationState.ets');
 
 // spec 007 PR2: Chat 状态机从 AgentChatService.statusFromStep 抽取为 ChatStatusMachine。
 // 4 个 structural guard (与 PR1 agentchat-intent-classifier.test.mjs 同节奏)。
@@ -64,7 +67,7 @@ test('AgentChatService adapter maps workflow progress through ChatStatusMachine'
 test('reply generation progress stays internal instead of creating a duplicate frontend event', () => {
   assert.match(workflowAdapter, /step === 'reply_model_call'/);
   assert.match(workflowAdapter, /step === 'completed'/);
-  assert.match(workflow, /this\.setStep\(ref, 'reply_model_call'\)/);
+  assert.match(workflow, /setStep\(ref, 'reply_model_call'\)/);
 });
 
 test('busy lifecycle remains in AgentChatService adapter; workflow emits lifecycle events', () => {

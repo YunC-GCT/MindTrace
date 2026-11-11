@@ -1,6 +1,6 @@
 # 0011 — `skill/` is retained as the Xiaoyi (小艺) skill development reservation
 
-The 2026-09-06 agent-tools audit ([F4](../architecture/agent-tools-inventory-2026-09-06.md)) flagged the `skill/` HSP as a candidate for freezing or removal: the whole module is one `SKILL_VERSION` constant plus a placeholder `SkillAbility`. The team ruled that `skill/` is the **reserved slot for Xiaoyi (小艺) skill development** — development has not started yet, but the module must be kept. This ADR records that ruling so future audits do not re-suggest deletion. The freeze/removal suggestion (audit finding F4) is withdrawn.
+The 2026-09-06 agent-tools audit ([F4](../architecture/agent-tools-inventory-2026-09-06.md)) flagged the `skill/` module as a candidate for freezing or removal: the whole module is one `SKILL_VERSION` constant plus a placeholder `SkillAbility`. The team ruled that `skill/` is the **reserved slot for Xiaoyi (小艺) skill development** — development has not started yet, but the module must be kept. This ADR records that ruling so future audits do not re-suggest deletion. The freeze/removal suggestion (audit finding F4) is withdrawn.
 
 ## Status
 
@@ -16,13 +16,18 @@ The 2026-09-06 agent-tools audit ([F4](../architecture/agent-tools-inventory-202
 
 - **Chosen (1)**: the stub state of `skill/` is *deliberate*. Future audits and agents must not treat it as dead code or propose its removal.
 - Implementation path when work starts: register the intents with Intents Kit (`@InsightIntent{Link,Page,Function,Form,Entry}` decorators, API 11+; the target SDK 6.1.1 = API 24 supports it), route `want.action` in `SkillAbility` through an IntentRouter onto the shared tool surface ([spec 014](../specs/014-tool-calling-protocol.md) ToolRegistry). A2A Server capabilities are API 26 — roadmap only. Survey: [agent-toolkit-and-skill-dispatch-2026-09-06](../research/agent-toolkit-and-skill-dispatch-2026-09-06.md) §4-5.
-- Topology constraint to design around: `skill/` (HSP) can only see `common` + `agents`; all DAOs and chat orchestration live in `entry` (HAP) and are unreachable — read-only intents first.
+- Topology constraint to design around: `skill/` (HAP, `type: feature`) can only see `common` + `agents`; all DAOs and chat orchestration live in `entry` (HAP) and are unreachable — read-only intents first.
 - Open item before any implementation spec: the 7 intent actions' semantics are inferred from their names only; a teammate must confirm them.
 - Follow-up (2026-09-10): `SearchNote` was explicitly selected as the first real intent. `SkillAbility → IntentRouter → SkillIntentWorkflow → ToolCatalog/ToolRegistry.note_query` is implemented; the other six actions return `UNSUPPORTED_INTENT` until their semantics are confirmed. This reuses the single common tool surface and does not create a skill-side backend.
 
 ## Reversibility
 
 **Low** — keeping an empty module costs nothing; what would be hard to reverse is deleting it and losing the declared intent actions and the team's recorded intent.
+
+## 现状（2026-10-30 回填）
+
+- **模块类型（2026-10-30 更正）**：`skill/` 是 **HAP**（`module.json5` `"type": "feature"`、`hvigorfile.ts` 用 `hapTasks`），本文原稿误写为 HSP；全仓只有 `common` / `agents` 是 HSP（`type: "shared"`）。结论不受影响：它仍只依赖 `common` + `agents`，仍读不到 `entry` 的 DAO。
+- 其余判断仍成立：`SKILL_VERSION = 'v0.0.1'`（`skill/src/main/ets/Index.ets:4`）还在，`SkillAbility` 仍声明 `entity.system.intent` 与 7 个 action，`SkillIntentWorkflow` 已从 `skill/src/main/ets/Index.ets:6` 导出。预留位的结论不变——**不要删这个模块**。
 
 ## Related
 

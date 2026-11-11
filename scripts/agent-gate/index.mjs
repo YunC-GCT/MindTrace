@@ -51,10 +51,6 @@ export function boundaryViolations(relPath, text) {
       if (spec.startsWith('entry/')) {
         out.push(`agents must not import entry (${spec})`);
       }
-      // L2 编排层只依赖端口：平台能力一律走 common 契约（spec 033 / #227 / #228）
-      if ((spec.startsWith('@kit.') || spec.startsWith('@ohos.')) && spec !== '@kit.NetworkKit') {
-        out.push(`agents may only @kit.NetworkKit, got ${spec} — 走端口，不要直接依赖能力 Kit`);
-      }
     }
   }
 
@@ -176,7 +172,7 @@ function testFiles() {
     .sort()
     .map((f) => `scripts/arkts-lint/tests/${f}`);
   // 其他目录下的 node --test 单测也要进 gate，否则新增用例无守门
-  for (const extra of ['scripts/a2a-smoke/tests', 'scripts/e2e-capture']) {
+  for (const extra of ['scripts/a2a-smoke/tests', 'scripts/e2e-capture', 'scripts/process-boundary/tests']) {
     const abs = join(REPO_ROOT, extra);
     if (!existsSync(abs)) continue;
     readdirSync(abs)
@@ -255,13 +251,26 @@ function main() {
     checks.push({ name: 'arkts-lint', status: 'SKIP', detail: 'no .ets changes', errors: [], warnings: [] });
   }
 
-  for (const [name, script] of [
+  const hypiumGeneratedDir = join(REPO_ROOT, 'entry/src/ohosTest/ets/generated-knowledge-tests');
+  if (all && !existsSync(hypiumGeneratedDir)) {
+    // 生成物被 gitignore；CI clean checkout 必须先落盘，否则 hypium-check 只能报
+    // 一堆 missing。只在目录整体缺失时生成，已有文件仍由 --check 抓 stale/orphan。
+    const prepared = runNode('scripts/prepare-knowledge-hypium.mjs', []);
+    if (prepared.status !== 0) {
+      console.error(prepared.output);
+      process.exit(1);
+    }
+  }
+
+  for (const [name, script, extraArgs] of [
     ['naming-lint', 'scripts/naming-lint/index.mjs'],
     ['link-check', 'scripts/link-check/index.mjs'],
     ['doc-trace', 'scripts/doc-trace/index.mjs'],
     ['process-boundary', 'scripts/process-boundary/check.mjs'],
+    // Hypium 测试不参与 HAP 构建，只能在门禁里守生成物与 barrel 符号
+    ['hypium-check', 'scripts/prepare-knowledge-hypium.mjs', ['--check']],
   ]) {
-    const r = runNode(script);
+    const r = runNode(script, extraArgs ?? []);
     checks.push({
       name,
       status: r.status === 0 ? 'PASS' : 'FAIL',

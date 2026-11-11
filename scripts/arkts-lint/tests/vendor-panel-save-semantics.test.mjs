@@ -15,11 +15,12 @@ test('per-vendor 保存回调调用 LLM-only saveLlm', () => {
   assert.match(vm, /async\s+saveLlm\s*\(\):\s*Promise<boolean>/);
 });
 
-test('底部 ActionBar 仅保存和重置 OCR', () => {
-  assert.match(page, /ActionBar\(\{\s*onReset:[\s\S]*?this\.resetOcr\(\)[\s\S]*?onSave:[\s\S]*?this\.saveOcr\(\)/);
-  assert.match(bar, /Button\("重置 OCR"\)/);
-  assert.match(bar, /Button\("保存 OCR"\)/);
-  assert.doesNotMatch(page, /保存模型设置/);
+test('底部 ActionBar 统一保存设置；OCR 配置入口已移除（OCR 走端侧 Kit）', () => {
+  assert.match(page, /ActionBar\(\{\s*onSave:[\s\S]*?this\.saveLlm\(\)/);
+  assert.match(bar, /Button\("保存设置"\)/);
+  assert.doesNotMatch(bar, /重置 OCR|保存 OCR/);
+  assert.doesNotMatch(page, /OcrConfigSection/);
+  assert.equal(existsSync(resolve(root, 'entry/src/main/ets/pages/AiSettings/OcrConfigSection.ets')), false);
 });
 
 test('连接测试读取当前 vendor 的 API key', () => {

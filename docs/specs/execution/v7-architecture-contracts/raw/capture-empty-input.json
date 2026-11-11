@@ -27,7 +27,7 @@
       "type": "概念"
     },
     "data": null,
-    "errorCode": null,
+    "errorCode": "STRUCTURE_ERROR",
     "errorMessage": "AI 结构化失败: LLM 调用失败: Unexpected LLM request",
     "generation": null,
     "route": "D1",

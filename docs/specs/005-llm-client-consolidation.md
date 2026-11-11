@@ -2,7 +2,7 @@
 
 > **Status**: implemented (2026-09-06 — 单一 `call(request)` 入口, `callSseTokens` 死路删除, 聊天走真 SSE 流式)
 > **Source ADR**: [`../adr/0004-llm-call-layer-consolidation.md`](../adr/0004-llm-call-layer-consolidation.md)
-> **Files affected**: `common/src/main/ets/llm/LlmClient.ets` (change); `agents/src/main/ets/agents/TypeClassifier.ets`, `agents/src/main/ets/agents/KnowledgeModel.ets`, `entry/src/main/ets/services/AgentChatService.ets` (migrate callers)
+> **Files affected**: `common/src/main/ets/llm/LlmClient.ets` (change); `agents/src/main/ets/subagents/TypeClassifier.ets`, `agents/src/main/ets/subagents/KnowledgeModel.ets`, `entry/src/main/ets/services/AgentChatService.ets` (migrate callers)
 > **Test files**: `scripts/arkts-lint/tests/llm-client-api.test.mjs` (new, TDD), existing tests in affected modules
 
 ## Why this ticket

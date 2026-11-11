@@ -19,7 +19,7 @@
   ```text
   M CONTEXT.md
   M docs/adr/0015-structured-stream-events.md
-  M docs/legacy/mindtrace/handoffs/qwen-deepseek-reasoning-handoff-2026-09-12.md
+  M docs/legacy/mindtrace/qwen-deepseek-reasoning-handoff-2026-09-12.md
   M docs/research/index.md
   M docs/specs/019-reasoning-process-display-p0.md
   M docs/specs/index.md
@@ -361,7 +361,7 @@ docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/tasks.md        (ch
 docs/specs/execution/ticket-0-6-chat-render-fixtures-budgets/verification-record.md (this record)
 ```
 
-`git status --porcelain` after implementation shows exactly the scoped files above plus the pre-existing unrelated dirty/untracked inventory recorded in Phase 1 (unchanged — including `CONTEXT.md`, `docs/adr/0015-structured-stream-events.md`, `docs/legacy/mindtrace/handoffs/qwen-deepseek-reasoning-handoff-2026-09-12.md`, `docs/research/index.md`, `docs/specs/019-*`, `docs/specs/index.md`, `spec/019-*`, `agents/.preview/`, `common/.preview/`, `docs/research/arkweb-*`, `docs/research/chat-markdown-*`, `entry/src/main/ets/shared/atoms/WebKeepAlive.ets`). Nothing was staged or committed. No `StreamingReplyDocument`/`RendererScheduler`/`RenderTick` and no chat render path switch in the scoped diff (see "US5 evidence").
+`git status --porcelain` after implementation shows exactly the scoped files above plus the pre-existing unrelated dirty/untracked inventory recorded in Phase 1 (unchanged — including `CONTEXT.md`, `docs/adr/0015-structured-stream-events.md`, `docs/legacy/mindtrace/qwen-deepseek-reasoning-handoff-2026-09-12.md`, `docs/research/index.md`, `docs/specs/019-*`, `docs/specs/index.md`, `spec/019-*`, `agents/.preview/`, `common/.preview/`, `docs/research/arkweb-*`, `docs/research/chat-markdown-*`, `entry/src/main/ets/shared/atoms/WebKeepAlive.ets`). Nothing was staged or committed. No `StreamingReplyDocument`/`RendererScheduler`/`RenderTick` and no chat render path switch in the scoped diff (see "US5 evidence").
 
 ## Handoff to Phase 9 (Verification)
 

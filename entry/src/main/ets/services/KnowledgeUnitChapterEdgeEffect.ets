@@ -15,7 +15,7 @@ import { relationalStore } from '@kit.ArkData';
 import { KnowledgeRelation, KnowledgeUnit, uuid } from 'common';
 import { KnowledgeRelationDao } from '../database/KnowledgeRelationDao';
 import { NoteDao } from '../database/NoteDao';
-import { KnowledgeUnitPostCommitEffect } from '../models/KnowledgeUnitWriteModels';
+import { KnowledgeUnitPostCommitEffect } from 'common';
 
 const SAME_CHAPTER_NEIGHBOR_LIMIT: number = 20;
 

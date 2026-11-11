@@ -7,8 +7,8 @@ const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 test('identity policies are distinct and session fallback is removed', () => {
-  const identity = read('entry/src/main/ets/services/ConversationIdentity.ets');
-  const workflow = read('entry/src/main/ets/workflows/conversation/ConversationWorkflow.ets');
+  const identity = read('common/src/main/ets/utils/ConversationIdentity.ets');
+  const workflow = read('agents/src/main/ets/conversation/ConversationWorkflow.ets');
   const session = read('entry/src/main/ets/overlays/AgentFloatWindow/chat/ChatSession.ets');
   const window = read('entry/src/main/ets/overlays/AgentFloatWindow/AgentFloatWindow.ets');
   assert.match(identity, /class SessionIdPolicy/);
@@ -22,7 +22,10 @@ test('identity policies are distinct and session fallback is removed', () => {
 
 test('run coordinator and snapshot decoder expose the required seams', () => {
   const coordinator = read('entry/src/main/ets/services/ConversationRunCoordinator.ets');
-  const persistence = read('entry/src/main/ets/services/ChatHistoryPersistence.ets');
+  const persistence = [
+  read('entry/src/main/ets/services/ChatHistoryPersistence.ets'),
+  read('entry/src/main/ets/services/ChatHistoryWire.ets'),
+].join('\n');
   const service = read('entry/src/main/ets/services/AgentChatService.ets');
   const runtime = read('entry/src/main/ets/services/ConversationRuntime.ets');
   const adapter = read('entry/src/main/ets/services/ConversationWorkflowAdapter.ets');

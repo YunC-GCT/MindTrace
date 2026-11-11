@@ -76,7 +76,36 @@ AGENTS.md
 
 ---
 
-## 4. 自动检查
+## 4. Legacy 的保留与清理
+
+`docs/legacy/` 既不是垃圾桶也不是档案馆：只留**仍能解释当前决策**或**为其提供证据**的东西，其余删掉——git history 还在，删掉的记录并没有消失。
+
+**三判据（满足任一即保留）**
+
+| 判据 | 怎么查 | 例 |
+|---|---|---|
+| 被现行文档引用 | `grep -rn "legacy/mindtrace/<file>" docs AGENTS.md` 有命中 | `audit-full-2026-09-01.md`（10 处引用） |
+| 是某个结论的唯一来源 | 现行 ADR / spec 里结论成立但推导只在这里 | `note-generation-origin-plan-2026-09-08.md`（未实现的 evaluator 循环） |
+| 是审计证据 | 记录了 ADR / spec 当初测量到的数字 | `lint-baseline-2026-09-01.json`、`deep-dive-2026-09-01.md` |
+
+**四类直接删（不必再论证“万一有人要” ）**
+
+1. 渲染件——`.md` 才是权威，`.html` 只是它的截图
+2. 同一快照的旧版本——被重写过的引擎留下的基线，已经没有东西可以拿它比对
+3. 描述**已被 ADR 否决**的路线——留着会被当成待办
+4. 一次性 session 交接——里面每个待办都已结算
+
+删除时把理由写进 `docs/legacy/<project>/index.md` 的 cleanup 表，**理由要具体到判据**（“旧 AST 引擎基线，引擎已重写” 而不是 “过时”）。
+
+**索引是导航，可改；正文冻结，不改。** 计数、路径、保留理由写错了改 `index.md`；正文条目的结论错了，删条目，不要编辑它。
+
+**结构能平铺就平铺。** 十几篇以内直接 `docs/legacy/<project>/*.md` + 一个 `index.md`；给 1–2 个文件配一个子目录、再配一个 `index.md` 是噪音，不是分类。
+
+**移动或删除必须同 commit 改入链**，否则 `link-check` / `doc-trace` 立刻红；移动后要重算被移动文档内部相对链接的 `../` 层级。
+
+---
+
+## 5. 自动检查
 
 ```bash
 # 一条命令：文档 + 代码边界 + lint（agent 交付前必跑）
@@ -95,7 +124,7 @@ node scripts/naming-lint/index.mjs
 
 ---
 
-## 5. 新增 / 修改文档的检查单
+## 6. 新增 / 修改文档的检查单
 
 - [ ] 文件名符合 [`naming-conventions.md`](../style/naming-conventions.md)（kebab-case、日期后缀）
 - [ ] 放在正确的目录：决策 → `adr/`；设计 → `specs/`；执行证据 → `specs/execution/<bundle>/`；调研 → `research/`；稳定架构描述 → `architecture/`；流程 → `agents/`
@@ -107,7 +136,7 @@ node scripts/naming-lint/index.mjs
 
 ---
 
-## 6. 当前基线（2026-10-18）
+## 7. 当前基线（2026-10-18）
 
 | 指标 | 值 |
 |---|---|

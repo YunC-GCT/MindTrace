@@ -30,21 +30,15 @@ export {
   DUR_INSTANT, DUR_FAST, DUR_BASE, DUR_SLOW, DUR_SLOWER, DUR_SLOWEST, DUR_BREATH,
 } from './constants/ColorTokens';
 
+// ========== 笔记类型词表（agents 与 entry 共用） ==========
+export {
+  NOTE_TYPE_ALL_KEY, NOTE_TYPE_KEYS, isKnownNoteType, noteTypeFilterKeys, normalizeNoteType,
+} from './models/NoteTypeVocabulary';
+
 // ========== Mock 笔记数据 (UI 开发期) ==========
 export {
   NoteItem, NOTES, stripMD, recentDate,
 } from './data/MockNotes';
-
-// ========== 笔记分类与取色 ==========
-export {
-  NOTE_TYPE_ALL_KEY,
-  NOTE_TYPE_KEYS,
-  noteTypeFilterKeys,
-  typeChar, typeColor, typeGlassColor,
-  subjectColor, subjectColorByIndex, subjectGlassColor, subjectBorderColor,
-  glassToneColor, glassSurfaceColor, glassHighlightColor, glassShadowColor, borderToneColor,
-  normalizeNoteType, isKnownNoteType,
-} from './data/NoteTaxonomy';
 
 // ========== Agent 共享类型 (Dispatcher 侧) ==========
 export {
@@ -77,9 +71,10 @@ export {
   ClassificationResult,
   TruthFlag,
   TruthCheckResult,
-  DispatchRequest,
-  DispatchResult,
+  BranchRequest,
   CaptureSetRequest,
+  CaptureSetPreview,
+  CaptureSetProblem,
   CaptureSetItemResult,
   CaptureSetResult,
   ApiResponse,
@@ -95,6 +90,17 @@ export type {
   NoteCategory,
   CaptureProvenance,
 } from './models/CaptureChain';
+// ========== ADR-0019：NoteCommand / NoteOutcome 契约 ==========
+export { NOTE_CANCELLED_MESSAGE, isRetryableNoteErrorCode } from './models/NoteCommandModels';
+export type {
+  DegradedMarker,
+  DispatchSource,
+  NoteBatchOutcome,
+  NoteCommand,
+  NoteCommandKind,
+  NoteOutcome,
+  NoteOutcomeKind,
+} from './models/NoteCommandModels';
 export { captureProvenanceFromFragments } from './models/CaptureChain';
 export type {
   NoteGenerationMode,
@@ -327,7 +333,6 @@ export { RunBudget, createRunBudget } from './workflow/RunBudget';
 export { CancellationError, DeadlineExceededError, isCancellationError, isDeadlineExceededError } from './workflow/RunErrors';
 export { RunContext, createRootRunContext, createChildRunContext } from './workflow/RunContext';
 export type { ToolLoopOptions } from './workflow/tool-calling/ToolCallingState';
-export { NoteQueryTool, NoteGetTool, ReviewDueQueryTool, createReadOnlyNoteTools } from './tools/NoteQueryTools';
 
 // ========== OCR 端点配置 (2026-07-17 P0 修复) ==========
 //   OcrConfig:  单例, preferences 持久化 endpoint + enabled, 真机部署改 IP
@@ -390,8 +395,14 @@ export type { CardSnapshotLoadResult } from './kit/CardSnapshotStore';
 // ========== v7 契约层切片 A (ADR-0019 / #238) ==========
 //   纯契约 / 纯函数：零 @kit.* 依赖；CardSnapshotStore 的 Preferences 边界保持原样。
 //   StudyPlanItem 与既有 models/StudyPlan 的 UI 类同名，这里改名为 StudyPlanPendingItem 导出。
-export { NotePortError } from './ports/NoteWritePort';
-export type { NoteWriteCommand, NoteWriteOutcome, NoteWritePort } from './ports/NoteWritePort';
+export { NotePortError, NOTE_WRITE_ERROR_FAILED } from './ports/NoteWritePort';
+export type {
+  NoteWriteCommand,
+  NoteWriteOutcome,
+  NoteWritePort,
+  NoteWriteSnapshot,
+  NoteWriteStore,
+} from './ports/NoteWritePort';
 export { decideWrite } from './ports/NoteWriteDecisions';
 export type { NoteSnapshot, WriteDecisionKind, WriteDecision } from './ports/NoteWriteDecisions';
 export {
@@ -400,8 +411,194 @@ export {
   decodeCardSnapshot,
 } from './kit/CardSnapshotCodec';
 export type { CardSnapshotEnvelope, CardSnapshotDecodeResult } from './kit/CardSnapshotCodec';
-export type { RunStatus, RunRecord, RunStorePort } from './ports/RunStore';
+export {
+  RunStoreError,
+  RUN_STORE_ERROR_RUN_NOT_FOUND,
+  RUN_STORE_ERROR_RUN_EXISTS,
+  RUN_STORE_ERROR_INVALID_RUN,
+  RUN_STORE_ERROR_FAILED,
+  RUN_EVENTS_DEFAULT_LIMIT,
+  RUN_EVENTS_MAX_LIMIT,
+} from './ports/RunStore';
+export type { RunEvent, RunRecord, RunStatus, RunStorePort, RunStoreStore } from './ports/RunStore';
+export { NOTE_READ_ERROR_INVALID_QUERY, NOTE_READ_ERROR_READ_FAILED } from './ports/NoteReadPort';
 export type {
+  NoteDetail,
+  NoteQuery,
+  NoteReadPort,
+  NoteReadStore,
+  NoteSummary,
+} from './ports/NoteReadPort';
+// 只读实现跨 HAP 共享（ADR-0021）；写实现留在 entry，不经本 barrel 导出。
+// 检索端口（ADR-0021）：正文/标签/全文命中归这里，读端口的 search 只匹配元数据。
+export { NOTE_SEARCH_DEFAULT_TOP_K, NOTE_SEARCH_MAX_TOP_K } from './ports/NoteSearchPort';
+export type { NoteSearchHit, NoteSearchPort, NoteSearchQuery } from './ports/NoteSearchPort';
+// 复习读端口（ADR-0022 / #238）：只读投影，SM-2 属 review.plan 工具。
+export {
+  ReviewPortError,
+  REVIEW_DUE_DEFAULT_LIMIT,
+  REVIEW_DUE_MAX_LIMIT,
+  REVIEW_READ_ERROR_INVALID_QUERY,
+  REVIEW_READ_ERROR_READ_FAILED,
+  REVIEW_WRITE_ERROR_ITEM_NOT_FOUND,
+  REVIEW_WRITE_ERROR_INVALID_ITEM,
+  REVIEW_WRITE_ERROR_OPERATION_REQUIRED,
+  REVIEW_WRITE_ERROR_WRITE_FAILED,
+} from './ports/ReviewPorts';
+export type {
+  ReviewItem,
+  ReviewLogEntry,
+  ReviewOperationRecord,
+  ReviewReadPort,
+  ReviewReadStore,
+  ReviewWriteCommand,
+  ReviewWriteOutcome,
+  ReviewWritePort,
+  ReviewWriteStore,
+} from './ports/ReviewPorts';
+export type { ArtifactDescriptor, ArtifactFileIo, ArtifactStorePort } from './ports/ArtifactStorePort';
+export {
+  StudyPlanError,
+  STUDY_PLAN_ERROR_READ_FAILED,
+  STUDY_PLAN_ERROR_OPERATION_REQUIRED,
+  STUDY_PLAN_ERROR_INVALID_PLAN,
+  STUDY_PLAN_ERROR_NOT_FOUND,
+  STUDY_PLAN_ERROR_VERSION_CONFLICT,
+  STUDY_PLAN_ERROR_WRITE_FAILED,
+} from './ports/StudyPlanPorts';
+export type {
+  StudyPlanOperationRecord,
   StudyPlanPendingItem,
   StudyPlanReadPort,
+  StudyPlanReadStore,
+  StudyPlanRecord,
+  StudyPlanWriteCommand,
+  StudyPlanWriteOutcome,
+  StudyPlanWritePort,
+  StudyPlanWriteRecord,
+  StudyPlanWriteStore,
 } from './ports/StudyPlanPorts';
+
+// ========== 业务 DTO（2026-11-03 由 entry/models 下沉，UI 与 :agent 双进程共用） ==========
+export type {
+  AgentJob, AgentJobEnqueueInput, AgentJobEnqueueResult,
+  AgentJobKind, AgentJobPriority, AgentJobStatus,
+} from './models/AgentJobModels';
+export { agentJobPriorityRank, isTerminalAgentJobStatus, shouldRecoverAgentJob } from './models/AgentJobModels';
+
+export type {
+  AgentMemoryContext, AgentMemoryRecord, AgentMemoryType,
+  ChatMessageRecord, ChatMessageWriteRequest, ChatRole,
+  LearnerLevel, LearnerProfile,
+  NoteGenerationContextBuildInput, NoteGenerationContextCandidate,
+  NoteGenerationContextCandidateKind, NoteGenerationContextResult,
+} from './models/AgentMemoryModels';
+
+export type {
+  ChatProjectionWriter, ConversationMessageSnapshot,
+  ConversationSessionSnapshot, ConversationSnapshotRole,
+} from './models/ConversationSnapshotModels';
+
+export { KnowledgeUnitWriteError, KnowledgeUnitWriteErrorCode } from './models/KnowledgeUnitWriteModels';
+export type {
+  KnowledgeUnitPersistenceResult, KnowledgeUnitPostCommitEffect,
+  KnowledgeUnitRevision, KnowledgeUnitWriteRepository, KnowledgeUnitWriteResult,
+  NoteGenerationBaseProvider,
+} from './models/KnowledgeUnitWriteModels';
+
+export type {
+  NoteEvidenceCitation, NoteEvidenceContext, NoteEvidenceRelation, NoteEvidenceRole,
+} from './models/NoteEvidenceModels';
+
+export {
+  copyNoteEvidenceCitation, copyNoteEvidenceCitations, copyNoteReviewAnswer,
+} from './models/NoteReviewModels';
+export type {
+  NoteReviewAnswer, NoteReviewFeedback, NoteReviewIntent,
+  NoteReviewSourceResolver, NoteReviewSourceResult, NoteReviewSourceStatus,
+  NoteReviewStatus,
+} from './models/NoteReviewModels';
+
+// ========== 知识星系与检索清洗（2026-11-03 纯算法上移） ==========
+export {
+  ChapterOrbit, GalaxyLink, PlanetNode, SubjectSystem,
+} from './models/GalaxyModels';
+export type { GalaxyLinkType } from './models/GalaxyModels';
+
+export { NoteRetrievalQuery } from './utils/NoteRetrievalQuery';
+export { stripCitationMarkers } from './utils/CitationText';
+export type {
+  NoteSimilarityCandidate, NoteSimilarityJudgePort,
+  NoteSimilarityVerdict, NoteSimilarityVerdictKind,
+} from './models/NoteSimilarityModels';
+export { citationSnippet, markdownToPlainText, normalizeEscapedNewlines, stripEchoedEvidence } from './utils/AnswerTextSanitizer';
+export { extractMathSignature, normalizeMathText } from './utils/MathSignature';
+export {
+  buildLexicalVector,
+  cosineSimilarity,
+  embeddingTokens,
+  LEXICAL_DIMENSION,
+  LEXICAL_EMBEDDING_MODEL,
+  LEXICAL_EMBEDDING_PROVIDER,
+  meanVector,
+  subtractCentroid,
+} from './utils/LexicalEmbedding';
+export { fuseRrf, fuseRrfScored, RRF_DEFAULT_K } from './utils/RrfFusion';
+export type { RrfChannel, RrfScored } from './utils/RrfFusion';
+export {
+  defaultEvidencePolicy,
+  evidencePolicyFor,
+} from './ports/EvidencePolicy';
+export type { EvidenceMode, EvidencePolicy } from './ports/EvidencePolicy';
+export type { NoteSuggestion, NoteSuggestionAction, NoteSuggestionKind } from './models/NoteSuggestionModels';
+export type {
+  EvidenceCandidateRef,
+  EvidenceJudgePort,
+  EvidenceJudgement,
+} from './ports/EvidenceJudgePort';
+export type { EmbeddingPort, EmbeddingVector } from './ports/EmbeddingPort';
+export {
+  BGE_ZH_QUERY_PREFIX,
+  CLOUD_EMBEDDING_MODEL_PREFIX,
+  CLOUD_EMBEDDING_PROVIDER,
+  cloudEmbeddingModelId,
+  embeddingQueryPrefix,
+  isCloudEmbeddingModel,
+} from './utils/EmbeddingModels';
+export { mergeQueryTerms, normalizeQueryText, planQueryTerms } from './utils/QueryTerms';
+export type { QueryTermPlan } from './utils/QueryTerms';
+
+// ========== 对话与笔记纯规则（2026-11-03 由 entry/services 上移） ==========
+export {
+  PROFILE_GLOBAL_SCOPE_ID,
+  ChatMessageIdPolicy, ConversationIdentityError, ConversationRunIdPolicy,
+  ProfileScopePolicy, SessionIdPolicy,
+  chatMessageIdPolicy, conversationRunIdPolicy, createConversationRunRef,
+  requireConversationRunRef, sessionIdPolicy,
+} from './utils/ConversationIdentity';
+export type {
+  ConversationIdentityErrorCode, ConversationIdentityKind,
+  ConversationIdentitySource, ConversationRunRef,
+} from './utils/ConversationIdentity';
+
+// ========== 调试故障注入端口（2026-11-03） ==========
+export type { DebugFault, DebugFaultSource } from './ports/DebugFaultPort';
+
+// ========== 证据链端口（2026-11-03） ==========
+export type {
+  NoteEvidenceCitationRef,
+  NoteEvidencePort,
+  NoteEvidenceStreamFilterPort,
+} from './ports/NoteEvidencePort';
+export type { CitationVersionRef, NoteEvidenceOptions } from './models/NoteEvidenceModels';
+export type {
+  NoteEvidenceSearchPort, NoteGraphNeighborhood, NoteGraphNode, NoteGraphPort,
+} from './ports/NoteEvidenceDataPorts';
+
+// ========== 复习链端口（2026-11-03） ==========
+export type { NoteReviewPort } from './ports/NoteReviewPort';
+export type {
+  NoteReviewFinalization,
+  NoteReviewPlan,
+  NoteReviewPlanKind,
+} from './models/NoteReviewModels';

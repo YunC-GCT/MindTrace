@@ -48,10 +48,11 @@ export function createRuntime(respond = () => { throw new Error('Unexpected LLM 
         get: () => load(path)[(item.propertyName ?? item.name).text] });
     }
   }
-  const { Dispatcher } = load('agents/src/main/ets/core/Dispatcher.ets');
-  options.mocks.agents = { Dispatcher };
-  const { KnowledgeModel } = load('agents/src/main/ets/agents/KnowledgeModel.ets');
-  return { common, load, requests, dispatcher: new Dispatcher(), model: new KnowledgeModel(new LlmClient()) };
+  const { CommandExecutor } = load('agents/src/main/ets/core/CommandExecutor.ets');
+  const { NoteGenerationContextBuilder } = load('agents/src/main/ets/note/NoteGenerationContextBuilder.ets');
+  options.mocks.agents = { Dispatcher: CommandExecutor, CommandExecutor, NoteGenerationContextBuilder };
+  const { KnowledgeModel } = load('agents/src/main/ets/subagents/KnowledgeModel.ets');
+  return { common, load, requests, dispatcher: new CommandExecutor(), model: new KnowledgeModel(new LlmClient()) };
 }
 
 export function generationRequest(route = 'light') {

@@ -12,7 +12,7 @@ import { ChatMsg, ChatSession, usableAsContext } from '../overlays/AgentFloatWin
 import {
   ConversationMessageSnapshot,
   ConversationSessionSnapshot,
-} from '../models/ConversationSnapshotModels';
+} from 'common';
 
 export class ConversationSnapshotMapper {
   static fromSessions(sessions: ChatSession[]): ConversationSessionSnapshot[] {

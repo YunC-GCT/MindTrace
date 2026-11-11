@@ -14,7 +14,7 @@ import {
   KnowledgeUnitWriteErrorCode,
   KnowledgeUnitWriteRepository,
   KnowledgeUnitWriteResult,
-} from '../main/ets/models/KnowledgeUnitWriteModels';
+} from 'common';
 import { KnowledgeUnitWriteService } from '../main/ets/services/KnowledgeUnitWriteService';
 
 class FakeWriteRepository implements KnowledgeUnitWriteRepository {

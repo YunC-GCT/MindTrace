@@ -20,7 +20,7 @@ import {
   GenerationJsonError,
   DomainJsonValidator,
   JsonCandidateSelector,
-} from '../main/ets/agents/GenerationJsonCaller';
+} from '../main/ets/subagents/GenerationJsonCaller';
 import { LlmError, TRUNCATION_MARKER } from 'common';
 import type {
   ChatMessage,
