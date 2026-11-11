@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from '@ohos/hypium';
 import { common } from '@kit.AbilityKit';
+import type { NoteSuggestion } from 'common';
 import {
   DifficultyLevel,
   KnowledgeUnit,
@@ -36,6 +37,7 @@ class RecordingDraftHost implements IConversationDraftWorkflowHost {
     _outcome: ChatMessageOutcome,
   ): Promise<void> {}
   draftOrigin(_ref: ConversationRunRef): ChatMessageOrigin { return 'chat'; }
+  notifySuggestion(_ref: ConversationRunRef, _suggestion: NoteSuggestion): void {}
 }
 
 class FixedDraftGateway implements IConversationDraftGateway {

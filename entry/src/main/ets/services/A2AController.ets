@@ -382,6 +382,12 @@ export class A2AController {
     const intent: A2AIntent = routeA2AIntent(text, hasImages, plan !== null);
     hilog.info(DOMAIN, TAG, 'INTENT kind=%{public}s reason=%{public}s',
       intent.kind, intent.reason);
+    // 回执问题优先级最高：否则「本次整理了几条」会先命中 pick_card → CHAT_RECALL，
+    // 用上一轮回答冒充整理条数。回执是确定性数据，不应该走模型。
+    if (matchesReceiptIntent(text)) {
+      this.answerFromReceipt(input.taskId);
+      return;
+    }
     if (pendingDraft !== null) {
       const command: string = parseA2ADraftCommand(text);
       if (command === 'confirm') {

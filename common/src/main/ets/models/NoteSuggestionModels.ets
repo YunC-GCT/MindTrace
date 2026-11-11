@@ -22,4 +22,6 @@ export interface NoteSuggestion {
   reason: string;
   /** merge 时的目标笔记 id。 */
   sourceNoteId?: string;
+  /** merge 时的目标笔记标题，供 UI 直接展示。 */
+  sourceTitle?: string;
 }

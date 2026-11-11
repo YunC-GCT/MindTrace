@@ -63,6 +63,10 @@ export class AgentChatService {
     await this.runtime.cancelDraft(sessionId, runId);
   }
 
+  async requestRegeneration(sessionId: string, noteId: string, instruction: string): Promise<void> {
+    await this.runtime.requestRegeneration(sessionId, noteId, instruction);
+  }
+
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
     return await this.runtime.listRecoverableDrafts();
   }

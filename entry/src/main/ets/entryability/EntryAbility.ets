@@ -36,6 +36,7 @@ import { ChatSessionManager } from '../overlays/AgentFloatWindow/chat/ChatSessio
 import { WebKeepAliveExperiment } from '../services/WebKeepAliveExperiment';
 import { ChatHistoryClearControl } from '../services/ChatHistoryClearControl';
 import { A2AInboxIngestService } from '../services/A2AInboxIngestService';
+import type { IngestSummary } from '../services/A2AInboxIngestService';
 import { WRITE_JOB_UI_ENABLED } from '../services/WriteJobConfig';
 import { WriteJobEventRecorder } from '../services/WriteJobEventRecorder';
 import { WriteJobFlags, WriteJobScheduler } from '../services/WriteJobScheduler';
@@ -75,6 +76,8 @@ export default class EntryAbility extends UIAbility {
   private pendingCardAction: string = '';
   /** 窗口内容是否已加载：Picker 必须在 UI 起来后再拉 */
   private windowReady: boolean = false;
+  /** 前台补齐队列后的 toast 需要 UIContext；窗口未就绪时不提示。 */
+  private windowStage: window.WindowStage | null = null;
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     // e2e 调试入口：冷启动也要保存 launchWant，onWindowStageCreate 里才能读到 --ps e2e。
     this.launchWant = want;
@@ -308,22 +311,6 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('ragProbe', DebugCaptureRunner.runRagProbe(this.context));
       return;
     }
-    if (mode === 'ragEval') {
-      this.runDebugProbe('ragEval', DebugCaptureRunner.runRagEval(this.context));
-      return;
-    }
-    if (mode === 'ragSpotCheck') {
-      this.runDebugProbe('ragSpotCheck', DebugCaptureRunner.runRagSpotCheck(this.context));
-      return;
-    }
-    if (mode === 'seedBulkCorpus') {
-      this.runDebugProbe('seedBulkCorpus', DebugCaptureRunner.runSeedBulkCorpus(this.context));
-      return;
-    }
-    if (mode === 'ragOodCheck') {
-      this.runDebugProbe('ragOodCheck', DebugCaptureRunner.runOodCheck(this.context));
-      return;
-    }
     if (mode === 'reindexEmbeddings') {
       this.runDebugProbe('reindexEmbeddings', DebugCaptureRunner.runReindexEmbeddings(this.context));
       return;
@@ -416,8 +403,12 @@ export default class EntryAbility extends UIAbility {
       this.runDebugProbe('clearNotes', DebugCaptureRunner.runClearAllNotes(this.context, true));
       return;
     }
-    if (mode === 'seedTestCorpus') {
-      this.runDebugProbe('seedTestCorpus', DebugCaptureRunner.runSeedTestCorpus(this.context));
+    if (mode === 'clearSeedCorpusAudit') {
+      this.runDebugProbe('clearSeedCorpusAudit', DebugCaptureRunner.runClearSeedCorpus(this.context, false));
+      return;
+    }
+    if (mode === 'clearSeedCorpus') {
+      this.runDebugProbe('clearSeedCorpus', DebugCaptureRunner.runClearSeedCorpus(this.context, true));
       return;
     }
     if (mode === 'segmentationProbe') {
@@ -500,6 +491,7 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
+    this.windowStage = windowStage;
 
     // 沉浸式状态栏: app 内容延伸到 status bar 下方, status bar 背景透明
     // 视觉效果: 系统时间/电量/信号/wifi 浮在 app 内容上, 与 app 无缝衔接
@@ -552,11 +544,47 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
     // 小艺侧排进队列的待整理原文：回到应用时逐条走正规写路径入库（队列空则立即返回）
-    A2AInboxIngestService.consume(this.context).catch((e: Error): void => {
-      hilog.error(DOMAIN, 'testTag', 'A2A inbox consume failed: %{public}s', e.message);
+    A2AInboxIngestService.consume(this.context)
+      .then((summary: IngestSummary): void => {
+        this.notifyInboxConsumed(summary);
+      })
+      .catch((e: Error): void => {
+        hilog.error(DOMAIN, 'testTag', 'A2A inbox consume failed: %{public}s', e.message);
+      });
+    A2AInboxIngestService.startWatch(this.context, (summary: IngestSummary): void => {
+      this.notifyInboxConsumed(summary);
     });
-    A2AInboxIngestService.startWatch(this.context);
   }
+  /** 小艺待整理补齐后给用户一条可感知的回执；窗口未就绪时只记日志。 */
+  private notifyInboxConsumed(summary: IngestSummary): void {
+    if (summary.claimed <= 0) {
+      return;
+    }
+    let text: string = '';
+    if (summary.done > 0 && summary.failed > 0) {
+      text = '小艺待整理已补齐 ' + summary.done.toString() + ' 条，'
+        + summary.failed.toString() + ' 条失败';
+    } else if (summary.done > 0) {
+      text = '小艺待整理已补齐 ' + summary.done.toString() + ' 条';
+    } else {
+      text = '小艺待整理有 ' + summary.failed.toString() + ' 条失败，可在应用内重试';
+    }
+    hilog.info(DOMAIN, 'A2AInbox', 'notify claimed=%{public}d done=%{public}d failed=%{public}d',
+      summary.claimed, summary.done, summary.failed);
+    try {
+      const stage: window.WindowStage | null = this.windowStage;
+      if (stage === null) {
+        return;
+      }
+      stage.getMainWindowSync().getUIContext().getPromptAction().showToast({
+        message: text,
+        duration: 2000,
+      });
+    } catch (e) {
+      hilog.warn(DOMAIN, 'A2AInbox', 'notify toast failed: %{public}s', (e as Error).message);
+    }
+  }
+
   onBackground(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
     A2AInboxIngestService.stopWatch();

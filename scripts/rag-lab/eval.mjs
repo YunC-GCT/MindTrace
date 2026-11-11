@@ -2,13 +2,11 @@
 /**
  * scripts/rag-lab/eval.mjs — 离线检索评测台
  *
- * 用途: 不装真机，在 PC 上评测检索策略。默认使用公开数学检索基准
- *       MathNet-Retrieve（CC-BY-4.0，中文子集），也可用 --dataset fixture
- *       跑仓库内的冒烟夹具（仅用于联调，不用于对外指标）。
+ * 用途: 不装真机，在 PC 上评测检索策略。使用公开数学检索基准
+ *       MathNet-Retrieve（CC-BY-4.0，中文子集）。
  * 用法:
  *   node scripts/rag-lab/fetch-mathnet.mjs          # 先下载数据到 .cache
  *   node scripts/rag-lab/eval.mjs                   # MathNet 中文子集 + 抽样候选池
- *   node scripts/rag-lab/eval.mjs --dataset fixture # 仓库夹具冒烟
  *   node scripts/rag-lab/eval.mjs --sample-docs 2000 --json
  * 依赖: 本地 embedding 服务（tools/embedding_service/start.bat）用于稠密变体；
  *       服务不可用时自动只跑词面变体。
@@ -27,7 +25,6 @@ const BATCH_SIZE = 16;
 const TOP_K = 10;
 const RRF_K = 60;
 const RERANK_TRIGGER_GAP = 0.05;
-const FIXTURE_VARIANTS = ['lexical', 'dense-body', 'dense-title2', 'dense-summary', 'hybrid-title2', 'hybrid-title2-re'];
 const MATHNET_VARIANTS = ['lexical', 'dense-body', 'hybrid-body', 'hybrid-body-re'];
 const EMBED_CACHE = new Map();
 let EMBED_CACHE_PATH = '';
@@ -65,7 +62,7 @@ function parseArgs(argv) {
     endpoint: DEFAULT_ENDPOINT,
     model: DEFAULT_MODEL,
     rerankModel: DEFAULT_RERANK_MODEL,
-    dataset: 'auto',
+    dataset: 'mathnet',
     tier: 'easy',
     sampleDocs: 2000,
     maxQueries: 0,
@@ -137,29 +134,6 @@ function hashString(text) {
   return hash >>> 0;
 }
 
-function loadFixtureData() {
-  const seed = loadEts('entry/src/main/ets/debug/TestCorpusSeed.ets').TEST_CORPUS;
-  const bulk = loadEts('entry/src/main/ets/debug/TestCorpusBulk.ets').BULK_CORPUS;
-  const evalCases = loadEts('entry/src/main/ets/debug/RagEvalCases.ets').RAG_EVAL_CASES;
-  const spotCases = loadEts('entry/src/main/ets/debug/RagSpotCases.ets').RAG_SPOT_CASES;
-  const notes = [];
-  for (const item of seed) {
-    notes.push({ id: item.id, matchKey: item.title, title: item.title, summary: item.summary, content: item.content });
-  }
-  for (let i = 0; i < bulk.length; i += 1) {
-    const item = bulk[i];
-    notes.push({ id: 'bulk-' + i, matchKey: item.title, title: item.title, summary: item.summary, content: item.content });
-  }
-  const cases = [];
-  for (const item of evalCases) {
-    cases.push({ query: item.query, expectTitle: item.expectTitle, kind: item.kind });
-  }
-  for (const item of spotCases) {
-    cases.push({ query: item.query, expectTitle: item.expectTitle, kind: 'spot' });
-  }
-  return { notes: notes, cases: cases, label: 'fixture（冒烟夹具，不用于对外指标）' };
-}
-
 function sampleCorpus(rows, goldIds, limit) {
   if (limit <= 0) {
     return rows;
@@ -225,15 +199,10 @@ function loadMathNetData(options) {
 }
 
 function loadDataset(options) {
-  let dataset = options.dataset;
-  if (dataset === 'auto') {
-    const mathnetQueries = join(ROOT, '.cache', 'rag-lab', 'mathnet-retrieve', options.tier, 'queries.jsonl');
-    dataset = existsSync(mathnetQueries) ? 'mathnet' : 'fixture';
+  if (options.dataset !== 'mathnet') {
+    throw new Error('只支持 MathNet-Retrieve；自建 100 条夹具已于 2026-11-10 移除');
   }
-  if (dataset === 'mathnet') {
-    return loadMathNetData(options);
-  }
-  return loadFixtureData();
+  return loadMathNetData(options);
 }
 
 function stripHeadings(text) {
@@ -456,7 +425,7 @@ async function main() {
   const allCases = data.cases;
   const variants = options.variants.length > 0
     ? options.variants
-    : (data.label.startsWith('MathNet') ? MATHNET_VARIANTS : FIXTURE_VARIANTS);
+    : MATHNET_VARIANTS;
   const denseTexts = {
     'dense-body': notes.map((note) => (note.title.length > 0 ? note.title + '\n' : '') + stripHeadings(note.content)),
     'dense-title2': notes.map((note) => note.title.length > 0
@@ -591,9 +560,6 @@ async function main() {
     + ' health=' + health + ' notes=' + notes.length + ' cases=' + allCases.length + '\n');
   if (!denseAvailable) {
     process.stdout.write('WARN: 稠密服务不可用，只跑词面变体。\n');
-  }
-  if (data.label.startsWith('fixture')) {
-    process.stdout.write('WARN: 夹具只用于联调，不用于对外指标。\n');
   }
   for (const result of results) {
     process.stdout.write(formatStats(result.name, result.stats, result.elapsedMs) + '\n');

@@ -157,7 +157,7 @@ _answer 里出现的 `[noteId=...]` 必须落在 citations 内_（现有 `saniti
 | R2 | 整句优先 + 词 OR 兜底 + 短词 LIKE 二次兜底 | `entry/services/RagQueryPlan.ets` · `RagRetrievalService.ets` |
 | R3 | 工具召回与 FTS 共用 query plan；多词加权排序（命中词数加成） | `common/ports/impl/RdbNoteSearchAdapter.ets` · `NoteSearchRanking.ets` |
 | R4 | 证据字符预算（默认 2400）+ 引用覆盖率日志 | `NoteEvidenceService.ets` · `ConversationFormatting.ets` |
-| R5 | 评测集 + `e2e=ragEval` 探针 + 离线契约测试 | `entry/debug/RagEvalCases.ets` · `DebugCaptureRunner.ets` |
+| R5 | 评测集 + `e2e=ragEval` 探针 + 离线契约测试（2026-11-10 已移除 100 条自建夹具，评测改走 `scripts/rag-lab` MathNet） | `entry/debug/RagEvalCases.ets` · `DebugCaptureRunner.ets` |
 
 **真机结果**（设备 `3XTYD24C16203663`）：`hit@1 = 11/13`、`hit@5 = 13/13`、负样本零假阳性，耗时 335ms。原先失败的两条查询（带疑问词/语序不同）都排到第 1。
 

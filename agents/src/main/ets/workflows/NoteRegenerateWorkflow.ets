@@ -75,8 +75,7 @@ export class NoteRegenerateWorkflow implements NoteWorkflow {
     if (repository === undefined) {
       return failedOutcome('增量重生成基础资料不可用', 'REGENERATION_REPOSITORY_REQUIRED');
     }
-    const getBase = repository.getRegenerationBase;
-    if (getBase === undefined) {
+    if (repository.getRegenerationBase === undefined) {
       return failedOutcome('增量重生成基础资料不可用', 'REGENERATION_REPOSITORY_REQUIRED');
     }
     this.emitProgress(context, {
@@ -84,7 +83,7 @@ export class NoteRegenerateWorkflow implements NoteWorkflow {
       state: 'running',
       activity: 'collect_sources',
     });
-    const base: IncrementalBase | undefined = await getBase(request.targetNoteId);
+    const base: IncrementalBase | undefined = await repository.getRegenerationBase(request.targetNoteId);
     if (base === undefined) {
       this.emitProgress(context, {
         phase: 'prepare',

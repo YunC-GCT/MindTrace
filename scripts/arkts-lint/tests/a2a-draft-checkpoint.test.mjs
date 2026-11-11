@@ -134,4 +134,6 @@ test('控制器与处理器接线：单题先草稿，确认才入库，取消�
   const store = read('entry/src/main/ets/services/A2ADraftStore.ets');
   assert.match(store, /DRAFT_FILE_PREFIX: string = 'draft-'/);
   assert.match(store, /DRAFT_MAX_AGE_MS/);
+  assert.match(store, /conversationKey !== 'default'/);
+  assert.match(store, /parsed\.conversationKey = conversationKey/);
 });
