@@ -1140,3 +1140,77 @@ vec range 0.781–0.960, l1 range 0.408–0.731
 - 顺手修掉单题 retryable 分支重复入队：只有多题（`totalProblems > 1`）才补入 `queuedTexts`，第 1 题统一由 `enqueueForIngest` 入队。
 
 **验证**：`a2a-draft-checkpoint` 新增源码守卫；gate PASS（1361 单测）。真机（provider 挂起）`存笔记：导数的定义` → `A2A_DRAFT_SLOW 8s` → `A2A_DRAFT_TIMEOUT 25s` → `INBOX_ENQUEUED pending=11` → **仅一条** `A2A_REPLY_SENT chars=46`。
+
+## 60. 2026-11-10 A2A 可用性补口：回执路由 / 重复提示 / 补齐通知
+
+**改动**：
+- 回执意图提前到 `routeInput` 的草稿/计划/pick_card 分支之前。此前「本次整理了几条」会先命中 `pick_card` → `CHAT_RECALL`，把上一轮回答当成整理条数；现在直接读 `receipts/last-capture.json`。
+- App 内确认草稿时用 `committed.id !== candidate.id` 判断复用，提示「已保存笔记（检测到相同笔记，已复用）：标题」，与 A2A 确认文案一致。
+- inbox 补齐通知：`A2AInboxIngestService.startWatch` 接受消费回调；`EntryAbility.onForeground` / 轮询消费完成后用 `windowStage.getMainWindowSync().getUIContext().getPromptAction().showToast` 提示「小艺待整理已补齐 N 条」。`onBackground` 仍然停止轮询。
+
+**验证**：
+- `a2a-usability.test.mjs` 三条源码/契约守卫通过；gate PASS（1364 单测）；HAP 构建成功。
+- 真机：`本次整理了几条` → `INTENT kind=pick_card` 但日志 `[Receipt] hit=true receipt=true done=24`，回复「本次整理 24 条：成功 24 条，失败 0 条（00:35）」。
+- 真机启动 App 后 `a2a-inbox/` 被清空，说明补齐消费路径已执行；2s toast 未在截图窗口内捕获，后续可由自然超时项复验。
+
+## 61. 2026-11-10 清理 100 条自建测试语料
+
+**背景**：设备库里同时有自建测试语料（`seed-math-*` 25 条 + `bulk-*` 75 条，写入时 `source='file_import'`）和产品生成/手工笔记。用户要求只清测试语料。
+
+**改动**：
+- 新增 e2e 探针 `clearSeedCorpusAudit` / `clearSeedCorpus`（`DebugCaptureRunner.runClearSeedCorpus`）：只按 `source='file_import' OR id LIKE 'seed-%' OR id LIKE 'bulk-%'` 选行。
+- 逐条走 `NoteDao.deleteById` 清 FTS/关系边，再补删 `rag_chunk`、`rag_embedding`、`note_revision`、`review_item`、`review_log`、`review_op`；不执行 `DELETE FROM knowledge_unit` 全表删除。
+- 清理结果写到 `files/a2a/seed-cleanup.json`，便于无 hilog 时核验；门禁测试 `seed-cleanup.test.mjs` 防止退化成清空全库。
+
+**真机结果**（3XTYD24C16203663）：
+- 清理前审计：`seedIds=100, total=136`
+- 执行后：`removed=100, failed=0, remaining=36`
+- 复查：`seedIds=0, total=36, sources="note_generation=24,manual=12"`
+
+## 62. 2026-11-10 删除 100 条自建测试语料源码
+
+**背景**：设备里的 100 条种子笔记已删除，用户确认源码也是同一批 100 条（25 条 `TestCorpusSeed` + 75 条 `TestCorpusBulk`），要求一并清掉。
+
+**删除**：
+- `entry/src/main/ets/debug/TestCorpusSeed.ets`（25 条）
+- `entry/src/main/ets/debug/TestCorpusBulk.ets`（75 条）
+- `entry/src/main/ets/debug/RagEvalCases.ets`、`RagSpotCases.ets`（绑定这批语料的查询集）
+- `DebugCaptureRunner` 的 `ragEval` / `ragSpotCheck` / `ragOodCheck` / `seedTestCorpus` / `seedBulkCorpus` 探针及对应 EntryAbility 模式
+- `scripts/arkts-lint/tests/rag-eval.test.mjs`
+- `scripts/rag-lab/eval.mjs` 的 `--dataset fixture` 分支；离线评测只保留 MathNet-Retrieve
+
+**保留**：`scripts/rag-lab/fetch-mathnet.mjs` / `eval.mjs` 的 MathNet 评测；设备端已有的 36 条产品/手工笔记不动。
+
+## 63. 2026-11-10 重复笔记二次操作：更新 / 另存 / 保留
+
+**背景**：确认草稿命中判重（same）时，之前只提示「已复用」，用户没有后续动作。
+
+**改动**：
+- `ConversationDraftWorkflow.confirm` 复用笔记时发出 `NoteSuggestion(action='merge', sourceNoteId, sourceTitle)`；`ConversationWorkflow.notifySuggestion` 转发给会话回调。
+- `AgentFloatWindow` 在草稿浮层关闭后弹出三选一：更新已有笔记 / 另存为新笔记 / 保留现状。
+- 更新：调用 `AgentChatService.requestRegeneration` → `ConversationRuntime` → `ConversationDraftCoordinator` → `ConversationWorkflow.requestRegeneration`，把候选正文作为增量资料，生成带 `expectedVersion` 的新草稿，用户再次确认后才更新。
+- 另存：`NoteEditService.saveAsNew` 生成新 id，调用 `KnowledgeUnitWriteService.create(..., allowDuplicate=true)`，跳过判重但保留索引/向量写入。
+- `append`（同主题补充）建议仍只在写服务日志里，未接 UI；本轮先完成重复确认的二次操作。
+
+**验证**：`note-duplicate-actions.test.mjs` 4 条契约测试；gate PASS（1363 单测）；HAP 构建成功并已安装。重复场景需要 App 内连续生成同一篇笔记才能触发，设备当前锁屏，未完成真机点击验证。
+
+**真机测试补充（2026-11-10 18:00）**：
+- 在 App 内重复生成《矩阵的秩的计算方法》并确认，ConfirmTrace 显示判重命中，但 UI 没有出现三选一。定位到 `NotePreparedWorkflow` 在 `duplicate=true` 时仍用候选 id 覆盖 `committedCandidate.id`，导致上层 `committed.id !== candidate.id` 判断失效；已改为保留 `finalState.commitResult.noteId`，并补契约测试。
+- A2A 草稿 key 不一致：`A2A_DRAFT begin key=default` 落盘，后续「确认」按 `mindtrace-context` 查找，草稿找不到，确认被当成普通聊天。已在 `A2ADraftStore.load` 增加 default → 当前 key 的迁移回退，并补源码守卫。
+- App 浮层受键盘/剪贴板遮挡，自动点击未稳定命中确认键，因此三选一弹窗的端到端点击尚未完成；代码、契约测试和构建已通过（1364 单测）。
+
+## 64. 2026-11-10 重复笔记三选一真机验收
+
+**结果**：
+- 弹窗正常出现：「更新已有笔记 / 另存为新笔记 / 保留现状」，日志 `[NoteSuggestion] notify action=merge reason=duplicate-on-confirm` → 适配器 `[NoteSuggestion] action=merge ... reason=duplicate-on-confirm` → `[DuplicateAction] show`。
+- 另存：点击后笔记数 35 → 36，弹窗关闭；`NoteEditService.saveAsNew` 跳过判重写入新 id。
+- 更新：点击后进入 `ConversationWorkflow run start kind=regenerate`，生成带「保留 · …」差异的增量草稿；确认时日志 `store=update-begin noteId=KB-mwajwp7o-s1f8gd-copy-1794307019755`、`updateWithCommitKey-ok`，没有新的 insert。
+- 保留现状：与另存共用同一弹窗清理逻辑，未单独点击（代码路径只清状态）。
+
+**真机暴露并修复的三个绑定问题**：
+1. `ConversationWorkflow.notifySuggestion` 把 `this.cbs.onNoteSuggestion` 取出后调用，丢失 `this`，适配器访问 `this.accepts` 报 “Cannot read property accepts of undefined”。改为直接调用 `this.cbs.onNoteSuggestion(ref, suggestion)`。
+2. `ConversationNoteHandler` 在生成完成时同样取出 `onNoteSuggestion` 调用，导致每次生成末尾报 accepts 错误；改为先取 `callbacks` 对象，再在对象上调用。
+3. `NoteRegenerateWorkflow` 把 `repository.getRegenerationBase` 取出后调用，丢失 `this`，报 “Cannot read property baseProvider of undefined”；改为直接 `repository.getRegenerationBase(noteId)`。
+4. 另修复 `NotePreparedWorkflow` 判重命中时用候选 id 覆盖 `committedCandidate.id`，导致“已复用”判断失效；以及 `A2ADraftStore` 的 `default → 当前 key` 草稿迁移。
+
+**验证**：gate PASS（1364 单测），HSP/HAP 构建并安装。

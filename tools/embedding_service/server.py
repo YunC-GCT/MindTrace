@@ -39,6 +39,9 @@ USE_ONNX_RERANK = ONNX_IMPORT_OK and os.environ.get("MT_USE_ONNX_RERANK", "0") =
 
 MODEL_ID = os.environ.get("MT_EMBED_MODEL", "BAAI/bge-large-zh-v1.5")
 RERANK_MODEL_ID = os.environ.get("MT_RERANK_MODEL", "BAAI/bge-reranker-base")
+# Docker 可把已下载的 snapshot 路径直接传给模型，绕开 Hub 的 revision 解析。
+MODEL_PATH = os.environ.get("MT_EMBED_MODEL_PATH", MODEL_ID)
+RERANK_MODEL_PATH = os.environ.get("MT_RERANK_MODEL_PATH", RERANK_MODEL_ID)
 RERANK_ENABLED = os.environ.get("MT_ENABLE_RERANK", "1") != "0"
 PORT = int(os.environ.get("MT_EMBED_PORT", "8001"))
 MAX_BATCH = 32
@@ -99,7 +102,7 @@ def get_reranker() -> CrossEncoder:
         if _reranker is None:
             print(f"[rerank] loading {RERANK_MODEL_ID} ...", flush=True)
             started = time.time()
-            _reranker = CrossEncoder(RERANK_MODEL_ID)
+            _reranker = CrossEncoder(RERANK_MODEL_PATH)
             print(f"[rerank] loaded in {time.time() - started:.1f}s", flush=True)
     return _reranker
 
@@ -110,7 +113,7 @@ def get_model() -> SentenceTransformer:
         if _model is None:
             print(f"[embedding] loading {MODEL_ID} ...", flush=True)
             started = time.time()
-            _model = SentenceTransformer(MODEL_ID)
+            _model = SentenceTransformer(MODEL_PATH)
             dim = _model.get_sentence_embedding_dimension()
             print(f"[embedding] loaded in {time.time() - started:.1f}s, dim={dim}", flush=True)
     return _model

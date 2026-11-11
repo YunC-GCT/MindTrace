@@ -25,7 +25,17 @@ export const DRAFT_MAX_AGE_MS: number = 24 * 60 * 60 * 1000;
 export class A2ADraftStore {
   static async load(context: common.Context, conversationKey: string): Promise<A2APendingDraft | null> {
     try {
-      const path: string = A2ADraftStore.filePath(context, conversationKey);
+      let loadedKey: string = conversationKey;
+      let path: string = A2ADraftStore.filePath(context, conversationKey);
+      // 小艺首条消息可能没有 contextId，草稿落在 default；后续消息带上了
+      // contextId，key 变成 mindtrace-context。这里做一次迁移，避免「确认」找不到草稿。
+      if (!fileIo.accessSync(path) && conversationKey !== 'default') {
+        const fallbackPath: string = A2ADraftStore.filePath(context, 'default');
+        if (fileIo.accessSync(fallbackPath)) {
+          path = fallbackPath;
+          loadedKey = 'default';
+        }
+      }
       if (!fileIo.accessSync(path)) {
         return null;
       }
@@ -35,13 +45,18 @@ export class A2ADraftStore {
       }
       const parsed: A2APendingDraft = JSON.parse(content) as A2APendingDraft;
       if (parsed === null || parsed.event === undefined || parsed.event.candidate === undefined) {
-        await A2ADraftStore.clear(context, conversationKey);
+        await A2ADraftStore.clear(context, loadedKey);
         return null;
       }
       if (Date.now() - parsed.createdAt > DRAFT_MAX_AGE_MS) {
-        await A2ADraftStore.clear(context, conversationKey);
-        hilog.info(DOMAIN, TAG, 'A2A_DRAFT expired key=%{public}s', conversationKey);
+        await A2ADraftStore.clear(context, loadedKey);
+        hilog.info(DOMAIN, TAG, 'A2A_DRAFT expired key=%{public}s', loadedKey);
         return null;
+      }
+      if (loadedKey !== conversationKey) {
+        parsed.conversationKey = conversationKey;
+        await A2ADraftStore.save(context, parsed);
+        await A2ADraftStore.clear(context, loadedKey);
       }
       return parsed;
     } catch (e) {

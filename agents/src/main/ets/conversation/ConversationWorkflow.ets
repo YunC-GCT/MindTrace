@@ -55,7 +55,7 @@ import {
   SourceFragment,
   sourceFingerprint,
 } from 'common';
-import type { StreamEvent } from 'common';
+import type { NoteSuggestion, StreamEvent } from 'common';
 import { NoteEvidenceContext } from 'common';
 import { evidencePolicyFor } from 'common';
 import type { EvidencePolicy, NoteEvidenceOptions } from 'common';
@@ -171,6 +171,14 @@ export class ConversationWorkflow implements IConversationDraftWorkflowHost, ICo
   acceptsDraftRun(ref: ConversationRunRef): boolean { return this.cbs.isCurrentRun(ref); }
 
   publishDraft(ref: ConversationRunRef, event: NoteDraftReadyEvent): void { this.cbs.onDraftReady(ref, event); }
+
+  notifySuggestion(ref: ConversationRunRef, suggestion: NoteSuggestion): void {
+    console.info('[NoteSuggestion] notify action=' + suggestion.action
+      + ' reason=' + suggestion.reason + ' source=' + (suggestion.sourceNoteId ?? ''));
+    if (this.cbs.onNoteSuggestion !== undefined) {
+      this.cbs.onNoteSuggestion(ref, suggestion);
+    }
+  }
 
   async addDraftMessage(
     ref: ConversationRunRef,

@@ -40,14 +40,21 @@ export class A2AInboxIngestService {
    * 为什么需要：用户可能正在应用里，小艺在另一侧把原文排进队列，此时不会再触发 onForeground，
    * 只靠生命周期钩子会漏掉。
    */
-  static startWatch(context: common.UIAbilityContext): void {
+  static startWatch(context: common.UIAbilityContext,
+    onConsumed?: (summary: IngestSummary) => void): void {
     if (A2AInboxIngestService.timer !== -1) {
       return;
     }
     A2AInboxIngestService.timer = setInterval((): void => {
-      A2AInboxIngestService.consume(context).catch((e: Error): void => {
-        hilog.error(DOMAIN, TAG, 'watch consume failed: %{public}s', e.message);
-      });
+      A2AInboxIngestService.consume(context)
+        .then((summary: IngestSummary): void => {
+          if (onConsumed !== undefined && summary.claimed > 0) {
+            onConsumed(summary);
+          }
+        })
+        .catch((e: Error): void => {
+          hilog.error(DOMAIN, TAG, 'watch consume failed: %{public}s', e.message);
+        });
     }, 5000);
   }
 

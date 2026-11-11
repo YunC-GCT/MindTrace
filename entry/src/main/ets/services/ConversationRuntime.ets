@@ -150,6 +150,10 @@ export class ConversationRuntime {
     await this.draftCoordinator.cancel(sessionId, runId);
   }
 
+  async requestRegeneration(sessionId: string, noteId: string, instruction: string): Promise<void> {
+    await this.draftCoordinator.requestRegeneration(sessionId, noteId, instruction);
+  }
+
   async listRecoverableDrafts(): Promise<NoteGenerationRun[]> {
     return await this.draftCoordinator.listRecoverable();
   }

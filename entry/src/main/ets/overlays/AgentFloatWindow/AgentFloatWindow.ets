@@ -50,6 +50,7 @@ import {
   copyNoteEvidenceCitation,
 } from 'common';
 import { NoteReviewSourceService } from '../../services/NoteReviewSourceService';
+import { NoteEditService } from '../../services/NoteEditService';
 import { SessionsPanel } from './chat/SessionsPanel';
 import { AgentMessageList } from './AgentMessageList';
 import { ImagePreviewBar } from './ImagePreviewBar';
@@ -147,6 +148,13 @@ export struct AgentFloatWindow {
   private pendingCaptureService: AiService | null = null;
   private pendingCaptureOnItem: ((item: CaptureSetItemResult) => void) | null = null;
   private generatedDraftSessionId: string = '';
+  /** 重复笔记的二次操作：确认回调里先暂存候选，等浮层关闭后再问用户。 */
+  private duplicateEvent: NoteDraftReadyEvent | null = null;
+  private duplicateCandidate: KnowledgeUnit | null = null;
+  private duplicateSessionId: string = '';
+  private duplicateNoteId: string = '';
+  private duplicateTitle: string = '';
+  private lastConfirmCandidate: KnowledgeUnit | null = null;
   private motionSeq: number = 0;
   private sourceRequestSeq: number = 0;
   private dragStartH: number = 48;
@@ -396,6 +404,10 @@ export struct AgentFloatWindow {
       },
       onNoteSuggestion: (ref: ConversationRunRef, suggestion: NoteSuggestion): void => {
         if (ref.sessionId !== this.activeSid) {
+          return;
+        }
+        if (suggestion.action === 'merge') {
+          this.scheduleDuplicateDialog(suggestion);
           return;
         }
         this.showToast(this.noteSuggestionText(suggestion));
@@ -1315,11 +1327,138 @@ export struct AgentFloatWindow {
     if (this.generatedDraft === null || this.service === null) {
       throw new Error('草稿服务不可用');
     }
+    this.lastConfirmCandidate = candidate;
     if (this.generatedDraftSessionId.length === 0) {
       if (this.draftRecovery === null) { throw new Error('DETACHED_DRAFT_RECOVERY_UNAVAILABLE'); }
-      return await this.draftRecovery.confirm(this.generatedDraft, candidate);
+      const committed: KnowledgeUnit = await this.draftRecovery.confirm(this.generatedDraft, candidate);
+      // Detached 草稿没有会话回调，直接按落库结果补一次重复提示。
+      this.scheduleDuplicateFromCommit(committed);
+      return committed;
     }
     return await this.service.confirmDraft(this.generatedDraftSessionId, this.generatedDraft, candidate);
+  }
+
+  private scheduleDuplicateFromCommit(committed: KnowledgeUnit): void {
+    const candidate: KnowledgeUnit | null = this.lastConfirmCandidate;
+    if (candidate === null || committed.id === candidate.id) {
+      return;
+    }
+    this.scheduleDuplicateDialog({
+      action: 'merge',
+      noteKind: 'normal',
+      count: 1,
+      reason: 'duplicate-on-confirm',
+      sourceNoteId: committed.id,
+      sourceTitle: committed.title,
+    });
+  }
+
+  /** 重复确认后不在保存瞬间打断用户：浮层关闭后再问更新/另存。 */
+  private scheduleDuplicateDialog(suggestion: NoteSuggestion): void {
+    this.duplicateEvent = this.generatedDraft;
+    this.duplicateCandidate = this.lastConfirmCandidate;
+    this.duplicateSessionId = this.generatedDraftSessionId;
+    this.duplicateNoteId = suggestion.sourceNoteId !== undefined ? suggestion.sourceNoteId : '';
+    this.duplicateTitle = suggestion.sourceTitle !== undefined ? suggestion.sourceTitle : '';
+    console.info('[DuplicateAction] schedule note=' + this.duplicateNoteId
+      + ' session=' + this.duplicateSessionId + ' hasDraft=' + (this.duplicateEvent !== null ? '1' : '0')
+      + ' hasCandidate=' + (this.duplicateCandidate !== null ? '1' : '0'));
+    if (this.duplicateEvent === null || this.duplicateCandidate === null || this.duplicateNoteId.length === 0) {
+      this.clearDuplicateState();
+      return;
+    }
+    setTimeout((): void => {
+      this.showDuplicateDialog();
+    }, 400);
+  }
+
+  private showDuplicateDialog(): void {
+    console.info('[DuplicateAction] show note=' + this.duplicateNoteId
+      + ' session=' + this.duplicateSessionId + ' active=' + this.activeSid);
+    if (this.duplicateEvent === null || this.duplicateCandidate === null || this.duplicateNoteId.length === 0
+      || (this.duplicateSessionId.length > 0 && this.duplicateSessionId !== this.activeSid)) {
+      this.clearDuplicateState();
+      return;
+    }
+    const title: string = this.duplicateTitle.length > 0 ? this.duplicateTitle : '已有笔记';
+    const canUpdate: boolean = this.duplicateSessionId.length > 0;
+    this.getUIContext().getPromptAction().showDialog({
+      title: '已有相同笔记',
+      message: '《' + title + '》已经在知识库里。要用这次整理的内容更新它，还是另存为新笔记？',
+      buttons: canUpdate ? [
+        { text: '更新已有笔记', color: '#3478F6' },
+        { text: '另存为新笔记', color: '#3478F6' },
+        { text: '保留现状', color: '#666666' },
+      ] : [
+        { text: '另存为新笔记', color: '#3478F6' },
+        { text: '保留现状', color: '#666666' },
+      ],
+    }).then((result): void => {
+      if (canUpdate) {
+        if (result.index === 0) {
+          this.updateDuplicateNote();
+        } else if (result.index === 1) {
+          this.saveDuplicateAsNew();
+        } else {
+          this.clearDuplicateState();
+        }
+        return;
+      }
+      if (result.index === 0) {
+        this.saveDuplicateAsNew();
+      } else {
+        this.clearDuplicateState();
+      }
+    }).catch((): void => {
+      this.clearDuplicateState();
+    });
+  }
+
+  private updateDuplicateNote(): void {
+    const event: NoteDraftReadyEvent | null = this.duplicateEvent;
+    const candidate: KnowledgeUnit | null = this.duplicateCandidate;
+    const sessionId: string = this.duplicateSessionId;
+    const noteId: string = this.duplicateNoteId;
+    this.clearDuplicateState();
+    if (event === null || candidate === null || sessionId.length === 0 || noteId.length === 0
+      || this.service === null) {
+      return;
+    }
+    const content: string = candidate.content.length > 6000
+      ? candidate.content.substring(0, 6000) : candidate.content;
+    const instruction: string = '把下面这次整理的内容合并进已有笔记；保留原有结构，补充新增内容，不要编造：\n' + content;
+    this.service.requestRegeneration(sessionId, noteId, instruction).catch((e: Error): void => {
+      this.showToast('更新失败：' + e.message);
+    });
+  }
+
+  private saveDuplicateAsNew(): void {
+    const event: NoteDraftReadyEvent | null = this.duplicateEvent;
+    const candidate: KnowledgeUnit | null = this.duplicateCandidate;
+    const sessionId: string = this.duplicateSessionId;
+    this.clearDuplicateState();
+    if (candidate === null) {
+      return;
+    }
+    NoteEditService.saveAsNew(getContext(this) as common.UIAbilityContext, candidate)
+      .then((): void => {
+        this.showToast('已另存为新笔记');
+        if (event !== null && sessionId.length > 0 && this.service !== null) {
+          this.service.cancelDraft(sessionId, event.runId).catch((): void => {});
+        }
+      })
+      .catch((e: Error): void => {
+        this.showToast('另存失败：' + e.message);
+      });
+  }
+
+  private clearDuplicateState(): void {
+    this.duplicateEvent = null;
+    this.duplicateCandidate = null;
+    this.duplicateSessionId = '';
+    this.duplicateNoteId = '';
+    this.duplicateTitle = '';
+    this.lastConfirmCandidate = null;
   }
 
   private openAnimated(): void {

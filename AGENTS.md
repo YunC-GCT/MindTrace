@@ -174,7 +174,9 @@
 |---|---|
 | Open 项目 | DevEco `File → Open → <本地仓库根>` (目录名以各人克隆为准) |
 | Build / Run / Sync | DevEco GUI (`Build → Build Hap(s)/APP(s)`, `Run → Run 'entry'`) |
-| 启动 OCR 服务 | 运行 `tools/ocr_service/start.bat` (端口 8000; python 依赖见 tools/ocr_service/README.md) |
+| 启动 OCR 服务（Docker） | `MT_PADDLEX_CACHE=C:/Users/<you>/.paddlex docker compose up -d ocr` (端口 8000; 详见 tools/ocr_service/README.md) |
+| 启动 OCR 服务（原生，已弃用） | 运行 `tools/ocr_service/start.bat` (端口 8000; 仅应急) |
+| 启动 Embedding 服务（Docker） | 先启动 Docker Desktop，再 `MT_HF_CACHE=C:/Users/<you>/.cache/huggingface docker compose up -d embedding` (端口 8001; 详见 tools/embedding_service/README.md) |
 | 跑 arkts-lint 测试 | `npm --prefix scripts/arkts-lint test` (数量以输出为准, 全绿即可) |
 | 跑 v0.3 lint 扫描 | `node scripts/arkts-lint/index.mjs --quiet` |
 | **交付前跑总 gate** | `node scripts/agent-gate/index.mjs`（改动集）/ `--all`（全仓）/ `--json`（机器读） |

@@ -9,6 +9,7 @@
  *   Session-owned draft command -> ownership validation -> AiService -> preview/commit result.
  */
 import { KnowledgeUnit, NoteDraftReadyEvent, NoteGenerationRun } from 'common';
+import type { NoteSuggestion } from 'common';
 import type { IConversationDraftServicePort } from './ConversationServicePorts';
 import { ChatMessageOrigin, ChatMessageOutcome } from './ConversationState';
 import { ConversationRunRef } from 'common';
@@ -24,6 +25,7 @@ export interface IConversationDraftWorkflowHost {
     outcome: ChatMessageOutcome,
   ): Promise<void>;
   draftOrigin(ref: ConversationRunRef): ChatMessageOrigin;
+  notifySuggestion(ref: ConversationRunRef, suggestion: NoteSuggestion): void;
 }
 
 export interface IConversationDraftGateway {
@@ -115,7 +117,20 @@ export class ConversationDraftWorkflow {
     this.pendingConfirmRunId = event.runId;
     try {
       const committed: KnowledgeUnit = await this.gateway.confirm(event, candidate);
-      await this.addMessage(ref, '已保存笔记：' + committed.title, 'completed');
+      const reused: boolean = committed.id !== candidate.id;
+      if (reused) {
+        this.host.notifySuggestion(ref, {
+          action: 'merge',
+          noteKind: 'normal',
+          count: 1,
+          reason: 'duplicate-on-confirm',
+          sourceNoteId: committed.id,
+          sourceTitle: committed.title,
+        });
+      }
+      await this.addMessage(ref,
+        (reused ? '已保存笔记（检测到相同笔记，已复用）：' : '已保存笔记：') + committed.title,
+        'completed');
       return committed;
     } catch (error) {
       const errorMessage: string = ConversationDraftWorkflow.errorMessage(error);
